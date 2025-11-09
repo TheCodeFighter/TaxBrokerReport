@@ -1,0 +1,1047 @@
+TRADE REPUBLIC BANK GMBH
+BRUNNENSTRAẞE 19-21
+10119 BERLIN
+
+
+
+
+                                                          TAX REPORT
+
+
+INFORMATION
+
+This document contains your personal, free of charge tax report for the past
+year. The tax report is based on the tax forms and regulations in your country.
+You can use it to prepare your tax return.
+
+
+Please note the following:
+
+
+    ●   The information in the tax report relates exclusively to your activities at
+        Trade Republic. We do not have any information beyond this and
+        therefore could not take it into account.
+    ●   The tax report may contain tax-relevant events that could not be
+        assessed for tax purposes on the basis of our information and are
+        therefore shown separately.
+    ●   We cannot guarantee the correctness and completeness of the
+        information in the tax report.
+    ●   Unfortunately, we cannot and are not allowed to answer individual
+        questions about your tax return.
+
+
+
+We hope this tax report is useful for you and that you will find informative
+insights about your finances in the past year!
+
+
+
+
+Your Trade Republic Team
+
+Client:           0101010101
+Period:           01.01.2024 - 31.12.2024
+Currency:         EUR
+Country:          Base Country
+
+
+
+
+Income, Acquisitions, Gains and Losses Report 2024
+
+
+
+Client:                       0101010101
+
+Period:                       01.01.2024 - 31.12.2024
+
+Currency:                     EUR
+
+Accounting                   Fifo
+Method:
+
+
+
+
+Report ID: random-id-number-for-tests-1234
+
+Client:           0101010101
+Period:           01.01.2024 - 31.12.2024
+Currency:         EUR
+Country:          Base Country
+
+
+
+Table of Content
+
+
+Section                                                                        Page
+
+I            Income summary per financial instrument in RCCY                       4
+II           Income Summary per Country in RCCY                                    5
+III          Gains and Losses summary per financial instrument in RCCY             6
+IV           Total proceeds and purchases per country in RCCY                      7
+V            Detailed Income Section                                               8
+VI           Detailed Gains and Losses Section                                    10
+VII          Detailed Withholding Tax Section                                     15
+VIII         History of Transactions and Corporate Actions                        16
+IX           Explanatory Notes                                                    22
+
+
+
+
+Report ID: random-id-number-for-tests-1234                          Page 3 of 23
+
+Client:                      0101010101
+Period:                      01.01.2024 - 31.12.2024
+Currency:                    EUR
+Country:                     Base Country
+
+
+
+I. Income summary per financial instrument in RCCY
+
+Income Details                                         Gross Income   Withholding Tax   Income Collection Fees   Net Income
+
+
+Liquidity                                                 7                                                 7
+Total bonds and similar products
+               EEA/Swiss corporate bonds
+               Other bonds and similar products
+Equities                                                   0.14            -0.02                                    0.12
+Structured products
+Total funds
+               whereof UCITS funds
+               whereof non-UCITS funds
+               Asset allocation funds
+               Bond funds
+               Commodity funds
+               Equity Funds
+               Exchange traded funds (ETF)
+               Hedge funds
+               Money market funds
+               Private equity funds
+               Real estate funds
+               Other funds
+Other products
+
+
+Total income                                              7           -0.02                                  7
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                            Page 4 of 23
+
+Client:                    0101010101
+Period:                    01.01.2024 - 31.12.2024
+Currency:                  EUR
+Country:                   Base Country
+
+
+
+II. Income Summary per Country in RCCY
+
+                 Country                          Transaction   Gross Income            Income Collection Fees          Withholding Tax Amount           Net Income
+
+
+HotelCountry                            Interest                                    7                            0.00                            0.00                  7
+
+Delta Echo Foxtrot Golf Country           Distribution                                  0.14                            0.00                            -0.02                   0.12
+
+
+
+
+Total Interest                                                                 7                                                                                  7
+
+Total Distribution                                                               0.14                                                            -0.02                   0.12
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                  Page 5 of 23
+
+Client:                     0101010101
+Period:                     01.01.2024 - 31.12.2024
+Currency:                   EUR
+Country:                    Base Country
+
+
+
+III. Gains and Losses summary per financial instrument in RCCY
+
+Gains & Losses                                               Capital Gains        Capital Losses   Redemption Gains   Redemption Losses   FX Component of Gain/Loss
+
+Liquidity
+Total bonds and similar products
+              EEA/Swiss corporate bonds
+              Other bonds and similar products
+Derivatives: options, warrants and assimilated instruments
+Swap and forward contracts on FX
+Equities                                                        9
+Structured products
+Total funds                                                     9                 -1.29
+              whereof UCITS funds                               9                -1.29
+              whereof non-UCITS funds
+              Asset allocation funds
+              Bond funds
+              Commodity funds
+              Equity Funds
+              Exchange traded funds (ETF)
+              Hedge funds
+              Money market funds
+              Private equity funds
+              Real estate funds
+              Other funds                                       9                -1
+Precious metal and base metal accounts
+Physical precious metal
+Other products                                                                        -5
+Total Gains & Losses                                            1                -6
+
+
+Total other Transactions                                           Transactions
+
+Swap and Forward contracts on FX and precious metals                     NO
+
+FX spot deals                                                            NO
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                            Page 6 of 23
+
+Client:                    0101010101
+Period:                    01.01.2024 - 31.12.2024
+Currency:                  EUR
+Country:                   Base Country
+
+
+
+IV. Total proceeds and purchases per country in RCCY
+
+                     Country                         Total Sales              Total Transaction Fees (Sales)          Total Purchases              Total Transaction Fees (Purchases)
+
+
+Alpha Country                                                              1                                    1.00                      1                                       1.00
+Bravo Country                                                         5                                   0.00                     5                                       5.00
+CharliCountry                                                         3                                    1.00                      2                                        1.00
+Stateless                                                             3                              0.00                        4                                     0.00
+Delta Echo Foxtrot Golf Country                                            7                                    0.00                      6                                        0.00
+
+
+
+
+Total                                                              6,283.00                                    2.00                     6,101.17                                        7.00
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                            Page 7 of 23
+
+Client:                  0101010101
+Period:                  01.01.2024 - 31.12.2024
+Currency:                EUR
+Country:                 Base Country
+
+
+
+V. Detailed Income Section
+
+ISIN - Valor - Name                                                                  BCCY
+                                                                                                                              Income Collection
+                                                   Value Date   Amount of Holding           Exchange Rate   Gross Income                          Withholding Tax     Net Income
+                                                                                                                                   Fees
+Transaction                                                                          EUR
+
+Asset Type: Equities
+Country: Delta Echo Foxtrot Golf Country
+
+AC0000000001 - Alpha Company
+                                                                                     EUR                               0.04                                   -0.01                0.03
+Dividend                                           14.11.2024               0.1476             1.0000
+                                                                                     EUR                               0.04                                   -0.01                0.03
+BC0000000001 - BRAVO COMPANY
+                                                                                     EUR                               0.07                                   -0.01                0.06
+Dividend                                           03.10.2024               8.0515             1.0000
+                                                                                     EUR                               0.07                                   -0.01                0.06
+                                                                                     EUR                               0.03                                                        0.03
+Dividend                                           27.12.2024               2.6282             1.0000
+                                                                                     EUR                               0.03                                                        0.03
+Total for Delta Echo Foxtrot Golf Country
+                                                                                     EUR                               0.14                                   -0.02                0.12
+
+
+
+
+Total for Equities
+                                                                                     EUR                               0.14                                   -0.02                0.12
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                       Page 8 of 23
+
+Client:               0101010101
+Period:               01.01.2024 - 31.12.2024
+Currency:             EUR
+Country:              Base Country
+
+
+
+V. Detailed Income Section
+
+ISIN - Valor - Name                                                               BCCY
+                                                                                                                           Income Collection
+                                                Value Date   Amount of Holding           Exchange Rate   Gross Income                          Withholding Tax   Net Income
+                                                                                                                                Fees
+Transaction                                                                       EUR
+
+Asset Type: Liquidity
+Country: HotelCountry
+
+0101010101
+                                                                                  EUR                             123,119.28                                                 123,119.28
+Interest payment                                01.02.2024               123,119.28             1.0000
+                                                                                  EUR                             123,119.28                                                 123,119.28
+                                                                                  EUR                             2                                                 2
+Interest payment                                01.03.2024               2             1.0000
+                                                                                  EUR                             2                                                 2
+                                                                                  EUR                              78.88                                                  78.88
+Interest payment                                01.04.2024                78.88             1.0000
+                                                                                  EUR                              78.88                                                  78.88
+                                                                                  EUR                              2,234,553.21                                                  2,234,553.21
+Interest payment                                01.05.2024                2,234,553.21             1.0000
+                                                                                  EUR                              2,234,553.21                                                  2,234,553.21
+                                                                                  EUR                              37.94                                                  37.94
+Interest payment                                01.06.2024                37.94             1.0000
+                                                                                  EUR                              37.94                                                  37.94
+                                                                                  EUR                              123456.8                                                  123456.8
+Interest payment                                01.07.2024                123456.8             1.0000
+                                                                                  EUR                              123456.8                                                  123456.8
+                                                                                  EUR                              1                                                  1
+Interest payment                                01.08.2024                1             1.0000
+                                                                                  EUR                              1                                                  1
+                                                                                  EUR                              4                                                  4
+Interest payment                                01.09.2024                4             1.0000
+                                                                                  EUR                              4                                                  4
+                                                                                  EUR                              7                                                  7
+Interest payment                                01.10.2024                7             1.0000
+                                                                                  EUR                              7                                                  7
+                                                                                  EUR                              2                                                  2
+Interest payment                                01.11.2024                2             1.0000
+                                                                                  EUR                              2                                                  2
+                                                                                  EUR                              4                                                  4
+Interest payment                                01.12.2024                4             1.0000
+                                                                                  EUR                              4                                                  4
+                                                                                  EUR                              4                                                  4
+Interest payment                                05.12.2024                4             1.0000
+                                                                                  EUR                              4                                                  4
+
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                  Page 9 of 23
+
+Client:                     0101010101
+Period:                     01.01.2024 - 31.12.2024
+Currency:                   EUR
+Country:                    Base Country
+
+V. Detailed Income Section
+
+ISIN - Valor - Name                                                               BCCY
+                                                                                                                           Income Collection
+                                                Value Date   Amount of Holding           Exchange Rate   Gross Income                          Withholding Tax   Net Income
+                                                                                                                                Fees
+Transaction                                                                       EUR
+
+                                                                                  EUR                              7                                                  7
+Interest payment                                08.12.2024                7             1.0000
+                                                                                  EUR                              7                                                  7
+                                                                                  EUR                              8                                                  8
+Interest payment                                10.12.2024                8             1.0000
+                                                                                  EUR                              8                                                  8
+
+Total for HotelCountry
+                                                                                  EUR                             7                                                 7
+
+Total for Liquidity
+                                                                                  EUR                             7                                                 7
+
+
+
+VI. Detailed Gains and Losses Section
+
+ISIN - Valor - Name                                               BCCY                                                     Income                                      Realized Gain                   Realized Gain and
+                                       Transaction   Amount of
+                                                                         Exchange Rate   Unit price    Accrued Interest   Collection   Gross Amount    Net Amount      and Loss with    FX Effect       Loss without FX
+                                          Date        Holding
+Transaction                                                       EUR                                                        Fees                                        FX Effect                           Effect
+
+Asset Type: Crypto Currency
+Country: Stateless
+
+CCRY00000001 - Alpha Coin
+                                                                  EUR                           2.56                                          -40.02          -40.02                                               -5.68
+Trading Buy                            02.12.2024       15.6513             1.0000
+                                                                  EUR                           2.56                                          -40.02          -40.02           -5.68                               -5.68
+                                                                  EUR                           2.19                                           34.33           34.33
+Trading Sell                           06.12.2024      -15.6513             1.0000
+                                                                  EUR                           2.19                                           34.33           34.33
+
+
+
+
+                                          Gains                   EUR                                                                                                            0.00           0.00                0.00
+Total for Stateless
+                                          Losses                  EUR                                                                                                           -5.68           0.00               -5.68
+
+                                          Gains                   EUR                                                                                                            0.00           0.00                0.00
+Total for Crypto Currency
+                                          Losses                  EUR                                                                                                           -5.68           0.00               -5.68
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                                         Page 10 of 23
+
+Client:               0101010101
+Period:               01.01.2024 - 31.12.2024
+Currency:             EUR
+Country:              Base Country
+
+
+
+VI. Detailed Gains and Losses Section
+
+ISIN - Valor - Name                                         BCCY                                                     Income                                       Realized Gain                  Realized Gain and
+                                 Transaction   Amount of
+                                                                   Exchange Rate   Unit price    Accrued Interest   Collection    Gross Amount    Net Amount      and Loss with   FX Effect       Loss without FX
+                                    Date        Holding
+Transaction                                                 EUR                                                        Fees                                         FX Effect                          Effect
+
+Asset Type: Equities
+Country: Alpha Country
+
+CC0000000001 - Charlie Company
+                                                            EUR                          33.68                            -1.00         -101.04         -102.04                                              19.42
+Trading Buy                      18.09.2023          3.00             1.0000
+                                                            EUR                          33.68                            -1.00         -101.04         -102.04           19.42                              19.42
+                                                            EUR                          40.82                            -1.00          122.46          121.46
+Trading Sell                     09.04.2024         -3.00             1.0000
+                                                            EUR                          40.82                            -1.00          122.46          121.46
+
+
+
+
+                                    Gains                   EUR                                                                                                           19.42           0.00               19.42
+Total for Alpha Country
+                                    Losses                  EUR                                                                                                            0.00           0.00                0.00
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                                   Page 11 of 23
+
+Client:                 0101010101
+Period:                 01.01.2024 - 31.12.2024
+Currency:               EUR
+Country:                Base Country
+
+
+
+VI. Detailed Gains and Losses Section
+
+ISIN - Valor - Name                                           BCCY                                                     Income                                       Realized Gain                  Realized Gain and
+                                   Transaction   Amount of
+                                                                     Exchange Rate   Unit price    Accrued Interest   Collection    Gross Amount    Net Amount      and Loss with   FX Effect       Loss without FX
+                                      Date        Holding
+Transaction                                                   EUR                                                        Fees                                         FX Effect                          Effect
+
+Asset Type: Equities
+Country: CharliCountry
+
+DC0000000001 - DeltaCompany
+                                                              EUR                         123,139.92                            -1.00         -279.84         -280.84                                              50.16
+Trading Buy                        15.12.2023          2.00             1.0000
+                                                              EUR                         123,139.92                            -1.00         -279.84         -280.84           50.16                              50.16
+                                                              EUR                         166.00                            -1.00          332.00          331.00
+Trading Sell                       03.04.2024         -2.00             1.0000
+                                                              EUR                         166.00                            -1.00          332.00          331.00
+
+
+
+
+                                      Gains                   EUR                                                                                                           50.16           0.00               50.16
+Total for CharliCountry
+                                      Losses                  EUR                                                                                                            0.00           0.00                0.00
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                                     Page 12 of 23
+
+Client:                   0101010101
+Period:                   01.01.2024 - 31.12.2024
+Currency:                 EUR
+Country:                  Base Country
+
+
+
+VI. Detailed Gains and Losses Section
+
+ISIN - Valor - Name                                             BCCY                                                     Income                                      Realized Gain                  Realized Gain and
+                                     Transaction   Amount of
+                                                                       Exchange Rate   Unit price    Accrued Interest   Collection   Gross Amount    Net Amount      and Loss with   FX Effect       Loss without FX
+                                        Date        Holding
+Transaction                                                     EUR                                                        Fees                                        FX Effect                          Effect
+
+Asset Type: Equities
+Country: Delta Echo Foxtrot Golf Country
+
+BC0000000001 - BRAVO COMPANY
+                                                                EUR                         124.20                                           -6.40           -6.40                                               0.32
+Trading Buy                          17.06.2024        0.0515             1.0000
+                                                                EUR                         124.20                                           -6.40           -6.40            0.32                               0.32
+                                                                EUR                         124.20                                           -1.92           -1.92                                               0.10
+Trading Buy                          17.06.2024        0.0155             1.0000
+                                                                EUR                         124.20                                           -1.92           -1.92            0.10                               0.10
+                                                                EUR                         130.42                                            8.74            8.74
+Trading Sell                         21.10.2024        -0.067             1.0000
+                                                                EUR                         130.42                                            8.74            8.74
+                                                                EUR                         124.20                                          -44.25          -44.25                                               1.11
+Trading Buy                          17.06.2024        0.3563             1.0000
+                                                                EUR                         124.20                                          -44.25          -44.25            1.11                               1.11
+                                                                EUR                         127.32                                           45.36           45.36
+Trading Sell                         21.10.2024       -0.3563             1.0000
+                                                                EUR                         127.32                                           45.36           45.36
+                                                                EUR                         124.20                                         -248.40         -248.40                                               6.24
+Trading Buy                          17.06.2024          2.00             1.0000
+                                                                EUR                         124.20                                         -248.40         -248.40            6.24                               6.24
+                                                                EUR                         127.32                                          254.64          254.64
+Trading Sell                         21.10.2024         -2.00             1.0000
+                                                                EUR                         127.32                                          254.64          254.64
+                                                                EUR                         124.20                                         -372.60         -372.60                                              18.66
+Trading Buy                          17.06.2024          3.00             1.0000
+                                                                EUR                         124.20                                         -372.60         -372.60           18.66                              18.66
+                                                                EUR                         130.42                                          391.26          391.26
+Trading Sell                         21.10.2024         -3.00             1.0000
+                                                                EUR                         130.42                                          391.26          391.26
+                                                                EUR                         13.42                                           39.26            39.26 
+Trading Buy                         21.11.2024           2.00             1.0000
+                                                                EUR                         13.42                                           39.26            39.26
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                                     Page 12 of 23
+
+Client:                   0101010101
+Period:                   01.01.2024 - 31.12.2024
+Currency:                 EUR
+Country:                  Base Country
+
+
+
+VI. Detailed Gains and Losses Section
+
+ISIN - Valor - Name                                             BCCY                                                     Income                                      Realized Gain                  Realized Gain and
+                                     Transaction   Amount of
+                                                                       Exchange Rate   Unit price    Accrued Interest   Collection   Gross Amount    Net Amount      and Loss with   FX Effect       Loss without FX
+                                        Date        Holding
+Transaction                                                     EUR                                                        Fees                                        FX Effect                          Effect
+                                                                EUR                         13.42                                           39.26            39.26 
+Trading Sell                         25.11.2024         -2.00             1.0000
+                                                                EUR                         13.42                                           39.26            39.26
+
+                                        Gains                   EUR                                                                                                          26.43           0.00               26.43
+Total for Delta Echo Foxtrot Golf Country
+                                        Losses                  EUR                                                                                                           0.00           0.00                0.00
+                                        Gains                   EUR                                                                                                          96.01           0.00               96.01
+Total for Equities
+                                        Losses                  EUR                                                                                                           0.00           0.00                0.00
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                                      Page 13 of 23
+
+Client:                0101010101
+Period:                01.01.2024 - 31.12.2024
+Currency:              EUR
+Country:               Base Country
+
+
+
+VI. Detailed Gains and Losses Section
+
+ISIN - Valor - Name                                              BCCY                                                     Income                                       Realized Gain                  Realized Gain and
+                                      Transaction   Amount of
+                                                                        Exchange Rate   Unit price    Accrued Interest   Collection    Gross Amount    Net Amount      and Loss with   FX Effect       Loss without FX
+                                         Date        Holding
+Transaction                                                      EUR                                                        Fees                                         FX Effect                          Effect
+
+Asset Type: Funds
+Country: Bravo Country
+
+AE0000000001 - AlphaETF-123 EUR (Acc)
+                                                                 EUR                          66.31                                            -5.35           -5.35                                               0.12
+Trading Buy                           15.02.2024        0.0807             1.0000
+                                                                 EUR                          66.31                                            -5.35           -5.35            0.12                               0.12
+                                                                 EUR                          66.31                                            -1.94           -1.94                                               0.04
+Trading Buy                           15.02.2024        0.0292             1.0000
+                                                                 EUR                          66.31                                            -1.94           -1.94            0.04                               0.04
+                                                                 EUR                          67.85                                             7.46            7.46
+Trading Sell                          09.08.2024       -0.1099             1.0000
+                                                                 EUR                          67.85                                             7.46            7.46
+                                                                 EUR                          66.31                            -1.00         -992.71         -993.71                                              22.06
+Trading Buy                           15.02.2024       14.9708             1.0000
+                                                                 EUR                          66.31                            -1.00         -992.71         -993.71           22.06                              22.06
+                                                                 EUR                          65.95                                           -10.60          -10.60                                               0.31
+Trading Buy                           22.02.2024        0.1607             1.0000
+                                                                 EUR                          65.95                                           -10.60          -10.60            0.31                               0.31
+                                                                 EUR                          65.95                            -1.00         -989.25         -990.25                                              27.50
+Trading Buy                           22.02.2024         15.00             1.0000
+                                                                 EUR                          65.95                            -1.00         -989.25         -990.25           27.50                              27.50
+                                                                 EUR                          66.57                                            -1.45           -1.45                                               0.03
+Trading Buy                           26.02.2024        0.0218             1.0000
+                                                                 EUR                          66.57                                            -1.45           -1.45            0.03                               0.03
+                                                                 EUR                          66.57                            -1.00         -998.55         -999.55                                              18.20
+Trading Buy                           26.02.2024         15.00             1.0000
+                                                                 EUR                          66.57                            -1.00         -998.55         -999.55           18.20                              18.20
+                                                                 EUR                          66.16                                            -7.60           -7.60                                               0.19
+Trading Buy                           29.02.2024        0.1149             1.0000
+                                                                 EUR                          66.16                                            -7.60           -7.60            0.19                               0.19
+                                                                 EUR                          66.16                            -1.00         -992.40         -993.40                                              24.35
+Trading Buy                           29.02.2024         15.00             1.0000
+                                                                 EUR                          66.16                            -1.00         -992.40         -993.40           24.35                              24.35
+                                                                 EUR                          67.87                                           -49.67          -49.67                                              -0.01
+Trading Buy                           04.03.2024        0.7319             1.0000
+                                                                 EUR                          67.87                                           -49.67          -49.67           -0.01                              -0.01
+                                                                 EUR                          67.87                            -1.00         -950.18         -951.18                                              -1.28
+Trading Buy                           04.03.2024         14.00             1.0000
+                                                                 EUR                          67.87                            -1.00         -950.18         -951.18           -1.28                              -1.28
+                                                                 EUR                          67.85                                         5,088.75        5,088.75
+Trading Sell                          09.08.2024        -75.00             1.0000
+                                                                 EUR                          67.85                                         5,088.75        5,088.75
+
+
+
+
+                                         Gains                   EUR                                                                                                           92.80           0.00               92.80
+Total for Bravo Country
+                                         Losses                  EUR                                                                                                           -1.29           0.00               -1.29
+
+                                         Gains                   EUR                                                                                                           92.80           0.00               92.80
+Total for Funds
+                                         Losses                  EUR                                                                                                           -1.29           0.00               -1.29
+
+                                         Gains                   EUR                                                                                                           92.80           0.00               92.80
+Total for Funds
+                                         Losses                  EUR                                                                                                           -1.29           0.00               -1.29
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                                        Page 14 of 23
+
+Client:                  0101010101
+Period:                  01.01.2024 - 31.12.2024
+Currency:                EUR
+Country:                 Base Country
+
+
+
+VII. Detailed Withholding Tax Section
+Country                                                                      BCCY                   Income in BCCY          Withholding Tax Amount in BCCY    Withholding Tax Rate   DTT Amount in BCCY
+                                               Transaction    Payment Date          Exchange Rate
+                                                                                                                            Withholding Tax Amount in EUR
+ISIN - Valor - Name                                                          EUR                    Income in EUR                                                  DTT Rate          DTT Amount in EUR
+                                                                                                                                         EUR
+
+Delta Echo Foxtrot Golf Country
+
+                                                                             EUR                                     0.04                              0.01         20.00%                  0.01
+AC0000000001 - Alpha Company                               Dividend    14.11.2024              1.0000
+                                                                             EUR                                     0.04                              0.01         15.00%                  0.01
+
+                                                                             EUR                                     0.07                              0.01         10.00%                  0.01
+BC0000000001 - BRAVO COMPANY                              Dividend    03.10.2024              1.0000
+                                                                             EUR                                     0.07                              0.01         15.00%                  0.01
+
+
+Total for Delta Echo Foxtrot Golf Country In EUR                                                                                                              0.02                                          0.02
+
+
+
+
+Overall Total In EUR                                                                                                                                   0.02                                          0.02
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                           Page 15 of 23
+
+Client:                0101010101
+Period:                01.01.2024 - 31.12.2024
+Currency:              EUR
+Country:               Base Country
+
+
+
+VIII. History of Transactions and Corporate Actions
+
+ISIN - Valor - Name                                                                                                Value In EUR at Transaction Date
+                                                    Transaction                           Exchange   Amount of
+                                                                  Value Date   Currency                                                                      Corporate Action Linked Asset
+                                                       Date                                 Rate      Holding
+Transaction                                                                                                        Market Value         Net Amount
+
+
+CC0000000001 - Charlie Company
+Trading Buy                                         18.09.2023    20.09.2023     EUR      1.0000           3.00             101.43                    0.00
+Trading Sell                                        09.04.2024    11.04.2024     EUR      1.0000           -3.00            123.93                    0.00
+
+BE0000000001 - A&B 123 Bravo Charlie ETF (Acc)
+Trading Buy                                         18.09.2023    20.09.2023     EUR      1.0000          0.589              12.00                    0.00
+Trading Buy                                         16.10.2023    18.10.2023     EUR      1.0000         0.5778              12.00                    0.00
+Trading Buy                                         16.11.2023    20.11.2023     EUR      1.0000         0.5547              12.03                    0.00
+Trading Buy                                         18.12.2023    20.12.2023     EUR      1.0000          0.536              12.10                    0.00
+Trading Buy                                         16.01.2024    18.01.2024     EUR      1.0000         0.5292              12.10                    0.00
+Trading Buy                                         16.02.2024    20.02.2024     EUR      1.0000          1.006              24.80                    0.00
+Trading Buy                                         18.03.2024    20.03.2024     EUR      1.0000         0.9773              24.74                    0.00
+
+CE0000000001 - CHARLIE123 ETF (Dst)
+Trading Buy                                         18.09.2023    20.09.2023     EUR      1.0000         0.0148              11.95                    0.00
+Trading Buy                                         16.10.2023    18.10.2023     EUR      1.0000         0.0147              11.99                    0.00
+Trading Buy                                         16.11.2023    20.11.2023     EUR      1.0000         0.0145              12.07                    0.00
+Trading Buy                                         18.12.2023    20.12.2023     EUR      1.0000         0.0138              12.01                    0.00
+Trading Buy                                         16.01.2024    18.01.2024     EUR      1.0000         0.0136              12.00                    0.00
+Trading Buy                                         16.02.2024    20.02.2024     EUR      1.0000         0.0266              24.90                    0.00
+Trading Buy                                         18.03.2024    20.03.2024     EUR      1.0000         0.0264              24.90                    0.00
+Trading Buy                                         16.04.2024    18.04.2024     EUR      1.0000         0.0315              29.99                    0.00
+Trading Buy                                         16.05.2024    20.05.2024     EUR      1.0000         0.0307              29.84                    0.00
+Trading Buy                                         17.06.2024    19.06.2024     EUR      1.0000         0.0286              30.23                    0.00
+Trading Buy                                         16.07.2024    18.07.2024     EUR      1.0000         0.0281              30.02                    0.00
+Trading Buy                                         16.08.2024    20.08.2024     EUR      1.0000         0.0296              30.00                    0.00
+Trading Buy                                         16.09.2024    18.09.2024     EUR      1.0000         0.0301              29.95                    0.00
+Trading Buy                                         16.10.2024    18.10.2024     EUR      1.0000         0.0284              30.10                    0.00
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                        Page 16 of 23
+
+Client:               0101010101
+Period:               01.01.2024 - 31.12.2024
+Currency:             EUR
+Country:              Base Country
+
+
+
+VIII. History of Transactions and Corporate Actions
+
+ISIN - Valor - Name                                                                                           Value In EUR at Transaction Date
+                                                Transaction                           Exchange   Amount of
+                                                              Value Date   Currency                                                                     Corporate Action Linked Asset
+                                                   Date                                 Rate      Holding
+Transaction                                                                                                   Market Value         Net Amount
+
+Trading Buy                                     18.11.2024    20.11.2024     EUR      1.0000          0.027             29.90                    0.00
+Trading Buy                                     16.12.2024    18.12.2024     EUR      1.0000         0.0251             30.11                    0.00
+
+DE0000000001 - Delta ET#$F& 123 ETF (Acc) 
+Trading Buy                                     18.09.2023    20.09.2023     EUR      1.0000         0.1378             60.05                    0.00
+Trading Buy                                     16.10.2023    18.10.2023     EUR      1.0000         0.1389             60.15                    0.00
+Trading Buy                                     16.11.2023    20.11.2023     EUR      1.0000         0.1383             60.28                    0.00
+Trading Buy                                     18.12.2023    20.12.2023     EUR      1.0000         0.1321             60.09                    0.00
+Trading Buy                                     16.01.2024    18.01.2024     EUR      1.0000         0.1307             60.07                    0.00
+Trading Buy                                     16.02.2024    20.02.2024     EUR      1.0000         0.1224             59.67                    0.00
+Trading Buy                                     18.03.2024    20.03.2024     EUR      1.0000         0.1201             59.84                    0.00
+Trading Buy                                     16.04.2024    18.04.2024     EUR      1.0000         0.1201             60.07                    0.00
+Trading Buy                                     16.05.2024    20.05.2024     EUR      1.0000         0.1164             59.69                    0.00
+Trading Buy                                     17.06.2024    19.06.2024     EUR      1.0000         0.1123             60.39                    0.00
+Trading Buy                                     16.07.2024    18.07.2024     EUR      1.0000         0.1094             59.98                    0.00
+Trading Buy                                     16.08.2024    20.08.2024     EUR      1.0000         0.1129             60.26                    0.00
+Trading Buy                                     16.09.2024    18.09.2024     EUR      1.0000         0.1124             60.07                    0.00
+Trading Buy                                     16.10.2024    18.10.2024     EUR      1.0000         0.1062             60.40                    0.00
+Trading Buy                                     18.11.2024    20.11.2024     EUR      1.0000          0.102             60.11                    0.00
+Trading Buy                                     16.12.2024    18.12.2024     EUR      1.0000         0.0977             59.88                    0.00
+
+EE0000000001 - ECHO FOXTROT ETF (Acc)
+Trading Buy                                     16.10.2023    18.10.2023     EUR      1.0000         3.3038            215.74                    0.00
+Trading Buy                                     16.11.2023    20.11.2023     EUR      1.0000         1.6577            108.43                    0.00
+Trading Buy                                     18.12.2023    20.12.2023     EUR      1.0000          1.582            107.91                    0.00
+Trading Buy                                     16.01.2024    18.01.2024     EUR      1.0000         1.5677            107.81                    0.00
+Trading Buy                                     16.02.2024    20.02.2024     EUR      1.0000         1.4831            107.33                    0.00
+Trading Buy                                     18.03.2024    20.03.2024     EUR      1.0000         1.4573            107.78                    0.00
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                   Page 17 of 23
+
+Client:                0101010101
+Period:                01.01.2024 - 31.12.2024
+Currency:              EUR
+Country:               Base Country
+
+
+
+VIII. History of Transactions and Corporate Actions
+
+ISIN - Valor - Name                                                                                            Value In EUR at Transaction Date
+                                                 Transaction                           Exchange   Amount of
+                                                               Value Date   Currency                                                                     Corporate Action Linked Asset
+                                                    Date                                 Rate      Holding
+Transaction                                                                                                    Market Value         Net Amount
+
+Trading Buy                                      16.04.2024    18.04.2024     EUR      1.0000         1.7596            129.95                    0.00
+Trading Buy                                      16.05.2024    20.05.2024     EUR      1.0000          1.692            129.68                    0.00
+Trading Buy                                      17.06.2024    19.06.2024     EUR      1.0000         1.6647            130.27                    0.00
+Trading Buy                                      16.07.2024    18.07.2024     EUR      1.0000         1.6197            129.72                    0.00
+Trading Buy                                      16.08.2024    20.08.2024     EUR      1.0000         1.6656            129.78                    0.00
+Trading Buy                                      16.09.2024    18.09.2024     EUR      1.0000         1.6611            130.08                    0.00
+Trading Buy                                      16.10.2024    18.10.2024     EUR      1.0000         1.5761            130.20                    0.00
+Trading Buy                                      18.11.2024    20.11.2024     EUR      1.0000         1.5396            129.66                    0.00
+Trading Buy                                      16.12.2024    18.12.2024     EUR      1.0000         1.4917            129.84                    0.00
+
+FE000000001 - FOXTROT Golf ETF (Acc)
+Trading Buy                                      03.06.2024    05.06.2024     EUR      1.0000         0.1093              0.98                    0.00
+Trading Buy                                      03.06.2024    05.06.2024     EUR      1.0000         0.1116              1.00                    0.00
+Trading Buy                                      16.10.2024    18.10.2024     EUR      1.0000         0.1066              1.00                    0.00
+Trading Buy                                      04.11.2024    06.11.2024     EUR      1.0000         0.2794              2.48                    0.00
+Trading Buy                                      18.11.2024    20.11.2024     EUR      1.0000         0.1119              0.99                    0.00
+Trading Buy                                      02.12.2024    04.12.2024     EUR      1.0000         0.4491              4.16                    0.00
+Trading Buy                                      16.12.2024    18.12.2024     EUR      1.0000         0.1059              1.00                    0.00
+
+GE0000000001 - Golf HOTEL India 123 ETF (Acc)
+Trading Buy                                      18.09.2023    20.09.2023     EUR      1.0000         0.2305             47.59                    0.00
+Trading Buy                                      16.10.2023    18.10.2023     EUR      1.0000         0.2359             48.11                    0.00
+Trading Buy                                      16.11.2023    20.11.2023     EUR      1.0000          0.233             47.84                    0.00
+Trading Buy                                      18.12.2023    20.12.2023     EUR      1.0000         0.2214             47.81                    0.00
+Trading Buy                                      16.01.2024    18.01.2024     EUR      1.0000         0.2239             47.87                    0.00
+Trading Buy                                      16.02.2024    20.02.2024     EUR      1.0000         0.2148             47.77                    0.00
+Trading Buy                                      18.03.2024    20.03.2024     EUR      1.0000         0.2085             47.79                    0.00
+Trading Buy                                      16.04.2024    18.04.2024     EUR      1.0000          0.219             49.85                    0.00
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                    Page 18 of 23
+
+Client:                0101010101
+Period:                01.01.2024 - 31.12.2024
+Currency:              EUR
+Country:               Base Country
+
+
+
+VIII. History of Transactions and Corporate Actions
+
+ISIN - Valor - Name                                                                                            Value In EUR at Transaction Date
+                                                 Transaction                           Exchange   Amount of
+                                                               Value Date   Currency                                                                     Corporate Action Linked Asset
+                                                    Date                                 Rate      Holding
+Transaction                                                                                                    Market Value         Net Amount
+
+Trading Buy                                      16.05.2024    20.05.2024     EUR      1.0000         0.2066             49.47                    0.00
+Trading Buy                                      17.06.2024    19.06.2024     EUR      1.0000         0.2107             50.00                    0.00
+Trading Buy                                      16.07.2024    18.07.2024     EUR      1.0000         0.2086             50.18                    0.00
+Trading Buy                                      16.08.2024    20.08.2024     EUR      1.0000         0.2101             49.86                    0.00
+Trading Buy                                      16.09.2024    18.09.2024     EUR      1.0000         0.2079             49.96                    0.00
+Trading Buy                                      16.10.2024    18.10.2024     EUR      1.0000          0.207             50.05                    0.00
+Trading Buy                                      18.11.2024    20.11.2024     EUR      1.0000         0.2134             49.94                    0.00
+Trading Buy                                      16.12.2024    18.12.2024     EUR      1.0000         0.2075             49.75                    0.00
+
+HE0000000001 - Hotel India ETF (Acc)
+Trading Buy                                      17.06.2024    19.06.2024     EUR      1.0000         0.0014              1.00                    0.00
+Trading Buy                                      02.07.2024    04.07.2024     EUR      1.0000         0.0044              3.11                    0.00
+Trading Buy                                      16.07.2024    18.07.2024     EUR      1.0000         0.0014              1.00                    0.00
+Trading Buy                                      02.08.2024    06.08.2024     EUR      1.0000         0.0014              0.93                    0.00
+Trading Buy                                      16.08.2024    20.08.2024     EUR      1.0000         0.0015              0.99                    0.00
+Trading Buy                                      02.09.2024    04.09.2024     EUR      1.0000         0.0103              7.22                    0.00
+Trading Buy                                      16.09.2024    18.09.2024     EUR      1.0000         0.0014              1.00                    0.00
+Trading Buy                                      02.10.2024    04.10.2024     EUR      1.0000          0.003              1.98                    0.00
+Trading Buy                                      16.10.2024    18.10.2024     EUR      1.0000         0.0015              0.99                    0.00
+Trading Buy                                      18.11.2024    20.11.2024     EUR      1.0000         0.0016              0.99                    0.00
+Trading Buy                                      16.12.2024    18.12.2024     EUR      1.0000         0.0015              1.00                    0.00
+
+AE0000000001 - AlphaETF-123 EUR (Acc)
+Trading Buy                                      15.02.2024    19.02.2024     EUR      1.0000         0.0807              5.37                    0.00
+Trading Buy                                      15.02.2024    19.02.2024     EUR      1.0000          15.00            999.30                    0.00
+Trading Buy                                      22.02.2024    26.02.2024     EUR      1.0000         0.1607             10.75                    0.00
+Trading Buy                                      22.02.2024    26.02.2024     EUR      1.0000          15.00          1,003.50                    0.00
+Trading Buy                                      26.02.2024    28.02.2024     EUR      1.0000         0.0218              1.45                    0.00
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                    Page 19 of 23
+
+Client:                  0101010101
+Period:                  01.01.2024 - 31.12.2024
+Currency:                EUR
+Country:                 Base Country
+
+
+
+VIII. History of Transactions and Corporate Actions
+
+ISIN - Valor - Name                                                                                               Value In EUR at Transaction Date
+                                                   Transaction                           Exchange   Amount of
+                                                                 Value Date   Currency                                                                      Corporate Action Linked Asset
+                                                      Date                                 Rate      Holding
+Transaction                                                                                                       Market Value         Net Amount
+
+Trading Buy                                        26.02.2024    28.02.2024     EUR      1.0000          15.00             995.70                    0.00
+Trading Buy                                        29.02.2024    04.03.2024     EUR      1.0000         0.1149               7.72                    0.00
+Trading Buy                                        29.02.2024    04.03.2024     EUR      1.0000          15.00           1231008.30                    0.00
+Trading Buy                                        04.03.2024    06.03.2024     EUR      1.0000         0.7319              49.45                    0.00
+Trading Buy                                        04.03.2024    06.03.2024     EUR      1.0000          14.00             945.84                    0.00
+Trading Sell                                       09.08.2024    13.08.2024     EUR      1.0000        -0.1099               7.47                    0.00
+Trading Sell                                       09.08.2024    13.08.2024     EUR      1.0000          -75.00          123,005,096.25                    0.00
+Trading Buy                                        02.09.2024    04.09.2024     EUR      1.0000         0.6988              49.85                    0.00
+Trading Buy                                        06.09.2024    10.09.2024     EUR      1.0000           1.00              66.72                    0.00
+Trading Buy                                        02.10.2024    04.10.2024     EUR      1.0000         0.6888              49.94                    0.00
+Trading Buy                                        04.11.2024    06.11.2024     EUR      1.0000         0.6711              49.80                    0.00
+Trading Buy                                        15.11.2024    19.11.2024     EUR      1.0000         0.6305              49.38                    0.00
+Trading Buy                                        02.12.2024    04.12.2024     EUR      1.0000          0.613              49.85                    0.00
+Trading Buy                                        19.12.2024    23.12.2024     EUR      1.0000           1.00              82.41                    0.00
+Trading Buy                                        20.12.2024    27.12.2024     EUR      1.0000           1.00              82.35                    0.00
+
+DC0000000001 - DeltaCompany
+Trading Buy                                        15.12.2023    19.12.2023     EUR      1.0000           2.00             278.68                    0.00
+Trading Sell                                       03.04.2024    05.04.2024     EUR      1.0000           -2.00            336.28                    0.00
+
+AC0000000001 - Alpha Company
+Trading Buy                                        27.09.2024    01.10.2024     EUR      1.0000         0.1476              30.08                    0.00
+
+EC0000000001 - EchoCompany
+Trading Buy                                        09.01.2024    11.01.2024     EUR      1.0000           2.00             412.40                    0.00
+Trading Buy                                        17.01.2024    19.01.2024     EUR      1.0000           1.00             186.18                    0.00
+
+FC0000000001 - Foxtrot Company
+Trading Buy                                        20.12.2024    27.12.2024     EUR      1.0000         0.0347              30.26                    0.00
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                       Page 20 of 23
+
+Client:                 0101010101
+Period:                 01.01.2024 - 31.12.2024
+Currency:               EUR
+Country:                Base Country
+
+
+
+VIII. History of Transactions and Corporate Actions
+
+ISIN - Valor - Name                                                                                              Value In EUR at Transaction Date
+                                                  Transaction                           Exchange   Amount of
+                                                                Value Date   Currency                                                                      Corporate Action Linked Asset
+                                                     Date                                 Rate      Holding
+Transaction                                                                                                      Market Value         Net Amount
+
+
+BC0000000001 - BRAVO COMPANY
+Trading Buy                                       17.06.2024    19.06.2024     EUR      1.0000         0.0515               6.28                    0.00
+Trading Buy                                       17.06.2024    19.06.2024     EUR      1.0000           8.00             123456                    0.00
+Trading Sell                                      21.10.2024    23.10.2024     EUR      1.0000          -0.067              8.91                    0.00
+Trading Sell                                      21.10.2024    23.10.2024     EUR      1.0000        -0.3563              47.38                    0.00
+Trading Sell                                      21.10.2024    23.10.2024     EUR      1.0000           -2.00            266.00                    0.00
+Trading Sell                                      21.10.2024    23.10.2024     EUR      1.0000           -3.00            399.00                    0.00
+
+GC0000000001 - Golf Company
+Trading Buy                                       27.03.2024    02.04.2024     EUR      1.0000          0.092              15.22                    0.00
+
+CCRY00000001 - Alpha Coin
+Trading Buy                                       02.12.2024    02.12.2024     EUR      1.0000        15.6513              40.46                    0.00
+Trading Sell                                      06.12.2024    06.12.2024     EUR      1.0000       -15.6513              35.79                    0.00
+
+
+
+
+Report ID: random-id-number-for-tests-1234                                                                                                                                      Page 21 of 23
+
+Explanatory Notes
+
+1.   Introduction
+     1.1. The Income, Gains and Losses Report (the ''Report'') is intended to be read together with the legal information and disclaimer document ("Legal Information") and these explanatory
+           notes. Together they have been prepared for your convenience and we believe these will be helpful in completing your income tax return. The Report is provided for information purposes
+           only and in no circumstances should this Report and the data contained in it be used without further verification and clarification for completing your tax return. This Report is not
+           intended, and should not be sent to the tax authorities, to fulfil your individual tax return obligations. This Report has been prepared on a best efforts basis and given the complexity
+           matter you or your tax advisor should verify all information contained in this Report with reference to contract, advice and transaction notes and statements and any other available
+           information. If in doubt, you should seek tax advice.
+
+2.   General reporting assumptions
+     2.1. Currency – Generally, conversions from the transaction currency of the investment to the Reporting Currency have been converted at the ECB and/or OANDA. This may differ from other
+          conversions to Reporting Currency shown on other documents of the Bank including but not limited to your contract and advice notes.
+     2.2. Data – This Report is based on information processed in our systems as at January following the fiscal year in scope and may not reflect subsequent bookings which impact transactions
+          that took place during the period indicated in the header.
+     2.3. Fees and Expenses – Whilst best efforts have been made to record accurately all expenses and fees relating to the transactions, the Bank accepts no liability for any errors or omissions
+          or for any consequential loss arising.
+     2.4. Layout – Securities are shown divided in Country and ISIN.
+
+3.   Income Section
+     3.1. Dividends and interest – Dividends and interest payments have been disclosed in this Report based on the Transaction Date. It may be that such treatment does not match the Country
+          of Residence tax rules for the categorization and recognition of this income. Therefore you, or your tax advisor, are strongly advised to check that the dividends have been correctly
+          categorized and recorded in the correct tax year.
+     3.2. Reinvestments and stock dividends – The amount of the dividend and the cash foregone have been included in the income section.
+     3.3. Income payment/alternatives to cash dividends – Due to the variety of alternative dividend possibilities that are now offered by overseas companies, we strongly recommend that each
+          event should be investigated as we cannot guarantee that it has been correctly recorded in this Report.
+     3.4. Foreign income – It should be noted that foreign income is shown where possible with the tax withheld at source and if in doubt you should check your advice statements. The double
+          tax relief that you may be able to claim on your tax return may be restricted under the relevant double taxation agreement with the Country of Residence.
+     3.5. Withholding tax rates – Withholding tax rates have been rounded to two decimal places.
+     3.6. Accrued income – If you have purchased or sold accrued income securities, a charge or relief may arise and this charge/relief is taken into account on the next interest payment date of
+          the same security. This report records accrued income at the date of purchase or sale in the tax year, but provides details of the next interest payment date. Only accrued interest that is
+          relevant for this tax year is included. As a result, it may be possible that accrued interest on purchases or sale in the prior tax year that are relevant for this tax year are not shown in this
+          Report.
+     3.7. Referral Bonus and Stock Perk – Please note, that if you have received a referral bonus or stock perk it has been considered in the report as income in the income section. This is a general
+          approach. In case of any doubts about this approach, please consult with your tax advisor.
+
+4.   Capital and Income gain and loss sections
+     4.1. Calculations – The Bank is not in a position to provide tax advice so all calculations (including part disposals) contained in this Report need to be verified. In order for you to be able to do
+           so, we have provided in the transaction history section the calculation history that is available in our banking system, including purchases, disposals and corporate actions relevant for
+           each disposal event.
+
+     4.2.   Historical data – is provided on a best efforts basis and is for information purposes only and the completeness and accuracy should be independently verified. Furthermore, neither it may
+            not be a full and complete list of all corresponding historical information nor it might be in line with the relevant tax law in the country of residency.
+
+
+
+5.   Capital gain and loss summary (‘’summary section’’)
+     5.1. The summary section provides an overview of all chargeable capital gains and allowable capital losses for the relevant tax year in a layout that follows:
+          5.1.1. Total Amount of Disposals – all the disposal occurred in the tax period are sum, divided by the asset category.
+          5.1.2. Total Amount of Purchases – all the relevant cost of purchases are sum in accordance with the asset category.
+          5.1.3. Total Amount of Expenses – all the relevant fees, always in accordance with the asset category, are display in the relevant column.
+
+6.   Capital Gains and Losses section (‘’report sections’’)
+     6.1. Conversion to Reporting Currency – Each disposal event during the tax year is shown in Reporting Currency in one of these sections depending on the asset classification.
+     6.2. Verification of all calculations - All gain and loss calculations should be verified individually. It should be noted that whilst every endeavour has been made to ensure that the calculation
+           methodology applied to each instrument is in line with the tax rules applicable in the Residence Country, there may be discrepancies. Certain adjustments may therefore be necessary
+           for tax purposes and it is recommended that you seek independent tax advice on this.
+     6.3. Calculation method – The order of matching applied within the Report follows the order of the Client.
+     6.4. Rounding issues – The transaction data applied for the purposes of these calculations includes two decimal places in relation to the nominal holding of assets. Accordingly, the calculation
+           engine may result in some rounding differences in comparison to transaction data on advice notes and statements.
+     6.5. Cryptocurrencies – In the case of cryptocurrency disposals, a gain/loss calculation has been made and displayed in the Capital Gains and Losses section. In case of any doubts about this
+           approach, please consult with your tax advisor.
+
+7.   Withholding Tax section
+     7.1. All withholding tax that are present in the income section are display in this section. Please check if you can ask for a Withholding tax refund. Please be aware to apply for a Withholding
+          tax refund, you have to consider the different forms and applications deadlines depending on each country jurisdiction within the (limited) application time.
+
+8.   Transfer In and Out section
+     8.1. Transfer In and Transfer Out are reported in these sections as follows:
+          8.1.1. All relevant transfer in are reported in this section. Only the asset affected with a sale in the tax period are listed.
+          8.1.2. All the Transfer Out occurred in the tax period are listed.
+
+9.   Transaction History and Corporate Actions section
+     9.1. Ordering – The transaction history is in ISIN order.
+     9.2. Older historical information – Only the relative information for the sale are listed in the transaction history, it means that historical information of a security which has previously been
+          fully disposed of for tax purposes prior to a new acquisition are not shown.
+     9.3. As no country-specific laws are applied in the Generic Report, corporate actions etc. will be classified in this report using standard methods without them being enriched by further
+          external data (e.g. for fund performance data). Transaction naming and calculations may not be in accordance with the Residence Country tax treatment. Tax rules are complex and the
+          tax consequences of corporate actions can vary depending on the precise circumstances. The Bank cannot accept any liability for any errors or omissions arising from the consequences
+          of corporate actions, and you should verify the income, gain and loss calculations of each corporate action accordingly. If in doubt, please contact your tax advisor.
+     9.4. In case of Corporate Action there are the information of the previous asset or the other way around of the following asset.
+     9.5. Market Value – The market value used for cost apportionments and calculations is the end of day price of the asset.
+     9.6. Relevant/effective date – the date use in the transaction history section is the taxable date. It is the same date used to make the calculations of the capital gain.
+

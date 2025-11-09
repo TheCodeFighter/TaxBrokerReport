@@ -1,0 +1,46 @@
+name: Prepare and Validate Pull Request
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate PR issue link and comment if missing
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body ? pr.body.trim() : "";
+            const prNumber = pr.number;
+            const prTitle = pr.title;
+
+            // Check for issue reference or "None"
+            const hasIssueRef = /(fix(es|ed)?|close(s|d)?|resolve(s|d)?)\s+#\d+/i.test(body);
+            const hasPlainRef = /#\d+/.test(body);
+            const explicitlyNone = /\bnone\b/i.test(body);
+
+            if (!hasIssueRef && !hasPlainRef && !explicitlyNone) {
+              const message = `❌ Hi @${pr.user.login}, your PR "${prTitle}" must include an issue reference (e.g., 'Fixes #12') or explicitly state 'None'.`;
+              
+              // Post a comment on the PR
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: message
+              });
+
+              // Fail the workflow
+              core.setFailed(message);
+            } else {
+              console.log(`✅ PR #${prNumber} is valid.`);
+            }

@@ -1,0 +1,43 @@
+name: C++ CI
+
+on:
+  push:
+    branches: [ main ]  # delete this line if running low on GitHub Actions minutes
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y cmake g++ make libgtest-dev nlohmann-json3-dev libpoppler-cpp-dev valgrind
+
+    - name: Build GTest
+      run: |
+        cd /usr/src/gtest
+        sudo cmake -S . -B build
+        sudo cmake --build build
+        sudo cmake --install build
+
+    - name: Configure & Build
+      run: |
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DSAVE_GENERATED_FILES=0
+        cmake --build build -- -j$(nproc)
+
+    - name: Test
+      run: ctest --test-dir build --output-on-failure
+
+    - name: Valgrind
+      run: |
+        set -e
+        for t in test_report_loader test_xml_generator; do
+          echo "Running Valgrind on ./build/$t"
+          valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 "./build/$t"
+        done

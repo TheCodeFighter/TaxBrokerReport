@@ -1,0 +1,5 @@
+build/
+.obsidian/
+tmp/
+.vscode/settings.json
+bin/

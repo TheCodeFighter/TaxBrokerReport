@@ -1,0 +1,1678 @@
+{
+  "client": "0101010101",
+  "country": "Base Country",
+  "currency": "EUR",
+  "gains_and_losses_section": [
+    {
+      "asset_type": "Crypto Currency",
+      "country": "Stateless",
+      "transactions": [
+        {
+          "amount_of_units": 15.6513,
+          "exchange_rate": 1.0,
+          "isin": "CCRY00000001 - Alpha Coin",
+          "transaction_date": "02.12.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 2.56
+        },
+        {
+          "amount_of_units": 15.6513,
+          "exchange_rate": 1.0,
+          "isin": "CCRY00000001 - Alpha Coin",
+          "transaction_date": "06.12.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 2.19
+        }
+      ]
+    },
+    {
+      "asset_type": "Equities",
+      "country": "Alpha Country",
+      "transactions": [
+        {
+          "amount_of_units": 3.0,
+          "exchange_rate": 1.0,
+          "isin": "CC0000000001 - Charlie Company",
+          "transaction_date": "18.09.2023",
+          "transaction_type": "Trading Buy",
+          "unit_price": 33.68
+        },
+        {
+          "amount_of_units": 3.0,
+          "exchange_rate": 1.0,
+          "isin": "CC0000000001 - Charlie Company",
+          "transaction_date": "09.04.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 40.82
+        }
+      ]
+    },
+    {
+      "asset_type": "Equities",
+      "country": "CharliCountry",
+      "transactions": [
+        {
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "isin": "DC0000000001 - DeltaCompany",
+          "transaction_date": "15.12.2023",
+          "transaction_type": "Trading Buy",
+          "unit_price": 123139.92
+        },
+        {
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "isin": "DC0000000001 - DeltaCompany",
+          "transaction_date": "03.04.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 166.0
+        }
+      ]
+    },
+    {
+      "asset_type": "Equities",
+      "country": "Delta Echo Foxtrot Golf Country",
+      "transactions": [
+        {
+          "amount_of_units": 0.0515,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 124.2
+        },
+        {
+          "amount_of_units": 0.0155,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 124.2
+        },
+        {
+          "amount_of_units": 0.067,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 130.42
+        },
+        {
+          "amount_of_units": 0.3563,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 124.2
+        },
+        {
+          "amount_of_units": 0.3563,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 127.32
+        },
+        {
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 124.2
+        },
+        {
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 127.32
+        },
+        {
+          "amount_of_units": 3.0,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 124.2
+        },
+        {
+          "amount_of_units": 3.0,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 130.42
+        },
+        {
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "21.11.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 13.42
+        },
+        {
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "transaction_date": "25.11.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 13.42
+        }
+      ]
+    },
+    {
+      "asset_type": "Funds",
+      "country": "Bravo Country",
+      "transactions": [
+        {
+          "amount_of_units": 0.0807,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "15.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 66.31
+        },
+        {
+          "amount_of_units": 0.0292,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "15.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 66.31
+        },
+        {
+          "amount_of_units": 0.1099,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "09.08.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 67.85
+        },
+        {
+          "amount_of_units": 14.9708,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "15.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 66.31
+        },
+        {
+          "amount_of_units": 0.1607,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "22.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 65.95
+        },
+        {
+          "amount_of_units": 15.0,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "22.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 65.95
+        },
+        {
+          "amount_of_units": 0.0218,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "26.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 66.57
+        },
+        {
+          "amount_of_units": 15.0,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "26.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 66.57
+        },
+        {
+          "amount_of_units": 0.1149,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "29.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 66.16
+        },
+        {
+          "amount_of_units": 15.0,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "29.02.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 66.16
+        },
+        {
+          "amount_of_units": 0.7319,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "04.03.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 67.87
+        },
+        {
+          "amount_of_units": 14.0,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "04.03.2024",
+          "transaction_type": "Trading Buy",
+          "unit_price": 67.87
+        },
+        {
+          "amount_of_units": 75.0,
+          "exchange_rate": 1.0,
+          "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+          "transaction_date": "09.08.2024",
+          "transaction_type": "Trading Sell",
+          "unit_price": 67.85
+        }
+      ]
+    }
+  ],
+  "income_section": [
+    {
+      "asset_type": "Equities",
+      "country": "Delta Echo Foxtrot Golf Country",
+      "totals": {
+        "gross_income": 0.14,
+        "net_income": 0.12
+      },
+      "transactions": [
+        {
+          "DEPOSIT": false,
+          "amount_of_units": 0.1476,
+          "exchange_rate": 1.0,
+          "gross_income": 0.04,
+          "isin": "AC0000000001 - Alpha Company",
+          "net_income": 0.03,
+          "transaction_type": "Dividend",
+          "value_date": "14.11.2024",
+          "withholding_tax": 0.01
+        },
+        {
+          "DEPOSIT": false,
+          "amount_of_units": 8.0515,
+          "exchange_rate": 1.0,
+          "gross_income": 0.07,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "net_income": 0.06,
+          "transaction_type": "Dividend",
+          "value_date": "03.10.2024",
+          "withholding_tax": 0.01
+        },
+        {
+          "DEPOSIT": false,
+          "amount_of_units": 2.6282,
+          "exchange_rate": 1.0,
+          "gross_income": 0.03,
+          "isin": "BC0000000001 - BRAVO COMPANY",
+          "net_income": 0.03,
+          "transaction_type": "Dividend",
+          "value_date": "27.12.2024",
+          "withholding_tax": 0.03
+        }
+      ]
+    },
+    {
+      "asset_type": "Liquidity",
+      "country": "HotelCountry",
+      "totals": {
+        "gross_income": 2481285.11,
+        "net_income": 2481285.11
+      },
+      "transactions": [
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 123119.28,
+          "exchange_rate": 1.0,
+          "gross_income": 123119.28,
+          "net_income": 123119.28,
+          "transaction_type": "Interest payment",
+          "value_date": "01.02.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "gross_income": 2.0,
+          "net_income": 2.0,
+          "transaction_type": "Interest payment",
+          "value_date": "01.03.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 78.88,
+          "exchange_rate": 1.0,
+          "gross_income": 78.88,
+          "net_income": 78.88,
+          "transaction_type": "Interest payment",
+          "value_date": "01.04.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 2234553.21,
+          "exchange_rate": 1.0,
+          "gross_income": 2234553.21,
+          "net_income": 2234553.21,
+          "transaction_type": "Interest payment",
+          "value_date": "01.05.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 37.94,
+          "exchange_rate": 1.0,
+          "gross_income": 37.94,
+          "net_income": 37.94,
+          "transaction_type": "Interest payment",
+          "value_date": "01.06.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 123456.8,
+          "exchange_rate": 1.0,
+          "gross_income": 123456.8,
+          "net_income": 123456.8,
+          "transaction_type": "Interest payment",
+          "value_date": "01.07.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 1.0,
+          "exchange_rate": 1.0,
+          "gross_income": 1.0,
+          "net_income": 1.0,
+          "transaction_type": "Interest payment",
+          "value_date": "01.08.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 4.0,
+          "exchange_rate": 1.0,
+          "gross_income": 4.0,
+          "net_income": 4.0,
+          "transaction_type": "Interest payment",
+          "value_date": "01.09.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 7.0,
+          "exchange_rate": 1.0,
+          "gross_income": 7.0,
+          "net_income": 7.0,
+          "transaction_type": "Interest payment",
+          "value_date": "01.10.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 2.0,
+          "exchange_rate": 1.0,
+          "gross_income": 2.0,
+          "net_income": 2.0,
+          "transaction_type": "Interest payment",
+          "value_date": "01.11.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 4.0,
+          "exchange_rate": 1.0,
+          "gross_income": 4.0,
+          "net_income": 4.0,
+          "transaction_type": "Interest payment",
+          "value_date": "01.12.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 4.0,
+          "exchange_rate": 1.0,
+          "gross_income": 4.0,
+          "net_income": 4.0,
+          "transaction_type": "Interest payment",
+          "value_date": "05.12.2024"
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 7.0,
+          "exchange_rate": 1.0,
+          "gross_income": 7.0,
+          "net_income": 7.0,
+          "transaction_type": "Interest payment",
+          "value_date": "08.12.2024",
+          "withholding_tax": 7.0
+        },
+        {
+          "DEPOSIT": true,
+          "amount_of_units": 8.0,
+          "exchange_rate": 1.0,
+          "gross_income": 8.0,
+          "net_income": 8.0,
+          "transaction_type": "Interest payment",
+          "value_date": "10.12.2024",
+          "withholding_tax": 8.0
+        }
+      ]
+    }
+  ],
+  "period": "01.01.2024 - 31.12.2024",
+  "transaction_history": [
+    {
+      "isin": "CC0000000001 - Charlie Company",
+      "transactions": [
+        {
+          "amount_of_units": 3.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 101.43,
+          "transaction_date": "18.09.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.09.2023"
+        },
+        {
+          "amount_of_units": 3.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 123.93,
+          "transaction_date": "09.04.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "11.04.2024"
+        }
+      ]
+    },
+    {
+      "isin": "BE0000000001 - A&B 123 Bravo Charlie ETF (Acc)",
+      "transactions": [
+        {
+          "amount_of_units": 0.589,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.0,
+          "transaction_date": "18.09.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.09.2023"
+        },
+        {
+          "amount_of_units": 0.5778,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.0,
+          "transaction_date": "16.10.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2023"
+        },
+        {
+          "amount_of_units": 0.5547,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.03,
+          "transaction_date": "16.11.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2023"
+        },
+        {
+          "amount_of_units": 0.536,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.1,
+          "transaction_date": "18.12.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.12.2023"
+        },
+        {
+          "amount_of_units": 0.5292,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.1,
+          "transaction_date": "16.01.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.01.2024"
+        },
+        {
+          "amount_of_units": 1.006,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 24.8,
+          "transaction_date": "16.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.02.2024"
+        },
+        {
+          "amount_of_units": 0.9773,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 24.74,
+          "transaction_date": "18.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.03.2024"
+        }
+      ]
+    },
+    {
+      "isin": "CE0000000001 - CHARLIE123 ETF (Dst)",
+      "transactions": [
+        {
+          "amount_of_units": 0.0148,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 11.95,
+          "transaction_date": "18.09.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.09.2023"
+        },
+        {
+          "amount_of_units": 0.0147,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 11.99,
+          "transaction_date": "16.10.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2023"
+        },
+        {
+          "amount_of_units": 0.0145,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.07,
+          "transaction_date": "16.11.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2023"
+        },
+        {
+          "amount_of_units": 0.0138,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.01,
+          "transaction_date": "18.12.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.12.2023"
+        },
+        {
+          "amount_of_units": 0.0136,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 12.0,
+          "transaction_date": "16.01.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.01.2024"
+        },
+        {
+          "amount_of_units": 0.0266,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 24.9,
+          "transaction_date": "16.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.02.2024"
+        },
+        {
+          "amount_of_units": 0.0264,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 24.9,
+          "transaction_date": "18.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.03.2024"
+        },
+        {
+          "amount_of_units": 0.0315,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 29.99,
+          "transaction_date": "16.04.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.04.2024"
+        },
+        {
+          "amount_of_units": 0.0307,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 29.84,
+          "transaction_date": "16.05.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.05.2024"
+        },
+        {
+          "amount_of_units": 0.0286,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 30.23,
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.06.2024"
+        },
+        {
+          "amount_of_units": 0.0281,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 30.02,
+          "transaction_date": "16.07.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.07.2024"
+        },
+        {
+          "amount_of_units": 0.0296,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 30.0,
+          "transaction_date": "16.08.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.08.2024"
+        },
+        {
+          "amount_of_units": 0.0301,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 29.95,
+          "transaction_date": "16.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.09.2024"
+        },
+        {
+          "amount_of_units": 0.0284,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 30.1,
+          "transaction_date": "16.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2024"
+        },
+        {
+          "amount_of_units": 0.027,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 29.9,
+          "transaction_date": "18.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2024"
+        },
+        {
+          "amount_of_units": 0.0251,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 30.11,
+          "transaction_date": "16.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "DE0000000001 - Delta ET#$F& 123 ETF (Acc)",
+      "transactions": [
+        {
+          "amount_of_units": 0.1378,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.05,
+          "transaction_date": "18.09.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.09.2023"
+        },
+        {
+          "amount_of_units": 0.1389,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.15,
+          "transaction_date": "16.10.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2023"
+        },
+        {
+          "amount_of_units": 0.1383,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.28,
+          "transaction_date": "16.11.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2023"
+        },
+        {
+          "amount_of_units": 0.1321,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.09,
+          "transaction_date": "18.12.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.12.2023"
+        },
+        {
+          "amount_of_units": 0.1307,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.07,
+          "transaction_date": "16.01.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.01.2024"
+        },
+        {
+          "amount_of_units": 0.1224,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 59.67,
+          "transaction_date": "16.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.02.2024"
+        },
+        {
+          "amount_of_units": 0.1201,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 59.84,
+          "transaction_date": "18.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.03.2024"
+        },
+        {
+          "amount_of_units": 0.1201,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.07,
+          "transaction_date": "16.04.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.04.2024"
+        },
+        {
+          "amount_of_units": 0.1164,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 59.69,
+          "transaction_date": "16.05.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.05.2024"
+        },
+        {
+          "amount_of_units": 0.1123,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.39,
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.06.2024"
+        },
+        {
+          "amount_of_units": 0.1094,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 59.98,
+          "transaction_date": "16.07.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.07.2024"
+        },
+        {
+          "amount_of_units": 0.1129,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.26,
+          "transaction_date": "16.08.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.08.2024"
+        },
+        {
+          "amount_of_units": 0.1124,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.07,
+          "transaction_date": "16.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.09.2024"
+        },
+        {
+          "amount_of_units": 0.1062,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.4,
+          "transaction_date": "16.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2024"
+        },
+        {
+          "amount_of_units": 0.102,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 60.11,
+          "transaction_date": "18.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2024"
+        },
+        {
+          "amount_of_units": 0.0977,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 59.88,
+          "transaction_date": "16.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "EE0000000001 - ECHO FOXTROT ETF (Acc)",
+      "transactions": [
+        {
+          "amount_of_units": 3.3038,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 215.74,
+          "transaction_date": "16.10.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2023"
+        },
+        {
+          "amount_of_units": 1.6577,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 108.43,
+          "transaction_date": "16.11.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2023"
+        },
+        {
+          "amount_of_units": 1.582,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 107.91,
+          "transaction_date": "18.12.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.12.2023"
+        },
+        {
+          "amount_of_units": 1.5677,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 107.81,
+          "transaction_date": "16.01.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.01.2024"
+        },
+        {
+          "amount_of_units": 1.4831,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 107.33,
+          "transaction_date": "16.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.02.2024"
+        },
+        {
+          "amount_of_units": 1.4573,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 107.78,
+          "transaction_date": "18.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.03.2024"
+        },
+        {
+          "amount_of_units": 1.7596,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 129.95,
+          "transaction_date": "16.04.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.04.2024"
+        },
+        {
+          "amount_of_units": 1.692,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 129.68,
+          "transaction_date": "16.05.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.05.2024"
+        },
+        {
+          "amount_of_units": 1.6647,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 130.27,
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.06.2024"
+        },
+        {
+          "amount_of_units": 1.6197,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 129.72,
+          "transaction_date": "16.07.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.07.2024"
+        },
+        {
+          "amount_of_units": 1.6656,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 129.78,
+          "transaction_date": "16.08.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.08.2024"
+        },
+        {
+          "amount_of_units": 1.6611,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 130.08,
+          "transaction_date": "16.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.09.2024"
+        },
+        {
+          "amount_of_units": 1.5761,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 130.2,
+          "transaction_date": "16.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2024"
+        },
+        {
+          "amount_of_units": 1.5396,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 129.66,
+          "transaction_date": "18.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2024"
+        },
+        {
+          "amount_of_units": 1.4917,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 129.84,
+          "transaction_date": "16.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "FE000000001 - FOXTROT Golf ETF (Acc)",
+      "transactions": [
+        {
+          "amount_of_units": 0.1093,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 0.98,
+          "transaction_date": "03.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "05.06.2024"
+        },
+        {
+          "amount_of_units": 0.1116,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.0,
+          "transaction_date": "03.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "05.06.2024"
+        },
+        {
+          "amount_of_units": 0.1066,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.0,
+          "transaction_date": "16.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2024"
+        },
+        {
+          "amount_of_units": 0.2794,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 2.48,
+          "transaction_date": "04.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "06.11.2024"
+        },
+        {
+          "amount_of_units": 0.1119,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 0.99,
+          "transaction_date": "18.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2024"
+        },
+        {
+          "amount_of_units": 0.4491,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 4.16,
+          "transaction_date": "02.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.12.2024"
+        },
+        {
+          "amount_of_units": 0.1059,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.0,
+          "transaction_date": "16.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "GE0000000001 - Golf HOTEL India 123 ETF (Acc)",
+      "transactions": [
+        {
+          "amount_of_units": 0.2305,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 47.59,
+          "transaction_date": "18.09.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.09.2023"
+        },
+        {
+          "amount_of_units": 0.2359,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 48.11,
+          "transaction_date": "16.10.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2023"
+        },
+        {
+          "amount_of_units": 0.233,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 47.84,
+          "transaction_date": "16.11.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2023"
+        },
+        {
+          "amount_of_units": 0.2214,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 47.81,
+          "transaction_date": "18.12.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.12.2023"
+        },
+        {
+          "amount_of_units": 0.2239,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 47.87,
+          "transaction_date": "16.01.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.01.2024"
+        },
+        {
+          "amount_of_units": 0.2148,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 47.77,
+          "transaction_date": "16.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.02.2024"
+        },
+        {
+          "amount_of_units": 0.2085,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 47.79,
+          "transaction_date": "18.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.03.2024"
+        },
+        {
+          "amount_of_units": 0.219,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.85,
+          "transaction_date": "16.04.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.04.2024"
+        },
+        {
+          "amount_of_units": 0.2066,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.47,
+          "transaction_date": "16.05.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.05.2024"
+        },
+        {
+          "amount_of_units": 0.2107,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 50.0,
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.06.2024"
+        },
+        {
+          "amount_of_units": 0.2086,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 50.18,
+          "transaction_date": "16.07.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.07.2024"
+        },
+        {
+          "amount_of_units": 0.2101,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.86,
+          "transaction_date": "16.08.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.08.2024"
+        },
+        {
+          "amount_of_units": 0.2079,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.96,
+          "transaction_date": "16.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.09.2024"
+        },
+        {
+          "amount_of_units": 0.207,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 50.05,
+          "transaction_date": "16.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2024"
+        },
+        {
+          "amount_of_units": 0.2134,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.94,
+          "transaction_date": "18.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2024"
+        },
+        {
+          "amount_of_units": 0.2075,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.75,
+          "transaction_date": "16.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "HE0000000001 - Hotel India ETF (Acc)",
+      "transactions": [
+        {
+          "amount_of_units": 0.0014,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.0,
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.06.2024"
+        },
+        {
+          "amount_of_units": 0.0044,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 3.11,
+          "transaction_date": "02.07.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.07.2024"
+        },
+        {
+          "amount_of_units": 0.0014,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.0,
+          "transaction_date": "16.07.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.07.2024"
+        },
+        {
+          "amount_of_units": 0.0014,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 0.93,
+          "transaction_date": "02.08.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "06.08.2024"
+        },
+        {
+          "amount_of_units": 0.0015,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 0.99,
+          "transaction_date": "16.08.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.08.2024"
+        },
+        {
+          "amount_of_units": 0.0103,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 7.22,
+          "transaction_date": "02.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.09.2024"
+        },
+        {
+          "amount_of_units": 0.0014,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.0,
+          "transaction_date": "16.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.09.2024"
+        },
+        {
+          "amount_of_units": 0.003,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.98,
+          "transaction_date": "02.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.10.2024"
+        },
+        {
+          "amount_of_units": 0.0015,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 0.99,
+          "transaction_date": "16.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.10.2024"
+        },
+        {
+          "amount_of_units": 0.0016,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 0.99,
+          "transaction_date": "18.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "20.11.2024"
+        },
+        {
+          "amount_of_units": 0.0015,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.0,
+          "transaction_date": "16.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "18.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "AE0000000001 - AlphaETF-123 EUR (Acc)",
+      "transactions": [
+        {
+          "amount_of_units": 0.0807,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 5.37,
+          "transaction_date": "15.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.02.2024"
+        },
+        {
+          "amount_of_units": 15.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 999.3,
+          "transaction_date": "15.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.02.2024"
+        },
+        {
+          "amount_of_units": 0.1607,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 10.75,
+          "transaction_date": "22.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "26.02.2024"
+        },
+        {
+          "amount_of_units": 15.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1003.5,
+          "transaction_date": "22.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "26.02.2024"
+        },
+        {
+          "amount_of_units": 0.0218,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1.45,
+          "transaction_date": "26.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "28.02.2024"
+        },
+        {
+          "amount_of_units": 15.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 995.7,
+          "transaction_date": "26.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "28.02.2024"
+        },
+        {
+          "amount_of_units": 0.1149,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 7.72,
+          "transaction_date": "29.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.03.2024"
+        },
+        {
+          "amount_of_units": 15.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 1231008.3,
+          "transaction_date": "29.02.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.03.2024"
+        },
+        {
+          "amount_of_units": 0.7319,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.45,
+          "transaction_date": "04.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "06.03.2024"
+        },
+        {
+          "amount_of_units": 14.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 945.84,
+          "transaction_date": "04.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "06.03.2024"
+        },
+        {
+          "amount_of_units": 0.1099,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 7.47,
+          "transaction_date": "09.08.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "13.08.2024"
+        },
+        {
+          "amount_of_units": 75.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 123005096.25,
+          "transaction_date": "09.08.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "13.08.2024"
+        },
+        {
+          "amount_of_units": 0.6988,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.85,
+          "transaction_date": "02.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.09.2024"
+        },
+        {
+          "amount_of_units": 1.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 66.72,
+          "transaction_date": "06.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "10.09.2024"
+        },
+        {
+          "amount_of_units": 0.6888,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.94,
+          "transaction_date": "02.10.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.10.2024"
+        },
+        {
+          "amount_of_units": 0.6711,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.8,
+          "transaction_date": "04.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "06.11.2024"
+        },
+        {
+          "amount_of_units": 0.6305,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.38,
+          "transaction_date": "15.11.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.11.2024"
+        },
+        {
+          "amount_of_units": 0.613,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 49.85,
+          "transaction_date": "02.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "04.12.2024"
+        },
+        {
+          "amount_of_units": 1.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 82.41,
+          "transaction_date": "19.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "23.12.2024"
+        },
+        {
+          "amount_of_units": 1.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 82.35,
+          "transaction_date": "20.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "27.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "DC0000000001 - DeltaCompany",
+      "transactions": [
+        {
+          "amount_of_units": 2.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 278.68,
+          "transaction_date": "15.12.2023",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.12.2023"
+        },
+        {
+          "amount_of_units": 2.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 336.28,
+          "transaction_date": "03.04.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "05.04.2024"
+        }
+      ]
+    },
+    {
+      "isin": "AC0000000001 - Alpha Company",
+      "transactions": [
+        {
+          "amount_of_units": 0.1476,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 30.08,
+          "transaction_date": "27.09.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "01.10.2024"
+        }
+      ]
+    },
+    {
+      "isin": "EC0000000001 - EchoCompany",
+      "transactions": [
+        {
+          "amount_of_units": 2.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 412.4,
+          "transaction_date": "09.01.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "11.01.2024"
+        },
+        {
+          "amount_of_units": 1.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 186.18,
+          "transaction_date": "17.01.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.01.2024"
+        }
+      ]
+    },
+    {
+      "isin": "FC0000000001 - Foxtrot Company",
+      "transactions": [
+        {
+          "amount_of_units": 0.0347,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 30.26,
+          "transaction_date": "20.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "27.12.2024"
+        }
+      ]
+    },
+    {
+      "isin": "BC0000000001 - BRAVO COMPANY",
+      "transactions": [
+        {
+          "amount_of_units": 0.0515,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 6.28,
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.06.2024"
+        },
+        {
+          "amount_of_units": 8.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 123456.0,
+          "transaction_date": "17.06.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "19.06.2024"
+        },
+        {
+          "amount_of_units": 0.067,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 8.91,
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "23.10.2024"
+        },
+        {
+          "amount_of_units": 0.3563,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 47.38,
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "23.10.2024"
+        },
+        {
+          "amount_of_units": 2.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 266.0,
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "23.10.2024"
+        },
+        {
+          "amount_of_units": 3.0,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 399.0,
+          "transaction_date": "21.10.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "23.10.2024"
+        }
+      ]
+    },
+    {
+      "isin": "GC0000000001 - Golf Company",
+      "transactions": [
+        {
+          "amount_of_units": 0.092,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 15.22,
+          "transaction_date": "27.03.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "02.04.2024"
+        }
+      ]
+    },
+    {
+      "isin": "CCRY00000001 - Alpha Coin",
+      "transactions": [
+        {
+          "amount_of_units": 15.6513,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 40.46,
+          "transaction_date": "02.12.2024",
+          "transaction_type": "Trading Buy",
+          "value_date": "02.12.2024"
+        },
+        {
+          "amount_of_units": 15.6513,
+          "currency": "EUR",
+          "exchange_rate": 1.0,
+          "market_value": 35.79,
+          "transaction_date": "06.12.2024",
+          "transaction_type": "Trading Sell",
+          "value_date": "06.12.2024"
+        }
+      ]
+    }
+  ],
+  "withholding_tax_section": [
+    {
+      "country": "Delta Echo Foxtrot Golf Country",
+      "totals": {
+        "dtt_amount_in_eur": 0.02,
+        "withholding_tax_amount_in_eur": 0.02
+      },
+      "transactions": []
+    }
+  ]
+}
