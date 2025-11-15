@@ -15,12 +15,17 @@ CACHE_VOLUME = $(IMAGE_NAME)-cache
 
 # For debugging/VSCode attach
 CONTAINER_NAME = edavki-container
+CONTAINER_NAME_NO_DEBUG = edavki-container-no-debug
 
 VALGRIND_TESTS_FILES := test_report_loader test_xml_generator   # Update when new files are needed to ckeck (i.e. main)
 
 
 # Common docker run command for dev tasks (mounts source + build cache)
-DOCKER_RUN = docker run --rm --name $(CONTAINER_NAME) -v "$(PWD)":/app --user $(shell id -u):$(shell id -g) $(IMAGE_NAME)
+DOCKER_RUN = docker run --rm --name $(CONTAINER_NAME_NO_DEBUG) \
+	-v "$(PWD)":/app \
+	-v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
+	--user $(shell id -u):$(shell id -g) \
+	$(IMAGE_NAME)
 
 # ---------------------------
 # Targets
@@ -32,7 +37,12 @@ build-image:
 
 # 2. Configure CMake project inside container
 configure:
-	$(DOCKER_RUN) cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
+	docker run --rm --name $(CONTAINER_NAME_NO_DEBUG) \
+	-v "$(PWD)":/app \
+	-v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
+	--user $(shell id -u):$(shell id -g) \
+	$(IMAGE_NAME) \
+	cmake -S . -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 
 # 3. Build incrementally inside container (uses persistent build cache)
 build:
