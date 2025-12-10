@@ -44,6 +44,7 @@ else
             libpoppler-dev \
             libpoppler-cpp-dev \
             nlohmann-json3-dev \
+            libpugixml-dev \
             ca-certificates \
             unzip \
             pkg-config \
