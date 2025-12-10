@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd"
+  targetNamespace="http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd"
+  elementFormDefault="qualified">
+  <xs:import namespace="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd" schemaLocation="EDP-Common-1.xsd"/>
+
+  <!--document structure-->
+  <xs:element name="Envelope">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="edp:Header"/>
+        <xs:element ref="edp:AttachmentList" minOccurs="0" />
+        <xs:element ref="edp:Signatures"/>
+        <xs:element name="body">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element ref="Doh_Div"/>
+              <xs:element ref="Dividend" minOccurs="0" maxOccurs="unbounded" />
+              <xs:element ref="CorpData" minOccurs="0" maxOccurs="unbounded" />
+              <xs:element ref="CorpDataDetail" minOccurs="0" maxOccurs="unbounded" />
+
+              <xs:element ref="SubseqSubmissDecision" minOccurs="0" />
+              <xs:element ref="SubseqSubmissProposal" minOccurs="0" />
+              
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="Doh_Div">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Period" type="xs:string" minOccurs="0" />
+        <xs:element name="EmailAddress" type="xs:string" minOccurs="0" />
+        <xs:element name="PhoneNumber" type="xs:string" minOccurs="0" />
+        <xs:element name="ResidentCountry" type="xs:string" minOccurs="0" />
+        <xs:element name="IsResident" type="xs:boolean" default="false" minOccurs="0"/>
+        <xs:element name="Locked" type="xs:boolean" default="false" minOccurs="0" />
+        <xs:element name="SelfReport" type="xs:boolean" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="WfTypeU" type="xs:boolean" minOccurs="0" maxOccurs="1"/>
+        <xs:element name="Notes" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  <xs:element name="Dividend">
+    <xs:complexType>
+      <xs:annotation><xs:documentation>Podatki o izplačevalcih dividend in izplačanih dividend</xs:documentation></xs:annotation>
+      <xs:sequence>
+        <xs:element name="Date" type="xs:date" minOccurs="0">
+          <xs:annotation><xs:documentation>Datum prejema dividend</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PayerTaxNumber" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Davčna številka izplačevalca dividend</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PayerIdentificationNumber" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Identifikacijska številka izplačevalca dividend</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PayerName" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Naziv izplačevalca dividend</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PayerAddress" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Naslov izplačevalca dividend</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PayerCountry" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Država izplačevalca dividend</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="Type" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Vrsta dividende</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="Value" type="Amount_Type" minOccurs="0">
+          <xs:annotation><xs:documentation>Znesek dividend (v EUR)</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="ForeignTax" type="Amount_Type" minOccurs="0">
+          <xs:annotation><xs:documentation>Tuji davek (v EUR)</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="SourceCountry" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Država vira</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="ReliefStatement" type="xs:string" minOccurs="0">
+          <xs:annotation><xs:documentation>Uveljavljam oprostitev po mednarodni pogodbi</xs:documentation></xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  <xs:element name="CorpData">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Id" type="xs:int" minOccurs="0" >
+          <xs:annotation><xs:documentation>id</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="TradeId" type="xs:string" minOccurs="0" >
+          <xs:annotation><xs:documentation>Naziv družbe ali ISIN koda, trgovalna koda ali naziv delnice</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="SoldDate" type="xs:date" minOccurs="0" >
+          <xs:annotation><xs:documentation>Datum odsvojitve delnic ali deležev družbe</xs:documentation></xs:annotation>
+        </xs:element>  
+        <xs:element name="CorpAmount" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>Količina pridobljenih delnic</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="CorpShare" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>% pridobljenega deleža</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="CorpSoldAmount" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>Količina odsvojenih delnic</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="CorpSoldShare" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>% odsvojenega deleža</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="NominalTotalValue" type="Amount_Type" minOccurs="0" >
+          <xs:annotation><xs:documentation>Nominalna vrednost celotnega osnovnega kapitala v družbi</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="Sum" type="Amount_Type" minOccurs="0" >
+          <xs:annotation><xs:documentation>Znesek (SUM(Nabavna vrednost odsvojenih delnic oz. deleža) - SUM(Znesek (bruto) izplačane vrednosti delnic oz. deležev))</xs:documentation></xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  <xs:element name="CorpDataDetail">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Id" type="xs:int" minOccurs="0" >
+          <xs:annotation><xs:documentation>CorpData id</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PurchDate" type="xs:date" minOccurs="0" >
+          <xs:annotation><xs:documentation>Datum pridobitve</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PurchType" type="xs:string" minOccurs="0" >
+          <xs:annotation><xs:documentation>Način pridobitve</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PurchAmount" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>Količina pridobljenih delnic</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="PurchShare" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>% pridobljenega deleža</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="ValueOfPurchased" type="Amount_Type" minOccurs="0" >
+          <xs:annotation><xs:documentation>Vrednost pridobljenih delnic ali deleža družbe</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="ValueAtPurchase" type="Amount_Type" minOccurs="0" >
+          <xs:annotation><xs:documentation>Nabavna vrednost ob pridobitvi</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="SoldAmount" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>Količina odsvojenih delnic</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="SoldShare" type="xs:decimal" minOccurs="0" >
+          <xs:annotation><xs:documentation>% odsvojenega deleža</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="SoldValue" type="Amount_Type" minOccurs="0" >
+          <xs:annotation><xs:documentation>Vrednost odsvojenih delnic ali deleža</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="SoldSharesValueAtPurchase" type="Amount_Type" minOccurs="0" >
+          <xs:annotation><xs:documentation>Nabavna vrednost odsvojenih delnic oz. deleža</xs:documentation></xs:annotation>
+        </xs:element>
+        <xs:element name="GrossSoldValue" type="Amount_Type" minOccurs="0" >
+          <xs:annotation><xs:documentation>Bruto izplačana vrednost delnic oz. deleža</xs:documentation></xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  <xs:element name="SubseqSubmissDecision">
+    <xs:complexType>
+      <xs:annotation>
+        <xs:documentation>Podatki iz sklepa o dovolitvi predložitve davčne napovedi po izteku predpisanega roka</xs:documentation>
+      </xs:annotation>
+      <xs:sequence>
+        <xs:element name="DecisionId" type="xs:string" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Številka sklepa</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="DecisionDate" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Datum izdaje sklepa</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="SubmissionDeadline" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Rok za predložitev, določen v sklepu</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="SubseqSubmissProposal">
+    <xs:complexType>
+      <xs:annotation>
+        <xs:documentation>Predlog za naknadno predložitev davčne napovedi</xs:documentation>
+      </xs:annotation>
+      <xs:sequence>
+        <xs:element name="ProposalSubmitted" type="xs:boolean" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>Vloga za podaljšanje roka - že vložena</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="StartDate" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Datum prenehanja razlogov za zamudo roka</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="ProposalDeadline" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Rok za naknadno predložitev</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="DelayReasons" type="xs:string" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Navedba opravičljivih razlogov za zamudo roka</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  
+  <xs:simpleType name="Amount_Type">
+    <xs:restriction base="xs:decimal">
+      <xs:fractionDigits value="2"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  
+
+</xs:schema>
