@@ -1,3 +1,4 @@
+// replace with #paragma once
 #ifndef REPORT_LOADER_HPP
 #define REPORT_LOADER_HPP
 
