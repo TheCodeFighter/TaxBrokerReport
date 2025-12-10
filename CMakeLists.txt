@@ -16,9 +16,6 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 endif()
 
-# Define project source directory macro
-add_definitions(-DPROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-
 # Explicitly add debug flags for Debug builds
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-g -O0)
@@ -28,7 +25,7 @@ endif()
 # Dependencies
 # -----------------------------
 
-# GTest (provided by nlohmann-json3-dev package)
+# GTest
 find_package(GTest REQUIRED)
 
 # Poppler
@@ -38,7 +35,6 @@ if (PKG_CONFIG_FOUND)
 endif()
 
 if (NOT POPPLER_FOUND)
-    # Fallback for systems without pkg-config
     find_path(POPPLER_INCLUDE_DIR poppler/cpp/poppler-document.h)
     find_library(POPPLER_LIBRARY NAMES poppler-cpp)
     if (NOT POPPLER_INCLUDE_DIR OR NOT POPPLER_LIBRARY)
@@ -57,6 +53,13 @@ else()
     )
 endif()
 
+# pugixml
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PUGIXML REQUIRED pugixml)
+
+# nlohmann-json
+find_package(nlohmann_json REQUIRED)
+
 # -----------------------------
 # Main application target
 # -----------------------------
@@ -69,10 +72,13 @@ add_executable(EdavkiXmlMaker
 
 target_include_directories(EdavkiXmlMaker PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${PUGIXML_INCLUDE_DIRS}
 )
 
 target_link_libraries(EdavkiXmlMaker PRIVATE
     Poppler::Poppler
+    ${PUGIXML_LIBRARIES}
+    nlohmann_json::nlohmann_json
     $<$<PLATFORM_ID:Linux>:pthread>
 )
 
@@ -81,38 +87,60 @@ target_link_libraries(EdavkiXmlMaker PRIVATE
 # -----------------------------
 enable_testing()
 
+# -----------------------------
 # Test 1: Report loader
+# -----------------------------
 add_executable(test_report_loader
     tests/test_report_loader.cpp
     src/report_loader.cpp
 )
+
 target_include_directories(test_report_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${PUGIXML_INCLUDE_DIRS}
 )
+
 target_link_libraries(test_report_loader PRIVATE
     GTest::gtest
     GTest::gtest_main
     Poppler::Poppler
+    ${PUGIXML_LIBRARIES}
+    nlohmann_json::nlohmann_json
     $<$<PLATFORM_ID:Linux>:pthread>
 )
+
+target_compile_definitions(test_report_loader PRIVATE
+    UNIT_TEST
+    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
 add_test(NAME ReportLoaderTest COMMAND test_report_loader)
 
+# -----------------------------
 # Test 2: XML generator
+# -----------------------------
 add_executable(test_xml_generator
     tests/test_xml_generator.cpp
     src/xml_generator.cpp
 )
+
 target_include_directories(test_xml_generator PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${PUGIXML_INCLUDE_DIRS}
 )
+
 target_link_libraries(test_xml_generator PRIVATE
     GTest::gtest
     GTest::gtest_main
     Poppler::Poppler
+    ${PUGIXML_LIBRARIES}
+    nlohmann_json::nlohmann_json
     $<$<PLATFORM_ID:Linux>:pthread>
 )
-# for unit tests, define UNIT_TEST macro
-target_compile_definitions(test_report_loader PRIVATE UNIT_TEST)
+
+target_compile_definitions(test_xml_generator PRIVATE
+    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
 
 add_test(NAME XmlGeneratorTest COMMAND test_xml_generator)
 
@@ -122,3 +150,4 @@ add_test(NAME XmlGeneratorTest COMMAND test_xml_generator)
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 message(STATUS "C++ Compiler Version: ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "pugixml include dirs: ${PUGIXML_INCLUDE_DIRS}")

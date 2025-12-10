@@ -31,9 +31,17 @@ DOCKER_RUN = docker run --rm --name $(CONTAINER_NAME_NO_DEBUG) \
 # Targets
 # ---------------------------
 
-# 1. Build base dev image (installs deps, cached)
+# 1.a Build base dev image (installs deps, cached)
 build-image:
 	docker build --target dev-base -t $(IMAGE_NAME) .
+
+# 1.b Fix volume permissions (if needed)
+fix-volume-perms:
+	docker run --rm \
+	  -v $(CACHE_VOLUME):/app/build \
+	  --user root \
+	  alpine \
+	  chown -R $(shell id -u):$(shell id -g) /app/build
 
 # 2. Configure CMake project inside container
 configure:

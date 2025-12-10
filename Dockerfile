@@ -10,9 +10,9 @@ RUN apt-get update && apt-get install -y apt-utils && rm -rf /var/lib/apt/lists/
 
 # Install other dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential git pkg-config gdb gdbserver vim curl wget \
-    libpoppler-cpp-dev libgtest-dev nlohmann-json3-dev file \
-    valgrind \
+    build-essential git pkg-config gdb gdbserver \
+    vim curl wget libpoppler-cpp-dev libgtest-dev \
+    nlohmann-json3-dev file libpugixml-dev valgrind \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user and group matching host UID/GID
