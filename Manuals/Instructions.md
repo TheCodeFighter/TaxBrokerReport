@@ -174,10 +174,21 @@ docker rmi <IMAGE_ID>
 docker volume rm <VOLUME_NAME>
 ```
 
-Attaching to docker denied. Add user to docker groupe:
+### Docker Permission Denied Errors
+
+If you encounter:
+>`docker: permission denied while trying to connect to the Docker daemon socket at unix`
+
+Add your user to the docker group:
 
 ```bash
 sudo usermod -aG docker $USER
+```
+
+If problems persist, fix volume permissions:
+
+``` bash
+make fix-volume-perms
 ```
 
 >[!Note]
@@ -320,17 +331,24 @@ C++ exception with description "Test PDF file not found at: /app/tests/test_data
 The project uses GitHub Actions for CI/CD. The main pipeline is defined in `.github/workflows/ci.yml`.
 We can run the pipeline locally using the: `scripts/run_ci_locally.sh` script.
 
-If you do this first time, you need to change the permissions of the script:
+### Running the CI Pipeline Locally
+
+If you do this for the first time, you need to change the permissions of the script:
 
 ```bash
 chmod +x scripts/run_ci_locally.sh
 ```
 
-Then run:
+**When to trigger this command:**
+
+- **First time only**: Run `chmod +x scripts/run_ci_locally.sh` to make the script executable.
+- **After that**: You can run the script with:
 
 ```bash
 scripts/run_ci_locally.sh
 ```
+
+**Note**: Do not use `sudo` with the script. If you encounter permission issues, ensure your user has proper permissions in the project directory.
 
 >[!Warning]
 > This is just a simulation of the GitHub Actions pipeline. It may not perfectly replicate the cloud environment.
