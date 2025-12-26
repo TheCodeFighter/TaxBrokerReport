@@ -60,6 +60,11 @@ pkg_check_modules(PUGIXML REQUIRED pugixml)
 # nlohmann-json
 find_package(nlohmann_json REQUIRED)
 
+# libxml2 (XSD validation)
+# libxml2 (XSD validation)
+pkg_check_modules(LIBXML2 REQUIRED IMPORTED_TARGET libxml-2.0)
+
+
 # -----------------------------
 # Main application target
 # -----------------------------
@@ -79,6 +84,7 @@ target_link_libraries(EdavkiXmlMaker PRIVATE
     Poppler::Poppler
     ${PUGIXML_LIBRARIES}
     nlohmann_json::nlohmann_json
+    PkgConfig::LIBXML2
     $<$<PLATFORM_ID:Linux>:pthread>
 )
 
@@ -97,14 +103,12 @@ add_executable(test_report_loader
 
 target_include_directories(test_report_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/include
-    ${PUGIXML_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_report_loader PRIVATE
     GTest::gtest
     GTest::gtest_main
     Poppler::Poppler
-    ${PUGIXML_LIBRARIES}
     nlohmann_json::nlohmann_json
     $<$<PLATFORM_ID:Linux>:pthread>
 )
@@ -121,6 +125,7 @@ add_test(NAME ReportLoaderTest COMMAND test_report_loader)
 # -----------------------------
 add_executable(test_xml_generator
     tests/test_xml_generator.cpp
+    tests/helper.cpp
     src/xml_generator.cpp
 )
 
@@ -135,6 +140,7 @@ target_link_libraries(test_xml_generator PRIVATE
     Poppler::Poppler
     ${PUGIXML_LIBRARIES}
     nlohmann_json::nlohmann_json
+    PkgConfig::LIBXML2
     $<$<PLATFORM_ID:Linux>:pthread>
 )
 

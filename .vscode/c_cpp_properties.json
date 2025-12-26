@@ -6,7 +6,8 @@
                 "${workspaceFolder}/**",
                 "/usr/include",
                 "/usr/local/include",
-                "${workspaceFolder}/include/**"
+                "${workspaceFolder}/include/**",
+                "/usr/include/libxml2"
             ],
             "defines": [
                 "PROJECT_SOURCE_DIR=\"/app\""
