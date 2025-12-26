@@ -14,8 +14,8 @@ const std::filesystem::path expectedJson = projectRoot / "tests" / "testData" /"
 const std::filesystem::path txtPdfData = projectRoot / "tests" / "testData" /"generated_test_data.txt";
 const std::filesystem::path rawDataPath = projectRoot / "tmp" / "generated_test_data.txt";
 
-#ifndef SAVE_GENERATED_FILES
-    #define SAVE_GENERATED_FILES 0
+#ifndef SAVE_GENERATED_TXT_FILES
+    #define SAVE_GENERATED_TXT_FILES 0
 #endif
 
 TEST(ReportLoaderTest, GetRawPdfData_InMemory) {
@@ -84,7 +84,7 @@ TEST(ReportLoaderTest, GetRawPdfData_FileBased) {
 }
 
 
-#if SAVE_GENERATED_FILES
+#if SAVE_GENERATED_TXT_FILES
 TEST(ReportLoaderTest, StoreGeneratedJson) {
     // Ensure the input PDF file exists
     ASSERT_TRUE(std::filesystem::exists(pdfPath)) << "Input PDF file does not exist: " << pdfPath;
