@@ -5,7 +5,8 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/usr/include",
-                "/usr/local/include"
+                "/usr/local/include",
+                "${workspaceFolder}/include/**"
             ],
             "defines": [
                 "PROJECT_SOURCE_DIR=\"/app\""
