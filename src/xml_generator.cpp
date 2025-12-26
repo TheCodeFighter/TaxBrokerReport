@@ -1,8 +1,6 @@
 #include "xml_generator.hpp"
 #include <iostream>
 
-namespace edavki::doh_kdvp {
-
 namespace {
     constexpr auto NS_DOH = "http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd";
     constexpr auto NS_EDP = "http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd";
@@ -126,5 +124,3 @@ pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data) {
 
     return doc;
 }
-
-} // namespace edavki::doh_kdvp

@@ -1,11 +1,19 @@
 #include <gtest/gtest.h>
-#include <xml_generator.hpp>
 #include <pugixml.hpp>
+#include <filesystem>
 
-using namespace edavki::doh_kdvp;
+#include "xml_generator.hpp"
 
-TEST(XmlGeneratorTest, GenerateDummyXmlInMemory) {
-    // Minimal dummy data
+#ifndef SAVE_GENERATED_XML_FILES
+    #define SAVE_GENERATED_XML_FILES 0
+#endif
+
+// Paths for files
+const std::filesystem::path projectRoot {PROJECT_SOURCE_DIR};
+const std::filesystem::path jsonPath = projectRoot / "tmp" / "generated_test_output.json";
+const std::filesystem::path xmlPath = projectRoot / "tmp" / "generated_test_output.xml";
+
+pugi::xml_document generateDummyXml(void) {
     DohKDVP_Data data;
     data.Year = 2025;
     data.IsResident = true;
@@ -20,6 +28,12 @@ TEST(XmlGeneratorTest, GenerateDummyXmlInMemory) {
     // Generate XML document
     pugi::xml_document doc = XmlGenerator::generate_envelope(data);
 
+    return doc;
+}
+
+TEST(XmlGeneratorTest, GenerateDummyXmlInMemory) {
+    auto doc = generateDummyXml();
+
     // Check that the document is not empty
     auto root = doc.first_child();
     ASSERT_TRUE(root) << "Generated XML is empty";
@@ -27,3 +41,20 @@ TEST(XmlGeneratorTest, GenerateDummyXmlInMemory) {
     // Optionally print XML for debugging
     // doc.save(std::cout);
 }
+
+#if SAVE_GENERATED_XML_FILES
+TEST(XmlGeneratorTest, StoreGeneratedXMl) {
+    // Ensure file exist
+    // TODO: integrate with real data
+    ASSERT_TRUE(std::filesystem::exists(jsonPath)) << "Input file does not exist: " << jsonPath;
+
+    try {
+        auto doc = generateDummyXml();
+        ASSERT_TRUE(doc.save_file(xmlPath.c_str()));
+
+    } catch (const std::exception& e) {
+        FAIL() << "Exception occured: " << e.what();
+    }
+}
+#endif
+
