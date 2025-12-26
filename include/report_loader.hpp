@@ -1,6 +1,4 @@
-// replace with #paragma once
-#ifndef REPORT_LOADER_HPP
-#define REPORT_LOADER_HPP
+#pragma once
 
 #include <nlohmann/json.hpp>
 #include <string>
@@ -54,6 +52,4 @@ class ReportLoader {
         std::vector<std::string> tokenize(std::string_view aLine) const;
         std::vector<std::string> normalizeSpaces(const std::string &aLine) const;
 };
-
-#endif // REPORT_LOADER_HPP
 
