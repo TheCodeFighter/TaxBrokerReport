@@ -27,6 +27,12 @@ const std::filesystem::path logXmlValidationPath = projectRoot / "tmp" / "xml_va
 
 pugi::xml_document generateDummyXml(void) {
     DohKDVP_Data data;
+    
+    TaxPayer tp {
+        .taxNumber = "12345678",
+        .resident  = data.IsResident
+    };
+    
     data.Year = 2025;
     data.IsResident = true;
 
@@ -38,7 +44,7 @@ pugi::xml_document generateDummyXml(void) {
     data.Items.push_back(item);
 
     // Generate XML document
-    pugi::xml_document doc = XmlGenerator::generate_envelope(data);
+    pugi::xml_document doc = XmlGenerator::generate_envelope(data, tp);
 
     return doc;
 }

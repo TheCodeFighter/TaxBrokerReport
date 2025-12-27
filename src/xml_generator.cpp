@@ -25,17 +25,10 @@ std::string XmlGenerator::inventory_type_to_string(InventoryListType t) {
     return "PLVP";
 }
 
-void XmlGenerator::append_header_and_signatures(pugi::xml_node envelope) {
-    // In real app you get these from your signing service
-    envelope.append_child("edp:Header");
-    envelope.append_child("edp:Signatures");
-}
-
 pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data) {
     auto doh = parent.append_child("Doh_KDVP");
 
-    auto kdvp_wrapper = doh.append_child("KDVP");
-    auto kdvp = kdvp_wrapper.append_child("KDVP");
+    auto kdvp = doh.append_child("KDVP");
 
     kdvp.append_child("Year").text().set(data.Year);
     kdvp.append_child("IsResident").text().set(data.IsResident ? "true" : "false");
@@ -47,6 +40,12 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
     for (const auto& item : data.Items)
         if (item.Type == InventoryListType::PLVP) ++sec_count;
     kdvp.append_child("SecurityCount").text().set(sec_count);
+    kdvp.append_child("SecurityShortCount").text().set(sec_count);
+
+    // TODO: for now 0, probably we don't need it.
+    kdvp.append_child("SecurityWithContractCount").text().set(0);
+    kdvp.append_child("SecurityWithContractShortCount").text().set(0);
+    kdvp.append_child("ShareCount").text().set(0);
 
     // All KDVPItem entries
     for (const auto& item : data.Items) {
@@ -106,7 +105,30 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
     return doh;
 }
 
-pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data) {
+void XmlGenerator::append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp)
+{
+    auto taxpayer = header.append_child("edp:taxpayer");
+
+    taxpayer.append_child("edp:taxNumber")
+            .text()
+            .set(tp.taxNumber.c_str());
+
+    taxpayer.append_child("edp:resident")
+            .text()
+            .set(tp.resident ? "true" : "false");
+}
+
+void XmlGenerator::append_edp_header(pugi::xml_node envelope, const TaxPayer& tp)
+{
+    auto header = envelope.append_child("edp:Header");
+
+    append_edp_taxpayer(header, tp);
+
+    // Optional but usually required later
+    // header.append_child("edp:DocumentWorkflowID").text().set("...");
+}
+
+pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data, const TaxPayer& tp) {
     pugi::xml_document doc;
     auto decl = doc.prepend_child(pugi::node_declaration);
     decl.append_attribute("version") = "1.0";
@@ -116,11 +138,16 @@ pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data) {
     envelope.append_attribute("xmlns") = NS_DOH;
     envelope.append_attribute("xmlns:edp") = NS_EDP;
 
-    append_header_and_signatures(envelope);
+    append_edp_header(envelope, tp);
 
-    auto body = envelope.append_child("body");
-    body.append_child("edp:bodyContent");  // required empty element
+    // signatures usually come AFTER body, but keep placeholder for now
+    envelope.append_child("edp:Signatures");
+
+    auto body = envelope.append_child("body");              // DOH namespace
+    auto bodyContent = body.append_child("edp:bodyContent"); // EDP namespace
+    (void)bodyContent;
     generate_doh_kdvp(body, data);
+
 
     return doc;
 }

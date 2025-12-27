@@ -84,16 +84,24 @@ struct DohKDVP_Data {
     // TODO: TaxRelief, TaxBaseDecrease, Attachments, not sure if needed
 };
 
+// TODO: extend with: name, address, country...
+struct TaxPayer {
+    std::string taxNumber;   // 8 digits, mandatory
+    bool        resident{true};
+};
+
+
 class XmlGenerator {
 public:
     // Main entry point – call this from main.cpp
-    static pugi::xml_document generate_envelope(const DohKDVP_Data& data);
+    static pugi::xml_document generate_envelope(const DohKDVP_Data& data, const TaxPayer& tp);
 
     // Helper if you only need the <Doh_KDVP> part (for testing)
     static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
 
 private:
-    static void append_header_and_signatures(pugi::xml_node envelope);
     static std::string gain_type_to_string(GainType t);
     static std::string inventory_type_to_string(InventoryListType t);
+    static void append_edp_header(pugi::xml_node envelope, const TaxPayer& tp);
+    static void append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp);
 };
