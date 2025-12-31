@@ -1,5 +1,7 @@
-#include "xml_generator.hpp"
 #include <iostream>
+
+#include "xml_generator.hpp"
+#include "util_xml.hpp"
 
 namespace {
     constexpr auto NS_DOH = "http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd";
@@ -150,4 +152,50 @@ pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data, con
 
 
     return doc;
+}
+
+void XmlGenerator::parse_json(std::map<std::string, std::vector<Transaction>>& aTransactions, TransactionType aType, const nlohmann::json& aJsonData) {
+    // Extract gains_and_losses_section
+    (void) aType;
+    auto& gains_section = aJsonData["gains_and_losses_section"];
+
+    if (!gains_section.is_array()) {
+        throw std::runtime_error("Invalid JSON: 'gains_and_losses_section' must be an array");
+    }
+
+    for (const auto& entry : gains_section) {
+        if (!entry.contains("transactions") || !entry["transactions"].is_array()) continue;
+
+        // Go just with desired type
+        if (string_to_asset_type(entry["asset_type"]) != aType) continue;
+
+        for (const auto& tx : entry["transactions"]) {
+            if (!tx.contains("isin") || !tx.contains("transaction_date") ||
+                !tx.contains("transaction_type") || !tx.contains("amount_of_units")) {
+                continue;  // Skip invalid transactions
+            }
+
+            std::string isin_str = tx["isin"];
+            std::string isin_code;
+            std::string name;
+            parse_isin(isin_str, isin_code, name);
+
+            Transaction t;
+            t.date = parse_date(tx["transaction_date"].get<std::string>());
+            t.type = tx["transaction_type"].get<std::string>();
+            t.quantity = tx["amount_of_units"].get<double>();
+
+            // Get unit_price: prefer "unit_price", fallback to "market_value" / quantity
+            if (tx.contains("unit_price")) {
+                t.unit_price = tx["unit_price"].get<double>();
+            } else if (tx.contains("market_value")) {
+                double market_value = tx["market_value"].get<double>();
+                t.unit_price = (t.quantity != 0.0) ? market_value / t.quantity : 0.0;
+            } else {
+                continue;  // Skip if no price info
+            }
+
+            aTransactions[isin_code].push_back(t);
+        }
+    }
 }

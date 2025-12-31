@@ -18,6 +18,14 @@ enum class InventoryListType {
 
 enum class GainType { A, B, C, D, E, F, G, H, I };
 
+enum class TransactionType {
+    Crypto,
+    Equities,
+    Funds,
+    Bonds,
+    None
+};
+
 struct RowPurchase {
     std::optional<std::string> F1;  // date of acquisition
     std::optional<GainType>    F2;  // method of acquisition
@@ -90,10 +98,17 @@ struct TaxPayer {
     bool        resident{true};
 };
 
+struct Transaction {
+    std::string date;
+    std::string type;  // "Trading Buy" or "Trading Sell"
+    double quantity = 0.0;
+    double unit_price = 0.0;
+};
 
 class XmlGenerator {
 public:
-    // Main entry point – call this from main.cpp
+    // Main methodes
+    static void parse_json(std::map<std::string, std::vector<Transaction>>& aTransactions, TransactionType aType, const nlohmann::json& aJsonData);
     static pugi::xml_document generate_envelope(const DohKDVP_Data& data, const TaxPayer& tp);
 
     // Helper if you only need the <Doh_KDVP> part (for testing)
