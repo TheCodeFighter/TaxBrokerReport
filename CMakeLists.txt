@@ -73,10 +73,12 @@ add_executable(EdavkiXmlMaker
     src/report_loader.cpp
     src/xml_generator.cpp
     src/platform_config.cpp
+    util/util_xml.cpp
 )
 
 target_include_directories(EdavkiXmlMaker PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/util
     ${PUGIXML_INCLUDE_DIRS}
 )
 
@@ -103,6 +105,7 @@ add_executable(test_report_loader
 
 target_include_directories(test_report_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/util
 )
 
 target_link_libraries(test_report_loader PRIVATE
@@ -126,11 +129,13 @@ add_test(NAME ReportLoaderTest COMMAND test_report_loader)
 add_executable(test_xml_generator
     tests/test_xml_generator.cpp
     tests/helper.cpp
+    util/util_xml.cpp
     src/xml_generator.cpp
 )
 
 target_include_directories(test_xml_generator PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/util
     ${PUGIXML_INCLUDE_DIRS}
 )
 
