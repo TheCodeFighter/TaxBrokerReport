@@ -37,6 +37,7 @@ pugi::xml_document generateDummyXml(void) {
     
     data.Year = 2025;
     data.IsResident = true;
+    data.docID = DocWorkflowID::Original;
 
     KDVPItem item;
     item.Type = InventoryListType::PLVP;
@@ -46,7 +47,8 @@ pugi::xml_document generateDummyXml(void) {
     data.Items.push_back(item);
 
     // Generate XML document
-    pugi::xml_document doc = XmlGenerator::generate_envelope(data, tp);
+    auto generator = XmlGenerator{};
+    pugi::xml_document doc = generator.generate_envelope(data, tp);
 
     return doc;
 }
@@ -114,3 +116,34 @@ TEST(XmlGenerator, ParseJson) {
     ASSERT_EQ(transactions["AE0000000001"][2].type, "Trading Sell");
     ASSERT_EQ(transactions["AE0000000001"][2].quantity, 0.1099);
 }
+
+TEST(XmlGenerator, PrepareKdvpData) {
+    ASSERT_TRUE(std::filesystem::exists(jsonPath)) << "JSON file does not exist: " << jsonPath;
+
+    // Read and parse JSON
+    std::ifstream json_file(jsonPath.string());
+    nlohmann::json json_data;
+    json_file >> json_data;
+
+    std::map<std::string, std::vector<Transaction>> transactions;
+
+    XmlGenerator::parse_json(transactions, TransactionType::Funds, json_data);
+
+    ASSERT_FALSE(transactions.empty()) << "No transactions parsed";
+
+    DohKDVP_Data data = XmlGenerator::prepare_kdvp_data(transactions);
+
+    TaxPayer tp;
+    tp.taxNumber = "12345678";  // Fallback if missing
+    tp.resident = true;
+
+    // Generate XML
+    auto generator = XmlGenerator{};
+    pugi::xml_document doc = generator.generate_envelope(data, tp);
+
+    std::filesystem::path output_xml = projectRoot / "tmp" / "test.xml";
+#if SAVE_GENERATED_XML_FILES
+    ASSERT_TRUE(doc.save_file(output_xml.c_str())) << "Failed to save generated XML";
+#endif
+}
+

@@ -1,15 +1,18 @@
 #include "util_xml.hpp"
+#include <algorithm>
 
 // Helper function to parse date from DD.MM.YYYY to YYYY-MM-DD
 std::string parse_date(const std::string& date_str) {
     if (date_str.empty()) return "";
     std::tm tm = {};
     std::istringstream ss(date_str);
+    ss.imbue(std::locale("C"));
     ss >> std::get_time(&tm, "%d.%m.%Y");
     if (ss.fail()) {
         throw std::runtime_error("Failed to parse date: " + date_str);
     }
     std::ostringstream oss;
+    oss.imbue(std::locale("C"));
     oss << std::put_time(&tm, "%Y-%m-%d");
     return oss.str();
 }
@@ -34,4 +37,12 @@ TransactionType string_to_asset_type(std::string type) {
     if (type == "Bonds") return TransactionType::Bonds;
 
     return TransactionType::None;
+}
+
+
+
+std::string to_xml_decimal(double value, int precision) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str();
 }
