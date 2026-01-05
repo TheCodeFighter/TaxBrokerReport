@@ -39,95 +39,104 @@ enum class DocWorkflowID {
     SelfReport
 };
 
+// TODO: make all structs members refactor to mMember
 struct RowPurchase {
-    std::optional<std::string> F1;  // date of acquisition
-    std::optional<GainType>    F2;  // method of acquisition
-    std::optional<double>      F3;  // quantity
-    std::optional<double>      F4;  // purchase value per unit
-    std::optional<double>      F5;  // inheritance/gift tax
-    std::optional<double>      F11; // reduced purchase value (full versions only)
+    std::optional<std::string> mF1;  // date of acquisition
+    std::optional<GainType>    mF2;  // method of acquisition
+    std::optional<double>      mF3;  // quantity
+    std::optional<double>      mF4;  // purchase value per unit
+    std::optional<double>      mF5;  // inheritance/gift tax
+    std::optional<double>      mF11; // reduced purchase value (full versions only)
 };
 
 struct RowSale {
-    std::optional<std::string> F6;  // date of disposal
-    std::optional<double>      F7;  // quantity / % / payment
-    std::optional<double>      F9;  // value at disposal
-    std::optional<bool>        F10; // rule 97.č ZDoh-2 (full versions only) -> losses substract gains if not bought until 30 days from loss sell pass
-    // TODO: make if F10 can be true
+    std::optional<std::string> mF6;  // date of disposal
+    std::optional<double>      mF7;  // quantity / % / payment
+    std::optional<double>      mF9;  // value at disposal
+    std::optional<bool>        mF10; // rule 97.č ZDoh-2 (full versions only) -> losses substract gains if not bought until 30 days from loss sell pass
+    // TODO: make if mF10 can be true
 };
 
 struct InventoryRow {
     int ID{0};
-    std::optional<RowPurchase> Purchase;
-    std::optional<RowSale>     Sale;
-    std::optional<double>      F8;  // stock (can be negative) -> normaly need to be 0 or even left out
+    std::optional<RowPurchase> mPurchase;
+    std::optional<RowSale>     mSale;
+    std::optional<double>      mF8;  // stock (can be negative) -> normaly need to be 0 or even left out
 };
 
 struct SecuritiesBase {
-    std::optional<std::string> ISIN;
-    std::optional<std::string> Code;    // Ticker
-    std::string                Name;
-    bool                       IsFond{false};
+    std::optional<std::string> mISIN;
+    std::optional<std::string> mCode;    // Ticker
+    std::string                mName;
+    bool                       mIsFond{false};
 };
 
 struct SecuritiesPLVP : SecuritiesBase {
-    std::optional<std::string> Resolution;
-    std::optional<std::string> ResolutionDate;
-    std::vector<InventoryRow>  Rows;
+    std::optional<std::string> mResolution;
+    std::optional<std::string> mResolutionDate;
+    std::vector<InventoryRow>  mRows;
 };
 
 struct Shares {  // PLD
     // TODO: extend later -> probably not needed for simple form
-    std::string               Name;
-    std::vector<InventoryRow> Rows;
+    std::string               mName;
+    std::vector<InventoryRow> mRows;
     // ... add foreign company, subsequent payments, etc.
 };
 
 struct KDVPItem {
-    std::optional<int>         ItemID;
-    InventoryListType          Type{InventoryListType::PLVP};
-    std::optional<bool>        HasForeignTax;
-    std::optional<double>      ForeignTax;
-    std::optional<std::string> FTCountryID;
-    std::optional<std::string> FTCountryName;
+    std::optional<int>         mItemID;
+    InventoryListType          mType{InventoryListType::PLVP};
+    std::optional<bool>        mHasForeignTax;
+    std::optional<double>      mForeignTax;
+    std::optional<std::string> mFTCountryID;
+    std::optional<std::string> mFTCountryName;
 
     // Only one of these is filled at a time
-    std::optional<SecuritiesPLVP> Securities;
-    std::optional<Shares>         SharesData;
+    std::optional<SecuritiesPLVP> mSecurities;
+    std::optional<Shares>         mSharesData;
     // add Short, WithContract, CapitalReduction when needed
 };
 
-struct DohKDVP_Data {
-    DocWorkflowID                     docID{DocWorkflowID::Original};
-    int                               Year{2025};
-    bool                              IsResident{true};
-    std::optional<std::string>        TelephoneNumber;
-    std::optional<std::string>        Email;
-    std::vector<KDVPItem>             Items;
-    // TODO: TaxRelief, TaxBaseDecrease, Attachments, not sure if needed
+struct FormData {
+    DocWorkflowID                     mDocID{DocWorkflowID::Original};
+    int                               mYear{};
+    bool                              mIsResident{true};
+    std::optional<std::string>        mTelephoneNumber;
+    std::optional<std::string>        mEmail;
+};
+
+struct DohKDVP_Data : public FormData {
+    std::vector<KDVPItem> mItems;
+
+    DohKDVP_Data() = default;
+
+    explicit DohKDVP_Data(const FormData& fd)
+        : FormData(fd) {}
 };
 
 // TODO: extend with: name, address, country...
 struct TaxPayer {
-    std::string taxNumber;   // 8 digits, mandatory
-    bool        resident{true};
+    std::string mTaxNumber;   // 8 digits, mandatory
+    bool        mResident{true};
 };
 
 struct Transaction {
-    std::string date;
-    std::string type;  // "Trading Buy" or "Trading Sell"
-    std::string isin;
-    std::string isin_name;
-    double quantity = 0.0;
-    double unit_price = 0.0;
+    std::string mDate;
+    std::string mType;  // "Trading Buy" or "Trading Sell"
+    std::string mIsin;
+    std::string mIsinName;
+    double mQuantity = 0.0;
+    double mUnitPrice = 0.0;
 };
 
+// TODO: make arguments to aArg on all places
 class XmlGenerator {
 public:
     // Main methodes
     static void parse_json(std::map<std::string, std::vector<Transaction>>& aTransactions, TransactionType aType, const nlohmann::json& aJsonData);
     pugi::xml_document generate_envelope(const DohKDVP_Data& data, const TaxPayer& tp);
-    static DohKDVP_Data prepare_kdvp_data(std::map<std::string, std::vector<Transaction>>& aTransactions);
+    static DohKDVP_Data prepare_kdvp_data(std::map<std::string, std::vector<Transaction>>& aTransactions, FormData& aFormData);
 
     // Helper if you only need the <Doh_KDVP> part (for testing)
     static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
