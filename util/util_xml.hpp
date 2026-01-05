@@ -12,5 +12,5 @@ std::string parse_date(const std::string& date_str);
 // Helper to extract ISIN code and name from "ISIN - Name" format
 void parse_isin(const std::string& isin_str, std::string& code, std::string& name);
 
-TransactionType string_to_asset_type(std::string type);
+TransactionType string_to_asset_type(std::string mType);
 std::string to_xml_decimal(double value, int precision);

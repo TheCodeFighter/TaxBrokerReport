@@ -30,11 +30,11 @@ void parse_isin(const std::string& isin_str, std::string& code, std::string& nam
 }
 
 // Helper to get string from enum
-TransactionType string_to_asset_type(std::string type) {
-    if (type == "Crypto Currency") return TransactionType::Crypto;
-    if (type == "Equities") return TransactionType::Equities;
-    if (type == "Funds") return TransactionType::Funds;
-    if (type == "Bonds") return TransactionType::Bonds;
+TransactionType string_to_asset_type(std::string mType) {
+    if (mType == "Crypto Currency") return TransactionType::Crypto;
+    if (mType == "Equities") return TransactionType::Equities;
+    if (mType == "Funds") return TransactionType::Funds;
+    if (mType == "Bonds") return TransactionType::Bonds;
 
     return TransactionType::None;
 }

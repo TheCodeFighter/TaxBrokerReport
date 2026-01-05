@@ -31,20 +31,20 @@ pugi::xml_document generateDummyXml(void) {
     DohKDVP_Data data;
     
     TaxPayer tp {
-        .taxNumber = "12345678",
-        .resident  = data.IsResident
+        .mTaxNumber = "12345678",
+        .mResident  = data.mIsResident
     };
     
-    data.Year = 2025;
-    data.IsResident = true;
-    data.docID = DocWorkflowID::Original;
+    data.mYear = 2025;
+    data.mIsResident = true;
+    data.mDocID = DocWorkflowID::Original;
 
     KDVPItem item;
-    item.Type = InventoryListType::PLVP;
-    item.Securities = SecuritiesPLVP{};
-    item.Securities->Name = "DummySecurity";  // assign individually
+    item.mType = InventoryListType::PLVP;
+    item.mSecurities = SecuritiesPLVP{};
+    item.mSecurities->mName = "DummySecurity";  // assign individually
 
-    data.Items.push_back(item);
+    data.mItems.push_back(item);
 
     // Generate XML document
     auto generator = XmlGenerator{};
@@ -112,9 +112,9 @@ TEST(XmlGenerator, ParseJson) {
 
     ASSERT_TRUE(transactions.contains("AE0000000001"));
 
-    ASSERT_EQ(transactions["AE0000000001"][2].date, "2024-08-09");
-    ASSERT_EQ(transactions["AE0000000001"][2].type, "Trading Sell");
-    ASSERT_EQ(transactions["AE0000000001"][2].quantity, 0.1099);
+    ASSERT_EQ(transactions["AE0000000001"][2].mDate, "2024-08-09");
+    ASSERT_EQ(transactions["AE0000000001"][2].mType, "Trading Sell");
+    ASSERT_EQ(transactions["AE0000000001"][2].mQuantity, 0.1099);
 }
 
 TEST(XmlGenerator, PrepareKdvpData) {
@@ -131,11 +131,19 @@ TEST(XmlGenerator, PrepareKdvpData) {
 
     ASSERT_FALSE(transactions.empty()) << "No transactions parsed";
 
-    DohKDVP_Data data = XmlGenerator::prepare_kdvp_data(transactions);
+    // This will be selected by user in gui or cli
+    FormData formData;
+    formData.mYear = 2025;
+    formData.mIsResident = true;
+    formData.mDocID = DocWorkflowID::Original;
+    formData.mTelephoneNumber = "012345678";
+    formData.mEmail = "jon@test.si";
+
+    DohKDVP_Data data = XmlGenerator::prepare_kdvp_data(transactions, formData);
 
     TaxPayer tp;
-    tp.taxNumber = "12345678";  // Fallback if missing
-    tp.resident = true;
+    tp.mTaxNumber = "87654321";
+    tp.mResident = true;
 
     // Generate XML
     auto generator = XmlGenerator{};

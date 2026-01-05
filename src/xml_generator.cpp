@@ -36,30 +36,27 @@ std::string XmlGenerator::inventory_type_to_string(InventoryListType t) {
 }
 
 pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data) {
-    // auto doc = parent.append_child("Doh_KDVP");
-
-
     auto kdvp = parent.append_child("KDVP");
 
     // 1. Workflow podatki (NUJNO NA ZAČETKU)
-    kdvp.append_child("DocumentWorkflowID").text().set(XmlGenerator::getDocWorkflowIDString(data.docID).c_str());
+    kdvp.append_child("DocumentWorkflowID").text().set(XmlGenerator::getDocWorkflowIDString(data.mDocID).c_str());
     kdvp.append_child("DocumentWorkflowName").text().set("Doh_KDVP");
 
-    kdvp.append_child("Year").text().set(std::to_string(data.Year).c_str());
+    kdvp.append_child("Year").text().set(std::to_string(data.mYear).c_str());
 
-    std::string pStart = std::to_string(data.Year) + "-01-01";
-    std::string pEnd = std::to_string(data.Year) + "-12-31";
+    std::string pStart = std::to_string(data.mYear) + "-01-01";
+    std::string pEnd = std::to_string(data.mYear) + "-12-31";
     kdvp.append_child("PeriodStart").text().set(pStart.c_str());
     kdvp.append_child("PeriodEnd").text().set(pEnd.c_str());
 
-    kdvp.append_child("IsResident").text().set(data.IsResident ? "true" : "false");
-    if (data.TelephoneNumber) kdvp.append_child("TelephoneNumber").text().set(data.TelephoneNumber->c_str());
-    if (data.Email)           kdvp.append_child("Email").text().set(data.Email->c_str());
+    kdvp.append_child("IsResident").text().set(data.mIsResident ? "true" : "false");
+    
+    if (data.mTelephoneNumber) kdvp.append_child("TelephoneNumber").text().set(data.mTelephoneNumber->c_str());
 
     // SecurityCount – auto-count PLVP items
     int sec_count = 0;
-    for (const auto& item : data.Items)
-        if (item.Type == InventoryListType::PLVP) ++sec_count;
+    for (const auto& item : data.mItems)
+        if (item.mType == InventoryListType::PLVP) ++sec_count;
     kdvp.append_child("SecurityCount").text().set(sec_count);
     
     // TODO: for now 0, probably we don't need it.
@@ -68,55 +65,57 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
     kdvp.append_child("SecurityWithContractShortCount").text().set(0);
     kdvp.append_child("ShareCount").text().set(0);
 
+    if (data.mEmail) kdvp.append_child("Email").text().set(data.mEmail->c_str());
+
     // All KDVPItem entries
-    for (const auto& item : data.Items) {
+    for (const auto& item : data.mItems) {
         auto item_node = parent.append_child("KDVPItem");
 
-        if (item.ItemID) item_node.append_child("ItemID").text().set(*item.ItemID);
-        item_node.append_child("InventoryListType").text().set(inventory_type_to_string(item.Type).c_str());
+        if (item.mItemID) item_node.append_child("ItemID").text().set(*item.mItemID);
+        item_node.append_child("InventoryListType").text().set(inventory_type_to_string(item.mType).c_str());
 
-        if (item.HasForeignTax && *item.HasForeignTax) {
+        if (item.mHasForeignTax && *item.mHasForeignTax) {
             item_node.append_child("HasForeignTax").text().set("true");
-            if (item.ForeignTax)   item_node.append_child("ForeignTax").text().set(*item.ForeignTax);
-            if (item.FTCountryID)  item_node.append_child("FTCountryID").text().set(item.FTCountryID->c_str());
+            if (item.mForeignTax)   item_node.append_child("ForeignTax").text().set(*item.mForeignTax);
+            if (item.mFTCountryID)  item_node.append_child("FTCountryID").text().set(item.mFTCountryID->c_str());
         }
 
-        if (item.Securities) {
-            const auto& sec = *item.Securities;
+        if (item.mSecurities) {
+            const auto& sec = *item.mSecurities;
             auto sec_node = item_node.append_child("Securities");
 
-            if (sec.ISIN)  sec_node.append_child("ISIN").text().set(sec.ISIN->c_str());
-            if (sec.Code)  sec_node.append_child("Code").text().set(sec.Code->c_str());
-            sec_node.append_child("Name").text().set(sec.Name.c_str());
-            sec_node.append_child("IsFond").text().set(sec.IsFond ? "true" : "false");
-            if (sec.Resolution)     sec_node.append_child("Resolution").text().set(sec.Resolution->c_str());
-            if (sec.ResolutionDate) sec_node.append_child("ResolutionDate").text().set(sec.ResolutionDate->c_str());
+            if (sec.mISIN)  sec_node.append_child("ISIN").text().set(sec.mISIN->c_str());
+            if (sec.mCode)  sec_node.append_child("Code").text().set(sec.mCode->c_str());
+            sec_node.append_child("Name").text().set(sec.mName.c_str());
+            sec_node.append_child("IsFond").text().set(sec.mIsFond ? "true" : "false");
+            if (sec.mResolution)     sec_node.append_child("Resolution").text().set(sec.mResolution->c_str());
+            if (sec.mResolutionDate) sec_node.append_child("ResolutionDate").text().set(sec.mResolutionDate->c_str());
 
-            for (const auto& row : sec.Rows) {
+            for (const auto& row : sec.mRows) {
                 auto row_node = sec_node.append_child("Row");
                 row_node.append_child("ID").text().set(row.ID);
 
-                if (row.Purchase) {
+                if (row.mPurchase) {
                     auto p = row_node.append_child("Purchase");
-                    const auto& pu = *row.Purchase; // TODO: correct raw pointer usage
-                    if (pu.F1)  p.append_child("F1").text().set(pu.F1->c_str());
-                    if (pu.F2)  p.append_child("F2").text().set(gain_type_to_string(*pu.F2).c_str());
-                    if (pu.F3)  p.append_child("F3").text().set(to_xml_decimal(pu.F3.value(), 8).c_str());
-                    if (pu.F4)  p.append_child("F4").text().set(to_xml_decimal(pu.F4.value(), 8).c_str());
-                    if (pu.F5)  p.append_child("F5").text().set(to_xml_decimal(pu.F5.value(), 4).c_str());
-                    if (pu.F11) p.append_child("F11").text().set(to_xml_decimal(pu.F11.value(), 8).c_str());
+                    const auto& pu = *row.mPurchase; // TODO: correct raw pointer usage
+                    if (pu.mF1)  p.append_child("F1").text().set(pu.mF1->c_str());
+                    if (pu.mF2)  p.append_child("F2").text().set(gain_type_to_string(*pu.mF2).c_str());
+                    if (pu.mF3)  p.append_child("F3").text().set(to_xml_decimal(pu.mF3.value(), 8).c_str());
+                    if (pu.mF4)  p.append_child("F4").text().set(to_xml_decimal(pu.mF4.value(), 8).c_str());
+                    if (pu.mF5)  p.append_child("F5").text().set(to_xml_decimal(pu.mF5.value(), 4).c_str());
+                    if (pu.mF11) p.append_child("F11").text().set(to_xml_decimal(pu.mF11.value(), 8).c_str());
                 }
 
-                if (row.Sale) {
+                if (row.mSale) {
                     auto s = row_node.append_child("Sale");
-                    const auto& sa = *row.Sale; // TODO: correct raw pointer usage
-                    if (sa.F6) s.append_child("F6").text().set(sa.F6->c_str());
-                    if (sa.F7) s.append_child("F7").text().set(to_xml_decimal(sa.F7.value(), 8).c_str());
-                    if (sa.F9) s.append_child("F9").text().set(to_xml_decimal(sa.F9.value(), 8).c_str());
-                    if (sa.F10) s.append_child("F10").text().set(*sa.F10 ? "true" : "false");
+                    const auto& sa = *row.mSale; // TODO: correct raw pointer usage
+                    if (sa.mF6) s.append_child("F6").text().set(sa.mF6->c_str());
+                    if (sa.mF7) s.append_child("F7").text().set(to_xml_decimal(sa.mF7.value(), 8).c_str());
+                    if (sa.mF9) s.append_child("F9").text().set(to_xml_decimal(sa.mF9.value(), 8).c_str());
+                    if (sa.mF10) s.append_child("F10").text().set(*sa.mF10 ? "true" : "false");
                 }
 
-                if (row.F8) row_node.append_child("F8").text().set(to_xml_decimal(*row.F8, 8).c_str());
+                if (row.mF8) row_node.append_child("F8").text().set(to_xml_decimal(*row.mF8, 8).c_str());
             }
         }
 
@@ -132,11 +131,11 @@ void XmlGenerator::append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp
 
     taxpayer.append_child("edp:taxNumber")
             .text()
-            .set(tp.taxNumber.c_str());
+            .set(tp.mTaxNumber.c_str());
 
     taxpayer.append_child("edp:resident")
             .text()
-            .set(tp.resident ? "true" : "false");
+            .set(tp.mResident ? "true" : "false");
 }
 
 void XmlGenerator::append_edp_header(pugi::xml_node envelope, const TaxPayer& tp, const DocWorkflowID docWorkflowID)
@@ -147,7 +146,7 @@ void XmlGenerator::append_edp_header(pugi::xml_node envelope, const TaxPayer& tp
 
     auto workflow = header.append_child("edp:Workflow");
     workflow.append_child("edp:DocumentWorkflowID").text().set(XmlGenerator::getDocWorkflowIDString(docWorkflowID).c_str());
-    workflow.append_child("edp:DocumentWorkflowName").text().set("Doh_KDVP");   // TODO: different for different 
+    workflow.append_child("edp:DocumentWorkflowName").text().set("Doh_KDVP");   // TODO: different for different forms
 }
 
 pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data, const TaxPayer& tp) {
@@ -160,7 +159,7 @@ pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data, con
     envelope.append_attribute("xmlns").set_value(NS_DOH);
     envelope.append_attribute("xmlns:edp").set_value(NS_EDP);
 
-    this->append_edp_header(envelope, tp, data.docID);
+    this->append_edp_header(envelope, tp, data.mDocID);
 
     envelope.append_child("edp:Signatures");
 
@@ -175,7 +174,6 @@ pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data, con
 
 void XmlGenerator::parse_json(std::map<std::string, std::vector<Transaction>>& aTransactions, TransactionType aType, const nlohmann::json& aJsonData) {
     // Extract gains_and_losses_section
-    (void) aType;
     auto& gains_section = aJsonData["gains_and_losses_section"];
 
     if (!gains_section.is_array()) {
@@ -200,19 +198,21 @@ void XmlGenerator::parse_json(std::map<std::string, std::vector<Transaction>>& a
             parse_isin(isin_str, isin_code, name);
 
             Transaction t;
-            t.date = parse_date(tx["transaction_date"].get<std::string>());
-            t.type = tx["transaction_type"].get<std::string>();
-            t.quantity = tx["amount_of_units"].get<double>();
-            t.isin = isin_code;
-            t.isin_name = name;
+            t.mDate = parse_date(tx["transaction_date"].get<std::string>());
+            t.mType = tx["transaction_type"].get<std::string>();
+            t.mQuantity = tx["amount_of_units"].get<double>();
+            t.mIsin = isin_code;
+            t.mIsinName = name;
 
             // Get unit_price: prefer "unit_price", fallback to "market_value" / quantity
             if (tx.contains("unit_price")) {
-                t.unit_price = tx["unit_price"].get<double>();
-            } else if (tx.contains("market_value")) {
+                t.mUnitPrice = tx["unit_price"].get<double>();
+            } 
+            else if (tx.contains("market_value")) {
                 double market_value = tx["market_value"].get<double>();
-                t.unit_price = (t.quantity != 0.0) ? market_value / t.quantity : 0.0;
-            } else {
+                t.mUnitPrice = (t.mQuantity != 0.0) ? market_value / t.mQuantity : 0.0;
+            } 
+            else {
                 continue;  // Skip if no price info
             }
 
@@ -221,66 +221,63 @@ void XmlGenerator::parse_json(std::map<std::string, std::vector<Transaction>>& a
     }
 }
 
-DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<Transaction>>& aTransactions) {
-    DohKDVP_Data data;
-    data.Year = 2025;  // From JSON current date, but hardcoded for test
-    data.IsResident = true;  // Assume
-    data.docID = DocWorkflowID::Original;
+DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<Transaction>>& aTransactions, FormData& aFormData) {
+
+    DohKDVP_Data data(aFormData);
 
     int item_id = 1;
-    for (auto& [isin, txs] : aTransactions) {
+    for (auto& [mIsin, txs] : aTransactions) {
         // Sort transactions by date
         std::sort(txs.begin(), txs.end(), [](const Transaction& a, const Transaction& b) {
-            return a.date < b.date;
+            return a.mDate < b.mDate;
         });
 
         KDVPItem item;
-        item.ItemID = item_id++;
-        item.Type = InventoryListType::PLVP;  // Use full PLVP for detailed rows
+        item.mItemID = item_id++;
+        item.mType = InventoryListType::PLVP;  // Use full PLVP for detailed rows
 
-        item.Securities = SecuritiesPLVP{};
-        item.Securities->ISIN = isin;
-        // item.Securities->Code = isin;  // Reuse as code if needed -> ticker, if we have isin we can skip this
-        item.Securities->Name = txs[0].isin_name;       
-        // item.Securities->IsFond = (name.find("ETF") != std::string::npos || name.find("Fond") != std::string::npos);  // Heuristic
+        item.mSecurities = SecuritiesPLVP{};
+        item.mSecurities->mISIN = mIsin;
+        // item.Securities->mCode = mIsin;  // Reuse as code if needed -> ticker, if we have isin we can skip this
+        item.mSecurities->mName = txs[0].mIsinName;       
 
-        // Build rows with running stock (F8)
+        // Build rows with running stock (mF8)
         double running_quantity = 0.0;
         int row_id = 0;
         for (const auto& t : txs) {
             InventoryRow row;
             row.ID = row_id++;
 
-            if (t.type == "Trading Buy") {
-                row.Purchase = RowPurchase{};
-                row.Purchase->F1 = t.date;
-                row.Purchase->F2 = GainType::A;
+            if (t.mType == "Trading Buy") {
+                row.mPurchase = RowPurchase{};
+                row.mPurchase->mF1 = t.mDate;
+                row.mPurchase->mF2 = GainType::A;
 
-                row.Purchase->F3 = t.quantity;
-                row.Purchase->F4 = t.unit_price;
-                row.Purchase->F5 = 0.0;  // Assume no inheritance tax
-                // F11 if needed
+                row.mPurchase->mF3 = t.mQuantity;
+                row.mPurchase->mF4 = t.mUnitPrice;
+                row.mPurchase->mF5 = 0.0;  // Assume no inheritance tax
+                // mF11 if needed
 
-                running_quantity = running_quantity + t.quantity;
-            } else if (t.type == "Trading Sell") {
-                row.Sale = RowSale{};
-                row.Sale->F6 = t.date;
-                row.Sale->F7 = t.quantity;
-                row.Sale->F9 = t.unit_price;
-                row.Sale->F10 = true;  // losses substract gains if not bought until 30 days from loss sell pass 
+                running_quantity = running_quantity + t.mQuantity;
+            } else if (t.mType == "Trading Sell") {
+                row.mSale = RowSale{};
+                row.mSale->mF6 = t.mDate;
+                row.mSale->mF7 = t.mQuantity;
+                row.mSale->mF9 = t.mUnitPrice;
+                row.mSale->mF10 = true;  // losses substract gains if not bought until 30 days from loss sell pass 
 
-                running_quantity = running_quantity - t.quantity;
+                running_quantity = running_quantity - t.mQuantity;
             } else {
                 continue;  // Skip unknown types
             }
 
-            row.F8 = running_quantity;
-            item.Securities->Rows.push_back(row);
+            row.mF8 = running_quantity;
+            item.mSecurities->mRows.push_back(row);
         }
 
         // Only add if there are rows
-        if (!item.Securities->Rows.empty()) {
-            data.Items.push_back(item);
+        if (!item.mSecurities->mRows.empty()) {
+            data.mItems.push_back(item);
         }
     }
 
