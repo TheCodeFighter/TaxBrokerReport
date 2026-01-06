@@ -32,6 +32,7 @@ pugi::xml_document generateDummyXml(void) {
     
     TaxPayer tp {
         .mTaxNumber = "12345678",
+        .mType = "FO",
         .mResident  = data.mIsResident
     };
     
@@ -48,7 +49,7 @@ pugi::xml_document generateDummyXml(void) {
 
     // Generate XML document
     auto generator = XmlGenerator{};
-    pugi::xml_document doc = generator.generate_envelope(data, tp);
+    pugi::xml_document doc = generator.generate_doh_kdvp_xml(data, tp);
 
     return doc;
 }
@@ -88,8 +89,10 @@ TEST(XmlGeneratorTest, ValidateGeneratedXmlAgainstXsd) {
     // XSD path
     ASSERT_TRUE(std::filesystem::exists(xsdDoh_KDVP_Path)) << "XSD file does not exist: " << xsdDoh_KDVP_Path;
 
+    xmlDocPtr doc = xmlReadFile(xmlPath.c_str(), nullptr, 0);
+
     // Validate
-    bool isValid = validateXml(xmlPath.c_str(), xsdDoh_KDVP_Path.c_str(), logXmlValidationPath, true);
+    bool isValid = validateXml(doc, xsdDoh_KDVP_Path.c_str(), logXmlValidationPath);
     ASSERT_TRUE(isValid) << "Generated XML does not conform to XSD schema";
 }
 #endif
@@ -127,7 +130,7 @@ TEST(XmlGenerator, PrepareKdvpData) {
 
     std::map<std::string, std::vector<Transaction>> transactions;
 
-    XmlGenerator::parse_json(transactions, TransactionType::Funds, json_data);
+    XmlGenerator::parse_json(transactions, TransactionType::Equities, json_data);
 
     ASSERT_FALSE(transactions.empty()) << "No transactions parsed";
 
@@ -139,18 +142,36 @@ TEST(XmlGenerator, PrepareKdvpData) {
     formData.mTelephoneNumber = "012345678";
     formData.mEmail = "jon@test.si";
 
-    DohKDVP_Data data = XmlGenerator::prepare_kdvp_data(transactions, formData);
 
     TaxPayer tp;
-    tp.mTaxNumber = "87654321";
+    // minimal working data
+    tp.mTaxNumber = "12345678";
+    tp.mType = "FO";
     tp.mResident = true;
+    
+    // tp.mTaxPayerName = "John Doe";
+    // tp.mAddress1 = "123 Main Street";
+    // tp.mCity = "Ljubljana";
+    // tp.mPostNumber = "1000";
+    // tp.mPostName = "Ljubljana";
+    // tp.mBirthDate = "1990-01-01";
+    // end of user input
+
+    DohKDVP_Data data = XmlGenerator::prepare_kdvp_data(transactions, formData);
+
 
     // Generate XML
     auto generator = XmlGenerator{};
-    pugi::xml_document doc = generator.generate_envelope(data, tp);
+    pugi::xml_document doc = generator.generate_doh_kdvp_xml(data, tp);
 
-    std::filesystem::path output_xml = projectRoot / "tmp" / "test.xml";
+    auto libxmlDoc = convertPugiToLibxml(doc);
+    ASSERT_TRUE(libxmlDoc);
+
+    bool isValid = validateXml(libxmlDoc.get(), xsdDoh_KDVP_Path);
+    ASSERT_TRUE(isValid) << "Generated XML document does not conform to XSD schema";
+
 #if SAVE_GENERATED_XML_FILES
+    std::filesystem::path output_xml = projectRoot / "tmp" / "test.xml";
     ASSERT_TRUE(doc.save_file(output_xml.c_str())) << "Failed to save generated XML";
 #endif
 }

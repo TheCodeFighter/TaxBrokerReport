@@ -39,7 +39,6 @@ enum class DocWorkflowID {
     SelfReport
 };
 
-// TODO: make all structs members refactor to mMember
 struct RowPurchase {
     std::optional<std::string> mF1;  // date of acquisition
     std::optional<GainType>    mF2;  // method of acquisition
@@ -77,11 +76,11 @@ struct SecuritiesPLVP : SecuritiesBase {
     std::vector<InventoryRow>  mRows;
 };
 
+// in future if needed
 struct Shares {  // PLD
-    // TODO: extend later -> probably not needed for simple form
     std::string               mName;
     std::vector<InventoryRow> mRows;
-    // ... add foreign company, subsequent payments, etc.
+    // ... add foreign company, subsequent payments
 };
 
 struct KDVPItem {
@@ -115,9 +114,16 @@ struct DohKDVP_Data : public FormData {
         : FormData(fd) {}
 };
 
-// TODO: extend with: name, address, country...
 struct TaxPayer {
-    std::string mTaxNumber;   // 8 digits, mandatory
+    std::string mTaxNumber;         // 8 digits, mandatory
+    std::string mType{"FO"};     // FO -> phisical person
+    std::optional<std::string> mTaxPayerName{std::nullopt};
+    std::optional<std::string> mAddress1{std::nullopt};
+    std::optional<std::string> mAddress2{std::nullopt};
+    std::optional<std::string> mCity{std::nullopt};
+    std::optional<std::string> mPostNumber{std::nullopt};
+    std::optional<std::string> mPostName{std::nullopt};
+    std::optional<std::string> mBirthDate{std::nullopt};    
     bool        mResident{true};
 };
 
@@ -130,18 +136,18 @@ struct Transaction {
     double mUnitPrice = 0.0;
 };
 
-// TODO: make arguments to aArg on all places
 class XmlGenerator {
 public:
-    // Main methodes
+    // JSON parsing
     static void parse_json(std::map<std::string, std::vector<Transaction>>& aTransactions, TransactionType aType, const nlohmann::json& aJsonData);
-    pugi::xml_document generate_envelope(const DohKDVP_Data& data, const TaxPayer& tp);
+    
+    // XML generation
     static DohKDVP_Data prepare_kdvp_data(std::map<std::string, std::vector<Transaction>>& aTransactions, FormData& aFormData);
+    pugi::xml_document generate_doh_kdvp_xml(const DohKDVP_Data& data, const TaxPayer& tp);
 
-    // Helper if you only need the <Doh_KDVP> part (for testing)
-    static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
-
+    
 private:
+    static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
     static std::string gain_type_to_string(GainType t);
     static std::string inventory_type_to_string(InventoryListType t);
     void append_edp_header(pugi::xml_node envelope, const TaxPayer& tp, const DocWorkflowID docWorkflowID);
