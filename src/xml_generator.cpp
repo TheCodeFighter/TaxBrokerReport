@@ -133,6 +133,52 @@ void XmlGenerator::append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp
             .text()
             .set(tp.mTaxNumber.c_str());
 
+    taxpayer.append_child("edp:taxpayerType")
+            .text()
+            .set(tp.mType.c_str());
+
+    if (tp.mTaxPayerName) {
+        taxpayer.append_child("edp:name")
+                .text()
+                .set(tp.mTaxPayerName->c_str());
+    }
+
+    if (tp.mAddress1) {
+        taxpayer.append_child("edp:address1")
+                .text()
+                .set(tp.mAddress1->c_str());
+    }
+
+    if (tp.mAddress2) {
+        taxpayer.append_child("edp:address2")
+            .text()
+            .set(tp.mAddress2->c_str());
+    }
+
+    if (tp.mCity) {
+        taxpayer.append_child("edp:city")
+            .text()
+            .set(tp.mCity->c_str());
+    }
+
+    if (tp.mPostNumber) {
+        taxpayer.append_child("edp:postNumber")
+                .text()
+                .set(tp.mPostNumber->c_str());
+    }
+
+    if (tp.mPostName) {
+        taxpayer.append_child("edp:postName")
+                .text()
+                .set(tp.mPostName->c_str());
+    }
+
+    if (tp.mBirthDate) {
+        taxpayer.append_child("edp:birthDate")
+                .text()
+                .set(tp.mBirthDate->c_str());
+    }
+
     taxpayer.append_child("edp:resident")
             .text()
             .set(tp.mResident ? "true" : "false");
@@ -149,7 +195,7 @@ void XmlGenerator::append_edp_header(pugi::xml_node envelope, const TaxPayer& tp
     workflow.append_child("edp:DocumentWorkflowName").text().set("Doh_KDVP");   // TODO: different for different forms
 }
 
-pugi::xml_document XmlGenerator::generate_envelope(const DohKDVP_Data& data, const TaxPayer& tp) {
+pugi::xml_document XmlGenerator::generate_doh_kdvp_xml(const DohKDVP_Data& data, const TaxPayer& tp) {
     pugi::xml_document doc;
     auto decl = doc.prepend_child(pugi::node_declaration);
     decl.append_attribute("version") = "1.0";
