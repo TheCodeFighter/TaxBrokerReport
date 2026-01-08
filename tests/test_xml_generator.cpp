@@ -105,22 +105,25 @@ TEST(XmlGenerator, ParseJson) {
     nlohmann::json json_data;
     json_file >> json_data;
 
-    std::map<std::string, std::vector<Transaction>> transactions;
+    Transactions transactions;
 
     XmlGenerator::parse_json(transactions, TransactionType::Funds, json_data);
 
-    ASSERT_FALSE(transactions.empty()) << "No transactions parsed";
+    auto& tx = transactions.mGains;
 
-    ASSERT_EQ(transactions.size(), 1);
+    ASSERT_FALSE(tx.empty()) << "No transactions parsed";
 
-    ASSERT_TRUE(transactions.contains("AE0000000001"));
+    ASSERT_EQ(transactions.mGains.size(), 1);
 
-    ASSERT_EQ(transactions["AE0000000001"][2].mDate, "2024-08-09");
-    ASSERT_EQ(transactions["AE0000000001"][2].mType, "Trading Sell");
-    ASSERT_EQ(transactions["AE0000000001"][2].mQuantity, 0.1099);
+    ASSERT_TRUE(transactions.mGains.contains("AE0000000001"));
+    ASSERT_EQ(transactions.mGains["AE0000000001"][2].mDate, "2024-08-09");
+    ASSERT_EQ(transactions.mGains["AE0000000001"][2].mType, "Trading Sell");
+    ASSERT_EQ(transactions.mGains["AE0000000001"][2].mQuantity, 0.1099);
 }
 
-TEST(XmlGenerator, PrepareKdvpData) {
+Transactions transactions;
+
+TEST(XmlGenerator, PreTest) {
     ASSERT_TRUE(std::filesystem::exists(jsonPath)) << "JSON file does not exist: " << jsonPath;
 
     // Read and parse JSON
@@ -128,41 +131,42 @@ TEST(XmlGenerator, PrepareKdvpData) {
     nlohmann::json json_data;
     json_file >> json_data;
 
-    std::map<std::string, std::vector<Transaction>> transactions;
 
     XmlGenerator::parse_json(transactions, TransactionType::Equities, json_data);
 
-    ASSERT_FALSE(transactions.empty()) << "No transactions parsed";
+    ASSERT_FALSE(transactions.mGains.empty()) << "No transactions parsed";
+}
 
-    // This will be selected by user in gui or cli
-    FormData formData;
-    formData.mYear = 2025;
-    formData.mIsResident = true;
-    formData.mDocID = DocWorkflowID::Original;
-    formData.mTelephoneNumber = "012345678";
-    formData.mEmail = "jon@test.si";
+//// This will be selected by user in gui or cli
+FormData formData{
+    .mDocID = DocWorkflowID::Original,
+    .mYear = 2025,
+    .mIsResident = true,
+    .mTelephoneNumber = std::optional<std::string>("012345678"),
+    .mEmail = std::optional<std::string>("jon@test.si")
+};
 
+// minimal working data
+TaxPayer taxPayer{
+    .mTaxNumber = "12345678",
+    .mType = "FO",
+    .mResident = true
+    // .mTaxPayerName = "John Doe";
+    // .mAddress1 = "123 Main Street";
+    // .mCity = "Ljubljana";
+    // .mPostNumber = "1000";
+    // .mPostName = "Ljubljana";
+    // .mBirthDate = "1990-01-01";
+};
+//// end of user input
 
-    TaxPayer tp;
-    // minimal working data
-    tp.mTaxNumber = "12345678";
-    tp.mType = "FO";
-    tp.mResident = true;
-    
-    // tp.mTaxPayerName = "John Doe";
-    // tp.mAddress1 = "123 Main Street";
-    // tp.mCity = "Ljubljana";
-    // tp.mPostNumber = "1000";
-    // tp.mPostName = "Ljubljana";
-    // tp.mBirthDate = "1990-01-01";
-    // end of user input
-
-    DohKDVP_Data data = XmlGenerator::prepare_kdvp_data(transactions, formData);
-
+// Capital gains test
+TEST(XmlGenerator, GenerateKdvpXml) {   
+    DohKDVP_Data data = XmlGenerator::prepare_kdvp_data(transactions.mGains, formData);
 
     // Generate XML
     auto generator = XmlGenerator{};
-    pugi::xml_document doc = generator.generate_doh_kdvp_xml(data, tp);
+    pugi::xml_document doc = generator.generate_doh_kdvp_xml(data, taxPayer);
 
     auto libxmlDoc = convertPugiToLibxml(doc);
     ASSERT_TRUE(libxmlDoc);
@@ -175,4 +179,6 @@ TEST(XmlGenerator, PrepareKdvpData) {
     ASSERT_TRUE(doc.save_file(output_xml.c_str())) << "Failed to save generated XML";
 #endif
 }
+
+
 

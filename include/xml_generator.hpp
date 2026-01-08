@@ -87,9 +87,9 @@ struct KDVPItem {
     std::optional<int>         mItemID;
     InventoryListType          mType{InventoryListType::PLVP};
     std::optional<bool>        mHasForeignTax;
-    std::optional<double>      mForeignTax;
-    std::optional<std::string> mFTCountryID;
-    std::optional<std::string> mFTCountryName;
+    std::optional<double>      mForeignTaxAmount;
+    std::optional<std::string> mForeignCountryID;
+    std::optional<std::string> mForeignCountryName;
 
     // Only one of these is filled at a time
     std::optional<SecuritiesPLVP> mSecurities;
@@ -127,7 +127,7 @@ struct TaxPayer {
     bool        mResident{true};
 };
 
-struct Transaction {
+struct GainTransaction {
     std::string mDate;
     std::string mType;  // "Trading Buy" or "Trading Sell"
     std::string mIsin;
@@ -135,22 +135,28 @@ struct Transaction {
     double mQuantity = 0.0;
     double mUnitPrice = 0.0;
 };
+struct Transactions {
+    std::map<std::string, std::vector<GainTransaction>> mGains;
+};
 
 class XmlGenerator {
 public:
     // JSON parsing
-    static void parse_json(std::map<std::string, std::vector<Transaction>>& aTransactions, TransactionType aType, const nlohmann::json& aJsonData);
+    static void parse_json(Transactions& aTransactions, TransactionType aType, const nlohmann::json& aJsonData);
     
     // XML generation
-    static DohKDVP_Data prepare_kdvp_data(std::map<std::string, std::vector<Transaction>>& aTransactions, FormData& aFormData);
+    // KDVP
+    static DohKDVP_Data prepare_kdvp_data(std::map<std::string, std::vector<GainTransaction>>& aTransactions, FormData& aFormData);
     pugi::xml_document generate_doh_kdvp_xml(const DohKDVP_Data& data, const TaxPayer& tp);
 
     
 private:
-    static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
-    static std::string gain_type_to_string(GainType t);
-    static std::string inventory_type_to_string(InventoryListType t);
     void append_edp_header(pugi::xml_node envelope, const TaxPayer& tp, const DocWorkflowID docWorkflowID);
     static void append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp);
+    
+    static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
     static std::string getDocWorkflowIDString(DocWorkflowID id);
+    
+    static std::string gain_type_to_string(GainType t);
+    static std::string inventory_type_to_string(InventoryListType t);
 };

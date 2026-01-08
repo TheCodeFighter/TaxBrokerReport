@@ -14,3 +14,7 @@ void parse_isin(const std::string& isin_str, std::string& code, std::string& nam
 
 TransactionType string_to_asset_type(std::string mType);
 std::string to_xml_decimal(double value, int precision);
+
+// Parse gains and losses section
+void parse_gains_section(const nlohmann::json& gains_section, TransactionType aType, std::map<std::string, std::vector<GainTransaction>>& aTransactions);
+

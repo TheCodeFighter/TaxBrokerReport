@@ -4,7 +4,7 @@
 #include "util_xml.hpp"
 
 namespace {
-    constexpr auto NS_DOH = "http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd";
+    constexpr auto NS_DOH_KDVP = "http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd";
     constexpr auto NS_EDP = "http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd";
 }
 
@@ -76,8 +76,8 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
 
         if (item.mHasForeignTax && *item.mHasForeignTax) {
             item_node.append_child("HasForeignTax").text().set("true");
-            if (item.mForeignTax)   item_node.append_child("ForeignTax").text().set(*item.mForeignTax);
-            if (item.mFTCountryID)  item_node.append_child("FTCountryID").text().set(item.mFTCountryID->c_str());
+            if (item.mForeignTaxAmount)   item_node.append_child("ForeignTax").text().set(*item.mForeignTaxAmount);
+            if (item.mForeignCountryID)  item_node.append_child("FTCountryID").text().set(item.mForeignCountryID->c_str());
         }
 
         if (item.mSecurities) {
@@ -202,7 +202,7 @@ pugi::xml_document XmlGenerator::generate_doh_kdvp_xml(const DohKDVP_Data& data,
     decl.append_attribute("encoding") = "UTF-8";
 
     auto envelope = doc.append_child("Envelope");
-    envelope.append_attribute("xmlns").set_value(NS_DOH);
+    envelope.append_attribute("xmlns").set_value(NS_DOH_KDVP);
     envelope.append_attribute("xmlns:edp").set_value(NS_EDP);
 
     this->append_edp_header(envelope, tp, data.mDocID);
@@ -218,7 +218,7 @@ pugi::xml_document XmlGenerator::generate_doh_kdvp_xml(const DohKDVP_Data& data,
     return doc;
 }
 
-void XmlGenerator::parse_json(std::map<std::string, std::vector<Transaction>>& aTransactions, TransactionType aType, const nlohmann::json& aJsonData) {
+void XmlGenerator::parse_json(Transactions& aTransactions, TransactionType aType, const nlohmann::json& aJsonData) {
     // Extract gains_and_losses_section
     auto& gains_section = aJsonData["gains_and_losses_section"];
 
@@ -226,55 +226,22 @@ void XmlGenerator::parse_json(std::map<std::string, std::vector<Transaction>>& a
         throw std::runtime_error("Invalid JSON: 'gains_and_losses_section' must be an array");
     }
 
-    for (const auto& entry : gains_section) {
-        if (!entry.contains("transactions") || !entry["transactions"].is_array()) continue;
+    auto& income_section = aJsonData["income_section"];
 
-        // Go just with desired type
-        if (string_to_asset_type(entry["asset_type"]) != aType) continue;
-
-        for (const auto& tx : entry["transactions"]) {
-            if (!tx.contains("isin") || !tx.contains("transaction_date") ||
-                !tx.contains("transaction_type") || !tx.contains("amount_of_units")) {
-                continue;  // Skip invalid transactions
-            }
-
-            std::string isin_str = tx["isin"];
-            std::string isin_code;
-            std::string name;
-            parse_isin(isin_str, isin_code, name);
-
-            Transaction t;
-            t.mDate = parse_date(tx["transaction_date"].get<std::string>());
-            t.mType = tx["transaction_type"].get<std::string>();
-            t.mQuantity = tx["amount_of_units"].get<double>();
-            t.mIsin = isin_code;
-            t.mIsinName = name;
-
-            // Get unit_price: prefer "unit_price", fallback to "market_value" / quantity
-            if (tx.contains("unit_price")) {
-                t.mUnitPrice = tx["unit_price"].get<double>();
-            } 
-            else if (tx.contains("market_value")) {
-                double market_value = tx["market_value"].get<double>();
-                t.mUnitPrice = (t.mQuantity != 0.0) ? market_value / t.mQuantity : 0.0;
-            } 
-            else {
-                continue;  // Skip if no price info
-            }
-
-            aTransactions[isin_code].push_back(t);
-        }
+    if (!income_section.is_array()) {
+        throw std::runtime_error("Invalid JSON: 'income_section' must be an array");
     }
+
+    parse_gains_section(gains_section, aType, aTransactions.mGains);
 }
 
-DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<Transaction>>& aTransactions, FormData& aFormData) {
-
+DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<GainTransaction>>& aTransactions, FormData& aFormData) {
     DohKDVP_Data data(aFormData);
 
     int item_id = 1;
     for (auto& [mIsin, txs] : aTransactions) {
         // Sort transactions by date
-        std::sort(txs.begin(), txs.end(), [](const Transaction& a, const Transaction& b) {
+        std::sort(txs.begin(), txs.end(), [](const GainTransaction& a, const GainTransaction& b) {
             return a.mDate < b.mDate;
         });
 
@@ -285,7 +252,7 @@ DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<T
         item.mSecurities = SecuritiesPLVP{};
         item.mSecurities->mISIN = mIsin;
         // item.Securities->mCode = mIsin;  // Reuse as code if needed -> ticker, if we have isin we can skip this
-        item.mSecurities->mName = txs[0].mIsinName;       
+        item.mSecurities->mName = txs[0].mIsinName;       // we take firs element name, as we group by isin and all elements have same isin
 
         // Build rows with running stock (mF8)
         double running_quantity = 0.0;
