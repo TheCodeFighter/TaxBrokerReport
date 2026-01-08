@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iostream>
 #include <fstream>
+#include <set>
 
 #include "xml_generator.hpp"
 #include "helper.hpp"
@@ -108,7 +109,7 @@ TEST(XmlGenerator, ParseJson) {
 
     Transactions transactions;
 
-    auto types = std::vector<TransactionType>{TransactionType::Funds};
+    auto types = std::set<TransactionType>{TransactionType::Funds};
 
     XmlGenerator::parse_json(transactions, types, json_data);
 
@@ -134,7 +135,7 @@ TEST(XmlGenerator, PreTest) {
     nlohmann::json json_data;
     json_file >> json_data;
 
-    auto types = std::vector<TransactionType>{TransactionType::Funds, TransactionType::Equities};
+    auto types = std::set<TransactionType>{TransactionType::Funds, TransactionType::Equities};
 
     XmlGenerator::parse_json(transactions, types, json_data);
 

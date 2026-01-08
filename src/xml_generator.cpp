@@ -267,7 +267,7 @@ pugi::xml_document XmlGenerator::generate_doh_div_xml(const DohDiv_Data& data, c
     return doc;
 }
 
-void XmlGenerator::parse_json(Transactions& aTransactions, std::vector<TransactionType> aTypes, const nlohmann::json& aJsonData) {
+void XmlGenerator::parse_json(Transactions& aTransactions, std::set<TransactionType> aTypes, const nlohmann::json& aJsonData) {
     // Extract gains_and_losses_section
     auto& gains_section = aJsonData["gains_and_losses_section"];
 
