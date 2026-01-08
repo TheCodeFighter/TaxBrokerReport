@@ -267,7 +267,7 @@ pugi::xml_document XmlGenerator::generate_doh_div_xml(const DohDiv_Data& data, c
     return doc;
 }
 
-void XmlGenerator::parse_json(Transactions& aTransactions, TransactionType aType, const nlohmann::json& aJsonData) {
+void XmlGenerator::parse_json(Transactions& aTransactions, std::set<TransactionType> aTypes, const nlohmann::json& aJsonData) {
     // Extract gains_and_losses_section
     auto& gains_section = aJsonData["gains_and_losses_section"];
 
@@ -281,7 +281,7 @@ void XmlGenerator::parse_json(Transactions& aTransactions, TransactionType aType
         throw std::runtime_error("Invalid JSON: 'income_section' must be an array");
     }
 
-    parse_gains_section(gains_section, aType, aTransactions.mGains);
+    parse_gains_section(gains_section, aTypes, aTransactions.mGains);
     parse_income_section(income_section, aTransactions.mDividends);
 }
 

@@ -5,6 +5,7 @@
 #include <optional>
 #include <nlohmann/json.hpp>
 #include <pugixml.hpp>
+#include <set>
 
 
 enum class InventoryListType {
@@ -181,7 +182,7 @@ struct Transactions {
 class XmlGenerator {
 public:
     // JSON parsing
-    static void parse_json(Transactions& aTransactions, TransactionType aType, const nlohmann::json& aJsonData);
+    static void parse_json(Transactions& aTransactions, std::set<TransactionType> aTypes, const nlohmann::json& aJsonData);
     
     // XML generation
     // KDVP

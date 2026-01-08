@@ -47,12 +47,12 @@ std::string to_xml_decimal(double value, int precision) {
     return oss.str();
 }
 
-void parse_gains_section(const nlohmann::json& gains_section, TransactionType aType, std::map<std::string, std::vector<GainTransaction>>& aTransactions) {
+void parse_gains_section(const nlohmann::json& gains_section, std::set<TransactionType> aTypes, std::map<std::string, std::vector<GainTransaction>>& aTransactions) {
     for (const auto& entry : gains_section) {
         if (!entry.contains("transactions") || !entry["transactions"].is_array()) continue;
 
-        // Go just with desired type
-        if (string_to_asset_type(entry["asset_type"]) != aType) continue;
+        // Go just with desired types
+        if (std::find(aTypes.begin(), aTypes.end(), string_to_asset_type(entry["asset_type"])) == aTypes.end()) continue;
 
         for (const auto& tx : entry["transactions"]) {
             if (!tx.contains("isin") || !tx.contains("transaction_date") ||
