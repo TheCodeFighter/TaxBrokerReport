@@ -97,6 +97,24 @@ struct KDVPItem {
     // add Short, WithContract, CapitalReduction when needed
 };
 
+struct DivPayer {
+    std::optional<std::string> mTaxID;
+    std::string                mIsin;
+    std::optional<std::string> mName;
+    std::optional<std::string> mAddress;
+    std::optional<std::string> mCountryCode;
+};
+
+struct DivItem {
+    std::string                mDate;
+    DivPayer                   mPayer;
+    std::string                mType{"1"}; // 1 -regular dividend, 2 - non physical person, 3 - loan gains distribution (look on furs instructions at "vrsta dividende")
+    double                     mGrossIncome;
+    std::optional<double>      mWithholdingTax;
+    std::optional<std::string> mSourceCountryCode;
+    std::optional<bool>        mForeignTaxPaid{true};   // for now we will assume its always true, maybe this will be gui user input // TODO: check
+};
+
 struct FormData {
     DocWorkflowID                     mDocID{DocWorkflowID::Original};
     int                               mYear{};
@@ -111,6 +129,15 @@ struct DohKDVP_Data : public FormData {
     DohKDVP_Data() = default;
 
     explicit DohKDVP_Data(const FormData& fd)
+        : FormData(fd) {}
+};
+
+struct DohDiv_Data : public FormData {
+    std::vector<DivItem> mItems;
+
+    DohDiv_Data() = default;
+
+    explicit DohDiv_Data(const FormData& fd)
         : FormData(fd) {}
 };
 
@@ -135,8 +162,20 @@ struct GainTransaction {
     double mQuantity = 0.0;
     double mUnitPrice = 0.0;
 };
+
+// TODO: add in readme warning that country, address of payer and proof of tax witholding must be provided by user
+struct DivTransaction {
+    std::string mDate;
+    std::string mIsin;
+    std::string mIsinName;
+    std::string mCountryName;
+    double mGrossIncome = 0.0;
+    double mWitholdTax = 0.0;
+};
+
 struct Transactions {
     std::map<std::string, std::vector<GainTransaction>> mGains;
+    std::map<std::string, std::vector<DivTransaction>>  mDividends;
 };
 
 class XmlGenerator {
@@ -148,6 +187,10 @@ public:
     // KDVP
     static DohKDVP_Data prepare_kdvp_data(std::map<std::string, std::vector<GainTransaction>>& aTransactions, FormData& aFormData);
     pugi::xml_document generate_doh_kdvp_xml(const DohKDVP_Data& data, const TaxPayer& tp);
+    
+    // Div
+    static DohDiv_Data prepare_div_data(std::map<std::string, std::vector<DivTransaction>>& aTransactions, FormData& aFormData);
+    pugi::xml_document generate_doh_div_xml(const DohDiv_Data& data, const TaxPayer& tp);
 
     
 private:
@@ -155,6 +198,8 @@ private:
     static void append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp);
     
     static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
+    static pugi::xml_node generate_doh_div(pugi::xml_node parent, const DohDiv_Data& data);
+
     static std::string getDocWorkflowIDString(DocWorkflowID id);
     
     static std::string gain_type_to_string(GainType t);

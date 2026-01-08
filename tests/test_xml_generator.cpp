@@ -24,6 +24,7 @@ const std::filesystem::path jsonTmpPath = projectRoot / "tmp" / "generated_test_
 const std::filesystem::path jsonPath = projectRoot / "tests" / "testData" / "expected_test_output.json";
 const std::filesystem::path xmlPath = projectRoot / "tmp" / "generated_test_output.xml";
 const std::filesystem::path xsdDoh_KDVP_Path = projectRoot / "resources" / "xml" / "edavk" / "schemas" / "Doh_KDVP_9.xsd";
+const std::filesystem::path xsdDoh_Div_Path = projectRoot / "resources" / "xml" / "edavk" / "schemas" / "Doh_Div_3.xsd";
 const std::filesystem::path logXmlValidationPath = projectRoot / "tmp" / "xml_validation_log.txt";
 
 
@@ -180,5 +181,23 @@ TEST(XmlGenerator, GenerateKdvpXml) {
 #endif
 }
 
+// Dividend test
+TEST(XmlGenerator, GenerateDivXml) {
+    DohDiv_Data data = XmlGenerator::prepare_div_data(transactions.mDividends, formData);
 
+    // Generate XML
+    auto generator = XmlGenerator{};
+    pugi::xml_document doc = generator.generate_doh_div_xml(data, taxPayer);
+
+    auto libxmlDoc = convertPugiToLibxml(doc);
+    ASSERT_TRUE(libxmlDoc);
+
+    bool isValid = validateXml(libxmlDoc.get(), xsdDoh_Div_Path);
+    ASSERT_TRUE(isValid) << "Generated XML document does not conform to XSD schema";
+
+#if SAVE_GENERATED_XML_FILES
+    std::filesystem::path output_xml = projectRoot / "tmp" / "test.xml";
+    ASSERT_TRUE(doc.save_file(output_xml.c_str())) << "Failed to save generated XML";
+#endif
+}
 

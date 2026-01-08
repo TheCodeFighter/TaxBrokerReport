@@ -5,6 +5,7 @@
 
 namespace {
     constexpr auto NS_DOH_KDVP = "http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd";
+    constexpr auto NS_DOH_DIV = "http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd";
     constexpr auto NS_EDP = "http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd";
 }
 
@@ -33,6 +34,33 @@ std::string XmlGenerator::inventory_type_to_string(InventoryListType t) {
         case InventoryListType::PLVPZOK:     return "PLVPZOK";
     }
     return "PLVP";
+}
+
+pugi::xml_node XmlGenerator::generate_doh_div(pugi::xml_node parent, const DohDiv_Data& data) {
+    auto dohDiv = parent.append_child("Doh_Div");
+
+    dohDiv.append_child("Period").text().set(std::to_string(data.mYear).c_str());
+    if (data.mEmail) dohDiv.append_child("EmailAddress").text().set(data.mEmail->c_str());
+    if (data.mTelephoneNumber) dohDiv.append_child("PhoneNumber").text().set(data.mTelephoneNumber->c_str());
+    dohDiv.append_child("IsResident").text().set(data.mIsResident ? "true" : "false");
+
+    for (const auto& item : data.mItems) {
+        auto dividend = parent.append_child("Dividend");
+
+        dividend.append_child("Date").text().set(item.mDate.c_str());
+        dividend.append_child("PayerIdentificationNumber").text().set(item.mPayer.mIsin.c_str());
+        if (item.mPayer.mName) dividend.append_child("PayerName").text().set(item.mPayer.mName->c_str());
+        if (item.mPayer.mAddress) dividend.append_child("PayerAddress").text().set(item.mPayer.mAddress->c_str());
+        if (item.mPayer.mCountryCode) dividend.append_child("PayerCountry").text().set(item.mPayer.mCountryCode->c_str());
+        
+        dividend.append_child("Type").text().set(item.mType.c_str());
+        dividend.append_child("Value").text().set(to_xml_decimal(item.mGrossIncome, 2).c_str());   // no ptr for no optional
+        if (item.mWithholdingTax) dividend.append_child("ForeignTax").text().set(to_xml_decimal(item.mWithholdingTax.value(), 2).c_str());
+        if (item.mPayer.mCountryCode) dividend.append_child("SourceCountry").text().set(item.mPayer.mCountryCode->c_str());
+        if (item.mForeignTaxPaid) dividend.append_child("ReliefStatement").text().set(item.mForeignTaxPaid ? "true" : "false");
+    }
+
+    return dohDiv;
 }
 
 pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data) {
@@ -218,6 +246,27 @@ pugi::xml_document XmlGenerator::generate_doh_kdvp_xml(const DohKDVP_Data& data,
     return doc;
 }
 
+pugi::xml_document XmlGenerator::generate_doh_div_xml(const DohDiv_Data& data, const TaxPayer& tp) {
+    pugi::xml_document doc;
+    auto decl = doc.prepend_child(pugi::node_declaration);
+    decl.append_attribute("version") = "1.0";
+    decl.append_attribute("encoding") = "UTF-8";
+
+    auto envelope = doc.append_child("Envelope");
+    envelope.append_attribute("xmlns").set_value(NS_DOH_DIV);
+    envelope.append_attribute("xmlns:edp").set_value(NS_EDP);
+
+    this->append_edp_header(envelope, tp, data.mDocID);
+
+    envelope.append_child("edp:Signatures");
+
+    auto body = envelope.append_child("body");
+
+    generate_doh_div(body, data);
+
+    return doc;
+}
+
 void XmlGenerator::parse_json(Transactions& aTransactions, TransactionType aType, const nlohmann::json& aJsonData) {
     // Extract gains_and_losses_section
     auto& gains_section = aJsonData["gains_and_losses_section"];
@@ -233,6 +282,7 @@ void XmlGenerator::parse_json(Transactions& aTransactions, TransactionType aType
     }
 
     parse_gains_section(gains_section, aType, aTransactions.mGains);
+    parse_income_section(income_section, aTransactions.mDividends);
 }
 
 DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<GainTransaction>>& aTransactions, FormData& aFormData) {
@@ -290,6 +340,40 @@ DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<G
 
         // Only add if there are rows
         if (!item.mSecurities->mRows.empty()) {
+            data.mItems.push_back(item);
+        }
+    }
+
+    return data;
+}
+
+DohDiv_Data XmlGenerator::prepare_div_data(std::map<std::string, std::vector<DivTransaction>>& aTransactions, FormData& aFormData) {
+    DohDiv_Data data(aFormData);
+
+    for (auto& [mIsin, txs] : aTransactions) {
+        // Sort transactions by date
+        std::sort(txs.begin(), txs.end(), [](const DivTransaction& a, const DivTransaction& b) {
+            return a.mDate < b.mDate;
+        });
+
+        DivItem item;
+
+        for (const auto& tx : txs) {
+            item.mDate = tx.mDate;
+
+            item.mPayer.mIsin = mIsin;
+            item.mPayer.mName = tx.mIsinName;
+            // TODO: make country dictionary: from county name to country code
+            // std::string country_code = getCountryCode(txs[0].mCountryName);
+            // if (country_code) item.mPayer.mCountryCode = country_code;
+            // if (country_code) item.mPayer.mSourceCountryCode = country_code; // TODO: after function is made move it out of payer part
+
+            item.mGrossIncome = tx.mGrossIncome;
+            item.mWithholdingTax = tx.mWitholdTax;
+
+            // mType remains default for physical person dividend ("1")
+            // mForeignTaxPaid remains default true
+
             data.mItems.push_back(item);
         }
     }

@@ -18,3 +18,5 @@ std::string to_xml_decimal(double value, int precision);
 // Parse gains and losses section
 void parse_gains_section(const nlohmann::json& gains_section, TransactionType aType, std::map<std::string, std::vector<GainTransaction>>& aTransactions);
 
+// Parse income (dividend) section
+void parse_income_section(const nlohmann::json& div_section, std::map<std::string, std::vector<DivTransaction>>& aTransactions);

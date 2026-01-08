@@ -88,3 +88,37 @@ void parse_gains_section(const nlohmann::json& gains_section, TransactionType aT
         }
     }
 }
+
+void parse_income_section(const nlohmann::json& income_section, std::map<std::string, std::vector<DivTransaction>>& aTransactions) {
+    for (const auto& entry : income_section) {
+        if (!entry.contains("transactions") || !entry["transactions"].is_array()) continue;
+
+
+
+        for (const auto& tx : entry["transactions"]) {
+            if (!tx.contains("isin") || 
+                !tx.contains("value_date") ||
+                !tx.contains("transaction_type") || 
+                !tx.contains("amount_of_units") ||
+                tx["transaction_type"] != "Dividend") {
+                    continue;  // Skip invalid transactions
+            }
+
+            std::string isin_str = tx["isin"];
+            std::string isin_code;
+            std::string name;
+            parse_isin(isin_str, isin_code, name);
+
+            DivTransaction t;
+            t.mDate = parse_date(tx["value_date"].get<std::string>());
+            t.mIsin = isin_code;
+            t.mIsinName = name;
+            t.mGrossIncome = tx["gross_income"].get<double>();
+            t.mWitholdTax = tx["withholding_tax"].get<double>();
+            t.mCountryName = entry["country"].get<std::string>();
+
+
+            aTransactions[isin_code].push_back(t);
+        }
+    }
+}
