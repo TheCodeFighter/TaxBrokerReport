@@ -46,3 +46,45 @@ std::string to_xml_decimal(double value, int precision) {
     oss << std::fixed << std::setprecision(precision) << value;
     return oss.str();
 }
+
+void parse_gains_section(const nlohmann::json& gains_section, TransactionType aType, std::map<std::string, std::vector<GainTransaction>>& aTransactions) {
+    for (const auto& entry : gains_section) {
+        if (!entry.contains("transactions") || !entry["transactions"].is_array()) continue;
+
+        // Go just with desired type
+        if (string_to_asset_type(entry["asset_type"]) != aType) continue;
+
+        for (const auto& tx : entry["transactions"]) {
+            if (!tx.contains("isin") || !tx.contains("transaction_date") ||
+                !tx.contains("transaction_type") || !tx.contains("amount_of_units")) {
+                continue;  // Skip invalid transactions
+            }
+
+            std::string isin_str = tx["isin"];
+            std::string isin_code;
+            std::string name;
+            parse_isin(isin_str, isin_code, name);
+
+            GainTransaction t;
+            t.mDate = parse_date(tx["transaction_date"].get<std::string>());
+            t.mType = tx["transaction_type"].get<std::string>();
+            t.mQuantity = tx["amount_of_units"].get<double>();
+            t.mIsin = isin_code;
+            t.mIsinName = name;
+
+            // Get unit_price: prefer "unit_price", fallback to "market_value" / quantity
+            if (tx.contains("unit_price")) {
+                t.mUnitPrice = tx["unit_price"].get<double>();
+            } 
+            else if (tx.contains("market_value")) {
+                double market_value = tx["market_value"].get<double>();
+                t.mUnitPrice = (t.mQuantity != 0.0) ? market_value / t.mQuantity : 0.0;
+            } 
+            else {
+                continue;  // Skip if no price info
+            }
+
+            aTransactions[isin_code].push_back(t);
+        }
+    }
+}
