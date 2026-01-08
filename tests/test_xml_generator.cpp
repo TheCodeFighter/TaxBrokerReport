@@ -108,7 +108,9 @@ TEST(XmlGenerator, ParseJson) {
 
     Transactions transactions;
 
-    XmlGenerator::parse_json(transactions, TransactionType::Funds, json_data);
+    auto types = std::vector<TransactionType>{TransactionType::Funds};
+
+    XmlGenerator::parse_json(transactions, types, json_data);
 
     auto& tx = transactions.mGains;
 
@@ -132,8 +134,9 @@ TEST(XmlGenerator, PreTest) {
     nlohmann::json json_data;
     json_file >> json_data;
 
+    auto types = std::vector<TransactionType>{TransactionType::Funds, TransactionType::Equities};
 
-    XmlGenerator::parse_json(transactions, TransactionType::Equities, json_data);
+    XmlGenerator::parse_json(transactions, types, json_data);
 
     ASSERT_FALSE(transactions.mGains.empty()) << "No transactions parsed";
 }
