@@ -40,7 +40,7 @@ pugi::xml_document generateDummyXml(void) {
     
     data.mYear = 2025;
     data.mIsResident = true;
-    data.mDocID = DocWorkflowID::Original;
+    data.mDocID = FormType::Original;
 
     KDVPItem item;
     item.mType = InventoryListType::PLVP;
@@ -144,7 +144,7 @@ TEST(XmlGenerator, PreTest) {
 
 //// This will be selected by user in gui or cli
 FormData formData{
-    .mDocID = DocWorkflowID::Original,
+    .mDocID = FormType::Original,
     .mYear = 2025,
     .mIsResident = true,
     .mTelephoneNumber = std::optional<std::string>("012345678"),

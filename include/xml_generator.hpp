@@ -35,7 +35,7 @@ enum class TransactionType {
     None
 };
 
-enum class DocWorkflowID {
+enum class FormType {
     Original,
     SelfReport
 };
@@ -117,11 +117,11 @@ struct DivItem {
 };
 
 struct FormData {
-    DocWorkflowID                     mDocID{DocWorkflowID::Original};
-    int                               mYear{};
-    bool                              mIsResident{true};
-    std::optional<std::string>        mTelephoneNumber;
-    std::optional<std::string>        mEmail;
+    FormType                   mDocID{FormType::Original};
+    int                        mYear{};
+    bool                       mIsResident{true};
+    std::optional<std::string> mTelephoneNumber;
+    std::optional<std::string> mEmail;
 };
 
 struct DohKDVP_Data : public FormData {
@@ -153,6 +153,11 @@ struct TaxPayer {
     std::optional<std::string> mPostName{std::nullopt};
     std::optional<std::string> mBirthDate{std::nullopt};    
     bool        mResident{true};
+};
+
+struct FormHeaderData {
+    FormType mDocWorkflowID{FormType::Original};
+    TaxPayer      mTaxPayer;
 };
 
 struct GainTransaction {
@@ -195,13 +200,11 @@ public:
 
     
 private:
-    void append_edp_header(pugi::xml_node envelope, const TaxPayer& tp, const DocWorkflowID docWorkflowID);
+    void append_edp_header(pugi::xml_node envelope, FormHeaderData headerData);
     static void append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp);
     
     static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
     static pugi::xml_node generate_doh_div(pugi::xml_node parent, const DohDiv_Data& data);
-
-    static std::string getDocWorkflowIDString(DocWorkflowID id);
     
     static std::string gain_type_to_string(GainType t);
     static std::string inventory_type_to_string(InventoryListType t);

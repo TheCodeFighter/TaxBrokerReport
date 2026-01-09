@@ -17,13 +17,6 @@ std::string XmlGenerator::gain_type_to_string(GainType t) {
     return "H";
 }
 
-std::string XmlGenerator::getDocWorkflowIDString(DocWorkflowID id) {
-    if (id == DocWorkflowID::Original)
-        return "O";
-
-    return "I";
-}
-
 std::string XmlGenerator::inventory_type_to_string(InventoryListType t) {
     switch (t) {
         case InventoryListType::PLVP:        return "PLVP";
@@ -66,9 +59,8 @@ pugi::xml_node XmlGenerator::generate_doh_div(pugi::xml_node parent, const DohDi
 pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data) {
     auto kdvp = parent.append_child("KDVP");
 
-    // 1. Workflow podatki (NUJNO NA ZAČETKU)
-    kdvp.append_child("DocumentWorkflowID").text().set(XmlGenerator::getDocWorkflowIDString(data.mDocID).c_str());
-    kdvp.append_child("DocumentWorkflowName").text().set("Doh_KDVP");
+    kdvp.append_child("DocumentWorkflowID").text().set(form_type_to_string_code(data.mDocID).c_str());
+    kdvp.append_child("DocumentWorkflowName").text().set(form_type_to_string(data.mDocID).c_str());
 
     kdvp.append_child("Year").text().set(std::to_string(data.mYear).c_str());
 
@@ -212,15 +204,15 @@ void XmlGenerator::append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp
             .set(tp.mResident ? "true" : "false");
 }
 
-void XmlGenerator::append_edp_header(pugi::xml_node envelope, const TaxPayer& tp, const DocWorkflowID docWorkflowID)
+void XmlGenerator::append_edp_header(pugi::xml_node envelope, FormHeaderData headerData)
 {
     auto header = envelope.append_child("edp:Header");
 
-    this->append_edp_taxpayer(header, tp);
+    this->append_edp_taxpayer(header, headerData.mTaxPayer);
 
     auto workflow = header.append_child("edp:Workflow");
-    workflow.append_child("edp:DocumentWorkflowID").text().set(XmlGenerator::getDocWorkflowIDString(docWorkflowID).c_str());
-    workflow.append_child("edp:DocumentWorkflowName").text().set("Doh_KDVP");   // TODO: different for different forms
+    workflow.append_child("edp:DocumentWorkflowID").text().set(form_type_to_string_code(headerData.mDocWorkflowID).c_str());
+    workflow.append_child("edp:DocumentWorkflowName").text().set(form_type_to_string(headerData.mDocWorkflowID).c_str());
 }
 
 pugi::xml_document XmlGenerator::generate_doh_kdvp_xml(const DohKDVP_Data& data, const TaxPayer& tp) {
@@ -233,7 +225,12 @@ pugi::xml_document XmlGenerator::generate_doh_kdvp_xml(const DohKDVP_Data& data,
     envelope.append_attribute("xmlns").set_value(NS_DOH_KDVP);
     envelope.append_attribute("xmlns:edp").set_value(NS_EDP);
 
-    this->append_edp_header(envelope, tp, data.mDocID);
+    FormHeaderData headerData {
+        .mDocWorkflowID = data.mDocID,
+        .mTaxPayer = tp
+    };
+
+    this->append_edp_header(envelope, headerData);
 
     envelope.append_child("edp:Signatures");
 
@@ -256,7 +253,12 @@ pugi::xml_document XmlGenerator::generate_doh_div_xml(const DohDiv_Data& data, c
     envelope.append_attribute("xmlns").set_value(NS_DOH_DIV);
     envelope.append_attribute("xmlns:edp").set_value(NS_EDP);
 
-    this->append_edp_header(envelope, tp, data.mDocID);
+    FormHeaderData headerData {
+        .mDocWorkflowID = data.mDocID,
+        .mTaxPayer = tp
+    };
+
+    this->append_edp_header(envelope, headerData);
 
     envelope.append_child("edp:Signatures");
 

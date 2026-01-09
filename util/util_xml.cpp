@@ -39,7 +39,19 @@ TransactionType string_to_asset_type(std::string mType) {
     return TransactionType::None;
 }
 
+// Helper to get string from FormType enum
+std::string form_type_to_string(FormType t) {
+    if (t == FormType::Original) return "Original";
+    if (t == FormType::SelfReport) return "SelfReport";
+    return "Unknown";
+}
 
+// Helper to get string code from FormType enum
+std::string form_type_to_string_code(FormType t) {
+    if (t == FormType::Original) return "O";
+    if (t == FormType::SelfReport) return "S";
+    return "Unknown";
+}
 
 std::string to_xml_decimal(double value, int precision) {
     std::ostringstream oss;

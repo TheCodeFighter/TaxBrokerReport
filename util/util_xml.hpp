@@ -14,6 +14,8 @@ std::string parse_date(const std::string& date_str);
 void parse_isin(const std::string& isin_str, std::string& code, std::string& name);
 
 TransactionType string_to_asset_type(std::string mType);
+std::string form_type_to_string(FormType t);
+std::string form_type_to_string_code(FormType t);
 std::string to_xml_decimal(double value, int precision);
 
 // Parse gains and losses section
