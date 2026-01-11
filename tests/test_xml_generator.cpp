@@ -139,7 +139,8 @@ TEST(XmlGenerator, PreTest) {
 
     XmlGenerator::parse_json(transactions, types, json_data);
 
-    ASSERT_FALSE(transactions.mGains.empty()) << "No transactions parsed";
+    ASSERT_FALSE(transactions.mGains.empty()) << "No Gain transactions parsed";
+    ASSERT_FALSE(transactions.mIncome.mDivTransactions.empty()) << "No Dividend transactions parsed";
 }
 
 //// This will be selected by user in gui or cli
@@ -187,7 +188,7 @@ TEST(XmlGenerator, GenerateKdvpXml) {
 
 // Dividend test
 TEST(XmlGenerator, GenerateDivXml) {
-    DohDiv_Data data = XmlGenerator::prepare_div_data(transactions.mDividends, formData);
+    DohDiv_Data data = XmlGenerator::prepare_div_data(transactions.mIncome.mDivTransactions, formData);
 
     // Generate XML
     auto generator = XmlGenerator{};

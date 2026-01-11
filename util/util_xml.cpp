@@ -1,6 +1,8 @@
 #include "util_xml.hpp"
 #include <algorithm>
 
+static void parse_div_section(const nlohmann::json& div_section,  std::map<std::string, std::vector<DivTransaction>>& aTransactions, std::string country_name);
+
 // Helper function to parse date from DD.MM.YYYY to YYYY-MM-DD
 std::string parse_date(const std::string& date_str) {
     if (date_str.empty()) return "";
@@ -101,36 +103,34 @@ void parse_gains_section(const nlohmann::json& gains_section, std::set<Transacti
     }
 }
 
-void parse_income_section(const nlohmann::json& income_section, std::map<std::string, std::vector<DivTransaction>>& aTransactions) {
+void parse_income_section(const nlohmann::json& income_section, IncomeTransactions& aTransactions) {
     for (const auto& entry : income_section) {
         if (!entry.contains("transactions") || !entry["transactions"].is_array()) continue;
 
 
-
-        for (const auto& tx : entry["transactions"]) {
-            if (!tx.contains("isin") || 
-                !tx.contains("value_date") ||
-                !tx.contains("transaction_type") || 
-                !tx.contains("amount_of_units") ||
-                tx["transaction_type"] != "Dividend") {
-                    continue;  // Skip invalid transactions
-            }
-
-            std::string isin_str = tx["isin"];
-            std::string isin_code;
-            std::string name;
-            parse_isin(isin_str, isin_code, name);
-
-            DivTransaction t;
-            t.mDate = parse_date(tx["value_date"].get<std::string>());
-            t.mIsin = isin_code;
-            t.mIsinName = name;
-            t.mGrossIncome = tx["gross_income"].get<double>();
-            t.mWitholdTax = tx["withholding_tax"].get<double>();
-            t.mCountryName = entry["country"].get<std::string>();
-
-
-            aTransactions[isin_code].push_back(t);
+        if (entry["asset_type"] == "Equities" || entry["asset_type"] == "Funds") {
+            parse_div_section(entry, aTransactions.mDivTransactions, entry["country"].get<std::string>());
         }
+
+    }
+}
+
+static void parse_div_section(const nlohmann::json& div_section,  std::map<std::string, std::vector<DivTransaction>>& aTransactions, std::string country_name) {
+    for (const auto& tx : div_section["transactions"]) {
+
+        std::string isin_str = tx["isin"];
+        std::string isin_code;
+        std::string name;
+        parse_isin(isin_str, isin_code, name);
+
+        DivTransaction t;
+        t.mDate = parse_date(tx["value_date"].get<std::string>());
+        t.mIsin = isin_code;
+        t.mIsinName = name;
+        t.mGrossIncome = tx["gross_income"].get<double>();
+        t.mWitholdTax = tx["withholding_tax"].get<double>();
+        t.mCountryName = country_name;
+
+        aTransactions[isin_code].push_back(t);
     }
 }

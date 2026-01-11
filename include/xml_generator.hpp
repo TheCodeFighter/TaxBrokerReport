@@ -61,7 +61,7 @@ struct InventoryRow {
     int ID{0};
     std::optional<RowPurchase> mPurchase;
     std::optional<RowSale>     mSale;
-    std::optional<double>      mF8;  // stock (can be negative) -> normaly need to be 0 or even left out
+    std::optional<double>      mF8;  // stock (can be negative) -> normally need to be 0 or even left out
 };
 
 struct SecuritiesBase {
@@ -165,8 +165,8 @@ struct GainTransaction {
     std::string mType;  // "Trading Buy" or "Trading Sell"
     std::string mIsin;
     std::string mIsinName;
-    double mQuantity = 0.0;
-    double mUnitPrice = 0.0;
+    double      mQuantity{0.0};
+    double      mUnitPrice{0.0};
 };
 
 // TODO: add in readme warning that country, address of payer and proof of tax witholding must be provided by user
@@ -175,13 +175,16 @@ struct DivTransaction {
     std::string mIsin;
     std::string mIsinName;
     std::string mCountryName;
-    double mGrossIncome = 0.0;
-    double mWitholdTax = 0.0;
+    double      mGrossIncome{0.0};
+    double      mWitholdTax{0.0};
+};
+struct IncomeTransactions {
+    std::map<std::string, std::vector<DivTransaction>> mDivTransactions;
 };
 
 struct Transactions {
     std::map<std::string, std::vector<GainTransaction>> mGains;
-    std::map<std::string, std::vector<DivTransaction>>  mDividends;
+    IncomeTransactions mIncome;
 };
 
 class XmlGenerator {

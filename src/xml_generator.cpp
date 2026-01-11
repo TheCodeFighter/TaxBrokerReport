@@ -284,7 +284,7 @@ void XmlGenerator::parse_json(Transactions& aTransactions, std::set<TransactionT
     }
 
     parse_gains_section(gains_section, aTypes, aTransactions.mGains);
-    parse_income_section(income_section, aTransactions.mDividends);
+    parse_income_section(income_section, aTransactions.mIncome);
 }
 
 DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<GainTransaction>>& aTransactions, FormData& aFormData) {

@@ -22,4 +22,4 @@ std::string to_xml_decimal(double value, int precision);
 void parse_gains_section(const nlohmann::json& gains_section, std::set<TransactionType> aTypes, std::map<std::string, std::vector<GainTransaction>>& aTransactions);
 
 // Parse income (dividend) section
-void parse_income_section(const nlohmann::json& div_section, std::map<std::string, std::vector<DivTransaction>>& aTransactions);
+void parse_income_section(const nlohmann::json& div_section, IncomeTransactions& aTransactions);
