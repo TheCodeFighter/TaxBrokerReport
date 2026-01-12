@@ -4,11 +4,15 @@
 #include <sstream>
 #include <iomanip>   
 #include <set>
+#include <chrono>
 
 #include "xml_generator.hpp"
 
 // Helper function to parse date from DD.MM.YYYY to YYYY-MM-DD
 std::string parse_date(const std::string& date_str);
+
+// Helper to calculate days between two dates in YYYY-MM-DD format
+int days_between(const std::string& from, const std::string& to);
 
 // Helper to extract ISIN code and name from "ISIN - Name" format
 void parse_isin(const std::string& isin_str, std::string& code, std::string& name);

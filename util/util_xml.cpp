@@ -20,6 +20,31 @@ std::string parse_date(const std::string& date_str) {
     return oss.str();
 }
 
+// Helper to calculate days between two dates in YYYY-MM-DD format
+int days_between(const std::string& from, const std::string& to)
+{
+    using namespace std::chrono;
+
+    auto parse = [](const std::string& s) -> sys_days {
+        int y, m, d;
+        if (std::sscanf(s.c_str(), "%d-%d-%d", &y, &m, &d) != 3)
+            throw std::invalid_argument("Invalid date format");
+
+        year_month_day ymd{
+            year{y},
+            month{static_cast<unsigned>(m)},
+            day{static_cast<unsigned>(d)}
+        };
+
+        if (!ymd.ok())
+            throw std::invalid_argument("Invalid calendar date");
+
+        return sys_days{ymd};
+    };
+
+    return (parse(to) - parse(from)).count();
+}
+
 // Helper to extract ISIN code and name from "ISIN - Name" format
 void parse_isin(const std::string& isin_str, std::string& code, std::string& name) {
     size_t dash_pos = isin_str.find(" - ");

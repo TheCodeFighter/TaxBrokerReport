@@ -380,6 +380,8 @@ DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<G
         // Build rows with running stock (mF8)
         double running_quantity = 0.0;
         int row_id = 0;
+        std::string last_buy_date;
+
         for (const auto& t : txs) {
             InventoryRow row;
             row.ID = row_id++;
@@ -394,13 +396,17 @@ DohKDVP_Data XmlGenerator::prepare_kdvp_data(std::map<std::string, std::vector<G
                 row.mPurchase->mF5 = 0.0;  // Assume no inheritance tax
                 // mF11 if needed
 
+                last_buy_date = t.mDate;
+
                 running_quantity = running_quantity + t.mQuantity;
             } else if (t.mType == "Trading Sell") {
                 row.mSale = RowSale{};
                 row.mSale->mF6 = t.mDate;
                 row.mSale->mF7 = t.mQuantity;
                 row.mSale->mF9 = t.mUnitPrice;
-                row.mSale->mF10 = true;  // losses substract gains if not bought until 30 days from loss sell pass 
+
+                // losses substract gains if not bought until 30 days from loss sell pass 
+                row.mSale->mF10 = days_between(last_buy_date, t.mDate) >= 30;  // true if bought at least 30 days before sell
 
                 running_quantity = running_quantity - t.mQuantity;
             } else {
