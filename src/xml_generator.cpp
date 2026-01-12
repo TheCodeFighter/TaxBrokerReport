@@ -1,11 +1,13 @@
 #include <iostream>
 
-#include "xml_generator.hpp"
+#include "config.hpp"
 #include "util_xml.hpp"
+#include "xml_generator.hpp"
 
 namespace {
     constexpr auto NS_DOH_KDVP = "http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd";
     constexpr auto NS_DOH_DIV = "http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd";
+    constexpr auto NS_DOH_DHO = "http://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd";
     constexpr auto NS_EDP = "http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd";
 }
 
@@ -57,7 +59,8 @@ pugi::xml_node XmlGenerator::generate_doh_div(pugi::xml_node parent, const DohDi
 }
 
 pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data) {
-    auto kdvp = parent.append_child("KDVP");
+    auto body = parent.append_child("Doh_KDVP");
+    auto kdvp = body.append_child("KDVP");
 
     kdvp.append_child("DocumentWorkflowID").text().set(form_type_to_string_code(data.mDocID).c_str());
     kdvp.append_child("DocumentWorkflowName").text().set(form_type_to_string(data.mDocID).c_str());
@@ -89,7 +92,7 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
 
     // All KDVPItem entries
     for (const auto& item : data.mItems) {
-        auto item_node = parent.append_child("KDVPItem");
+        auto item_node = body.append_child("KDVPItem");
 
         if (item.mItemID) item_node.append_child("ItemID").text().set(*item.mItemID);
         item_node.append_child("InventoryListType").text().set(inventory_type_to_string(item.mType).c_str());
@@ -143,6 +146,48 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
     }
 
     return kdvp;
+}
+
+pugi::xml_node XmlGenerator::generate_doh_dho(pugi::xml_node parent, const DohDho_Data& data) {
+    auto dho = parent.append_child("Doh_DHO");
+
+    auto dhoTaxPayerInfo = dho.append_child("Doh_DHO_TaxPayerData");
+    if (data.mEmail) dhoTaxPayerInfo.append_child("Email").text().set(data.mEmail->c_str());
+    if (data.mTelephoneNumber) dhoTaxPayerInfo.append_child("PhoneNumber").text().set(data.mTelephoneNumber->c_str());
+    dhoTaxPayerInfo.append_child("SelfReport").text().set("false"); // For now we assume we have original, so selfreport is therefore false
+    dhoTaxPayerInfo.append_child("IsResident").text().set(data.mIsResident ? "true" : "false");
+
+    double totalAmount = 0;
+    double totalWitholdTax = 0;
+
+    for (const auto& item : data.mItems) {
+        auto dhoItem = dho.append_child("Doh_DHO_InterestEarned");
+        
+        // Insert Trade Republic data
+        if (item.mPayer == DhoPayer::TradeRepublic) {
+            dhoItem.append_child("IDeu").text().set(TRADE_REPUBLIC_DATA.mTaxNumber.data());
+            dhoItem.append_child("Title").text().set(TRADE_REPUBLIC_DATA.mName.data());
+            dhoItem.append_child("Address").text().set(TRADE_REPUBLIC_DATA.mAddress.data());
+            dhoItem.append_child("PayerCountryCode").text().set(TRADE_REPUBLIC_DATA.mCountryCode.data());
+            dhoItem.append_child("PayerCountryName").text().set(TRADE_REPUBLIC_DATA.mCountry.data());
+            dhoItem.append_child("InterestType").text().set(TRADE_REPUBLIC_DATA.mInterestsType.data());
+            dhoItem.append_child("InterestEarned").text().set(to_xml_decimal(item.mAmount, 0).c_str());
+            dhoItem.append_child("ForeignTaxPaid").text().set(to_xml_decimal(item.mWitholdTax, 0).c_str());
+            dhoItem.append_child("SourceCountryCode").text().set(TRADE_REPUBLIC_DATA.mCountryCode.data());
+            dhoItem.append_child("SourceCountryName").text().set(TRADE_REPUBLIC_DATA.mCountry.data());    
+        }
+
+        // for now we have just TR, so no need for other payer in this scope
+        totalAmount += item.mAmount;
+        totalWitholdTax += item.mWitholdTax;
+    }
+
+    auto dhoTotal = dho.append_child("Doh_DHO_Totals");
+    dhoTotal.append_child("TotalInterestEarned").text().set(to_xml_decimal(totalAmount, 0).c_str());
+    dhoTotal.append_child("TotalForeignTaxPaid").text().set(to_xml_decimal(totalWitholdTax, 0).c_str());
+    dhoTotal.append_child("Year").text().set(std::to_string(data.mYear).c_str());
+
+    return dho;
 }
 
 void XmlGenerator::append_edp_taxpayer(pugi::xml_node header, const TaxPayer& tp)
@@ -236,9 +281,8 @@ pugi::xml_document XmlGenerator::generate_doh_kdvp_xml(const DohKDVP_Data& data,
 
     auto body = envelope.append_child("body");
     body.append_child("edp:bodyContent");
-    auto doh = body.append_child("Doh_KDVP");
 
-    generate_doh_kdvp(doh, data);
+    generate_doh_kdvp(body, data);
 
     return doc;
 }
@@ -265,6 +309,33 @@ pugi::xml_document XmlGenerator::generate_doh_div_xml(const DohDiv_Data& data, c
     auto body = envelope.append_child("body");
 
     generate_doh_div(body, data);
+
+    return doc;
+}
+
+pugi::xml_document XmlGenerator::generate_doh_dho_xml(const DohDho_Data& data, const TaxPayer& tp) {
+    pugi::xml_document doc;
+    auto decl = doc.prepend_child(pugi::node_declaration);
+    decl.append_attribute("version") = "1.0";
+    decl.append_attribute("encoding") = "UTF-8";
+
+    auto envelope = doc.append_child("Envelope");
+    envelope.append_attribute("xmlns").set_value(NS_DOH_DHO);
+    envelope.append_attribute("xmlns:edp").set_value(NS_EDP);
+
+    FormHeaderData headerData {
+        .mDocWorkflowID = data.mDocID,
+        .mTaxPayer = tp
+    };
+
+    this->append_edp_header(envelope, headerData);
+
+    envelope.append_child("edp:Signatures");
+
+    auto body = envelope.append_child("body");
+    body.append_child("edp:bodyContent");
+
+    generate_doh_dho(body, data);
 
     return doc;
 }
@@ -376,6 +447,22 @@ DohDiv_Data XmlGenerator::prepare_div_data(std::map<std::string, std::vector<Div
             // mType remains default for physical person dividend ("1")
             // mForeignTaxPaid remains default true
 
+            data.mItems.push_back(item);
+        }
+    }
+
+    return data;
+}
+
+DohDho_Data XmlGenerator::prepare_dho_data(std::map<std::string, std::vector<DhoTransaction>>& aTransactions, FormData& aFormData) {
+    DohDho_Data data(aFormData);
+
+    for (auto& [payer, txs] : aTransactions) {
+        for (auto& tx : txs) {
+            DhoItem item;
+            item.mPayer = tx.mPayer == "Trade Republic" ? DhoPayer::TradeRepublic : DhoPayer::Unknown;
+            item.mAmount = tx.mGrossIncome;
+            item.mWitholdTax = tx.mWitholdingTax;
             data.mItems.push_back(item);
         }
     }

@@ -2,6 +2,7 @@
 #include <algorithm>
 
 static void parse_div_section(const nlohmann::json& div_section,  std::map<std::string, std::vector<DivTransaction>>& aTransactions, std::string country_name);
+static void parse_interests_section(const nlohmann::json& interests_section,  std::map<std::string, std::vector<DhoTransaction>>& aTransactions);
 
 // Helper function to parse date from DD.MM.YYYY to YYYY-MM-DD
 std::string parse_date(const std::string& date_str) {
@@ -112,6 +113,10 @@ void parse_income_section(const nlohmann::json& income_section, IncomeTransactio
             parse_div_section(entry, aTransactions.mDivTransactions, entry["country"].get<std::string>());
         }
 
+        if (entry["asset_type"] == "Liquidity") {
+            parse_interests_section(entry, aTransactions.mInterests);
+        }
+
     }
 }
 
@@ -133,4 +138,14 @@ static void parse_div_section(const nlohmann::json& div_section,  std::map<std::
 
         aTransactions[isin_code].push_back(t);
     }
+}
+
+static void parse_interests_section(const nlohmann::json& interests_section,  std::map<std::string, std::vector<DhoTransaction>>& aTransactions) {
+    DhoTransaction income;
+
+    income.mPayer = "Trade Republic";
+    income.mGrossIncome = interests_section["totals"]["gross_income"].get<double>();
+    income.mWitholdingTax = interests_section["totals"]["gross_income"].get<double>() - interests_section["totals"]["net_income"].get<double>();
+
+    aTransactions["Trade Republic"].push_back(income);
 }

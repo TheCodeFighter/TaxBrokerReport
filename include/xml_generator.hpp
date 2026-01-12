@@ -40,6 +40,11 @@ enum class FormType {
     SelfReport
 };
 
+enum class DhoPayer {
+    TradeRepublic,
+    Unknown
+};
+
 struct RowPurchase {
     std::optional<std::string> mF1;  // date of acquisition
     std::optional<GainType>    mF2;  // method of acquisition
@@ -116,6 +121,12 @@ struct DivItem {
     std::optional<bool>        mForeignTaxPaid{true};   // for now we will assume its always true, maybe this will be gui user input // TODO: check
 };
 
+struct DhoItem {
+    DhoPayer    mPayer{DhoPayer::TradeRepublic};
+    double      mAmount{0};     // need to be non negative
+    double      mWitholdTax{0};     // need to be non negative
+};
+
 struct FormData {
     FormType                   mDocID{FormType::Original};
     int                        mYear{};
@@ -139,6 +150,15 @@ struct DohDiv_Data : public FormData {
     DohDiv_Data() = default;
 
     explicit DohDiv_Data(const FormData& fd)
+        : FormData(fd) {}
+};
+
+struct DohDho_Data : public FormData {
+    std::vector<DhoItem> mItems;
+
+    DohDho_Data() = default;
+
+    explicit DohDho_Data(const FormData& fd)
         : FormData(fd) {}
 };
 
@@ -178,8 +198,16 @@ struct DivTransaction {
     double      mGrossIncome{0.0};
     double      mWitholdTax{0.0};
 };
+
+struct DhoTransaction {
+    std::string mPayer;
+    double      mGrossIncome{0.0};
+    double      mWitholdingTax{0.0};
+};
+
 struct IncomeTransactions {
     std::map<std::string, std::vector<DivTransaction>> mDivTransactions;
+    std::map<std::string, std::vector<DhoTransaction>>  mInterests;
 };
 
 struct Transactions {
@@ -200,6 +228,10 @@ public:
     // Div
     static DohDiv_Data prepare_div_data(std::map<std::string, std::vector<DivTransaction>>& aTransactions, FormData& aFormData);
     pugi::xml_document generate_doh_div_xml(const DohDiv_Data& data, const TaxPayer& tp);
+    
+    // Dho
+    static DohDho_Data prepare_dho_data(std::map<std::string, std::vector<DhoTransaction>>& aTransactions, FormData& aFormData);
+    pugi::xml_document generate_doh_dho_xml(const DohDho_Data& data, const TaxPayer& tp);
 
     
 private:
@@ -208,6 +240,7 @@ private:
     
     static pugi::xml_node generate_doh_kdvp(pugi::xml_node parent, const DohKDVP_Data& data);
     static pugi::xml_node generate_doh_div(pugi::xml_node parent, const DohDiv_Data& data);
+    static pugi::xml_node generate_doh_dho(pugi::xml_node parent, const DohDho_Data& data);
     
     static std::string gain_type_to_string(GainType t);
     static std::string inventory_type_to_string(InventoryListType t);
