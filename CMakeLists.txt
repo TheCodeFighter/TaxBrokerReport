@@ -74,6 +74,7 @@ add_executable(EdavkiXmlMaker
     src/xml_generator.cpp
     src/platform_config.cpp
     util/util_xml.cpp
+    util/config.cpp
 )
 
 target_include_directories(EdavkiXmlMaker PRIVATE
@@ -130,6 +131,7 @@ add_executable(test_xml_generator
     tests/test_xml_generator.cpp
     tests/helper.cpp
     util/util_xml.cpp
+    util/config.cpp
     src/xml_generator.cpp
 )
 
