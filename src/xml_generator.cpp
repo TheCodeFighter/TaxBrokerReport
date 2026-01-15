@@ -99,7 +99,7 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
 
         if (item.mHasForeignTax && *item.mHasForeignTax) {
             item_node.append_child("HasForeignTax").text().set("true");
-            if (item.mForeignTaxAmount)   item_node.append_child("ForeignTax").text().set(*item.mForeignTaxAmount);
+            if (item.mForeignTaxAmount)   item_node.append_child("ForeignTax").text().set(to_xml_decimal(*item.mForeignTaxAmount, 4).c_str());
             if (item.mForeignCountryID)  item_node.append_child("FTCountryID").text().set(item.mForeignCountryID->c_str());
         }
 
