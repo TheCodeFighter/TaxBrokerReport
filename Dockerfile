@@ -5,18 +5,22 @@ FROM ubuntu:22.04 AS dev-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install apt-utils first to avoid debconf warning
+# Install apt-utils first
 RUN apt-get update && apt-get install -y apt-utils && rm -rf /var/lib/apt/lists/*
 
-# Install other dependencies
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     build-essential git pkg-config gdb gdbserver \
     vim curl wget libpoppler-cpp-dev libgtest-dev \
     nlohmann-json3-dev file libpugixml-dev \
     libxml2-dev libxml2-utils valgrind \
+    ninja-build ccache \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user and group matching host UID/GID
+# Configure Ccache (Enable it nicely for dev)
+ENV PATH="/usr/lib/ccache:$PATH"
+
+# Create user and group
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 RUN groupadd -g ${GROUP_ID} appuser && \
@@ -27,7 +31,7 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v3.30.2/cmake-3.30.2
     tar --strip-components=1 -xzvf cmake-3.30.2-linux-x86_64.tar.gz -C /usr/local && \
     rm cmake-3.30.2-linux-x86_64.tar.gz
 
-# Build Google Test static libraries
+# Build Google Test static libraries (Legacy but safe method)
 RUN cd /usr/src/gtest && cmake . && make && cp lib/*.a /usr/lib
 
 WORKDIR /app
@@ -45,15 +49,28 @@ CMD ["/bin/bash"]
 # ================================
 FROM dev-base AS builder
 WORKDIR /app
-COPY . .
-RUN rm -rf build && mkdir build && chown appuser:appuser build  # Reset build directory
-RUN cmake -S . -B build -CMAKE_BUILD_TYPE=Release && cmake --build build
+COPY --chown=appuser:appuser . .
+
+# 1. Use Ninja Generator (-G Ninja) for speed
+# 2. Fixed typo: -DCMAKE_BUILD_TYPE (added 'D')
+# 3. Explicitly set Release mode
+RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build
 
 # ================================
 # Stage 4: Production Runtime
 # ================================
 FROM ubuntu:22.04 AS prod
-RUN apt-get update && apt-get install -y libpoppler-cpp-dev && rm -rf /var/lib/apt/lists/*
+
+# Runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    libpoppler-cpp-dev \
+    libpugixml1v5 \
+    libxml2 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
+# Copy only the executable from the builder stage
 COPY --from=builder /app/build/EdavkiXmlMaker .
+
 CMD ["./EdavkiXmlMaker"]

@@ -1,4 +1,3 @@
-#include <report_loader.hpp>
 #include <poppler/cpp/poppler-document.h>
 #include <poppler/cpp/poppler-page.h>
 #include <stdexcept>
@@ -7,6 +6,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+
+#include "report_loader.hpp"
 
 //TODO: remove for prod
 #include <iostream>

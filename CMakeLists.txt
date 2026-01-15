@@ -1,166 +1,108 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.20)
+project(EdavkiXmlMaker VERSION 1.0.0 LANGUAGES CXX)
 
-# -----------------------------
-# Project settings
-# -----------------------------
-project(EdavkiXmlMaker LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Enable all warnings and treat them as errors
-if (MSVC)
-    add_compile_options(/W4 /WX)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+# -----------------------------
+# 1. Performance Optimization (CCache)
+# -----------------------------
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    message(STATUS "Using ccache for faster builds")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif()
 
-# Explicitly add debug flags for Debug builds
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-g -O0)
+# -----------------------------
+# 2. Build Strategy (Debug vs Release)
+# -----------------------------
+string(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_UPPER)
+
+if(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
+    message(STATUS "Build Mode: DEBUG (Optimized for speed)")
+    set(CORE_LIB_TYPE OBJECT)
+    add_compile_definitions(UNIT_TEST)
+    set(CORE_OBJECTS $<TARGET_OBJECTS:CoreLib>)
+else()
+    message(STATUS "Build Mode: RELEASE (Optimized for distribution)")
+    set(CORE_LIB_TYPE STATIC)
+    set(CORE_OBJECTS "") # no need to add objects manually
 endif()
 
 # -----------------------------
 # Dependencies
 # -----------------------------
-
-# GTest
+find_package(Threads REQUIRED)
 find_package(GTest REQUIRED)
-
-# Poppler
-find_package(PkgConfig QUIET)
-if (PKG_CONFIG_FOUND)
-    pkg_check_modules(POPPLER QUIET poppler-cpp)
-endif()
-
-if (NOT POPPLER_FOUND)
-    find_path(POPPLER_INCLUDE_DIR poppler/cpp/poppler-document.h)
-    find_library(POPPLER_LIBRARY NAMES poppler-cpp)
-    if (NOT POPPLER_INCLUDE_DIR OR NOT POPPLER_LIBRARY)
-        message(FATAL_ERROR "Poppler not found. Please install Poppler or specify its location.")
-    endif()
-    add_library(Poppler::Poppler STATIC IMPORTED)
-    set_target_properties(Poppler::Poppler PROPERTIES
-        IMPORTED_LOCATION "${POPPLER_LIBRARY}"
-        INTERFACE_INCLUDE_DIRECTORIES "${POPPLER_INCLUDE_DIR}"
-    )
-else()
-    add_library(Poppler::Poppler INTERFACE IMPORTED)
-    set_target_properties(Poppler::Poppler PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${POPPLER_INCLUDE_DIRS}"
-        INTERFACE_LINK_LIBRARIES "${POPPLER_LIBRARIES}"
-    )
-endif()
-
-# pugixml
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(PUGIXML REQUIRED pugixml)
-
-# nlohmann-json
 find_package(nlohmann_json REQUIRED)
+find_package(PkgConfig REQUIRED)
 
-# libxml2 (XSD validation)
-# libxml2 (XSD validation)
+pkg_check_modules(POPPLER REQUIRED IMPORTED_TARGET poppler-cpp)
+pkg_check_modules(PUGIXML REQUIRED IMPORTED_TARGET pugixml)
 pkg_check_modules(LIBXML2 REQUIRED IMPORTED_TARGET libxml-2.0)
 
-
 # -----------------------------
-# Main application target
+# Core Library
 # -----------------------------
-add_executable(EdavkiXmlMaker
-    src/main.cpp
-    src/report_loader.cpp
-    src/xml_generator.cpp
+add_library(CoreLib ${CORE_LIB_TYPE}
+    src/backend/report_loader.cpp
+    src/backend/xml_generator.cpp
+    src/app/application_service.cpp
     src/platform_config.cpp
     util/util_xml.cpp
     util/config.cpp
 )
 
-target_include_directories(EdavkiXmlMaker PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/util
-    ${PUGIXML_INCLUDE_DIRS}
+target_include_directories(CoreLib 
+    PUBLIC 
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include/app>
+    PRIVATE 
+        ${CMAKE_SOURCE_DIR}/include/backend
+        ${CMAKE_SOURCE_DIR}/util
 )
 
-target_link_libraries(EdavkiXmlMaker PRIVATE
-    Poppler::Poppler
-    ${PUGIXML_LIBRARIES}
+target_link_libraries(CoreLib PUBLIC 
     nlohmann_json::nlohmann_json
+    PkgConfig::PUGIXML
+    PkgConfig::POPPLER
     PkgConfig::LIBXML2
-    $<$<PLATFORM_ID:Linux>:pthread>
+    Threads::Threads
 )
 
 # -----------------------------
-# Testing setup
+# Main Application
+# -----------------------------
+add_executable(EdavkiXmlMaker src/main.cpp ${CORE_OBJECTS})
+
+target_link_libraries(EdavkiXmlMaker PRIVATE CoreLib)
+
+# -----------------------------
+# Testing Setup
 # -----------------------------
 enable_testing()
+include(GoogleTest)
 
-# -----------------------------
-# Test 1: Report loader
-# -----------------------------
-add_executable(test_report_loader
-    tests/test_report_loader.cpp
-    src/report_loader.cpp
-)
+function(add_edavki_test TEST_NAME SOURCE_FILE)
+    add_executable(${TEST_NAME} ${SOURCE_FILE} tests/helper.cpp ${CORE_OBJECTS})
+    
+    target_link_libraries(${TEST_NAME} PRIVATE 
+        CoreLib 
+        GTest::gtest 
+        GTest::gtest_main
+    )
 
-target_include_directories(test_report_loader PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/util
-)
+    target_include_directories(${TEST_NAME} PRIVATE 
+        ${CMAKE_SOURCE_DIR}/util 
+        ${CMAKE_SOURCE_DIR}/include/backend
+    )
 
-target_link_libraries(test_report_loader PRIVATE
-    GTest::gtest
-    GTest::gtest_main
-    Poppler::Poppler
-    nlohmann_json::nlohmann_json
-    $<$<PLATFORM_ID:Linux>:pthread>
-)
+    target_compile_definitions(${TEST_NAME} PRIVATE 
+        PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
+    
+    gtest_discover_tests(${TEST_NAME})
+endfunction()
 
-target_compile_definitions(test_report_loader PRIVATE
-    UNIT_TEST
-    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
-)
-
-add_test(NAME ReportLoaderTest COMMAND test_report_loader)
-
-# -----------------------------
-# Test 2: XML generator
-# -----------------------------
-add_executable(test_xml_generator
-    tests/test_xml_generator.cpp
-    tests/helper.cpp
-    util/util_xml.cpp
-    util/config.cpp
-    src/xml_generator.cpp
-)
-
-target_include_directories(test_xml_generator PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/util
-    ${PUGIXML_INCLUDE_DIRS}
-)
-
-target_link_libraries(test_xml_generator PRIVATE
-    GTest::gtest
-    GTest::gtest_main
-    Poppler::Poppler
-    ${PUGIXML_LIBRARIES}
-    nlohmann_json::nlohmann_json
-    PkgConfig::LIBXML2
-    $<$<PLATFORM_ID:Linux>:pthread>
-)
-
-target_compile_definitions(test_xml_generator PRIVATE
-    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
-)
-
-add_test(NAME XmlGeneratorTest COMMAND test_xml_generator)
-
-# -----------------------------
-# Diagnostics
-# -----------------------------
-message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
-message(STATUS "C++ Compiler Version: ${CMAKE_CXX_COMPILER_VERSION}")
-message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "pugixml include dirs: ${PUGIXML_INCLUDE_DIRS}")
+add_edavki_test(test_report_loader tests/test_report_loader.cpp)
+add_edavki_test(test_xml_generator tests/test_xml_generator.cpp)
