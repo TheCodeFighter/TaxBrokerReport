@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include "report_loader.hpp"
 
 enum class TaxFormType {
     Doh_KDVP,
@@ -15,7 +16,6 @@ enum class TaxFormType {
 struct GenerationRequest {
     std::filesystem::path inputPdf;
     std::filesystem::path outputDirectory;
-    
     bool jsonOnly = false;
     
     // Obligatory
@@ -41,17 +41,13 @@ public:
     ApplicationService();
     ~ApplicationService();
 
-    ApplicationService(const ApplicationService&) = delete;
-    ApplicationService& operator=(const ApplicationService&) = delete;
-    
-    ApplicationService(ApplicationService&&) noexcept;
-    ApplicationService& operator=(ApplicationService&&) noexcept;
-
-    // main processing method for GUI
+    // Standard method for Production/GUI
     GenerationResult processRequest(const GenerationRequest& request);
 
+    // Overloaded method for Testing (Dependency Injection)
+    GenerationResult processRequest(const GenerationRequest& request, ReportLoader& loader);
+
 private:
-    // Forward declaration of implementation struct
     struct Impl;
     std::unique_ptr<Impl> m_pImpl;
 };

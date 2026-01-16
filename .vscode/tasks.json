@@ -28,6 +28,17 @@
             ]
         },
         {
+            "label": "build-test-application-service",
+            "type": "shell",
+            "command": "make build-test-application-service",
+            "options": {
+                "cwd": "/app"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
             "label": "build-all",
             "type": "shell",
             "command": "make",
@@ -53,6 +64,16 @@
             "label": "run-test-xml-generator",
             "type": "shell",
             "command": "./build/test_xml_generator",
+            "options": {
+                "cwd": "/app"
+            },
+            "group": "none",
+            "problemMatcher": []
+        },
+        {
+            "label": "run-test-application-service",
+            "type": "shell",
+            "command": "./build/test_application_service",
             "options": {
                 "cwd": "/app"
             },

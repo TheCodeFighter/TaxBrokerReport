@@ -37,7 +37,7 @@ jobs:
     - name: Valgrind
       run: |
         set -e
-        for t in test_report_loader test_xml_generator; do
+        for t in test_report_loader test_xml_generator test_application_service; do
           echo "Running Valgrind on ./build/$t"
           valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 "./build/$t"
         done

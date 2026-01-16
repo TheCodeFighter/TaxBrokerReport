@@ -772,4 +772,8 @@ bool ReportLoader::saveRawDataToFile(const std::string& aOutputPath) const {
 void ReportLoader::setRawText(const std::string& aText) {
     mRawText = aText;
 }
+
+const std::string& ReportLoader::getRawText() const {
+    return mRawText;
+}
 #endif

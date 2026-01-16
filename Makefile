@@ -17,7 +17,7 @@ CACHE_VOLUME = $(IMAGE_NAME)-cache
 CONTAINER_NAME = edavki-container
 CONTAINER_NAME_NO_DEBUG = edavki-container-no-debug
 
-VALGRIND_TESTS_FILES := test_report_loader test_xml_generator   # Update when new files are needed to ckeck (i.e. main)
+VALGRIND_TESTS_FILES := test_report_loader test_xml_generator   test_application_service  # Update when new files are needed to check (i.e. main)
 
 
 # Common docker run command for dev tasks (mounts source + build cache)
@@ -58,7 +58,7 @@ build:
 
 # 4. Run tests inside container
 test: build
-	$(DOCKER_RUN) cmake --build $(BUILD_DIR) --target test_report_loader test_xml_generator
+	$(DOCKER_RUN) cmake --build $(BUILD_DIR) --target test_report_loader test_xml_generator test_application_service
 	$(DOCKER_RUN) ctest --test-dir $(BUILD_DIR) --output-on-failure
 
 # 5. Combined: configure + build + test
@@ -134,6 +134,11 @@ build-test-xml-generator:
 	@echo "Building test_xml_generator..."
 	cmake -S /app -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 	cmake --build /app/$(BUILD_DIR) --target test_xml_generator
+
+build-test-application-service:
+	@echo "Building test_application_service..."
+	cmake -S /app -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
+	cmake --build /app/$(BUILD_DIR) --target test_application_service
 
 # ---------------------------
 # 12. Run all tests under Valgrind (inside container)

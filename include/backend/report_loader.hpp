@@ -23,6 +23,7 @@ class ReportLoader {
         #ifdef UNIT_TEST
         bool saveRawDataToFile(const std::string& aOutputPath) const;
         void setRawText(const std::string& aText);
+        const std::string& getRawText() const;
         #endif
 
     private:

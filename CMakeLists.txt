@@ -106,3 +106,4 @@ endfunction()
 
 add_edavki_test(test_report_loader tests/test_report_loader.cpp)
 add_edavki_test(test_xml_generator tests/test_xml_generator.cpp)
+add_edavki_test(test_application_service tests/test_application_service.cpp)
