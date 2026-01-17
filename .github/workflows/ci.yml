@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Required to let the bot post comments on your PR
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -28,27 +33,32 @@ jobs:
 
     - name: Configure & Build
       run: |
-        # Use Debug to trigger the coverage flags in your CMakeLists.txt
         cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DSAVE_GENERATED_FILES=0
         cmake --build build -- -j$(nproc)
 
     - name: Run Tests & Gather Coverage
       run: |
-        # 1. Reset counters
         lcov --directory . --zerocounters
-        
-        # 2. Execute all tests
-        cd build
-        ./test_report_loader
-        ./test_xml_generator
-        ./test_application_service
-        cd ..
-        
-        # 3. Capture coverage with mismatch fix
+        cd build && ./test_report_loader && ./test_xml_generator && ./test_application_service && cd ..
         lcov --directory . --capture --output-file coverage.info --ignore-errors mismatch
-        
-        # 4. Filter only for your specific logic files
         lcov --extract coverage.info "*/src/app/application_service.cpp" \
                                      "*/src/backend/report_loader.cpp" \
                                      "*/src/backend/xml_generator.cpp" \
                                      --output-file coverage.info.filtered \
+                                     --ignore-errors mismatch
+
+    # NEW: Posts the summary directly to the PR
+    - name: PR Coverage Report
+      if: github.event_name == 'pull_request'
+      uses: romeovs/lcov-reporter-action@v0.3.1
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        lcov-file: ./coverage.info.filtered
+        filter-changed-files: true
+
+    - name: Valgrind Memory Check
+      run: |
+        set -e
+        for t in test_report_loader test_xml_generator test_application_service; do
+          valgrind --leak-check=full --error-exitcode=1 "./build/$t"
+        done
