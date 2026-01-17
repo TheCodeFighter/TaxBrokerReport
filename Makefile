@@ -156,3 +156,37 @@ valgrind-tests: dev-container-build
 	            echo 'Test executable not found or not executable:' \$$test_exec; \
 	        fi; \
 	    done"   
+
+# ---------------------------
+# 13. Test coverage report generation
+# ---------------------------
+COVERAGE_SOURCES := src/app/application_service.cpp \
+                    src/backend/report_loader.cpp \
+                    src/backend/xml_generator.cpp
+
+TEST_EXECUTABLES := ./test_report_loader \
+                    ./test_xml_generator \
+                    ./test_application_service
+
+COVERAGE_INFO = tests/coverage.info
+COVERAGE_REPORT_DIR = tests/coverage_report
+
+coverage:
+	@echo "Gathering code coverage data..."
+	docker exec -it $(CONTAINER_NAME) lcov --directory . --zerocounters
+	
+	docker exec -it $(CONTAINER_NAME) bash -c "cd $(BUILD_DIR) && $(foreach test,$(TEST_EXECUTABLES),$(test) &&) true"
+	
+	docker exec -it $(CONTAINER_NAME) lcov --directory . --capture --output-file $(COVERAGE_INFO)
+	
+	@echo "Filtering for specific sources..."
+	docker exec -it $(CONTAINER_NAME) lcov --extract $(COVERAGE_INFO) $(addprefix */,$(COVERAGE_SOURCES)) --output-file $(COVERAGE_INFO).filtered
+	
+	docker exec -it $(CONTAINER_NAME) genhtml $(COVERAGE_INFO).filtered --output-directory $(COVERAGE_REPORT_DIR)
+	@echo "-------------------------------------------------------"
+	@echo "Report generated: $(COVERAGE_REPORT_DIR)/index.html"
+	@echo "-------------------------------------------------------"
+
+clean-coverage:
+	rm -rf $(COVERAGE_REPORT_DIR)
+	rm -f $(COVERAGE_INFO) $(COVERAGE_INFO).filtered

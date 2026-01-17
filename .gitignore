@@ -3,3 +3,6 @@ build/
 tmp/
 .vscode/settings.json
 bin/
+tests/coverage_report/
+tests/coverage.info
+tests/coverage.info.filtered

@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     vim curl wget libpoppler-cpp-dev libgtest-dev \
     nlohmann-json3-dev file libpugixml-dev \
     libxml2-dev libxml2-utils valgrind \
-    ninja-build ccache \
+    ninja-build ccache lcov\
     && rm -rf /var/lib/apt/lists/*
 
 # Configure Ccache (Enable it nicely for dev)
