@@ -1,6 +1,8 @@
 # ---------------------------
 # Variables
 # ---------------------------
+.PHONY: build configure test clean coverage dev-up dev-down build-main run-main
+
 IMAGE_NAME = edavki-dev
 BUILD_DIR = build
 CACHE_VOLUME = $(IMAGE_NAME)-cache
@@ -78,6 +80,28 @@ run-main: build-main
 
 test: build
 	$(CMD_PREFIX) bash -c "QT_QPA_PLATFORM=offscreen ctest --test-dir $(BUILD_DIR) --output-on-failure"
+
+coverage: build
+	@echo "Generating code coverage report..."
+	# 1. Reset counters
+	$(CMD_PREFIX) lcov --directory build --zerocounters
+	
+	# 2. Run all tests (ignore SegFault with '-')
+	-$(CMD_PREFIX) bash -c "QT_QPA_PLATFORM=offscreen ctest --test-dir build"
+	
+	# 3. Capture coverage data
+	$(CMD_PREFIX) lcov --directory build --capture --output-file build/coverage.info
+	
+	# 4. FILTER: Keep only src subfolders and the root util folder
+	$(CMD_PREFIX) lcov --extract build/coverage.info "*/src/app/*" "*/src/backend/*" "*/src/gui/*" "*/util/*" --output-file build/coverage_filtered.info
+	
+	# 5. Generate HTML report and strip path prefixes for a clean view
+	# Using --prefix /app/src and --prefix /app ensures all folders look like top-level names
+	$(CMD_PREFIX) genhtml build/coverage_filtered.info \
+		--prefix /app/src \
+		--prefix /app \
+		--output-directory tests/coverage_report
+	@echo "Report generated at tests/coverage_report/index.html"
 
 clean:
 	$(CMD_PREFIX) rm -rf $(BUILD_DIR)/*

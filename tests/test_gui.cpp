@@ -2,16 +2,19 @@
 #include <QApplication>
 #include "main_window.hpp"
 
-int argc = 0;
-char **argv = nullptr;
-
 TEST(GuiTest, SmokeTest) {
-    // App need to exist
-    if (!QApplication::instance()) {
-        new QApplication(argc, argv);
-    }
-
     MainWindow w;
-    // Window need to be generated without crash
-    EXPECT_TRUE(w.isEnabled());
+    w.show();
+    QApplication::processEvents();
+    EXPECT_TRUE(w.isVisible());
+    w.close();
+}
+
+int main(int argc, char **argv) {
+    QApplication app(argc, argv);
+    ::testing::InitGoogleTest(&argc, argv);
+    int result = RUN_ALL_TESTS();
+    
+    QApplication::processEvents();
+    return result;
 }
