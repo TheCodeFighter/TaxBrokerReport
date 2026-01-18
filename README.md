@@ -17,7 +17,8 @@ make build-image
 ### 2. Configure and Build (Debug)
 
 ```bash
-make configure build
+make dev-up
+make configure
 ```
 
 If error is:
@@ -29,37 +30,18 @@ Run:
 sudo usermod -aG docker $USER
 ```
 
-### 3. Run Tests
+### 3. Build and Run GUI
+
+Build the main application and launch it on your host display:
+
+```Bash
+make run-main
+```
+
+### 4. Run Tests
 
 ```bash
 make test
-```
-
-### 4. Debugging
-
-- Debug with GDB inside container:
-
-  ```bash
-  make debug-test-report-loader
-  ```
-
-- Remote debug with gdbserver:
-
-  ```bash
-  make gdbserver BIN=build/EdavkiXmlMaker PORT=1234
-  # Then attach with gdb or VS Code
-  ```
-
-### 5. Build Production Image
-
-```bash
-make build-prod
-```
-
-### 6. Run Production Binary
-
-```bash
-make run-prod
 ```
 
 ## 🧩 GitHub Pipelines
@@ -91,9 +73,15 @@ This ensures that all code merged into the main branch passes basic quality and 
 
 - See the [Manuals/Instructions.md](Manuals/Instructions.md) for detailed usage, setup, and troubleshooting.
 
-## VS Code Integration
+## 💻 VS Code Integration
 
-- Launch and task configurations are provided in `.vscode/` for building, testing, and debugging inside Docker.
+This project is designed to be used with the "**Dev Containers: Attach to Running Container**" extension.
+
+- Run make dev-up on host.
+
+- Attach VS Code to edavki-container.
+
+- Use F5 to build and debug specific targets instantly.
 
 ## License
 

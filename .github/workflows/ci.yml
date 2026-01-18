@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-# Required to let the bot post comments on your PR
 permissions:
   pull-requests: write
   contents: read
@@ -49,7 +48,6 @@ jobs:
                                      --output-file coverage.info.filtered \
                                      --ignore-errors mismatch
 
-    # NEW: Posts the summary directly to the PR
     - name: PR Coverage Report
       if: github.event_name == 'pull_request'
       uses: romeovs/lcov-reporter-action@v0.3.1
