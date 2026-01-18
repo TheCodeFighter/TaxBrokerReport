@@ -27,17 +27,22 @@ void MainWindow::setupUi() {
     m_taxNumEdit->setPlaceholderText("e.g. 12345678");
     
     m_yearSpin = new QSpinBox(this);
-    m_yearSpin->setRange(2020, 2030);
-    m_yearSpin->setValue(2024);
+    m_yearSpin->setRange(2020, 2050);
+    m_yearSpin->setValue(2025);
 
     m_formTypeCombo = new QComboBox(this);
     m_formTypeCombo->addItem("Doh-KDVP (Capital Gains)", 0);
     m_formTypeCombo->addItem("Doh-DIV (Dividends)", 1);
     m_formTypeCombo->addItem("Doh-DHO (Interest)", 2);
 
+    m_docTypeCombo = new QComboBox(this);
+    m_docTypeCombo->addItem("Original", static_cast<int>(FormType::Original));
+    m_docTypeCombo->addItem("Self-Report (Samoprijava)", static_cast<int>(FormType::SelfReport));
+
     formLayout->addRow("Tax Number:", m_taxNumEdit);
     formLayout->addRow("Tax Year:", m_yearSpin);
     formLayout->addRow("Form Type:", m_formTypeCombo);
+    formLayout->addRow("Document Type:", m_docTypeCombo);
 
     // Group 2: File Paths
     QGroupBox *fileGroup = new QGroupBox("File Paths", this);
@@ -114,6 +119,7 @@ void MainWindow::onGenerateClicked() {
     request.year = m_yearSpin->value();
     request.inputPdf = m_inputPdfEdit->text().toStdString();
     request.outputDirectory = m_outputDirEdit->text().toStdString();
+    request.formDocType = static_cast<FormType>(m_docTypeCombo->currentData().toInt());
     
     int typeIndex = m_formTypeCombo->currentData().toInt();
     if (typeIndex == 0) request.formType = TaxFormType::Doh_KDVP;
