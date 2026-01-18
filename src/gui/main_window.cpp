@@ -39,25 +39,28 @@ void MainWindow::setupUi() {
     m_docTypeCombo->addItem("Original", static_cast<int>(FormType::Original));
     m_docTypeCombo->addItem("Self-Report (Samoprijava)", static_cast<int>(FormType::SelfReport));
 
+    m_jsonOnlyCheck = new QCheckBox("Generate JSON only (skip XML)", this);
+    
     formLayout->addRow("Tax Number:", m_taxNumEdit);
     formLayout->addRow("Tax Year:", m_yearSpin);
     formLayout->addRow("Form Type:", m_formTypeCombo);
     formLayout->addRow("Document Type:", m_docTypeCombo);
+    formLayout->addRow(m_jsonOnlyCheck);
 
     // Group 2: File Paths
     QGroupBox *fileGroup = new QGroupBox("File Paths", this);
     QGridLayout *fileLayout = new QGridLayout(fileGroup);
 
-    m_inputPdfEdit = new QLineEdit(this);
+    m_inputFileEdit = new QLineEdit(this);
     QPushButton *browsePdfBtn = new QPushButton("Browse...", this);
-    connect(browsePdfBtn, &QPushButton::clicked, this, &MainWindow::onBrowsePdf);
+    connect(browsePdfBtn, &QPushButton::clicked, this, &MainWindow::onBrowseFile);
 
     m_outputDirEdit = new QLineEdit(this);
     QPushButton *browseDirBtn = new QPushButton("Browse...", this);
     connect(browseDirBtn, &QPushButton::clicked, this, &MainWindow::onBrowseOutputDir);
 
     fileLayout->addWidget(new QLabel("Input PDF:"), 0, 0);
-    fileLayout->addWidget(m_inputPdfEdit, 0, 1);
+    fileLayout->addWidget(m_inputFileEdit, 0, 1);
     fileLayout->addWidget(browsePdfBtn, 0, 2);
 
     fileLayout->addWidget(new QLabel("Output Dir:"), 1, 0);
@@ -92,10 +95,13 @@ void MainWindow::setupUi() {
     resize(500, 600);
 }
 
-void MainWindow::onBrowsePdf() {
-    QString fileName = QFileDialog::getOpenFileName(this, "Select Tax Report PDF", "", "PDF Files (*.pdf)");
+void MainWindow::onBrowseFile() {
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Open Report"), "", 
+        tr("Supported Formats (*.pdf *.json);;PDF Files (*.pdf);;JSON Files (*.json)"));
+    
     if (!fileName.isEmpty()) {
-        m_inputPdfEdit->setText(fileName);
+        m_inputFileEdit->setText(fileName);
     }
 }
 
@@ -108,7 +114,7 @@ void MainWindow::onBrowseOutputDir() {
 
 void MainWindow::onGenerateClicked() {
     // 1. Validation
-    if (m_taxNumEdit->text().isEmpty() || m_inputPdfEdit->text().isEmpty() || m_outputDirEdit->text().isEmpty()) {
+    if (m_taxNumEdit->text().isEmpty() || m_inputFileEdit->text().isEmpty() || m_outputDirEdit->text().isEmpty()) {
         QMessageBox::warning(this, "Validation Error", "Please fill in all mandatory fields.");
         return;
     }
@@ -117,9 +123,11 @@ void MainWindow::onGenerateClicked() {
     GenerationRequest request;
     request.taxNumber = m_taxNumEdit->text().toStdString();
     request.year = m_yearSpin->value();
-    request.inputPdf = m_inputPdfEdit->text().toStdString();
+    request.inputFile = m_inputFileEdit->text().toStdString();
     request.outputDirectory = m_outputDirEdit->text().toStdString();
     request.formDocType = static_cast<FormType>(m_docTypeCombo->currentData().toInt());
+    request.inputFile = m_inputFileEdit->text().toStdString();
+    request.jsonOnly = m_jsonOnlyCheck->isChecked();
     
     int typeIndex = m_formTypeCombo->currentData().toInt();
     if (typeIndex == 0) request.formType = TaxFormType::Doh_KDVP;
@@ -155,10 +163,12 @@ void MainWindow::onGenerateClicked() {
 void MainWindow::onWorkerFinished(bool success, QString message) {
     m_generateBtn->setEnabled(true);
     m_progressBar->setValue(100);
-    
+    m_progressBar->setVisible(false);
+
     if (success) {
-        QMessageBox::information(this, "Success", "Generation successful!\n" + message);
-    } else {
-        QMessageBox::critical(this, "Error", "Failed to generate XML:\n" + message);
+        QMessageBox::information(this, "Success", "Processing completed successfully!\n\n" + message);
+    } 
+    else {
+        QMessageBox::critical(this, "Error", "An error occurred:\n" + message);
     }
 }

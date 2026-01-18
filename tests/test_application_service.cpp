@@ -83,7 +83,7 @@ protected:
         request.year = 2025;
         request.outputDirectory = m_root / "tmp" / "api_test_output";
         request.taxNumber = "12345678";
-        request.inputPdf = m_root / "tmp" / "TaxReport2024.pdf";
+        request.inputFile = m_root / "tmp" / "TaxReport2024.pdf";
         request.formDocType = FormType::Original;
         
         if (!fs::exists(request.outputDirectory)) {

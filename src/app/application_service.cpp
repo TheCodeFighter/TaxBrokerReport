@@ -55,28 +55,50 @@ GenerationResult ApplicationService::processRequest(const GenerationRequest& req
 GenerationResult ApplicationService::processRequest(const GenerationRequest& request, ReportLoader& loader) {
     GenerationResult result;
     try {
+        if (!std::filesystem::exists(request.inputFile)) {
+            throw std::runtime_error("File does not exist: " + request.inputFile.string());
+        }
+
+        std::string ext = request.inputFile.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower); // Pretvorba v male črke (.JSON -> .json)
+
+        if (ext != ".pdf" && ext != ".json") {
+            throw std::runtime_error("Unsupported file format: " + ext + ". Please provide a .pdf or .json file.");
+        }
+
         if (!std::filesystem::exists(request.outputDirectory)) {
             std::filesystem::create_directories(request.outputDirectory);
         }
 
-        // Bypass Poppler if text is already set (for tests)
+        nlohmann::json jsonData;
+
+        if (request.inputFile.extension() == ".json") {
+            std::ifstream ifs(request.inputFile);
+            jsonData = nlohmann::json::parse(ifs);
+
+            if (!jsonData.contains("income_section") || 
+                !jsonData.contains("gains_and_losses_section")) {
+                throw std::runtime_error("Invalid JSON structure: Missing required Trade Republic report sections.");
+            }
+        } else {
+// Bypass Poppler if text is already set (for tests)
 #ifdef UNIT_TEST
-        if (loader.getRawText().empty()) {
-            loader.getRawPdfData(request.inputPdf.string(), ReportLoader::ProcessingMode::InMemory);
-        }
+            if (loader.getRawText().empty()) {
+                loader.getRawPdfData(request.inputFile.string(), ReportLoader::ProcessingMode::InMemory);
+            }
 #else
-        loader.getRawPdfData(request.inputPdf.string(), ReportLoader::ProcessingMode::InMemory);
+            loader.getRawPdfData(request.inputFile.string(), ReportLoader::ProcessingMode::InMemory);
 #endif
+            jsonData = loader.convertToJson();
 
-        const auto jsonData = loader.convertToJson();
-
-        if (request.jsonOnly) {
-            auto jsonPath = request.outputDirectory / "intermediate_data.json";
-            std::ofstream out(jsonPath);
-            out << jsonData.dump(4);
-            result.createdFiles.push_back(jsonPath);
-            result.success = true;
-            return result;
+            if (request.jsonOnly) {
+                auto jsonPath = request.outputDirectory / "intermediate_data.json";
+                std::ofstream out(jsonPath);
+                out << jsonData.dump(4);
+                result.createdFiles.push_back(jsonPath);
+                result.success = true;
+                return result;
+            }
         }
 
         // Map request to domain objects

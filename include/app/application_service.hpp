@@ -16,7 +16,7 @@ enum class TaxFormType {
 };
 
 struct GenerationRequest {
-    std::filesystem::path inputPdf;
+    std::filesystem::path inputFile;
     std::filesystem::path outputDirectory;
     bool jsonOnly = false;
     
