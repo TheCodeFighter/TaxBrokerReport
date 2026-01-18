@@ -7,6 +7,7 @@
 #include <QThread>
 #include <QGroupBox>
 #include <QLabel>
+// #include <QCheckBox>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setupUi();
@@ -19,9 +20,15 @@ void MainWindow::setupUi() {
     setCentralWidget(centralWidget);
     QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
 
-    // Group 1: Mandatory Data
-    QGroupBox *mandatoryGroup = new QGroupBox("Mandatory Information", this);
-    QFormLayout *formLayout = new QFormLayout(mandatoryGroup);
+    // 0. Top Level Toggle
+    m_jsonOnlyCheck = new QCheckBox("Mode: Generate intermediate JSON only (skip XML generation)", this);
+    m_jsonOnlyCheck->setStyleSheet("font-weight: bold; margin: 5px;");
+    connect(m_jsonOnlyCheck, &QCheckBox::toggled, this, &MainWindow::onJsonModeToggled);
+    mainLayout->addWidget(m_jsonOnlyCheck);
+
+    // Group 1: Mandatory Tax Data (XML specific)
+    m_mandatoryGroup = new QGroupBox("Tax Data (Required for XML)", this);
+    QFormLayout *formLayout = new QFormLayout(m_mandatoryGroup);
 
     m_taxNumEdit = new QLineEdit(this);
     m_taxNumEdit->setPlaceholderText("e.g. 12345678");
@@ -44,29 +51,29 @@ void MainWindow::setupUi() {
     formLayout->addRow("Form Type:", m_formTypeCombo);
     formLayout->addRow("Document Type:", m_docTypeCombo);
 
-    // Group 2: File Paths
-    QGroupBox *fileGroup = new QGroupBox("File Paths", this);
+    // Group 2: File Paths (Always required)
+    QGroupBox *fileGroup = new QGroupBox("Input / Output", this);
     QGridLayout *fileLayout = new QGridLayout(fileGroup);
 
-    m_inputPdfEdit = new QLineEdit(this);
-    QPushButton *browsePdfBtn = new QPushButton("Browse...", this);
-    connect(browsePdfBtn, &QPushButton::clicked, this, &MainWindow::onBrowsePdf);
+    m_inputFileEdit = new QLineEdit(this);
+    QPushButton *browseInputBtn = new QPushButton("Browse...", this);
+    connect(browseInputBtn, &QPushButton::clicked, this, &MainWindow::onBrowseFile);
 
     m_outputDirEdit = new QLineEdit(this);
     QPushButton *browseDirBtn = new QPushButton("Browse...", this);
     connect(browseDirBtn, &QPushButton::clicked, this, &MainWindow::onBrowseOutputDir);
 
-    fileLayout->addWidget(new QLabel("Input PDF:"), 0, 0);
-    fileLayout->addWidget(m_inputPdfEdit, 0, 1);
-    fileLayout->addWidget(browsePdfBtn, 0, 2);
+    fileLayout->addWidget(new QLabel("Input File (PDF/JSON):"), 0, 0);
+    fileLayout->addWidget(m_inputFileEdit, 0, 1);
+    fileLayout->addWidget(browseInputBtn, 0, 2);
 
-    fileLayout->addWidget(new QLabel("Output Dir:"), 1, 0);
+    fileLayout->addWidget(new QLabel("Output Directory:"), 1, 0);
     fileLayout->addWidget(m_outputDirEdit, 1, 1);
     fileLayout->addWidget(browseDirBtn, 1, 2);
 
-    // Group 3: Optional
-    QGroupBox *optGroup = new QGroupBox("Optional Contact Info", this);
-    QFormLayout *optLayout = new QFormLayout(optGroup);
+    // Group 3: Optional Contact Info (XML specific)
+    m_optGroup = new QGroupBox("Optional Contact Info", this);
+    QFormLayout *optLayout = new QFormLayout(m_optGroup);
     m_emailEdit = new QLineEdit(this);
     m_phoneEdit = new QLineEdit(this);
     optLayout->addRow("Email:", m_emailEdit);
@@ -81,21 +88,34 @@ void MainWindow::setupUi() {
     m_generateBtn->setMinimumHeight(40);
     connect(m_generateBtn, &QPushButton::clicked, this, &MainWindow::onGenerateClicked);
 
-    // Add to main layout
-    mainLayout->addWidget(mandatoryGroup);
+    // Final Assembly
+    mainLayout->addWidget(m_mandatoryGroup);
     mainLayout->addWidget(fileGroup);
-    mainLayout->addWidget(optGroup);
+    mainLayout->addWidget(m_optGroup);
+    mainLayout->addStretch(); 
     mainLayout->addWidget(m_progressBar);
     mainLayout->addWidget(m_generateBtn);
     
     setWindowTitle("Edavki XML Maker GUI");
-    resize(500, 600);
+    resize(550, 650);
 }
 
-void MainWindow::onBrowsePdf() {
-    QString fileName = QFileDialog::getOpenFileName(this, "Select Tax Report PDF", "", "PDF Files (*.pdf)");
+void MainWindow::onJsonModeToggled(bool jsonOnly) {
+    // Hide or show XML-specific sections
+    m_mandatoryGroup->setVisible(!jsonOnly);
+    m_optGroup->setVisible(!jsonOnly);
+    
+    // Update button label to reflect the current mode
+    m_generateBtn->setText(jsonOnly ? "Generate JSON" : "Generate XML");
+}
+
+void MainWindow::onBrowseFile() {
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Open Report"), "", 
+        tr("Supported Formats (*.pdf *.json);;PDF Files (*.pdf);;JSON Files (*.json)"));
+    
     if (!fileName.isEmpty()) {
-        m_inputPdfEdit->setText(fileName);
+        m_inputFileEdit->setText(fileName);
     }
 }
 
@@ -107,47 +127,57 @@ void MainWindow::onBrowseOutputDir() {
 }
 
 void MainWindow::onGenerateClicked() {
+    bool jsonOnly = m_jsonOnlyCheck->isChecked();
+
     // 1. Validation
-    if (m_taxNumEdit->text().isEmpty() || m_inputPdfEdit->text().isEmpty() || m_outputDirEdit->text().isEmpty()) {
-        QMessageBox::warning(this, "Validation Error", "Please fill in all mandatory fields.");
+    if (m_inputFileEdit->text().isEmpty() || m_outputDirEdit->text().isEmpty()) {
+        QMessageBox::warning(this, "Validation Error", "Please select an input file and output directory.");
+        return;
+    }
+
+    if (!jsonOnly && m_taxNumEdit->text().isEmpty()) {
+        QMessageBox::warning(this, "Validation Error", "Tax Number is required for XML generation.");
         return;
     }
 
     // 2. Prepare Request
     GenerationRequest request;
-    request.taxNumber = m_taxNumEdit->text().toStdString();
-    request.year = m_yearSpin->value();
-    request.inputPdf = m_inputPdfEdit->text().toStdString();
+    request.jsonOnly = jsonOnly;
+    request.inputFile = m_inputFileEdit->text().toStdString();
     request.outputDirectory = m_outputDirEdit->text().toStdString();
-    request.formDocType = static_cast<FormType>(m_docTypeCombo->currentData().toInt());
-    
-    int typeIndex = m_formTypeCombo->currentData().toInt();
-    if (typeIndex == 0) request.formType = TaxFormType::Doh_KDVP;
-    else if (typeIndex == 1) request.formType = TaxFormType::Doh_DIV;
-    else request.formType = TaxFormType::Doh_DHO;
 
-    if (!m_emailEdit->text().isEmpty()) request.email = m_emailEdit->text().toStdString();
-    if (!m_phoneEdit->text().isEmpty()) request.phone = m_phoneEdit->text().toStdString();
+    if (!jsonOnly) {
+        request.taxNumber = m_taxNumEdit->text().toStdString();
+        request.year = m_yearSpin->value();
+        request.formDocType = static_cast<FormType>(m_docTypeCombo->currentData().toInt());
+        
+        int typeIndex = m_formTypeCombo->currentIndex();
+        if (typeIndex == 0) request.formType = TaxFormType::Doh_KDVP;
+        else if (typeIndex == 1) request.formType = TaxFormType::Doh_DIV;
+        else request.formType = TaxFormType::Doh_DHO;
 
-    // 3. Setup Threading
+        if (!m_emailEdit->text().isEmpty()) request.email = m_emailEdit->text().toStdString();
+        if (!m_phoneEdit->text().isEmpty()) request.phone = m_phoneEdit->text().toStdString();
+    }
+
+    // 3. Setup Threading for Background Processing
     QThread *thread = new QThread;
     Worker *worker = new Worker(request);
     
     worker->moveToThread(thread);
 
-    // Connect signals
     connect(thread, &QThread::started, worker, &Worker::process);
     connect(worker, &Worker::finished, this, &MainWindow::onWorkerFinished);
     
-    // Cleanup logic
+    // Auto-cleanup when finished
     connect(worker, &Worker::finished, thread, &QThread::quit);
     connect(worker, &Worker::finished, worker, &Worker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
 
-    // UI State
+    // UI Feedback
     m_generateBtn->setEnabled(false);
     m_progressBar->setVisible(true);
-    m_progressBar->setValue(0); // Indeterminate or start
+    m_progressBar->setValue(0);
     
     thread->start();
 }
@@ -155,10 +185,11 @@ void MainWindow::onGenerateClicked() {
 void MainWindow::onWorkerFinished(bool success, QString message) {
     m_generateBtn->setEnabled(true);
     m_progressBar->setValue(100);
-    
+    m_progressBar->setVisible(false);
+
     if (success) {
-        QMessageBox::information(this, "Success", "Generation successful!\n" + message);
+        QMessageBox::information(this, "Success", "Processing completed successfully!\n\n" + message);
     } else {
-        QMessageBox::critical(this, "Error", "Failed to generate XML:\n" + message);
+        QMessageBox::critical(this, "Error", "An error occurred:\n" + message);
     }
 }
