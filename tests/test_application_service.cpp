@@ -75,7 +75,7 @@ TEST_F(ApplicationServiceApiTest, ShouldGenerateFullXml) {
 
 std::string TAX_NUM = "12345678";
 
-TEST_F(ApplicationServiceApiTest, ApKDVP) {
+TEST_F(ApplicationServiceApiTest, ApiKDVP) {
     ApplicationService service;
 
     GenerationRequest request;
@@ -94,6 +94,27 @@ TEST_F(ApplicationServiceApiTest, ApKDVP) {
     
     ASSERT_TRUE(result.success);
     EXPECT_TRUE(fs::exists(request.outputDirectory / "Doh_KDVP.xml"));
+}
+
+TEST_F(ApplicationServiceApiTest, ApiDIV) {
+    ApplicationService service;
+
+    GenerationRequest request;
+    
+    request.outputDirectory = m_root / "tmp" / "api_test";
+    request.inputPdf = m_root / "tmp" / "TaxReport2024.pdf";
+    request.outputDirectory = m_root / "tmp" / "api_test_output";
+    request.formType = TaxFormType::Doh_DIV;
+    request.email = "john@example.com";
+    request.phone = "0123456789";
+    request.year = 2025;
+
+    request.taxNumber = TAX_NUM;
+    
+    auto result = service.processRequest(request);
+    
+    ASSERT_TRUE(result.success);
+    EXPECT_TRUE(fs::exists(request.outputDirectory / "Doh_DIV.xml"));
 }
 
 #endif

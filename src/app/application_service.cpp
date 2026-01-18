@@ -13,9 +13,9 @@ struct ApplicationService::Impl {
     {
         XmlGenerator generator;
         Transactions transactions;
+        XmlGenerator::parse_json(transactions, {TransactionType::Equities, TransactionType::Funds}, jsonData);
         
         if (request.formType == TaxFormType::Doh_KDVP) {
-            XmlGenerator::parse_json(transactions, {TransactionType::Equities, TransactionType::Funds}, jsonData);
             auto data = XmlGenerator::prepare_kdvp_data(transactions.mGains, (FormData&)formData);
             auto doc = generator.generate_doh_kdvp_xml(data, taxpayer);
             
@@ -23,7 +23,15 @@ struct ApplicationService::Impl {
             doc.save_file(outPath.c_str());
             outFiles.push_back(outPath);
         }
-        // Add other form types (DIV, DHO) here...
+        
+        if (request.formType == TaxFormType::Doh_DIV) {
+            auto data = XmlGenerator::prepare_div_data(transactions.mIncome.mDivTransactions, (FormData&)formData);
+            auto doc = generator.generate_doh_div_xml(data, taxpayer);
+            
+            auto outPath = request.outputDirectory / "Doh_DIV.xml";
+            doc.save_file(outPath.c_str());
+            outFiles.push_back(outPath);
+        }
     }
 };
 
