@@ -54,6 +54,36 @@ jobs:
              --output-file coverage.info.filtered \
              --ignore-errors mismatch
 
+    - name: Generate Coverage Summary
+      if: github.event_name == 'pull_request'
+      run: |
+        # Function to get percentage from lcov
+        get_percent() {
+          lcov --summary $1 | grep "lines......:" | cut -d' ' -f4 | cut -d'%' -f1
+        }
+
+        PR_COV=$(get_percent coverage.info.filtered)
+        BASE_COV=$(get_percent base_coverage.info.filtered)
+        DIFF=$(echo "$PR_COV - $BASE_COV" | bc)
+        
+        # Format the emoji based on progress
+        EMOJI="✅"
+        if (( $(echo "$DIFF < 0" | bc -l) )); then EMOJI="⚠️"; fi
+
+        echo "### 📊 Coverage Report Delta" > coverage_summary.md
+        echo "| Branch | Coverage |" >> coverage_summary.md
+        echo "| :--- | :--- |" >> coverage_summary.md
+        echo "| Main (Base) | ${BASE_COV}% |" >> coverage_summary.md
+        echo "| PR (This change) | ${PR_COV}% |" >> coverage_summary.md
+        echo "" >> coverage_summary.md
+        echo "**Difference:** ${EMOJI} ${DIFF}%" >> coverage_summary.md
+
+    - name: Post Delta Comment
+      if: github.event_name == 'pull_request'
+      uses: thollander/actions-comment-pull-request@v2
+      with:
+        filePath: ./coverage_summary.md
+
     - name: PR Coverage Report
       if: github.event_name == 'pull_request'
       uses: romeovs/lcov-reporter-action@v0.3.1
