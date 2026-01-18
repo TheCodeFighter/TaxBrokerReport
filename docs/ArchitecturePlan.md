@@ -103,17 +103,23 @@ User interaction only
 
 ``` text
 include/
+├── app/
+│   └── application_service.hpp
 ├── backend/
 │   ├── report_loader.hpp
 │   └── xml_generator.hpp
-├── app/
-│   └── application_service.hpp
+├── gui/
+│   ├── main_window.hpp
+│   └── worker.hpp
 src/
+├── app/
+│   └── application_service.cpp
 ├── backend/
 │   ├── report_loader.cpp
 │   └── xml_generator.cpp
-├── app/
-│   └── application_service.cpp
+└── gui/                <-- NOVO: Tu so Qt source datoteke
+│   ├── main_window.cpp
+│   └── worker.cpp
 └── main.cpp
 ```
 
@@ -125,5 +131,3 @@ src/
 - **JSON → XML**     – tax domain logic & official schema compliance  
 - **Application**    – orchestration, validation, stable API  
 - **GUI**            – presentation only (replaceable)
-
-This strict layering gives excellent maintainability, testability and future extensibility.

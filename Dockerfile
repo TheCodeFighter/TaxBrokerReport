@@ -11,10 +11,11 @@ RUN apt-get update && apt-get install -y apt-utils && rm -rf /var/lib/apt/lists/
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     build-essential git pkg-config gdb gdbserver \
-    vim curl wget libpoppler-cpp-dev libgtest-dev \
+    curl wget libpoppler-cpp-dev libgtest-dev \
     nlohmann-json3-dev file libpugixml-dev \
     libxml2-dev libxml2-utils valgrind \
     ninja-build ccache lcov\
+    qt6-base-dev libgl1-mesa-dev libxkbcommon-x11-0 libegl1-mesa-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure Ccache (Enable it nicely for dev)
