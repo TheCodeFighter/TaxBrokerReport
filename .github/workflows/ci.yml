@@ -33,6 +33,7 @@ jobs:
 
     - name: Configure & Build
       run: |
+        export QT_QPA_PLATFORM=offscreen
         cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DSAVE_GENERATED_FILES=0
         cmake --build build -- -j$(nproc)
 
@@ -40,13 +41,18 @@ jobs:
       run: |
         export QT_QPA_PLATFORM=offscreen
         lcov --directory . --zerocounters
-        cd build && ./test_report_loader && ./test_xml_generator && ./test_application_service && cd ..
+        
+        # 1. Run all tests using ctest (cleaner than calling binaries manually)
+        ctest --test-dir build --output-on-failure
+        
+        # 2. Capture coverage
         lcov --directory . --capture --output-file coverage.info --ignore-errors mismatch
-        lcov --extract coverage.info "*/src/app/application_service.cpp" \
-                                     "*/src/backend/report_loader.cpp" \
-                                     "*/src/backend/xml_generator.cpp" \
-                                     --output-file coverage.info.filtered \
-                                     --ignore-errors mismatch
+        
+        # 3. Use the "Whitelist" extraction we perfected locally
+        # This includes src (app, backend, gui) and the root util folder
+        lcov --extract coverage.info "*/src/*" "*/util/*" \
+             --output-file coverage.info.filtered \
+             --ignore-errors mismatch
 
     - name: PR Coverage Report
       if: github.event_name == 'pull_request'
@@ -54,11 +60,15 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         lcov-file: ./coverage.info.filtered
-        filter-changed-files: true
+        # Changed to false so you can see the total project health, 
+        # not just the lines you touched.
+        filter-changed-files: false 
 
     - name: Valgrind Memory Check
       run: |
+        export QT_QPA_PLATFORM=offscreen
         set -e
-        for t in test_report_loader test_xml_generator test_application_service; do
+        # Added test_gui to the loop
+        for t in test_report_loader test_xml_generator test_application_service test_gui; do
           valgrind --leak-check=full --error-exitcode=1 "./build/$t"
         done
