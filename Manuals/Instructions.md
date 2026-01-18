@@ -116,6 +116,24 @@ make shell
 
 - Drops you into the running container's bash prompt.
 
+#### 📊 Code Coverage
+
+We use lcov and gcov to track the testing status of the project. The coverage includes the backend logic, utility functions, and the Qt-based GUI.
+
+Generating Reports Locally
+To generate the same report locally using the development Docker container:
+
+**1. Run the coverage target:**
+
+```Bash
+make coverage
+```
+
+**2. View the results: Open tests/coverage_report/index.html in your browser.**
+
+>[!Note]
+GUI tests are executed using the offscreen Qt platform plugin to ensure they can run in headless environments (like Docker and GitHub Actions CI).
+
 ---
 
 ## VS Code Debugging
