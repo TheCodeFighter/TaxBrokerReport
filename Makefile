@@ -24,6 +24,7 @@ VALGRIND_TESTS_FILES := test_report_loader test_xml_generator   test_application
 DOCKER_RUN = docker run --rm --name $(CONTAINER_NAME_NO_DEBUG) \
 	-v "$(PWD)":/app \
 	-v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
+	-e QT_QPA_PLATFORM=offscreen \
 	--user $(shell id -u):$(shell id -g) \
 	$(IMAGE_NAME)
 
