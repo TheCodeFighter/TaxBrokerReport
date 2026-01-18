@@ -32,6 +32,15 @@ struct ApplicationService::Impl {
             doc.save_file(outPath.c_str());
             outFiles.push_back(outPath);
         }
+
+        if (request.formType == TaxFormType::Doh_DHO) {
+            auto data = XmlGenerator::prepare_dho_data(transactions.mIncome.mInterests, (FormData&)formData);
+            auto doc = generator.generate_doh_dho_xml(data, taxpayer);
+            
+            auto outPath = request.outputDirectory / "Doh_DHO.xml";
+            doc.save_file(outPath.c_str());
+            outFiles.push_back(outPath);
+        }
     }
 };
 
