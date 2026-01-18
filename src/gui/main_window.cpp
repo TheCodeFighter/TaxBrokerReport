@@ -16,9 +16,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 MainWindow::~MainWindow() {}
 
 void MainWindow::setupUi() {
+    setWindowIcon(QIcon(":/app_logo"));
+
     QWidget *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
     QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
+
+    QLabel *logoLabel = new QLabel(this);
+    QPixmap logoPixmap(":/app_logo");
+    
+    if (!logoPixmap.isNull()) {
+        logoLabel->setPixmap(logoPixmap.scaledToHeight(160, Qt::SmoothTransformation));
+        
+        logoLabel->setAlignment(Qt::AlignCenter);
+        // Add some breathing room (top/bottom padding)
+        logoLabel->setContentsMargins(0, 20, 0, 20); 
+        
+        mainLayout->insertWidget(0, logoLabel); 
+    }
 
     // 0. Top Level Toggle
     m_jsonOnlyCheck = new QCheckBox("Mode: Generate intermediate JSON only (skip XML generation)", this);

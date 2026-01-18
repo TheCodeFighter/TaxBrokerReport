@@ -79,6 +79,7 @@ add_executable(EdavkiXmlMaker
     include/gui/worker.hpp
     src/gui/main_window.cpp
     src/gui/worker.cpp
+    resources/gui/resources.qrc
     ${CORE_OBJECTS}
 )
 
@@ -124,6 +125,7 @@ add_executable(test_gui
     include/gui/worker.hpp
     src/gui/main_window.cpp 
     src/gui/worker.cpp
+    resources/gui/resources.qrc
     ${CORE_OBJECTS}
 )
 

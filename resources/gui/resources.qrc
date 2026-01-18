@@ -1,0 +1,5 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/">
+    <file alias="app_logo">logo.jpg</file>
+</qresource>
+</RCC>
