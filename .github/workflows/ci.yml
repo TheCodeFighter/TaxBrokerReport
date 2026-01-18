@@ -9,6 +9,7 @@ on:
 permissions:
   pull-requests: write
   contents: read
+  actions: read
 
 jobs:
   build-and-test:
@@ -54,20 +55,74 @@ jobs:
              --output-file coverage.info.filtered \
              --ignore-errors mismatch
 
+    - name: Upload Baseline Coverage
+      if: github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@v4
+      with:
+        name: main-coverage
+        path: coverage.info.filtered
+
+    - name: Download Baseline Coverage
+      if: github.event_name == 'pull_request'
+      uses: dawidd6/action-download-artifact@v3
+      with:
+        github_token: ${{secrets.GITHUB_TOKEN}}
+        workflow: ci.yml
+        branch: main
+        name: main-coverage
+        path: ./base_coverage/
+        if_no_artifact_found: warn
+
     - name: Generate Coverage Summary
       if: github.event_name == 'pull_request'
       run: |
-        # Function to get percentage from lcov
+        # Use the downloaded path
+        BASE_FILE="./base_coverage/coverage.info.filtered"
+        
         get_percent() {
-          lcov --summary $1 | grep "lines......:" | cut -d' ' -f4 | cut -d'%' -f1
+          if [ -f "$1" ]; then
+            lcov --summary "$1" 2>/dev/null | grep "lines......:" | awk '{print $2}' | tr -d '%'
+          else
+            echo "0.0"
+          fi
+        }
+
+        PR_COV=$(get_percent coverage.info.filtered)
+        BASE_COV=$(get_percent "$BASE_FILE")
+        
+        # Calculate Delta using bc
+        DIFF=$(echo "$PR_COV - $BASE_COV" | bc)
+        
+        EMOJI="✅"
+        if (( $(echo "$DIFF < 0" | bc -l) )); then EMOJI="⚠️"; fi
+
+        echo "### 📊 Coverage Report Delta" > coverage_summary.md
+        echo "| Branch | Coverage |" >> coverage_summary.md
+        echo "| :--- | :--- |" >> coverage_summary.md
+        echo "| Main (Base) | ${BASE_COV}% |" >> coverage_summary.md
+        echo "| PR (This change) | ${PR_COV}% |" >> coverage_summary.md
+        echo "" >> coverage_summary.md
+        echo "**Difference:** ${EMOJI} ${DIFF}%" >> coverage_summary.md
+
+    - name: Generate Coverage Summary
+      if: github.event_name == 'pull_request'
+      run: |
+        # Robust function to get percentage
+        get_percent() {
+          lcov --summary $1 2>/dev/null | grep "lines......:" | awk '{print $2}' | tr -d '%'
         }
 
         PR_COV=$(get_percent coverage.info.filtered)
         BASE_COV=$(get_percent base_coverage.info.filtered)
+        
+        # If BASE_COV is empty (first run), default to 0
+        if [ -z "$BASE_COV" ]; then BASE_COV="0.0"; fi
+        
+        # Calculate Delta
         DIFF=$(echo "$PR_COV - $BASE_COV" | bc)
         
-        # Format the emoji based on progress
         EMOJI="✅"
+        # Compare as floats
         if (( $(echo "$DIFF < 0" | bc -l) )); then EMOJI="⚠️"; fi
 
         echo "### 📊 Coverage Report Delta" > coverage_summary.md
