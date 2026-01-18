@@ -31,4 +31,5 @@ private:
     QLineEdit *m_phoneEdit;
     QProgressBar *m_progressBar;
     QPushButton *m_generateBtn;
+    QComboBox *m_docTypeCombo;
 };
