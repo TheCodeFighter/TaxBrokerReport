@@ -1,193 +1,83 @@
 # ---------------------------
 # Variables
 # ---------------------------
-# Dev image with all tools/deps
 IMAGE_NAME = edavki-dev
-
-# Minimal runtime image
-PROD_IMAGE = edavki-prod
-
-# CMake build folder
 BUILD_DIR = build
-
-# Persistent build volume
 CACHE_VOLUME = $(IMAGE_NAME)-cache
-
-# For debugging/VSCode attach
 CONTAINER_NAME = edavki-container
-CONTAINER_NAME_NO_DEBUG = edavki-container-no-debug
+TEST_FILES := test_report_loader test_xml_generator test_application_service test_gui
 
-VALGRIND_TESTS_FILES := test_report_loader test_xml_generator   test_application_service  # Update when new files are needed to check (i.e. main)
+# Detect environment: skip docker exec if already inside the container
+INSIDE_DOCKER := $(shell if [ -f /.dockerenv ]; then echo "yes"; else echo "no"; fi)
 
-
-# Common docker run command for dev tasks (mounts source + build cache)
-DOCKER_RUN = docker run --rm --name $(CONTAINER_NAME_NO_DEBUG) \
-	-v "$(PWD)":/app \
-	-v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
-	-e QT_QPA_PLATFORM=offscreen \
-	--user $(shell id -u):$(shell id -g) \
-	$(IMAGE_NAME)
+ifeq ($(INSIDE_DOCKER),yes)
+    CMD_PREFIX := 
+else
+    CMD_PREFIX := docker exec $(CONTAINER_NAME)
+endif
 
 # ---------------------------
-# Targets
+# Image & Environment (Host Only)
 # ---------------------------
 
-# 1.a Build base dev image (installs deps, cached)
 build-image:
-	docker build --target dev-base -t $(IMAGE_NAME) .
+	@echo "Building development image..."
+	@docker build --target dev-base -t $(IMAGE_NAME) .
 
-# 1.b Fix volume permissions (if needed)
-fix-volume-perms:
-	docker run --rm \
-	  -v $(CACHE_VOLUME):/app/build \
-	  --user root \
-	  alpine \
-	  chown -R $(shell id -u):$(shell id -g) /app/build
-
-# 2. Configure CMake project inside container
-configure:
-	docker run --rm --name $(CONTAINER_NAME_NO_DEBUG) \
-	-v "$(PWD)":/app \
-	-v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
-	--user $(shell id -u):$(shell id -g) \
-	$(IMAGE_NAME) \
-	cmake -S . -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
-
-# 3. Build incrementally inside container (uses persistent build cache)
-build:
-	$(DOCKER_RUN) cmake --build $(BUILD_DIR)
-
-# 4. Run tests inside container
-test: build
-	$(DOCKER_RUN) cmake --build $(BUILD_DIR) --target test_report_loader test_xml_generator test_application_service
-	$(DOCKER_RUN) ctest --test-dir $(BUILD_DIR) --output-on-failure
-
-# 5. Combined: configure + build + test
-all: configure build test
-
-# 6. Build production image (multi-stage, minimal size)
-build-prod:
-	docker build --target prod -t $(PROD_IMAGE) .
-
-# 7. Run production image (executes built binary)
-run-prod:
-	docker run --rm $(PROD_IMAGE)
-
-# 8. Optional: start interactive dev container (for debugging or manual work)
-run-dev:
-	docker run -d --name $(CONTAINER_NAME) -v "$(PWD)":/app -v $(CACHE_VOLUME):/app/$(BUILD_DIR) --user $(shell id -u):$(shell id -g) $(IMAGE_NAME) sleep infinity
-
-# 9. Open shell inside dev container
-dev-shell:
-	docker run -it --rm \
-	  --name $(CONTAINER_NAME) \
-	  -v "$(PWD)":/app \
-	  -v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
-	  --user $(shell id -u):$(shell id -g) \
-	  $(IMAGE_NAME) /bin/bash
-
-# -----------------------------
-# 10. Debug tests in container
-# -----------------------------
-debug-test-report-loader:
-	docker run --rm -it --name $(CONTAINER_NAME) \
-	  -v "${PWD}":/app \
-	  --user $(shell id -u):$(shell id -g) \
-	  $(IMAGE_NAME) \
-	  bash -c "cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build && gdb ./build/test_report_loader"
-
-# 11.a Start dev container and build tests
-# ---------------------------
-dev-container-build:
-	@echo "Starting edavki-dev container and building tests..."
+dev-up:
+	@if [ ! $$(docker images -q $(IMAGE_NAME)) ]; then $(MAKE) build-image; fi
 	@if [ $$(docker ps -aq -f name=$(CONTAINER_NAME)) ]; then \
-		echo "Container already exists. Starting it..."; \
 		docker start $(CONTAINER_NAME) > /dev/null; \
 	else \
-		docker run -d \
-		  --name $(CONTAINER_NAME) \
-		  -v "$(PWD)":/app \
-		  -v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
-		  --user $(shell id -u):$(shell id -g) \
-		  edavki-dev \
-		  sleep infinity; \
+		docker run -d --name $(CONTAINER_NAME) \
+			-v "$(PWD)":/app -v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
+			-e DISPLAY=$(DISPLAY) -v /tmp/.X11-unix:/tmp/.X11-unix \
+			--user $(shell id -u):$(shell id -g) $(IMAGE_NAME) sleep infinity; \
 	fi
-	@echo "Running CMake build inside container..."
-	docker exec $(CONTAINER_NAME) cmake -S /app -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
-	docker exec $(CONTAINER_NAME) cmake --build /app/$(BUILD_DIR)
+	@xhost +local:docker > /dev/null
+	@echo "Development engine is READY."
 
+dev-down:
+	@echo "Shutting down the development engine..."
+	@docker stop $(CONTAINER_NAME) > /dev/null 2>&1 || true
+	@docker rm $(CONTAINER_NAME) > /dev/null 2>&1 || true
+	@echo "Engine STOPPED."
 
 # ---------------------------
-# 11.b Optional: stop container
+# Development Commands (Work both on Host and Inside Container)
 # ---------------------------
-dev-container-stop:
-	@echo "Stopping edavki-dev container..."
-	docker stop $(CONTAINER_NAME) || echo "Container is not running"
 
+configure:
+	$(CMD_PREFIX) cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 
-# Build single test inside container, will not work outside
 build-test-report-loader:
-	@echo "Building test_report_loader..."
-	cmake -S /app -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
-	cmake --build /app/$(BUILD_DIR) --target test_report_loader
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_report_loader -j$(shell nproc)
 
 build-test-xml-generator:
-	@echo "Building test_xml_generator..."
-	cmake -S /app -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
-	cmake --build /app/$(BUILD_DIR) --target test_xml_generator
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_xml_generator -j$(shell nproc)
 
 build-test-application-service:
-	@echo "Building test_application_service..."
-	cmake -S /app -B /app/$(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
-	cmake --build /app/$(BUILD_DIR) --target test_application_service
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_application_service -j$(shell nproc)
 
-# ---------------------------
-# 12. Run all tests under Valgrind (inside container)
-# ---------------------------
-valgrind-tests: dev-container-build
-	@echo "Running selected tests under Valgrind inside container..."
-	docker exec -it $(CONTAINER_NAME) bash -c "\
-	    for test_name in $(VALGRIND_TESTS_FILES); do \
-	        test_exec=\"/app/$(BUILD_DIR)/\$$test_name\"; \
-	        if [ -x \"\$$test_exec\" ]; then \
-	            echo '==> Running Valgrind on' \$$test_exec; \
-	            valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 \$$test_exec && \
-	            echo '✔ Passed Valgrind:' \$$test_exec; \
-	        else \
-	            echo 'Test executable not found or not executable:' \$$test_exec; \
-	        fi; \
-	    done"   
+build-test-gui:
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_gui -j$(shell nproc)
 
-# ---------------------------
-# 13. Test coverage report generation
-# ---------------------------
-COVERAGE_SOURCES := src/app/application_service.cpp \
-                    src/backend/report_loader.cpp \
-                    src/backend/xml_generator.cpp
+# Build only the main application binary
+build-main:
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target EdavkiXmlMaker -j$(shell nproc)
 
-TEST_EXECUTABLES := ./test_report_loader \
-                    ./test_xml_generator \
-                    ./test_application_service
+build:
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) -j$(shell nproc)
 
-COVERAGE_INFO = tests/coverage.info
-COVERAGE_REPORT_DIR = tests/coverage_report
+run: build
+	$(CMD_PREFIX) ./$(BUILD_DIR)/EdavkiXmlMaker
 
-coverage:
-	@echo "Gathering code coverage data..."
-	docker exec -it $(CONTAINER_NAME) lcov --directory . --zerocounters
-	
-	docker exec -it $(CONTAINER_NAME) bash -c "cd $(BUILD_DIR) && $(foreach test,$(TEST_EXECUTABLES),$(test) &&) true"
-	
-	docker exec -it $(CONTAINER_NAME) lcov --directory . --capture --output-file $(COVERAGE_INFO)
-	
-	@echo "Filtering for specific sources..."
-	docker exec -it $(CONTAINER_NAME) lcov --extract $(COVERAGE_INFO) $(addprefix */,$(COVERAGE_SOURCES)) --output-file $(COVERAGE_INFO).filtered
-	
-	docker exec -it $(CONTAINER_NAME) genhtml $(COVERAGE_INFO).filtered --output-directory $(COVERAGE_REPORT_DIR)
-	@echo "-------------------------------------------------------"
-	@echo "Report generated: $(COVERAGE_REPORT_DIR)/index.html"
-	@echo "-------------------------------------------------------"
+# Launch the GUI application on your host display
+run-main: build-main
+	$(CMD_PREFIX) ./$(BUILD_DIR)/EdavkiXmlMaker
 
-clean-coverage:
-	rm -rf $(COVERAGE_REPORT_DIR)
-	rm -f $(COVERAGE_INFO) $(COVERAGE_INFO).filtered
+test: build
+	$(CMD_PREFIX) bash -c "QT_QPA_PLATFORM=offscreen ctest --test-dir $(BUILD_DIR) --output-on-failure"
+
+clean:
+	$(CMD_PREFIX) rm -rf $(BUILD_DIR)/*
