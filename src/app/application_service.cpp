@@ -68,7 +68,7 @@ GenerationResult ApplicationService::processRequest(const GenerationRequest& req
         // ... fill other fields ...
 
         FormData formData;
-        formData.mYear = 2024;
+        formData.mYear = request.year;
 
         // Now m_pImpl is "complete" and this call will work
         m_pImpl->generateXml(request, jsonData, taxpayer, formData, result.createdFiles);

@@ -21,6 +21,7 @@ struct GenerationRequest {
     // Obligatory
     TaxFormType formType;
     std::string taxNumber;
+    int year;
 
     // Optional
     std::optional<std::string> phone;
