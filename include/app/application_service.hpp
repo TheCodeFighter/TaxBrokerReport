@@ -5,7 +5,9 @@
 #include <vector>
 #include <string>
 #include <memory>
+
 #include "report_loader.hpp"
+#include "xml_generator.hpp"
 
 enum class TaxFormType {
     Doh_KDVP,
@@ -22,6 +24,7 @@ struct GenerationRequest {
     TaxFormType formType;
     std::string taxNumber;
     int year;
+    FormType  formDocType = FormType::Original;
 
     // Optional
     std::optional<std::string> phone;

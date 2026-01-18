@@ -86,6 +86,10 @@ GenerationResult ApplicationService::processRequest(const GenerationRequest& req
 
         FormData formData;
         formData.mYear = request.year;
+        formData.mTelephoneNumber = request.phone;
+        formData.mEmail = request.email;
+        formData.mIsResident = true; // Assume resident for simplicity
+        formData.mDocID = request.formDocType;
 
         // Now m_pImpl is "complete" and this call will work
         m_pImpl->generateXml(request, jsonData, taxpayer, formData, result.createdFiles);
