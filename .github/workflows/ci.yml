@@ -23,7 +23,7 @@ jobs:
         sudo apt update
         sudo apt install -y cmake g++ make libgtest-dev nlohmann-json3-dev \
                             libpoppler-cpp-dev libpugixml-dev valgrind lcov \
-                            qt6-base-dev libgl1-mesa-dev libxkbcommon-x11-0
+                            qt6-base-dev libgl1-mesa-dev libxkbcommon-x11-0 bc
 
     - name: Build GTest
       run: |
@@ -76,7 +76,7 @@ jobs:
     - name: Generate Coverage Summary
       if: github.event_name == 'pull_request'
       run: |
-        # Use the downloaded path
+        PR_FILE="coverage.info.filtered"
         BASE_FILE="./base_coverage/coverage.info.filtered"
         
         get_percent() {
@@ -87,42 +87,13 @@ jobs:
           fi
         }
 
-        PR_COV=$(get_percent coverage.info.filtered)
+        PR_COV=$(get_percent "$PR_FILE")
         BASE_COV=$(get_percent "$BASE_FILE")
-        
-        # Calculate Delta using bc
-        DIFF=$(echo "$PR_COV - $BASE_COV" | bc)
-        
-        EMOJI="✅"
-        if (( $(echo "$DIFF < 0" | bc -l) )); then EMOJI="⚠️"; fi
-
-        echo "### 📊 Coverage Report Delta" > coverage_summary.md
-        echo "| Branch | Coverage |" >> coverage_summary.md
-        echo "| :--- | :--- |" >> coverage_summary.md
-        echo "| Main (Base) | ${BASE_COV}% |" >> coverage_summary.md
-        echo "| PR (This change) | ${PR_COV}% |" >> coverage_summary.md
-        echo "" >> coverage_summary.md
-        echo "**Difference:** ${EMOJI} ${DIFF}%" >> coverage_summary.md
-
-    - name: Generate Coverage Summary
-      if: github.event_name == 'pull_request'
-      run: |
-        # Robust function to get percentage
-        get_percent() {
-          lcov --summary $1 2>/dev/null | grep "lines......:" | awk '{print $2}' | tr -d '%'
-        }
-
-        PR_COV=$(get_percent coverage.info.filtered)
-        BASE_COV=$(get_percent base_coverage.info.filtered)
-        
-        # If BASE_COV is empty (first run), default to 0
-        if [ -z "$BASE_COV" ]; then BASE_COV="0.0"; fi
         
         # Calculate Delta
         DIFF=$(echo "$PR_COV - $BASE_COV" | bc)
         
         EMOJI="✅"
-        # Compare as floats
         if (( $(echo "$DIFF < 0" | bc -l) )); then EMOJI="⚠️"; fi
 
         echo "### 📊 Coverage Report Delta" > coverage_summary.md
@@ -145,15 +116,12 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         lcov-file: ./coverage.info.filtered
-        # Changed to false so you can see the total project health, 
-        # not just the lines you touched.
         filter-changed-files: false 
 
     - name: Valgrind Memory Check
       run: |
         export QT_QPA_PLATFORM=offscreen
         set -e
-        # Added test_gui to the loop
         for t in test_report_loader test_xml_generator test_application_service test_gui; do
           valgrind --leak-check=full --error-exitcode=1 "./build/$t"
         done
