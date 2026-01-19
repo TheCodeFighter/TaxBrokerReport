@@ -95,13 +95,16 @@ jobs:
         PR_COV=$(get_percent "$PR_FILE")
         BASE_COV=$(get_percent "$BASE_FILE")
         
-        # ADDED: scale=2 for decimal precision
-        DIFF=$(echo "scale=2; $PR_COV - $BASE_COV" | bc)
+        # 1. Calculate the raw difference
+        RAW_DIFF=$(echo "$PR_COV - $BASE_COV" | bc -l)
         
-        # Robust comparison for emoji
+        # 2. Use printf to force leading zeros (e.g., 0.90 instead of .90)
+        DIFF=$(printf "%.2f" $RAW_DIFF)
+        
+        # 3. Robust comparison for emoji
         EMOJI="✅"
-        IS_NEGATIVE=$(echo "$DIFF < 0" | bc -l)
-        if [ "$IS_NEGATIVE" -eq 1 ]; then EMOJI="⚠️"; fi
+        # Check if the first character is a minus sign
+        if [[ $DIFF == -* ]]; then EMOJI="⚠️"; fi
 
         echo "### 📊 Coverage Report Delta" > coverage_summary.md
         if [ ! -f "$BASE_FILE" ]; then
@@ -112,6 +115,7 @@ jobs:
         echo "| Main (Base) | ${BASE_COV}% |" >> coverage_summary.md
         echo "| PR (This change) | ${PR_COV}% |" >> coverage_summary.md
         echo "" >> coverage_summary.md
+        # Space after emoji for readability
         echo "**Difference:** ${EMOJI} ${DIFF}%" >> coverage_summary.md
 
     - name: Post Delta Comment
