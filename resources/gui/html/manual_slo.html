@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: sans-serif; line-height: 1.4; color: #333; }
+        h2 { color: #0056b3; border-bottom: 1px solid #ccc; }
+        .code { font-family: monospace; background-color: #f4f4f4; padding: 2px; }
+        .warning { color: #d32f2f; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>Navodila za uporabo</h2>
+    
+    <p><b>1. Izbira vhodne datoteke</b></p>
+    <ul>
+        <li><b>PDF Poročilo:</b> Naložite izvoz vašega posrednika (trnutno le Trade Republic). Program bo samodejno pridobil podatke o trgovanju.</li>
+        <li><b>JSON Datoteka:</b> Naložite predhodno ustvarjeno datoteko <span class="code">transactions.json</span>, da preskočite fazo branja PDF dokumenta.</li>
+    </ul>
+
+    <p><b>2. Načini generiranja</b></p>
+    <p>Privzeto program ustvari XML datoteko za eDavke. Vendar pa:</p>
+    <ul>
+        <li><b>Način JSON:</b> Če je ta možnost označena, program <i>le</i> shrani pridobljene podatke v JSON datoteko. To uporabite za preverjanje natančnosti podatkov pred končno izdelavo XML datoteke.</li>
+    </ul>
+
+    <p class="warning">Opomba: Prepričajte se, da sta <b>davčna številka</b> in <b>leto</b> pravilna za glavo XML datoteke.</p>
+</body>
+</html>

@@ -1,5 +1,8 @@
-<!DOCTYPE RCC><RCC version="1.0">
-<qresource prefix="/">
-    <file alias="app_logo">logo.jpg</file>
-</qresource>
+<RCC>
+    <qresource prefix="/">
+        <file alias="app_logo">icons/logo.jpg</file>
+        <file alias="manual_eng">html/manual_eng.html</file>
+        <file alias="manual_slo">html/manual_slo.html</file>
+        <file alias="about">html/about.html</file>
+    </qresource>
 </RCC>

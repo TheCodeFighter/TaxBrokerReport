@@ -7,7 +7,10 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QCheckBox>
-#include <QGroupBox> // Added missing include
+#include <QGroupBox> 
+#include <QTabWidget>
+#include <QTextBrowser>
+
 #include "application_service.hpp"
 
 class MainWindow : public QMainWindow {
@@ -26,6 +29,13 @@ private slots:
 
 private:
     void setupUi();
+
+    // tabs
+    QWidget* createHomeTab();
+    QWidget* createManualsTab();
+    QWidget* createAboutTab();
+
+    QTabWidget *m_mainTabs;
 
     // Group Boxes (stored as members to allow hiding/showing)
     QGroupBox *m_mandatoryGroup;

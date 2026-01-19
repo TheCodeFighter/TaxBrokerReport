@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: sans-serif; line-height: 1.4; color: #333; }
+        h2 { color: #0056b3; border-bottom: 1px solid #ccc; }
+        .code { font-family: monospace; background-color: #f4f4f4; padding: 2px; }
+        .warning { color: #d32f2f; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>User Manual</h2>
+    
+    <p><b>1. Input File Selection</b></p>
+    <ul>
+        <li><b>PDF Report:</b> Upload your broker's export (currently only Trade Republic). The parser extracts trade data.</li>
+        <li><b>JSON File:</b> Load a previously generated <span class="code">transactions.json</span> to skip the PDF parsing stage.</li>
+    </ul>
+
+    <p><b>2. Generation Modes</b></p>
+    <p>By default, the app generates an XML for eDavki. However:</p>
+    <ul>
+        <li><b>JSON Mode:</b> If checked, the app <i>only</i> saves the extracted data to a JSON file. Use this to verify accuracy before final XML creation.</li>
+    </ul>
+
+    <p class="warning">Note: Ensure your <b>Tax Number</b> and <b>Year</b> are correct for the XML header.</p>
+</body>
+</html>

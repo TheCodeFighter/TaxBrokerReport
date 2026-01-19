@@ -1,5 +1,3 @@
-#include "gui/main_window.hpp"
-#include "gui/worker.hpp"
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QFileDialog>
@@ -7,7 +5,22 @@
 #include <QThread>
 #include <QGroupBox>
 #include <QLabel>
-// #include <QCheckBox>
+#include <QFile>
+#include <QTextStream>
+
+#include "gui/main_window.hpp"
+#include "gui/worker.hpp"
+
+
+// Helper to read internal resource files
+QString loadResource(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return "Error: Could not load content.";
+    }
+    QTextStream in(&file);
+    return in.readAll();
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setupUi();
@@ -17,47 +30,58 @@ MainWindow::~MainWindow() {}
 
 void MainWindow::setupUi() {
     setWindowIcon(QIcon(":/app_logo"));
+    setWindowTitle("Edavki XML Maker");
+    resize(600, 750);
 
-    QWidget *centralWidget = new QWidget(this);
-    setCentralWidget(centralWidget);
-    QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
+    // Main Tab Widget
+    m_mainTabs = new QTabWidget(this);
+    setCentralWidget(m_mainTabs);
 
-    QLabel *logoLabel = new QLabel(this);
+    // Tabs
+    m_mainTabs->addTab(createHomeTab(), "Home");
+    m_mainTabs->addTab(createManualsTab(), "Manuals");
+    m_mainTabs->addTab(createAboutTab(), "About");
+}
+
+QWidget* MainWindow::createHomeTab() {
+    QWidget *tab = new QWidget();
+    QVBoxLayout *mainLayout = new QVBoxLayout(tab);
+
+    // --- Original Logic Starts Here ---
+
+    QLabel *logoLabel = new QLabel(tab);
     QPixmap logoPixmap(":/app_logo");
-    
     if (!logoPixmap.isNull()) {
-        logoLabel->setPixmap(logoPixmap.scaledToHeight(160, Qt::SmoothTransformation));
-        
+        logoLabel->setPixmap(logoPixmap.scaledToHeight(120, Qt::SmoothTransformation));
         logoLabel->setAlignment(Qt::AlignCenter);
-        // Add some breathing room (top/bottom padding)
-        logoLabel->setContentsMargins(0, 20, 0, 20); 
-        
-        mainLayout->insertWidget(0, logoLabel); 
+        logoLabel->setContentsMargins(0, 10, 0, 10);
+        mainLayout->addWidget(logoLabel);
     }
 
     // 0. Top Level Toggle
-    m_jsonOnlyCheck = new QCheckBox("Mode: Generate intermediate JSON only (skip XML generation)", this);
+    m_jsonOnlyCheck = new QCheckBox("Mode: Generate intermediate JSON only", tab);
+    m_jsonOnlyCheck->setToolTip("Skip XML generation. Useful for debugging or checking parsed data.");
     m_jsonOnlyCheck->setStyleSheet("font-weight: bold; margin: 5px;");
     connect(m_jsonOnlyCheck, &QCheckBox::toggled, this, &MainWindow::onJsonModeToggled);
     mainLayout->addWidget(m_jsonOnlyCheck);
 
-    // Group 1: Mandatory Tax Data (XML specific)
-    m_mandatoryGroup = new QGroupBox("Tax Data (Required for XML)", this);
+    // Group 1: Mandatory Tax Data
+    m_mandatoryGroup = new QGroupBox("Tax Data (Required for XML)", tab);
     QFormLayout *formLayout = new QFormLayout(m_mandatoryGroup);
 
-    m_taxNumEdit = new QLineEdit(this);
+    m_taxNumEdit = new QLineEdit(tab);
     m_taxNumEdit->setPlaceholderText("e.g. 12345678");
     
-    m_yearSpin = new QSpinBox(this);
+    m_yearSpin = new QSpinBox(tab);
     m_yearSpin->setRange(2020, 2050);
     m_yearSpin->setValue(2025);
 
-    m_formTypeCombo = new QComboBox(this);
+    m_formTypeCombo = new QComboBox(tab);
     m_formTypeCombo->addItem("Doh-KDVP (Capital Gains)", 0);
     m_formTypeCombo->addItem("Doh-DIV (Dividends)", 1);
     m_formTypeCombo->addItem("Doh-DHO (Interest)", 2);
 
-    m_docTypeCombo = new QComboBox(this);
+    m_docTypeCombo = new QComboBox(tab);
     m_docTypeCombo->addItem("Original", static_cast<int>(FormType::Original));
     m_docTypeCombo->addItem("Self-Report (Samoprijava)", static_cast<int>(FormType::SelfReport));
 
@@ -66,19 +90,19 @@ void MainWindow::setupUi() {
     formLayout->addRow("Form Type:", m_formTypeCombo);
     formLayout->addRow("Document Type:", m_docTypeCombo);
 
-    // Group 2: File Paths (Always required)
-    QGroupBox *fileGroup = new QGroupBox("Input / Output", this);
+    // Group 2: File Paths
+    QGroupBox *fileGroup = new QGroupBox("Input / Output", tab);
     QGridLayout *fileLayout = new QGridLayout(fileGroup);
 
-    m_inputFileEdit = new QLineEdit(this);
-    QPushButton *browseInputBtn = new QPushButton("Browse...", this);
+    m_inputFileEdit = new QLineEdit(tab);
+    QPushButton *browseInputBtn = new QPushButton("Browse...", tab);
     connect(browseInputBtn, &QPushButton::clicked, this, &MainWindow::onBrowseFile);
 
-    m_outputDirEdit = new QLineEdit(this);
-    QPushButton *browseDirBtn = new QPushButton("Browse...", this);
+    m_outputDirEdit = new QLineEdit(tab);
+    QPushButton *browseDirBtn = new QPushButton("Browse...", tab);
     connect(browseDirBtn, &QPushButton::clicked, this, &MainWindow::onBrowseOutputDir);
 
-    fileLayout->addWidget(new QLabel("Input File (PDF/JSON):"), 0, 0);
+    fileLayout->addWidget(new QLabel("Input File (PDF or JSON):"), 0, 0);
     fileLayout->addWidget(m_inputFileEdit, 0, 1);
     fileLayout->addWidget(browseInputBtn, 0, 2);
 
@@ -86,33 +110,72 @@ void MainWindow::setupUi() {
     fileLayout->addWidget(m_outputDirEdit, 1, 1);
     fileLayout->addWidget(browseDirBtn, 1, 2);
 
-    // Group 3: Optional Contact Info (XML specific)
-    m_optGroup = new QGroupBox("Optional Contact Info", this);
+    // Group 3: Optional Contact Info
+    m_optGroup = new QGroupBox("Optional Contact Info", tab);
     QFormLayout *optLayout = new QFormLayout(m_optGroup);
-    m_emailEdit = new QLineEdit(this);
-    m_phoneEdit = new QLineEdit(this);
+    m_emailEdit = new QLineEdit(tab);
+    m_phoneEdit = new QLineEdit(tab);
     optLayout->addRow("Email:", m_emailEdit);
     optLayout->addRow("Phone:", m_phoneEdit);
 
-    // Actions & Progress
-    m_progressBar = new QProgressBar(this);
+    // Actions
+    m_progressBar = new QProgressBar(tab);
     m_progressBar->setVisible(false);
     m_progressBar->setRange(0, 100);
 
-    m_generateBtn = new QPushButton("Generate XML", this);
+    m_generateBtn = new QPushButton("Generate XML", tab);
     m_generateBtn->setMinimumHeight(40);
     connect(m_generateBtn, &QPushButton::clicked, this, &MainWindow::onGenerateClicked);
 
-    // Final Assembly
     mainLayout->addWidget(m_mandatoryGroup);
     mainLayout->addWidget(fileGroup);
     mainLayout->addWidget(m_optGroup);
-    mainLayout->addStretch(); 
+    mainLayout->addStretch();
     mainLayout->addWidget(m_progressBar);
     mainLayout->addWidget(m_generateBtn);
+
+    return tab;
+}
+
+QWidget* MainWindow::createManualsTab() {
+    QTabWidget *manualTabs = new QTabWidget();
     
-    setWindowTitle("Edavki XML Maker GUI");
-    resize(550, 650);
+    // 1. English Manual
+    QTextBrowser *engBrowser = new QTextBrowser();
+    engBrowser->setOpenExternalLinks(true);
+
+    // Text is in manual_eng.html
+    engBrowser->setText(loadResource(":/manual_eng"));
+
+    // 2. Slovene Manual
+    QTextBrowser *sloBrowser = new QTextBrowser();
+    sloBrowser->setOpenExternalLinks(true);
+
+    // Text is in manual_eng.html
+    sloBrowser->setText(loadResource(":/manual_slo"));
+
+    manualTabs->addTab(engBrowser, "Eng");
+    manualTabs->addTab(sloBrowser, "Slo");
+    
+    return manualTabs;
+}
+
+QWidget* MainWindow::createAboutTab() {
+    QWidget *tab = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(tab);
+
+    QLabel *infoLabel = new QLabel(tab);
+    infoLabel->setOpenExternalLinks(true); // Crucial for clickable links
+    infoLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    infoLabel->setWordWrap(true);
+
+    // Text is in about.html
+    infoLabel->setText(loadResource(":/about"));
+
+    layout->addWidget(infoLabel);
+    layout->addStretch(); // Push content to top
+
+    return tab;
 }
 
 void MainWindow::onJsonModeToggled(bool jsonOnly) {
