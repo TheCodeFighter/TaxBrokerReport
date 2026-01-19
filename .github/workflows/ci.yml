@@ -35,7 +35,12 @@ jobs:
     - name: Configure & Build
       run: |
         export QT_QPA_PLATFORM=offscreen
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DSAVE_GENERATED_FILES=0
+        # ADDED: Coverage flags for compiler and linker
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DSAVE_GENERATED_FILES=0 \
+          -DCMAKE_CXX_FLAGS="--coverage" \
+          -DCMAKE_EXE_LINKER_FLAGS="--coverage"
         cmake --build build -- -j$(nproc)
 
     - name: Run Tests & Gather Coverage
@@ -83,20 +88,25 @@ jobs:
           if [ -f "$1" ]; then
             lcov --summary "$1" 2>/dev/null | grep "lines......:" | awk '{print $2}' | tr -d '%'
           else
-            echo "0.0"
+            echo "0.00"
           fi
         }
 
         PR_COV=$(get_percent "$PR_FILE")
         BASE_COV=$(get_percent "$BASE_FILE")
         
-        # Calculate Delta
-        DIFF=$(echo "$PR_COV - $BASE_COV" | bc)
+        # ADDED: scale=2 for decimal precision
+        DIFF=$(echo "scale=2; $PR_COV - $BASE_COV" | bc)
         
+        # Robust comparison for emoji
         EMOJI="✅"
-        if (( $(echo "$DIFF < 0" | bc -l) )); then EMOJI="⚠️"; fi
+        IS_NEGATIVE=$(echo "$DIFF < 0" | bc -l)
+        if [ "$IS_NEGATIVE" -eq 1 ]; then EMOJI="⚠️"; fi
 
         echo "### 📊 Coverage Report Delta" > coverage_summary.md
+        if [ ! -f "$BASE_FILE" ]; then
+          echo "> ℹ️ **Note:** No baseline found from main. Initial coverage snapshot created." >> coverage_summary.md
+        fi
         echo "| Branch | Coverage |" >> coverage_summary.md
         echo "| :--- | :--- |" >> coverage_summary.md
         echo "| Main (Base) | ${BASE_COV}% |" >> coverage_summary.md
@@ -122,6 +132,7 @@ jobs:
       run: |
         export QT_QPA_PLATFORM=offscreen
         set -e
-        for t in test_report_loader test_xml_generator test_application_service test_gui; do
+        # Test_gui removed from Valgrind to avoid false positives from Qt drivers
+        for t in test_report_loader test_xml_generator test_application_service; do
           valgrind --leak-check=full --error-exitcode=1 "./build/$t"
         done
