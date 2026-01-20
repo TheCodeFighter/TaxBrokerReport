@@ -21,6 +21,13 @@
             "command": "make build-test-application-service",
             "options": { "cwd": "${workspaceFolder}" },
             "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "build-main",
+            "type": "shell",
+            "command": "make build-main",
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$gcc"]
         }
     ]
 }
