@@ -71,7 +71,7 @@ This ensures that all code merged into the main branch passes basic quality and 
 
 ## Documentation
 
-- See the [Manuals/Instructions.md](Manuals/Instructions.md) for detailed usage, setup, and troubleshooting.
+- See the [Instructions.md](docs/manuals/Instructions.md) for detailed usage, setup, and troubleshooting.
 
 ## 💻 VS Code Integration
 
