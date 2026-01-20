@@ -2,10 +2,26 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug Main App (EdavkiXmlMaker)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/EdavkiXmlMaker",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "QT_QPA_PLATFORM", "value": "xcb" }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "preLaunchTask": "build-main"
+        },
+        {
             "name": "Debug test_report_loader",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/test_report_loader",
+            "program": "${workspaceFolder}/build/tests/test_report_loader",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -26,7 +42,7 @@
             "name": "Debug test_xml_generator",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/test_xml_generator",
+            "program": "${workspaceFolder}/build/tests/test_xml_generator",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -47,7 +63,7 @@
             "name": "Debug test_application_service",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/test_application_service",
+            "program": "${workspaceFolder}/build/tests/test_application_service",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -63,71 +79,6 @@
                     "ignoreFailures": true
                 }
             ]
-        },
-        {
-            "name": "C/C++: c++ build and debug active file",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${fileDirname}/${fileBasenameNoExtension}",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set Disassembly Flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                }
-            ],
-            "preLaunchTask": "C/C++: c++ build active file",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "C/C++: g++ build and debug active file",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${fileDirname}/${fileBasenameNoExtension}",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set Disassembly Flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                }
-            ],
-            "preLaunchTask": "C/C++: g++ build active file",
-            "miDebuggerPath": "/usr/bin/gdb"
-        },
-        {
-            "name": "Run test_report_loader (no debug)",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/test_report_loader",
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "stopAtEntry": false,
-            "MIMode": "gdb",
-            "miDebuggerPath": "/usr/bin/gdb",
-            "externalConsole": true,
-            "preLaunchTask": "build-test-report-loader"
         }
     ]
 }
