@@ -138,5 +138,5 @@ jobs:
         set -e
         # Test_gui removed from Valgrind to avoid false positives from Qt drivers
         for t in test_report_loader test_xml_generator test_application_service; do
-          valgrind --leak-check=full --error-exitcode=1 "./build/$t"
+          valgrind --leak-check=full --error-exitcode=1 "./build/tests/$t"
         done
