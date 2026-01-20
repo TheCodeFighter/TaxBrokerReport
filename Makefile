@@ -110,3 +110,31 @@ clean:
 # Use this when clean does not work
 # It forces: Empty Folder -> New Config -> Fresh Build
 clean-rebuild: clean configure build
+
+
+
+# ---------------------------
+# Production
+# ---------------------------
+VERSION ?= 1.0.0
+LINUX_VERSION_DIR = production/linux/v$(VERSION)/bin
+
+# AppImage
+release-linux:
+	@echo "Manufacturing Linux Standalone (v$(VERSION))..."
+	@mkdir -p $(LINUX_VERSION_DIR)
+	@chmod +x production/linux/bundle.sh
+	
+	# Build the bundler image
+	docker build --target bundler -t edavki-bundler .
+	
+	# Run the factory
+	docker run --rm \
+    -v /home/david/Projects/TaxBrokerReport/production/linux/v$(VERSION)/bin:/export \
+    -v /home/david/Projects/TaxBrokerReport:/app \
+    -v /app/build_prod \
+    -e QT_QPA_PLATFORM=offscreen \
+    edavki-bundler \
+    /app/production/linux/bundle.sh $(VERSION)
+	
+	@echo "Success! File is at: ./$(LINUX_VERSION_DIR)/"

@@ -56,6 +56,13 @@ set(EDAVKI_INCLUDES
     util
 )
 
+# Building for release
+if(STATIC_BUILD OR WIN32)
+    set(BUILD_SHARED_LIBS OFF)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a;.lib")
+    add_definitions(-DQT_STATIC)
+endif()
+
 # 2. Core Library
 add_library(CoreLib ${CORE_LIB_TYPE}
     src/backend/report_loader.cpp
@@ -94,4 +101,6 @@ target_link_libraries(EdavkiXmlMaker PRIVATE
 
 # 4. Tests
 enable_testing()
-add_subdirectory(tests)
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_subdirectory(tests)
+endif()
