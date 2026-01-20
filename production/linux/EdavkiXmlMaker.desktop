@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=EdavkiXmlMaker
+Exec=EdavkiXmlMaker
+Icon=qt_logo
+Categories=Utility;
+Comment=Slovenian Tax Form Generator
+Terminal=false

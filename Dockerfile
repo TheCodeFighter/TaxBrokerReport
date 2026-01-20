@@ -58,12 +58,21 @@ CMD ["/bin/bash"]
 # Stage 3: Production Build
 # ================================
 FROM dev-base AS builder
-WORKDIR /app
-COPY --chown=appuser:appuser . .
 
-# Use Ninja for speed; CMAKE_BUILD_TYPE=Release strips debug symbols
-RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSAVE_GENERATED_FILES=0 && \
-    cmake --build build --parallel $(nproc)
+USER root
+WORKDIR /app
+
+COPY . .
+
+RUN mkdir -p build_prod && chown -R appuser:appuser /app
+
+USER appuser
+
+RUN cmake -S . -B build_prod -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DSAVE_GENERATED_FILES=0 \
+    -DBUILD_TESTING=OFF && \
+    cmake --build build_prod --target EdavkiXmlMaker --parallel $(nproc)
 
 # ================================
 # Stage 4: Production Runtime
@@ -88,3 +97,25 @@ WORKDIR /app
 COPY --from=builder /app/build/EdavkiXmlMaker .
 
 CMD ["./EdavkiXmlMaker"]
+
+# ================================
+# Stage 5: AppImage Bundler Tools
+# ================================
+FROM builder AS bundler
+USER root
+
+# Majority for Qt dependencies
+RUN apt-get update && apt-get install -y \
+    imagemagick libglib2.0-0 file wget fuse libfuse2 \
+    libdouble-conversion3 libicu70 libpcre2-16-0 \
+    libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+    libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 \
+    libfontconfig1 libfreetype6 \
+    libqt6widgets6 libqt6gui6 libqt6core6 libqt6opengl6 \
+    libpoppler-cpp0v5 libpugixml1v5 libxml2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tools
+RUN wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage && \
+    wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage && \
+    chmod +x linuxdeploy*.AppImage
