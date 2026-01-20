@@ -7,6 +7,8 @@
                 "/usr/include",
                 "/usr/local/include",
                 "${workspaceFolder}/include/**",
+                "${workspaceFolder}/include/gui/**",
+                "${workspaceFolder}/include/api/**",
                 "/usr/include/libxml2",
                 "${workspaceFolder}/util"
             ],

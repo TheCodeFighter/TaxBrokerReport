@@ -106,7 +106,7 @@ coverage: build
 clean:
 	$(CMD_PREFIX) rm -rf $(BUILD_DIR)/*
 
-# 2. Rebuild: The "Nuclear Option"
-# Use this when timestamps are messed up or CMake is acting weird.
+# Hard clean
+# Use this when clean does not work
 # It forces: Empty Folder -> New Config -> Fresh Build
 clean-rebuild: clean configure build
