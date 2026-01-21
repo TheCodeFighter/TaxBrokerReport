@@ -1,7 +1,6 @@
 build/
 .obsidian/
 tmp/
-.vscode/settings.json
 bin/
 tests/coverage_report/
 tests/coverage.info
