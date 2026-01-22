@@ -46,7 +46,7 @@ make test
 
 ## 🧩 GitHub Pipelines
 
-### 🧠 `pr-prep.yml`
+### 🧠 `prep-pr.yml`
 
 This workflow validates Pull Requests to enforce proper issue linking:
 
@@ -57,7 +57,7 @@ This workflow validates Pull Requests to enforce proper issue linking:
 
 ---
 
-### ⚙️ `ci.yml`
+### ⚙️ `test-pr.yml`
 
 The continuous integration (CI) workflow runs automatically on each commit or pull request.
 It handles:
