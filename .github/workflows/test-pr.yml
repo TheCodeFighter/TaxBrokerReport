@@ -12,6 +12,7 @@ permissions:
   actions: read
 
 jobs:
+  # JOB 1: Logic & Memory Verification (Runs on Host)
   build-and-test:
     runs-on: ubuntu-latest
 
@@ -35,7 +36,6 @@ jobs:
     - name: Configure & Build
       run: |
         export QT_QPA_PLATFORM=offscreen
-        # ADDED: Coverage flags for compiler and linker
         cmake -S . -B build \
           -DCMAKE_BUILD_TYPE=Debug \
           -DSAVE_GENERATED_FILES=0 \
@@ -48,15 +48,14 @@ jobs:
         export QT_QPA_PLATFORM=offscreen
         lcov --directory . --zerocounters
         
-        # 1. Run all tests using ctest (cleaner than calling binaries manually)
+        # 1. Run all tests using ctest
         ctest --test-dir build --output-on-failure
         
         # 2. Capture coverage
         lcov --directory . --capture --output-file coverage.info --ignore-errors mismatch
         
-        # 3. Use the "Whitelist" extraction we perfected locally
-        # This includes src (app, backend, gui) and the root util folder
-        lcov --extract coverage.info "*/src/*" "*/util/*" \
+        # 3. Filter Coverage
+        lcov --extract coverage.info "*/src/*" \
              --output-file coverage.info.filtered \
              --ignore-errors mismatch
 
@@ -72,7 +71,7 @@ jobs:
       uses: dawidd6/action-download-artifact@v3
       with:
         github_token: ${{secrets.GITHUB_TOKEN}}
-        workflow: ci.yml
+        workflow: test-pr.yml
         branch: main
         name: main-coverage
         path: ./base_coverage/
@@ -95,15 +94,12 @@ jobs:
         PR_COV=$(get_percent "$PR_FILE")
         BASE_COV=$(get_percent "$BASE_FILE")
         
-        # 1. Calculate the raw difference
         RAW_DIFF=$(echo "$PR_COV - $BASE_COV" | bc -l)
         
-        # 2. Use printf to force leading zeros (e.g., 0.90 instead of .90)
+        # Use printf to force leading zeros (e.g., 0.90)
         DIFF=$(printf "%.2f" $RAW_DIFF)
         
-        # 3. Robust comparison for emoji
         EMOJI="✅"
-        # Check if the first character is a minus sign
         if [[ $DIFF == -* ]]; then EMOJI="⚠️"; fi
 
         echo "### 📊 Coverage Report Delta" > coverage_summary.md
@@ -115,7 +111,6 @@ jobs:
         echo "| Main (Base) | ${BASE_COV}% |" >> coverage_summary.md
         echo "| PR (This change) | ${PR_COV}% |" >> coverage_summary.md
         echo "" >> coverage_summary.md
-        # Space after emoji for readability
         echo "**Difference:** ${EMOJI} ${DIFF}%" >> coverage_summary.md
 
     - name: Post Delta Comment
@@ -136,7 +131,23 @@ jobs:
       run: |
         export QT_QPA_PLATFORM=offscreen
         set -e
-        # Test_gui removed from Valgrind to avoid false positives from Qt drivers
+        # Test_gui not in Valgrind to avoid false positives from Qt drivers
         for t in test_report_loader test_xml_generator test_application_service; do
           valgrind --leak-check=full --error-exitcode=1 "./build/tests/$t"
         done
+
+  # JOB 2: Packaging Verification Ensures the production environment is still valid
+  check-appimage-packaging:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Verify Production Build
+      run: make release-linux VERSION="check-${{ github.sha }}"
+
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Linux-AppImage-Check
+        path: production/linux/v*/bin/*.AppImage
+        retention-days: 5
