@@ -10,7 +10,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [
-                { "name": "QT_QPA_PLATFORM", "value": "xcb" }
+                { "name": "QT_QPA_PLATFORM", "value": "xcb" },
+                { "name": "DISPLAY", "value": ":0" }
             ],
             "externalConsole": false,
             "MIMode": "gdb",

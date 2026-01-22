@@ -53,7 +53,7 @@ set(EDAVKI_INCLUDES
     include/app 
     include/backend 
     include/gui
-    util
+    include/util
 )
 
 # Building for release
@@ -68,8 +68,8 @@ add_library(CoreLib ${CORE_LIB_TYPE}
     src/backend/report_loader.cpp
     src/backend/xml_generator.cpp
     src/app/application_service.cpp
-    util/util_xml.cpp
-    util/config.cpp
+    src/util/util_xml.cpp
+    src/util/config.cpp
 )
 
 target_include_directories(CoreLib PUBLIC ${EDAVKI_INCLUDES})

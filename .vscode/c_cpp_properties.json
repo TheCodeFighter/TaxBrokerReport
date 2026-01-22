@@ -10,10 +10,11 @@
                 "${workspaceFolder}/include/gui/**",
                 "${workspaceFolder}/include/api/**",
                 "/usr/include/libxml2",
-                "${workspaceFolder}/util"
+                "/usr/include/qt6/**"
             ],
             "defines": [
-                "PROJECT_SOURCE_DIR=\"/app\""
+                "PROJECT_SOURCE_DIR=\"/app\"",
+                "UNIT_TEST"
             ],
             "compilerPath": "/usr/bin/c++",
             "cStandard": "c17",

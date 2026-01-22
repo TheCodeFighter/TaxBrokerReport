@@ -93,7 +93,7 @@ coverage: build
 	$(CMD_PREFIX) lcov --directory build --capture --output-file build/coverage.info
 	
 	# 4. FILTER: Keep only src subfolders and the root util folder
-	$(CMD_PREFIX) lcov --extract build/coverage.info "*/src/app/*" "*/src/backend/*" "*/src/gui/*" "*/util/*" --output-file build/coverage_filtered.info
+	$(CMD_PREFIX) lcov --extract build/coverage.info "*/src/app/*" "*/src/backend/*" "*/src/gui/*" "*/src/util/*" --output-file build/coverage_filtered.info
 	
 	# 5. Generate HTML report and strip path prefixes for a clean view
 	# Using --prefix /app/src and --prefix /app ensures all folders look like top-level names
