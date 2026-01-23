@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 jobs:
-  # JOB 1: Logic & Memory Verification (Runs on Host)
+  # JOB 1: Logic & Memory Verification
   build-and-test:
     runs-on: ubuntu-latest
 
@@ -47,20 +47,14 @@ jobs:
       run: |
         export QT_QPA_PLATFORM=offscreen
         lcov --directory . --zerocounters
-        
-        # 1. Run all tests using ctest
         ctest --test-dir build --output-on-failure
-        
-        # 2. Capture coverage
         lcov --directory . --capture --output-file coverage.info --ignore-errors mismatch
-        
-        # 3. Filter Coverage
         lcov --extract coverage.info "*/src/*" \
              --output-file coverage.info.filtered \
              --ignore-errors mismatch
 
     - name: Upload Baseline Coverage
-      if: github.ref == 'refs/heads/main'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: actions/upload-artifact@v4
       with:
         name: main-coverage
@@ -95,8 +89,6 @@ jobs:
         BASE_COV=$(get_percent "$BASE_FILE")
         
         RAW_DIFF=$(echo "$PR_COV - $BASE_COV" | bc -l)
-        
-        # Use printf to force leading zeros (e.g., 0.90)
         DIFF=$(printf "%.2f" $RAW_DIFF)
         
         EMOJI="✅"
@@ -136,14 +128,15 @@ jobs:
           valgrind --leak-check=full --error-exitcode=1 "./build/tests/$t"
         done
 
-  # JOB 2: Packaging Verification Ensures the production environment is still valid
+  # JOB 2: Packaging Verification (PR ONLY)
   check-appimage-packaging:
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@v4
 
     - name: Verify Production Build
-      run: make release-linux VERSION="check-${{ github.sha }}"
+      run: make release-linux VERSION="check-${{ github.event.number }}"
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
