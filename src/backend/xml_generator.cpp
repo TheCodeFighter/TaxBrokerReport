@@ -82,7 +82,7 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
         if (item.mType == InventoryListType::PLVP) ++sec_count;
     kdvp.append_child("SecurityCount").text().set(sec_count);
     
-    // TODO: for now 0, probably we don't need it.
+    // This is not necessary, so for now we skip it.
     kdvp.append_child("SecurityShortCount").text().set(0);
     kdvp.append_child("SecurityWithContractCount").text().set(0);
     kdvp.append_child("SecurityWithContractShortCount").text().set(0);
@@ -120,7 +120,7 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
 
                 if (row.mPurchase) {
                     auto p = row_node.append_child("Purchase");
-                    const auto& pu = *row.mPurchase; // TODO: correct raw pointer usage
+                    const auto& pu = *row.mPurchase;
                     if (pu.mF1)  p.append_child("F1").text().set(pu.mF1->c_str());
                     if (pu.mF2)  p.append_child("F2").text().set(gain_type_to_string(*pu.mF2).c_str());
                     if (pu.mF3)  p.append_child("F3").text().set(to_xml_decimal(pu.mF3.value(), 8).c_str());
@@ -131,7 +131,7 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
 
                 if (row.mSale) {
                     auto s = row_node.append_child("Sale");
-                    const auto& sa = *row.mSale; // TODO: correct raw pointer usage
+                    const auto& sa = *row.mSale;
                     if (sa.mF6) s.append_child("F6").text().set(sa.mF6->c_str());
                     if (sa.mF7) s.append_child("F7").text().set(to_xml_decimal(sa.mF7.value(), 8).c_str());
                     if (sa.mF9) s.append_child("F9").text().set(to_xml_decimal(sa.mF9.value(), 8).c_str());
@@ -142,7 +142,6 @@ pugi::xml_node XmlGenerator::generate_doh_kdvp(pugi::xml_node parent, const DohK
             }
         }
 
-        // TODO: Shares (PLD), Short versions, etc.
     }
 
     return kdvp;
@@ -445,7 +444,7 @@ DohDiv_Data XmlGenerator::prepare_div_data(std::map<std::string, std::vector<Div
             // TODO: make country dictionary: from county name to country code
             // std::string country_code = getCountryCode(txs[0].mCountryName);
             // if (country_code) item.mPayer.mCountryCode = country_code;
-            // if (country_code) item.mPayer.mSourceCountryCode = country_code; // TODO: after function is made move it out of payer part
+            // if (country_code) item.mPayer.mSourceCountryCode = country_code; // move after country dic is made
 
             item.mGrossIncome = tx.mGrossIncome;
             item.mWithholdingTax = tx.mWitholdTax;

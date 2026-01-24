@@ -130,11 +130,7 @@ jobs:
 
   # JOB 2: Packaging Verification (PR ONLY)
   check-appimage-packaging:
-<<<<<<<< HEAD:.github/workflows/test-pr.yml
-    runs-on: ubuntu-latest
-========
     runs-on: ubuntu-22.04
->>>>>>>> main:.github/workflows/test-pr.yml.disable
     if: github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@v4
