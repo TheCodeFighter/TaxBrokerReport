@@ -71,7 +71,6 @@ TEST(XmlGeneratorTest, GenerateDummyXmlInMemory) {
 #if SAVE_GENERATED_XML_FILES
 TEST(XmlGeneratorTest, StoreGeneratedXMl) {
     // Ensure file exist
-    // TODO: integrate with real data
     ASSERT_TRUE(std::filesystem::exists(jsonTmpPath)) << "Input file does not exist: " << jsonTmpPath;
 
     try {

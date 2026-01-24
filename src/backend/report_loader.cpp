@@ -9,7 +9,6 @@
 
 #include "report_loader.hpp"
 
-//TODO: remove for prod
 #include <iostream>
 
 constexpr size_t RAW_DATA_PAGE_SIZE_BYTES = 1024; // Estimated bytes per page
@@ -43,7 +42,7 @@ void ReportLoader::getRawPdfData(const std::string& aPdfPath, ProcessingMode aMo
     const auto numPagesToProcess = numPages - startPage;
 
     if (aMode == ProcessingMode::InMemory) {
-        mRawText.reserve(numPagesToProcess * RAW_DATA_PAGE_SIZE_BYTES);     // TODO: check if 1024B on page is ok, and make num
+        mRawText.reserve(numPagesToProcess * RAW_DATA_PAGE_SIZE_BYTES);
 
         bool hasContent {false};
         for (const auto i : std::views::iota(startPage, numPages)) {
@@ -87,7 +86,7 @@ void ReportLoader::getRawPdfData(const std::string& aPdfPath, ProcessingMode aMo
             }
         }
 
-        tempFile.close();  // TODO: some mutex for safly file filling?
+        tempFile.close();  // TODO: some mutex when will be in use, currently is not
 
         if (!hasContent) {
             std::filesystem::remove(mTempFilePath);

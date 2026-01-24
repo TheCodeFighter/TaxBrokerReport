@@ -59,7 +59,6 @@ struct RowSale {
     std::optional<double>      mF7;  // quantity / % / payment
     std::optional<double>      mF9;  // value at disposal
     std::optional<bool>        mF10; // rule 97.č ZDoh-2 (full versions only) -> losses substract gains if not bought until 30 days from loss sell pass
-    // TODO: make if mF10 can be true
 };
 
 struct InventoryRow {
@@ -118,7 +117,7 @@ struct DivItem {
     double                     mGrossIncome;
     std::optional<double>      mWithholdingTax;
     std::optional<std::string> mSourceCountryCode;
-    std::optional<bool>        mForeignTaxPaid{true};   // for now we will assume its always true, maybe this will be gui user input // TODO: check
+    std::optional<bool>        mForeignTaxPaid{true};   // we will assume its always true, maybe this will be gui user input 
 };
 
 struct DhoItem {
@@ -189,7 +188,6 @@ struct GainTransaction {
     double      mUnitPrice{0.0};
 };
 
-// TODO: add in readme warning that country, address of payer and proof of tax witholding must be provided by user
 struct DivTransaction {
     std::string mDate;
     std::string mIsin;
