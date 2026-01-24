@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Manuals/icon.jpg" alt="Project Icon" width="150"/>
+  <img src="docs/manuals/icon.jpg" alt="Project Icon" width="150"/>
 </p>
 
 # EdavkiXmlMaker
