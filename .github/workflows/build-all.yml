@@ -1,0 +1,47 @@
+name: "TRIGGER ALL BUILDS"
+run-name: Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., v1.0.2)'
+        default: 'manual-build'
+        required: true
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  create-release-and-trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine Version and Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            FINAL_VER="${{ github.event.inputs.version }}-${{ github.run_number }}"
+            TARGET_FLAG="--target ${{ github.ref_name }}"
+          else
+            FINAL_VER="${{ github.ref_name }}"
+            TARGET_FLAG=""
+          fi
+
+          EXTRA_FLAGS=""
+          if [[ ! $FINAL_VER =~ ^v ]]; then EXTRA_FLAGS="--prerelease"; fi
+
+          gh release create "$FINAL_VER" $EXTRA_FLAGS $TARGET_FLAG \
+            --title "Build $FINAL_VER" \
+            --notes "Consolidated build for all platforms." || echo "Release already exists, moving to trigger workers."
+
+          workflows=("linux-deb-x86-64-release.yml" "windows-x86-64-release.yml" "macOS-arm64-release.yml" "linux-arm64-release.yml") # too costly, put only if needed: macOS-x86-64-release.yml
+          for wf in "${workflows[@]}"; do
+            gh workflow run "$wf" -f version="$FINAL_VER" -f is_release="true" --ref "${{ github.ref_name }}"
+          done

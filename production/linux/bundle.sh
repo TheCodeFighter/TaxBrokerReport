@@ -33,8 +33,7 @@ fi
 echo "🏗️  Manufacturing AppImage..."
 rm -rf /tmp/appdir # Clean slate
 
-# Find the binary (Docker paths can be tricky)
-REAL_EXEC_PATH=$(find /app/build_prod -name "EdavkiXmlMaker" -type f -executable | head -n 1)
+REAL_EXEC_PATH="/app/build_prod/EdavkiXmlMaker"
 
 ./squashfs-root/AppRun \
     --appdir /tmp/appdir \

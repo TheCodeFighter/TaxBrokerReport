@@ -1,0 +1,86 @@
+name: Linux x86-64 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., v1.0.0)'
+        required: true
+        default: 'manual-build'
+      is_release:
+        description: 'Set to true if triggered by Dispatcher'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build qt6-base-dev \
+            libgl1-mesa-dev libpoppler-cpp-dev libpugixml-dev libxml2-dev nlohmann-json3-dev
+
+      - name: Build and Install
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          cmake --install build --prefix ./dist
+
+      - name: Package AppImage
+        run: |
+          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          
+          echo -e "[Desktop Entry]\nType=Application\nName=EdavkiXmlMaker\nExec=EdavkiXmlMaker\nIcon=qt_logo\nCategories=Utility;" > edavki.desktop
+
+          export QMAKE=/usr/lib/qt6/bin/qmake
+          export LDAI_OUTPUT="EdavkiXmlMaker-x86_64.AppImage"
+
+          ./linuxdeploy-x86_64.AppImage --appdir ./dist \
+            -d edavki.desktop \
+            -i resources/gui/icons/qt_logo.png \
+            --plugin qt \
+            --output appimage \
+            --executable ./dist/bin/EdavkiXmlMaker
+
+      - name: Save or Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${{ github.event.inputs.version }}"
+          IS_RELEASE="${{ github.event.inputs.is_release }}"
+          
+          ARCH=$(uname -m)
+          if [ "$ARCH" == "x86_64" ]; then PLATFORM="Linux-x64"; else PLATFORM="Linux-ARM64"; fi
+          
+          APP_IMAGE=$(ls EdavkiXmlMaker-*.AppImage)
+          
+          ZIP_NAME="EdavkiXmlMaker-${PLATFORM}-${VER}.zip"
+          
+          echo "Packaging $APP_IMAGE into $ZIP_NAME"
+          zip -j "$ZIP_NAME" "$APP_IMAGE"
+
+          if [ "$IS_RELEASE" == "true" ]; then
+            echo "Uploading to release $VER..."
+            for i in {1..5}; do
+              gh release upload "$VER" "$ZIP_NAME" --clobber && exit 0 || sleep 10
+            done
+            exit 1
+          else
+            echo "Standalone run."
+          fi
+
+      - name: Always Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.workflow }}-${{ github.run_number }}
+          path: "*.zip"
+          retention-days: 5

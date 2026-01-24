@@ -1,0 +1,82 @@
+name: Windows x86-64 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., v1.0.0)'
+        required: true
+        default: 'manual-build'
+      is_release:
+        description: 'Set to true if triggered by Dispatcher'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.0'
+          arch: 'win64_msvc2019_64'
+
+      - name: Install vcpkg Dependencies
+        run: |
+          vcpkg install "nlohmann-json:x64-windows" "pugixml:x64-windows" "poppler:x64-windows" "libxml2:x64-windows" "pkgconf:x64-windows"
+
+      - name: Configure CMake
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DCMAKE_INSTALL_PREFIX="dist"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Install & Deploy (windeployqt)
+        run: cmake --install build --config Release
+
+      - name: Archive Production Folder
+        run: |
+          $VER = "${{ github.event.inputs.version || github.ref_name }}"
+          Compress-Archive -Path dist/* -DestinationPath "EdavkiXmlMaker-Windows-$VER.zip"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Build
+          path: EdavkiXmlMaker-Windows-*.zip
+
+      - name: Save or Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $VER = "${{ github.event.inputs.version }}"
+          $IS_RELEASE = "${{ github.event.inputs.is_release }}"
+          $ZIP_NAME = "EdavkiXmlMaker-Windows-x64-$VER.zip"
+          
+          Compress-Archive -Path ./dist/* -DestinationPath "./$ZIP_NAME"
+
+          if ($IS_RELEASE -eq "true") {
+              Write-Host "Uploading to existing release $VER..."
+              gh release upload "$VER" "./$ZIP_NAME" --clobber
+          } else {
+              Write-Host "Standalone run. Check artifacts below."
+          }
+
+      - name: Always Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Build-${{ github.run_number }}
+          path: "*.zip"
+          retention-days: 5

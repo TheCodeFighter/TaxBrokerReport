@@ -50,7 +50,7 @@ dev-down:
 # ---------------------------
 
 configure:
-	$(CMD_PREFIX) cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
+	$(CMD_PREFIX) cmake -G Ninja -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 
 build-test-report-loader:
 	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_report_loader -j$(shell nproc)
@@ -125,16 +125,15 @@ release-linux:
 	@mkdir -p $(LINUX_VERSION_DIR)
 	@chmod +x production/linux/bundle.sh
 	
-	# Build the bundler image
+	# Build the tool environment
 	docker build --target bundler -t edavki-bundler .
 	
-	# Run the factory
+	# Run the factory: Build THEN Bundle
 	docker run --rm \
-    -v /home/david/Projects/TaxBrokerReport/production/linux/v$(VERSION)/bin:/export \
-    -v /home/david/Projects/TaxBrokerReport:/app \
-    -v /app/build_prod \
-    -e QT_QPA_PLATFORM=offscreen \
-    edavki-bundler \
-    /app/production/linux/bundle.sh $(VERSION)
-	
-	@echo "Success! File is at: ./$(LINUX_VERSION_DIR)/"
+		-v "$(CURDIR)/$(LINUX_VERSION_DIR)":/export \
+		-v "$(CURDIR)":/app \
+		-e QT_QPA_PLATFORM=offscreen \
+		edavki-bundler \
+		bash -c "cmake -G Ninja -S /app -B /app/build_prod -DCMAKE_BUILD_TYPE=Release && \
+			 cmake --build /app/build_prod --parallel $$(nproc) && \
+			 /app/production/linux/bundle.sh $(VERSION)"

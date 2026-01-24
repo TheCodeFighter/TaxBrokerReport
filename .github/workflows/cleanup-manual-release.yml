@@ -1,0 +1,26 @@
+name: Cleanup Manual Releases
+
+on:
+  # schedule: # Every Sunday at midnight
+  #   - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete Manual Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          echo "Fetching releases for $REPO..."
+          
+          gh release list --repo "$REPO" --limit 100 --json tagName,isDraft --jq '.[] | select(.tagName | contains("manual-build")) | .tagName' | while read -r tag; do
+            if [ -n "$tag" ]; then
+              echo "Deleting release and tag: $tag"
+              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
+            fi
+          done

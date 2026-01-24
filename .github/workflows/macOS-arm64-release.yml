@@ -1,0 +1,89 @@
+name: MacOS ARM64 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., v1.0.0)'
+        required: true
+        default: 'manual-build'
+      is_release:
+        description: 'Set to true if triggered by Dispatcher'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          brew install qt@6 poppler pugixml nlohmann-json libxml2
+          echo "QT_DIR=$(brew --prefix qt@6)" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+            -DCMAKE_OSX_ARCHITECTURES="arm64" \
+            -DCMAKE_INSTALL_PREFIX="dist"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Install and Ad-hoc Sign
+        run: |
+          cmake --install build
+          find dist/EdavkiXmlMaker.app -type f -perm +111 -exec codesign -s - --deep --force {} +
+
+      - name: Bundle & Deploy (macdeployqt)
+        run: |
+          export PATH="$(brew --prefix qt@6)/bin:$PATH"
+          ${{ env.QT_DIR }}/bin/macdeployqt dist/EdavkiXmlMaker.app -dmg -executable=dist/EdavkiXmlMaker.app/Contents/MacOS/EdavkiXmlMaker
+          
+          VER="${{ github.event.inputs.version || github.ref_name }}"
+          mv dist/EdavkiXmlMaker.dmg "dist/EdavkiXmlMaker-MacOS-ARM64-$VER.dmg"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacOS-ARM64-Build
+          path: dist/*.dmg
+
+      - name: Save or Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${{ github.event.inputs.version }}"
+          IS_RELEASE="${{ github.event.inputs.is_release }}"
+          
+          ARCH="ARM64"
+          if [[ "${{ runner.arch }}" == "X64" ]]; then ARCH="Intel"; fi
+          ZIP_NAME="EdavkiXmlMaker-MacOS-$ARCH-$VER.zip"
+          
+          cd dist
+          zip -r "../$ZIP_NAME" EdavkiXmlMaker.app
+          cd ..
+
+          if [ "$IS_RELEASE" == "true" ]; then
+            echo "Uploading to existing release $VER..."
+            gh release upload "$VER" "$ZIP_NAME" --clobber
+          else
+            echo "Standalone run. Check artifacts below."
+          fi
+
+      - name: Always Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.workflow }}-${{ github.run_number }}
+          path: "*.zip"
+          retention-days: 5

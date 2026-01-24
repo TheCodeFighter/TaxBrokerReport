@@ -1,4 +1,5 @@
 build/
+build_prod/
 .obsidian/
 tmp/
 bin/

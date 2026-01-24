@@ -41,5 +41,3 @@ To keep the repository clean from old manual tests:
 | **Workers** | Compile code and upload portable ZIPs to the Release ID. |
 | **Internal Storage** | Stores builds for 5 days for private testing. |
 | **Cleanup Bot** | Manually removes "manual-build" clutter from the Release page. |
-
-> **Technical Note**: Ensure "Enable release immutability" is **disabled** in Repository Settings to allow workers to upload assets to existing releases.

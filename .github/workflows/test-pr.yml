@@ -62,7 +62,7 @@ jobs:
 
     - name: Download Baseline Coverage
       if: github.event_name == 'pull_request'
-      uses: dawidd6/action-download-artifact@v3
+      uses: dawidd6/action-download-artifact@v6
       with:
         github_token: ${{secrets.GITHUB_TOKEN}}
         workflow: test-pr.yml
@@ -130,7 +130,11 @@ jobs:
 
   # JOB 2: Packaging Verification (PR ONLY)
   check-appimage-packaging:
+<<<<<<<< HEAD:.github/workflows/test-pr.yml
     runs-on: ubuntu-latest
+========
+    runs-on: ubuntu-22.04
+>>>>>>>> main:.github/workflows/test-pr.yml.disable
     if: github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@v4
