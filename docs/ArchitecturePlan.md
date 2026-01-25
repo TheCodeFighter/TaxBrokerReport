@@ -117,7 +117,7 @@ src/
 ├── backend/
 │   ├── report_loader.cpp
 │   └── xml_generator.cpp
-└── gui/                <-- NOVO: Tu so Qt source datoteke
+└── gui/
 │   ├── main_window.cpp
 │   └── worker.cpp
 └── main.cpp
