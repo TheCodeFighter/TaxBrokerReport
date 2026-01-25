@@ -1,88 +1,56 @@
+# TaxBrokerReport
+
 <p align="center">
-  <img src="docs/manuals/icon.jpg" alt="Project Icon" width="150"/>
+  <img src="docs/assets/icon.jpg" alt="TaxBrokerReport Icon" width="200"/>
 </p>
 
-# EdavkiXmlMaker
-
-EdavkiXmlMaker is a C++ project for generating XML files from financial reports, with support for Poppler PDF parsing and Google Test-based unit tests. The project is containerized using Docker for reproducible builds and easy development.
-
-## Quick Start
-
-### 1. Build Dev Docker Image
-
-```bash
-make build-image
-```
-
-### 2. Configure and Build (Debug)
-
-```bash
-make dev-up
-make configure
-```
-
-If error is:
->`docker: permission denied while trying to connect to the Docker daemon socket at unix`
-
-Run:
-
-``` bash
-sudo usermod -aG docker $USER
-```
-
-### 3. Build and Run GUI
-
-Build the main application and launch it on your host display:
-
-```Bash
-make run-main
-```
-
-### 4. Run Tests
-
-```bash
-make test
-```
-
-## 🧩 GitHub Pipelines
-
-### 🧠 `prep-pr.yml`
-
-This workflow validates Pull Requests to enforce proper issue linking:
-
-- Respects the default PR template (`.github/PULL_REQUEST_TEMPLATE.md`).
-- Ensures each PR references an issue (e.g., `Fixes #123`) or explicitly states `None`.
-- Will **comment on the PR** if the check fails, alerting the author.
-- Fails the workflow if no valid issue reference is found, preventing merges until fixed.
+**TaxBrokerReport** is an open-source tool designed for Slovenian investors to automate the generation of FURS-compatible XML files (Doh-KDVP, Doh-Div, and Doh-DHO) from broker export data (currently just Trade Republic).
 
 ---
 
-### ⚙️ `test-pr.yml`
+## 🛡️ Security & Privacy Guarantee
 
-The continuous integration (CI) workflow runs automatically on each commit or pull request.
-It handles:
+* **Local Processing**: Your financial data never leaves your computer. The application processes JSON/CSV files locally on your Computer.
+* **No Tracking**: There are no hidden analytics or external server calls, App works offline.
+* **Open Source**: Every line of code is public and auditable.
 
-- Building the project
-- Running unit tests  
-- Checking code formatting or linting (if configured)
-- Running Valgrind for memory checks
+## 🤝 Support Karitas Slovenija
 
-This ensures that all code merged into the main branch passes basic quality and functionality checks before integration.
+If this tool saves you time or money, please consider paying it forward. Instead of tipping the me, make a donation to **Karitas Slovenija** to help families in need.
 
-## Documentation
+> [**Donate to Karitas Slovenija**](https://www.karitas.si/daruj/donacija/)
 
-- See the [Instructions.md](docs/manuals/Instructions.md) for detailed usage, setup, and troubleshooting.
+---
 
-## 💻 VS Code Integration
+## 📖 Documentation Menu
 
-This project is designed to be used with the "**Dev Containers: Attach to Running Container**" extension.
+### 👤 For Users
 
-- Run make dev-up on host.
+* [**Download Guide**](docs/users/download-guide.md) – Which version do you need? (Win/Mac/Linux)
+* [**App Usage (EN)**](docs/users/app-usage-en.md) / [**Navodila (SLO)**](docs/users/app-usage-sl.md) – How to run the application.
+* [**eDavki Upload (EN)**](docs/users/edavki-upload-en.md) / [**Oddaja na eDavki (SLO)**](docs/users/edavki-upload-sl.md) – Step-by-step submission.
+* [**Data Format**](docs/users/data-format.md) – Technical details for manual JSON import.
 
-- Attach VS Code to edavki-container.
+### 💻 For Developers
 
-- Use F5 to build and debug specific targets instantly.
+* [**Project Overview**](docs/developers/README.md) – Architecture and logic.
+* [**Build Instructions**](docs/developers/build-instructions.md) – Setting up CMake and Qt6.
+* [**Contributing**](docs/developers/contributing.md) – How to help improve the tool.
 
-## License
+### 🧪 Beta Testing
 
-This project is licensed under the MIT License.
+* [**Testing Guide**](docs/beta-testing/testing-guide.md) – Help us verify data for the 2025 tax year.
+
+---
+
+### ⚖️ Disclaimer
+
+*Official notice: This is an unofficial community tool. It is not affiliated with FURS or any broker. Users are responsible for verifying the correctness of the generated XML files before submission.*
+
+**This software is provided "as is" under the [MIT License](LICENSE), without warranty of any kind.** Users are solely responsible for verifying the accuracy of the generated XML files before submitting them to eDavki. **The developer assumes no liability for tax errors, fines, or omissions.**
+
+### ⚖️ Pravno obvestilo
+
+*To je neuradno skupnostno orodje in ni povezano s FURS (Finančna uprava Republike Slovenije) ali katero koli finančno posredovalnico (brokerjem).*
+
+**Programska oprema se nalaga "kot je" (as is) pod pogoji [MIT licence](LICENSE), brez kakršnih koli jamstev.** Uporabniki so sami odgovorni za preverjanje pravilnosti generiranih XML datotek pred oddajo v sistem eDavki. **Razvijalec ne prevzema nobene odgovornosti za morebitne napake v davčnih napovedih, globe ali druge nevšečnosti.**
