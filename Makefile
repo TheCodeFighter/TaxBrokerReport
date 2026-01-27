@@ -1,7 +1,7 @@
 # ---------------------------
 # Variables
 # ---------------------------
-.PHONY: build configure test clean coverage dev-up dev-down build-main run-main
+.PHONY: build configure test clean coverage dev-up dev-down build-main run
 
 IMAGE_NAME = edavki-dev
 BUILD_DIR = build
@@ -72,10 +72,6 @@ build:
 	$(CMD_PREFIX) cmake --build $(BUILD_DIR) -j$(shell nproc)
 
 run: build
-	$(CMD_PREFIX) ./$(BUILD_DIR)/EdavkiXmlMaker
-
-# Launch the GUI application on your host display
-run-main: build-main
 	$(CMD_PREFIX) ./$(BUILD_DIR)/EdavkiXmlMaker
 
 test: build
