@@ -42,9 +42,10 @@ Izberite XML datoteko, ki jo je generirala aplikacija **TaxBrokerReport**.
 
 > [!WARNING]
 > **Pomembno opozorilo glede FIFO pravila in več posrednikov:**
-> * **FIFO pravilo**: FURS zahteva metodo "prvi noter, prvi ven" (First-In, First-Out). Naša aplikacija generira podatke strogo na podlagi vašega Trade Republic poročila.
-> * **Več posrednikov**: Če trgujete z **isto ISIN kodo** pri drugem posredniku (npr. Revolut ali IBKR), te datoteke ne smete preprosto uvoziti. Podatke morate ročno združiti, da zagotovite pravilno FIFO zaporedje prek vseh računov.
-> * **Logika razčlenjevanja**: Uporabljamo razdelek "Gains and Losses" iz poročila Trade Republic, kjer je posrednik že povezal nakupne in prodajne zneske. To deluje brezhibno, če z določeno ISIN kodo trgujete samo preko Trade Republic.
+> * **FIFO pravilo**: FURS zahteva metodo "prvi noter, prvi ven" (First-In, First-Out). Ta aplikacija generira podatke strogo na podlagi vašega Trade Republic poročila.
+> * **Več posrednikov**: Če trgujete z **isto ISIN kodo** pri več posrednikih (npr. Revolut ali IBKR), posameznih datotek ne smete preprosto uvoziti ločeno. Podatke morate združiti, da zagotovite pravilno kronološko FIFO zaporedje prek vseh računov.
+> * **Logika razčlenjevanja**: Aplikacija uporablja razdelek "Gains and Losses" iz poročila Trade Republic, kjer so pari nakupov in prodaj že usklajeni. To deluje brezhibno, če z dotičnimi sredstvi trgujete izključno preko Trade Republic.
+> * **Postopek ročnega popravljanja**: Če želite dodati manjkajoče podatke ali združiti transakcije, lahko v aplikaciji najprej uporabite "JSON Mode" za generiranje JSON datoteke. To datoteko nato ročno uredite in jo naložite nazaj v aplikacijo (namesto PDF-ja) za izdelavo končnega XML-ja. Podrobna navodila najdete v [priročniku za JSON format](data-format.md).
 
 **Korak 6:** Zdaj lahko poročilo shranite, naložite dodatna dokazila (PDF potrdila) ali oddate dokument.
 
