@@ -31,15 +31,26 @@ If this tool saves you time or money, please consider paying it forward. Instead
 * [**eDavki Upload (EN)**](docs/users/edavki-upload-en.md) / [**Oddaja na eDavki (SLO)**](docs/users/edavki-upload-sl.md) – Step-by-step submission.
 * [**Data Format**](docs/users/data-format.md) – Technical details for manual JSON import.
 
+### 🧪 Beta Testing
+
+* [**Testing Guide (EN)**](docs/beta-testing/testing-guide-en.md) / [**Vodnik za testiranje (SLO)**](docs/beta-testing/testing-guide-sl.md) – Help us verify data for the 2025 tax year.
+
+### 🚀 Future Roadmap
+
+* [**Plan in future**](docs/developers/future-plans.md) – Upcoming features and planned improvements.
+
 ### 💻 For Developers
 
 * [**Project Overview**](docs/developers/README.md) – Architecture and logic.
 * [**Build Instructions**](docs/developers/build-instructions.md) – Setting up CMake and Qt6.
 * [**Contributing**](docs/developers/contributing.md) – How to help improve the tool.
 
-### 🧪 Beta Testing
+---
 
-* [**Testing Guide**](docs/beta-testing/testing-guide.md) – Help us verify data for the 2025 tax year.
+## 📧 Get in Touch
+
+If you have questions, suggestions, or need help, feel free to reach out via email:
+[**tax.brokerage.report@gmail.com**](mailto:tax.brokerage.report@gmail.com)
 
 ---
 
@@ -53,4 +64,4 @@ If this tool saves you time or money, please consider paying it forward. Instead
 
 *To je neuradno skupnostno orodje in ni povezano s FURS (Finančna uprava Republike Slovenije) ali katero koli finančno posredovalnico (brokerjem).*
 
-**Programska oprema se nalaga "kot je" (as is) pod pogoji [MIT licence](LICENSE), brez kakršnih koli jamstev.** Uporabniki so sami odgovorni za preverjanje pravilnosti generiranih XML datotek pred oddajo v sistem eDavki. **Razvijalec ne prevzema nobene odgovornosti za morebitne napake v davčnih napovedih, globe ali druge nevšečnosti.**
+**Programska oprema se nalaga "kot je" (as is) pod pogoji [MIT licence](LICENSE), brez kakršnih koli jamstev.** Uporabniki so sami odgovorni za preverjanje pravilnosti generiranih XML dat
