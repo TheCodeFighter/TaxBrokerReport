@@ -67,7 +67,6 @@ jobs:
           IS_RELEASE="${{ github.event.inputs.is_release }}"
           
           ARCH="ARM64"
-          if [[ "${{ runner.arch }}" == "X64" ]]; then ARCH="Intel"; fi
           ZIP_NAME="EdavkiXmlMaker-MacOS-$ARCH-$VER.zip"
           
           cd dist

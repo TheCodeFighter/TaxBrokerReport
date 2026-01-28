@@ -74,8 +74,7 @@ jobs:
           VER="${{ github.event.inputs.version }}"
           IS_RELEASE="${{ github.event.inputs.is_release }}"
           
-          ARCH="ARM64"
-          if [[ "${{ runner.arch }}" == "X64" ]]; then ARCH="Intel"; fi
+          ARCH="Intel" 
           ZIP_NAME="EdavkiXmlMaker-MacOS-$ARCH-$VER.zip"
           
           cd dist
@@ -85,8 +84,6 @@ jobs:
           if [ "$IS_RELEASE" == "true" ]; then
             echo "Uploading to existing release $VER..."
             gh release upload "$VER" "$ZIP_NAME" --clobber
-          else
-            echo "Standalone run. Check artifacts below."
           fi
 
       - name: Always Upload Artifact
