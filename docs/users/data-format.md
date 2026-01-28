@@ -9,15 +9,17 @@ This document describes the JSON structure used by **TaxBrokerReport**. You can 
 The JSON follows a hierarchical structure grouped by asset type and origin country:
 
 * **Root Object**: Contains metadata (Client ID, Currency).
-    * **`gains_and_losses_section`**: Array of asset groups.
-        * **Asset Group**: Defines `asset_type` (e.g., Equities) and `country`.
-            * **`transactions`**: Array of individual trade events.
+  
+  * **`gains_and_losses_section`**: Array of asset groups.
+    * **Asset Group**: Defines `asset_type` (e.g., Equities) and `country`.
+      * **`transactions`**: Array of individual trade events.
 
 ---
 
 ## 📘 Field Definitions
 
 ### Root Level
+
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `client` | String | The tax number (Davčna številka) of the user. |
@@ -25,12 +27,14 @@ The JSON follows a hierarchical structure grouped by asset type and origin count
 | `currency` | String | Reporting currency (usually EUR). |
 
 ### Asset Group Level
+
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `asset_type` | String | The category: `Equities`, `Crypto Currency`, `Derivatives`, etc. |
 | `country` | String | The country of the asset's origin (e.g., "US", "DE", or "Stateless" for Crypto). |
 
 ### Transaction Level
+
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `transaction_date` | String | Format: `DD.MM.YYYY` (e.g., "02.12.2024"). |

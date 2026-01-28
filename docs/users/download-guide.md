@@ -65,10 +65,10 @@ Because this is an independent open-source project and does not have a $100/year
 
 ## 📥 Get the Latest Version
 
-You can always find the latest files on our official Releases page:
+Find the most recent versions on our official Releases page (marked with the green Latest tag):
 
 > [!TIP]
-> **[Download Latest Release](../../releases)**
+> **[Download Latest Release](https://github.com/TheCodeFighter/TaxBrokerReport/releases)**
 
 ---
 
