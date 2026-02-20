@@ -68,7 +68,7 @@ endif()
 # Global Includes
 set(EDAVKI_INCLUDES 
     include 
-    include/app 
+    include/api 
     include/backend 
     include/gui
     include/util
@@ -85,7 +85,7 @@ endif()
 add_library(CoreLib ${CORE_LIB_TYPE}
     src/backend/report_loader.cpp
     src/backend/xml_generator.cpp
-    src/app/application_service.cpp
+    src/api/application_service.cpp
     src/util/util_xml.cpp
     src/util/config.cpp
 )

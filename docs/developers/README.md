@@ -40,12 +40,12 @@ Responsibility: A "dumb" view. It never touches the logic directly; it only call
 ```Plaintext
 TaxBrokerReport/
 ├── include/
-│   ├── app/               # Application Service headers
+│   ├── api/               # Application Service headers
 │   ├── backend/           # Core logic (Parser + Generator)
 │   ├──  gui/               # Qt Window definitions
 |   └── util/              # Utility helpers (XML writers, Config)
 ├── src/
-│   ├── app/               # Orchestration logic
+│   ├── api/               # Application Service implementations
 │   ├── backend/           # The "Brains" (C++ logic)
 │   ├── gui/               # The "Face" (Qt Widgets)
 │   ├── main.cpp           # Entry point
