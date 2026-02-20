@@ -15,7 +15,7 @@ const std::filesystem::path txtPdfData = projectRoot / "tests" / "testData" /"ge
 const std::filesystem::path rawDataPath = projectRoot / "tmp" / "generated_test_data.txt";
 
 #ifndef SAVE_GENERATED_TXT_FILES
-    #define SAVE_GENERATED_TXT_FILES 1
+    #define SAVE_GENERATED_TXT_FILES 0
 #endif
 
 TEST(ReportLoaderTest, GetRawPdfData_InMemory) {
