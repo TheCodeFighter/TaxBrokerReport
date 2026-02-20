@@ -215,7 +215,7 @@ void ReportLoader::parseIncomeSection(std::istringstream& aIss, std::vector<nloh
     std::regex interestPaymentRegex(R"(^(Interest payment)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d,.]+)\s+([\d,.]+)\s*$)");
     std::regex dividendRegex(R"(^(Dividend)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d,.]+)\s+([\d,.]+)\s*$)");
     std::regex amountRegex(R"(^EUR\s+([\d,.]+)\s+(-?[\d,.]+)?\s*([\d,.]+)?\s*$)");
-    std::regex incomeTotalRegex(R"(^Total for ([A-Za-z\s]+)\s+EUR\s+([\d,.]+)\s+(-?[\d,.]+)?\s*([\d,.]+)?$)");
+    std::regex incomeTotalRegex(R"(^Total for ([A-Za-z\s]+).*$)");
     std::regex sectionRegex(R"(^([IVX]+\.)\s+(.+)$)");
 
     bool hasTransactions = false;
@@ -226,53 +226,45 @@ void ReportLoader::parseIncomeSection(std::istringstream& aIss, std::vector<nloh
 
         std::smatch match;
         if (std::regex_match(trimmedLine, match, sectionRegex)) {
-            aIss.seekg(-static_cast<long>(line->length() + 1), std::ios::cur);
-            if (hasTransactions) {
-                nlohmann::json section;
-
-                if (!context.mAssetType.empty() && !context.mCountry.empty()) {
-                    mLastContext.mAssetType = context.mAssetType;
-                    mLastContext.mCountry = context.mCountry;
-
-                    section["asset_type"] = mLastContext.mAssetType;
-                    section["country"] = mLastContext.mCountry;
-                    section["transactions"] = context.mTransactions;
-                    if (context.mTotals.empty()) {
-                        double grossIncome = 0.0;
-                        double netIncome = 0.0;
-                        for (const auto& txn : context.mTransactions) {
-                            grossIncome += txn["gross_income"].get<double>();
-                            netIncome += txn["net_income"].get<double>();
-                        }
-                        context.mTotals["gross_income"] = grossIncome;
-                        context.mTotals["net_income"] = netIncome;
-                    }
-                    section["totals"] = context.mTotals;
-                    aIncomeSections.push_back(section);
-                }
-                else {
-                    for (auto it = aIncomeSections.rbegin(); it != aIncomeSections.rend(); ++it) {
-                        if ((*it)["asset_type"] == mLastContext.mAssetType) {
-                            std::copy(context.mTransactions.begin(),
-                                        context.mTransactions.end(),
-                                        std::back_inserter((*it)["transactions"]));
-
-                            double grossIncome = (*it)["totals"]["gross_income"].get<double>();
-                            double netIncome = (*it)["totals"]["net_income"].get<double>();
-                            for (const auto& txn : context.mTransactions) {
-                                grossIncome += txn["gross_income"].get<double>();
-                                netIncome += txn["net_income"].get<double>();
-                            }
-                            context.mTotals["gross_income"] = grossIncome;
-                            context.mTotals["net_income"] = netIncome;
-                            (*it)["totals"] = context.mTotals;
-                            
-                            break;
-                        }
-                    }
-                }
+            if(match[2].str() != SECTION_INCOME) {
+                // Rewind stream to before this section header
+                aIss.seekg(-static_cast<long>(line->length() + 1), std::ios::cur);
+                break;
             }
-            break;
+        }
+
+        if (std::regex_match(trimmedLine, match, incomeTotalRegex)) {
+            nlohmann::json section;
+
+            if (!context.mAssetType.empty() && !context.mCountry.empty()) {
+                mLastContext.mAssetType = context.mAssetType;
+                mLastContext.mCountry = context.mCountry;
+                mLastContext.mIsin = context.mIsin;
+
+                section["asset_type"] = mLastContext.mAssetType;
+                section["country"] = mLastContext.mCountry;
+                section["transactions"] = context.mTransactions;
+                if (context.mTotals.empty()) {
+                    double grossIncome = 0.0;
+                    double netIncome = 0.0;
+                    for (const auto& txn : context.mTransactions) {
+                        grossIncome += txn["gross_income"].get<double>();
+                        netIncome += txn["net_income"].get<double>();
+                    }
+                    context.mTotals["gross_income"] = grossIncome;
+                    context.mTotals["net_income"] = netIncome;
+                }
+                section["totals"] = context.mTotals;
+                aIncomeSections.push_back(section);
+                
+                // Reset context for next country
+                context.mTransactions.clear();
+                context.mTotals.clear();
+                context.mIsin.clear();
+                context.mCountry.clear();
+                hasTransactions = false;
+            }
+            continue;
         }
 
         if (std::regex_match(trimmedLine, match, assetTypeRegex)) {
@@ -296,7 +288,6 @@ void ReportLoader::parseIncomeSection(std::istringstream& aIss, std::vector<nloh
         }
 
         if (trimmedLine == mClientNumber) {
-            context.mIsin = "CLIENT";
             continue; // Skip lines that match the client number
         }
 
@@ -307,13 +298,15 @@ void ReportLoader::parseIncomeSection(std::istringstream& aIss, std::vector<nloh
             std::string isin = !context.mIsin.empty() ? context.mIsin : mLastContext.mIsin;
             mLastContext.mIsin = isin.empty() ? mLastContext.mIsin : isin;
 
-            if ((context.mAssetType != "Liquidity" || mLastContext.mAssetType != "Liquidity") && isin != "CLIENT") {
+            if (context.mAssetType != "Liquidity") {
                 transaction["isin"] = isin;
                 transaction["DEPOSIT"] = false;
             }
-            if ((context.mAssetType == "Liquidity" || mLastContext.mAssetType == "Liquidity") && isin == "CLIENT") {
+            
+            if (context.mAssetType == "Liquidity") {
                 transaction["DEPOSIT"] = true;
             }
+            
             transaction["transaction_type"] = match[1].str();
             transaction["value_date"] = match[2].str();
             std::string amountStr = match[3].str();
