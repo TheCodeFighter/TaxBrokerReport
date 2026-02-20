@@ -187,3 +187,73 @@ TEST(ReportLoaderTest, IsParsedJsonValid) {
             SUCCEED() << "Parsed JSON matches expected JSON.";
         }
 }
+
+TEST(ReportLoaderTest, IncomeSectionCoverage) {
+    // Real PDF format with header lines and multiple countries
+    std::string testData = "Client: CLIENT001\n";
+    testData += "Period: 01.01.2025 - 31.12.2025\n";
+    testData += "Currency: EUR\n";
+    testData += "Country: TestCountry\n";
+    testData += "\n";
+    testData += "V. Detailed Income Section\n";
+    testData += "\n";
+    testData += "ISIN - Name                                          BCCY\n";
+    testData += "Value Date   Amount   Exchange Rate   Gross Income   Tax   Net Income\n";
+    testData += "Transaction                                          EUR\n";
+    testData += "\n";
+    testData += "Asset Type: Equities\n";
+    testData += "Country: CountryA\n";
+    testData += "\n";
+    testData += "XX0000000001 - Company A\n";
+    testData += "EUR                       1.20               -0.31             0.89\n";
+    testData += "Dividend 15.05.2025 0.1234 1.0000\n";
+    testData += "EUR                       1.20               -0.31             0.89\n";
+    testData += "Total for CountryA\n";
+    testData += "\n";
+    testData += "EUR                       1.20               -0.31             0.89\n";
+    testData += "\n";
+    testData += "Total for Equities\n";
+    testData += "\n";
+    testData += "Asset Type: Equities\n";
+    testData += "Country: CountryB\n";
+    testData += "\n";
+    testData += "YY0000000002 - Company B\n";
+    testData += "EUR                       0.63               -0.09             0.54\n";
+    testData += "Dividend 20.06.2025 2.5678 1.0000\n";
+    testData += "EUR                       0.63               -0.09             0.54\n";
+    testData += "Total for CountryB\n";
+    testData += "\n";
+    testData += "EUR                       0.63               -0.09             0.54\n";
+    testData += "\n";
+    testData += "Total for Equities\n";
+    testData += "\n";
+    testData += "VI. Detailed Gains and Losses Section\n";
+
+    ReportLoader loader;
+    loader.setRawText(testData);
+    const auto parsedJson = loader.convertToJson();
+    auto& incomeSections = parsedJson["income_section"];
+    
+    // Core test: verify multiple countries are parsed correctly
+    ASSERT_TRUE(parsedJson.contains("income_section"));
+    ASSERT_GE(incomeSections.size(), 2) << "Should have at least 2 Equities sections";
+    
+    // Find CountryA and CountryB sections
+    bool foundCountryA = false, foundCountryB = false;
+    for (const auto& sec : incomeSections) {
+        if (sec["country"] == "CountryA" && sec["asset_type"] == "Equities") {
+            foundCountryA = true;
+            ASSERT_EQ(sec["transactions"].size(), 1);
+            ASSERT_EQ(sec["transactions"][0]["transaction_type"], "Dividend");
+        }
+        if (sec["country"] == "CountryB" && sec["asset_type"] == "Equities") {
+            foundCountryB = true;
+            ASSERT_EQ(sec["transactions"].size(), 1);
+            ASSERT_EQ(sec["transactions"][0]["transaction_type"], "Dividend");
+        }
+    }
+    
+    ASSERT_TRUE(foundCountryA) << "Should find CountryA section";
+    ASSERT_TRUE(foundCountryB) << "Should find CountryB section";
+    ASSERT_TRUE(parsedJson.contains("gains_and_losses_section"));
+}
