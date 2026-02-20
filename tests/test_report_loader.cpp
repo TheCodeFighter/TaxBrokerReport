@@ -5,6 +5,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <iostream>
+#include <regex>
 
 // Define paths for the input PDF and the output JSON file
 const std::filesystem::path projectRoot {PROJECT_SOURCE_DIR};
@@ -46,6 +47,71 @@ TEST(ReportLoaderTest, GetRawPdfData_InMemory) {
     ASSERT_TRUE(parseData.contains("client")) << "client field missing in parsed data";
     ASSERT_FALSE(parseData["client"].get<std::string>().empty()) << "client is empty";
 
+    loader.clearRawText();
+}
+
+TEST(ReportLoaderTest, GetRawPdfData_InvalidPath) {
+    ReportLoader loader;
+    std::string invalidPath = "/nonexistent/path/to/invalid.pdf";
+    
+    EXPECT_THROW({
+        loader.getRawPdfData(invalidPath, ReportLoader::ProcessingMode::InMemory);
+    }, std::runtime_error) << "Should throw exception for invalid PDF path";
+}
+
+TEST(ReportLoaderTest, GetRawPdfData_FileBasedModeCreatesTemporaryFile) {
+    ASSERT_TRUE(std::filesystem::exists(pdfPath)) << "Test PDF file does not exist: " << pdfPath;
+    
+    ReportLoader loader;
+    
+    // Process in FileBased mode
+    EXPECT_NO_THROW({
+        loader.getRawPdfData(pdfPath.string(), ReportLoader::ProcessingMode::FileBased);
+    }) << "FileBased mode should not throw";
+    
+    // Verify data was extracted
+    auto parseData = loader.convertToJson();
+    ASSERT_TRUE(parseData.contains("client")) << "client field should be present after FileBased processing";
+    ASSERT_FALSE(parseData["client"].get<std::string>().empty()) << "client should not be empty";
+    
+    loader.clearRawText();
+}
+
+TEST(ReportLoaderTest, GetRawPdfData_ClearRawTextCleansUpResources) {
+    ASSERT_TRUE(std::filesystem::exists(pdfPath)) << "Test PDF file does not exist: " << pdfPath;
+    
+    ReportLoader loader;
+    
+    // Process in FileBased mode
+    loader.getRawPdfData(pdfPath.string(), ReportLoader::ProcessingMode::FileBased);
+    auto parseDataBefore = loader.convertToJson();
+    ASSERT_TRUE(parseDataBefore.contains("client")) << "Should have data before clear";
+    
+    // Clear and verify cleanup
+    loader.clearRawText();
+    
+    EXPECT_THROW({
+        loader.convertToJson();
+    }, std::runtime_error) << "Should throw after clearRawText leaves no data";
+}
+
+TEST(ReportLoaderTest, GetRawPdfData_InMemoryModeStoresInMemory) {
+    ASSERT_TRUE(std::filesystem::exists(pdfPath)) << "Test PDF file does not exist: " << pdfPath;
+    
+    ReportLoader loader;
+    
+    // Process in InMemory mode
+    EXPECT_NO_THROW({
+        loader.getRawPdfData(pdfPath.string(), ReportLoader::ProcessingMode::InMemory);
+    }) << "InMemory mode should not throw";
+    
+    // Verify data was extracted
+    auto parseData = loader.convertToJson();
+    ASSERT_TRUE(parseData.contains("client")) << "client field should be present";
+    ASSERT_TRUE(parseData.contains("period")) << "period field should be present";
+    ASSERT_TRUE(parseData.contains("currency")) << "currency field should be present";
+    ASSERT_TRUE(parseData.contains("country")) << "country field should be present";
+    
     loader.clearRawText();
 }
 
