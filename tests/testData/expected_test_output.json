@@ -441,8 +441,7 @@
           "gross_income": 7.0,
           "net_income": 7.0,
           "transaction_type": "Interest payment",
-          "value_date": "08.12.2024",
-          "withholding_tax": 7.0
+          "value_date": "08.12.2024"
         },
         {
           "DEPOSIT": true,
@@ -451,8 +450,7 @@
           "gross_income": 8.0,
           "net_income": 8.0,
           "transaction_type": "Interest payment",
-          "value_date": "10.12.2024",
-          "withholding_tax": 8.0
+          "value_date": "10.12.2024"
         }
       ]
     }
