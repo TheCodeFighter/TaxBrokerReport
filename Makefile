@@ -11,22 +11,11 @@ TEST_FILES := test_report_loader test_xml_generator test_application_service tes
 
 # Detect environment: skip docker exec if already inside the container
 INSIDE_DOCKER := $(shell if [ -f /.dockerenv ]; then echo "yes"; else echo "no"; fi)
-# macOS: use host.docker.internal for X11 (XQuartz); Linux: use DISPLAY
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-    DOCKER_DISPLAY := host.docker.internal:0
-else
-    DOCKER_DISPLAY := $(or $(DISPLAY),:0)
-endif
-# Env for build/configure: ccache dir + offscreen so test discovery and ctest don't need a display
-DOCKER_BUILD_ENV := -e CCACHE_DIR=/app/build/.ccache -e QT_QPA_PLATFORM=offscreen
 
 ifeq ($(INSIDE_DOCKER),yes)
-    CMD_PREFIX :=
-    BUILD_CMD_PREFIX :=
+    CMD_PREFIX := 
 else
     CMD_PREFIX := docker exec $(CONTAINER_NAME)
-    BUILD_CMD_PREFIX := docker exec $(DOCKER_BUILD_ENV) $(CONTAINER_NAME)
 endif
 
 # ---------------------------
@@ -44,10 +33,10 @@ dev-up:
 	else \
 		docker run -d --name $(CONTAINER_NAME) \
 			-v "$(PWD)":/app -v $(CACHE_VOLUME):/app/$(BUILD_DIR) \
-			-e DISPLAY=$(DOCKER_DISPLAY) -v /tmp/.X11-unix:/tmp/.X11-unix \
+			-e DISPLAY=$(DISPLAY) -v /tmp/.X11-unix:/tmp/.X11-unix \
 			--user $(shell id -u):$(shell id -g) $(IMAGE_NAME) sleep infinity; \
 	fi
-	@[ "$(UNAME_S)" = "Darwin" ] || (command -v xhost >/dev/null 2>&1 && xhost +local:docker >/dev/null) || true
+	@xhost +local:docker > /dev/null
 	@echo "Development engine is READY."
 
 dev-down:
@@ -61,29 +50,28 @@ dev-down:
 # ---------------------------
 
 configure:
-	$(BUILD_CMD_PREFIX) cmake -G Ninja -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
+	$(CMD_PREFIX) cmake -G Ninja -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 
 build-test-report-loader:
-	$(BUILD_CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_report_loader -j$(shell nproc)
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_report_loader -j$(shell nproc)
 
 build-test-xml-generator:
-	$(BUILD_CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_xml_generator -j$(shell nproc)
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_xml_generator -j$(shell nproc)
 
 build-test-application-service:
-	$(BUILD_CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_application_service -j$(shell nproc)
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_application_service -j$(shell nproc)
 
 build-test-gui:
-	$(BUILD_CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_gui -j$(shell nproc)
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target test_gui -j$(shell nproc)
 
 # Build only the main application binary
 build-main:
-	$(BUILD_CMD_PREFIX) cmake --build $(BUILD_DIR) --target EdavkiXmlMaker -j$(shell nproc)
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) --target EdavkiXmlMaker -j$(shell nproc)
 
 build:
-	$(BUILD_CMD_PREFIX) cmake --build $(BUILD_DIR) -j$(shell nproc)
+	$(CMD_PREFIX) cmake --build $(BUILD_DIR) -j$(shell nproc)
 
 run: build
-	@[ "$(UNAME_S)" = "Darwin" ] && echo "Tip: If the GUI does not open, run XQuartz, enable Preferences → Security → 'Allow connections from network clients', restart XQuartz, then run: xhost +localhost" || true
 	$(CMD_PREFIX) ./$(BUILD_DIR)/EdavkiXmlMaker
 
 test: build
@@ -93,16 +81,16 @@ coverage: build
 	@echo "Generating code coverage report..."
 	# 1. Reset counters
 	$(CMD_PREFIX) lcov --directory build --zerocounters
-
+	
 	# 2. Run all tests (ignore SegFault with '-')
 	-$(CMD_PREFIX) bash -c "QT_QPA_PLATFORM=offscreen ctest --test-dir build"
-
+	
 	# 3. Capture coverage data
 	$(CMD_PREFIX) lcov --directory build --capture --output-file build/coverage.info
-
+	
 	# 4. FILTER: Keep only src subfolders and the root util folder
 	$(CMD_PREFIX) lcov --extract build/coverage.info "*/src/api/*" "*/src/backend/*" "*/src/gui/*" "*/src/util/*" --output-file build/coverage_filtered.info
-
+	
 	# 5. Generate HTML report and strip path prefixes for a clean view
 	# Using --prefix /app/src and --prefix /app ensures all folders look like top-level names
 	$(CMD_PREFIX) genhtml build/coverage_filtered.info \
@@ -112,7 +100,7 @@ coverage: build
 	@echo "Report generated at tests/coverage_report/index.html"
 
 clean:
-	$(BUILD_CMD_PREFIX) rm -rf $(BUILD_DIR)/*
+	$(CMD_PREFIX) rm -rf $(BUILD_DIR)/*
 
 # Hard clean
 # Use this when clean does not work
@@ -132,10 +120,10 @@ release-linux:
 	@echo "Manufacturing Linux Standalone (v$(VERSION))..."
 	@mkdir -p $(LINUX_VERSION_DIR)
 	@chmod +x production/linux/bundle.sh
-
+	
 	# Build the tool environment
 	docker build --target bundler -t edavki-bundler .
-
+	
 	# Run the factory: Build THEN Bundle
 	docker run --rm \
 		-v "$(CURDIR)/$(LINUX_VERSION_DIR)":/export \
