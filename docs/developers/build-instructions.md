@@ -34,42 +34,10 @@ make build
 make run
 ```
 
-## 🍎 Running the GUI on macOS (Docker + XQuartz)
-
-The app runs in a Linux container and draws to your Mac via X11. You need **XQuartz** and one-time setup:
-
-1. **Install XQuartz** (if needed):
-   `brew install --cask xquartz`
-   Then **log out and back in** (or reboot) so the X11 app is properly registered.
-
-2. **Allow network clients** (required for Docker to connect):
-   - Open **XQuartz** (Applications → Utilities → XQuartz).
-   - In the menu bar: **XQuartz → Preferences → Security**.
-   - Check **"Allow connections from network clients"**.
-   - **Quit XQuartz completely** (XQuartz → Quit) and open it again.
-
-3. **Allow localhost** (in Terminal, each time after you start XQuartz):
-   ```bash
-   xhost +localhost
-   ```
-
-4. **Start the dev container** (so it gets `DISPLAY=host.docker.internal:0`):
-   ```bash
-   make dev-down
-   make dev-up
-   ```
-
-5. **Build and run**:
-   ```bash
-   make run
-   ```
-
-The app window should appear in XQuartz. If you see `could not connect to display host.docker.internal:0`, re-check steps 2 and 3 and ensure XQuartz is running.
-
 ## 🧪 Testing & Quality
 
 - Run Unit Tests: Executes all GoogleTest suites (headless).
-
+  
   ```Bash
   make test
   ```
@@ -84,7 +52,7 @@ The app window should appear in XQuartz. If you see `could not connect to displa
   ```
 
 - Code Coverage: Generates an HTML report of test coverage.
-
+  
   ```Bash
   make coverage
   # Open tests/coverage_report/index.html to view
@@ -108,8 +76,8 @@ The app window should appear in XQuartz. If you see `could not connect to displa
 
 ## 🧹 Cleanup
 
-- Stop for the day:
-
+- Stop for the day: 
+  
   ```Bash
   make dev-down
   ```
@@ -123,7 +91,7 @@ The app window should appear in XQuartz. If you see `could not connect to displa
   ```
 
 - Nuclear Reset: clean (Wipes build cache) or manually remove the edavki-dev-cache volume to start fresh.
-
+  
   ```Bash
   make clean-rebuild
   ```
