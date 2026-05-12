@@ -1,0 +1,8 @@
+build/
+build_prod/
+.obsidian/
+tmp/
+bin/
+tests/coverage_report/
+tests/coverage.info
+tests/coverage.info.filtered
