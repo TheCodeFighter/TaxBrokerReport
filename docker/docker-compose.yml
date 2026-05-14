@@ -1,0 +1,26 @@
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - ..:/workspace
+    # Capabilities required for debuggers (lldb/gdb) and valgrind to hook into processes
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    # Keep standard streams open
+    stdin_open: true
+    tty: true
+
+  prod:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: prod
+    ports:
+      - "8080:8080"
