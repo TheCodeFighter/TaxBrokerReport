@@ -1,0 +1,21 @@
+{
+    "name": "TaxBrokerReport Dev",
+    "dockerComposeFile": "../docker/docker-compose.yml",
+    "service": "dev",
+    "workspaceFolder": "/workspace",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cmake-tools",
+                "twxs.cmake"
+            ],
+            "settings": {
+                "cmake.generator": "Ninja",
+                "cmake.configureOnOpen": true,
+                "C_Cpp.default.compilerPath": "/usr/bin/clang++"
+            }
+        }
+    },
+    "remoteUser": "root"
+}
