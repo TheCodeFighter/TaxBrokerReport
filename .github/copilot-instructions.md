@@ -12,16 +12,16 @@ applyTo: "**"
 - Keep naming consistent with the legacy GUI codebase when adding new public types or data-transfer objects.
 
 # Commits and branches
-- All branches should be named:
-  - TBR-<increment_number>-<short-description>, for common work (TBR is short for TaxBrokerReport)
-  - TR-<increment_number>-<short-description>, for work related to Trade Republic (TR is short for Trade Republic), pay attention to increment properly from legacy codebase and it's commits
-  - IBKR-<increment_number>-<short-description>, for work related to Interactive Brokers (IBKR is short for Interactive Brokers)
-  - <new-broker-initials>-<increment_number>-<short-description>, for work related to a new broker (use the broker's initials as the prefix)
 
-- All commits should be named:
-  - TBR-<increment_number>: <short-description>, for common work
-  - TR-<increment_number>: <short-description>, for work related to Trade Republic
-  - IBKR-<increment_number>: <short-description>, for work related to Interactive Brokers
-  - <new-broker-initials>-<increment_number>: <short-description>, for work related to a new broker (use the broker's initials as the prefix)
+Follow these branching and commit naming conventions based on the type of work:
 
-- Pay attention in reviews and auto generations of commits
+| Work Type | Prefix | Branch Name Format | Commit Message Format |
+| :--- | :--- | :--- | :--- |
+| Common Work | `TBR-` | `TBR-<increment>-<short-desc>` | `TBR-<increment>: <short-desc>` |
+| Trade Republic | `TR-` | `TR-<increment>-<short-desc>` | `TR-<increment>: <short-desc>` |
+| Interactive Brokers | `IBKR-` | `IBKR-<increment>-<short-desc>` | `IBKR-<increment>: <short-desc>` |
+| New Broker | `<initials>-` | `<initials>-<increment>-<short-desc>` | `<initials>-<increment>: <short-desc>` |
+
+**Additional Rules:**
+- **Trade Republic (TR)** branch increments: Ensure the increment number follows the sequential numbering scheme used in the legacy codebase and its commits.
+- Pay attention in reviews and auto-generations of commits to ensure they adhere to these table structures.
