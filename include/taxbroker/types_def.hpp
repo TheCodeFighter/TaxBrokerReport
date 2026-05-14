@@ -29,6 +29,14 @@ using Units = std::int64_t;
 constexpr Units UNITS_SCALE = 100000000;
 
 /*
+    Fixed-point ratio representation with 8 decimal precision.
+    Example:
+        125000000 -> 1.25000000
+*/
+using CorpRatio = std::int64_t;
+constexpr CorpRatio CORP_RATIO_SCALE = 100000000;
+
+/*
     Day-precision date representation used across the tax pipeline.
     Time-of-day is intentionally ignored since tax reporting is date-based.
 */ 
@@ -66,7 +74,7 @@ enum class CorporateActionType {
 struct CorporateAction {
     Date mDate{};
     CorporateActionType mType{};
-    double mRatio{};
+    CorpRatio mRatio{CORP_RATIO_SCALE};
 };
 
 struct TradeTransaction {
