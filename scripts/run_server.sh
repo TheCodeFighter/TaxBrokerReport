@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
+
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+if [[ ! -f "$repo_root/build/build.ninja" ]]; then
+	echo "==> Build tree not found; building the dev image and backend first..."
+	"$script_dir/build.sh" dev
+else
+	ensure_dev_image
+	echo "==> Refreshing the backend build..."
+	compose run --rm dev sh -lc 'cmake --build /workspace/build --parallel'
+fi
 
 echo "==> Running taxbroker_server in development mode on port 8080..."
-# Use --service-ports to ensure the 8080 mapping in docker-compose.yml is respected during `run`
-docker compose run --rm --service-ports dev ./build/src/taxbroker_server
+compose run --rm --service-ports dev ./build/src/taxbroker_server "$@"
