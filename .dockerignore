@@ -1,0 +1,15 @@
+.git
+.gitignore
+build/
+build_clang/
+legacy-QT-GUI/build/
+legacy-QT-GUI/tmp/
+**/CMakeCache.txt
+**/CMakeFiles/
+**/CTestTestfile.cmake
+**/cmake_install.cmake
+**/compile_commands.json
+**/Testing/
+**/*.ninja
+**/*.ninja.deps
+**/*.ninja.log
