@@ -25,3 +25,5 @@ Follow these branching and commit naming conventions based on the type of work:
 **Additional Rules:**
 - **Trade Republic (TR)** branch increments: Ensure the increment number follows the sequential numbering scheme used in the legacy codebase and its commits.
 - Pay attention in reviews and auto-generations of commits to ensure they adhere to these table structures.
+- When generating a commit message, always start the subject with the required prefix and increment from the active branch or work type, for example `TBR-0006: ...`, `TR-0105: ...`, or `IBKR-0001: ...`.
+- Do not generate a plain subject line without the prefix; if the prefix is missing, revise the commit message before finalizing it.

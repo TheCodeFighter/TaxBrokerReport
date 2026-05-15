@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+commit_msg_file="$1"
+first_line="$(head -n 1 "$commit_msg_file")"
+
+if [[ ! "$first_line" =~ ^[A-Z]+-[0-9]{4}:\ [[:print:]]+$ ]]; then
+    cat >&2 <<'EOF'
+Invalid commit message format.
+Use: TBR-0007: short description
+Allowed prefixes: TBR, TR, IBKR, or another uppercase broker prefix.
+EOF
+    exit 1
+fi

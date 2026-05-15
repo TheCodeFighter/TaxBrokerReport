@@ -3,7 +3,6 @@
 #include <string_view>
 #include "taxbroker/types_def.hpp"
 
-
 taxbroker::Money parseMoney4(std::string_view value);
 
 taxbroker::Units parseUnits8(std::string_view value);

@@ -10,3 +10,9 @@
 > https://github.com/TheCodeFighter/TaxBrokerReport/tree/main-legacy
 
 **TaxBrokerReport** is an open-source tool designed for Slovenian investors to automate the generation of FURS-compatible XML files (Doh-KDVP, Doh-Div, and Doh-DHO) from broker export data.
+
+## Development Workflow
+
+Run `scripts/format.sh` before opening a pull request. To make Git reject unformatted commits and pushes locally, run `scripts/install_hooks.sh` once; it wires the repo-local hooks in `.githooks/` to `scripts/format.sh --check`.
+
+The `Format Check` GitHub Action also runs `scripts/format.sh --check` on every PR to `main`, so unformatted code will fail CI and should be fixed before merge.
