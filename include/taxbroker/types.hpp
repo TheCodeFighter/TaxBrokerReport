@@ -50,12 +50,26 @@ enum class TradeSide {
     Sell,
 };
 
-enum class Currency { EUR, USD, GBP, CHF, Unknown };
+enum class Currency {
+    EUR,
+    USD,
+    GBP,
+    CHF,
+    Unknown
+};
 
 // Potentially useful for debugging and logging
-enum class EventType { Trade, Dividend, Interest };
+enum class EventType {
+    Trade,
+    Dividend,
+    Interest
+};
 
-enum class CorporateActionType { Split, ReverseSplit, Merger };
+enum class CorporateActionType {
+    Split,
+    ReverseSplit,
+    Merger
+};
 
 struct CorporateAction {
     Date mDate{};
@@ -99,6 +113,7 @@ struct InterestTransaction {
     Currency mCurrency{Currency::EUR};
 };
 
+// Canonical parsed broker data used throughout the processing pipeline.
 struct BrokerStatement {
     std::vector<TradeInstrument> mTradeInstruments;
     std::vector<DividendInstrument> mDividendInstruments;
