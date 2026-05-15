@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string_view>
-#include "taxbroker/types_def.hpp"
+#include "taxbroker/types.hpp"
 
 taxbroker::Money parseMoney4(std::string_view value);
 
