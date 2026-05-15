@@ -20,6 +20,11 @@ target_include_directories(taxbroker_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
 
+target_link_libraries(taxbroker_core
+    PUBLIC
+    spdlog::spdlog
+)
+
 # Server executable
 add_executable(taxbroker_server
     server/server.cpp

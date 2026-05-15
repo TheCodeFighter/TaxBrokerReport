@@ -5,6 +5,7 @@ UseTab: Never
 ColumnLimit: 100
 BreakBeforeBraces: Attach
 AllowShortFunctionsOnASingleLine: Empty
+AllowShortEnumsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 NamespaceIndentation: None

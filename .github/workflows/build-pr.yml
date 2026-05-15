@@ -1,0 +1,26 @@
+name: Build PR Images
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - dev
+          - prod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.mode }} image
+        run: scripts/build.sh ${{ matrix.mode }}
