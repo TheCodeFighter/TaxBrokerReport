@@ -1,11 +1,43 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# If an argument is provided, run specific tests matching the regex. Otherwise, run all.
-if [ -n "$1" ]; then
-    echo "==> Running tests matching: $1"
-    docker compose run --rm dev ctest --test-dir build -R "$1"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+usage() {
+    cat <<'EOF'
+Usage: test.sh [ctest-regex]
+
+  With no arguments, runs the full test suite.
+  With one argument, runs only tests matching that CTest regular expression.
+EOF
+}
+
+if [[ $# -gt 1 ]]; then
+    echo "Too many arguments." >&2
+    usage >&2
+    exit 1
+fi
+
+test_filter="${1:-}"
+
+if [[ "$test_filter" == "-h" || "$test_filter" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ ! -f "$repo_root/build/build.ninja" ]]; then
+    echo "==> Build tree not found; building the dev image and backend first..."
+    "$script_dir/build.sh" dev
+else
+    ensure_dev_image
+    echo "==> Refreshing the backend build..."
+    compose run --rm dev sh -lc 'cmake --build /workspace/build --parallel'
+fi
+
+if [[ -n "$test_filter" ]]; then
+    echo "==> Running tests matching: $test_filter"
+    compose run --rm dev ctest --test-dir /workspace/build --output-on-failure -R "$test_filter"
 else
     echo "==> Running all tests..."
-    docker compose run --rm dev ctest --test-dir build --output-on-failure
+    compose run --rm dev ctest --test-dir /workspace/build --output-on-failure
 fi
