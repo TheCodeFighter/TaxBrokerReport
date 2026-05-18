@@ -19,18 +19,19 @@ The `Format Check` GitHub Action also runs `scripts/format.sh --check` on every 
 
 ## Logger (spdlog integration)
 
-This project uses the C++ logging library:
-:contentReference[oaicite:0]{index=0}
+This project uses [spdlog](https://github.com/gabime/spdlog) for file-backed logging.
 
-It is currently integrated in a minimal but production-oriented setup suitable for development and early-stage backend work.
+`taxbroker::InitializeLogger()` configures a named file logger, sets it as the default logger, and is safe to call more than once. By default it appends to `logs/taxbroker.log`, uses `debug` as the fallback level, and flushes warnings and errors eagerly.
 
----
+The project keeps spdlog log calls compiled in at `trace` level, so `TBR_LOG_LEVEL` can actually enable or suppress debug output at runtime.
 
-### Current Setup
+Use `TBR_LOG_FILE_MODE=truncate` only when you explicitly want to clear the log at startup. The other supported environment variables are:
 
-### Initialization
+- `TBR_LOG_LEVEL`: `trace`, `debug`, `info`, `warn`, `error`, `critical`, or `off`
+- `TBR_LOG_FILE`: custom log file path
+- `TBR_LOG_FILE_MODE`: `append` or `truncate`
 
-Logging must be explicitly initialized at application startup:
+Use the `LOG_*` macros from `utils/logger.hpp` when you want the pattern to include file and line information:
 
 ```cpp
 #include "utils/logger.hpp"
@@ -39,5 +40,13 @@ int main()
 {
     taxbroker::InitializeLogger();
 
-    spdlog::info("Server started");
+    LOG_TRACE("Trace message");
+    LOG_DEBUG("Debug message");
+    LOG_INFO("Info message");
+    LOG_WARNING("Warning message");
+    LOG_WARN("Warning message");
+    LOG_ERROR("Error message");
+    LOG_CRITICAL("Critical message");
+
+    LOG_INFO("Server started");
 }
