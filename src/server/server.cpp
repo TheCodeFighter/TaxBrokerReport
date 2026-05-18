@@ -6,10 +6,12 @@ int main(int argc, char** argv) {
 
     taxbroker::InitializeLogger();
 
-    spdlog::debug("Debug message");
-    spdlog::info("Info message");
-    spdlog::warn("Warning message");
-    spdlog::error("Error message");
+    LOG_TRACE("Trace message");
+    LOG_DEBUG("Debug message");
+    LOG_INFO("Info message");
+    LOG_WARNING("Warning message");
+    LOG_ERROR("Error message");
+    LOG_CRITICAL("Critical message");
 
     return 0;
 }

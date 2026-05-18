@@ -15,5 +15,6 @@ fi
 echo "==> Running taxbroker_server in development mode on port 8080..."
 compose run --rm --service-ports \
 	-e TBR_LOG_LEVEL="${TBR_LOG_LEVEL:-}" \
+	-e TBR_LOG_FILE="${TBR_LOG_FILE:-}" \
 	-e TBR_LOG_FILE_MODE="${TBR_LOG_FILE_MODE:-}" \
 	dev ./build/src/taxbroker_server "$@"
