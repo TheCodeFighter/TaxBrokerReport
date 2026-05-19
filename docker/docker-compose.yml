@@ -1,6 +1,7 @@
 services:
   dev:
     image: taxbrokerreport-dev
+    user: "${UID}:${GID}"
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -9,6 +10,9 @@ services:
       - "8080:8080"
     volumes:
       - ..:/workspace
+      - ../logs:/var/log/taxbroker
+    environment:
+      - TBR_LOG_FILE=/var/log/taxbroker/taxbroker.log
     # Capabilities required for debuggers (lldb/gdb) and valgrind to hook into processes
     cap_add:
       - SYS_PTRACE
@@ -26,3 +30,10 @@ services:
       target: prod
     ports:
       - "8080:8080"
+    volumes:
+      - taxbroker_logs:/var/log/taxbroker
+    environment:
+      - TBR_LOG_FILE=/var/log/taxbroker/taxbroker.log
+
+volumes:
+  taxbroker_logs:

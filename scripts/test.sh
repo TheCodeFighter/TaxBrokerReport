@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$script_dir/lib.sh"
+
+bash "$script_dir/restore_exec_bits.sh"
 
 usage() {
     cat <<'EOF'
@@ -25,6 +29,8 @@ if [[ "$test_filter" == "-h" || "$test_filter" == "--help" ]]; then
     exit 0
 fi
 
+ensure_build_tree_writable
+
 if [[ ! -f "$repo_root/build/build.ninja" ]]; then
     echo "==> Build tree not found; building the dev image and backend first..."
     "$script_dir/build.sh" dev
@@ -33,6 +39,8 @@ else
     echo "==> Refreshing the backend build..."
     compose run --rm dev sh -lc 'cmake --build /workspace/build --parallel'
 fi
+
+ensure_build_outputs_executable
 
 if [[ -n "$test_filter" ]]; then
     echo "==> Running tests matching: $test_filter"

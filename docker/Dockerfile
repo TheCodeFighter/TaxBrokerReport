@@ -3,6 +3,7 @@ FROM alpine:3.19 AS dev
 
 RUN apk add --no-cache \
     bash \
+    ca-certificates \
     git \
     clang \
     clang-extra-tools \
@@ -25,7 +26,7 @@ RUN git clone --depth 1 --branch v1.16 https://github.com/linux-test-project/lco
 
 WORKDIR /workspace
 
-CMD ["tail", "-f", "/dev/null"]
+CMD ["/bin/bash"]
 
 # Stage 2: Builder
 FROM dev AS builder
@@ -37,10 +38,15 @@ RUN CC=clang CXX=clang++ cmake -B build -G Ninja -S . -DCMAKE_BUILD_TYPE=Release
 # Stage 3: Production
 FROM alpine:3.19 AS prod
 # Install runtime libraries
-RUN apk add --no-cache libc++ libstdc++
+RUN apk add --no-cache libc++ libstdc++ ca-certificates && \
+    addgroup -S app && adduser -S app -G app && \
+    mkdir -p /app /var/log/taxbroker && \
+    chown -R app:app /app /var/log/taxbroker
 
 WORKDIR /app
-COPY --from=builder /workspace/build/src/taxbroker_server /app/taxbroker_server
+COPY --from=builder --chown=app:app /workspace/build/src/taxbroker_server /app/taxbroker_server
+
+USER app
 
 EXPOSE 8080
 CMD ["./taxbroker_server"]

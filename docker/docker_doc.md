@@ -40,15 +40,49 @@ To run specific tests matching a pattern:
 ### 3. Run the Server
 Starts the compiled backend server and maps port 8080 to your host machine:
 ```bash
-./scripts/run_server.sh
+./scripts/run.sh
 ```
 
 ---
 
 ## Native Docker Compose usage
 
-Because of the `.env` file in the root, you no longer need to specify the file path with `-f`. You can use standard compose commands directly:
+Because of the `.env` file in this directory, you can run compose from here without specifying the file path with `-f`. If you run compose from the repo root, keep using `-f docker/docker-compose.yml`.
 
 * **Build**: `docker compose build dev`
+* **Dev**: `docker compose up --build dev`
 * **Production Test**: `docker compose up prod`
 * **Cleanup**: `docker compose down -v`
+
+---
+
+## UID/GID mapping (permissions)
+
+The `dev` container runs as `${UID}:${GID}` to keep file ownership aligned with your host user for bind mounts like `/workspace`.
+
+Before starting the dev container, export your current UID and GID:
+```bash
+export UID=$(id -u)
+export GID=$(id -g)
+docker compose up dev
+```
+
+The `.env` file provides a default fallback (UID=1000, GID=1000) if you do not export them.
+
+If files were already created as root, fix ownership once on the host:
+```bash
+sudo chown -R $(id -un):$(id -gn) .
+```
+
+---
+
+## Logs
+
+The dev service bind-mounts `../logs` into `/var/log/taxbroker` and sets `TBR_LOG_FILE` to `/var/log/taxbroker/taxbroker.log` by default. Logs end up in the repo `logs/` folder and still honor `TBR_LOG_FILE_MODE` (append or truncate).
+
+The prod service mounts a named volume (`taxbroker_logs`) at `/var/log/taxbroker` so logs stay outside the container filesystem.
+
+To view logs from the container:
+```bash
+docker compose run --rm dev sh -lc 'tail -f /var/log/taxbroker/taxbroker.log'
+```
