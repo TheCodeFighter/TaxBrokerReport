@@ -27,6 +27,7 @@ target_link_libraries(taxbroker_core
 
 # Server executable
 add_executable(taxbroker_server
+    main.cpp
     server/server.cpp
     server/api/health_api.cpp
     server/api/report_api.cpp

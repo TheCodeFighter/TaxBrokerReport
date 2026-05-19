@@ -1,11 +1,9 @@
+#include "server/server.hpp"
 #include "utils/logger.hpp"
 
-int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
+namespace taxbroker {
 
-    taxbroker::InitializeLogger();
-
+int StartServer() {
     LOG_TRACE("Trace message");
     LOG_DEBUG("Debug message");
     LOG_INFO("Info message");
@@ -15,3 +13,5 @@ int main(int argc, char** argv) {
 
     return 0;
 }
+
+} // namespace taxbroker
