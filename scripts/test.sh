@@ -25,6 +25,8 @@ if [[ "$test_filter" == "-h" || "$test_filter" == "--help" ]]; then
     exit 0
 fi
 
+ensure_build_tree_writable
+
 if [[ ! -f "$repo_root/build/build.ninja" ]]; then
     echo "==> Build tree not found; building the dev image and backend first..."
     "$script_dir/build.sh" dev

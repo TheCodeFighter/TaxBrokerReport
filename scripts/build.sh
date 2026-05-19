@@ -36,5 +36,6 @@ else
     compose build dev
 
     echo "==> Configuring and building the backend inside the dev container..."
+    ensure_build_tree_writable
     compose run --rm -e CC=clang -e CXX=clang++ dev sh -lc 'cmake -S /workspace -B /workspace/build -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build /workspace/build --parallel'
 fi
