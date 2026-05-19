@@ -10,7 +10,7 @@ services:
       - "8080:8080"
     volumes:
       - ..:/workspace
-      - taxbroker_logs:/var/log/taxbroker
+      - ../logs:/var/log/taxbroker
     environment:
       - TBR_LOG_FILE=/var/log/taxbroker/taxbroker.log
     # Capabilities required for debuggers (lldb/gdb) and valgrind to hook into processes
@@ -22,13 +22,6 @@ services:
     stdin_open: true
     tty: true
 
-  log-perms:
-    image: taxbrokerreport-dev
-    user: "0:0"
-    command: ["sh", "-lc", "chown -R ${UID}:${GID} /var/log/taxbroker"]
-    volumes:
-      - taxbroker_logs:/var/log/taxbroker
-
   prod:
     image: taxbrokerreport-prod
     build:
@@ -37,6 +30,10 @@ services:
       target: prod
     ports:
       - "8080:8080"
+    volumes:
+      - taxbroker_logs:/var/log/taxbroker
+    environment:
+      - TBR_LOG_FILE=/var/log/taxbroker/taxbroker.log
 
 volumes:
   taxbroker_logs:

@@ -54,7 +54,11 @@ resolve_log_file_path() {
         log_path="logs/taxbroker.log"
     fi
 
-    if [[ "$log_path" == /workspace/* ]]; then
+    if [[ "$log_path" == /var/log/taxbroker ]]; then
+        log_path="$repo_root/logs"
+    elif [[ "$log_path" == /var/log/taxbroker/* ]]; then
+        log_path="$repo_root/logs/${log_path#/var/log/taxbroker/}"
+    elif [[ "$log_path" == /workspace/* ]]; then
         log_path="$repo_root/${log_path#/workspace/}"
     elif [[ "$log_path" != /* ]]; then
         log_path="$repo_root/$log_path"
@@ -128,14 +132,6 @@ EOF
     sudo chown -R $current_user:$current_group "$log_dir"
 EOF
         return 1
-    fi
-}
-
-ensure_log_volume_ready() {
-    local log_path="${TBR_LOG_FILE:-/var/log/taxbroker/taxbroker.log}"
-
-    if [[ "$log_path" == /var/log/taxbroker/* ]]; then
-        compose run --rm log-perms
     fi
 }
 

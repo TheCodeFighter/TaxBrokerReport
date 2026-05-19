@@ -40,7 +40,7 @@ To run specific tests matching a pattern:
 ### 3. Run the Server
 Starts the compiled backend server and maps port 8080 to your host machine:
 ```bash
-./scripts/run_server.sh
+./scripts/run.sh
 ```
 
 ---
@@ -53,8 +53,6 @@ Because of the `.env` file in this directory, you can run compose from here with
 * **Dev**: `docker compose up --build dev`
 * **Production Test**: `docker compose up prod`
 * **Cleanup**: `docker compose down -v`
-
-`log-perms` is intended as a one-off helper (run via the scripts or `docker compose run --rm log-perms`), not as a long-running service.
 
 ---
 
@@ -73,19 +71,16 @@ The `.env` file provides a default fallback (UID=1000, GID=1000) if you do not e
 
 If files were already created as root, fix ownership once on the host:
 ```bash
-sudo chown -R $USER:$USER .
+sudo chown -R $(id -un):$(id -gn) .
 ```
 
 ---
 
-## Log volume (dev)
+## Logs
 
-The dev service mounts a named Docker volume at `/var/log/taxbroker` and sets `TBR_LOG_FILE` to `/var/log/taxbroker/taxbroker.log` by default. This keeps logs out of the repo and avoids host permission issues while still honoring `TBR_LOG_FILE_MODE` (append or truncate).
+The dev service bind-mounts `../logs` into `/var/log/taxbroker` and sets `TBR_LOG_FILE` to `/var/log/taxbroker/taxbroker.log` by default. Logs end up in the repo `logs/` folder and still honor `TBR_LOG_FILE_MODE` (append or truncate).
 
-Because the container runs as your host UID/GID, the log volume needs a one-time ownership fix when it is created. The `log-perms` service takes care of this automatically when you use the scripts. You can run it manually as well:
-```bash
-docker compose run --rm log-perms
-```
+The prod service mounts a named volume (`taxbroker_logs`) at `/var/log/taxbroker` so logs stay outside the container filesystem.
 
 To view logs from the container:
 ```bash
