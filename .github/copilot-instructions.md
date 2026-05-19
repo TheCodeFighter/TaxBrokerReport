@@ -27,3 +27,17 @@ Follow these branching and commit naming conventions based on the type of work:
 - Pay attention in reviews and auto-generations of commits to ensure they adhere to these table structures.
 - When generating a commit message, always start the subject with the required prefix and increment from the active branch or work type, for example `TBR-0006: ...`, `TR-0105: ...`, or `IBKR-0001: ...`.
 - Do not generate a plain subject line without the prefix; if the prefix is missing, revise the commit message before finalizing it.
+
+# Logging constraints (for contributors and AI tools)
+
+- Do not modify logging macros
+- Do not introduce additional logging libraries
+- Do not reinitialize logger
+- Do not call InitializeLogger() outside main()
+- Do not call spdlog::shutdown() outside main()
+- Logger configuration must remain environment-driven
+- Keep logging lightweight and non-blocking
+- Any changes must preserve:
+  - async logging behavior
+  - thread safety
+  - minimal dependencies
