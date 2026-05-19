@@ -47,6 +47,26 @@ EOF
     fi
 }
 
+ensure_build_outputs_executable() {
+    local build_dir="$repo_root/build"
+
+    if [[ ! -d "$build_dir" ]]; then
+        return 0
+    fi
+
+    if [[ ! -w "$build_dir" ]]; then
+        ensure_build_tree_writable
+        return 1
+    fi
+
+    local server_path="$build_dir/src/taxbroker_server"
+    if [[ -e "$server_path" && ! -x "$server_path" ]]; then
+        chmod u+x "$server_path"
+    fi
+
+    find "$build_dir" -maxdepth 4 -type f -name "*_tests" ! -executable -exec chmod u+x {} +
+}
+
 resolve_log_file_path() {
     local log_path="${TBR_LOG_FILE:-}"
 

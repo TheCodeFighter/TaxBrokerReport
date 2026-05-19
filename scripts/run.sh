@@ -5,6 +5,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$script_dir/lib.sh"
 
+bash "$script_dir/restore_exec_bits.sh"
+
 ensure_build_tree_writable
 
 if [[ ! -f "$repo_root/build/build.ninja" ]]; then
@@ -15,6 +17,8 @@ else
 	echo "==> Refreshing the backend build..."
 	compose run --rm dev sh -lc 'cmake --build /workspace/build --parallel'
 fi
+
+ensure_build_outputs_executable
 
 echo "==> Running taxbroker_server in development mode on port 8080..."
 TBR_LOG_FILE="${TBR_LOG_FILE:-/var/log/taxbroker/taxbroker.log}"
