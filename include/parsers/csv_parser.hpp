@@ -10,7 +10,7 @@ class CsvParser {
   public:
     virtual ~CsvParser() = default;
 
-    [[nodiscard("Parsed broker data should not be ignored")]] virtual BrokerStatement
+    [[nodiscard("Parsed broker data should not be ignored")]] virtual ParseResult
     parse(const std::filesystem::path& csvPath) = 0;
 };
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "taxbroker/errors.hpp"
+
 #include <cstdint>
 #include <chrono>
 #include <string>
@@ -113,11 +115,16 @@ struct InterestTransaction {
     Currency mCurrency{Currency::EUR};
 };
 
-// Canonical parsed broker data used throughout the processing pipeline.
 struct BrokerStatement {
     std::vector<TradeInstrument> mTradeInstruments;
     std::vector<DividendInstrument> mDividendInstruments;
     std::vector<InterestTransaction> mInterestTransactions;
+};
+
+// Canonical parsed broker data with warnings used throughout the processing pipeline.
+struct ParseResult {
+    BrokerStatement mStatement;
+    std::vector<ParseWarning> mWarnings;
 };
 
 } // namespace taxbroker

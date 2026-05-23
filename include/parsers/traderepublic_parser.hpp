@@ -6,7 +6,7 @@ namespace taxbroker::tr {
 
 class TradeRepublicParser final : public CsvParser {
   public:
-    BrokerStatement parse(const std::filesystem::path& csvPath) override;
+    ParseResult parse(const std::filesystem::path& csvPath) override;
 
   private:
     TradeTransaction parseTradeRow(...);
