@@ -18,6 +18,7 @@ add_library(taxbroker_core STATIC
 
 target_include_directories(taxbroker_core PUBLIC 
     ${CMAKE_SOURCE_DIR}/include
+    ${CSV_PARSER_INCLUDE_DIR}
 )
 
 target_link_libraries(taxbroker_core

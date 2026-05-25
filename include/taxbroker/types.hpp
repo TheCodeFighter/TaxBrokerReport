@@ -73,6 +73,12 @@ enum class CorporateActionType {
     Merger
 };
 
+enum class InterestType {
+    BondInterest,
+    BrokerInterest,
+    OtherInterest
+};
+
 struct CorporateAction {
     Date mDate{};
     CorporateActionType mType{};
@@ -115,10 +121,18 @@ struct InterestTransaction {
     Currency mCurrency{Currency::EUR};
 };
 
+struct InterestInstrument {
+    std::string mName; // No ISIN for interest transactions, using name instead.
+    std::optional<Isin>
+        mIsin; // Optional ISIN if available, otherwise empty. (ie bonds has isin, broker not)
+    InterestType mInterestType;
+    std::vector<InterestTransaction> mTransactions;
+};
+
 struct BrokerStatement {
     std::vector<TradeInstrument> mTradeInstruments;
     std::vector<DividendInstrument> mDividendInstruments;
-    std::vector<InterestTransaction> mInterestTransactions;
+    std::vector<InterestInstrument> mInterestInstruments;
 };
 
 // Canonical parsed broker data with warnings used throughout the processing pipeline.

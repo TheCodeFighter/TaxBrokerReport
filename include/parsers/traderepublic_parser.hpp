@@ -4,35 +4,30 @@
 #include "types_parser.hpp"
 
 #include <unordered_map>
-#include <string_view>
+#include <csv.hpp>
 
 namespace taxbroker::tr {
 
 class TradeRepublicParser final : public CsvParser {
   public:
-    ParseResult parse(const std::filesystem::path& csvPath) override;
+    ParseResult parse(const std::filesystem::path& aCsvPath) override;
 
   private:
     static constexpr char delimiter = ',';
 
-    using Fields = std::vector<std::string>;
-    using HeaderMap = std::unordered_map<std::string, std::size_t>;
+    RowType detectRowType(const csv::CSVRow& aCsvRow) const;
 
-    const std::string& getField(const Fields& aFields, const HeaderMap& aHeaderMap,
-                                const std::string_view& aFieldName) const;
+    void parseTradeRow(const csv::CSVRow& aCsvRow, std::vector<TradeInstrument>& aInstruments);
+    DividendTransaction parseDividendRow(const csv::CSVRow& aCsvRow,
+                                         std::vector<DividendInstrument>& aInstruments);
+    InterestTransaction parseInterestRow(const csv::CSVRow& aCsvRow,
+                                         std::vector<InterestInstrument>& aInstruments);
 
-    HeaderMap buildHeaderMap(const Fields& aHeaderFields) const;
-    RowType detectRowType(const Fields& aFields, const HeaderMap& aHeaderMap) const;
-
-    TradeTransaction parseTradeRow(const Fields& aFields, const HeaderMap& aHeaderMap);
-    DividendTransaction parseDividendRow(const Fields& aFields, const HeaderMap& aHeaderMap);
-    InterestTransaction parseInterestRow(const Fields& aFields, const HeaderMap& aHeaderMap);
-
-    Date parseDate(...);
-
-    Money parseMoney(...);
-
-    Units parseUnits(...);
+    std::optional<Date> parseDate(std::string_view aValue);
+    std::optional<Money> parseUnitPrice(std::string_view aValue);
+    std::optional<Units> parseUnits(std::string_view aValue);
+    std::optional<Currency> parseCurrency(std::string_view aValue);
+    std::optional<TradeSide> parseTradeSide(std::string_view aValue);
 };
 
 } // namespace taxbroker::tr

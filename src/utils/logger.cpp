@@ -53,7 +53,8 @@ std::string ToLower(std::string_view aValue) {
 
 const char* GetEnvironmentValue(const char* aName) {
     const char* value = std::getenv(aName);
-    if (value == nullptr || *value == '\0') {
+    if (value == nullptr || *value == '\0')
+    {
         return nullptr;
     }
 
@@ -61,30 +62,38 @@ const char* GetEnvironmentValue(const char* aName) {
 }
 
 std::optional<spdlog::level::level_enum> ParseLogLevel(const char* aValue) {
-    if (aValue == nullptr) {
+    if (aValue == nullptr)
+    {
         return std::nullopt;
     }
 
     const auto normalizedValue = ToLower(aValue);
-    if (normalizedValue == "trace") {
+    if (normalizedValue == "trace")
+    {
         return spdlog::level::trace;
     }
-    if (normalizedValue == "debug") {
+    if (normalizedValue == "debug")
+    {
         return spdlog::level::debug;
     }
-    if (normalizedValue == "info") {
+    if (normalizedValue == "info")
+    {
         return spdlog::level::info;
     }
-    if (normalizedValue == "warn" || normalizedValue == "warning") {
+    if (normalizedValue == "warn" || normalizedValue == "warning")
+    {
         return spdlog::level::warn;
     }
-    if (normalizedValue == "error" || normalizedValue == "err") {
+    if (normalizedValue == "error" || normalizedValue == "err")
+    {
         return spdlog::level::err;
     }
-    if (normalizedValue == "critical" || normalizedValue == "crit") {
+    if (normalizedValue == "critical" || normalizedValue == "crit")
+    {
         return spdlog::level::critical;
     }
-    if (normalizedValue == "off") {
+    if (normalizedValue == "off")
+    {
         return spdlog::level::off;
     }
 
@@ -92,18 +101,21 @@ std::optional<spdlog::level::level_enum> ParseLogLevel(const char* aValue) {
 }
 
 std::optional<bool> ParseLogFileMode(const char* aValue) {
-    if (aValue == nullptr) {
+    if (aValue == nullptr)
+    {
         return std::nullopt;
     }
 
     const auto normalizedValue = ToLower(aValue);
     if (normalizedValue == "append" || normalizedValue == "a" || normalizedValue == "false" ||
-        normalizedValue == "0" || normalizedValue == "no") {
+        normalizedValue == "0" || normalizedValue == "no")
+    {
         return false;
     }
 
     if (normalizedValue == "truncate" || normalizedValue == "t" || normalizedValue == "true" ||
-        normalizedValue == "1" || normalizedValue == "yes" || normalizedValue == "overwrite") {
+        normalizedValue == "1" || normalizedValue == "yes" || normalizedValue == "overwrite")
+    {
         return true;
     }
 
@@ -111,15 +123,18 @@ std::optional<bool> ParseLogFileMode(const char* aValue) {
 }
 
 std::optional<bool> ParseLogBool(const char* aValue) {
-    if (aValue == nullptr) {
+    if (aValue == nullptr)
+    {
         return std::nullopt;
     }
 
     const auto normalizedValue = ToLower(aValue);
-    if (normalizedValue == "1" || normalizedValue == "true") {
+    if (normalizedValue == "1" || normalizedValue == "true")
+    {
         return true;
     }
-    if (normalizedValue == "0" || normalizedValue == "false") {
+    if (normalizedValue == "0" || normalizedValue == "false")
+    {
         return false;
     }
 
@@ -131,23 +146,27 @@ std::optional<bool> ParseLogBool(const char* aValue) {
 // - Value must not exceed aMaxValue
 // - Overflow (ERANGE) is rejected
 std::optional<std::size_t> ParseSizeT(const char* aValue, std::size_t aMaxValue) {
-    if (aValue == nullptr) {
+    if (aValue == nullptr)
+    {
         return std::nullopt;
     }
 
     errno = 0;
     char* end = nullptr;
     const auto parsedValue = std::strtoul(aValue, &end, 10);
-    if (end == aValue || *end != '\0' || errno == ERANGE) {
+    if (end == aValue || *end != '\0' || errno == ERANGE)
+    {
         return std::nullopt;
     }
 
-    if (parsedValue == 0U) {
+    if (parsedValue == 0U)
+    {
         return std::nullopt;
     }
 
     const auto maxSizeT = static_cast<unsigned long>(std::numeric_limits<std::size_t>::max());
-    if (parsedValue > maxSizeT || parsedValue > static_cast<unsigned long>(aMaxValue)) {
+    if (parsedValue > maxSizeT || parsedValue > static_cast<unsigned long>(aMaxValue))
+    {
         return std::nullopt;
     }
 
@@ -166,7 +185,8 @@ void EnsureAsyncThreadPoolInitialized(std::size_t aQueueSize, std::size_t aThrea
 }
 
 bool IsAsyncLogger(const std::shared_ptr<spdlog::logger>& aLogger) {
-    if (aLogger == nullptr) {
+    if (aLogger == nullptr)
+    {
         return false;
     }
 
@@ -174,13 +194,16 @@ bool IsAsyncLogger(const std::shared_ptr<spdlog::logger>& aLogger) {
 }
 
 std::optional<std::string> GetLogFilePath(const std::shared_ptr<spdlog::logger>& aLogger) {
-    if (aLogger == nullptr) {
+    if (aLogger == nullptr)
+    {
         return std::nullopt;
     }
 
-    for (const auto& sink : aLogger->sinks()) {
+    for (const auto& sink : aLogger->sinks())
+    {
         const auto fileSink = std::dynamic_pointer_cast<spdlog::sinks::basic_file_sink_mt>(sink);
-        if (fileSink != nullptr) {
+        if (fileSink != nullptr)
+        {
             return std::string{fileSink->filename()};
         }
     }
@@ -217,25 +240,30 @@ void InitializeLogger() {
 
         auto logger = spdlog::get(kLoggerName);
         if (logger == nullptr || GetLogFilePath(logger).value_or(std::string{}) != logFilePath ||
-            IsAsyncLogger(logger) != useAsyncLogger) {
+            IsAsyncLogger(logger) != useAsyncLogger)
+        {
             spdlog::drop(kLoggerName);
 
             std::vector<spdlog::sink_ptr> sinks;
             sinks.reserve(useStdoutSink ? 2U : 1U);
 
-            if (useStdoutSink) {
+            if (useStdoutSink)
+            {
                 sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
             }
 
             sinks.push_back(
                 std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFilePath, truncateLogFile));
 
-            if (useAsyncLogger) {
+            if (useAsyncLogger)
+            {
                 EnsureAsyncThreadPoolInitialized(logQueueSize, logThreadCount);
                 logger = std::make_shared<spdlog::async_logger>(
                     kLoggerName, sinks.begin(), sinks.end(), spdlog::thread_pool(),
                     spdlog::async_overflow_policy::block);
-            } else {
+            }
+            else
+            {
                 logger = std::make_shared<spdlog::logger>(kLoggerName, sinks.begin(), sinks.end());
             }
 
