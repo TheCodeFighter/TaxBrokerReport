@@ -7,6 +7,7 @@
 #include <string>
 #include <ratio>
 #include <vector>
+#include <optional>
 
 namespace taxbroker {
 

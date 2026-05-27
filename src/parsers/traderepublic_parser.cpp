@@ -4,6 +4,29 @@
 #include <sstream>
 #include <algorithm>
 
+namespace {
+// used just for trade rows and dividend rows
+template <typename InstrumentT>
+InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments, const std::string& aIsin,
+                                            const std::string& aName) {
+    auto instrumentIt =
+        std::find_if(aInstruments.begin(), aInstruments.end(),
+        [&](const InstrumentT& aInstrument) { return aInstrument.mIsin == aIsin; });
+
+    if (instrumentIt == aInstruments.end())
+    {
+        aInstruments.emplace_back(InstrumentT{
+            .mIsin = aIsin,
+            .mName = aName,
+        });
+        instrumentIt = std::prev(aInstruments.end());
+    }
+
+    return *instrumentIt;
+}
+
+} // namespace
+
 namespace taxbroker::tr {
 
 ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
@@ -58,47 +81,42 @@ RowType TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) const {
     return rowType;
 }
 
+bool TradeRepublicParser::isInstrumentValid(std::string_view aContext, const std::string& aIsin,
+                                            const std::string& aName) {
+    if (aIsin.empty() && aName.empty())
+    {
+        LOG_WARNING("Missing ISIN and name values for {} row. Skipping row.", aContext);
+        return false;
+    }
+
+    auto logMainFail = [&](std::string_view aFieldName, std::string_view aValue) {
+        LOG_WARNING("Failed to parse {} row with: {} for {} skipping row", aContext, aFieldName,
+                    aValue);
+    };
+
+    // clang-format off
+    if (aIsin.empty()) { logMainFail("ISIN", aIsin); return false; }
+    if (aName.empty()) { logMainFail("name", aName); return false; }
+    // clang-format on
+    return true;
+}
+
 void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
                                         std::vector<TradeInstrument>& aInstruments) {
 
     const auto isinValue = aCsvRow["symbol"].get<std::string>();
     const auto nameValue = aCsvRow["name"].get<std::string>();
 
-    if (isinValue.empty() && nameValue.empty())
+    if (!isInstrumentValid("trade", isinValue, nameValue))
     {
-        LOG_WARNING("Missing ISIN and name values for trade row. Skipping row.");
         return;
     }
 
-    auto logMainFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse row with: {} for {} skipping row", aFieldName, aValue);
-    };
-
-    // clang-format off
-    if (isinValue.empty()) { logMainFail("ISIN", isinValue); return; }
-    if (nameValue.empty()) { logMainFail("name", nameValue); return; }
-    // clang-format on
-
-    auto instrumentIt = std::find_if(
-        aInstruments.begin(), aInstruments.end(),
-        [&](const TradeInstrument& aInstrument) { return aInstrument.mIsin == isinValue; });
-
-    if (instrumentIt == aInstruments.end())
-    {
-        aInstruments.emplace_back(TradeInstrument{
-            .mIsin = isinValue,
-            .mName = nameValue,
-        });
-    }
-
-    if (instrumentIt == aInstruments.end())
-    {
-        instrumentIt = std::prev(aInstruments.end());
-    }
+    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
 
     auto date = parseDate(aCsvRow["date"].get<std::string>());
     auto tradeSide = parseTradeSide(aCsvRow["type"].get<std::string>());
-    auto unitPrice = parseUnitPrice(aCsvRow["price"].get<std::string>());
+    auto unitPrice = parseMoney(aCsvRow["price"].get<std::string>());
     auto units = parseUnits(aCsvRow["shares"].get<std::string>());
     auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
@@ -115,7 +133,7 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     if (!currency) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
     // clang-format on
 
-    instrumentIt->mTransactions.emplace_back(TradeTransaction{
+    instrument.mTransactions.emplace_back(TradeTransaction{
         .mDate = *date,
         .mTradeSide = *tradeSide,
         .mUnitPrice = *unitPrice,
