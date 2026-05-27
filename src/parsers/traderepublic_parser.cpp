@@ -8,10 +8,10 @@ namespace {
 // used just for trade rows and dividend rows
 template <typename InstrumentT>
 InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments, const std::string& aIsin,
-                                            const std::string& aName) {
+                                   const std::string& aName) {
     auto instrumentIt =
         std::find_if(aInstruments.begin(), aInstruments.end(),
-        [&](const InstrumentT& aInstrument) { return aInstrument.mIsin == aIsin; });
+                     [&](const InstrumentT& aInstrument) { return aInstrument.mIsin == aIsin; });
 
     if (instrumentIt == aInstruments.end())
     {
@@ -138,6 +138,43 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mTradeSide = *tradeSide,
         .mUnitPrice = *unitPrice,
         .mUnits = *units,
+        .mCurrency = *currency,
+    });
+}
+
+void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
+                                           std::vector<DividendInstrument>& aInstruments) {
+    const auto isinValue = aCsvRow["symbol"].get<std::string>();
+    const auto nameValue = aCsvRow["name"].get<std::string>();
+
+    if (!isInstrumentValid("dividend", isinValue, nameValue))
+    {
+        return;
+    }
+
+    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+
+    auto date = parseDate(aCsvRow["date"].get<std::string>());
+    auto grossAmount = parseMoney(aCsvRow["gross amount"].get<std::string>());
+    auto taxPaid = parseMoney(aCsvRow["tax"].get<std::string>());
+    auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
+
+    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
+        LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}", aFieldName, aValue,
+                    isinValue);
+    };
+
+    // clang-format off
+    if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
+    if (!grossAmount) { logFail("gross amount", aCsvRow["amount"].get<std::string>()); return; }
+    if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
+    if (!currency) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
+    // clang-format on
+
+    instrument.mTransactions.emplace_back(DividendTransaction{
+        .mDate = *date,
+        .mGrossAmount = *grossAmount,
+        .mTaxPaid = *taxPaid,
         .mCurrency = *currency,
     });
 }

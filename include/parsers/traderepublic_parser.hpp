@@ -18,10 +18,10 @@ class TradeRepublicParser final : public CsvParser {
     RowType detectRowType(const csv::CSVRow& aCsvRow) const;
 
     void parseTradeRow(const csv::CSVRow& aCsvRow, std::vector<TradeInstrument>& aInstruments);
-    DividendTransaction parseDividendRow(const csv::CSVRow& aCsvRow,
-                                         std::vector<DividendInstrument>& aInstruments);
-    InterestTransaction parseInterestRow(const csv::CSVRow& aCsvRow,
-                                         std::vector<InterestInstrument>& aInstruments);
+    void parseDividendRow(const csv::CSVRow& aCsvRow,
+                          std::vector<DividendInstrument>& aInstruments);
+    void parseInterestRow(const csv::CSVRow& aCsvRow,
+                          std::vector<InterestInstrument>& aInstruments);
 
     // Parsing helpers
     std::optional<Date> parseDate(std::string_view aValue);
@@ -32,7 +32,7 @@ class TradeRepublicParser final : public CsvParser {
 
     // class helpers
     static bool isInstrumentValid(std::string_view aContext, const std::string& aIsin,
-                    const std::string& aName);
+                                  const std::string& aName);
 };
 
 } // namespace taxbroker::tr
