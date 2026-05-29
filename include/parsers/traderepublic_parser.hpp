@@ -3,6 +3,8 @@
 #include "csv_parser.hpp"
 #include "types_parser.hpp"
 
+#include <string_view>
+
 namespace csv {
 class CSVRow;
 }
@@ -16,13 +18,15 @@ class TradeRepublicParser final : public CsvParser {
   private:
     static constexpr char delimiter = ',';
 
-    RowType detectRowType(const csv::CSVRow& aCsvRow) const;
+    RowMeta detectRowType(const csv::CSVRow& aCsvRow) const;
+    InterestType detectInterestType(const std::string& aType) const;
 
-    void parseTradeRow(const csv::CSVRow& aCsvRow, std::vector<TradeInstrument>& aInstruments);
+    void parseTradeRow(const csv::CSVRow& aCsvRow, std::vector<TradeInstrument>& aInstruments,
+                       const RowParsedValues& aParsedValues);
     void parseDividendRow(const csv::CSVRow& aCsvRow,
                           std::vector<DividendInstrument>& aInstruments);
-    void parseInterestRow(const csv::CSVRow& aCsvRow,
-                          std::vector<InterestInstrument>& aInstruments);
+    void parseInterestRow(const csv::CSVRow& aCsvRow, std::vector<InterestInstrument>& aInstruments,
+                          const InterestType aInterestType);
 
     // Parsing helpers
     std::optional<Date> parseDate(std::string_view aValue);

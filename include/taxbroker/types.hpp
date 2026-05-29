@@ -77,7 +77,8 @@ enum class CorporateActionType {
 enum class InterestType {
     BondInterest,
     BrokerInterest,
-    OtherInterest
+    OtherInterest,
+    UnknownInterest
 };
 
 struct CorporateAction {
@@ -95,8 +96,8 @@ struct TradeTransaction {
 };
 
 struct TradeInstrument {
-    Isin mIsin;
     std::string mName;
+    Isin mIsin;
     std::vector<TradeTransaction> mTransactions;
     std::vector<CorporateAction>
         mCorporateActions; // Optional corporate actions affecting transaction history.
@@ -110,8 +111,8 @@ struct DividendTransaction {
 };
 
 struct DividendInstrument {
-    Isin mIsin;
     std::string mName;
+    Isin mIsin;
     std::vector<DividendTransaction> mTransactions;
 };
 
