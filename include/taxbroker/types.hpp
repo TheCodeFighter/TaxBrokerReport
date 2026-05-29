@@ -92,6 +92,7 @@ struct TradeTransaction {
     TradeSide mTradeSide{TradeSide::Buy};
     Money mUnitPrice{};
     Units mUnits{};
+    Money mExchangeRate{MONEY_SCALE}; // By default, exchange rate is 1.0 (scaled)
     Currency mCurrency{Currency::EUR};
 };
 
@@ -99,7 +100,7 @@ struct TradeInstrument {
     std::string mName;
     Isin mIsin;
     std::vector<TradeTransaction> mTransactions;
-    std::vector<CorporateAction>
+    std::optional<std::vector<CorporateAction>>
         mCorporateActions; // Optional corporate actions affecting transaction history.
 };
 
@@ -107,6 +108,7 @@ struct DividendTransaction {
     Date mDate{};
     Money mGrossAmount{};
     Money mTaxPaid{};
+    Money mExchangeRate{MONEY_SCALE}; // By default, exchange rate is 1.0 (scaled)
     Currency mCurrency{Currency::EUR};
 };
 
@@ -120,6 +122,7 @@ struct InterestTransaction {
     Date mDate{};
     Money mGrossAmount{};
     Money mTaxPaid{};
+    Money mExchangeRate{MONEY_SCALE}; // By default, exchange rate is 1.0 (scaled)
     Currency mCurrency{Currency::EUR};
 };
 

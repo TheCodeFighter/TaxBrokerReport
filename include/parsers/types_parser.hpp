@@ -1,11 +1,14 @@
 #pragma once
 
+#include "taxbroker/types.hpp"
+
+#include <optional>
 namespace taxbroker {
 
 enum class RowType {
     Trade,
     Dividend,
-    Cash,
+    Interest,
     CorporateAction,
     Unknown
 };
@@ -20,4 +23,9 @@ struct RowMeta {
     RowParsedValues mParsedValues;
 };
 
+struct GetAmount {
+    std::optional<Money> mGrossAmount;
+    std::optional<Money> mExchangeRate;
+    std::optional<Currency> mCurrency;
+};
 } // namespace taxbroker
