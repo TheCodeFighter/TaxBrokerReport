@@ -3,6 +3,7 @@
 
 #include <sstream>
 #include <algorithm>
+#include <csv.hpp>
 
 namespace {
 // used just for trade rows and dividend rows

@@ -3,8 +3,9 @@
 #include "csv_parser.hpp"
 #include "types_parser.hpp"
 
-#include <unordered_map>
-#include <csv.hpp>
+namespace csv {
+class CSVRow;
+}
 
 namespace taxbroker::tr {
 

@@ -10,6 +10,7 @@ applyTo: "**"
 - Prefix function parameters and local arguments with `a` and use PascalCase after the prefix, for example `aName` and `aTaxNumber`.
 - Prefer explicit, descriptive names over abbreviated snake_case identifiers.
 - Keep naming consistent with the legacy GUI codebase when adding new public types or data-transfer objects.
+- Avoid mentor-only advice modes. When giving recommendations, first gather relevant repo context (files, patterns, conventions) before answering.
 
 # Commits and branches
 
