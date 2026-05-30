@@ -164,6 +164,22 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     };
 }
 
+std::pair<std::string_view, std::string>
+TradeRepublicParser::pickAmountField(const csv::CSVRow& aRow) {
+    const auto originalAmount = aRow["original_amount"].get<std::string>();
+    auto effectiveCurrency = parseCurrency(aRow["original_currency"].get<std::string>());
+    effectiveCurrency = (!effectiveCurrency || effectiveCurrency.value() == Currency::Unknown)
+                            ? parseCurrency(aRow["currency"].get<std::string>())
+                            : effectiveCurrency;
+
+    if (effectiveCurrency && effectiveCurrency.value() != Currency::EUR && !originalAmount.empty())
+    {
+        return {"original_amount", originalAmount};
+    }
+
+    return {"amount", aRow["amount"].get<std::string>()};
+}
+
 void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
                                         std::vector<TradeInstrument>& aInstruments,
                                         const RowParsedValues& aParsedValues) {
@@ -230,9 +246,15 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
                     isinValue);
     };
 
+    if (!amountAndCurrency.mGrossAmount.has_value())
+    {
+        const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
+        logFail(fieldName, fieldValue);
+        return;
+    }
+
     // clang-format off
     if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
-    if (!amountAndCurrency.mGrossAmount.has_value()) { logFail("amount", aCsvRow["amount"].get<std::string>()); return; }
     if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
     if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
     if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
@@ -277,15 +299,23 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                         aValue, nameValue);
         };
 
+        if (!amountAndCurrency.mGrossAmount.has_value())
+        {
+            const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
+            logFail(fieldName, fieldValue);
+            return;
+        }
+
         // clang-format off
         if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
         if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
         if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
-        if (!amountAndCurrency.mGrossAmount.has_value()) { logFail("gross amount", aCsvRow["original_amount"].get<std::string>()); return; }
         if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
         // clang-format on
 
         auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+
+        instrument.mInterestType = InterestType::BondInterest;
 
         instrument.mTransactions.emplace_back(InterestTransaction{
             .mDate = *date,
@@ -298,6 +328,62 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
     // Broker interest and other interest types don't have ISIN
     else
     {
+        // Currently we don't have info how fixed income interest looks like and will be skipped for
+        // now
+        if (aInterestType == InterestType::OtherInterest)
+        {
+            LOG_WARNING(
+                "Skipping fixed income interest row with name {} as it's currently not supported.",
+                aCsvRow["name"].get<std::string>());
+            return;
+        }
+
+        if (aInterestType == InterestType::BrokerInterest)
+        {
+            const auto brokerName = "Trade Republic";
+            auto instrumentIt = std::find_if(aInstruments.begin(), aInstruments.end(),
+                                             [&](const InterestInstrument& aInstrument) {
+                                                 return aInstrument.mName == brokerName;
+                                             });
+
+            if (instrumentIt == aInstruments.end())
+            {
+                aInstruments.emplace_back(InterestInstrument{
+                    .mName = brokerName, .mInterestType = InterestType::BrokerInterest});
+                instrumentIt = std::prev(aInstruments.end());
+            }
+
+            auto date = parseDate(aCsvRow["date"].get<std::string>());
+            auto taxPaid = parseMoney(aCsvRow["tax"].get<std::string>());
+
+            auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
+
+            auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
+                LOG_WARNING("Failed to parse {} value: {} for broker interest row. Skipping row.",
+                            aFieldName, aValue);
+            };
+
+            if (!amountAndCurrency.mGrossAmount)
+            {
+                const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
+                logFail(fieldName, fieldValue);
+                return;
+            }
+
+            // clang-format off
+            if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
+            if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
+            // clang-format on
+
+            instrumentIt->mTransactions.emplace_back(InterestTransaction{
+                .mDate = *date,
+                .mGrossAmount = *amountAndCurrency.mGrossAmount,
+                .mTaxPaid = *taxPaid,
+                .mExchangeRate = amountAndCurrency.mExchangeRate.value_or(MONEY_SCALE),
+                .mCurrency = amountAndCurrency.mCurrency.value_or(Currency::Unknown)});
+        }
+
+        // Broker interest
     }
 }
 

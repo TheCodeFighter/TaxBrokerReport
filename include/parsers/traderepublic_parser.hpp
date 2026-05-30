@@ -39,6 +39,7 @@ class TradeRepublicParser final : public CsvParser {
     static bool isInstrumentValid(std::string_view aContext, const std::string& aIsin,
                                   const std::string& aName);
     GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow);
+    std::pair<std::string_view, std::string> pickAmountField(const csv::CSVRow& aRow);
 };
 
 } // namespace taxbroker::tr
