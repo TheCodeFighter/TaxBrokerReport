@@ -2,10 +2,11 @@
 #include "taxbroker/types.hpp"
 #include "utils/logger.hpp"
 
-#include <sstream>
 #include <algorithm>
+#include <charconv>
 #include <csv.hpp>
 #include <string_view>
+#include <system_error>
 
 namespace {
 // used just for trade rows and dividend rows
@@ -395,6 +396,38 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 
         // Broker interest
     }
+}
+
+std::optional<Date> TradeRepublicParser::parseDate(std::string_view aValue) {
+    if (aValue.size() != 10 || aValue[4] != '-' || aValue[7] != '-')
+    {
+        return std::nullopt;
+    }
+
+    auto parseNumber = [&](size_t aOffset, size_t aLength, int& aOutValue) {
+        const char* start = aValue.data() + aOffset;
+        const char* end = start + aLength;
+        const auto result = std::from_chars(start, end, aOutValue);
+        return result.ec == std::errc{} && result.ptr == end;
+    };
+
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    if (!parseNumber(0, 4, year) || !parseNumber(5, 2, month) || !parseNumber(8, 2, day))
+    {
+        return std::nullopt;
+    }
+
+    const auto ymd = std::chrono::year{year} / std::chrono::month{static_cast<unsigned>(month)} /
+                     std::chrono::day{static_cast<unsigned>(day)};
+    if (!ymd.ok())
+    {
+        return std::nullopt;
+    }
+
+    const auto sysDays = std::chrono::sys_days{ymd};
+    return Date{std::chrono::time_point_cast<DayDuration>(sysDays)};
 }
 
 } // namespace taxbroker::tr
