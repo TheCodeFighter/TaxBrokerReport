@@ -32,7 +32,7 @@ class TradeRepublicParser final : public CsvParser {
     std::optional<Date> parseDate(std::string_view aValue);
     std::optional<Money> parseMoney(std::string_view aValue);
     std::optional<Units> parseUnits(std::string_view aValue);
-    std::optional<Currency> parseCurrency(std::string_view aValue);
+    Currency parseCurrency(std::string_view aValue);
     std::optional<TradeSide> parseTradeSide(std::string_view aValue);
 
     // class helpers

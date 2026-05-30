@@ -139,15 +139,22 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     std::optional<Money> exchangeRate{MONEY_SCALE}; // Default to 1.0 (scaled)
 
     auto currency = parseCurrency(aCsvRow["original_currency"].get<std::string>());
-    currency = (!currency || currency.value() == Currency::Unknown)
-                   ? parseCurrency(aCsvRow["currency"].get<std::string>())
-                   : currency;
+    if (currency == Currency::Unknown)
+    {
+        currency = parseCurrency(aCsvRow["currency"].get<std::string>());
+    }
 
-    if (!currency || currency.value() == Currency::Unknown)
+    if (currency == Currency::Unknown)
     {
         LOG_WARNING("Unknown currency. Skipping row for {}", aCsvRow["name"].get<std::string>());
+        exchangeRate.reset();
+        return GetAmount{
+            .mGrossAmount = grossAmount,
+            .mExchangeRate = exchangeRate,
+            .mCurrency = std::nullopt,
+        };
     }
-    else if (currency.value() == Currency::EUR)
+    else if (currency == Currency::EUR)
     {
         grossAmount = parseMoney(aCsvRow["amount"].get<std::string>());
     }
@@ -168,11 +175,12 @@ std::pair<std::string_view, std::string>
 TradeRepublicParser::pickAmountField(const csv::CSVRow& aRow) {
     const auto originalAmount = aRow["original_amount"].get<std::string>();
     auto effectiveCurrency = parseCurrency(aRow["original_currency"].get<std::string>());
-    effectiveCurrency = (!effectiveCurrency || effectiveCurrency.value() == Currency::Unknown)
-                            ? parseCurrency(aRow["currency"].get<std::string>())
-                            : effectiveCurrency;
+    if (effectiveCurrency == Currency::Unknown)
+    {
+        effectiveCurrency = parseCurrency(aRow["currency"].get<std::string>());
+    }
 
-    if (effectiveCurrency && effectiveCurrency.value() != Currency::EUR && !originalAmount.empty())
+    if (effectiveCurrency != Currency::EUR && effectiveCurrency != Currency::Unknown)
     {
         return {"original_amount", originalAmount};
     }
@@ -212,7 +220,7 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     if (!tradeSide) { logFail("trade side", typeValue); return; }
     if (!unitPrice) { logFail("unit price", aCsvRow["price"].get<std::string>()); return; }
     if (!units) { logFail("units", aCsvRow["shares"].get<std::string>()); return; }
-    if (!currency) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
+    if (currency == Currency::Unknown) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
     // clang-format on
 
     instrument.mTransactions.emplace_back(TradeTransaction{
@@ -221,7 +229,7 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mUnitPrice = *unitPrice,
         .mUnits = *units,
         .mExchangeRate = MONEY_SCALE, // Default to 1.0 (scaled)
-        .mCurrency = *currency,
+        .mCurrency = currency,
     });
 }
 
@@ -246,19 +254,19 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
                     isinValue);
     };
 
-    if (!amountAndCurrency.mGrossAmount.has_value())
-    {
-        const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-        logFail(fieldName, fieldValue);
-        return;
-    }
-
     // clang-format off
     if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
     if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
     if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
     if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
     // clang-format on
+
+    if (!amountAndCurrency.mGrossAmount.has_value())
+    {
+        const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
+        logFail(fieldName, fieldValue);
+        return;
+    }
 
     instrument.mTransactions.emplace_back(DividendTransaction{
         .mDate = *date,
@@ -299,19 +307,19 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                         aValue, nameValue);
         };
 
-        if (!amountAndCurrency.mGrossAmount.has_value())
-        {
-            const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-            logFail(fieldName, fieldValue);
-            return;
-        }
-
         // clang-format off
         if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
         if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
         if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
         if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
         // clang-format on
+
+        if (!amountAndCurrency.mGrossAmount.has_value())
+        {
+            const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
+            logFail(fieldName, fieldValue);
+            return;
+        }
 
         auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
 
@@ -363,6 +371,13 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                             aFieldName, aValue);
             };
 
+            // clang-format off
+            if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
+            if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
+            if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
+            if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
+            // clang-format on
+
             if (!amountAndCurrency.mGrossAmount)
             {
                 const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
@@ -370,17 +385,12 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                 return;
             }
 
-            // clang-format off
-            if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
-            if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
-            // clang-format on
-
-            instrumentIt->mTransactions.emplace_back(InterestTransaction{
-                .mDate = *date,
-                .mGrossAmount = *amountAndCurrency.mGrossAmount,
-                .mTaxPaid = *taxPaid,
-                .mExchangeRate = amountAndCurrency.mExchangeRate.value_or(MONEY_SCALE),
-                .mCurrency = amountAndCurrency.mCurrency.value_or(Currency::Unknown)});
+            instrumentIt->mTransactions.emplace_back(
+                InterestTransaction{.mDate = *date,
+                                    .mGrossAmount = *amountAndCurrency.mGrossAmount,
+                                    .mTaxPaid = *taxPaid,
+                                    .mExchangeRate = *amountAndCurrency.mExchangeRate,
+                                    .mCurrency = *amountAndCurrency.mCurrency});
         }
 
         // Broker interest
