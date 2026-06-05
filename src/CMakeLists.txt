@@ -12,6 +12,7 @@ add_library(taxbroker_core STATIC
     processors/tax_processor.cpp
     utils/date_utils.cpp
     utils/logger.cpp
+    utils/numeric_util.cpp
     utils/string_utils.cpp
     utils/thread_pool.cpp
 )

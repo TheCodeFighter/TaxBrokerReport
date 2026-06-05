@@ -430,4 +430,64 @@ std::optional<Date> TradeRepublicParser::parseDate(std::string_view aValue) {
     return Date{std::chrono::time_point_cast<DayDuration>(sysDays)};
 }
 
+std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
+    try
+    {
+        // Remove potential thousand separators and handle negative values in parentheses
+        std::string cleanedValue;
+        cleanedValue.reserve(aValue.size());
+        bool isNegative = false;
+
+        for (char ch : aValue)
+        {
+            if (ch == ',')
+            {
+                continue; // Skip thousand separators
+            }
+            else if (ch == '(')
+            {
+                isNegative = true; // Mark as negative if value is in parentheses
+            }
+            else if (ch != ')')
+            {
+                cleanedValue += ch; // Append valid characters
+            }
+        }
+
+        double amount = std::stod(cleanedValue);
+        if (isNegative)
+        {
+            amount = -amount; // Negate the amount if it was marked as negative
+        }
+
+        return static_cast<Money>(amount * MONEY_SCALE);
+    } catch (const std::exception&)
+    {
+        return std::nullopt; // Return nullopt if parsing fails
+    }
+}
+
+std::optional<Units> TradeRepublicParser::parseUnits(std::string_view aValue) {
+    try
+    {
+        // Remove potential thousand separators
+        std::string cleanedValue;
+        cleanedValue.reserve(aValue.size());
+
+        for (char ch : aValue)
+        {
+            if (ch != ',')
+            {
+                cleanedValue += ch; // Append valid characters
+            }
+        }
+
+        double units = std::stod(cleanedValue);
+        return static_cast<Units>(units * UNITS_SCALE);
+    } catch (const std::exception&)
+    {
+        return std::nullopt; // Return nullopt if parsing fails
+    }
+}
+
 } // namespace taxbroker::tr
