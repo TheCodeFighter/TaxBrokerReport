@@ -58,6 +58,7 @@ enum class Currency {
     USD,
     GBP,
     CHF,
+    JPY,
     Unknown
 };
 

@@ -1,6 +1,7 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/logger.hpp"
+#include "utils/numeric_util.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -399,95 +400,48 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 }
 
 std::optional<Date> TradeRepublicParser::parseDate(std::string_view aValue) {
-    if (aValue.size() != 10 || aValue[4] != '-' || aValue[7] != '-')
-    {
+    if (aValue.size() != 10 || aValue[4] != '-' || aValue[7] != '-') return std::nullopt;
+
+    int year{}, month{}, day{};
+    auto view_year = aValue.substr(0, 4);
+    auto view_month = aValue.substr(5, 2);
+    auto view_day = aValue.substr(8, 2);
+
+    if (std::from_chars(view_year.data(), view_year.data() + view_year.size(), year).ec != std::errc{} ||
+        std::from_chars(view_month.data(), view_month.data() + view_month.size(), month).ec != std::errc{} ||
+        std::from_chars(view_day.data(), view_day.data() + view_day.size(), day).ec != std::errc{}) {
         return std::nullopt;
     }
 
-    auto parseNumber = [&](size_t aOffset, size_t aLength, int& aOutValue) {
-        const char* start = aValue.data() + aOffset;
-        const char* end = start + aLength;
-        const auto result = std::from_chars(start, end, aOutValue);
-        return result.ec == std::errc{} && result.ptr == end;
-    };
+    auto ymd = std::chrono::year{year} / std::chrono::month{static_cast<unsigned>(month)} /
+               std::chrono::day{static_cast<unsigned>(day)};
+    if (!ymd.ok()) return std::nullopt;
 
-    int year = 0;
-    int month = 0;
-    int day = 0;
-    if (!parseNumber(0, 4, year) || !parseNumber(5, 2, month) || !parseNumber(8, 2, day))
-    {
-        return std::nullopt;
-    }
-
-    const auto ymd = std::chrono::year{year} / std::chrono::month{static_cast<unsigned>(month)} /
-                     std::chrono::day{static_cast<unsigned>(day)};
-    if (!ymd.ok())
-    {
-        return std::nullopt;
-    }
-
-    const auto sysDays = std::chrono::sys_days{ymd};
-    return Date{std::chrono::time_point_cast<DayDuration>(sysDays)};
+    return Date{std::chrono::time_point_cast<DayDuration>(std::chrono::sys_days{ymd})};
 }
 
 std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
-    try
-    {
-        // Remove potential thousand separators and handle negative values in parentheses
-        std::string cleanedValue;
-        cleanedValue.reserve(aValue.size());
-        bool isNegative = false;
-
-        for (char ch : aValue)
-        {
-            if (ch == ',')
-            {
-                continue; // Skip thousand separators
-            }
-            else if (ch == '(')
-            {
-                isNegative = true; // Mark as negative if value is in parentheses
-            }
-            else if (ch != ')')
-            {
-                cleanedValue += ch; // Append valid characters
-            }
-        }
-
-        double amount = std::stod(cleanedValue);
-        if (isNegative)
-        {
-            amount = -amount; // Negate the amount if it was marked as negative
-        }
-
-        return static_cast<Money>(amount * MONEY_SCALE);
-    } catch (const std::exception&)
-    {
-        return std::nullopt; // Return nullopt if parsing fails
-    }
+    return parseScaledNumber<Money, MONEY_SCALE>(aValue);
 }
 
 std::optional<Units> TradeRepublicParser::parseUnits(std::string_view aValue) {
-    try
-    {
-        // Remove potential thousand separators
-        std::string cleanedValue;
-        cleanedValue.reserve(aValue.size());
+    return parseScaledNumber<Units, UNITS_SCALE>(aValue);
+}
 
-        for (char ch : aValue)
-        {
-            if (ch != ',')
-            {
-                cleanedValue += ch; // Append valid characters
-            }
-        }
+Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
+    if (aValue == "EUR") return Currency::EUR;
+    if (aValue == "USD") return Currency::USD;
+    if (aValue == "GBP") return Currency::GBP;
+    if (aValue == "CHF") return Currency::CHF;
+    if (aValue == "JPY") return Currency::JPY;
+    // add others as needed
+    return Currency::Unknown;
+}
 
-        double units = std::stod(cleanedValue);
-        return static_cast<Units>(units * UNITS_SCALE);
-    } catch (const std::exception&)
-    {
-        return std::nullopt; // Return nullopt if parsing fails
-    }
+std::optional<TradeSide> TradeRepublicParser::parseTradeSide(std::string_view aValue) {
+    if (aValue == "BUY") return TradeSide::Buy;
+    if (aValue == "SELL") return TradeSide::Sell;
+    return std::nullopt;
 }
 
 } // namespace taxbroker::tr
