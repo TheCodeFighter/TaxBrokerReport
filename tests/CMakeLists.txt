@@ -17,6 +17,11 @@ add_executable(taxbroker_unit_tests
     unit/tax_processor_test.cpp
     unit/traderepublic_parser_test.cpp
     unit/xml_generator_test.cpp
+    # utils/date_utils.cpp
+    # utils/logger.cpp
+    # utils/numeric_util.cpp
+    # utils/string_utils.cpp
+    # utils/thread_pool.cpp
 )
 
 target_include_directories(taxbroker_unit_tests PRIVATE 

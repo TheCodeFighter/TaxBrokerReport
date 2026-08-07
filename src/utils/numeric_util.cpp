@@ -40,15 +40,25 @@ std::optional<ScaledType> parseScaledNumber(std::string_view value) {
         if (ch == '(') { negative = true; continue; }
         if (ch == ')') continue;
         if (std::isspace(static_cast<unsigned char>(ch))) continue;
+        if (ch == '.' && cleaned.find('.') == std::string::npos) { 
+            cleaned += ch; 
+            continue;
+        }
         cleaned += ch;
     }
 
     if (cleaned.empty()) return std::nullopt;
 
+    if (!cleaned.empty() && cleaned[0] == '-') {
+        negative = true;
+        cleaned.erase(0, 1);
+    }
+
     int64_t val = 0;
-    const char* start = cleaned.data();
-    auto [ptr, ec] = std::from_chars(start, start + cleaned.size(), val);
-    if (ec != std::errc{} || ptr != start + cleaned.size()) return std::nullopt;
+    auto [ptr, ec] = std::from_chars(cleaned.data(), cleaned.data() + cleaned.size(), val);
+    if (ec != std::errc{} || ptr != cleaned.data() + cleaned.size()) {
+        return std::nullopt;
+    }
 
     if (negative) val = -val;
 
