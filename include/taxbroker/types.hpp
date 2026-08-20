@@ -90,7 +90,7 @@ struct CorporateAction {
 
 struct TradeTransaction {
     Date mDate{};
-    TradeSide mTradeSide{TradeSide::Buy};
+    TradeSide mTradeSide{};
     Money mUnitPrice{};
     Units mUnits{};
     Money mExchangeRate{MONEY_SCALE}; // By default, exchange rate is 1.0 (scaled)
@@ -128,7 +128,8 @@ struct InterestTransaction {
 };
 
 struct InterestInstrument {
-    std::string mName; // No ISIN for interest transactions, using name instead.
+    // TODO: check if name need to be enum
+    std::string mName; // No ISIN for interest transactions, using name instead (e.g., "Trade Republic")
     std::optional<Isin>
         mIsin; // Optional ISIN if available, otherwise empty. (ie bonds has isin, broker not)
     InterestType mInterestType;
