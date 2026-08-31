@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <charconv>
 #include <csv.hpp>
+#include <cstdlib>
+#include <limits>
 #include <string_view>
 #include <system_error>
 
@@ -256,6 +258,13 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
+    const auto normalizedUnits = normalizeTradeUnits(*tradeSide, *units);
+    if (!normalizedUnits)
+    {
+        logFail("units inconsistent with trade side", aCsvRow["shares"].get<std::string>());
+        return;
+    }
+
     if (currency == Currency::Unknown)
     {
         logFail("currency", aCsvRow["currency"].get<std::string>());
@@ -266,7 +275,7 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mDate = *date,
         .mTradeSide = *tradeSide,
         .mUnitPrice = *unitPrice,
-        .mUnits = *units,
+        .mUnits = *normalizedUnits,
         .mExchangeRate = MONEY_SCALE, // Default to 1.0 (scaled)
         .mCurrency = currency,
     });
@@ -526,6 +535,24 @@ std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
 
 std::optional<Units> TradeRepublicParser::parseUnits(std::string_view aValue) {
     return parseScaledNumber<Units, UNITS_SCALE>(aValue);
+}
+
+std::optional<Units> TradeRepublicParser::normalizeTradeUnits(TradeSide aTradeSide,
+                                                              Units aSignedUnits) {
+    if (aSignedUnits == 0 || aSignedUnits == std::numeric_limits<Units>::min())
+    {
+        return std::nullopt;
+    }
+
+    const bool hasExpectedSign = (aTradeSide == TradeSide::Buy && aSignedUnits > 0) ||
+                                 (aTradeSide == TradeSide::Sell && aSignedUnits < 0);
+
+    if (!hasExpectedSign)
+    {
+        return std::nullopt;
+    }
+
+    return std::abs(aSignedUnits);
 }
 
 Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
