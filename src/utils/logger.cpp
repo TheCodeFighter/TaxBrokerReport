@@ -46,7 +46,9 @@ constexpr std::size_t kMaxAsyncThreadCount = 8;
 std::string ToLower(std::string_view aValue) {
     std::string loweredValue{aValue};
     std::transform(
-        loweredValue.begin(), loweredValue.end(), loweredValue.begin(),
+        loweredValue.begin(),
+        loweredValue.end(),
+        loweredValue.begin(),
         [](unsigned char aCharacter) { return static_cast<char>(std::tolower(aCharacter)); });
     return loweredValue;
 }
@@ -258,9 +260,12 @@ void InitializeLogger() {
             if (useAsyncLogger)
             {
                 EnsureAsyncThreadPoolInitialized(logQueueSize, logThreadCount);
-                logger = std::make_shared<spdlog::async_logger>(
-                    kLoggerName, sinks.begin(), sinks.end(), spdlog::thread_pool(),
-                    spdlog::async_overflow_policy::block);
+                logger =
+                    std::make_shared<spdlog::async_logger>(kLoggerName,
+                                                           sinks.begin(),
+                                                           sinks.end(),
+                                                           spdlog::thread_pool(),
+                                                           spdlog::async_overflow_policy::block);
             }
             else
             {

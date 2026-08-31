@@ -12,11 +12,13 @@
 namespace {
 // used just for trade rows and dividend rows
 template <typename InstrumentT>
-InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments, const std::string& aIsin,
+InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
+                                   const std::string& aIsin,
                                    const std::string& aName) {
     auto instrumentIt =
-        std::find_if(aInstruments.begin(), aInstruments.end(),
-                     [&](const InstrumentT& aInstrument) { return aInstrument.mIsin == aIsin; });
+        std::find_if(aInstruments.begin(), aInstruments.end(), [&](const InstrumentT& aInstrument) {
+            return aInstrument.mIsin == aIsin;
+        });
 
     if (instrumentIt == aInstruments.end())
     {
@@ -116,7 +118,8 @@ InterestType TradeRepublicParser::detectInterestType(const std::string& aType) c
     }
 }
 
-bool TradeRepublicParser::isInstrumentValid(std::string_view aContext, const std::string& aIsin,
+bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
+                                            const std::string& aIsin,
                                             const std::string& aName) {
     if (aIsin.empty() && aName.empty())
     {
@@ -125,14 +128,24 @@ bool TradeRepublicParser::isInstrumentValid(std::string_view aContext, const std
     }
 
     auto logMainFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} row with: {} for {} skipping row", aContext, aFieldName,
+        LOG_WARNING("Failed to parse {} row with: {} for {} skipping row",
+                    aContext,
+                    aFieldName,
                     aValue);
     };
 
-    // clang-format off
-    if (aIsin.empty()) { logMainFail("ISIN", aIsin); return false; }
-    if (aName.empty()) { logMainFail("name", aName); return false; }
-    // clang-format on
+    if (aIsin.empty())
+    {
+        logMainFail("ISIN", aIsin);
+        return false;
+    }
+
+    if (aName.empty())
+    {
+        logMainFail("name", aName);
+        return false;
+    }
+
     return true;
 }
 
@@ -213,17 +226,41 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
     auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}", aFieldName, aValue,
+        LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}",
+                    aFieldName,
+                    aValue,
                     isinValue);
     };
 
-    // clang-format off
-    if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
-    if (!tradeSide) { logFail("trade side", typeValue); return; }
-    if (!unitPrice) { logFail("unit price", aCsvRow["price"].get<std::string>()); return; }
-    if (!units) { logFail("units", aCsvRow["shares"].get<std::string>()); return; }
-    if (currency == Currency::Unknown) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
-    // clang-format on
+    if (!date)
+    {
+        logFail("date", aCsvRow["date"].get<std::string>());
+        return;
+    }
+
+    if (!tradeSide)
+    {
+        logFail("trade side", typeValue);
+        return;
+    }
+
+    if (!unitPrice)
+    {
+        logFail("unit price", aCsvRow["price"].get<std::string>());
+        return;
+    }
+
+    if (!units)
+    {
+        logFail("units", aCsvRow["shares"].get<std::string>());
+        return;
+    }
+
+    if (currency == Currency::Unknown)
+    {
+        logFail("currency", aCsvRow["currency"].get<std::string>());
+        return;
+    }
 
     instrument.mTransactions.emplace_back(TradeTransaction{
         .mDate = *date,
@@ -252,16 +289,35 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
     auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}", aFieldName, aValue,
+        LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}",
+                    aFieldName,
+                    aValue,
                     isinValue);
     };
 
-    // clang-format off
-    if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
-    if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
-    if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
-    if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
-    // clang-format on
+    if (!date)
+    {
+        logFail("date", aCsvRow["date"].get<std::string>());
+        return;
+    }
+
+    if (!taxPaid)
+    {
+        logFail("tax paid", aCsvRow["tax"].get<std::string>());
+        return;
+    }
+
+    if (!amountAndCurrency.mCurrency.has_value())
+    {
+        logFail("currency", aCsvRow["currency"].get<std::string>());
+        return;
+    }
+
+    if (!amountAndCurrency.mExchangeRate.has_value())
+    {
+        logFail("fx rate", aCsvRow["fx_rate"].get<std::string>());
+        return;
+    }
 
     if (!amountAndCurrency.mGrossAmount.has_value())
     {
@@ -305,16 +361,35 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
         auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-            LOG_WARNING("Failed to parse {} value: {} for interest row with name {}", aFieldName,
-                        aValue, nameValue);
+            LOG_WARNING("Failed to parse {} value: {} for interest row with name {}",
+                        aFieldName,
+                        aValue,
+                        nameValue);
         };
 
-        // clang-format off
-        if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
-        if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
-        if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
-        if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
-        // clang-format on
+        if (!date)
+        {
+            logFail("date", aCsvRow["date"].get<std::string>());
+            return;
+        }
+
+        if (!taxPaid)
+        {
+            logFail("tax paid", aCsvRow["tax"].get<std::string>());
+            return;
+        }
+
+        if (!amountAndCurrency.mCurrency.has_value())
+        {
+            logFail("currency", aCsvRow["currency"].get<std::string>());
+            return;
+        }
+
+        if (!amountAndCurrency.mExchangeRate.has_value())
+        {
+            logFail("fx rate", aCsvRow["fx_rate"].get<std::string>());
+            return;
+        }
 
         if (!amountAndCurrency.mGrossAmount.has_value())
         {
@@ -351,15 +426,17 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         if (aInterestType == InterestType::BrokerInterest)
         {
             const auto brokerName = "Trade Republic";
-            auto instrumentIt = std::find_if(aInstruments.begin(), aInstruments.end(),
+            auto instrumentIt = std::find_if(aInstruments.begin(),
+                                             aInstruments.end(),
                                              [&](const InterestInstrument& aInstrument) {
                                                  return aInstrument.mName == brokerName;
                                              });
 
             if (instrumentIt == aInstruments.end())
             {
-                aInstruments.emplace_back(InterestInstrument{
-                    .mName = brokerName, .mInterestType = InterestType::BrokerInterest});
+                aInstruments.emplace_back(
+                    InterestInstrument{.mName = brokerName,
+                                       .mInterestType = InterestType::BrokerInterest});
                 instrumentIt = std::prev(aInstruments.end());
             }
 
@@ -370,15 +447,33 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 
             auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
                 LOG_WARNING("Failed to parse {} value: {} for broker interest row. Skipping row.",
-                            aFieldName, aValue);
+                            aFieldName,
+                            aValue);
             };
 
-            // clang-format off
-            if (!date) { logFail("date", aCsvRow["date"].get<std::string>()); return; }
-            if (!taxPaid) { logFail("tax paid", aCsvRow["tax"].get<std::string>()); return; }
-            if (!amountAndCurrency.mCurrency.has_value()) { logFail("currency", aCsvRow["currency"].get<std::string>()); return; }
-            if (!amountAndCurrency.mExchangeRate.has_value()) { logFail("fx rate", aCsvRow["fx_rate"].get<std::string>()); return; }
-            // clang-format on
+            if (!date)
+            {
+                logFail("date", aCsvRow["date"].get<std::string>());
+                return;
+            }
+
+            if (!taxPaid)
+            {
+                logFail("tax paid", aCsvRow["tax"].get<std::string>());
+                return;
+            }
+
+            if (!amountAndCurrency.mCurrency.has_value())
+            {
+                logFail("currency", aCsvRow["currency"].get<std::string>());
+                return;
+            }
+
+            if (!amountAndCurrency.mExchangeRate.has_value())
+            {
+                logFail("fx rate", aCsvRow["fx_rate"].get<std::string>());
+                return;
+            }
 
             if (!amountAndCurrency.mGrossAmount)
             {
@@ -400,22 +495,27 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 }
 
 std::optional<Date> TradeRepublicParser::parseDate(std::string_view aValue) {
-    if (aValue.size() != 10 || aValue[4] != '-' || aValue[7] != '-') return std::nullopt;
+    if (aValue.size() != 10 || aValue[4] != '-' || aValue[7] != '-')
+        return std::nullopt;
 
     int year{}, month{}, day{};
     auto view_year = aValue.substr(0, 4);
     auto view_month = aValue.substr(5, 2);
     auto view_day = aValue.substr(8, 2);
 
-    if (std::from_chars(view_year.data(), view_year.data() + view_year.size(), year).ec != std::errc{} ||
-        std::from_chars(view_month.data(), view_month.data() + view_month.size(), month).ec != std::errc{} ||
-        std::from_chars(view_day.data(), view_day.data() + view_day.size(), day).ec != std::errc{}) {
+    if (std::from_chars(view_year.data(), view_year.data() + view_year.size(), year).ec !=
+            std::errc{} ||
+        std::from_chars(view_month.data(), view_month.data() + view_month.size(), month).ec !=
+            std::errc{} ||
+        std::from_chars(view_day.data(), view_day.data() + view_day.size(), day).ec != std::errc{})
+    {
         return std::nullopt;
     }
 
     auto ymd = std::chrono::year{year} / std::chrono::month{static_cast<unsigned>(month)} /
                std::chrono::day{static_cast<unsigned>(day)};
-    if (!ymd.ok()) return std::nullopt;
+    if (!ymd.ok())
+        return std::nullopt;
 
     return Date{std::chrono::time_point_cast<DayDuration>(std::chrono::sys_days{ymd})};
 }
@@ -429,18 +529,25 @@ std::optional<Units> TradeRepublicParser::parseUnits(std::string_view aValue) {
 }
 
 Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
-    if (aValue == "EUR") return Currency::EUR;
-    if (aValue == "USD") return Currency::USD;
-    if (aValue == "GBP") return Currency::GBP;
-    if (aValue == "CHF") return Currency::CHF;
-    if (aValue == "JPY") return Currency::JPY;
+    if (aValue == "EUR")
+        return Currency::EUR;
+    if (aValue == "USD")
+        return Currency::USD;
+    if (aValue == "GBP")
+        return Currency::GBP;
+    if (aValue == "CHF")
+        return Currency::CHF;
+    if (aValue == "JPY")
+        return Currency::JPY;
     // add others as needed
     return Currency::Unknown;
 }
 
 std::optional<TradeSide> TradeRepublicParser::parseTradeSide(std::string_view aValue) {
-    if (aValue == "BUY") return TradeSide::Buy;
-    if (aValue == "SELL") return TradeSide::Sell;
+    if (aValue == "BUY")
+        return TradeSide::Buy;
+    if (aValue == "SELL")
+        return TradeSide::Sell;
     return std::nullopt;
 }
 

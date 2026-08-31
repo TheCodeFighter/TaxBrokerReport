@@ -129,7 +129,8 @@ struct InterestTransaction {
 
 struct InterestInstrument {
     // TODO: check if name need to be enum
-    std::string mName; // No ISIN for interest transactions, using name instead (e.g., "Trade Republic")
+    std::string
+        mName; // No ISIN for interest transactions, using name instead (e.g., "Trade Republic")
     std::optional<Isin>
         mIsin; // Optional ISIN if available, otherwise empty. (ie bonds has isin, broker not)
     InterestType mInterestType;

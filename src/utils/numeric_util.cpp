@@ -39,8 +39,10 @@ std::optional<std::int64_t> applySign(std::uint64_t aMagnitude, bool aNegative) 
     return -static_cast<std::int64_t>(aMagnitude);
 }
 
-std::optional<std::int64_t> roundAndApplySign(std::uint64_t aQuotient, std::uint64_t aRemainder,
-                                              std::uint64_t aDivisor, bool aNegative) {
+std::optional<std::int64_t> roundAndApplySign(std::uint64_t aQuotient,
+                                              std::uint64_t aRemainder,
+                                              std::uint64_t aDivisor,
+                                              bool aNegative) {
     const auto limit = signedMagnitudeLimit(aNegative);
     if (aQuotient > limit)
         return std::nullopt;
@@ -130,7 +132,9 @@ std::optional<taxbroker::Money> multiplyMoneyUnits(taxbroker::Money aPrice,
     if (quotient > std::numeric_limits<std::uint64_t>::max())
         return std::nullopt;
     return roundAndApplySign(static_cast<std::uint64_t>(quotient),
-                             static_cast<std::uint64_t>(remainder), divisor, negative);
+                             static_cast<std::uint64_t>(remainder),
+                             divisor,
+                             negative);
 #elif defined(_MSC_VER) && defined(_M_X64)
     std::uint64_t high{};
     const auto low = _umul128(priceMagnitude, unitsMagnitude, &high);

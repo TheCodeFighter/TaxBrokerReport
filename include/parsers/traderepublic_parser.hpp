@@ -21,11 +21,13 @@ class TradeRepublicParser final : public CsvParser {
     RowMeta detectRowType(const csv::CSVRow& aCsvRow) const;
     InterestType detectInterestType(const std::string& aType) const;
 
-    void parseTradeRow(const csv::CSVRow& aCsvRow, std::vector<TradeInstrument>& aInstruments,
+    void parseTradeRow(const csv::CSVRow& aCsvRow,
+                       std::vector<TradeInstrument>& aInstruments,
                        const RowParsedValues& aParsedValues);
     void parseDividendRow(const csv::CSVRow& aCsvRow,
                           std::vector<DividendInstrument>& aInstruments);
-    void parseInterestRow(const csv::CSVRow& aCsvRow, std::vector<InterestInstrument>& aInstruments,
+    void parseInterestRow(const csv::CSVRow& aCsvRow,
+                          std::vector<InterestInstrument>& aInstruments,
                           const InterestType aInterestType);
 
     // Parsing helpers
@@ -36,7 +38,8 @@ class TradeRepublicParser final : public CsvParser {
     std::optional<TradeSide> parseTradeSide(std::string_view aValue);
 
     // class helpers
-    static bool isInstrumentValid(std::string_view aContext, const std::string& aIsin,
+    static bool isInstrumentValid(std::string_view aContext,
+                                  const std::string& aIsin,
                                   const std::string& aName);
     GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow);
     std::pair<std::string_view, std::string> pickAmountField(const csv::CSVRow& aRow);
