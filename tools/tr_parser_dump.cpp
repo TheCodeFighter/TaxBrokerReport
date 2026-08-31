@@ -60,10 +60,10 @@ void writeDate(std::ostream& aOutput, Date aDate) {
 std::string_view toString(TradeSide aTradeSide) {
     switch (aTradeSide)
     {
-        case TradeSide::Buy:
-            return "Buy";
-        case TradeSide::Sell:
-            return "Sell";
+    case TradeSide::Buy:
+        return "Buy";
+    case TradeSide::Sell:
+        return "Sell";
     }
 
     return "Unknown";
@@ -72,18 +72,40 @@ std::string_view toString(TradeSide aTradeSide) {
 std::string_view toString(Currency aCurrency) {
     switch (aCurrency)
     {
-        case Currency::EUR:
-            return "EUR";
-        case Currency::USD:
-            return "USD";
-        case Currency::GBP:
-            return "GBP";
-        case Currency::CHF:
-            return "CHF";
-        case Currency::JPY:
-            return "JPY";
-        case Currency::Unknown:
-            return "Unknown";
+    case Currency::EUR:
+        return "EUR";
+    case Currency::USD:
+        return "USD";
+    case Currency::GBP:
+        return "GBP";
+    case Currency::CHF:
+        return "CHF";
+    case Currency::JPY:
+        return "JPY";
+    case Currency::Unknown:
+        return "Unknown";
+    }
+
+    return "Unknown";
+}
+
+std::string_view toString(AssetClass aAssetClass) {
+    switch (aAssetClass)
+    {
+    case AssetClass::Stock:
+        return "Stock";
+    case AssetClass::Fund:
+        return "Fund";
+    case AssetClass::Bond:
+        return "Bond";
+    case AssetClass::Derivative:
+        return "Derivative";
+    case AssetClass::Crypto:
+        return "Crypto";
+    case AssetClass::PrivateFund:
+        return "PrivateFund";
+    case AssetClass::Unknown:
+        return "Unknown";
     }
 
     return "Unknown";
@@ -92,14 +114,14 @@ std::string_view toString(Currency aCurrency) {
 std::string_view toString(InterestType aInterestType) {
     switch (aInterestType)
     {
-        case InterestType::BondInterest:
-            return "BondInterest";
-        case InterestType::BrokerInterest:
-            return "BrokerInterest";
-        case InterestType::OtherInterest:
-            return "OtherInterest";
-        case InterestType::UnknownInterest:
-            return "UnknownInterest";
+    case InterestType::BondInterest:
+        return "BondInterest";
+    case InterestType::BrokerInterest:
+        return "BrokerInterest";
+    case InterestType::OtherInterest:
+        return "OtherInterest";
+    case InterestType::UnknownInterest:
+        return "UnknownInterest";
     }
 
     return "UnknownInterest";
@@ -108,12 +130,24 @@ std::string_view toString(InterestType aInterestType) {
 std::string_view toString(CorporateActionType aCorporateActionType) {
     switch (aCorporateActionType)
     {
-        case CorporateActionType::Split:
-            return "Split";
-        case CorporateActionType::ReverseSplit:
-            return "ReverseSplit";
-        case CorporateActionType::Merger:
-            return "Merger";
+    case CorporateActionType::Split:
+        return "Split";
+    case CorporateActionType::ReverseSplit:
+        return "ReverseSplit";
+    case CorporateActionType::Merger:
+        return "Merger";
+    }
+
+    return "Unknown";
+}
+
+std::string_view toString(BenefitType aBenefitType) {
+    switch (aBenefitType)
+    {
+    case BenefitType::Saveback:
+        return "Saveback";
+    case BenefitType::Stockperk:
+        return "Stockperk";
     }
 
     return "Unknown";
@@ -122,14 +156,18 @@ std::string_view toString(CorporateActionType aCorporateActionType) {
 std::string_view toString(WarningCode aWarningCode) {
     switch (aWarningCode)
     {
-        case WarningCode::UnsupportedRowType:
-            return "UnsupportedRowType";
-        case WarningCode::MissingField:
-            return "MissingField";
-        case WarningCode::InvalidValue:
-            return "InvalidValue";
-        case WarningCode::ParseError:
-            return "ParseError";
+    case WarningCode::UnknownRowType:
+        return "UnknownRowType";
+    case WarningCode::UnsupportedRowType:
+        return "UnsupportedRowType";
+    case WarningCode::UnsupportedAssetClass:
+        return "UnsupportedAssetClass";
+    case WarningCode::MissingField:
+        return "MissingField";
+    case WarningCode::InvalidValue:
+        return "InvalidValue";
+    case WarningCode::ParseError:
+        return "ParseError";
     }
 
     return "Unknown";
@@ -143,6 +181,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
         aOutput << "Instrument\n"
                 << "  name: " << instrument.mName << '\n'
                 << "  isin: " << instrument.mIsin << '\n'
+                << "  asset_class: " << toString(instrument.mAssetClass) << '\n'
                 << "  transactions: " << instrument.mTransactions.size() << '\n';
 
         for (const auto& transaction : instrument.mTransactions)
@@ -159,20 +198,24 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
         }
 
-        const auto actionCount =
-            instrument.mCorporateActions.has_value() ? instrument.mCorporateActions->size() : 0;
-        aOutput << "  corporate_actions: " << actionCount << '\n';
+        aOutput << "  corporate_actions: " << instrument.mCorporateActions.size() << '\n';
 
-        if (instrument.mCorporateActions)
+        for (const auto& action : instrument.mCorporateActions)
         {
-            for (const auto& action : *instrument.mCorporateActions)
+            aOutput << "    - date: ";
+            writeDate(aOutput, action.mDate);
+            aOutput << "\n      type: " << toString(action.mType) << "\n      units_delta: ";
+            writeFixedPoint(aOutput, action.mUnitsDelta, UNITS_SCALE);
+            aOutput << "\n      ratio: ";
+            if (action.mRatio)
             {
-                aOutput << "    - date: ";
-                writeDate(aOutput, action.mDate);
-                aOutput << "\n      type: " << toString(action.mType) << "\n      ratio: ";
-                writeFixedPoint(aOutput, action.mRatio, CORP_RATIO_SCALE);
-                aOutput << '\n';
+                writeFixedPoint(aOutput, *action.mRatio, CORP_RATIO_SCALE);
             }
+            else
+            {
+                aOutput << "<unresolved>";
+            }
+            aOutput << '\n';
         }
 
         aOutput << '\n';
@@ -234,6 +277,23 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
     }
 }
 
+void writeBenefits(std::ostream& aOutput, const BrokerStatement& aStatement) {
+    aOutput << "BENEFIT EVENTS: " << aStatement.mBenefitEvents.size() << "\n\n";
+
+    for (const auto& benefit : aStatement.mBenefitEvents)
+    {
+        aOutput << "- date: ";
+        writeDate(aOutput, benefit.mDate);
+        aOutput << "\n  datetime: " << benefit.mDateTime << "\n  type: " << toString(benefit.mType)
+                << "\n  name: " << (benefit.mName.empty() ? "<none>" : benefit.mName)
+                << "\n  isin: " << benefit.mIsin.value_or("<none>")
+                << "\n  asset_class: " << toString(benefit.mAssetClass) << "\n  amount: ";
+        writeFixedPoint(aOutput, benefit.mAmount, MONEY_SCALE);
+        aOutput << "\n  currency: " << toString(benefit.mCurrency)
+                << "\n  transaction_id: " << benefit.mTransactionId << "\n\n";
+    }
+}
+
 void writeWarnings(std::ostream& aOutput, const ParseResult& aParseResult) {
     aOutput << "WARNINGS: " << aParseResult.mWarnings.size() << "\n\n";
 
@@ -249,6 +309,7 @@ void writeParseResult(std::ostream& aOutput, const ParseResult& aParseResult) {
     writeTrades(aOutput, aParseResult.mStatement);
     writeDividends(aOutput, aParseResult.mStatement);
     writeInterests(aOutput, aParseResult.mStatement);
+    writeBenefits(aOutput, aParseResult.mStatement);
     writeWarnings(aOutput, aParseResult);
 }
 
@@ -278,8 +339,7 @@ int main(int aArgumentCount, char** aArguments) {
 
         writeParseResult(output, parseResult);
         std::cout << "Wrote parsed Trade Republic data to " << outputPath << '\n';
-    }
-    catch (const std::exception& exception)
+    } catch (const std::exception& exception)
     {
         std::cerr << "Failed to parse Trade Republic CSV: " << exception.what() << '\n';
         return 1;

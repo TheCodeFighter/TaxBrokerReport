@@ -62,6 +62,16 @@ enum class Currency {
     Unknown
 };
 
+enum class AssetClass {
+    Stock,
+    Fund,
+    Bond,
+    Derivative,
+    Crypto,
+    PrivateFund,
+    Unknown
+};
+
 // Potentially useful for debugging and logging
 enum class EventType {
     Trade,
@@ -82,10 +92,16 @@ enum class InterestType {
     UnknownInterest
 };
 
+enum class BenefitType {
+    Saveback,
+    Stockperk
+};
+
 struct CorporateAction {
     Date mDate{};
     CorporateActionType mType{};
-    CorpRatio mRatio{CORP_RATIO_SCALE};
+    Units mUnitsDelta{};
+    std::optional<CorpRatio> mRatio;
 };
 
 struct TradeTransaction {
@@ -100,9 +116,9 @@ struct TradeTransaction {
 struct TradeInstrument {
     std::string mName;
     Isin mIsin;
+    AssetClass mAssetClass{AssetClass::Unknown};
     std::vector<TradeTransaction> mTransactions;
-    std::optional<std::vector<CorporateAction>>
-        mCorporateActions; // Optional corporate actions affecting transaction history.
+    std::vector<CorporateAction> mCorporateActions;
 };
 
 struct DividendTransaction {
@@ -137,10 +153,25 @@ struct InterestInstrument {
     std::vector<InterestTransaction> mTransactions;
 };
 
+// Broker benefits are preserved separately from security acquisitions. This keeps the exact
+// credited amount available for local analytics without creating a duplicate buy transaction.
+struct BenefitEvent {
+    Date mDate{};
+    std::string mDateTime;
+    BenefitType mType{};
+    std::string mName;
+    std::optional<Isin> mIsin;
+    AssetClass mAssetClass{AssetClass::Unknown};
+    Money mAmount{};
+    Currency mCurrency{Currency::EUR};
+    std::string mTransactionId;
+};
+
 struct BrokerStatement {
     std::vector<TradeInstrument> mTradeInstruments;
     std::vector<DividendInstrument> mDividendInstruments;
     std::vector<InterestInstrument> mInterestInstruments;
+    std::vector<BenefitEvent> mBenefitEvents;
 };
 
 // Canonical parsed broker data with warnings used throughout the processing pipeline.

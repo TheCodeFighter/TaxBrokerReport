@@ -4,14 +4,82 @@
 #include "utils/numeric_util.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <csv.hpp>
 #include <cstdlib>
+#include <filesystem>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 namespace {
+struct TransactionTypeMapping {
+    std::string_view mType;
+    std::string_view mExpectedCategory;
+    taxbroker::RowType mRowType;
+};
+
+constexpr auto kTransactionTypeMappings = std::array{
+    TransactionTypeMapping{"BUY", "TRADING", taxbroker::RowType::Trade},
+    TransactionTypeMapping{"SELL", "TRADING", taxbroker::RowType::Trade},
+    TransactionTypeMapping{"SAVINGS_PLAN_EXECUTED", "TRADING", taxbroker::RowType::Trade},
+    TransactionTypeMapping{"BENEFITS_SPARE_CHANGE_EXECUTION", "TRADING", taxbroker::RowType::Trade},
+    TransactionTypeMapping{"BENEFITS_SAVEBACK_EXECUTION", "TRADING", taxbroker::RowType::Trade},
+    TransactionTypeMapping{"DIVIDEND", "CASH", taxbroker::RowType::Dividend},
+    TransactionTypeMapping{"DISTRIBUTION", "CASH", taxbroker::RowType::Dividend},
+    TransactionTypeMapping{"INTEREST_PAYMENT", "CASH", taxbroker::RowType::Interest},
+    TransactionTypeMapping{"BOND_INTEREST", "CASH", taxbroker::RowType::Interest},
+    TransactionTypeMapping{"FIXED_INCOME", "CASH", taxbroker::RowType::Interest},
+    TransactionTypeMapping{"SPLIT", "CORPORATE_ACTION", taxbroker::RowType::CorporateAction},
+
+    TransactionTypeMapping{"BENEFITS_SAVEBACK", "CASH", taxbroker::RowType::Benefit},
+    TransactionTypeMapping{"STOCKPERK", "CASH", taxbroker::RowType::Benefit},
+
+    // These cash rows describe benefits or pre-payments. Their corresponding security
+    // acquisitions are exported separately as TRADING/BUY rows.
+    TransactionTypeMapping{"BONUS", "CASH", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"PRIVATE_MARKET_BUY", "CASH", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"PRIVATE_MARKET_SELL", "CASH", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"TAX_OPTIMIZATION", "", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"TAX_REFUND", "", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"SSP_TAX_CORRECTION_INVOICE", "", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{
+        "SSP_CORPORATE_ACTION_INVOICE_CASH", "", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"WARRANT_EXERCISE", "", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"TILG", "", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"CRYPTO_INVOICE", "", taxbroker::RowType::Unsupported},
+
+    TransactionTypeMapping{"CARD_FAILED_TRANSACTION", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CARD_ORDER_BILLED", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CARD_ORDERING_FEE", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CARD_TRANSACTION", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CARD_TRANSACTION_INTERNATIONAL", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CUSTOMER_INBOUND", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CUSTOMER_INPAYMENT", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CUSTOMER_OUTBOUND_REQUEST", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"TRANSFER_INSTANT_INBOUND", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"TRANSFER_INSTANT_OUTBOUND", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"TRANSFER_OUTBOUND", "CASH", taxbroker::RowType::Ignored},
+    TransactionTypeMapping{"CREDIT", "CASH", taxbroker::RowType::Ignored},
+};
+
+void addWarning(taxbroker::ParseResult& aParseResult,
+                const std::filesystem::path& aSourceFile,
+                std::size_t aRowIndex,
+                taxbroker::WarningCode aWarningCode,
+                std::string aMessage) {
+    LOG_WARNING("CSV row {}: {}", aRowIndex, aMessage);
+    aParseResult.mWarnings.emplace_back(taxbroker::ParseWarning{
+        .mCode = aWarningCode,
+        .mSourceFile = aSourceFile.string(),
+        .mRowIndex = aRowIndex,
+        .mMessage = std::move(aMessage),
+    });
+}
+
 // used just for trade rows and dividend rows
 template <typename InstrumentT>
 InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
@@ -44,27 +112,66 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
 
     ParseResult parsedResult;
 
+    std::size_t rowIndex = 1;
     for (csv::CSVRow& row : reader)
     {
+        ++rowIndex;
         const RowMeta rowMeta = detectRowType(row);
 
-        if (rowMeta.mRowType == RowType::Unknown)
+        switch (rowMeta.mRowType)
         {
-            continue;
-        }
+        case RowType::Trade: {
+            const auto assetClass = parseAssetClass(rowMeta.mParsedValues.mAssetClass);
+            if (assetClass == AssetClass::PrivateFund || assetClass == AssetClass::Crypto)
+            {
+                addWarning(parsedResult,
+                           aCsvPath,
+                           rowIndex,
+                           WarningCode::UnsupportedAssetClass,
+                           "Trade Republic asset class '" + rowMeta.mParsedValues.mAssetClass +
+                               "' is preserved, but its tax treatment is not supported yet "
+                               "(transaction ID '" +
+                               rowMeta.mParsedValues.mTransactionId + "').");
+            }
 
-        if (rowMeta.mRowType == RowType::Trade)
-        {
             parseTradeRow(row, parsedResult.mStatement.mTradeInstruments, rowMeta.mParsedValues);
+            break;
         }
-        else if (rowMeta.mRowType == RowType::Dividend)
-        {
+        case RowType::Dividend:
             parseDividendRow(row, parsedResult.mStatement.mDividendInstruments);
-        }
-        else if (rowMeta.mRowType == RowType::Interest)
-        {
+            break;
+        case RowType::Interest: {
             const auto interestType = detectInterestType(rowMeta.mParsedValues.mType);
             parseInterestRow(row, parsedResult.mStatement.mInterestInstruments, interestType);
+            break;
+        }
+        case RowType::CorporateAction:
+            parseCorporateActionRow(row, parsedResult.mStatement.mTradeInstruments);
+            break;
+        case RowType::Benefit:
+            parseBenefitRow(row, parsedResult.mStatement.mBenefitEvents, rowMeta.mParsedValues);
+            break;
+        case RowType::Ignored:
+            break;
+        case RowType::Unsupported:
+            addWarning(parsedResult,
+                       aCsvPath,
+                       rowIndex,
+                       WarningCode::UnsupportedRowType,
+                       "Trade Republic transaction type '" + rowMeta.mParsedValues.mType +
+                           "' in category '" + rowMeta.mParsedValues.mCategory +
+                           "' is recognized but not supported yet (transaction ID '" +
+                           rowMeta.mParsedValues.mTransactionId + "').");
+            break;
+        case RowType::Unknown:
+            addWarning(parsedResult,
+                       aCsvPath,
+                       rowIndex,
+                       WarningCode::UnknownRowType,
+                       "Unknown Trade Republic transaction type '" + rowMeta.mParsedValues.mType +
+                           "' in category '" + rowMeta.mParsedValues.mCategory +
+                           "' (transaction ID '" + rowMeta.mParsedValues.mTransactionId + "').");
+            break;
         }
     }
 
@@ -76,19 +183,20 @@ RowMeta TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) const {
 
     auto category = aCsvRow["category"].get<std::string>();
     auto type = aCsvRow["type"].get<std::string>();
+    auto assetClass = aCsvRow["asset_class"].get<std::string>();
+    auto transactionId = aCsvRow["transaction_id"].get<std::string>();
 
-    if (category == "TRADING")
+    const auto mapping = std::find_if(kTransactionTypeMappings.begin(),
+                                      kTransactionTypeMappings.end(),
+                                      [&](const TransactionTypeMapping& aMapping) {
+                                          const bool categoryMatches =
+                                              aMapping.mExpectedCategory.empty() ||
+                                              aMapping.mExpectedCategory == category;
+                                          return aMapping.mType == type && categoryMatches;
+                                      });
+    if (mapping != kTransactionTypeMappings.end())
     {
-        rowType = RowType::Trade;
-    }
-    else if (category == "CASH" && type == "DIVIDEND")
-    {
-        rowType = RowType::Dividend;
-    }
-    else if (category == "CASH" &&
-             (type == "INTEREST_PAYMENT" || type == "BOND_INTEREST" || type == "FIXED_INCOME"))
-    {
-        rowType = RowType::Interest;
+        rowType = mapping->mRowType;
     }
 
     return RowMeta{
@@ -97,6 +205,8 @@ RowMeta TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) const {
             RowParsedValues{
                 .mCategory = std::move(category),
                 .mType = std::move(type),
+                .mAssetClass = std::move(assetClass),
+                .mTransactionId = std::move(transactionId),
             },
     };
 }
@@ -129,22 +239,19 @@ bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
         return false;
     }
 
-    auto logMainFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} row with: {} for {} skipping row",
-                    aContext,
-                    aFieldName,
-                    aValue);
+    auto logMainFail = [&](std::string_view aFieldName) {
+        LOG_WARNING("Failed to parse {} row: {} is empty. Skipping row.", aContext, aFieldName);
     };
 
     if (aIsin.empty())
     {
-        logMainFail("ISIN", aIsin);
+        logMainFail("ISIN");
         return false;
     }
 
     if (aName.empty())
     {
-        logMainFail("name", aName);
+        logMainFail("name");
         return false;
     }
 
@@ -218,14 +325,12 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
-
     auto date = parseDate(aCsvRow["date"].get<std::string>());
     auto tradeSide = parseTradeSide(typeValue);
     auto unitPrice = parseMoney(aCsvRow["price"].get<std::string>());
     auto units = parseUnits(aCsvRow["shares"].get<std::string>());
-    // Warning, if currency is null, we have a problem
     auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
+    auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
 
     auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
         LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}",
@@ -271,6 +376,21 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
+    if (assetClass == AssetClass::Unknown)
+    {
+        logFail("asset class", aCsvRow["asset_class"].get<std::string>());
+        return;
+    }
+
+    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+    if (instrument.mAssetClass != AssetClass::Unknown && instrument.mAssetClass != assetClass)
+    {
+        logFail("asset class inconsistent with existing instrument",
+                aCsvRow["asset_class"].get<std::string>());
+        return;
+    }
+    instrument.mAssetClass = assetClass;
+
     instrument.mTransactions.emplace_back(TradeTransaction{
         .mDate = *date,
         .mTradeSide = *tradeSide,
@@ -290,8 +410,6 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     {
         return;
     }
-
-    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
 
     auto date = parseDate(aCsvRow["date"].get<std::string>());
     auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
@@ -334,6 +452,8 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
         logFail(fieldName, fieldValue);
         return;
     }
+
+    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
 
     instrument.mTransactions.emplace_back(DividendTransaction{
         .mDate = *date,
@@ -435,20 +555,6 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         if (aInterestType == InterestType::BrokerInterest)
         {
             const auto brokerName = "Trade Republic";
-            auto instrumentIt = std::find_if(aInstruments.begin(),
-                                             aInstruments.end(),
-                                             [&](const InterestInstrument& aInstrument) {
-                                                 return aInstrument.mName == brokerName;
-                                             });
-
-            if (instrumentIt == aInstruments.end())
-            {
-                aInstruments.emplace_back(
-                    InterestInstrument{.mName = brokerName,
-                                       .mInterestType = InterestType::BrokerInterest});
-                instrumentIt = std::prev(aInstruments.end());
-            }
-
             auto date = parseDate(aCsvRow["date"].get<std::string>());
             auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
 
@@ -491,6 +597,20 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                 return;
             }
 
+            auto instrumentIt = std::find_if(aInstruments.begin(),
+                                             aInstruments.end(),
+                                             [&](const InterestInstrument& aInstrument) {
+                                                 return aInstrument.mName == brokerName;
+                                             });
+
+            if (instrumentIt == aInstruments.end())
+            {
+                aInstruments.emplace_back(
+                    InterestInstrument{.mName = brokerName,
+                                       .mInterestType = InterestType::BrokerInterest});
+                instrumentIt = std::prev(aInstruments.end());
+            }
+
             instrumentIt->mTransactions.emplace_back(
                 InterestTransaction{.mDate = *date,
                                     .mGrossAmount = *amountAndCurrency.mGrossAmount,
@@ -501,6 +621,117 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 
         // Broker interest
     }
+}
+
+void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
+                                                  std::vector<TradeInstrument>& aInstruments) {
+    const auto isinValue = aCsvRow["symbol"].get<std::string>();
+    const auto nameValue = aCsvRow["name"].get<std::string>();
+
+    if (!isInstrumentValid("corporate action", isinValue, nameValue))
+    {
+        return;
+    }
+
+    const auto date = parseDate(aCsvRow["date"].get<std::string>());
+    const auto unitsDelta = parseUnits(aCsvRow["shares"].get<std::string>());
+    const auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
+
+    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
+        LOG_WARNING("Failed to parse {} value: {} for corporate action row with ISIN {}",
+                    aFieldName,
+                    aValue,
+                    isinValue);
+    };
+
+    if (!date)
+    {
+        logFail("date", aCsvRow["date"].get<std::string>());
+        return;
+    }
+
+    if (!unitsDelta || *unitsDelta == 0)
+    {
+        logFail("units delta", aCsvRow["shares"].get<std::string>());
+        return;
+    }
+
+    if (assetClass == AssetClass::Unknown)
+    {
+        logFail("asset class", aCsvRow["asset_class"].get<std::string>());
+        return;
+    }
+
+    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+    if (instrument.mAssetClass != AssetClass::Unknown && instrument.mAssetClass != assetClass)
+    {
+        logFail("asset class inconsistent with existing instrument",
+                aCsvRow["asset_class"].get<std::string>());
+        return;
+    }
+    instrument.mAssetClass = assetClass;
+
+    // Trade Republic exports the signed change in units, not the split ratio. The ratio can only
+    // be derived after statements are merged and the open position immediately before this event
+    // is known.
+    instrument.mCorporateActions.emplace_back(CorporateAction{
+        .mDate = *date,
+        .mType = *unitsDelta > 0 ? CorporateActionType::Split : CorporateActionType::ReverseSplit,
+        .mUnitsDelta = *unitsDelta,
+        .mRatio = std::nullopt,
+    });
+}
+
+void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
+                                          std::vector<BenefitEvent>& aBenefitEvents,
+                                          const RowParsedValues& aParsedValues) {
+    const auto date = parseDate(aCsvRow["date"].get<std::string>());
+    const auto benefitType = parseBenefitType(aParsedValues.mType);
+    const auto amount = parseMoney(aCsvRow["amount"].get<std::string>());
+    const auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
+
+    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
+        LOG_WARNING("Failed to parse {} value: {} for Trade Republic benefit row",
+                    aFieldName,
+                    aValue);
+    };
+
+    if (!date)
+    {
+        logFail("date", aCsvRow["date"].get<std::string>());
+        return;
+    }
+
+    if (!benefitType)
+    {
+        logFail("benefit type", aParsedValues.mType);
+        return;
+    }
+
+    if (!amount)
+    {
+        logFail("amount", aCsvRow["amount"].get<std::string>());
+        return;
+    }
+
+    if (currency == Currency::Unknown)
+    {
+        logFail("currency", aCsvRow["currency"].get<std::string>());
+        return;
+    }
+
+    const auto isin = aCsvRow["symbol"].get<std::string>();
+    aBenefitEvents.emplace_back(BenefitEvent{
+        .mDate = *date,
+        .mDateTime = aCsvRow["datetime"].get<std::string>(),
+        .mType = *benefitType,
+        .mName = aCsvRow["name"].get<std::string>(),
+        .mIsin = isin.empty() ? std::nullopt : std::optional<Isin>{isin},
+        .mAssetClass = parseAssetClass(aParsedValues.mAssetClass),
+        .mAmount = *amount,
+        .mCurrency = currency,
+        .mTransactionId = aParsedValues.mTransactionId,
+    });
 }
 
 std::optional<Date> TradeRepublicParser::parseDate(std::string_view aValue) {
@@ -586,8 +817,33 @@ Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
     return Currency::Unknown;
 }
 
+AssetClass TradeRepublicParser::parseAssetClass(std::string_view aValue) {
+    if (aValue == "STOCK")
+        return AssetClass::Stock;
+    if (aValue == "FUND")
+        return AssetClass::Fund;
+    if (aValue == "BOND")
+        return AssetClass::Bond;
+    if (aValue == "DERIVATIVE")
+        return AssetClass::Derivative;
+    if (aValue == "CRYPTO")
+        return AssetClass::Crypto;
+    if (aValue == "PRIVATE_FUND")
+        return AssetClass::PrivateFund;
+    return AssetClass::Unknown;
+}
+
+std::optional<BenefitType> TradeRepublicParser::parseBenefitType(std::string_view aValue) {
+    if (aValue == "BENEFITS_SAVEBACK")
+        return BenefitType::Saveback;
+    if (aValue == "STOCKPERK")
+        return BenefitType::Stockperk;
+    return std::nullopt;
+}
+
 std::optional<TradeSide> TradeRepublicParser::parseTradeSide(std::string_view aValue) {
-    if (aValue == "BUY")
+    if (aValue == "BUY" || aValue == "SAVINGS_PLAN_EXECUTED" ||
+        aValue == "BENEFITS_SPARE_CHANGE_EXECUTION" || aValue == "BENEFITS_SAVEBACK_EXECUTION")
         return TradeSide::Buy;
     if (aValue == "SELL")
         return TradeSide::Sell;

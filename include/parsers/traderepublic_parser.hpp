@@ -29,12 +29,19 @@ class TradeRepublicParser final : public CsvParser {
     void parseInterestRow(const csv::CSVRow& aCsvRow,
                           std::vector<InterestInstrument>& aInstruments,
                           const InterestType aInterestType);
+    void parseCorporateActionRow(const csv::CSVRow& aCsvRow,
+                                 std::vector<TradeInstrument>& aInstruments);
+    void parseBenefitRow(const csv::CSVRow& aCsvRow,
+                         std::vector<BenefitEvent>& aBenefitEvents,
+                         const RowParsedValues& aParsedValues);
 
     // Parsing helpers
     std::optional<Date> parseDate(std::string_view aValue);
     std::optional<Money> parseMoney(std::string_view aValue);
     std::optional<Units> parseUnits(std::string_view aValue);
     Currency parseCurrency(std::string_view aValue);
+    AssetClass parseAssetClass(std::string_view aValue);
+    std::optional<BenefitType> parseBenefitType(std::string_view aValue);
     std::optional<TradeSide> parseTradeSide(std::string_view aValue);
 
     // class helpers

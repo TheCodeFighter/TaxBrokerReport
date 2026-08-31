@@ -45,7 +45,7 @@ ensure_dev_image
 
 echo "==> Formatting C++ sources..."
 if [[ "$check_only" == true ]]; then
-	compose run --rm dev sh -lc 'find /workspace/include /workspace/src /workspace/tests -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.hpp" -o -name "*.h" \) -print0 | xargs -0 -r clang-format --dry-run --Werror'
+	compose run --rm dev sh -lc 'find /workspace/include /workspace/src /workspace/tests /workspace/tools -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.hpp" -o -name "*.h" \) -print0 | xargs -0 -r clang-format --dry-run --Werror'
 else
-	compose run --rm dev sh -lc 'find /workspace/include /workspace/src /workspace/tests -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.hpp" -o -name "*.h" \) -print0 | xargs -0 -r clang-format -i'
+	compose run --rm dev sh -lc 'find /workspace/include /workspace/src /workspace/tests /workspace/tools -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.hpp" -o -name "*.h" \) -print0 | xargs -0 -r clang-format -i'
 fi

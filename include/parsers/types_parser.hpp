@@ -3,6 +3,8 @@
 #include "taxbroker/types.hpp"
 
 #include <optional>
+#include <string>
+
 namespace taxbroker {
 
 enum class RowType {
@@ -10,12 +12,17 @@ enum class RowType {
     Dividend,
     Interest,
     CorporateAction,
+    Benefit,
+    Ignored,
+    Unsupported,
     Unknown
 };
 
 struct RowParsedValues {
     std::string mCategory;
     std::string mType;
+    std::string mAssetClass;
+    std::string mTransactionId;
 };
 
 struct RowMeta {
