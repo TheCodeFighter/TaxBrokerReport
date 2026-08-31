@@ -15,6 +15,7 @@ endif()
 
 # Option to build legacy QT GUI
 option(BUILD_LEGACY_GUI "Build the legacy Qt-based GUI codebase" OFF)
+option(BUILD_DEBUG_TOOLS "Build local debugging tools" OFF)
 
 if(BUILD_LEGACY_GUI)
     add_subdirectory(legacy-QT-GUI)
@@ -46,4 +47,7 @@ set(CSV_PARSER_INCLUDE_DIR "${csv_parser_SOURCE_DIR}/single_include")
 enable_testing()
 
 add_subdirectory(src)
+if(BUILD_DEBUG_TOOLS)
+    add_subdirectory(tools)
+endif()
 add_subdirectory(tests)

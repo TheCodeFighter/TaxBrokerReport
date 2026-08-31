@@ -44,6 +44,7 @@ class TradeRepublicParser final : public CsvParser {
     static std::optional<Units> normalizeTradeUnits(TradeSide aTradeSide, Units aSignedUnits);
     GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow);
     std::pair<std::string_view, std::string> pickAmountField(const csv::CSVRow& aRow);
+    static std::optional<Money> parseTaxPaid(std::string_view aValue);
 };
 
 } // namespace taxbroker::tr

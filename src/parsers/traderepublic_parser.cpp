@@ -294,7 +294,7 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
 
     auto date = parseDate(aCsvRow["date"].get<std::string>());
-    auto taxPaid = parseMoney(aCsvRow["tax"].get<std::string>());
+    auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
     auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
     auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
@@ -365,7 +365,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         }
 
         auto date = parseDate(aCsvRow["date"].get<std::string>());
-        auto taxPaid = parseMoney(aCsvRow["tax"].get<std::string>());
+        auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
 
         auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
@@ -450,7 +450,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
             }
 
             auto date = parseDate(aCsvRow["date"].get<std::string>());
-            auto taxPaid = parseMoney(aCsvRow["tax"].get<std::string>());
+            auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
 
             auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
@@ -553,6 +553,22 @@ std::optional<Units> TradeRepublicParser::normalizeTradeUnits(TradeSide aTradeSi
     }
 
     return std::abs(aSignedUnits);
+}
+
+std::optional<Money> TradeRepublicParser::parseTaxPaid(std::string_view aValue) {
+    if (aValue.empty())
+    {
+        return Money{0};
+    }
+
+    const auto signedTax = parseScaledNumber<Money, MONEY_SCALE>(aValue);
+
+    if (!signedTax || *signedTax > 0 || *signedTax == std::numeric_limits<Money>::min())
+    {
+        return std::nullopt;
+    }
+
+    return std::abs(*signedTax);
 }
 
 Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
