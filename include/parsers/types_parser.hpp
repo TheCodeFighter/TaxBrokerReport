@@ -13,6 +13,7 @@ enum class RowType {
     Interest,
     CorporateAction,
     Benefit,
+    PrivateMarket,
     Ignored,
     Unsupported,
     Unknown
@@ -32,7 +33,7 @@ struct RowMeta {
 
 struct GetAmount {
     std::optional<Money> mGrossAmount;
-    std::optional<Money> mExchangeRate;
+    std::optional<ExchangeRate> mExchangeRate;
     std::optional<Currency> mCurrency;
 };
 } // namespace taxbroker

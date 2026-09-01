@@ -153,6 +153,20 @@ std::string_view toString(BenefitType aBenefitType) {
     return "Unknown";
 }
 
+std::string_view toString(PrivateMarketEventType aEventType) {
+    switch (aEventType)
+    {
+    case PrivateMarketEventType::Buy:
+        return "Buy";
+    case PrivateMarketEventType::Sell:
+        return "Sell";
+    case PrivateMarketEventType::Bonus:
+        return "Bonus";
+    }
+
+    return "Unknown";
+}
+
 std::string_view toString(WarningCode aWarningCode) {
     switch (aWarningCode)
     {
@@ -193,9 +207,21 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             writeFixedPoint(aOutput, transaction.mUnitPrice, MONEY_SCALE);
             aOutput << "\n      units: ";
             writeFixedPoint(aOutput, transaction.mUnits, UNITS_SCALE);
+            aOutput << "\n      amount: ";
+            if (transaction.mAmount)
+            {
+                writeFixedPoint(aOutput, *transaction.mAmount, MONEY_SCALE);
+            }
+            else
+            {
+                aOutput << "<none>";
+            }
+            aOutput << "\n      fee_paid: ";
+            writeFixedPoint(aOutput, transaction.mFeePaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeFixedPoint(aOutput, transaction.mExchangeRate, MONEY_SCALE);
-            aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
+            writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            aOutput << "\n      currency: " << toString(transaction.mCurrency)
+                    << "\n      transaction_id: " << transaction.mTransactionId << '\n';
         }
 
         aOutput << "  corporate_actions: " << instrument.mCorporateActions.size() << '\n';
@@ -215,7 +241,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             {
                 aOutput << "<unresolved>";
             }
-            aOutput << '\n';
+            aOutput << "\n      transaction_id: " << action.mTransactionId << '\n';
         }
 
         aOutput << '\n';
@@ -241,8 +267,10 @@ void writeDividends(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      tax_paid: ";
             writeFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeFixedPoint(aOutput, transaction.mExchangeRate, MONEY_SCALE);
-            aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
+            writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            aOutput << "\n      currency: " << toString(transaction.mCurrency)
+                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency)
+                    << "\n      transaction_id: " << transaction.mTransactionId << '\n';
         }
 
         aOutput << '\n';
@@ -269,8 +297,9 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      tax_paid: ";
             writeFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeFixedPoint(aOutput, transaction.mExchangeRate, MONEY_SCALE);
-            aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
+            writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            aOutput << "\n      currency: " << toString(transaction.mCurrency)
+                    << "\n      transaction_id: " << transaction.mTransactionId << '\n';
         }
 
         aOutput << '\n';
@@ -284,13 +313,33 @@ void writeBenefits(std::ostream& aOutput, const BrokerStatement& aStatement) {
     {
         aOutput << "- date: ";
         writeDate(aOutput, benefit.mDate);
-        aOutput << "\n  datetime: " << benefit.mDateTime << "\n  type: " << toString(benefit.mType)
+        aOutput << "\n  type: " << toString(benefit.mType)
                 << "\n  name: " << (benefit.mName.empty() ? "<none>" : benefit.mName)
                 << "\n  isin: " << benefit.mIsin.value_or("<none>")
                 << "\n  asset_class: " << toString(benefit.mAssetClass) << "\n  amount: ";
         writeFixedPoint(aOutput, benefit.mAmount, MONEY_SCALE);
         aOutput << "\n  currency: " << toString(benefit.mCurrency)
                 << "\n  transaction_id: " << benefit.mTransactionId << "\n\n";
+    }
+}
+
+void writePrivateMarketEvents(std::ostream& aOutput, const BrokerStatement& aStatement) {
+    aOutput << "PRIVATE MARKET EVENTS: " << aStatement.mPrivateMarketEvents.size() << "\n\n";
+
+    for (const auto& event : aStatement.mPrivateMarketEvents)
+    {
+        aOutput << "- date: ";
+        writeDate(aOutput, event.mDate);
+        aOutput << "\n  type: " << toString(event.mType)
+                << "\n  name: " << (event.mName.empty() ? "<none>" : event.mName)
+                << "\n  isin: " << event.mIsin.value_or("<none>")
+                << "\n  asset_class: " << toString(event.mAssetClass) << "\n  amount: ";
+        writeFixedPoint(aOutput, event.mAmount, MONEY_SCALE);
+        aOutput << "\n  fee_paid: ";
+        writeFixedPoint(aOutput, event.mFeePaid, MONEY_SCALE);
+        aOutput << "\n  currency: " << toString(event.mCurrency)
+                << "\n  description: " << event.mDescription
+                << "\n  transaction_id: " << event.mTransactionId << "\n\n";
     }
 }
 
@@ -310,6 +359,7 @@ void writeParseResult(std::ostream& aOutput, const ParseResult& aParseResult) {
     writeDividends(aOutput, aParseResult.mStatement);
     writeInterests(aOutput, aParseResult.mStatement);
     writeBenefits(aOutput, aParseResult.mStatement);
+    writePrivateMarketEvents(aOutput, aParseResult.mStatement);
     writeWarnings(aOutput, aParseResult);
 }
 

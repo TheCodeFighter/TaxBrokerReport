@@ -38,11 +38,10 @@ constexpr auto kTransactionTypeMappings = std::array{
     TransactionTypeMapping{"BENEFITS_SAVEBACK", "CASH", taxbroker::RowType::Benefit},
     TransactionTypeMapping{"STOCKPERK", "CASH", taxbroker::RowType::Benefit},
 
-    // These cash rows describe benefits or pre-payments. Their corresponding security
-    // acquisitions are exported separately as TRADING/BUY rows.
-    TransactionTypeMapping{"BONUS", "CASH", taxbroker::RowType::Unsupported},
-    TransactionTypeMapping{"PRIVATE_MARKET_BUY", "CASH", taxbroker::RowType::Unsupported},
-    TransactionTypeMapping{"PRIVATE_MARKET_SELL", "CASH", taxbroker::RowType::Unsupported},
+    TransactionTypeMapping{"BONUS", "CASH", taxbroker::RowType::PrivateMarket},
+    TransactionTypeMapping{"PRIVATE_MARKET_BUY", "CASH", taxbroker::RowType::PrivateMarket},
+    TransactionTypeMapping{"PRIVATE_MARKET_SELL", "CASH", taxbroker::RowType::PrivateMarket},
+
     TransactionTypeMapping{"TAX_OPTIMIZATION", "", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"TAX_REFUND", "", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"SSP_TAX_CORRECTION_INVOICE", "", taxbroker::RowType::Unsupported},
@@ -150,6 +149,11 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
             break;
         case RowType::Benefit:
             parseBenefitRow(row, parsedResult.mStatement.mBenefitEvents, rowMeta.mParsedValues);
+            break;
+        case RowType::PrivateMarket:
+            parsePrivateMarketRow(row,
+                                  parsedResult.mStatement.mPrivateMarketEvents,
+                                  rowMeta.mParsedValues);
             break;
         case RowType::Ignored:
             break;
@@ -260,7 +264,7 @@ bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
 
 GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) {
     std::optional<Money> grossAmount{};
-    std::optional<Money> exchangeRate{MONEY_SCALE}; // Default to 1.0 (scaled)
+    std::optional<ExchangeRate> exchangeRate{EXCHANGE_RATE_SCALE};
 
     auto currency = parseCurrency(aCsvRow["original_currency"].get<std::string>());
     if (currency == Currency::Unknown)
@@ -285,7 +289,7 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     else
     {
         grossAmount = parseMoney(aCsvRow["original_amount"].get<std::string>());
-        exchangeRate = parseMoney(aCsvRow["fx_rate"].get<std::string>());
+        exchangeRate = parseExchangeRate(aCsvRow["fx_rate"].get<std::string>());
     }
 
     return GetAmount{
@@ -329,6 +333,9 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     auto tradeSide = parseTradeSide(typeValue);
     auto unitPrice = parseMoney(aCsvRow["price"].get<std::string>());
     auto units = parseUnits(aCsvRow["shares"].get<std::string>());
+    const auto amountValue = aCsvRow["amount"].get<std::string>();
+    auto amount = amountValue.empty() ? std::optional<Money>{} : parseMoney(amountValue);
+    auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
     auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
     auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
 
@@ -370,6 +377,28 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
+    if (!amountValue.empty() && !amount)
+    {
+        logFail("amount", amountValue);
+        return;
+    }
+
+    if (amount)
+    {
+        amount = normalizeTradeAmount(*tradeSide, *amount);
+        if (!amount)
+        {
+            logFail("amount inconsistent with trade side", amountValue);
+            return;
+        }
+    }
+
+    if (!feePaid)
+    {
+        logFail("fee", aCsvRow["fee"].get<std::string>());
+        return;
+    }
+
     if (currency == Currency::Unknown)
     {
         logFail("currency", aCsvRow["currency"].get<std::string>());
@@ -396,8 +425,11 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mTradeSide = *tradeSide,
         .mUnitPrice = *unitPrice,
         .mUnits = *normalizedUnits,
-        .mExchangeRate = MONEY_SCALE, // Default to 1.0 (scaled)
+        .mAmount = amount,
+        .mFeePaid = *feePaid,
+        .mExchangeRate = EXCHANGE_RATE_SCALE,
         .mCurrency = currency,
+        .mTransactionId = aParsedValues.mTransactionId,
     });
 }
 
@@ -413,6 +445,7 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
 
     auto date = parseDate(aCsvRow["date"].get<std::string>());
     auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
+    auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
     auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
     auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
@@ -431,6 +464,12 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     if (!taxPaid)
     {
         logFail("tax paid", aCsvRow["tax"].get<std::string>());
+        return;
+    }
+
+    if (taxCurrency == Currency::Unknown)
+    {
+        logFail("tax currency", aCsvRow["currency"].get<std::string>());
         return;
     }
 
@@ -461,6 +500,8 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
         .mTaxPaid = *taxPaid,
         .mExchangeRate = *amountAndCurrency.mExchangeRate,
         .mCurrency = *amountAndCurrency.mCurrency,
+        .mTaxCurrency = taxCurrency,
+        .mTransactionId = aCsvRow["transaction_id"].get<std::string>(),
     });
 }
 
@@ -537,6 +578,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
             .mTaxPaid = *taxPaid,
             .mExchangeRate = *amountAndCurrency.mExchangeRate,
             .mCurrency = *amountAndCurrency.mCurrency,
+            .mTransactionId = aCsvRow["transaction_id"].get<std::string>(),
         });
     }
     // Broker interest and other interest types don't have ISIN
@@ -611,12 +653,13 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                 instrumentIt = std::prev(aInstruments.end());
             }
 
-            instrumentIt->mTransactions.emplace_back(
-                InterestTransaction{.mDate = *date,
-                                    .mGrossAmount = *amountAndCurrency.mGrossAmount,
-                                    .mTaxPaid = *taxPaid,
-                                    .mExchangeRate = *amountAndCurrency.mExchangeRate,
-                                    .mCurrency = *amountAndCurrency.mCurrency});
+            instrumentIt->mTransactions.emplace_back(InterestTransaction{
+                .mDate = *date,
+                .mGrossAmount = *amountAndCurrency.mGrossAmount,
+                .mTaxPaid = *taxPaid,
+                .mExchangeRate = *amountAndCurrency.mExchangeRate,
+                .mCurrency = *amountAndCurrency.mCurrency,
+                .mTransactionId = aCsvRow["transaction_id"].get<std::string>()});
         }
 
         // Broker interest
@@ -679,6 +722,7 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
         .mType = *unitsDelta > 0 ? CorporateActionType::Split : CorporateActionType::ReverseSplit,
         .mUnitsDelta = *unitsDelta,
         .mRatio = std::nullopt,
+        .mTransactionId = aCsvRow["transaction_id"].get<std::string>(),
     });
 }
 
@@ -723,13 +767,73 @@ void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
     const auto isin = aCsvRow["symbol"].get<std::string>();
     aBenefitEvents.emplace_back(BenefitEvent{
         .mDate = *date,
-        .mDateTime = aCsvRow["datetime"].get<std::string>(),
         .mType = *benefitType,
         .mName = aCsvRow["name"].get<std::string>(),
         .mIsin = isin.empty() ? std::nullopt : std::optional<Isin>{isin},
         .mAssetClass = parseAssetClass(aParsedValues.mAssetClass),
         .mAmount = *amount,
         .mCurrency = currency,
+        .mTransactionId = aParsedValues.mTransactionId,
+    });
+}
+
+void TradeRepublicParser::parsePrivateMarketRow(
+    const csv::CSVRow& aCsvRow,
+    std::vector<PrivateMarketEvent>& aPrivateMarketEvents,
+    const RowParsedValues& aParsedValues) {
+    const auto date = parseDate(aCsvRow["date"].get<std::string>());
+    const auto eventType = parsePrivateMarketEventType(aParsedValues.mType);
+    const auto amount = parseMoney(aCsvRow["amount"].get<std::string>());
+    const auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
+    const auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
+
+    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
+        LOG_WARNING("Failed to parse {} value: {} for Trade Republic private-market row",
+                    aFieldName,
+                    aValue);
+    };
+
+    if (!date)
+    {
+        logFail("date", aCsvRow["date"].get<std::string>());
+        return;
+    }
+
+    if (!eventType)
+    {
+        logFail("private-market event type", aParsedValues.mType);
+        return;
+    }
+
+    if (!amount)
+    {
+        logFail("amount", aCsvRow["amount"].get<std::string>());
+        return;
+    }
+
+    if (!feePaid)
+    {
+        logFail("fee", aCsvRow["fee"].get<std::string>());
+        return;
+    }
+
+    if (currency == Currency::Unknown)
+    {
+        logFail("currency", aCsvRow["currency"].get<std::string>());
+        return;
+    }
+
+    const auto isin = aCsvRow["symbol"].get<std::string>();
+    aPrivateMarketEvents.emplace_back(PrivateMarketEvent{
+        .mDate = *date,
+        .mType = *eventType,
+        .mName = aCsvRow["name"].get<std::string>(),
+        .mIsin = isin.empty() ? std::nullopt : std::optional<Isin>{isin},
+        .mAssetClass = parseAssetClass(aParsedValues.mAssetClass),
+        .mAmount = *amount,
+        .mFeePaid = *feePaid,
+        .mCurrency = currency,
+        .mDescription = aCsvRow["description"].get<std::string>(),
         .mTransactionId = aParsedValues.mTransactionId,
     });
 }
@@ -764,6 +868,10 @@ std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
     return parseScaledNumber<Money, MONEY_SCALE>(aValue);
 }
 
+std::optional<ExchangeRate> TradeRepublicParser::parseExchangeRate(std::string_view aValue) {
+    return parseScaledNumber<ExchangeRate, EXCHANGE_RATE_SCALE>(aValue);
+}
+
 std::optional<Units> TradeRepublicParser::parseUnits(std::string_view aValue) {
     return parseScaledNumber<Units, UNITS_SCALE>(aValue);
 }
@@ -786,6 +894,23 @@ std::optional<Units> TradeRepublicParser::normalizeTradeUnits(TradeSide aTradeSi
     return std::abs(aSignedUnits);
 }
 
+std::optional<Money> TradeRepublicParser::normalizeTradeAmount(TradeSide aTradeSide,
+                                                               Money aSignedAmount) {
+    if (aSignedAmount == 0 || aSignedAmount == std::numeric_limits<Money>::min())
+    {
+        return std::nullopt;
+    }
+
+    const bool hasExpectedSign = (aTradeSide == TradeSide::Buy && aSignedAmount < 0) ||
+                                 (aTradeSide == TradeSide::Sell && aSignedAmount > 0);
+    if (!hasExpectedSign)
+    {
+        return std::nullopt;
+    }
+
+    return std::abs(aSignedAmount);
+}
+
 std::optional<Money> TradeRepublicParser::parseTaxPaid(std::string_view aValue) {
     if (aValue.empty())
     {
@@ -800,6 +925,21 @@ std::optional<Money> TradeRepublicParser::parseTaxPaid(std::string_view aValue) 
     }
 
     return std::abs(*signedTax);
+}
+
+std::optional<Money> TradeRepublicParser::parseFeePaid(std::string_view aValue) {
+    if (aValue.empty())
+    {
+        return Money{0};
+    }
+
+    const auto signedFee = parseScaledNumber<Money, MONEY_SCALE>(aValue);
+    if (!signedFee || *signedFee > 0 || *signedFee == std::numeric_limits<Money>::min())
+    {
+        return std::nullopt;
+    }
+
+    return std::abs(*signedFee);
 }
 
 Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
@@ -838,6 +978,17 @@ std::optional<BenefitType> TradeRepublicParser::parseBenefitType(std::string_vie
         return BenefitType::Saveback;
     if (aValue == "STOCKPERK")
         return BenefitType::Stockperk;
+    return std::nullopt;
+}
+
+std::optional<PrivateMarketEventType>
+TradeRepublicParser::parsePrivateMarketEventType(std::string_view aValue) {
+    if (aValue == "PRIVATE_MARKET_BUY")
+        return PrivateMarketEventType::Buy;
+    if (aValue == "PRIVATE_MARKET_SELL")
+        return PrivateMarketEventType::Sell;
+    if (aValue == "BONUS")
+        return PrivateMarketEventType::Bonus;
     return std::nullopt;
 }
 

@@ -83,11 +83,18 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     ASSERT_NE(stockperkInstrument, nullptr);
     ASSERT_EQ(stockperkInstrument->mTransactions.size(), 1U);
     EXPECT_EQ(stockperkInstrument->mTransactions.front().mUnits, 9'200'000);
+    ASSERT_TRUE(stockperkInstrument->mTransactions.front().mAmount.has_value());
+    EXPECT_EQ(*stockperkInstrument->mTransactions.front().mAmount, 153'100);
+    EXPECT_EQ(stockperkInstrument->mTransactions.front().mFeePaid, 0);
+    EXPECT_EQ(stockperkInstrument->mTransactions.front().mTransactionId, "stockperk-buy");
 
     const auto* savebackInstrument = findTradeInstrument(parseResult.mStatement, "IE0000000001");
     ASSERT_NE(savebackInstrument, nullptr);
     ASSERT_EQ(savebackInstrument->mTransactions.size(), 1U);
     EXPECT_EQ(savebackInstrument->mTransactions.front().mUnits, 10'932'600);
+    ASSERT_TRUE(savebackInstrument->mTransactions.front().mAmount.has_value());
+    EXPECT_EQ(*savebackInstrument->mTransactions.front().mAmount, 9'800);
+    EXPECT_EQ(savebackInstrument->mTransactions.front().mTransactionId, "saveback-buy");
 
     ASSERT_EQ(parseResult.mStatement.mBenefitEvents.size(), 3U);
 
@@ -99,7 +106,6 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_EQ(stockperk->mName, "Example Stock");
     ASSERT_TRUE(stockperk->mIsin.has_value());
     EXPECT_EQ(*stockperk->mIsin, "US0000000001");
-    EXPECT_EQ(stockperk->mDateTime, "2024-03-27T16:14:07.000Z");
     EXPECT_EQ(stockperk->mTransactionId, "stockperk-cash");
 
     const auto* saveback = findBenefitEvent(parseResult.mStatement, BenefitType::Saveback);
@@ -110,7 +116,6 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_EQ(saveback->mName, "Example Fund");
     ASSERT_TRUE(saveback->mIsin.has_value());
     EXPECT_EQ(*saveback->mIsin, "IE0000000001");
-    EXPECT_EQ(saveback->mDateTime, "2024-06-03T19:31:50.000Z");
     EXPECT_EQ(saveback->mTransactionId, "saveback-cash");
 
     const auto* unassignedSaveback =
@@ -122,19 +127,27 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_FALSE(unassignedSaveback->mIsin.has_value());
     EXPECT_EQ(unassignedSaveback->mAssetClass, AssetClass::Unknown);
 
-    // The remaining unsupported row is the private-market cash pre-payment, not a benefit.
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedRowType), 1U);
+    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedRowType), 0U);
     EXPECT_FALSE(hasWarningContaining(parseResult, "STOCKPERK"));
     EXPECT_FALSE(hasWarningContaining(parseResult, "BENEFITS_SAVEBACK"));
 }
 
-TEST(TradeRepublicParserTest, PreservesPrivateFundExecutionAndWarnsAboutTaxTreatment) {
+TEST(TradeRepublicParserTest, PreservesPrivateMarketEventsAndFundExecution) {
     const ParseResult parseResult = parseFixture();
 
     const auto* privateFund = findTradeInstrument(parseResult.mStatement, "LU0000000001");
     ASSERT_NE(privateFund, nullptr);
     EXPECT_EQ(privateFund->mAssetClass, AssetClass::PrivateFund);
     ASSERT_EQ(privateFund->mTransactions.size(), 1U);
+    EXPECT_FALSE(privateFund->mTransactions.front().mAmount.has_value());
+    EXPECT_EQ(privateFund->mTransactions.front().mTransactionId, "private-buy");
+
+    ASSERT_EQ(parseResult.mStatement.mPrivateMarketEvents.size(), 1U);
+    const auto& prepayment = parseResult.mStatement.mPrivateMarketEvents.front();
+    EXPECT_EQ(prepayment.mType, PrivateMarketEventType::Buy);
+    EXPECT_EQ(prepayment.mAmount, -3'000'000);
+    EXPECT_EQ(prepayment.mFeePaid, 10'000);
+    EXPECT_EQ(prepayment.mTransactionId, "private-prepayment");
 
     EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedAssetClass), 1U);
 }
@@ -149,16 +162,16 @@ TEST(TradeRepublicParserTest, PreservesUnresolvedSplitWithoutCreatingATrade) {
     EXPECT_EQ(splitInstrument->mCorporateActions.front().mType, CorporateActionType::Split);
     EXPECT_EQ(splitInstrument->mCorporateActions.front().mUnitsDelta, 56'520'000);
     EXPECT_FALSE(splitInstrument->mCorporateActions.front().mRatio.has_value());
+    EXPECT_EQ(splitInstrument->mCorporateActions.front().mTransactionId, "split-action");
 }
 
-TEST(TradeRepublicParserTest, ReportsUnsupportedAndUnknownRowsWithSourceLocation) {
+TEST(TradeRepublicParserTest, ReportsUnknownRowsWithSourceLocation) {
     const ParseResult parseResult = parseFixture();
 
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedRowType), 1U);
+    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedRowType), 0U);
     EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedAssetClass), 1U);
     EXPECT_EQ(countWarnings(parseResult, WarningCode::UnknownRowType), 1U);
-    ASSERT_EQ(parseResult.mWarnings.size(), 3U);
-    EXPECT_TRUE(hasWarningContaining(parseResult, "PRIVATE_MARKET_BUY"));
+    ASSERT_EQ(parseResult.mWarnings.size(), 2U);
     EXPECT_TRUE(hasWarningContaining(parseResult, "FUTURE_EVENT"));
     EXPECT_EQ(parseResult.mWarnings.back().mRowIndex, 11U);
     EXPECT_EQ(parseResult.mWarnings.back().mSourceFile, fixturePath().string());

@@ -22,6 +22,9 @@ namespace taxbroker {
 using Money = std::int64_t;
 constexpr Money MONEY_SCALE = 10000;
 
+using ExchangeRate = std::int64_t;
+constexpr ExchangeRate EXCHANGE_RATE_SCALE = 100000000;
+
 /*
     Fixed-point asset/unit representation with 8 decimal precision.
     Supports fractional shares and precise partial trade matching.
@@ -97,11 +100,18 @@ enum class BenefitType {
     Stockperk
 };
 
+enum class PrivateMarketEventType {
+    Buy,
+    Sell,
+    Bonus
+};
+
 struct CorporateAction {
     Date mDate{};
     CorporateActionType mType{};
     Units mUnitsDelta{};
     std::optional<CorpRatio> mRatio;
+    std::string mTransactionId;
 };
 
 struct TradeTransaction {
@@ -109,8 +119,13 @@ struct TradeTransaction {
     TradeSide mTradeSide{};
     Money mUnitPrice{};
     Units mUnits{};
-    Money mExchangeRate{MONEY_SCALE}; // By default, exchange rate is 1.0 (scaled)
+    // Positive transaction value from the broker export. Some executions omit it.
+    std::optional<Money> mAmount;
+    // Positive fee paid; zero when the export has no fee.
+    Money mFeePaid{};
+    ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::EUR};
+    std::string mTransactionId;
 };
 
 struct TradeInstrument {
@@ -125,8 +140,10 @@ struct DividendTransaction {
     Date mDate{};
     Money mGrossAmount{};
     Money mTaxPaid{};
-    Money mExchangeRate{MONEY_SCALE}; // By default, exchange rate is 1.0 (scaled)
+    ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::EUR};
+    Currency mTaxCurrency{Currency::EUR};
+    std::string mTransactionId;
 };
 
 struct DividendInstrument {
@@ -139,8 +156,9 @@ struct InterestTransaction {
     Date mDate{};
     Money mGrossAmount{};
     Money mTaxPaid{};
-    Money mExchangeRate{MONEY_SCALE}; // By default, exchange rate is 1.0 (scaled)
+    ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::EUR};
+    std::string mTransactionId;
 };
 
 struct InterestInstrument {
@@ -157,7 +175,6 @@ struct InterestInstrument {
 // credited amount available for local analytics without creating a duplicate buy transaction.
 struct BenefitEvent {
     Date mDate{};
-    std::string mDateTime;
     BenefitType mType{};
     std::string mName;
     std::optional<Isin> mIsin;
@@ -167,11 +184,27 @@ struct BenefitEvent {
     std::string mTransactionId;
 };
 
+struct PrivateMarketEvent {
+    Date mDate{};
+    PrivateMarketEventType mType{};
+    std::string mName;
+    std::optional<Isin> mIsin;
+    AssetClass mAssetClass{AssetClass::Unknown};
+    // Signed cash movement as exported by the broker.
+    Money mAmount{};
+    // Positive fee paid; zero when the export has no fee.
+    Money mFeePaid{};
+    Currency mCurrency{Currency::EUR};
+    std::string mDescription;
+    std::string mTransactionId;
+};
+
 struct BrokerStatement {
     std::vector<TradeInstrument> mTradeInstruments;
     std::vector<DividendInstrument> mDividendInstruments;
     std::vector<InterestInstrument> mInterestInstruments;
     std::vector<BenefitEvent> mBenefitEvents;
+    std::vector<PrivateMarketEvent> mPrivateMarketEvents;
 };
 
 // Canonical parsed broker data with warnings used throughout the processing pipeline.
