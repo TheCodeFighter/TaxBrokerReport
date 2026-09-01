@@ -299,6 +299,7 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      exchange_rate: ";
             writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
+                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency)
                     << "\n      transaction_id: " << transaction.mTransactionId << '\n';
         }
 

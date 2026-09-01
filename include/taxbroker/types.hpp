@@ -2,12 +2,12 @@
 
 #include "taxbroker/errors.hpp"
 
-#include <cstdint>
 #include <chrono>
-#include <string>
-#include <ratio>
-#include <vector>
+#include <cstdint>
 #include <optional>
+#include <ratio>
+#include <string>
+#include <vector>
 
 namespace taxbroker {
 
@@ -124,7 +124,7 @@ struct TradeTransaction {
     // Positive fee paid; zero when the export has no fee.
     Money mFeePaid{};
     ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
-    Currency mCurrency{Currency::EUR};
+    Currency mCurrency{Currency::Unknown};
     std::string mTransactionId;
 };
 
@@ -158,16 +158,14 @@ struct InterestTransaction {
     Money mTaxPaid{};
     ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::EUR};
+    Currency mTaxCurrency{Currency::EUR};
     std::string mTransactionId;
 };
 
 struct InterestInstrument {
-    // TODO: check if name need to be enum
-    std::string
-        mName; // No ISIN for interest transactions, using name instead (e.g., "Trade Republic")
-    std::optional<Isin>
-        mIsin; // Optional ISIN if available, otherwise empty. (ie bonds has isin, broker not)
-    InterestType mInterestType;
+    std::string mName;
+    std::optional<Isin> mIsin;
+    InterestType mInterestType{InterestType::UnknownInterest};
     std::vector<InterestTransaction> mTransactions;
 };
 

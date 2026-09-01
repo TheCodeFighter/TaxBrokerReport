@@ -9,6 +9,7 @@
 #include <csv.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -32,7 +33,7 @@ constexpr auto kTransactionTypeMappings = std::array{
     TransactionTypeMapping{"DISTRIBUTION", "CASH", taxbroker::RowType::Dividend},
     TransactionTypeMapping{"INTEREST_PAYMENT", "CASH", taxbroker::RowType::Interest},
     TransactionTypeMapping{"BOND_INTEREST", "CASH", taxbroker::RowType::Interest},
-    TransactionTypeMapping{"FIXED_INCOME", "CASH", taxbroker::RowType::Interest},
+    TransactionTypeMapping{"FIXED_INCOME", "CASH", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"SPLIT", "CORPORATE_ACTION", taxbroker::RowType::CorporateAction},
 
     TransactionTypeMapping{"BENEFITS_SAVEBACK", "CASH", taxbroker::RowType::Benefit},
@@ -79,7 +80,6 @@ void addWarning(taxbroker::ParseResult& aParseResult,
     });
 }
 
-// used just for trade rows and dividend rows
 template <typename InstrumentT>
 InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
                                    const std::string& aIsin,
@@ -99,6 +99,11 @@ InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
     }
 
     return *instrumentIt;
+}
+
+std::string getAmountCurrencyValue(const csv::CSVRow& aCsvRow) {
+    const auto originalCurrency = aCsvRow["original_currency"].get<std::string>();
+    return originalCurrency.empty() ? aCsvRow["currency"].get<std::string>() : originalCurrency;
 }
 } // namespace
 
@@ -120,8 +125,12 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
         switch (rowMeta.mRowType)
         {
         case RowType::Trade: {
+            const bool wasParsed = parseTradeRow(row,
+                                                 parsedResult.mStatement.mTradeInstruments,
+                                                 rowMeta.mParsedValues);
             const auto assetClass = parseAssetClass(rowMeta.mParsedValues.mAssetClass);
-            if (assetClass == AssetClass::PrivateFund || assetClass == AssetClass::Crypto)
+            if (wasParsed &&
+                (assetClass == AssetClass::PrivateFund || assetClass == AssetClass::Crypto))
             {
                 addWarning(parsedResult,
                            aCsvPath,
@@ -133,7 +142,6 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
                                rowMeta.mParsedValues.mTransactionId + "').");
             }
 
-            parseTradeRow(row, parsedResult.mStatement.mTradeInstruments, rowMeta.mParsedValues);
             break;
         }
         case RowType::Dividend:
@@ -215,23 +223,18 @@ RowMeta TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) const {
     };
 }
 
-InterestType TradeRepublicParser::detectInterestType(const std::string& aType) const {
+InterestType TradeRepublicParser::detectInterestType(std::string_view aType) const {
     if (aType == "INTEREST_PAYMENT")
     {
         return InterestType::BrokerInterest;
-    } // TODO: or fix income or bond type
-    else if (aType == "BOND_INTEREST")
+    }
+    // TODO: Check what is actually type for bond interest
+    if (aType == "BOND_INTEREST")
     {
         return InterestType::BondInterest;
     }
-    else if (aType == "FIXED_INCOME")
-    {
-        return InterestType::OtherInterest;
-    }
-    else
-    {
-        return InterestType::UnknownInterest;
-    }
+
+    return InterestType::UnknownInterest;
 }
 
 bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
@@ -266,15 +269,13 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     std::optional<Money> grossAmount{};
     std::optional<ExchangeRate> exchangeRate{EXCHANGE_RATE_SCALE};
 
-    auto currency = parseCurrency(aCsvRow["original_currency"].get<std::string>());
-    if (currency == Currency::Unknown)
-    {
-        currency = parseCurrency(aCsvRow["currency"].get<std::string>());
-    }
+    const auto originalCurrencyValue = aCsvRow["original_currency"].get<std::string>();
+    const bool usesOriginalCurrency = !originalCurrencyValue.empty();
+    const auto currency = parseCurrency(
+        usesOriginalCurrency ? originalCurrencyValue : aCsvRow["currency"].get<std::string>());
 
     if (currency == Currency::Unknown)
     {
-        LOG_WARNING("Unknown currency. Skipping row for {}", aCsvRow["name"].get<std::string>());
         exchangeRate.reset();
         return GetAmount{
             .mGrossAmount = grossAmount,
@@ -282,7 +283,7 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
             .mCurrency = std::nullopt,
         };
     }
-    else if (currency == Currency::EUR)
+    if (!usesOriginalCurrency)
     {
         grossAmount = parseMoney(aCsvRow["amount"].get<std::string>());
     }
@@ -302,13 +303,7 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
 std::pair<std::string_view, std::string>
 TradeRepublicParser::pickAmountField(const csv::CSVRow& aRow) {
     const auto originalAmount = aRow["original_amount"].get<std::string>();
-    auto effectiveCurrency = parseCurrency(aRow["original_currency"].get<std::string>());
-    if (effectiveCurrency == Currency::Unknown)
-    {
-        effectiveCurrency = parseCurrency(aRow["currency"].get<std::string>());
-    }
-
-    if (effectiveCurrency != Currency::EUR && effectiveCurrency != Currency::Unknown)
+    if (!aRow["original_currency"].get<std::string>().empty())
     {
         return {"original_amount", originalAmount};
     }
@@ -316,7 +311,7 @@ TradeRepublicParser::pickAmountField(const csv::CSVRow& aRow) {
     return {"amount", aRow["amount"].get<std::string>()};
 }
 
-void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
+bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
                                         std::vector<TradeInstrument>& aInstruments,
                                         const RowParsedValues& aParsedValues) {
 
@@ -326,7 +321,7 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
 
     if (!isInstrumentValid("trade", isinValue, nameValue))
     {
-        return;
+        return false;
     }
 
     auto date = parseDate(aCsvRow["date"].get<std::string>());
@@ -349,38 +344,38 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     if (!date)
     {
         logFail("date", aCsvRow["date"].get<std::string>());
-        return;
+        return false;
     }
 
     if (!tradeSide)
     {
         logFail("trade side", typeValue);
-        return;
+        return false;
     }
 
-    if (!unitPrice)
+    if (!unitPrice || *unitPrice <= 0)
     {
         logFail("unit price", aCsvRow["price"].get<std::string>());
-        return;
+        return false;
     }
 
     if (!units)
     {
         logFail("units", aCsvRow["shares"].get<std::string>());
-        return;
+        return false;
     }
 
     const auto normalizedUnits = normalizeTradeUnits(*tradeSide, *units);
     if (!normalizedUnits)
     {
         logFail("units inconsistent with trade side", aCsvRow["shares"].get<std::string>());
-        return;
+        return false;
     }
 
     if (!amountValue.empty() && !amount)
     {
         logFail("amount", amountValue);
-        return;
+        return false;
     }
 
     if (amount)
@@ -389,26 +384,26 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         if (!amount)
         {
             logFail("amount inconsistent with trade side", amountValue);
-            return;
+            return false;
         }
     }
 
     if (!feePaid)
     {
         logFail("fee", aCsvRow["fee"].get<std::string>());
-        return;
+        return false;
     }
 
     if (currency == Currency::Unknown)
     {
         logFail("currency", aCsvRow["currency"].get<std::string>());
-        return;
+        return false;
     }
 
     if (assetClass == AssetClass::Unknown)
     {
         logFail("asset class", aCsvRow["asset_class"].get<std::string>());
-        return;
+        return false;
     }
 
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
@@ -416,7 +411,7 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     {
         logFail("asset class inconsistent with existing instrument",
                 aCsvRow["asset_class"].get<std::string>());
-        return;
+        return false;
     }
     instrument.mAssetClass = assetClass;
 
@@ -431,6 +426,8 @@ void TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mCurrency = currency,
         .mTransactionId = aParsedValues.mTransactionId,
     });
+
+    return true;
 }
 
 void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
@@ -475,7 +472,7 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
 
     if (!amountAndCurrency.mCurrency.has_value())
     {
-        logFail("currency", aCsvRow["currency"].get<std::string>());
+        logFail("currency", getAmountCurrencyValue(aCsvRow));
         return;
     }
 
@@ -527,6 +524,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 
         auto date = parseDate(aCsvRow["date"].get<std::string>());
         auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
+        auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
         auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
@@ -549,9 +547,15 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
             return;
         }
 
+        if (taxCurrency == Currency::Unknown)
+        {
+            logFail("tax currency", aCsvRow["currency"].get<std::string>());
+            return;
+        }
+
         if (!amountAndCurrency.mCurrency.has_value())
         {
-            logFail("currency", aCsvRow["currency"].get<std::string>());
+            logFail("currency", getAmountCurrencyValue(aCsvRow));
             return;
         }
 
@@ -578,6 +582,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
             .mTaxPaid = *taxPaid,
             .mExchangeRate = *amountAndCurrency.mExchangeRate,
             .mCurrency = *amountAndCurrency.mCurrency,
+            .mTaxCurrency = taxCurrency,
             .mTransactionId = aCsvRow["transaction_id"].get<std::string>(),
         });
     }
@@ -599,6 +604,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
             const auto brokerName = "Trade Republic";
             auto date = parseDate(aCsvRow["date"].get<std::string>());
             auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
+            auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
             auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
@@ -620,9 +626,15 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                 return;
             }
 
+            if (taxCurrency == Currency::Unknown)
+            {
+                logFail("tax currency", aCsvRow["currency"].get<std::string>());
+                return;
+            }
+
             if (!amountAndCurrency.mCurrency.has_value())
             {
-                logFail("currency", aCsvRow["currency"].get<std::string>());
+                logFail("currency", getAmountCurrencyValue(aCsvRow));
                 return;
             }
 
@@ -659,6 +671,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                 .mTaxPaid = *taxPaid,
                 .mExchangeRate = *amountAndCurrency.mExchangeRate,
                 .mCurrency = *amountAndCurrency.mCurrency,
+                .mTaxCurrency = taxCurrency,
                 .mTransactionId = aCsvRow["transaction_id"].get<std::string>()});
         }
 
@@ -847,11 +860,13 @@ std::optional<Date> TradeRepublicParser::parseDate(std::string_view aValue) {
     auto view_month = aValue.substr(5, 2);
     auto view_day = aValue.substr(8, 2);
 
-    if (std::from_chars(view_year.data(), view_year.data() + view_year.size(), year).ec !=
-            std::errc{} ||
-        std::from_chars(view_month.data(), view_month.data() + view_month.size(), month).ec !=
-            std::errc{} ||
-        std::from_chars(view_day.data(), view_day.data() + view_day.size(), day).ec != std::errc{})
+    const auto parsePart = [](std::string_view aPart, int& aResult) {
+        const auto end = aPart.data() + aPart.size();
+        const auto [parsedEnd, error] = std::from_chars(aPart.data(), end, aResult);
+        return error == std::errc{} && parsedEnd == end;
+    };
+
+    if (!parsePart(view_year, year) || !parsePart(view_month, month) || !parsePart(view_day, day))
     {
         return std::nullopt;
     }
@@ -869,7 +884,13 @@ std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
 }
 
 std::optional<ExchangeRate> TradeRepublicParser::parseExchangeRate(std::string_view aValue) {
-    return parseScaledNumber<ExchangeRate, EXCHANGE_RATE_SCALE>(aValue);
+    const auto exchangeRate = parseScaledNumber<ExchangeRate, EXCHANGE_RATE_SCALE>(aValue);
+    if (!exchangeRate || *exchangeRate <= 0)
+    {
+        return std::nullopt;
+    }
+
+    return exchangeRate;
 }
 
 std::optional<Units> TradeRepublicParser::parseUnits(std::string_view aValue) {
@@ -942,6 +963,7 @@ std::optional<Money> TradeRepublicParser::parseFeePaid(std::string_view aValue) 
     return std::abs(*signedFee);
 }
 
+// TODO: Extend when more currencies are known
 Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
     if (aValue == "EUR")
         return Currency::EUR;
