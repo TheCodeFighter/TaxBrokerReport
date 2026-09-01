@@ -11,7 +11,7 @@ class CsvParser {
     virtual ~CsvParser() = default;
 
     [[nodiscard("Parsed broker data should not be ignored")]] virtual ParseResult
-    parse(const std::filesystem::path& csvPath) = 0;
+    parse(const std::filesystem::path& aCsvPath) = 0;
 };
 
 } // namespace taxbroker

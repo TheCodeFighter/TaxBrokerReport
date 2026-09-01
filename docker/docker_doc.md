@@ -17,10 +17,16 @@ Click **"Reopen in Container"** when prompted. The IDE will automatically map in
 
 The easiest way to work with this environment is using the pre-configured scripts in the `scripts/` directory. These scripts automatically handle the Docker Compose context and common flags.
 
-### 1. Build the Development Image and Compile Code
-This script builds the Docker development image (if changed) and compiles the C++ code using Clang+Ninja inside the container.
+### 1. Build the Backend (no image rebuild)
+By default, this script only compiles the C++ code using Clang+Ninja inside the existing dev container image.
 ```bash
 ./scripts/build.sh
+```
+
+### 2. Build the Development Image and Compile Code
+If you need to rebuild the dev image, pass `docker-build` and it will rebuild the image before compiling.
+```bash
+./scripts/build.sh docker-build
 ```
 If you want to build the highly-optimized production image instead, pass the `prod` parameter:
 ```bash

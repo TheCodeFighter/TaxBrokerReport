@@ -12,12 +12,14 @@ add_library(taxbroker_core STATIC
     processors/tax_processor.cpp
     utils/date_utils.cpp
     utils/logger.cpp
+    utils/numeric_util.cpp
     utils/string_utils.cpp
     utils/thread_pool.cpp
 )
 
 target_include_directories(taxbroker_core PUBLIC 
     ${CMAKE_SOURCE_DIR}/include
+    ${CSV_PARSER_INCLUDE_DIR}
 )
 
 target_link_libraries(taxbroker_core

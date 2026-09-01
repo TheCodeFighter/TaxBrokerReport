@@ -1,13 +1,33 @@
 #pragma once
 
-#include <string_view>
 #include "taxbroker/types.hpp"
 
-taxbroker::Money parseMoney4(std::string_view value);
+#include <cstdint>
+#include <optional>
+#include <string_view>
+#include <type_traits>
 
-taxbroker::Units parseUnits8(std::string_view value);
+taxbroker::Money parseMoney4(std::string_view aValue);
 
-taxbroker::CorpRatio parseCorpRatio8(std::string_view value);
+taxbroker::Units parseUnits8(std::string_view aValue);
 
-// To avoid unit64_t overflow when multiplying price and units
-taxbroker::Money multiplyMoneyUnits(taxbroker::Money price, taxbroker::Units units);
+taxbroker::CorpRatio parseCorpRatio8(std::string_view aValue);
+
+// Returns nullopt when the scaled result cannot fit in Money.
+std::optional<taxbroker::Money> multiplyMoneyUnits(taxbroker::Money aPrice,
+                                                   taxbroker::Units aUnits);
+
+namespace numeric_detail {
+
+std::optional<std::int64_t> parseScaledInt64(std::string_view aValue, std::int64_t aScale);
+
+} // namespace numeric_detail
+
+template <typename ScaledType, std::int64_t Scale>
+std::optional<ScaledType> parseScaledNumber(std::string_view aValue) {
+    static_assert(std::is_same_v<ScaledType, std::int64_t>,
+                  "Fixed-point storage types must currently use std::int64_t");
+    static_assert(Scale > 0, "Fixed-point scale must be positive");
+
+    return numeric_detail::parseScaledInt64(aValue, Scale);
+}

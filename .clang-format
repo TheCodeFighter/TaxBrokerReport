@@ -3,7 +3,13 @@ IndentWidth: 4
 TabWidth: 4
 UseTab: Never
 ColumnLimit: 100
-BreakBeforeBraces: Attach
+AllowAllArgumentsOnNextLine: false
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterControlStatement: true
+  BeforeElse: true
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortEnumsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: Never

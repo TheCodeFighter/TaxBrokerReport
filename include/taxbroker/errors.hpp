@@ -6,7 +6,9 @@
 namespace taxbroker {
 
 enum class WarningCode {
+    UnknownRowType,
     UnsupportedRowType,
+    UnsupportedAssetClass,
     MissingField,
     InvalidValue,
     ParseError

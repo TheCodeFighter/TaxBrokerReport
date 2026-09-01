@@ -1,12 +1,12 @@
 #pragma once
 
-#include "parsers/csv_parser.hpp"
+#include "csv_parser.hpp"
 
 namespace taxbroker::ibkr {
 
 class IbkrParser final : public CsvParser {
   public:
-    ParseResult parse(const std::filesystem::path& csvPath) override;
+    ParseResult parse(const std::filesystem::path& aCsvPath) override;
 
   private:
     TradeTransaction parseTradeRow(...);
