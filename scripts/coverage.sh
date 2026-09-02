@@ -51,6 +51,14 @@ coverage_build_dir=/workspace/build/coverage
 coverage_report_dir=/workspace/coverage
 lcov_options="--quiet --rc lcov_branch_coverage=1"
 
+# CMake's GoogleTest discovery executes the rebuilt test binary during the build. Clear counters
+# from the previous binary first so libgcov never sees stale checksums during that discovery run.
+if [ -d "$coverage_build_dir" ]; then
+    lcov $lcov_options \
+        --zerocounters \
+        --directory "$coverage_build_dir"
+fi
+
 cmake \
     -S /workspace \
     -B "$coverage_build_dir" \
