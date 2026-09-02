@@ -17,6 +17,25 @@ Run `scripts/format.sh` before opening a pull request. To make Git reject unform
 
 The `Format Check` GitHub Action also runs `scripts/format.sh --check` on every PR to `main`, so unformatted code will fail CI and should be fixed before merge.
 
+### Test coverage
+
+Run the test suite with coverage instrumentation inside the development container:
+
+```sh
+scripts/coverage.sh
+```
+
+The script keeps its instrumented build separate from the normal development build and writes:
+
+- an HTML report to `coverage/html/index.html`;
+- the machine-readable LCOV report to `coverage/lcov.info`;
+- a short summary and exact line-coverage metrics to `coverage/summary.txt` and
+  `coverage/metrics.env`.
+
+The `Test Coverage` GitHub Action compares every pull request with its exact base commit. Its job
+summary shows both results and provides the HTML report as an artifact. A line-coverage decrease
+creates or updates a prominent pull-request comment, but does not currently block merging.
+
 ## Logging
 
 This project uses spdlog with a lightweight wrapper for structured, thread-safe, and async-capable logging.
