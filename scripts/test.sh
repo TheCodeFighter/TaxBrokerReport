@@ -44,8 +44,10 @@ ensure_build_outputs_executable
 
 if [[ -n "$test_filter" ]]; then
     echo "==> Running tests matching: $test_filter"
-    compose run --rm dev ctest --test-dir /workspace/build --output-on-failure -R "$test_filter"
+    compose run --rm dev \
+        ctest --test-dir /workspace/build --output-on-failure --no-tests=error -R "$test_filter"
 else
     echo "==> Running all tests..."
-    compose run --rm dev ctest --test-dir /workspace/build --output-on-failure
+    compose run --rm dev \
+        ctest --test-dir /workspace/build --output-on-failure --no-tests=error
 fi

@@ -1,4 +1,4 @@
-name: Build PR Images
+name: Build and Test
 
 on:
   pull_request:
@@ -9,18 +9,30 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  test:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Required tests
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        mode:
-          - dev
-          - prod
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build ${{ matrix.mode }} image
-        run: scripts/build.sh ${{ matrix.mode }}
+      - name: Build development image and test binaries
+        run: scripts/build.sh docker-build
+
+      - name: Run all tests
+        run: scripts/test.sh
+
+  production-image:
+    name: Production image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: scripts/build.sh prod

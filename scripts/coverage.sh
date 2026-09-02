@@ -88,7 +88,7 @@ if ! lcov $lcov_options \
 fi
 
 echo "==> Running all tests with coverage instrumentation..."
-ctest --test-dir "$coverage_build_dir" --output-on-failure
+ctest --test-dir "$coverage_build_dir" --output-on-failure --no-tests=error
 
 lcov $lcov_options \
     --capture \
