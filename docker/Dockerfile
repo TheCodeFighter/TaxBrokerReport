@@ -8,6 +8,7 @@ RUN apk add --no-cache \
     clang \
     clang-extra-tools \
     compiler-rt \
+    g++ \
     libc++-dev \
     cmake \
     ninja \

@@ -1,0 +1,150 @@
+name: Test Coverage
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout pull-request commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: current
+
+      - name: Checkout base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+
+      - name: Measure pull-request coverage
+        working-directory: current
+        run: scripts/coverage.sh
+
+      - name: Measure base coverage
+        working-directory: baseline
+        run: |
+          cp ../current/scripts/coverage.sh scripts/coverage.sh
+          chmod +x scripts/coverage.sh
+          TBR_COVERAGE_SKIP_IMAGE_BUILD=1 scripts/coverage.sh
+
+      - name: Compare coverage
+        id: compare
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source current/coverage/metrics.env
+          current_lines_hit="$lines_hit"
+          current_lines_found="$lines_found"
+          current_line_rate="$line_rate"
+
+          source baseline/coverage/metrics.env
+          baseline_lines_hit="$lines_hit"
+          baseline_lines_found="$lines_found"
+          baseline_line_rate="$line_rate"
+
+          delta="$(awk \
+            -v current="$current_line_rate" \
+            -v baseline="$baseline_line_rate" \
+            'BEGIN { printf "%+.4f", current - baseline }')"
+
+          dropped=false
+          result="maintained or improved"
+          if ((current_lines_hit * baseline_lines_found < baseline_lines_hit * current_lines_found)); then
+            dropped=true
+            result="decreased"
+          fi
+
+          report_file="current/coverage/pr-summary.md"
+          {
+            echo '<!-- taxbroker-coverage-report -->'
+            echo '## Test coverage'
+            echo
+            echo '| Revision | Covered lines | Line coverage |'
+            echo '| --- | ---: | ---: |'
+            echo "| Base | ${baseline_lines_hit} / ${baseline_lines_found} | ${baseline_line_rate}% |"
+            echo "| Pull request | ${current_lines_hit} / ${current_lines_found} | ${current_line_rate}% |"
+            echo "| Change |  | ${delta} percentage points |"
+            echo
+
+            if [[ "$dropped" == "true" ]]; then
+              echo '> [!WARNING]'
+              echo "> **Coverage decreased compared with the base commit. Please add or improve tests before merging this pull request.**"
+            else
+              echo "Coverage **${result}** compared with the pull request's base commit."
+            fi
+          } >"$report_file"
+
+          cat "$report_file" >>"$GITHUB_STEP_SUMMARY"
+          echo "dropped=$dropped" >>"$GITHUB_OUTPUT"
+
+          if [[ "$dropped" == "true" ]]; then
+            echo "::warning title=Line coverage decreased::Coverage changed by ${delta} percentage points. Please add or improve tests before merging."
+          fi
+
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage-html
+          path: |
+            current/coverage/html
+            current/coverage/lcov.info
+            current/coverage/summary.txt
+            current/coverage/metrics.env
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Update coverage warning comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        uses: actions/github-script@v8
+        env:
+          COVERAGE_DROPPED: ${{ steps.compare.outputs.dropped }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- taxbroker-coverage-report -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number, per_page: 100 }
+            );
+            const existing = comments.find(
+              comment => comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (process.env.COVERAGE_DROPPED === 'true') {
+              const body = fs.readFileSync('current/coverage/pr-summary.md', 'utf8');
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existing.id,
+                  body
+                });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              }
+            } else if (existing) {
+              await github.rest.issues.deleteComment({
+                owner,
+                repo,
+                comment_id: existing.id
+              });
+            }
