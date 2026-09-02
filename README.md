@@ -17,6 +17,12 @@ Run `scripts/format.sh` before opening a pull request. To make Git reject unform
 
 The `Format Check` GitHub Action also runs `scripts/format.sh --check` on every PR to `main`, so unformatted code will fail CI and should be fixed before merge.
 
+The `Build and Test` GitHub Action builds the C++ backend with Clang and runs the complete test
+suite on every pull request to `main`. In the GitHub ruleset or branch-protection rule for `main`,
+enable **Require status checks to pass before merging** and select both **Required tests** and
+**Production image**. These repository settings prevent merging while either image build or the
+test suite is failing or pending.
+
 ### Test coverage
 
 Run the test suite with coverage instrumentation inside the development container:
