@@ -762,7 +762,7 @@ TEST(TradeRepublicParserTest, ReturnsAStructuredErrorForAnUnexpectedCsvHeader) {
                              std::string_view{"\"category\""}.size(),
                              "\"unexpected_category\"");
 
-    const SyntheticCsvRow row;
+    const SyntheticCsvRow row{};
     const TemporaryCsvFile csvFile{{row}, unexpectedHeader};
     tr::TradeRepublicParser parser;
     const ParseResult parseResult = parser.parse(csvFile.path());

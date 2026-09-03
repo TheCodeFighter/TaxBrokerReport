@@ -18,14 +18,26 @@ Run `scripts/format.sh` before opening a pull request. To make Git reject unform
 The `Format Check` GitHub Action runs `scripts/format.sh --check` on every PR to `main`, so
 unformatted code will fail CI and should be fixed before merge.
 
-The `Build and Test` GitHub Action builds the C++ backend with Clang and runs the complete test
-suite on every pull request to `main`. It repeats the development build, tests, and production-image
-build after a merge or any other push to `main`. In the GitHub ruleset or branch-protection rule for
-`main`, enable **Require status checks to pass before merging** and select both **Required tests**
-and **Production image**. Also select **Required issue reference**, which requires the pull
-request's `Related issue` section to contain an issue reference or exactly `N/A`. These repository
-settings prevent merging while required metadata, either image build, or the test suite is failing
-or pending.
+Separate GitHub Actions build the development and production images, run tests, run Valgrind, and
+run Cppcheck on every pull request to `main` and after changes reach `main`. Keeping them separate
+makes the failing category immediately visible. In the GitHub ruleset or branch-protection rule for
+`main`, enable **Require status checks to pass before merging** and select **Development build**,
+**Production image**, **Required tests**, **Valgrind**, and **Cppcheck**. Also select **Required
+issue reference**, which requires the pull request's `Related issue` section to contain an issue
+reference or exactly `N/A`.
+
+### Static analysis
+
+Run Cppcheck against all active project-owned C++ source and header files:
+
+```sh
+scripts/cppcheck.sh
+```
+
+The analysis uses CMake's compile database to cover `src/`, `tests/`, `tools/`, and all headers they
+include. It also checks every file in `include/` directly so currently unreferenced headers are not
+missed. Third-party dependencies and the deprecated `legacy-QT-GUI/` tree are intentionally
+excluded. Cppcheck findings fail its dedicated pull-request and `main` workflow.
 
 ### Memory checks
 
@@ -41,8 +53,8 @@ uses synthetic test data. Valgrind reports invalid memory access and fails on de
 memory leaks. Each test executable is started once to avoid Valgrind startup overhead for every
 test discovered by CTest.
 
-The required `Build and Test` workflow runs the same memory checks for pull requests and after
-changes reach `main`.
+The dedicated `Valgrind` workflow runs the same memory checks for pull requests and after changes
+reach `main`.
 
 ### Test coverage
 

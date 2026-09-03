@@ -1,0 +1,29 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Required tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build development image and test binaries
+        run: scripts/build.sh docker-build
+
+      - name: Run all tests
+        run: scripts/test.sh

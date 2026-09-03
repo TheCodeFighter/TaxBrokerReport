@@ -171,7 +171,7 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
         csv::CSVReader reader(aCsvPath.string(), format);
 
         std::size_t rowIndex = 1;
-        for (csv::CSVRow& row : reader)
+        for (const csv::CSVRow& row : reader)
         {
             ++rowIndex;
             const RowMeta rowMeta = detectRowType(row);
