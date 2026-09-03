@@ -5,8 +5,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$script_dir/lib.sh"
 
-bash "$script_dir/restore_exec_bits.sh"
-
 ensure_build_tree_writable
 
 if [[ ! -f "$repo_root/build/build.ninja" ]]; then
