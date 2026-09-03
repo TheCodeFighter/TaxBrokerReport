@@ -29,17 +29,17 @@ or pending.
 
 ### Memory checks
 
-Run the test binaries under Valgrind inside the development container:
+Run every C++ executable under Valgrind inside the development container:
 
 ```sh
 scripts/valgrind.sh
 ```
 
-The script refreshes the normal Debug build and runs the unit-test and integration-test executables
-once each. It reports invalid memory access and fails on definite or indirect memory leaks. Running
-each executable directly avoids starting Valgrind separately for every test discovered by CTest.
-Optional developer tools are not included; their core parsing and JSON logic is exercised through
-the test binaries.
+The script refreshes the normal Debug build and runs the unit tests, integration tests, backend
+server, and Trade Republic dump tool. The dump tool is built in its isolated debug-tools build and
+uses synthetic test data. Valgrind reports invalid memory access and fails on definite or indirect
+memory leaks. Each test executable is started once to avoid Valgrind startup overhead for every
+test discovered by CTest.
 
 The required `Build and Test` workflow runs the same memory checks for pull requests and after
 changes reach `main`.
