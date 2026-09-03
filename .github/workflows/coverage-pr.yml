@@ -70,7 +70,11 @@ jobs:
           report_file="current/coverage/pr-summary.md"
           {
             echo '<!-- taxbroker-coverage-report -->'
-            echo '## Test coverage'
+            if [[ "$dropped" == "true" ]]; then
+              echo '## ⚠️ Test coverage decreased'
+            else
+              echo '## Test coverage'
+            fi
             echo
             echo '| Revision | Covered lines | Line coverage |'
             echo '| --- | ---: | ---: |'
@@ -80,8 +84,8 @@ jobs:
             echo
 
             if [[ "$dropped" == "true" ]]; then
-              echo '> [!WARNING]'
-              echo "> **Coverage decreased compared with the base commit. Please add or improve tests before merging this pull request.**"
+              echo '> [!CAUTION]'
+              echo '> **This pull request reduces line coverage. Please add or improve tests before merging.**'
             else
               echo "Coverage **${result}** compared with the pull request's base commit."
             fi
@@ -107,12 +111,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Update coverage warning comment
+      - name: Update coverage comment
         if: github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
         uses: actions/github-script@v8
-        env:
-          COVERAGE_DROPPED: ${{ steps.compare.outputs.dropped }}
         with:
           script: |
             const fs = require('fs');
@@ -127,24 +129,15 @@ jobs:
             const existing = comments.find(
               comment => comment.user?.type === 'Bot' && comment.body?.includes(marker)
             );
+            const body = fs.readFileSync('current/coverage/pr-summary.md', 'utf8');
 
-            if (process.env.COVERAGE_DROPPED === 'true') {
-              const body = fs.readFileSync('current/coverage/pr-summary.md', 'utf8');
-
-              if (existing) {
-                await github.rest.issues.updateComment({
-                  owner,
-                  repo,
-                  comment_id: existing.id,
-                  body
-                });
-              } else {
-                await github.rest.issues.createComment({ owner, repo, issue_number, body });
-              }
-            } else if (existing) {
-              await github.rest.issues.deleteComment({
+            if (existing) {
+              await github.rest.issues.updateComment({
                 owner,
                 repo,
-                comment_id: existing.id
+                comment_id: existing.id,
+                body
               });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }

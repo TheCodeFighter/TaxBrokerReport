@@ -27,6 +27,23 @@ request's `Related issue` section to contain an issue reference or exactly `N/A`
 settings prevent merging while required metadata, either image build, or the test suite is failing
 or pending.
 
+### Memory checks
+
+Run the test binaries under Valgrind inside the development container:
+
+```sh
+scripts/valgrind.sh
+```
+
+The script refreshes the normal Debug build and runs the unit-test and integration-test executables
+once each. It reports invalid memory access and fails on definite or indirect memory leaks. Running
+each executable directly avoids starting Valgrind separately for every test discovered by CTest.
+Optional developer tools are not included; their core parsing and JSON logic is exercised through
+the test binaries.
+
+The required `Build and Test` workflow runs the same memory checks for pull requests and after
+changes reach `main`.
+
 ### Test coverage
 
 Run the test suite with coverage instrumentation inside the development container:
@@ -43,8 +60,9 @@ The script keeps its instrumented build separate from the normal development bui
   `coverage/metrics.env`.
 
 The `Test Coverage` GitHub Action compares every pull request with its exact base commit. Its job
-summary shows both results and provides the HTML report as an artifact. A line-coverage decrease
-creates or updates a prominent pull-request comment, but does not currently block merging.
+summary shows both results and provides the HTML report as an artifact. It creates or updates one
+pull-request comment with the current summary. A decrease is highlighted prominently but does not
+currently block merging.
 
 ## Logging
 

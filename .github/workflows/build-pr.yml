@@ -28,6 +28,9 @@ jobs:
       - name: Run all tests
         run: scripts/test.sh
 
+      - name: Run Valgrind memory checks
+        run: scripts/valgrind.sh
+
   production-image:
     name: Production image
     runs-on: ubuntu-latest
