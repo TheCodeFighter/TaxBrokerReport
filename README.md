@@ -15,15 +15,17 @@
 
 Run `scripts/format.sh` before opening a pull request. To make Git reject unformatted commits and pushes locally, run `scripts/install_hooks.sh` once; it wires the repo-local hooks in `.githooks/` to `scripts/format.sh --check`.
 
-The `Format Check` GitHub Action also runs `scripts/format.sh --check` on every PR to `main`, so unformatted code will fail CI and should be fixed before merge.
+The `Format Check` GitHub Action runs `scripts/format.sh --check` on every PR to `main`, so
+unformatted code will fail CI and should be fixed before merge.
 
 The `Build and Test` GitHub Action builds the C++ backend with Clang and runs the complete test
-suite on every pull request to `main`. In the GitHub ruleset or branch-protection rule for `main`,
-enable **Require status checks to pass before merging** and select both **Required tests** and
-**Production image**. Also select **Required issue reference**, which requires the pull request's
-`Related issue` section to contain an issue reference or exactly `N/A`. These repository settings
-prevent merging while required metadata, either image build, or the test suite is failing or
-pending.
+suite on every pull request to `main`. It repeats the development build, tests, and production-image
+build after a merge or any other push to `main`. In the GitHub ruleset or branch-protection rule for
+`main`, enable **Require status checks to pass before merging** and select both **Required tests**
+and **Production image**. Also select **Required issue reference**, which requires the pull
+request's `Related issue` section to contain an issue reference or exactly `N/A`. These repository
+settings prevent merging while required metadata, either image build, or the test suite is failing
+or pending.
 
 ### Test coverage
 
