@@ -1,0 +1,25 @@
+name: Cppcheck
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  cppcheck:
+    name: Cppcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Cppcheck static analysis
+        run: scripts/cppcheck.sh

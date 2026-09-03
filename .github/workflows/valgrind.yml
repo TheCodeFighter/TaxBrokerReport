@@ -1,4 +1,4 @@
-name: Build
+name: Valgrind
 
 on:
   push:
@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 jobs:
-  development-build:
-    name: Development build
+  valgrind:
+    name: Valgrind
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -24,14 +24,5 @@ jobs:
       - name: Build development image and C++ targets
         run: scripts/build.sh docker-build
 
-  production-image:
-    name: Production image
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build production image
-        run: scripts/build.sh prod
+      - name: Run Valgrind memory checks
+        run: scripts/valgrind.sh
