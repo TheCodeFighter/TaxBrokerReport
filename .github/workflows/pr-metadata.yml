@@ -1,0 +1,60 @@
+name: Pull Request Metadata
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  issue-reference:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Required issue reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate related issue section
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const body = context.payload.pull_request.body ?? '';
+            const headingPattern = /^##[ \t]+Related issue[ \t]*\r?$/im;
+            const heading = headingPattern.exec(body);
+
+            if (!heading) {
+              core.setFailed(
+                'Add a "## Related issue" section containing an issue reference or exactly "N/A".'
+              );
+              return;
+            }
+
+            const sectionStart = heading.index + heading[0].length;
+            const remainingBody = body.slice(sectionStart);
+            const nextHeading = remainingBody.search(/^##[ \t]+/m);
+            const rawSection = nextHeading === -1
+              ? remainingBody
+              : remainingBody.slice(0, nextHeading);
+            const section = rawSection.replace(/<!--[\s\S]*?-->/g, '').trim();
+
+            const isNotApplicable = section.toUpperCase() === 'N/A';
+            const hasShortIssueReference = /(?:^|[^\w])(?:[\w.-]+\/[\w.-]+)?#\d+\b/.test(section);
+            const hasIssueUrl = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+\b/i.test(section);
+
+            if (!isNotApplicable && !hasShortIssueReference && !hasIssueUrl) {
+              core.setFailed(
+                'Fill "Related issue" with an issue reference such as "Closes #123", ' +
+                'a GitHub issue URL, or exactly "N/A".'
+              );
+              return;
+            }
+
+            core.info(`Valid related issue value: ${section}`);
