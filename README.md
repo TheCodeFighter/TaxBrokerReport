@@ -20,8 +20,10 @@ The `Format Check` GitHub Action also runs `scripts/format.sh --check` on every 
 The `Build and Test` GitHub Action builds the C++ backend with Clang and runs the complete test
 suite on every pull request to `main`. In the GitHub ruleset or branch-protection rule for `main`,
 enable **Require status checks to pass before merging** and select both **Required tests** and
-**Production image**. These repository settings prevent merging while either image build or the
-test suite is failing or pending.
+**Production image**. Also select **Required issue reference**, which requires the pull request's
+`Related issue` section to contain an issue reference or exactly `N/A`. These repository settings
+prevent merging while required metadata, either image build, or the test suite is failing or
+pending.
 
 ### Test coverage
 
