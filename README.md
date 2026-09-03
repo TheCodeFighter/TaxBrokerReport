@@ -46,6 +46,17 @@ creates or updates a prominent pull-request comment, but does not currently bloc
 
 This project uses spdlog with a lightweight wrapper for structured, thread-safe, and async-capable logging.
 
+Parser warnings and errors intended for the local browser UI are not extracted from log text. Each
+parse returns structured diagnostics, and the API layer can serialize them using the versioned JSON
+contract documented in [docs/architecture.md](docs/architecture.md). To inspect the current Trade
+Republic parser output and diagnostics locally, run:
+
+```sh
+scripts/dump_tr_parse.sh
+```
+
+Generated debug files are written below `runtime/`, which is ignored by Git.
+
 ## Initialization model
 
 ### Important

@@ -2,6 +2,10 @@
 .gitignore
 build/
 build_clang/
+coverage/
+logs/
+runtime/
+tmp/
 legacy-QT-GUI/build/
 legacy-QT-GUI/tmp/
 **/CMakeCache.txt

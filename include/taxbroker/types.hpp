@@ -1,6 +1,6 @@
 #pragma once
 
-#include "taxbroker/errors.hpp"
+#include "taxbroker/diagnostics.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -10,6 +10,12 @@
 #include <vector>
 
 namespace taxbroker {
+
+enum class Broker {
+    Unknown,
+    TradeRepublic,
+    InteractiveBrokers,
+};
 
 /*
     Fixed-point monetary representation with 4 decimal precision.
@@ -205,10 +211,12 @@ struct BrokerStatement {
     std::vector<PrivateMarketEvent> mPrivateMarketEvents;
 };
 
-// Canonical parsed broker data with warnings used throughout the processing pipeline.
+// Broker data with structured diagnostics used throughout the processing
+// pipeline and by the frontend API.
 struct ParseResult {
+    Broker mBroker{Broker::Unknown};
     BrokerStatement mStatement;
-    std::vector<ParseWarning> mWarnings;
+    std::vector<ParseDiagnostic> mDiagnostics;
 };
 
 } // namespace taxbroker

@@ -4,4 +4,5 @@ add_executable(taxbroker_tr_dump
 
 target_link_libraries(taxbroker_tr_dump PRIVATE
     taxbroker_core
+    taxbroker_api
 )

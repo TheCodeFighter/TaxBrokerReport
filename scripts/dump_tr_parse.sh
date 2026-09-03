@@ -7,14 +7,18 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF'
-Usage: dump_tr_parse.sh [csv-path] [output-path]
+Usage: dump_tr_parse.sh [csv-path] [parsed-output-path] [diagnostics-output-path]
 
-    csv-path       Path relative to the repository (default: tmp/TransactionExport.csv)
-    output-path    Path relative to the repository (default: tmp/tr_parsed_debug.txt)
+    csv-path                Path relative to the repository
+                            (default: tmp/TransactionExport.csv)
+    parsed-output-path      Human-readable parsed-data output
+                            (default: runtime/debug/tr_parsed_debug.txt)
+    diagnostics-output-path Versioned JSON diagnostics output
+                            (default: runtime/diagnostics/tr_parse_diagnostics.json)
 EOF
 }
 
-if [[ $# -gt 2 ]]; then
+if [[ $# -gt 3 ]]; then
     echo "Too many arguments." >&2
     usage >&2
     exit 1
@@ -26,9 +30,10 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 csv_path="${1:-tmp/TransactionExport.csv}"
-output_path="${2:-tmp/tr_parsed_debug.txt}"
+output_path="${2:-runtime/debug/tr_parsed_debug.txt}"
+diagnostics_output_path="${3:-runtime/diagnostics/tr_parse_diagnostics.json}"
 
-if [[ "$csv_path" == /* || "$output_path" == /* ]]; then
+if [[ "$csv_path" == /* || "$output_path" == /* || "$diagnostics_output_path" == /* ]]; then
     echo "Paths must be relative to the repository." >&2
     exit 1
 fi
@@ -61,4 +66,5 @@ echo "==> Writing parsed C++ data to $output_path..."
 compose run --rm dev \
     "$debug_build_dir/tools/taxbroker_tr_dump" \
     "/workspace/$csv_path" \
-    "/workspace/$output_path"
+    "/workspace/$output_path" \
+    "/workspace/$diagnostics_output_path"

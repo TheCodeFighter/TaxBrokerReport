@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <iterator>
 #include <limits>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -66,20 +68,6 @@ constexpr auto kTransactionTypeMappings = std::array{
     TransactionTypeMapping{"CREDIT", "CASH", taxbroker::RowType::Ignored},
 };
 
-void addWarning(taxbroker::ParseResult& aParseResult,
-                const std::filesystem::path& aSourceFile,
-                std::size_t aRowIndex,
-                taxbroker::WarningCode aWarningCode,
-                std::string aMessage) {
-    LOG_WARNING("CSV row {}: {}", aRowIndex, aMessage);
-    aParseResult.mWarnings.emplace_back(taxbroker::ParseWarning{
-        .mCode = aWarningCode,
-        .mSourceFile = aSourceFile.string(),
-        .mRowIndex = aRowIndex,
-        .mMessage = std::move(aMessage),
-    });
-}
-
 template <typename InstrumentT>
 InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
                                    const std::string& aIsin,
@@ -109,82 +97,172 @@ std::string getAmountCurrencyValue(const csv::CSVRow& aCsvRow) {
 
 namespace taxbroker::tr {
 
-ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
-    csv::CSVFormat format;
-    format.delimiter(delimiter);
-    csv::CSVReader reader(aCsvPath.string(), format);
+struct TradeRepublicParser::RowContext {
+    ParseResult& mParseResult;
+    std::string_view mSourceFile;
+    std::size_t mRowIndex;
+    std::string_view mTransactionId;
 
-    ParseResult parsedResult;
+    void add(DiagnosticSeverity aSeverity,
+             DiagnosticCode aCode,
+             std::string aMessage,
+             std::optional<std::string> aField = std::nullopt) const {
+        const std::string_view transactionId =
+            mTransactionId.empty() ? "<unavailable>" : mTransactionId;
 
-    std::size_t rowIndex = 1;
-    for (csv::CSVRow& row : reader)
-    {
-        ++rowIndex;
-        const RowMeta rowMeta = detectRowType(row);
-
-        switch (rowMeta.mRowType)
+        if (aSeverity == DiagnosticSeverity::Warning)
         {
-        case RowType::Trade: {
-            const bool wasParsed = parseTradeRow(row,
-                                                 parsedResult.mStatement.mTradeInstruments,
-                                                 rowMeta.mParsedValues);
-            const auto assetClass = parseAssetClass(rowMeta.mParsedValues.mAssetClass);
-            if (wasParsed &&
-                (assetClass == AssetClass::PrivateFund || assetClass == AssetClass::Crypto))
-            {
-                addWarning(parsedResult,
-                           aCsvPath,
-                           rowIndex,
-                           WarningCode::UnsupportedAssetClass,
-                           "Trade Republic asset class '" + rowMeta.mParsedValues.mAssetClass +
-                               "' is preserved, but its tax treatment is not supported yet "
-                               "(transaction ID '" +
-                               rowMeta.mParsedValues.mTransactionId + "').");
-            }
+            LOG_WARNING("CSV diagnostic in {} row {} (transaction ID '{}'): {}",
+                        mSourceFile,
+                        mRowIndex,
+                        transactionId,
+                        aMessage);
+        }
+        else
+        {
+            LOG_ERROR("CSV diagnostic in {} row {} (transaction ID '{}'): {}",
+                      mSourceFile,
+                      mRowIndex,
+                      transactionId,
+                      aMessage);
+        }
 
-            break;
+        std::optional<std::string> storedTransactionId;
+        if (!mTransactionId.empty())
+        {
+            storedTransactionId.emplace(mTransactionId);
         }
-        case RowType::Dividend:
-            parseDividendRow(row, parsedResult.mStatement.mDividendInstruments);
-            break;
-        case RowType::Interest: {
-            const auto interestType = detectInterestType(rowMeta.mParsedValues.mType);
-            parseInterestRow(row, parsedResult.mStatement.mInterestInstruments, interestType);
-            break;
+
+        mParseResult.mDiagnostics.emplace_back(ParseDiagnostic{
+            .mSeverity = aSeverity,
+            .mCode = aCode,
+            .mSourceFile = std::string{mSourceFile},
+            .mRowIndex = mRowIndex,
+            .mTransactionId = std::move(storedTransactionId),
+            .mField = std::move(aField),
+            .mMessage = std::move(aMessage),
+        });
+    }
+
+    void invalidField(std::string_view aField,
+                      std::string_view aValue,
+                      std::string_view aRowKind) const {
+        const bool isMissing = aValue.empty();
+        add(DiagnosticSeverity::Error,
+            isMissing ? DiagnosticCode::MissingField : DiagnosticCode::InvalidValue,
+            isMissing ? "Required field '" + std::string{aField} + "' is missing in " +
+                            std::string{aRowKind} + "; the row was skipped."
+                      : "Field '" + std::string{aField} + "' has an invalid value in " +
+                            std::string{aRowKind} + "; the row was skipped.",
+            std::string{aField});
+    }
+};
+
+ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath) {
+    ParseResult parsedResult{
+        .mBroker = Broker::TradeRepublic,
+    };
+    const auto sourceFile = aCsvPath.filename().string();
+
+    try
+    {
+        csv::CSVFormat format;
+        format.delimiter(delimiter);
+        csv::CSVReader reader(aCsvPath.string(), format);
+
+        std::size_t rowIndex = 1;
+        for (csv::CSVRow& row : reader)
+        {
+            ++rowIndex;
+            const RowMeta rowMeta = detectRowType(row);
+            const RowContext context{
+                .mParseResult = parsedResult,
+                .mSourceFile = sourceFile,
+                .mRowIndex = rowIndex,
+                .mTransactionId = rowMeta.mParsedValues.mTransactionId,
+            };
+
+            switch (rowMeta.mRowType)
+            {
+            case RowType::Trade: {
+                const bool wasParsed = parseTradeRow(row,
+                                                     parsedResult.mStatement.mTradeInstruments,
+                                                     rowMeta.mParsedValues,
+                                                     context);
+                const auto assetClass = parseAssetClass(rowMeta.mParsedValues.mAssetClass);
+                if (wasParsed &&
+                    (assetClass == AssetClass::PrivateFund || assetClass == AssetClass::Crypto))
+                {
+                    context.add(DiagnosticSeverity::Warning,
+                                DiagnosticCode::UnsupportedAssetClass,
+                                "Asset class '" + rowMeta.mParsedValues.mAssetClass +
+                                    "' was preserved, but its tax treatment is not supported yet.",
+                                "asset_class");
+                }
+
+                break;
+            }
+            case RowType::Dividend:
+                parseDividendRow(row, parsedResult.mStatement.mDividendInstruments, context);
+                break;
+            case RowType::Interest: {
+                const auto interestType = detectInterestType(rowMeta.mParsedValues.mType);
+                parseInterestRow(row,
+                                 parsedResult.mStatement.mInterestInstruments,
+                                 interestType,
+                                 context);
+                break;
+            }
+            case RowType::CorporateAction:
+                parseCorporateActionRow(row, parsedResult.mStatement.mTradeInstruments, context);
+                break;
+            case RowType::Benefit:
+                parseBenefitRow(row,
+                                parsedResult.mStatement.mBenefitEvents,
+                                rowMeta.mParsedValues,
+                                context);
+                break;
+            case RowType::PrivateMarket:
+                parsePrivateMarketRow(row,
+                                      parsedResult.mStatement.mPrivateMarketEvents,
+                                      rowMeta.mParsedValues,
+                                      context);
+                break;
+            case RowType::Ignored:
+                break;
+            case RowType::Unsupported:
+                context.add(DiagnosticSeverity::Error,
+                            DiagnosticCode::UnsupportedRowType,
+                            "Transaction type '" + rowMeta.mParsedValues.mType + "' in category '" +
+                                rowMeta.mParsedValues.mCategory +
+                                "' is recognized but not supported; the row was skipped.",
+                            "type");
+                break;
+            case RowType::Unknown:
+                context.add(DiagnosticSeverity::Error,
+                            DiagnosticCode::UnknownRowType,
+                            "Transaction type '" + rowMeta.mParsedValues.mType + "' in category '" +
+                                rowMeta.mParsedValues.mCategory +
+                                "' is unknown; the row was skipped.",
+                            "type");
+                break;
+            }
         }
-        case RowType::CorporateAction:
-            parseCorporateActionRow(row, parsedResult.mStatement.mTradeInstruments);
-            break;
-        case RowType::Benefit:
-            parseBenefitRow(row, parsedResult.mStatement.mBenefitEvents, rowMeta.mParsedValues);
-            break;
-        case RowType::PrivateMarket:
-            parsePrivateMarketRow(row,
-                                  parsedResult.mStatement.mPrivateMarketEvents,
-                                  rowMeta.mParsedValues);
-            break;
-        case RowType::Ignored:
-            break;
-        case RowType::Unsupported:
-            addWarning(parsedResult,
-                       aCsvPath,
-                       rowIndex,
-                       WarningCode::UnsupportedRowType,
-                       "Trade Republic transaction type '" + rowMeta.mParsedValues.mType +
-                           "' in category '" + rowMeta.mParsedValues.mCategory +
-                           "' is recognized but not supported yet (transaction ID '" +
-                           rowMeta.mParsedValues.mTransactionId + "').");
-            break;
-        case RowType::Unknown:
-            addWarning(parsedResult,
-                       aCsvPath,
-                       rowIndex,
-                       WarningCode::UnknownRowType,
-                       "Unknown Trade Republic transaction type '" + rowMeta.mParsedValues.mType +
-                           "' in category '" + rowMeta.mParsedValues.mCategory +
-                           "' (transaction ID '" + rowMeta.mParsedValues.mTransactionId + "').");
-            break;
-        }
+    } catch (const std::runtime_error& exception)
+    {
+        LOG_ERROR("Failed to parse Trade Republic CSV '{}': {}",
+                  aCsvPath.string(),
+                  exception.what());
+        // A file-level failure may happen after some rows were yielded. Never return a statement
+        // that could be mistaken for a complete import.
+        parsedResult.mStatement = {};
+        parsedResult.mDiagnostics.emplace_back(ParseDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = DiagnosticCode::ParseError,
+            .mSourceFile = sourceFile,
+            .mMessage = "The CSV file could not be opened or did not match the expected Trade "
+                        "Republic format.",
+        });
     }
 
     return parsedResult;
@@ -239,26 +317,26 @@ InterestType TradeRepublicParser::detectInterestType(std::string_view aType) con
 
 bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
                                             const std::string& aIsin,
-                                            const std::string& aName) {
+                                            const std::string& aName,
+                                            const RowContext& aRowContext) {
     if (aIsin.empty() && aName.empty())
     {
-        LOG_WARNING("Missing ISIN and name values for {} row. Skipping row.", aContext);
+        aRowContext.add(DiagnosticSeverity::Error,
+                        DiagnosticCode::MissingField,
+                        "Required fields 'symbol' and 'name' are missing in " +
+                            std::string{aContext} + "; the row was skipped.");
         return false;
     }
 
-    auto logMainFail = [&](std::string_view aFieldName) {
-        LOG_WARNING("Failed to parse {} row: {} is empty. Skipping row.", aContext, aFieldName);
-    };
-
     if (aIsin.empty())
     {
-        logMainFail("ISIN");
+        aRowContext.invalidField("symbol", aIsin, aContext);
         return false;
     }
 
     if (aName.empty())
     {
-        logMainFail("name");
+        aRowContext.invalidField("name", aName, aContext);
         return false;
     }
 
@@ -313,13 +391,14 @@ TradeRepublicParser::pickAmountField(const csv::CSVRow& aRow) {
 
 bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
                                         std::vector<TradeInstrument>& aInstruments,
-                                        const RowParsedValues& aParsedValues) {
+                                        const RowParsedValues& aParsedValues,
+                                        const RowContext& aContext) {
 
     const auto isinValue = aCsvRow["symbol"].get<std::string>();
     const auto nameValue = aCsvRow["name"].get<std::string>();
     std::string_view typeValue = aParsedValues.mType;
 
-    if (!isInstrumentValid("trade", isinValue, nameValue))
+    if (!isInstrumentValid("trade row", isinValue, nameValue, aContext))
     {
         return false;
     }
@@ -334,47 +413,43 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
     auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
 
-    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}",
-                    aFieldName,
-                    aValue,
-                    isinValue);
-    };
-
     if (!date)
     {
-        logFail("date", aCsvRow["date"].get<std::string>());
+        aContext.invalidField("date", aCsvRow["date"].get<std::string>(), "trade row");
         return false;
     }
 
     if (!tradeSide)
     {
-        logFail("trade side", typeValue);
+        aContext.invalidField("type", typeValue, "trade row");
         return false;
     }
 
     if (!unitPrice || *unitPrice <= 0)
     {
-        logFail("unit price", aCsvRow["price"].get<std::string>());
+        aContext.invalidField("price", aCsvRow["price"].get<std::string>(), "trade row");
         return false;
     }
 
     if (!units)
     {
-        logFail("units", aCsvRow["shares"].get<std::string>());
+        aContext.invalidField("shares", aCsvRow["shares"].get<std::string>(), "trade row");
         return false;
     }
 
     const auto normalizedUnits = normalizeTradeUnits(*tradeSide, *units);
     if (!normalizedUnits)
     {
-        logFail("units inconsistent with trade side", aCsvRow["shares"].get<std::string>());
+        aContext.add(DiagnosticSeverity::Error,
+                     DiagnosticCode::InconsistentValue,
+                     "Field 'shares' is inconsistent with the trade side; the row was skipped.",
+                     "shares");
         return false;
     }
 
     if (!amountValue.empty() && !amount)
     {
-        logFail("amount", amountValue);
+        aContext.invalidField("amount", amountValue, "trade row");
         return false;
     }
 
@@ -383,34 +458,42 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         amount = normalizeTradeAmount(*tradeSide, *amount);
         if (!amount)
         {
-            logFail("amount inconsistent with trade side", amountValue);
+            aContext.add(DiagnosticSeverity::Error,
+                         DiagnosticCode::InconsistentValue,
+                         "Field 'amount' is inconsistent with the trade side; the row was skipped.",
+                         "amount");
             return false;
         }
     }
 
     if (!feePaid)
     {
-        logFail("fee", aCsvRow["fee"].get<std::string>());
+        aContext.invalidField("fee", aCsvRow["fee"].get<std::string>(), "trade row");
         return false;
     }
 
     if (currency == Currency::Unknown)
     {
-        logFail("currency", aCsvRow["currency"].get<std::string>());
+        aContext.invalidField("currency", aCsvRow["currency"].get<std::string>(), "trade row");
         return false;
     }
 
     if (assetClass == AssetClass::Unknown)
     {
-        logFail("asset class", aCsvRow["asset_class"].get<std::string>());
+        aContext.invalidField("asset_class",
+                              aCsvRow["asset_class"].get<std::string>(),
+                              "trade row");
         return false;
     }
 
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
     if (instrument.mAssetClass != AssetClass::Unknown && instrument.mAssetClass != assetClass)
     {
-        logFail("asset class inconsistent with existing instrument",
-                aCsvRow["asset_class"].get<std::string>());
+        aContext.add(DiagnosticSeverity::Error,
+                     DiagnosticCode::InconsistentValue,
+                     "Field 'asset_class' conflicts with an earlier row for the same symbol; the "
+                     "row was skipped.",
+                     "asset_class");
         return false;
     }
     instrument.mAssetClass = assetClass;
@@ -431,11 +514,12 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
 }
 
 void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
-                                           std::vector<DividendInstrument>& aInstruments) {
+                                           std::vector<DividendInstrument>& aInstruments,
+                                           const RowContext& aContext) {
     const auto isinValue = aCsvRow["symbol"].get<std::string>();
     const auto nameValue = aCsvRow["name"].get<std::string>();
 
-    if (!isInstrumentValid("dividend", isinValue, nameValue))
+    if (!isInstrumentValid("dividend row", isinValue, nameValue, aContext))
     {
         return;
     }
@@ -445,47 +529,43 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
     auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
-    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} value: {} for row with ISIN {}",
-                    aFieldName,
-                    aValue,
-                    isinValue);
-    };
-
     if (!date)
     {
-        logFail("date", aCsvRow["date"].get<std::string>());
+        aContext.invalidField("date", aCsvRow["date"].get<std::string>(), "dividend row");
         return;
     }
 
     if (!taxPaid)
     {
-        logFail("tax paid", aCsvRow["tax"].get<std::string>());
+        aContext.invalidField("tax", aCsvRow["tax"].get<std::string>(), "dividend row");
         return;
     }
 
     if (taxCurrency == Currency::Unknown)
     {
-        logFail("tax currency", aCsvRow["currency"].get<std::string>());
+        aContext.invalidField("currency", aCsvRow["currency"].get<std::string>(), "dividend row");
         return;
     }
 
     if (!amountAndCurrency.mCurrency.has_value())
     {
-        logFail("currency", getAmountCurrencyValue(aCsvRow));
+        const auto field = aCsvRow["original_currency"].get<std::string>().empty()
+                               ? "currency"
+                               : "original_currency";
+        aContext.invalidField(field, getAmountCurrencyValue(aCsvRow), "dividend row");
         return;
     }
 
     if (!amountAndCurrency.mExchangeRate.has_value())
     {
-        logFail("fx rate", aCsvRow["fx_rate"].get<std::string>());
+        aContext.invalidField("fx_rate", aCsvRow["fx_rate"].get<std::string>(), "dividend row");
         return;
     }
 
     if (!amountAndCurrency.mGrossAmount.has_value())
     {
         const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-        logFail(fieldName, fieldValue);
+        aContext.invalidField(fieldName, fieldValue, "dividend row");
         return;
     }
 
@@ -504,11 +584,14 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
 
 void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                                            std::vector<InterestInstrument>& aInstruments,
-                                           const InterestType aInterestType) {
+                                           const InterestType aInterestType,
+                                           const RowContext& aContext) {
     if (aInterestType == InterestType::UnknownInterest)
     {
-        LOG_WARNING("Unknown interest type for row with name {}. Skipping row.",
-                    aCsvRow["name"].get<std::string>());
+        aContext.add(DiagnosticSeverity::Error,
+                     DiagnosticCode::InvalidValue,
+                     "The interest transaction type is unknown; the row was skipped.",
+                     "type");
         return;
     }
 
@@ -517,7 +600,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         const auto nameValue = aCsvRow["name"].get<std::string>();
         std::string isinValue = aCsvRow["symbol"].get<std::string>();
 
-        if (!isInstrumentValid("interest", isinValue, nameValue))
+        if (!isInstrumentValid("bond-interest row", isinValue, nameValue, aContext))
         {
             return;
         }
@@ -528,47 +611,47 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 
         auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
-        auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-            LOG_WARNING("Failed to parse {} value: {} for interest row with name {}",
-                        aFieldName,
-                        aValue,
-                        nameValue);
-        };
-
         if (!date)
         {
-            logFail("date", aCsvRow["date"].get<std::string>());
+            aContext.invalidField("date", aCsvRow["date"].get<std::string>(), "bond-interest row");
             return;
         }
 
         if (!taxPaid)
         {
-            logFail("tax paid", aCsvRow["tax"].get<std::string>());
+            aContext.invalidField("tax", aCsvRow["tax"].get<std::string>(), "bond-interest row");
             return;
         }
 
         if (taxCurrency == Currency::Unknown)
         {
-            logFail("tax currency", aCsvRow["currency"].get<std::string>());
+            aContext.invalidField("currency",
+                                  aCsvRow["currency"].get<std::string>(),
+                                  "bond-interest row");
             return;
         }
 
         if (!amountAndCurrency.mCurrency.has_value())
         {
-            logFail("currency", getAmountCurrencyValue(aCsvRow));
+            const auto field = aCsvRow["original_currency"].get<std::string>().empty()
+                                   ? "currency"
+                                   : "original_currency";
+            aContext.invalidField(field, getAmountCurrencyValue(aCsvRow), "bond-interest row");
             return;
         }
 
         if (!amountAndCurrency.mExchangeRate.has_value())
         {
-            logFail("fx rate", aCsvRow["fx_rate"].get<std::string>());
+            aContext.invalidField("fx_rate",
+                                  aCsvRow["fx_rate"].get<std::string>(),
+                                  "bond-interest row");
             return;
         }
 
         if (!amountAndCurrency.mGrossAmount.has_value())
         {
             const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-            logFail(fieldName, fieldValue);
+            aContext.invalidField(fieldName, fieldValue, "bond-interest row");
             return;
         }
 
@@ -593,9 +676,10 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         // now
         if (aInterestType == InterestType::OtherInterest)
         {
-            LOG_WARNING(
-                "Skipping fixed income interest row with name {} as it's currently not supported.",
-                aCsvRow["name"].get<std::string>());
+            aContext.add(DiagnosticSeverity::Error,
+                         DiagnosticCode::UnsupportedRowType,
+                         "This interest transaction type is not supported; the row was skipped.",
+                         "type");
             return;
         }
 
@@ -608,46 +692,53 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 
             auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
-            auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-                LOG_WARNING("Failed to parse {} value: {} for broker interest row. Skipping row.",
-                            aFieldName,
-                            aValue);
-            };
-
             if (!date)
             {
-                logFail("date", aCsvRow["date"].get<std::string>());
+                aContext.invalidField("date",
+                                      aCsvRow["date"].get<std::string>(),
+                                      "broker-interest row");
                 return;
             }
 
             if (!taxPaid)
             {
-                logFail("tax paid", aCsvRow["tax"].get<std::string>());
+                aContext.invalidField("tax",
+                                      aCsvRow["tax"].get<std::string>(),
+                                      "broker-interest row");
                 return;
             }
 
             if (taxCurrency == Currency::Unknown)
             {
-                logFail("tax currency", aCsvRow["currency"].get<std::string>());
+                aContext.invalidField("currency",
+                                      aCsvRow["currency"].get<std::string>(),
+                                      "broker-interest row");
                 return;
             }
 
             if (!amountAndCurrency.mCurrency.has_value())
             {
-                logFail("currency", getAmountCurrencyValue(aCsvRow));
+                const auto field = aCsvRow["original_currency"].get<std::string>().empty()
+                                       ? "currency"
+                                       : "original_currency";
+                aContext.invalidField(field,
+                                      getAmountCurrencyValue(aCsvRow),
+                                      "broker-interest row");
                 return;
             }
 
             if (!amountAndCurrency.mExchangeRate.has_value())
             {
-                logFail("fx rate", aCsvRow["fx_rate"].get<std::string>());
+                aContext.invalidField("fx_rate",
+                                      aCsvRow["fx_rate"].get<std::string>(),
+                                      "broker-interest row");
                 return;
             }
 
             if (!amountAndCurrency.mGrossAmount)
             {
                 const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-                logFail(fieldName, fieldValue);
+                aContext.invalidField(fieldName, fieldValue, "broker-interest row");
                 return;
             }
 
@@ -680,11 +771,12 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
 }
 
 void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
-                                                  std::vector<TradeInstrument>& aInstruments) {
+                                                  std::vector<TradeInstrument>& aInstruments,
+                                                  const RowContext& aContext) {
     const auto isinValue = aCsvRow["symbol"].get<std::string>();
     const auto nameValue = aCsvRow["name"].get<std::string>();
 
-    if (!isInstrumentValid("corporate action", isinValue, nameValue))
+    if (!isInstrumentValid("corporate-action row", isinValue, nameValue, aContext))
     {
         return;
     }
@@ -693,36 +785,36 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
     const auto unitsDelta = parseUnits(aCsvRow["shares"].get<std::string>());
     const auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
 
-    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} value: {} for corporate action row with ISIN {}",
-                    aFieldName,
-                    aValue,
-                    isinValue);
-    };
-
     if (!date)
     {
-        logFail("date", aCsvRow["date"].get<std::string>());
+        aContext.invalidField("date", aCsvRow["date"].get<std::string>(), "corporate-action row");
         return;
     }
 
     if (!unitsDelta || *unitsDelta == 0)
     {
-        logFail("units delta", aCsvRow["shares"].get<std::string>());
+        aContext.invalidField("shares",
+                              aCsvRow["shares"].get<std::string>(),
+                              "corporate-action row");
         return;
     }
 
     if (assetClass == AssetClass::Unknown)
     {
-        logFail("asset class", aCsvRow["asset_class"].get<std::string>());
+        aContext.invalidField("asset_class",
+                              aCsvRow["asset_class"].get<std::string>(),
+                              "corporate-action row");
         return;
     }
 
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
     if (instrument.mAssetClass != AssetClass::Unknown && instrument.mAssetClass != assetClass)
     {
-        logFail("asset class inconsistent with existing instrument",
-                aCsvRow["asset_class"].get<std::string>());
+        aContext.add(DiagnosticSeverity::Error,
+                     DiagnosticCode::InconsistentValue,
+                     "Field 'asset_class' conflicts with an earlier row for the same symbol; the "
+                     "row was skipped.",
+                     "asset_class");
         return;
     }
     instrument.mAssetClass = assetClass;
@@ -741,39 +833,34 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
 
 void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
                                           std::vector<BenefitEvent>& aBenefitEvents,
-                                          const RowParsedValues& aParsedValues) {
+                                          const RowParsedValues& aParsedValues,
+                                          const RowContext& aContext) {
     const auto date = parseDate(aCsvRow["date"].get<std::string>());
     const auto benefitType = parseBenefitType(aParsedValues.mType);
     const auto amount = parseMoney(aCsvRow["amount"].get<std::string>());
     const auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
-    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} value: {} for Trade Republic benefit row",
-                    aFieldName,
-                    aValue);
-    };
-
     if (!date)
     {
-        logFail("date", aCsvRow["date"].get<std::string>());
+        aContext.invalidField("date", aCsvRow["date"].get<std::string>(), "benefit row");
         return;
     }
 
     if (!benefitType)
     {
-        logFail("benefit type", aParsedValues.mType);
+        aContext.invalidField("type", aParsedValues.mType, "benefit row");
         return;
     }
 
     if (!amount)
     {
-        logFail("amount", aCsvRow["amount"].get<std::string>());
+        aContext.invalidField("amount", aCsvRow["amount"].get<std::string>(), "benefit row");
         return;
     }
 
     if (currency == Currency::Unknown)
     {
-        logFail("currency", aCsvRow["currency"].get<std::string>());
+        aContext.invalidField("currency", aCsvRow["currency"].get<std::string>(), "benefit row");
         return;
     }
 
@@ -793,46 +880,43 @@ void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
 void TradeRepublicParser::parsePrivateMarketRow(
     const csv::CSVRow& aCsvRow,
     std::vector<PrivateMarketEvent>& aPrivateMarketEvents,
-    const RowParsedValues& aParsedValues) {
+    const RowParsedValues& aParsedValues,
+    const RowContext& aContext) {
     const auto date = parseDate(aCsvRow["date"].get<std::string>());
     const auto eventType = parsePrivateMarketEventType(aParsedValues.mType);
     const auto amount = parseMoney(aCsvRow["amount"].get<std::string>());
     const auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
     const auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
-    auto logFail = [&](std::string_view aFieldName, std::string_view aValue) {
-        LOG_WARNING("Failed to parse {} value: {} for Trade Republic private-market row",
-                    aFieldName,
-                    aValue);
-    };
-
     if (!date)
     {
-        logFail("date", aCsvRow["date"].get<std::string>());
+        aContext.invalidField("date", aCsvRow["date"].get<std::string>(), "private-market row");
         return;
     }
 
     if (!eventType)
     {
-        logFail("private-market event type", aParsedValues.mType);
+        aContext.invalidField("type", aParsedValues.mType, "private-market row");
         return;
     }
 
     if (!amount)
     {
-        logFail("amount", aCsvRow["amount"].get<std::string>());
+        aContext.invalidField("amount", aCsvRow["amount"].get<std::string>(), "private-market row");
         return;
     }
 
     if (!feePaid)
     {
-        logFail("fee", aCsvRow["fee"].get<std::string>());
+        aContext.invalidField("fee", aCsvRow["fee"].get<std::string>(), "private-market row");
         return;
     }
 
     if (currency == Currency::Unknown)
     {
-        logFail("currency", aCsvRow["currency"].get<std::string>());
+        aContext.invalidField("currency",
+                              aCsvRow["currency"].get<std::string>(),
+                              "private-market row");
         return;
     }
 
