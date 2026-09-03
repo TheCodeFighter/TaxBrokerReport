@@ -1,5 +1,5 @@
 #include "parsers/traderepublic_parser.hpp"
-#include "taxbroker/errors.hpp"
+#include "taxbroker/diagnostics.hpp"
 #include "taxbroker/types.hpp"
 
 #include <gtest/gtest.h>
@@ -124,7 +124,8 @@ std::string sanitizedTestName() {
 
 class TemporaryCsvFile {
   public:
-    explicit TemporaryCsvFile(std::initializer_list<SyntheticCsvRow> aRows)
+    explicit TemporaryCsvFile(std::initializer_list<SyntheticCsvRow> aRows,
+                              std::string_view aHeader = kCsvHeader)
         : mPath{std::filesystem::temp_directory_path() /
                 ("taxbroker_" + sanitizedTestName() + ".csv")} {
         std::ofstream output{mPath, std::ios::trunc};
@@ -133,7 +134,7 @@ class TemporaryCsvFile {
             throw std::runtime_error{"Unable to create synthetic CSV fixture"};
         }
 
-        output << kCsvHeader << '\n';
+        output << aHeader << '\n';
         for (const auto& row : aRows)
         {
             writeCsvRow(output, row);
@@ -265,18 +266,18 @@ const BenefitEvent* findBenefitEvent(const BrokerStatement& aStatement,
     return benefit == aStatement.mBenefitEvents.end() ? nullptr : &*benefit;
 }
 
-std::size_t countWarnings(const ParseResult& aParseResult, WarningCode aWarningCode) {
+std::size_t countDiagnostics(const ParseResult& aParseResult, DiagnosticCode aDiagnosticCode) {
     return static_cast<std::size_t>(std::count_if(
-        aParseResult.mWarnings.begin(),
-        aParseResult.mWarnings.end(),
-        [&](const ParseWarning& aWarning) { return aWarning.mCode == aWarningCode; }));
+        aParseResult.mDiagnostics.begin(),
+        aParseResult.mDiagnostics.end(),
+        [&](const ParseDiagnostic& aDiagnostic) { return aDiagnostic.mCode == aDiagnosticCode; }));
 }
 
-bool hasWarningContaining(const ParseResult& aParseResult, std::string_view aText) {
-    return std::any_of(aParseResult.mWarnings.begin(),
-                       aParseResult.mWarnings.end(),
-                       [&](const ParseWarning& aWarning) {
-                           return aWarning.mMessage.find(aText) != std::string::npos;
+bool hasDiagnosticContaining(const ParseResult& aParseResult, std::string_view aText) {
+    return std::any_of(aParseResult.mDiagnostics.begin(),
+                       aParseResult.mDiagnostics.end(),
+                       [&](const ParseDiagnostic& aDiagnostic) {
+                           return aDiagnostic.mMessage.find(aText) != std::string::npos;
                        });
 }
 
@@ -441,9 +442,9 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_FALSE(unassignedSaveback->mIsin.has_value());
     EXPECT_EQ(unassignedSaveback->mAssetClass, AssetClass::Unknown);
 
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedRowType), 0U);
-    EXPECT_FALSE(hasWarningContaining(parseResult, "STOCKPERK"));
-    EXPECT_FALSE(hasWarningContaining(parseResult, "BENEFITS_SAVEBACK"));
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedRowType), 0U);
+    EXPECT_FALSE(hasDiagnosticContaining(parseResult, "STOCKPERK"));
+    EXPECT_FALSE(hasDiagnosticContaining(parseResult, "BENEFITS_SAVEBACK"));
 }
 
 TEST(TradeRepublicParserTest, PreservesPrivateMarketEventsAndFundExecution) {
@@ -463,7 +464,7 @@ TEST(TradeRepublicParserTest, PreservesPrivateMarketEventsAndFundExecution) {
     EXPECT_EQ(prepayment.mFeePaid, 7'500);
     EXPECT_EQ(prepayment.mTransactionId, "synthetic-private-prepayment");
 
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedAssetClass), 1U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 1U);
 }
 
 TEST(TradeRepublicParserTest, PreservesUnresolvedSplitWithoutCreatingATrade) {
@@ -482,13 +483,13 @@ TEST(TradeRepublicParserTest, PreservesUnresolvedSplitWithoutCreatingATrade) {
 TEST(TradeRepublicParserTest, ReportsUnknownRowsWithSourceLocation) {
     const ParseResult parseResult = parseFixture();
 
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedRowType), 0U);
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedAssetClass), 1U);
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnknownRowType), 1U);
-    ASSERT_EQ(parseResult.mWarnings.size(), 2U);
-    EXPECT_TRUE(hasWarningContaining(parseResult, "FUTURE_EVENT"));
-    EXPECT_EQ(parseResult.mWarnings.back().mRowIndex, 11U);
-    EXPECT_EQ(parseResult.mWarnings.back().mSourceFile, fixturePath().string());
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedRowType), 0U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 1U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnknownRowType), 1U);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 2U);
+    EXPECT_TRUE(hasDiagnosticContaining(parseResult, "FUTURE_EVENT"));
+    EXPECT_EQ(parseResult.mDiagnostics.back().mRowIndex, 11U);
+    EXPECT_EQ(parseResult.mDiagnostics.back().mSourceFile, fixturePath().filename().string());
 }
 
 TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
@@ -549,8 +550,17 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
         EXPECT_EQ(instrument->mAssetClass, expectedAssetClass) << transactionId;
     }
 
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedAssetClass), 1U);
-    EXPECT_TRUE(hasWarningContaining(parseResult, "synthetic-crypto-001"));
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 1U);
+    const auto diagnostic =
+        std::find_if(parseResult.mDiagnostics.begin(),
+                     parseResult.mDiagnostics.end(),
+                     [](const ParseDiagnostic& aDiagnostic) {
+                         return aDiagnostic.mCode == DiagnosticCode::UnsupportedAssetClass;
+                     });
+    ASSERT_NE(diagnostic, parseResult.mDiagnostics.end());
+    EXPECT_EQ(diagnostic->mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_TRUE(diagnostic->mTransactionId.has_value());
+    EXPECT_EQ(*diagnostic->mTransactionId, "synthetic-crypto-001");
 }
 
 TEST(TradeRepublicParserTest, ParsesLocalAndForeignIncomeCurrenciesExactly) {
@@ -707,8 +717,8 @@ TEST(TradeRepublicParserTest, PreservesBenefitsAndEveryPrivateMarketEventType) {
     EXPECT_EQ(sell->mFeePaid, 0);
     EXPECT_EQ(sell->mDescription, "Synthetic private-market sell");
 
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnknownRowType), 0U);
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedRowType), 0U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnknownRowType), 0U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedRowType), 0U);
 }
 
 TEST(TradeRepublicParserTest, HeaderOnlyCsvProducesAnEmptyResult) {
@@ -719,7 +729,50 @@ TEST(TradeRepublicParserTest, HeaderOnlyCsvProducesAnEmptyResult) {
     EXPECT_TRUE(parseResult.mStatement.mInterestInstruments.empty());
     EXPECT_TRUE(parseResult.mStatement.mBenefitEvents.empty());
     EXPECT_TRUE(parseResult.mStatement.mPrivateMarketEvents.empty());
-    EXPECT_TRUE(parseResult.mWarnings.empty());
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, ReturnsAStructuredErrorWhenTheCsvCannotBeOpened) {
+    const auto missingPath = std::filesystem::temp_directory_path() /
+                             "taxbroker_nonexistent_parser_input" / "missing.csv";
+    ASSERT_FALSE(std::filesystem::exists(missingPath));
+
+    tr::TradeRepublicParser parser;
+    const ParseResult parseResult = parser.parse(missingPath);
+
+    EXPECT_EQ(parseResult.mBroker, Broker::TradeRepublic);
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_EQ(diagnostic.mSourceFile, "missing.csv");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_FALSE(diagnostic.mTransactionId.has_value());
+    EXPECT_FALSE(diagnostic.mField.has_value());
+    EXPECT_EQ(diagnostic.mMessage.find(missingPath.parent_path().string()), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, ReturnsAStructuredErrorForAnUnexpectedCsvHeader) {
+    std::string unexpectedHeader{kCsvHeader};
+    const auto categoryColumn = unexpectedHeader.find("\"category\"");
+    ASSERT_NE(categoryColumn, std::string::npos);
+    unexpectedHeader.replace(categoryColumn,
+                             std::string_view{"\"category\""}.size(),
+                             "\"unexpected_category\"");
+
+    const SyntheticCsvRow row;
+    const TemporaryCsvFile csvFile{{row}, unexpectedHeader};
+    tr::TradeRepublicParser parser;
+    const ParseResult parseResult = parser.parse(csvFile.path());
+
+    EXPECT_EQ(parseResult.mBroker, Broker::TradeRepublic);
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::ParseError);
+    EXPECT_FALSE(parseResult.mDiagnostics.front().mRowIndex.has_value());
 }
 
 TEST(TradeRepublicParserTest, ParsesAStandaloneDividendInstrument) {
@@ -740,7 +793,7 @@ TEST(TradeRepublicParserTest, ParsesAStandaloneDividendInstrument) {
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
     EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(transaction.mTransactionId, "synthetic-dividend-validation");
-    EXPECT_TRUE(parseResult.mWarnings.empty());
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
 }
 
 TEST(TradeRepublicParserTest, ReportsAStandaloneUnknownTransaction) {
@@ -754,13 +807,15 @@ TEST(TradeRepublicParserTest, ReportsAStandaloneUnknownTransaction) {
     const ParseResult parseResult = parser.parse(csvFile.path());
 
     expectNoParsedRecords(parseResult);
-    ASSERT_EQ(parseResult.mWarnings.size(), 1U);
-    const auto& warning = parseResult.mWarnings.front();
-    EXPECT_EQ(warning.mCode, WarningCode::UnknownRowType);
-    EXPECT_EQ(warning.mSourceFile, csvFile.path().string());
-    EXPECT_EQ(warning.mRowIndex, 2U);
-    EXPECT_NE(warning.mMessage.find(row.mType), std::string::npos);
-    EXPECT_NE(warning.mMessage.find(row.mTransactionId), std::string::npos);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::UnknownRowType);
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    ASSERT_TRUE(diagnostic.mTransactionId.has_value());
+    EXPECT_EQ(*diagnostic.mTransactionId, row.mTransactionId);
+    EXPECT_NE(diagnostic.mMessage.find(row.mType), std::string::npos);
 }
 
 TEST(TradeRepublicParserTest, UsesTheDateColumnAndPreservesTheBrokerReportedAmount) {
@@ -800,6 +855,14 @@ TEST(TradeRepublicParserTest, ContinuesParsingAfterAnInvalidRow) {
         findTradeTransaction(parseResult.mStatement, validRow.mTransactionId);
     ASSERT_NE(validTransaction, nullptr);
     EXPECT_EQ(validTransaction->mDate, makeDate(2024, 1, 16));
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(diagnostic.mField, "price");
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, invalidRow.mTransactionId);
 }
 
 TEST(TradeRepublicParserTest, AcceptsAnOmittedTradeAmountAndAnExplicitZeroFee) {
@@ -815,7 +878,7 @@ TEST(TradeRepublicParserTest, AcceptsAnOmittedTradeAmountAndAnExplicitZeroFee) {
     ASSERT_NE(transaction, nullptr);
     EXPECT_FALSE(transaction->mAmount.has_value());
     EXPECT_EQ(transaction->mFeePaid, 0);
-    EXPECT_TRUE(parseResult.mWarnings.empty());
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
 }
 
 TEST(TradeRepublicParserTest, RejectsAnAssetClassConflictForTheSameIsin) {
@@ -839,7 +902,7 @@ TEST(TradeRepublicParserTest, WarnsAboutUnsupportedAssetsOnlyAfterAValidTradeIsP
 
     const ParseResult parseResult = parseRows({malformedCrypto});
     expectNoParsedRecords(parseResult);
-    EXPECT_EQ(countWarnings(parseResult, WarningCode::UnsupportedAssetClass), 0U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 0U);
 }
 
 struct InvalidRowCase {
@@ -863,6 +926,10 @@ TEST_P(InvalidTradeRowTest, SkipsTheRowWithoutCreatingPartialData) {
 
     const ParseResult parseResult = parseRows({row});
     expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mRowIndex, 2U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mTransactionId, row.mTransactionId);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1025,6 +1092,10 @@ TEST_P(InvalidIncomeRowTest, RejectsInvalidCommonIncomeFields) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
+        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mRowIndex, 2U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mTransactionId, row.mTransactionId);
     }
 }
 
@@ -1065,6 +1136,8 @@ TEST_P(InvalidIncomeInstrumentTest, RequiresBothIsinAndName) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
+        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::MissingField);
     }
 }
 
@@ -1107,6 +1180,8 @@ TEST(TradeRepublicParserTest, RejectsInvalidCorporateActions) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
+        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
     }
 }
 
@@ -1123,6 +1198,9 @@ TEST(TradeRepublicParserTest, RejectsACorporateActionAssetConflictForTheSameIsin
     EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
     EXPECT_EQ(instrument.mTransactions.size(), 1U);
     EXPECT_TRUE(instrument.mCorporateActions.empty());
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mField, "asset_class");
 }
 
 TEST(TradeRepublicParserTest, RejectsInvalidBenefits) {
@@ -1146,6 +1224,8 @@ TEST(TradeRepublicParserTest, RejectsInvalidBenefits) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
+        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
     }
 }
 
@@ -1174,6 +1254,8 @@ TEST(TradeRepublicParserTest, RejectsInvalidPrivateMarketEvents) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
+        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
     }
 }
 
@@ -1203,7 +1285,7 @@ TEST(TradeRepublicParserTest, IgnoresEveryKnownNonTaxCashTransaction) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
-        EXPECT_TRUE(parseResult.mWarnings.empty());
+        EXPECT_TRUE(parseResult.mDiagnostics.empty());
     }
 }
 
@@ -1233,13 +1315,14 @@ TEST(TradeRepublicParserTest, ReportsEveryRecognizedButUnsupportedTransaction) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
-        ASSERT_EQ(parseResult.mWarnings.size(), 1U);
-        EXPECT_EQ(parseResult.mWarnings.front().mCode, WarningCode::UnsupportedRowType);
-        EXPECT_EQ(parseResult.mWarnings.front().mRowIndex, 2U);
-        EXPECT_NE(parseResult.mWarnings.front().mMessage.find(unsupportedType.mType),
+        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::UnsupportedRowType);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mRowIndex, 2U);
+        EXPECT_NE(parseResult.mDiagnostics.front().mMessage.find(unsupportedType.mType),
                   std::string::npos);
-        EXPECT_NE(parseResult.mWarnings.front().mMessage.find(row.mTransactionId),
-                  std::string::npos);
+        ASSERT_TRUE(parseResult.mDiagnostics.front().mTransactionId.has_value());
+        EXPECT_EQ(*parseResult.mDiagnostics.front().mTransactionId, row.mTransactionId);
     }
 }
 
@@ -1260,12 +1343,13 @@ TEST(TradeRepublicParserTest, ReportsUnknownAndKnownTypesInTheWrongCategory) {
 
         const ParseResult parseResult = parseRows({row});
         expectNoParsedRecords(parseResult);
-        ASSERT_EQ(parseResult.mWarnings.size(), 1U);
-        EXPECT_EQ(parseResult.mWarnings.front().mCode, WarningCode::UnknownRowType);
-        EXPECT_EQ(parseResult.mWarnings.front().mRowIndex, 2U);
-        EXPECT_NE(parseResult.mWarnings.front().mMessage.find(type), std::string::npos);
-        EXPECT_NE(parseResult.mWarnings.front().mMessage.find(row.mTransactionId),
-                  std::string::npos);
+        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::UnknownRowType);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mRowIndex, 2U);
+        EXPECT_NE(parseResult.mDiagnostics.front().mMessage.find(type), std::string::npos);
+        ASSERT_TRUE(parseResult.mDiagnostics.front().mTransactionId.has_value());
+        EXPECT_EQ(*parseResult.mDiagnostics.front().mTransactionId, row.mTransactionId);
     }
 }
 

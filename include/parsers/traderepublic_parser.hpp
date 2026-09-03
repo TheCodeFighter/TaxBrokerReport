@@ -17,6 +17,8 @@ class TradeRepublicParser final : public CsvParser {
     ParseResult parse(const std::filesystem::path& aCsvPath) override;
 
   private:
+    struct RowContext;
+
     static constexpr char delimiter = ',';
 
     RowMeta detectRowType(const csv::CSVRow& aCsvRow) const;
@@ -24,20 +26,26 @@ class TradeRepublicParser final : public CsvParser {
 
     bool parseTradeRow(const csv::CSVRow& aCsvRow,
                        std::vector<TradeInstrument>& aInstruments,
-                       const RowParsedValues& aParsedValues);
+                       const RowParsedValues& aParsedValues,
+                       const RowContext& aContext);
     void parseDividendRow(const csv::CSVRow& aCsvRow,
-                          std::vector<DividendInstrument>& aInstruments);
+                          std::vector<DividendInstrument>& aInstruments,
+                          const RowContext& aContext);
     void parseInterestRow(const csv::CSVRow& aCsvRow,
                           std::vector<InterestInstrument>& aInstruments,
-                          const InterestType aInterestType);
+                          InterestType aInterestType,
+                          const RowContext& aContext);
     void parseCorporateActionRow(const csv::CSVRow& aCsvRow,
-                                 std::vector<TradeInstrument>& aInstruments);
+                                 std::vector<TradeInstrument>& aInstruments,
+                                 const RowContext& aContext);
     void parseBenefitRow(const csv::CSVRow& aCsvRow,
                          std::vector<BenefitEvent>& aBenefitEvents,
-                         const RowParsedValues& aParsedValues);
+                         const RowParsedValues& aParsedValues,
+                         const RowContext& aContext);
     void parsePrivateMarketRow(const csv::CSVRow& aCsvRow,
                                std::vector<PrivateMarketEvent>& aPrivateMarketEvents,
-                               const RowParsedValues& aParsedValues);
+                               const RowParsedValues& aParsedValues,
+                               const RowContext& aContext);
 
     // Parsing helpers
     std::optional<Date> parseDate(std::string_view aValue);
@@ -53,7 +61,8 @@ class TradeRepublicParser final : public CsvParser {
     // class helpers
     static bool isInstrumentValid(std::string_view aContext,
                                   const std::string& aIsin,
-                                  const std::string& aName);
+                                  const std::string& aName,
+                                  const RowContext& aRowContext);
     static std::optional<Units> normalizeTradeUnits(TradeSide aTradeSide, Units aSignedUnits);
     static std::optional<Money> normalizeTradeAmount(TradeSide aTradeSide, Money aSignedAmount);
     GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow);

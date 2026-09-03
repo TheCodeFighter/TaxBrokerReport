@@ -13,6 +13,7 @@ include(GoogleTest)
 # Unit Tests
 add_executable(taxbroker_unit_tests
     unit/fifo_matcher_test.cpp
+    unit/diagnostics_json_test.cpp
     unit/ibkr_parser_test.cpp
     unit/tax_processor_test.cpp
     unit/traderepublic_parser_test.cpp
@@ -31,7 +32,9 @@ target_include_directories(taxbroker_unit_tests PRIVATE
 target_link_libraries(taxbroker_unit_tests
     PRIVATE
     taxbroker_core
+    taxbroker_api
     GTest::gtest_main
+    nlohmann_json::nlohmann_json
 )
 
 gtest_discover_tests(taxbroker_unit_tests)

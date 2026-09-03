@@ -1,4 +1,5 @@
 #include "parsers/traderepublic_parser.hpp"
+#include "taxbroker/api/diagnostics_json.hpp"
 #include "taxbroker/types.hpp"
 
 #include <chrono>
@@ -167,20 +168,34 @@ std::string_view toString(PrivateMarketEventType aEventType) {
     return "Unknown";
 }
 
-std::string_view toString(WarningCode aWarningCode) {
-    switch (aWarningCode)
+std::string_view toString(DiagnosticSeverity aSeverity) {
+    switch (aSeverity)
     {
-    case WarningCode::UnknownRowType:
+    case DiagnosticSeverity::Warning:
+        return "Warning";
+    case DiagnosticSeverity::Error:
+        return "Error";
+    }
+
+    return "Error";
+}
+
+std::string_view toString(DiagnosticCode aDiagnosticCode) {
+    switch (aDiagnosticCode)
+    {
+    case DiagnosticCode::UnknownRowType:
         return "UnknownRowType";
-    case WarningCode::UnsupportedRowType:
+    case DiagnosticCode::UnsupportedRowType:
         return "UnsupportedRowType";
-    case WarningCode::UnsupportedAssetClass:
+    case DiagnosticCode::UnsupportedAssetClass:
         return "UnsupportedAssetClass";
-    case WarningCode::MissingField:
+    case DiagnosticCode::MissingField:
         return "MissingField";
-    case WarningCode::InvalidValue:
+    case DiagnosticCode::InvalidValue:
         return "InvalidValue";
-    case WarningCode::ParseError:
+    case DiagnosticCode::InconsistentValue:
+        return "InconsistentValue";
+    case DiagnosticCode::ParseError:
         return "ParseError";
     }
 
@@ -344,14 +359,25 @@ void writePrivateMarketEvents(std::ostream& aOutput, const BrokerStatement& aSta
     }
 }
 
-void writeWarnings(std::ostream& aOutput, const ParseResult& aParseResult) {
-    aOutput << "WARNINGS: " << aParseResult.mWarnings.size() << "\n\n";
+void writeDiagnostics(std::ostream& aOutput, const ParseResult& aParseResult) {
+    aOutput << "DIAGNOSTICS: " << aParseResult.mDiagnostics.size() << "\n\n";
 
-    for (const auto& warning : aParseResult.mWarnings)
+    for (const auto& diagnostic : aParseResult.mDiagnostics)
     {
-        aOutput << "- code: " << toString(warning.mCode) << "\n  source: " << warning.mSourceFile
-                << "\n  row: " << warning.mRowIndex << "\n  message: " << warning.mMessage
-                << "\n\n";
+        aOutput << "- severity: " << toString(diagnostic.mSeverity)
+                << "\n  code: " << toString(diagnostic.mCode)
+                << "\n  source: " << diagnostic.mSourceFile << "\n  row: ";
+        if (diagnostic.mRowIndex)
+        {
+            aOutput << *diagnostic.mRowIndex;
+        }
+        else
+        {
+            aOutput << "<none>";
+        }
+        aOutput << "\n  transaction_id: " << diagnostic.mTransactionId.value_or("<none>")
+                << "\n  field: " << diagnostic.mField.value_or("<none>")
+                << "\n  message: " << diagnostic.mMessage << "\n\n";
     }
 }
 
@@ -361,26 +387,36 @@ void writeParseResult(std::ostream& aOutput, const ParseResult& aParseResult) {
     writeInterests(aOutput, aParseResult.mStatement);
     writeBenefits(aOutput, aParseResult.mStatement);
     writePrivateMarketEvents(aOutput, aParseResult.mStatement);
-    writeWarnings(aOutput, aParseResult);
+    writeDiagnostics(aOutput, aParseResult);
+}
+
+void createParentDirectory(const std::filesystem::path& aPath) {
+    if (aPath.has_parent_path())
+    {
+        std::filesystem::create_directories(aPath.parent_path());
+    }
 }
 
 } // namespace
 
 int main(int aArgumentCount, char** aArguments) {
-    if (aArgumentCount != 3)
+    if (aArgumentCount != 4)
     {
-        std::cerr << "Usage: taxbroker_tr_dump <Trade Republic CSV> <output file>\n";
+        std::cerr << "Usage: taxbroker_tr_dump <Trade Republic CSV> <parsed output> "
+                     "<diagnostics JSON>\n";
         return 2;
     }
 
     const std::filesystem::path csvPath{aArguments[1]};
     const std::filesystem::path outputPath{aArguments[2]};
+    const std::filesystem::path diagnosticsPath{aArguments[3]};
 
     try
     {
         taxbroker::tr::TradeRepublicParser parser;
         const taxbroker::ParseResult parseResult = parser.parse(csvPath);
 
+        createParentDirectory(outputPath);
         std::ofstream output{outputPath};
         if (!output)
         {
@@ -389,7 +425,28 @@ int main(int aArgumentCount, char** aArguments) {
         }
 
         writeParseResult(output, parseResult);
+        if (!output)
+        {
+            std::cerr << "Failed to write parsed output file: " << outputPath << '\n';
+            return 1;
+        }
+
+        createParentDirectory(diagnosticsPath);
+        std::ofstream diagnosticsOutput{diagnosticsPath};
+        if (!diagnosticsOutput)
+        {
+            std::cerr << "Failed to open diagnostics file: " << diagnosticsPath << '\n';
+            return 1;
+        }
+        diagnosticsOutput << taxbroker::api::serializeDiagnosticsJson(parseResult, 2) << '\n';
+        if (!diagnosticsOutput)
+        {
+            std::cerr << "Failed to write diagnostics file: " << diagnosticsPath << '\n';
+            return 1;
+        }
+
         std::cout << "Wrote parsed Trade Republic data to " << outputPath << '\n';
+        std::cout << "Wrote parser diagnostics to " << diagnosticsPath << '\n';
     } catch (const std::exception& exception)
     {
         std::cerr << "Failed to parse Trade Republic CSV: " << exception.what() << '\n';

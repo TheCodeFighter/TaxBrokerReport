@@ -27,6 +27,22 @@ target_link_libraries(taxbroker_core
     spdlog::spdlog
 )
 
+# JSON is an API/presentation concern. Keeping it in a separate target prevents the parser and
+# tax-processing core from depending on a wire format.
+add_library(taxbroker_api STATIC
+    server/api/diagnostics_json.cpp
+)
+
+target_include_directories(taxbroker_api
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(taxbroker_api
+    PRIVATE
+    nlohmann_json::nlohmann_json
+)
+
 # Server executable
 add_executable(taxbroker_server
     main.cpp
@@ -41,4 +57,5 @@ target_include_directories(taxbroker_server PRIVATE
 
 target_link_libraries(taxbroker_server PRIVATE
     taxbroker_core
+    taxbroker_api
 )
