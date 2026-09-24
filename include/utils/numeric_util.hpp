@@ -13,6 +13,8 @@ taxbroker::Units parseUnits8(std::string_view aValue);
 
 taxbroker::CorpRatio parseCorpRatio8(std::string_view aValue);
 
+bool parseInteger(std::string_view aValue, int& aResult);
+
 // Returns nullopt when the scaled result cannot fit in Money.
 std::optional<taxbroker::Money> multiplyMoneyUnits(taxbroker::Money aPrice,
                                                    taxbroker::Units aUnits);
