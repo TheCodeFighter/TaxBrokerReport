@@ -542,11 +542,11 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
         std::pair{"synthetic-saveback-execution-001", AssetClass::Derivative},
         std::pair{"synthetic-crypto-001", AssetClass::Crypto},
     };
-    for (const auto& [transactionId, expectedAssetClass] : expectedExecutions)
+    for (const auto& [expectedTransactionId, expectedAssetClass] : expectedExecutions)
     {
-        const auto* transaction = findTradeTransaction(statement, transactionId);
-        ASSERT_NE(transaction, nullptr) << transactionId;
-        EXPECT_EQ(transaction->mTradeSide, TradeSide::Buy) << transactionId;
+        const auto* transaction = findTradeTransaction(statement, expectedTransactionId);
+        ASSERT_NE(transaction, nullptr) << expectedTransactionId;
+        EXPECT_EQ(transaction->mTradeSide, TradeSide::Buy) << expectedTransactionId;
 
         const auto instrument = std::find_if(
             statement.mTradeInstruments.begin(),
@@ -556,11 +556,11 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
                                    aInstrument.mTransactions.end(),
                                    [&](const TradeTransaction& aTransaction) {
                                        return ::transactionId(aTransaction.mMetadata) ==
-                                              transactionId;
+                                              expectedTransactionId;
                                    });
             });
         ASSERT_NE(instrument, statement.mTradeInstruments.end());
-        EXPECT_EQ(instrument->mAssetClass, expectedAssetClass) << transactionId;
+        EXPECT_EQ(instrument->mAssetClass, expectedAssetClass) << expectedTransactionId;
     }
 
     EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 1U);
