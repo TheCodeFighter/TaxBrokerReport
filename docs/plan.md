@@ -78,7 +78,7 @@ Retain:
 - a stable input sequence.
 
 The timestamp may be optional because not every future broker is guaranteed to provide one. Stable
-ordering must therefore have a documented fallback based on source provenance and input sequence.
+ordering must therefore have a documented fallback based on source details and input sequence.
 Timezone parsing and normalization must not change the broker-provided tax date.
 
 Monetary values, quantities, exchange rates, and corporate-action ratios remain fixed-point values.
@@ -119,7 +119,7 @@ The merge contract must define and test:
 - transaction-ID scope by broker;
 - conflicting instrument names or asset classes;
 - stable ordering of events with equal dates or timestamps;
-- preservation of source provenance; and
+- preservation of source references; and
 - deterministic diagnostic and output ordering regardless of parser completion order.
 
 The merger creates a combined chronological ledger but does not calculate tax or resolve the effect

@@ -1,10 +1,12 @@
 #include "utils/numeric_util.hpp"
 
+#include <charconv>
 #include <cctype>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <immintrin.h>
@@ -114,6 +116,12 @@ taxbroker::Units parseUnits8(std::string_view aValue) {
 
 taxbroker::CorpRatio parseCorpRatio8(std::string_view aValue) {
     return parseOrThrow(aValue, taxbroker::CORP_RATIO_SCALE);
+}
+
+bool parseInteger(std::string_view aValue, int& aResult) {
+    const auto* end = aValue.data() + aValue.size();
+    const auto [parsedEnd, error] = std::from_chars(aValue.data(), end, aResult);
+    return error == std::errc{} && parsedEnd == end;
 }
 
 std::optional<taxbroker::Money> multiplyMoneyUnits(taxbroker::Money aPrice,

@@ -174,6 +174,11 @@ Date makeDate(int aYear, unsigned aMonth, unsigned aDay) {
     return Date{std::chrono::sys_days{calendarDate}.time_since_epoch()};
 }
 
+std::string_view transactionId(const EventMetadata& aMetadata) {
+    return aMetadata.mSource.mTransactionId ? *aMetadata.mSource.mTransactionId
+                                            : std::string_view{};
+}
+
 const TradeInstrument* findTradeInstrument(const BrokerStatement& aStatement,
                                            std::string_view aIsin) {
     const auto instrument = std::find_if(
@@ -188,11 +193,12 @@ const TradeTransaction* findTradeTransaction(const BrokerStatement& aStatement,
                                              std::string_view aTransactionId) {
     for (const auto& instrument : aStatement.mTradeInstruments)
     {
-        const auto transaction = std::find_if(instrument.mTransactions.begin(),
-                                              instrument.mTransactions.end(),
-                                              [&](const TradeTransaction& aTrade) {
-                                                  return aTrade.mTransactionId == aTransactionId;
-                                              });
+        const auto transaction =
+            std::find_if(instrument.mTransactions.begin(),
+                         instrument.mTransactions.end(),
+                         [&](const TradeTransaction& aTrade) {
+                             return transactionId(aTrade.mMetadata) == aTransactionId;
+                         });
         if (transaction != instrument.mTransactions.end())
         {
             return &*transaction;
@@ -205,11 +211,12 @@ const DividendTransaction* findDividendTransaction(const BrokerStatement& aState
                                                    std::string_view aTransactionId) {
     for (const auto& instrument : aStatement.mDividendInstruments)
     {
-        const auto transaction = std::find_if(instrument.mTransactions.begin(),
-                                              instrument.mTransactions.end(),
-                                              [&](const DividendTransaction& aDividend) {
-                                                  return aDividend.mTransactionId == aTransactionId;
-                                              });
+        const auto transaction =
+            std::find_if(instrument.mTransactions.begin(),
+                         instrument.mTransactions.end(),
+                         [&](const DividendTransaction& aDividend) {
+                             return transactionId(aDividend.mMetadata) == aTransactionId;
+                         });
         if (transaction != instrument.mTransactions.end())
         {
             return &*transaction;
@@ -230,11 +237,12 @@ const InterestInstrument* findInterestInstrument(const BrokerStatement& aStateme
 
 const PrivateMarketEvent* findPrivateMarketEvent(const BrokerStatement& aStatement,
                                                  std::string_view aTransactionId) {
-    const auto event = std::find_if(aStatement.mPrivateMarketEvents.begin(),
-                                    aStatement.mPrivateMarketEvents.end(),
-                                    [&](const PrivateMarketEvent& aPrivateEvent) {
-                                        return aPrivateEvent.mTransactionId == aTransactionId;
-                                    });
+    const auto event =
+        std::find_if(aStatement.mPrivateMarketEvents.begin(),
+                     aStatement.mPrivateMarketEvents.end(),
+                     [&](const PrivateMarketEvent& aPrivateEvent) {
+                         return transactionId(aPrivateEvent.mMetadata) == aTransactionId;
+                     });
     return event == aStatement.mPrivateMarketEvents.end() ? nullptr : &*event;
 }
 
@@ -258,10 +266,11 @@ const BenefitEvent* findBenefitEvent(const BrokerStatement& aStatement, BenefitT
 
 const BenefitEvent* findBenefitEvent(const BrokerStatement& aStatement,
                                      std::string_view aTransactionId) {
-    const auto benefit = std::find_if(
-        aStatement.mBenefitEvents.begin(),
-        aStatement.mBenefitEvents.end(),
-        [&](const BenefitEvent& aEvent) { return aEvent.mTransactionId == aTransactionId; });
+    const auto benefit = std::find_if(aStatement.mBenefitEvents.begin(),
+                                      aStatement.mBenefitEvents.end(),
+                                      [&](const BenefitEvent& aEvent) {
+                                          return transactionId(aEvent.mMetadata) == aTransactionId;
+                                      });
 
     return benefit == aStatement.mBenefitEvents.end() ? nullptr : &*benefit;
 }
@@ -401,7 +410,8 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     ASSERT_TRUE(stockperkInstrument->mTransactions.front().mAmount.has_value());
     EXPECT_EQ(*stockperkInstrument->mTransactions.front().mAmount, 123'400);
     EXPECT_EQ(stockperkInstrument->mTransactions.front().mFeePaid, 0);
-    EXPECT_EQ(stockperkInstrument->mTransactions.front().mTransactionId, "synthetic-stockperk-buy");
+    EXPECT_EQ(transactionId(stockperkInstrument->mTransactions.front().mMetadata),
+              "synthetic-stockperk-buy");
 
     const auto* savebackInstrument = findTradeInstrument(parseResult.mStatement, "XX1000000002");
     ASSERT_NE(savebackInstrument, nullptr);
@@ -409,7 +419,8 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_EQ(savebackInstrument->mTransactions.front().mUnits, 25'000'000);
     ASSERT_TRUE(savebackInstrument->mTransactions.front().mAmount.has_value());
     EXPECT_EQ(*savebackInstrument->mTransactions.front().mAmount, 25'000);
-    EXPECT_EQ(savebackInstrument->mTransactions.front().mTransactionId, "synthetic-saveback-buy");
+    EXPECT_EQ(transactionId(savebackInstrument->mTransactions.front().mMetadata),
+              "synthetic-saveback-buy");
 
     ASSERT_EQ(parseResult.mStatement.mBenefitEvents.size(), 3U);
 
@@ -421,7 +432,7 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_EQ(stockperk->mName, "Synthetic Reward Share");
     ASSERT_TRUE(stockperk->mIsin.has_value());
     EXPECT_EQ(*stockperk->mIsin, "XX1000000001");
-    EXPECT_EQ(stockperk->mTransactionId, "synthetic-stockperk-cash");
+    EXPECT_EQ(transactionId(stockperk->mMetadata), "synthetic-stockperk-cash");
 
     const auto* saveback = findBenefitEvent(parseResult.mStatement, BenefitType::Saveback);
     ASSERT_NE(saveback, nullptr);
@@ -431,7 +442,7 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_EQ(saveback->mName, "Synthetic Reward Fund");
     ASSERT_TRUE(saveback->mIsin.has_value());
     EXPECT_EQ(*saveback->mIsin, "XX1000000002");
-    EXPECT_EQ(saveback->mTransactionId, "synthetic-saveback-cash");
+    EXPECT_EQ(transactionId(saveback->mMetadata), "synthetic-saveback-cash");
 
     const auto* unassignedSaveback =
         findBenefitEvent(parseResult.mStatement, "synthetic-saveback-unassigned");
@@ -455,14 +466,14 @@ TEST(TradeRepublicParserTest, PreservesPrivateMarketEventsAndFundExecution) {
     EXPECT_EQ(privateFund->mAssetClass, AssetClass::PrivateFund);
     ASSERT_EQ(privateFund->mTransactions.size(), 1U);
     EXPECT_FALSE(privateFund->mTransactions.front().mAmount.has_value());
-    EXPECT_EQ(privateFund->mTransactions.front().mTransactionId, "synthetic-private-buy");
+    EXPECT_EQ(transactionId(privateFund->mTransactions.front().mMetadata), "synthetic-private-buy");
 
     ASSERT_EQ(parseResult.mStatement.mPrivateMarketEvents.size(), 1U);
     const auto& prepayment = parseResult.mStatement.mPrivateMarketEvents.front();
     EXPECT_EQ(prepayment.mType, PrivateMarketEventType::Buy);
     EXPECT_EQ(prepayment.mAmount, -2'500'000);
     EXPECT_EQ(prepayment.mFeePaid, 7'500);
-    EXPECT_EQ(prepayment.mTransactionId, "synthetic-private-prepayment");
+    EXPECT_EQ(transactionId(prepayment.mMetadata), "synthetic-private-prepayment");
 
     EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 1U);
 }
@@ -477,7 +488,8 @@ TEST(TradeRepublicParserTest, PreservesUnresolvedSplitWithoutCreatingATrade) {
     EXPECT_EQ(splitInstrument->mCorporateActions.front().mType, CorporateActionType::Split);
     EXPECT_EQ(splitInstrument->mCorporateActions.front().mUnitsDelta, 75'000'000);
     EXPECT_FALSE(splitInstrument->mCorporateActions.front().mRatio.has_value());
-    EXPECT_EQ(splitInstrument->mCorporateActions.front().mTransactionId, "synthetic-split-action");
+    EXPECT_EQ(transactionId(splitInstrument->mCorporateActions.front().mMetadata),
+              "synthetic-split-action");
 }
 
 TEST(TradeRepublicParserTest, ReportsUnknownRowsWithSourceLocation) {
@@ -500,7 +512,7 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
 
     const auto* buy = findTradeTransaction(statement, "synthetic-buy-001");
     ASSERT_NE(buy, nullptr);
-    EXPECT_EQ(buy->mDate, makeDate(2024, 2, 29));
+    EXPECT_EQ(buy->mMetadata.mTaxDate, makeDate(2024, 2, 29));
     EXPECT_EQ(buy->mTradeSide, TradeSide::Buy);
     EXPECT_EQ(buy->mUnitPrice, 123'457);
     EXPECT_EQ(buy->mUnits, 123'456'790);
@@ -543,7 +555,8 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
                 return std::any_of(aInstrument.mTransactions.begin(),
                                    aInstrument.mTransactions.end(),
                                    [&](const TradeTransaction& aTransaction) {
-                                       return aTransaction.mTransactionId == transactionId;
+                                       return ::transactionId(aTransaction.mMetadata) ==
+                                              transactionId;
                                    });
             });
         ASSERT_NE(instrument, statement.mTradeInstruments.end());
@@ -634,7 +647,7 @@ TEST(TradeRepublicParserTest, GroupsBrokerInterestAndPreservesBondInterest) {
     ASSERT_EQ(brokerInterest->mTransactions.size(), 2U);
     EXPECT_EQ(brokerInterest->mTransactions[0].mGrossAmount, 12'300);
     EXPECT_EQ(brokerInterest->mTransactions[0].mTaxPaid, 0);
-    EXPECT_EQ(brokerInterest->mTransactions[0].mTransactionId, "synthetic-interest-001");
+    EXPECT_EQ(transactionId(brokerInterest->mTransactions[0].mMetadata), "synthetic-interest-001");
     EXPECT_EQ(brokerInterest->mTransactions[1].mGrossAmount, 20'000);
     EXPECT_EQ(brokerInterest->mTransactions[1].mTaxPaid, 5'000);
     EXPECT_EQ(brokerInterest->mTransactions[1].mCurrency, Currency::EUR);
@@ -651,7 +664,7 @@ TEST(TradeRepublicParserTest, GroupsBrokerInterestAndPreservesBondInterest) {
     EXPECT_EQ(transaction.mExchangeRate, 90'000'000);
     EXPECT_EQ(transaction.mCurrency, Currency::USD);
     EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(transaction.mTransactionId, "synthetic-bond-interest-001");
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-bond-interest-001");
 }
 
 TEST(TradeRepublicParserTest, PreservesSplitAndReverseSplitOnTheExistingInstrument) {
@@ -665,13 +678,13 @@ TEST(TradeRepublicParserTest, PreservesSplitAndReverseSplitOnTheExistingInstrume
     EXPECT_EQ(split.mType, CorporateActionType::Split);
     EXPECT_EQ(split.mUnitsDelta, 200'000'000);
     EXPECT_FALSE(split.mRatio.has_value());
-    EXPECT_EQ(split.mTransactionId, "synthetic-split-001");
+    EXPECT_EQ(transactionId(split.mMetadata), "synthetic-split-001");
 
     const auto& reverseSplit = instrument->mCorporateActions[1];
     EXPECT_EQ(reverseSplit.mType, CorporateActionType::ReverseSplit);
     EXPECT_EQ(reverseSplit.mUnitsDelta, -50'000'000);
     EXPECT_FALSE(reverseSplit.mRatio.has_value());
-    EXPECT_EQ(reverseSplit.mTransactionId, "synthetic-reverse-split-001");
+    EXPECT_EQ(transactionId(reverseSplit.mMetadata), "synthetic-reverse-split-001");
 }
 
 TEST(TradeRepublicParserTest, PreservesBenefitsAndEveryPrivateMarketEventType) {
@@ -786,14 +799,39 @@ TEST(TradeRepublicParserTest, ParsesAStandaloneDividendInstrument) {
     ASSERT_EQ(instrument.mTransactions.size(), 1U);
 
     const auto& transaction = instrument.mTransactions.front();
-    EXPECT_EQ(transaction.mDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transaction.mGrossAmount, 100'000);
     EXPECT_EQ(transaction.mTaxPaid, 10'000);
     EXPECT_EQ(transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
     EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(transaction.mTransactionId, "synthetic-dividend-validation");
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-dividend-validation");
     EXPECT_TRUE(parseResult.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, PopulatesRequestScopedSourceReferenceAndTimestamp) {
+    SyntheticCsvRow row = makeDividendRow();
+    row.mDatetime = "2024-01-15T00:30:00.123456789+01:30";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const ParseResult parseResult = parser.parse(csvFile.path(), 7);
+    const auto& transaction =
+        parseResult.mStatement.mDividendInstruments.front().mTransactions.front();
+    const auto& metadata = transaction.mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_TRUE(metadata.mSourceTimestamp.has_value());
+    const auto expectedTimestamp =
+        SourceTimestamp{std::chrono::sys_days{std::chrono::year{2024} / 1 / 14}.time_since_epoch() +
+                        std::chrono::hours{23} + std::chrono::milliseconds{123}};
+    EXPECT_EQ(*metadata.mSourceTimestamp, expectedTimestamp);
+    EXPECT_EQ(metadata.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(metadata.mSource.mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(metadata.mSource.mSourceRow, 2U);
+    EXPECT_EQ(transactionId(metadata), "synthetic-dividend-validation");
+    EXPECT_EQ(metadata.mSource.mInputSequence.mSourceIndex, 7U);
+    EXPECT_EQ(metadata.mSource.mInputSequence.mEventIndex, 0U);
 }
 
 TEST(TradeRepublicParserTest, ReportsAStandaloneUnknownTransaction) {
@@ -831,11 +869,15 @@ TEST(TradeRepublicParserTest, UsesTheDateColumnAndPreservesTheBrokerReportedAmou
         findTradeTransaction(parseResult.mStatement, "synthetic-test-transaction");
 
     ASSERT_NE(transaction, nullptr);
-    EXPECT_EQ(transaction->mDate, makeDate(2024, 2, 29));
+    EXPECT_EQ(transaction->mMetadata.mTaxDate, makeDate(2024, 2, 29));
+    EXPECT_FALSE(transaction->mMetadata.mSourceTimestamp.has_value());
     EXPECT_EQ(transaction->mUnitPrice, 30'000);
     EXPECT_EQ(transaction->mUnits, 200'000'000);
     ASSERT_TRUE(transaction->mAmount.has_value());
     EXPECT_EQ(*transaction->mAmount, 990'000);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mField, "datetime");
 }
 
 TEST(TradeRepublicParserTest, ContinuesParsingAfterAnInvalidRow) {
@@ -854,7 +896,7 @@ TEST(TradeRepublicParserTest, ContinuesParsingAfterAnInvalidRow) {
     const auto* validTransaction =
         findTradeTransaction(parseResult.mStatement, validRow.mTransactionId);
     ASSERT_NE(validTransaction, nullptr);
-    EXPECT_EQ(validTransaction->mDate, makeDate(2024, 1, 16));
+    EXPECT_EQ(validTransaction->mMetadata.mTaxDate, makeDate(2024, 1, 16));
 
     ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
     const auto& diagnostic = parseResult.mDiagnostics.front();
@@ -891,7 +933,8 @@ TEST(TradeRepublicParserTest, RejectsAnAssetClassConflictForTheSameIsin) {
     ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
     EXPECT_EQ(parseResult.mStatement.mTradeInstruments.front().mAssetClass, AssetClass::Stock);
     EXPECT_EQ(parseResult.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
-    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.front().mTransactions.front().mTransactionId,
+    EXPECT_EQ(transactionId(
+                  parseResult.mStatement.mTradeInstruments.front().mTransactions.front().mMetadata),
               "synthetic-test-transaction");
 }
 

@@ -23,6 +23,17 @@ std::optional<Units> parseUnits(std::string_view aValue) {
     return parseScaledNumber<Units, UNITS_SCALE>(aValue);
 }
 
+TEST(ParseIntegerTest, ParsesOnlyCompleteIntegers) {
+    int value{};
+    EXPECT_TRUE(parseInteger("2024", value));
+    EXPECT_EQ(value, 2024);
+    EXPECT_TRUE(parseInteger("-12", value));
+    EXPECT_EQ(value, -12);
+    EXPECT_FALSE(parseInteger("", value));
+    EXPECT_FALSE(parseInteger("12x", value));
+    EXPECT_FALSE(parseInteger("2147483648", value));
+}
+
 TEST(ParseScaledNumberTest, ParsesTradeRepublicValuesExactly) {
     EXPECT_EQ(parseMoney("204.300000"), 2'043'000);
     EXPECT_EQ(parseMoney("0.070000"), 700);

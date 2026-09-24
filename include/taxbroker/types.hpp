@@ -1,21 +1,14 @@
 #pragma once
 
 #include "taxbroker/diagnostics.hpp"
+#include "taxbroker/event_metadata.hpp"
 
-#include <chrono>
 #include <cstdint>
 #include <optional>
-#include <ratio>
 #include <string>
 #include <vector>
 
 namespace taxbroker {
-
-enum class Broker {
-    Unknown,
-    TradeRepublic,
-    InteractiveBrokers,
-};
 
 /*
     Fixed-point monetary representation with 4 decimal precision.
@@ -47,13 +40,6 @@ constexpr Units UNITS_SCALE = 100000000;
 */
 using CorpRatio = std::int64_t;
 constexpr CorpRatio CORP_RATIO_SCALE = 100000000;
-
-/*
-    Day-precision date representation used across the tax pipeline.
-    Time-of-day is intentionally ignored since tax reporting is date-based.
-*/
-using DayDuration = std::chrono::duration<std::int64_t, std::ratio<86400>>;
-using Date = std::chrono::time_point<std::chrono::system_clock, DayDuration>;
 
 using Isin = std::string;
 
@@ -113,15 +99,14 @@ enum class PrivateMarketEventType {
 };
 
 struct CorporateAction {
-    Date mDate{};
+    EventMetadata mMetadata;
     CorporateActionType mType{};
     Units mUnitsDelta{};
     std::optional<CorpRatio> mRatio;
-    std::string mTransactionId;
 };
 
 struct TradeTransaction {
-    Date mDate{};
+    EventMetadata mMetadata;
     TradeSide mTradeSide{};
     Money mUnitPrice{};
     Units mUnits{};
@@ -131,7 +116,6 @@ struct TradeTransaction {
     Money mFeePaid{};
     ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::Unknown};
-    std::string mTransactionId;
 };
 
 struct TradeInstrument {
@@ -143,13 +127,12 @@ struct TradeInstrument {
 };
 
 struct DividendTransaction {
-    Date mDate{};
+    EventMetadata mMetadata;
     Money mGrossAmount{};
     Money mTaxPaid{};
     ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
-    std::string mTransactionId;
 };
 
 struct DividendInstrument {
@@ -159,13 +142,12 @@ struct DividendInstrument {
 };
 
 struct InterestTransaction {
-    Date mDate{};
+    EventMetadata mMetadata;
     Money mGrossAmount{};
     Money mTaxPaid{};
     ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
-    std::string mTransactionId;
 };
 
 struct InterestInstrument {
@@ -178,18 +160,17 @@ struct InterestInstrument {
 // Broker benefits are preserved separately from security acquisitions. This keeps the exact
 // credited amount available for local analytics without creating a duplicate buy transaction.
 struct BenefitEvent {
-    Date mDate{};
+    EventMetadata mMetadata;
     BenefitType mType{};
     std::string mName;
     std::optional<Isin> mIsin;
     AssetClass mAssetClass{AssetClass::Unknown};
     Money mAmount{};
     Currency mCurrency{Currency::EUR};
-    std::string mTransactionId;
 };
 
 struct PrivateMarketEvent {
-    Date mDate{};
+    EventMetadata mMetadata;
     PrivateMarketEventType mType{};
     std::string mName;
     std::optional<Isin> mIsin;
@@ -200,7 +181,6 @@ struct PrivateMarketEvent {
     Money mFeePaid{};
     Currency mCurrency{Currency::EUR};
     std::string mDescription;
-    std::string mTransactionId;
 };
 
 struct BrokerStatement {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 
 #include "taxbroker/types.hpp"
@@ -11,7 +12,7 @@ class CsvParser {
     virtual ~CsvParser() = default;
 
     [[nodiscard("Parsed broker data should not be ignored")]] virtual ParseResult
-    parse(const std::filesystem::path& aCsvPath) = 0;
+    parse(const std::filesystem::path& aCsvPath, std::size_t aSourceIndex = 0) = 0;
 };
 
 } // namespace taxbroker

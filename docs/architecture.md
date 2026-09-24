@@ -8,6 +8,57 @@ The repository does not currently define a frontend framework or an HTTP transpo
 therefore keep domain results independent of JSON and avoid designing transport-specific endpoint
 classes prematurely.
 
+## Imported event metadata
+
+Every imported trade, corporate action, dividend, interest payment, benefit, and private-market
+event owns the same `EventMetadata`:
+
+- `mTaxDate` is the broker-provided calendar date used for tax reporting. It is not derived from
+  the source timestamp.
+- `mSourceTimestamp` is an optional UTC instant with millisecond precision. Fractions finer than
+  milliseconds are truncated.
+- `mSource` is a `SourceReference` containing the broker, source filename, source row, optional
+  transaction ID, and stable input sequence.
+
+These types depend only on the C++ standard library. `SourceFilename::fromPath` removes both POSIX
+and Windows directory components and rejects empty, `.` and `..` basenames, so event metadata
+cannot retain an absolute host path. Source rows are one-based logical rows; for CSV input, the
+header is row 1 and the first data row is row 2.
+
+When a broker omits a timestamp, `mSourceTimestamp` is empty. When it supplies an invalid timestamp
+for an otherwise valid event, the parser keeps the event, leaves the timestamp empty, and reports a
+warning. The tax date remains unchanged in both cases.
+
+### Stable input sequence
+
+The stable input sequence is scoped to the complete input request. `mSourceIndex` is the zero-based
+position of the source file in the request, and `mEventIndex` is the zero-based source-order
+position assigned by that source's parser. The current CSV parsers use the data-row position as the
+event index. Parser completion order is never used, so files can be parsed concurrently without
+changing event order.
+
+The pair must uniquely identify each imported event in a request. It is the final ordering key and
+does not represent broker time.
+
+### Equality and duplicate identity
+
+`EventMetadata` equality compares every metadata field, including filename, row, and stable input
+sequence. This exact value equality is separate from duplicate detection.
+
+A transaction identity consists of the broker and transaction ID. The same ID from different
+brokers therefore identifies different transactions. Matching identities mark duplicate
+candidates even when their filename, row, or stable sequence differs. A candidate is an exact
+duplicate only when its event kind, tax date, timestamp, instrument, and event-specific values also
+match; otherwise it is a conflict. Events without transaction IDs are not automatically
+deduplicated.
+
+### Deterministic ordering
+
+Events are ordered by tax date, timestamp presence, timestamp value, and stable input sequence, in
+that order. On the same tax date, timestamped events precede events without timestamps. Broker,
+filename, row, and transaction ID are not ordering fallbacks. The placement of untimestamped events
+is a deterministic policy and does not claim that they occurred after every timestamped event.
+
 ## Parser diagnostics
 
 Parser diagnostics have three separate responsibilities:

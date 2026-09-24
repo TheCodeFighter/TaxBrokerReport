@@ -12,6 +12,7 @@ include(GoogleTest)
 
 # Unit Tests
 add_executable(taxbroker_unit_tests
+    unit/event_metadata_test.cpp
     unit/fifo_matcher_test.cpp
     unit/diagnostics_json_test.cpp
     unit/ibkr_parser_test.cpp

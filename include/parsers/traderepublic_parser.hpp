@@ -14,7 +14,7 @@ namespace taxbroker::tr {
 
 class TradeRepublicParser final : public CsvParser {
   public:
-    ParseResult parse(const std::filesystem::path& aCsvPath) override;
+    ParseResult parse(const std::filesystem::path& aCsvPath, std::size_t aSourceIndex = 0) override;
 
   private:
     struct RowContext;
