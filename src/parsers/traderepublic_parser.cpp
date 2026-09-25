@@ -1,5 +1,6 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/types.hpp"
+#include "utils/date_utils.hpp"
 #include "utils/logger.hpp"
 #include "utils/numeric_util.hpp"
 
@@ -92,93 +93,6 @@ std::string getAmountCurrencyValue(const csv::CSVRow& aCsvRow) {
     return originalCurrency.empty() ? aCsvRow["currency"].get<std::string>() : originalCurrency;
 }
 
-std::optional<taxbroker::SourceTimestamp> parseSourceTimestamp(std::string_view aValue) {
-    if (aValue.size() < 20 || aValue[4] != '-' || aValue[7] != '-' || aValue[10] != 'T' ||
-        aValue[13] != ':' || aValue[16] != ':')
-    {
-        return std::nullopt;
-    }
-
-    int year{}, month{}, day{}, hour{}, minute{}, second{};
-    if (!parseInteger(aValue.substr(0, 4), year) || !parseInteger(aValue.substr(5, 2), month) ||
-        !parseInteger(aValue.substr(8, 2), day) || !parseInteger(aValue.substr(11, 2), hour) ||
-        !parseInteger(aValue.substr(14, 2), minute) || !parseInteger(aValue.substr(17, 2), second))
-    {
-        return std::nullopt;
-    }
-
-    const auto calendarDate = std::chrono::year{year} /
-                              std::chrono::month{static_cast<unsigned>(month)} /
-                              std::chrono::day{static_cast<unsigned>(day)};
-    if (!calendarDate.ok() || hour > 23 || minute > 59 || second > 59)
-    {
-        return std::nullopt;
-    }
-
-    std::size_t timezonePosition = 19;
-    std::chrono::milliseconds fractional{};
-    if (aValue[timezonePosition] == '.')
-    {
-        const auto fractionalStart = ++timezonePosition;
-        while (timezonePosition < aValue.size() && aValue[timezonePosition] >= '0' &&
-               aValue[timezonePosition] <= '9')
-        {
-            ++timezonePosition;
-        }
-        const auto fractionalDigits = timezonePosition - fractionalStart;
-        if (fractionalDigits == 0 || fractionalDigits > 9)
-        {
-            return std::nullopt;
-        }
-
-        const auto retainedDigits = std::min<std::size_t>(fractionalDigits, 3);
-        int fractionalValue{};
-        if (!parseInteger(aValue.substr(fractionalStart, retainedDigits), fractionalValue))
-        {
-            return std::nullopt;
-        }
-        for (std::size_t digit = retainedDigits; digit < 3; ++digit)
-        {
-            fractionalValue *= 10;
-        }
-        fractional = std::chrono::milliseconds{fractionalValue};
-    }
-
-    std::chrono::minutes utcOffset{};
-    if (timezonePosition < aValue.size() && aValue[timezonePosition] == 'Z')
-    {
-        if (timezonePosition + 1 != aValue.size())
-        {
-            return std::nullopt;
-        }
-    }
-    else
-    {
-        if (timezonePosition + 6 != aValue.size() ||
-            (aValue[timezonePosition] != '+' && aValue[timezonePosition] != '-') ||
-            aValue[timezonePosition + 3] != ':')
-        {
-            return std::nullopt;
-        }
-
-        int offsetHour{}, offsetMinute{};
-        if (!parseInteger(aValue.substr(timezonePosition + 1, 2), offsetHour) ||
-            !parseInteger(aValue.substr(timezonePosition + 4, 2), offsetMinute) ||
-            offsetHour > 23 || offsetMinute > 59)
-        {
-            return std::nullopt;
-        }
-        utcOffset = std::chrono::hours{offsetHour} + std::chrono::minutes{offsetMinute};
-        if (aValue[timezonePosition] == '-')
-        {
-            utcOffset = -utcOffset;
-        }
-    }
-
-    return taxbroker::SourceTimestamp{std::chrono::sys_days{calendarDate}.time_since_epoch() +
-                                      std::chrono::hours{hour} + std::chrono::minutes{minute} +
-                                      std::chrono::seconds{second} + fractional - utcOffset};
-}
 } // namespace
 
 namespace taxbroker::tr {
@@ -539,7 +453,7 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return false;
     }
 
-    auto date = parseDate(aCsvRow["date"].get<std::string>());
+    auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     auto tradeSide = parseTradeSide(typeValue);
     auto unitPrice = parseMoney(aCsvRow["price"].get<std::string>());
     auto units = parseUnits(aCsvRow["shares"].get<std::string>());
@@ -668,7 +582,7 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    auto date = parseDate(aCsvRow["date"].get<std::string>());
+    auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
     auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
     auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
@@ -756,7 +670,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
             return;
         }
 
-        auto date = parseDate(aCsvRow["date"].get<std::string>());
+        auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
         auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
         auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
@@ -843,7 +757,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         if (aInterestType == InterestType::BrokerInterest)
         {
             const auto brokerName = "Trade Republic";
-            auto date = parseDate(aCsvRow["date"].get<std::string>());
+            auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
             auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
             auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
@@ -937,7 +851,7 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    const auto date = parseDate(aCsvRow["date"].get<std::string>());
+    const auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     const auto unitsDelta = parseUnits(aCsvRow["shares"].get<std::string>());
     const auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
 
@@ -993,7 +907,7 @@ void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
                                           std::vector<BenefitEvent>& aBenefitEvents,
                                           const RowParsedValues& aParsedValues,
                                           const RowContext& aContext) {
-    const auto date = parseDate(aCsvRow["date"].get<std::string>());
+    const auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     const auto benefitType = parseBenefitType(aParsedValues.mType);
     const auto amount = parseMoney(aCsvRow["amount"].get<std::string>());
     const auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
@@ -1045,7 +959,7 @@ void TradeRepublicParser::parsePrivateMarketRow(
     std::vector<PrivateMarketEvent>& aPrivateMarketEvents,
     const RowParsedValues& aParsedValues,
     const RowContext& aContext) {
-    const auto date = parseDate(aCsvRow["date"].get<std::string>());
+    const auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     const auto eventType = parsePrivateMarketEventType(aParsedValues.mType);
     const auto amount = parseMoney(aCsvRow["amount"].get<std::string>());
     const auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
@@ -1101,29 +1015,6 @@ void TradeRepublicParser::parsePrivateMarketRow(
         .mCurrency = currency,
         .mDescription = aCsvRow["description"].get<std::string>(),
     });
-}
-
-std::optional<Date> TradeRepublicParser::parseDate(std::string_view aValue) {
-    if (aValue.size() != 10 || aValue[4] != '-' || aValue[7] != '-')
-        return std::nullopt;
-
-    int year{}, month{}, day{};
-    auto view_year = aValue.substr(0, 4);
-    auto view_month = aValue.substr(5, 2);
-    auto view_day = aValue.substr(8, 2);
-
-    if (!parseInteger(view_year, year) || !parseInteger(view_month, month) ||
-        !parseInteger(view_day, day))
-    {
-        return std::nullopt;
-    }
-
-    auto ymd = std::chrono::year{year} / std::chrono::month{static_cast<unsigned>(month)} /
-               std::chrono::day{static_cast<unsigned>(day)};
-    if (!ymd.ok())
-        return std::nullopt;
-
-    return Date{std::chrono::time_point_cast<DayDuration>(std::chrono::sys_days{ymd})};
 }
 
 std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
