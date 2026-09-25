@@ -48,7 +48,6 @@ class TradeRepublicParser final : public CsvParser {
                                const RowContext& aContext);
 
     // Parsing helpers
-    std::optional<Date> parseDate(std::string_view aValue);
     std::optional<Money> parseMoney(std::string_view aValue);
     std::optional<ExchangeRate> parseExchangeRate(std::string_view aValue);
     std::optional<Units> parseUnits(std::string_view aValue);
