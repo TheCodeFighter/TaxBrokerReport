@@ -43,7 +43,8 @@ Every report run starts with an empty ledger:
 2. Process every buy, sale, and relevant corporate action up to the end of the selected year.
 3. Use older buys and sales to build the correct FIFO position.
 4. Add a result to the report only when the event that created it happened in the selected year.
-5. Include every in-year capital sale, even when its holding period may make it tax-exempt.
+5. Include every in-year capital sale for each processable ISIN, even when its holding period may
+   make it tax-exempt. [`fifo.md`](fifo.md) defines the explicit incomplete-history exception.
 
 Each report run rebuilds its own ledger. Running a report for one year must not change the result
 of a later run for another year.
