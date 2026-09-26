@@ -147,8 +147,8 @@ std::string_view toString(BenefitType aBenefitType) {
     {
     case BenefitType::Saveback:
         return "Saveback";
-    case BenefitType::Stockperk:
-        return "Stockperk";
+    case BenefitType::StockPerk:
+        return "StockPerk";
     }
 
     return "Unknown";

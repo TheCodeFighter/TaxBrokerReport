@@ -89,7 +89,7 @@ enum class InterestType {
 
 enum class BenefitType {
     Saveback,
-    Stockperk
+    StockPerk
 };
 
 enum class PrivateMarketEventType {

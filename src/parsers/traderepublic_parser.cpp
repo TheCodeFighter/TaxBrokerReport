@@ -1137,7 +1137,7 @@ std::optional<BenefitType> TradeRepublicParser::parseBenefitType(std::string_vie
     if (aValue == "BENEFITS_SAVEBACK")
         return BenefitType::Saveback;
     if (aValue == "STOCKPERK")
-        return BenefitType::Stockperk;
+        return BenefitType::StockPerk;
     return std::nullopt;
 }
 

@@ -59,6 +59,16 @@ static_assert(std::is_same_v<decltype(BenefitEvent{}.mMetadata), EventMetadata>)
 static_assert(std::is_same_v<decltype(PrivateMarketEvent{}.mMetadata), EventMetadata>);
 static_assert(std::is_same_v<SourceTimestamp::duration, std::chrono::milliseconds>);
 
+template <typename Event>
+concept HasAdHocTransactionId = requires(Event aEvent) { aEvent.mTransactionId; };
+
+static_assert(!HasAdHocTransactionId<CorporateAction>);
+static_assert(!HasAdHocTransactionId<TradeTransaction>);
+static_assert(!HasAdHocTransactionId<DividendTransaction>);
+static_assert(!HasAdHocTransactionId<InterestTransaction>);
+static_assert(!HasAdHocTransactionId<BenefitEvent>);
+static_assert(!HasAdHocTransactionId<PrivateMarketEvent>);
+
 TEST(SourceFilenameTest, RetainsOnlyTheBasenameAcrossPathStyles) {
     EXPECT_EQ(SourceFilename::fromPath("/private/user/export.csv").value(), "export.csv");
     EXPECT_EQ(SourceFilename::fromPath(R"(C:\Users\person\export.csv)").value(), "export.csv");
@@ -71,13 +81,35 @@ TEST(SourceFilenameTest, RejectsPathsWithoutABasename) {
     EXPECT_THROW((void)SourceFilename::fromPath(""), std::invalid_argument);
 }
 
-TEST(EventMetadataTest, ExactEqualityIncludesEverySourceField) {
-    const auto original = makeMetadata("transaction-1", 4, {.mSourceIndex = 1, .mEventIndex = 2});
-    auto copy = original;
-    EXPECT_EQ(original, copy);
+TEST(EventMetadataTest, ExactEqualityIncludesEveryMetadataField) {
+    const auto original = makeMetadata("transaction-1",
+                                       4,
+                                       {.mSourceIndex = 1, .mEventIndex = 2},
+                                       makeTimestamp(2024, 1, 15, 10));
+    EXPECT_EQ(original, original);
 
-    copy.mSource.mInputSequence.mEventIndex = 3;
-    EXPECT_NE(original, copy);
+    const auto expectDifferent = [&original](auto aMutate) {
+        auto changed = original;
+        aMutate(changed);
+        EXPECT_NE(original, changed);
+    };
+
+    expectDifferent([](EventMetadata& aMetadata) { aMetadata.mTaxDate = makeDate(2024, 1, 16); });
+    expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mSourceTimestamp = makeTimestamp(2024, 1, 15, 11);
+    });
+    expectDifferent(
+        [](EventMetadata& aMetadata) { aMetadata.mSource.mBroker = Broker::InteractiveBrokers; });
+    expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mSource.mFilename = SourceFilename::fromPath("other.csv");
+    });
+    expectDifferent([](EventMetadata& aMetadata) { aMetadata.mSource.mSourceRow = 5; });
+    expectDifferent(
+        [](EventMetadata& aMetadata) { aMetadata.mSource.mTransactionId = "transaction-2"; });
+    expectDifferent(
+        [](EventMetadata& aMetadata) { aMetadata.mSource.mInputSequence.mSourceIndex = 2; });
+    expectDifferent(
+        [](EventMetadata& aMetadata) { aMetadata.mSource.mInputSequence.mEventIndex = 3; });
 }
 
 TEST(EventMetadataTest, TransactionIdentityIsScopedByBrokerAndIgnoresSourceLocation) {

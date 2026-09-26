@@ -179,6 +179,26 @@ std::string_view transactionId(const EventMetadata& aMetadata) {
                                             : std::string_view{};
 }
 
+void expectSourceMetadata(const EventMetadata& aMetadata,
+                          const std::filesystem::path& aSourcePath,
+                          std::size_t aSourceRow,
+                          std::string_view aTransactionId,
+                          std::size_t aSourceIndex,
+                          std::size_t aEventIndex) {
+    const auto expectedTimestamp =
+        SourceTimestamp{std::chrono::sys_days{std::chrono::year{2024} / 1 / 14}.time_since_epoch() +
+                        std::chrono::hours{23} + std::chrono::milliseconds{123}};
+
+    EXPECT_EQ(aMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(aMetadata.mSourceTimestamp, expectedTimestamp);
+    EXPECT_EQ(aMetadata.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(aMetadata.mSource.mFilename.value(), aSourcePath.filename().string());
+    EXPECT_EQ(aMetadata.mSource.mSourceRow, aSourceRow);
+    EXPECT_EQ(transactionId(aMetadata), aTransactionId);
+    EXPECT_EQ(aMetadata.mSource.mInputSequence.mSourceIndex, aSourceIndex);
+    EXPECT_EQ(aMetadata.mSource.mInputSequence.mEventIndex, aEventIndex);
+}
+
 const TradeInstrument* findTradeInstrument(const BrokerStatement& aStatement,
                                            std::string_view aIsin) {
     const auto instrument = std::find_if(
@@ -220,6 +240,42 @@ const DividendTransaction* findDividendTransaction(const BrokerStatement& aState
         if (transaction != instrument.mTransactions.end())
         {
             return &*transaction;
+        }
+    }
+    return nullptr;
+}
+
+const InterestTransaction* findInterestTransaction(const BrokerStatement& aStatement,
+                                                   std::string_view aTransactionId) {
+    for (const auto& instrument : aStatement.mInterestInstruments)
+    {
+        const auto transaction =
+            std::find_if(instrument.mTransactions.begin(),
+                         instrument.mTransactions.end(),
+                         [&](const InterestTransaction& aInterest) {
+                             return transactionId(aInterest.mMetadata) == aTransactionId;
+                         });
+        if (transaction != instrument.mTransactions.end())
+        {
+            return &*transaction;
+        }
+    }
+    return nullptr;
+}
+
+const CorporateAction* findCorporateAction(const BrokerStatement& aStatement,
+                                           std::string_view aTransactionId) {
+    for (const auto& instrument : aStatement.mTradeInstruments)
+    {
+        const auto action =
+            std::find_if(instrument.mCorporateActions.begin(),
+                         instrument.mCorporateActions.end(),
+                         [&](const CorporateAction& aCorporateAction) {
+                             return transactionId(aCorporateAction.mMetadata) == aTransactionId;
+                         });
+        if (action != instrument.mCorporateActions.end())
+        {
+            return &*action;
         }
     }
     return nullptr;
@@ -403,15 +459,15 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
                         });
     EXPECT_EQ(transactionCount, 3U);
 
-    const auto* stockperkInstrument = findTradeInstrument(parseResult.mStatement, "XX1000000001");
-    ASSERT_NE(stockperkInstrument, nullptr);
-    ASSERT_EQ(stockperkInstrument->mTransactions.size(), 1U);
-    EXPECT_EQ(stockperkInstrument->mTransactions.front().mUnits, 10'000'000);
-    ASSERT_TRUE(stockperkInstrument->mTransactions.front().mAmount.has_value());
-    EXPECT_EQ(*stockperkInstrument->mTransactions.front().mAmount, 123'400);
-    EXPECT_EQ(stockperkInstrument->mTransactions.front().mFeePaid, 0);
-    EXPECT_EQ(transactionId(stockperkInstrument->mTransactions.front().mMetadata),
-              "synthetic-stockperk-buy");
+    const auto* stockPerkInstrument = findTradeInstrument(parseResult.mStatement, "XX1000000001");
+    ASSERT_NE(stockPerkInstrument, nullptr);
+    ASSERT_EQ(stockPerkInstrument->mTransactions.size(), 1U);
+    EXPECT_EQ(stockPerkInstrument->mTransactions.front().mUnits, 10'000'000);
+    ASSERT_TRUE(stockPerkInstrument->mTransactions.front().mAmount.has_value());
+    EXPECT_EQ(*stockPerkInstrument->mTransactions.front().mAmount, 123'400);
+    EXPECT_EQ(stockPerkInstrument->mTransactions.front().mFeePaid, 0);
+    EXPECT_EQ(transactionId(stockPerkInstrument->mTransactions.front().mMetadata),
+              "synthetic-stock-perk-buy");
 
     const auto* savebackInstrument = findTradeInstrument(parseResult.mStatement, "XX1000000002");
     ASSERT_NE(savebackInstrument, nullptr);
@@ -424,15 +480,15 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
 
     ASSERT_EQ(parseResult.mStatement.mBenefitEvents.size(), 3U);
 
-    const auto* stockperk = findBenefitEvent(parseResult.mStatement, BenefitType::Stockperk);
-    ASSERT_NE(stockperk, nullptr);
-    EXPECT_EQ(stockperk->mAmount, 123'400);
-    EXPECT_EQ(stockperk->mCurrency, Currency::EUR);
-    EXPECT_EQ(stockperk->mAssetClass, AssetClass::Stock);
-    EXPECT_EQ(stockperk->mName, "Synthetic Reward Share");
-    ASSERT_TRUE(stockperk->mIsin.has_value());
-    EXPECT_EQ(*stockperk->mIsin, "XX1000000001");
-    EXPECT_EQ(transactionId(stockperk->mMetadata), "synthetic-stockperk-cash");
+    const auto* stockPerk = findBenefitEvent(parseResult.mStatement, BenefitType::StockPerk);
+    ASSERT_NE(stockPerk, nullptr);
+    EXPECT_EQ(stockPerk->mAmount, 123'400);
+    EXPECT_EQ(stockPerk->mCurrency, Currency::EUR);
+    EXPECT_EQ(stockPerk->mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(stockPerk->mName, "Synthetic Reward Share");
+    ASSERT_TRUE(stockPerk->mIsin.has_value());
+    EXPECT_EQ(*stockPerk->mIsin, "XX1000000001");
+    EXPECT_EQ(transactionId(stockPerk->mMetadata), "synthetic-stock-perk-cash");
 
     const auto* saveback = findBenefitEvent(parseResult.mStatement, BenefitType::Saveback);
     ASSERT_NE(saveback, nullptr);
@@ -700,13 +756,13 @@ TEST(TradeRepublicParserTest, PreservesBenefitsAndEveryPrivateMarketEventType) {
     EXPECT_FALSE(saveback->mIsin.has_value());
     EXPECT_EQ(saveback->mAssetClass, AssetClass::Unknown);
 
-    const auto* stockperk = findBenefitEvent(statement, "synthetic-stockperk-001");
-    ASSERT_NE(stockperk, nullptr);
-    EXPECT_EQ(stockperk->mType, BenefitType::Stockperk);
-    EXPECT_EQ(stockperk->mAmount, 75'000);
-    ASSERT_TRUE(stockperk->mIsin.has_value());
-    EXPECT_EQ(*stockperk->mIsin, "XX0000000009");
-    EXPECT_EQ(stockperk->mAssetClass, AssetClass::Stock);
+    const auto* stockPerk = findBenefitEvent(statement, "synthetic-stock-perk-001");
+    ASSERT_NE(stockPerk, nullptr);
+    EXPECT_EQ(stockPerk->mType, BenefitType::StockPerk);
+    EXPECT_EQ(stockPerk->mAmount, 75'000);
+    ASSERT_TRUE(stockPerk->mIsin.has_value());
+    EXPECT_EQ(*stockPerk->mIsin, "XX0000000009");
+    EXPECT_EQ(stockPerk->mAssetClass, AssetClass::Stock);
 
     ASSERT_EQ(statement.mPrivateMarketEvents.size(), 3U);
     const auto* bonus = findPrivateMarketEvent(statement, "synthetic-private-bonus-001");
@@ -809,29 +865,93 @@ TEST(TradeRepublicParserTest, ParsesAStandaloneDividendInstrument) {
     EXPECT_TRUE(parseResult.mDiagnostics.empty());
 }
 
-TEST(TradeRepublicParserTest, PopulatesRequestScopedSourceReferenceAndTimestamp) {
-    SyntheticCsvRow row = makeDividendRow();
-    row.mDatetime = "2024-01-15T00:30:00.123456789+01:30";
-    const TemporaryCsvFile csvFile{{row}};
+TEST(TradeRepublicParserTest, PopulatesCompleteSourceMetadataForEveryEventType) {
+    SyntheticCsvRow trade;
+    SyntheticCsvRow dividend = makeDividendRow();
+    SyntheticCsvRow brokerInterest = makeBrokerInterestRow();
+    SyntheticCsvRow bondInterest = makeBondInterestRow();
+    SyntheticCsvRow corporateAction = makeCorporateActionRow();
+    SyntheticCsvRow benefit = makeBenefitRow();
+    SyntheticCsvRow privateMarket = makePrivateMarketRow();
+
+    const std::array rows{
+        &trade,
+        &dividend,
+        &brokerInterest,
+        &bondInterest,
+        &corporateAction,
+        &benefit,
+        &privateMarket,
+    };
+    for (auto* row : rows)
+    {
+        row->mDatetime = "2024-01-15T00:30:00.123456789+01:30";
+    }
+
+    const TemporaryCsvFile csvFile{
+        {trade, dividend, brokerInterest, bondInterest, corporateAction, benefit, privateMarket}};
     tr::TradeRepublicParser parser;
-
     const ParseResult parseResult = parser.parse(csvFile.path(), 7);
-    const auto& transaction =
-        parseResult.mStatement.mDividendInstruments.front().mTransactions.front();
-    const auto& metadata = transaction.mMetadata;
+    const auto& statement = parseResult.mStatement;
 
-    EXPECT_EQ(metadata.mTaxDate, makeDate(2024, 1, 15));
-    ASSERT_TRUE(metadata.mSourceTimestamp.has_value());
-    const auto expectedTimestamp =
-        SourceTimestamp{std::chrono::sys_days{std::chrono::year{2024} / 1 / 14}.time_since_epoch() +
-                        std::chrono::hours{23} + std::chrono::milliseconds{123}};
-    EXPECT_EQ(*metadata.mSourceTimestamp, expectedTimestamp);
-    EXPECT_EQ(metadata.mSource.mBroker, Broker::TradeRepublic);
-    EXPECT_EQ(metadata.mSource.mFilename.value(), csvFile.path().filename().string());
-    EXPECT_EQ(metadata.mSource.mSourceRow, 2U);
-    EXPECT_EQ(transactionId(metadata), "synthetic-dividend-validation");
-    EXPECT_EQ(metadata.mSource.mInputSequence.mSourceIndex, 7U);
-    EXPECT_EQ(metadata.mSource.mInputSequence.mEventIndex, 0U);
+    const auto* tradeTransaction = findTradeTransaction(statement, trade.mTransactionId);
+    const auto* dividendTransaction = findDividendTransaction(statement, dividend.mTransactionId);
+    const auto* brokerInterestTransaction =
+        findInterestTransaction(statement, brokerInterest.mTransactionId);
+    const auto* bondInterestTransaction =
+        findInterestTransaction(statement, bondInterest.mTransactionId);
+    const auto* action = findCorporateAction(statement, corporateAction.mTransactionId);
+    const auto* benefitEvent = findBenefitEvent(statement, benefit.mTransactionId);
+    const auto* privateMarketEvent =
+        findPrivateMarketEvent(statement, privateMarket.mTransactionId);
+
+    ASSERT_NE(tradeTransaction, nullptr);
+    ASSERT_NE(dividendTransaction, nullptr);
+    ASSERT_NE(brokerInterestTransaction, nullptr);
+    ASSERT_NE(bondInterestTransaction, nullptr);
+    ASSERT_NE(action, nullptr);
+    ASSERT_NE(benefitEvent, nullptr);
+    ASSERT_NE(privateMarketEvent, nullptr);
+
+    expectSourceMetadata(tradeTransaction->mMetadata,
+                         csvFile.path(),
+                         2,
+                         trade.mTransactionId,
+                         7,
+                         0);
+    expectSourceMetadata(dividendTransaction->mMetadata,
+                         csvFile.path(),
+                         3,
+                         dividend.mTransactionId,
+                         7,
+                         1);
+    expectSourceMetadata(brokerInterestTransaction->mMetadata,
+                         csvFile.path(),
+                         4,
+                         brokerInterest.mTransactionId,
+                         7,
+                         2);
+    expectSourceMetadata(bondInterestTransaction->mMetadata,
+                         csvFile.path(),
+                         5,
+                         bondInterest.mTransactionId,
+                         7,
+                         3);
+    expectSourceMetadata(action->mMetadata,
+                         csvFile.path(),
+                         6,
+                         corporateAction.mTransactionId,
+                         7,
+                         4);
+    expectSourceMetadata(benefitEvent->mMetadata, csvFile.path(), 7, benefit.mTransactionId, 7, 5);
+    expectSourceMetadata(privateMarketEvent->mMetadata,
+                         csvFile.path(),
+                         8,
+                         privateMarket.mTransactionId,
+                         7,
+                         6);
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
 }
 
 TEST(TradeRepublicParserTest, ReportsAStandaloneUnknownTransaction) {
