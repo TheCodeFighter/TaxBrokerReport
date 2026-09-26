@@ -11,6 +11,14 @@
 
 **TaxBrokerReport** is an open-source tool designed for Slovenian investors to automate the generation of FURS-compatible XML files (Doh-KDVP, Doh-Div, and Doh-DHO) from broker export data.
 
+## Contributing and support
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md) before contributing. Report security vulnerabilities
+privately by following [SECURITY.md](SECURITY.md).
+
+TaxBrokerReport is available under the [MIT License](LICENSE).
+
 ## Development Workflow
 
 Run `scripts/format.sh` before opening a pull request. To make Git reject unformatted commits and pushes locally, run `scripts/install_hooks.sh` once; it wires the repo-local hooks in `.githooks/` to `scripts/format.sh --check`.
