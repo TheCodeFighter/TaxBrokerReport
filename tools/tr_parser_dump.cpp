@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <ostream>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -49,13 +50,26 @@ void writeFixedPoint(std::ostream& aOutput, std::int64_t aValue, std::int64_t aS
             << std::setfill(' ');
 }
 
-void writeDate(std::ostream& aOutput, Date aDate) {
-    const auto dayPoint = std::chrono::floor<std::chrono::days>(aDate);
-    const std::chrono::year_month_day calendarDate{dayPoint};
+void writeCalendarDate(std::ostream& aOutput, std::chrono::year_month_day aDate) {
+    aOutput << static_cast<int>(aDate.year()) << '-' << std::setfill('0') << std::setw(2)
+            << static_cast<unsigned>(aDate.month()) << '-' << std::setw(2)
+            << static_cast<unsigned>(aDate.day()) << std::setfill(' ');
+}
 
-    aOutput << static_cast<int>(calendarDate.year()) << '-' << std::setfill('0') << std::setw(2)
-            << static_cast<unsigned>(calendarDate.month()) << '-' << std::setw(2)
-            << static_cast<unsigned>(calendarDate.day()) << std::setfill(' ');
+void writeDate(std::ostream& aOutput, Date aDate) {
+    writeCalendarDate(aOutput,
+                      std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(aDate)});
+}
+
+void writeTimestamp(std::ostream& aOutput, SourceTimestamp aTimestamp) {
+    const auto dayPoint = std::chrono::floor<std::chrono::days>(aTimestamp);
+    const std::chrono::hh_mm_ss time{aTimestamp - dayPoint};
+
+    writeCalendarDate(aOutput, std::chrono::year_month_day{dayPoint});
+    aOutput << 'T' << std::setfill('0') << std::setw(2) << time.hours().count() << ':'
+            << std::setw(2) << time.minutes().count() << ':' << std::setw(2)
+            << time.seconds().count() << '.' << std::setw(3) << time.subseconds().count() << 'Z'
+            << std::setfill(' ');
 }
 
 std::string_view toString(TradeSide aTradeSide) {
@@ -168,6 +182,53 @@ std::string_view toString(PrivateMarketEventType aEventType) {
     return "Unknown";
 }
 
+std::string_view toString(Broker aBroker) {
+    switch (aBroker)
+    {
+    case Broker::TradeRepublic:
+        return "TradeRepublic";
+    case Broker::InteractiveBrokers:
+        return "InteractiveBrokers";
+    case Broker::Unknown:
+        return "Unknown";
+    }
+
+    return "Unknown";
+}
+
+void writeMetadata(std::ostream& aOutput,
+                   const EventMetadata& aMetadata,
+                   std::string_view aIndent) {
+    aOutput << "tax_date: ";
+    writeDate(aOutput, aMetadata.mTaxDate);
+    aOutput << '\n' << aIndent << "source_timestamp: ";
+    if (aMetadata.mSourceTimestamp)
+    {
+        writeTimestamp(aOutput, *aMetadata.mSourceTimestamp);
+    }
+    else
+    {
+        aOutput << "<none>";
+    }
+
+    const auto& source = aMetadata.mSource;
+    aOutput << '\n'
+            << aIndent << "broker: " << toString(source.mBroker) << '\n'
+            << aIndent << "source_file: " << source.mFilename.value() << '\n'
+            << aIndent << "source_row: " << source.mSourceRow << '\n'
+            << aIndent << "transaction_id: " << source.mTransactionId.value_or("<none>") << '\n'
+            << aIndent << "source_index: " << source.mInputSequence.mSourceIndex << '\n'
+            << aIndent << "event_index: " << source.mInputSequence.mEventIndex;
+}
+
+std::string safeSourceFile(std::string_view aSourceFile) {
+    if (aSourceFile.empty())
+    {
+        return "<none>";
+    }
+    return SourceFilename::fromPath(aSourceFile).value();
+}
+
 std::string_view toString(DiagnosticSeverity aSeverity) {
     switch (aSeverity)
     {
@@ -215,8 +276,8 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
 
         for (const auto& transaction : instrument.mTransactions)
         {
-            aOutput << "    - date: ";
-            writeDate(aOutput, transaction.mMetadata.mTaxDate);
+            aOutput << "    - ";
+            writeMetadata(aOutput, transaction.mMetadata, "      ");
             aOutput << "\n      side: " << toString(transaction.mTradeSide)
                     << "\n      unit_price: ";
             writeFixedPoint(aOutput, transaction.mUnitPrice, MONEY_SCALE);
@@ -235,17 +296,15 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             writeFixedPoint(aOutput, transaction.mFeePaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
             writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
-            aOutput << "\n      currency: " << toString(transaction.mCurrency)
-                    << "\n      transaction_id: "
-                    << transaction.mMetadata.mSource.mTransactionId.value_or("<none>") << '\n';
+            aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
         }
 
         aOutput << "  corporate_actions: " << instrument.mCorporateActions.size() << '\n';
 
         for (const auto& action : instrument.mCorporateActions)
         {
-            aOutput << "    - date: ";
-            writeDate(aOutput, action.mMetadata.mTaxDate);
+            aOutput << "    - ";
+            writeMetadata(aOutput, action.mMetadata, "      ");
             aOutput << "\n      type: " << toString(action.mType) << "\n      units_delta: ";
             writeFixedPoint(aOutput, action.mUnitsDelta, UNITS_SCALE);
             aOutput << "\n      ratio: ";
@@ -257,8 +316,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             {
                 aOutput << "<unresolved>";
             }
-            aOutput << "\n      transaction_id: "
-                    << action.mMetadata.mSource.mTransactionId.value_or("<none>") << '\n';
+            aOutput << '\n';
         }
 
         aOutput << '\n';
@@ -277,8 +335,8 @@ void writeDividends(std::ostream& aOutput, const BrokerStatement& aStatement) {
 
         for (const auto& transaction : instrument.mTransactions)
         {
-            aOutput << "    - date: ";
-            writeDate(aOutput, transaction.mMetadata.mTaxDate);
+            aOutput << "    - ";
+            writeMetadata(aOutput, transaction.mMetadata, "      ");
             aOutput << "\n      gross_amount: ";
             writeFixedPoint(aOutput, transaction.mGrossAmount, MONEY_SCALE);
             aOutput << "\n      tax_paid: ";
@@ -286,9 +344,7 @@ void writeDividends(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      exchange_rate: ";
             writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
-                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency)
-                    << "\n      transaction_id: "
-                    << transaction.mMetadata.mSource.mTransactionId.value_or("<none>") << '\n';
+                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
         }
 
         aOutput << '\n';
@@ -308,8 +364,8 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
 
         for (const auto& transaction : instrument.mTransactions)
         {
-            aOutput << "    - date: ";
-            writeDate(aOutput, transaction.mMetadata.mTaxDate);
+            aOutput << "    - ";
+            writeMetadata(aOutput, transaction.mMetadata, "      ");
             aOutput << "\n      gross_amount: ";
             writeFixedPoint(aOutput, transaction.mGrossAmount, MONEY_SCALE);
             aOutput << "\n      tax_paid: ";
@@ -317,9 +373,7 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      exchange_rate: ";
             writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
-                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency)
-                    << "\n      transaction_id: "
-                    << transaction.mMetadata.mSource.mTransactionId.value_or("<none>") << '\n';
+                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
         }
 
         aOutput << '\n';
@@ -331,15 +385,14 @@ void writeBenefits(std::ostream& aOutput, const BrokerStatement& aStatement) {
 
     for (const auto& benefit : aStatement.mBenefitEvents)
     {
-        aOutput << "- date: ";
-        writeDate(aOutput, benefit.mMetadata.mTaxDate);
+        aOutput << "- ";
+        writeMetadata(aOutput, benefit.mMetadata, "  ");
         aOutput << "\n  type: " << toString(benefit.mType)
                 << "\n  name: " << (benefit.mName.empty() ? "<none>" : benefit.mName)
                 << "\n  isin: " << benefit.mIsin.value_or("<none>")
                 << "\n  asset_class: " << toString(benefit.mAssetClass) << "\n  amount: ";
         writeFixedPoint(aOutput, benefit.mAmount, MONEY_SCALE);
-        aOutput << "\n  currency: " << toString(benefit.mCurrency) << "\n  transaction_id: "
-                << benefit.mMetadata.mSource.mTransactionId.value_or("<none>") << "\n\n";
+        aOutput << "\n  currency: " << toString(benefit.mCurrency) << "\n\n";
     }
 }
 
@@ -348,8 +401,8 @@ void writePrivateMarketEvents(std::ostream& aOutput, const BrokerStatement& aSta
 
     for (const auto& event : aStatement.mPrivateMarketEvents)
     {
-        aOutput << "- date: ";
-        writeDate(aOutput, event.mMetadata.mTaxDate);
+        aOutput << "- ";
+        writeMetadata(aOutput, event.mMetadata, "  ");
         aOutput << "\n  type: " << toString(event.mType)
                 << "\n  name: " << (event.mName.empty() ? "<none>" : event.mName)
                 << "\n  isin: " << event.mIsin.value_or("<none>")
@@ -358,8 +411,7 @@ void writePrivateMarketEvents(std::ostream& aOutput, const BrokerStatement& aSta
         aOutput << "\n  fee_paid: ";
         writeFixedPoint(aOutput, event.mFeePaid, MONEY_SCALE);
         aOutput << "\n  currency: " << toString(event.mCurrency)
-                << "\n  description: " << event.mDescription << "\n  transaction_id: "
-                << event.mMetadata.mSource.mTransactionId.value_or("<none>") << "\n\n";
+                << "\n  description: " << event.mDescription << "\n\n";
     }
 }
 
@@ -370,7 +422,7 @@ void writeDiagnostics(std::ostream& aOutput, const ParseResult& aParseResult) {
     {
         aOutput << "- severity: " << toString(diagnostic.mSeverity)
                 << "\n  code: " << toString(diagnostic.mCode)
-                << "\n  source: " << diagnostic.mSourceFile << "\n  row: ";
+                << "\n  source: " << safeSourceFile(diagnostic.mSourceFile) << "\n  row: ";
         if (diagnostic.mRowIndex)
         {
             aOutput << *diagnostic.mRowIndex;

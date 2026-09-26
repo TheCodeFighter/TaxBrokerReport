@@ -4,7 +4,6 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <filesystem>
 #include <string_view>
 
 namespace {
@@ -88,7 +87,7 @@ std::string serializeDiagnosticsJson(const ParseResult& aParseResult, int aInden
     nlohmann::json diagnostics = nlohmann::json::array();
     for (const auto& diagnostic : aParseResult.mDiagnostics)
     {
-        const auto sourceFile = std::filesystem::path{diagnostic.mSourceFile}.filename().string();
+        const auto sourceFile = SourceFilename::fromPath(diagnostic.mSourceFile).value();
         nlohmann::json source{{"file", sourceFile}};
         if (diagnostic.mRowIndex)
         {

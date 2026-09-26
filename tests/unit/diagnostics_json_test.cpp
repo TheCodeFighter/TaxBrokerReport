@@ -37,7 +37,7 @@ TEST(DiagnosticsJsonTest, SerializesStableFrontendFieldsAndSummary) {
         ParseDiagnostic{
             .mSeverity = DiagnosticSeverity::Warning,
             .mCode = DiagnosticCode::UnsupportedAssetClass,
-            .mSourceFile = "/private/upload/Synthetic Export.csv",
+            .mSourceFile = "Synthetic Export.csv",
             .mRowIndex = 7U,
             .mTransactionId = "synthetic-transaction-001",
             .mField = "asset_class",
@@ -46,7 +46,7 @@ TEST(DiagnosticsJsonTest, SerializesStableFrontendFieldsAndSummary) {
         ParseDiagnostic{
             .mSeverity = DiagnosticSeverity::Error,
             .mCode = DiagnosticCode::ParseError,
-            .mSourceFile = "/private/upload/Synthetic Export.csv",
+            .mSourceFile = "Synthetic Export.csv",
             .mMessage = "The CSV could not be parsed.",
         },
     };
@@ -69,13 +69,26 @@ TEST(DiagnosticsJsonTest, SerializesStableFrontendFieldsAndSummary) {
     const auto& error = response.at("diagnostics").at(1);
     EXPECT_EQ(error.at("severity"), "error");
     EXPECT_EQ(error.at("code"), "parse_error");
+    EXPECT_EQ(error.at("source").at("file"), "Synthetic Export.csv");
     EXPECT_FALSE(error.at("source").contains("row"));
     EXPECT_FALSE(error.contains("transactionId"));
     EXPECT_FALSE(error.contains("field"));
+}
 
-    // Host paths are private implementation details and must never reach the browser contract.
-    EXPECT_EQ(api::serializeDiagnosticsJson(parseResult).find("/private/upload"),
-              std::string::npos);
+TEST(DiagnosticsJsonTest, KeepsOnlyFilenamesFromLinuxMacAndWindowsPaths) {
+    ParseResult parseResult;
+    parseResult.mDiagnostics = {
+        ParseDiagnostic{.mSourceFile = "/home/user/imports/linux.csv"},
+        ParseDiagnostic{.mSourceFile = "/Users/user/imports/macos.csv"},
+        ParseDiagnostic{.mSourceFile = R"(C:\Users\user\imports\windows.csv)"},
+    };
+
+    const auto response = nlohmann::json::parse(api::serializeDiagnosticsJson(parseResult));
+    const auto& diagnostics = response.at("diagnostics");
+
+    EXPECT_EQ(diagnostics.at(0).at("source").at("file"), "linux.csv");
+    EXPECT_EQ(diagnostics.at(1).at("source").at("file"), "macos.csv");
+    EXPECT_EQ(diagnostics.at(2).at("source").at("file"), "windows.csv");
 }
 
 TEST(DiagnosticsJsonTest, ReportsWarningOnlyResultsSeparatelyFromErrors) {
