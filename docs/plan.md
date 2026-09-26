@@ -101,10 +101,10 @@ Diagnostics must identify their stage, such as:
 Where available, diagnostics include broker, source filename, source row, transaction ID, and field
 name. They must not expose absolute paths or duplicate sensitive raw financial values.
 
-Warnings allow processing to continue. An error blocks only the affected output XML file. For
-example, incomplete capital-gains history blocks the capital-gains XML but does not prevent valid
-dividend or interest XML files from being generated. The API returns both successful outputs and
-all diagnostics so the frontend can explain partial success.
+Warnings allow processing to continue. Errors have an explicit scope. Incomplete capital-gains
+history excludes the affected ISIN after user confirmation, while other ISINs and valid dividend
+or interest XML files can still be generated. The API returns both successful outputs and all
+diagnostics so the frontend can explain exclusions and partial success.
 
 ## Multi-file merging
 
@@ -143,8 +143,9 @@ Filtering must therefore occur at the ledger/output stages, not by discarding al
 selected year immediately after parsing.
 
 If a disposal cannot be matched because acquisition history is missing, produce a structured
-incomplete-history error. Do not silently invent a cost basis or generate an affected XML file from
-known incomplete data.
+incomplete-history error. In normal mode, identify the investment by name and ISIN and require user
+confirmation before excluding the whole ISIN. Developer mode may include known incomplete data
+only after three separate warnings. Neither mode may invent a cost basis.
 
 ## Tax processing rules
 
@@ -288,7 +289,8 @@ The Trade Republic MVP is complete when:
 - results are deterministic across repeated runs;
 - selected-year processing uses all supplied relevant history and excludes later events;
 - corporate actions and FIFO inventory produce tested outcomes;
-- incomplete history is visible in the frontend and blocks only affected XML files;
+- incomplete history is visible in the frontend, and affected ISINs can be explicitly excluded
+  without blocking unrelated reports;
 - capital-gains, dividend, and interest XML files match ported known-good behavior and validate
   against their schemas;
 - the complete backend pipeline is covered by integration tests;
