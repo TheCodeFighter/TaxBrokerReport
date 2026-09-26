@@ -106,6 +106,11 @@ history excludes the affected ISIN after user confirmation, while other ISINs an
 or interest XML files can still be generated. The API returns both successful outputs and all
 diagnostics so the frontend can explain exclusions and partial success.
 
+The application result also carries structured requests for missing user decisions. When a Trade
+Republic split row has no verified ratio, the frontend asks for the number of new shares and old
+shares from the broker's announcement. The backend validates the ratio and never infers it from an
+undocumented decimal value.
+
 ## Multi-file merging
 
 Implement merging as a deterministic, single-threaded operation.

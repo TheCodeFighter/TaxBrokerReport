@@ -161,7 +161,7 @@ because this example is about dates, FIFO shares, and report output.
 | 2008-05-10 | Buy 10 shares. | Hold 10 shares bought in 2008. | Nothing. |
 | 2023-03-01 | Sell 4 shares. | Use 4 shares from the 2008 buy; 6 remain. | Nothing because the sale was before 2024. |
 | 2023-09-01 | Buy 8 shares. | Hold 6 older and 8 newer shares. | Nothing. |
-| 2024-02-01 | Two-for-one split. | Hold 12 older and 16 newer adjusted shares. | Nothing. |
+| 2024-02-01 | Trade Republic records a split. Its announcement says 2 new shares for 1 old share. | The user confirms `2 / 1`; hold 12 older and 16 newer adjusted shares. | Nothing. |
 | 2024-06-20 | Sell 20 shares. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | Report both matches. The older match exceeds 15 years but is still sent to FURS. |
 | 2024-12-20 | Sell 4 shares at a loss. | Use 4 newer shares; 4 remain at year-end. | Report the loss, but the January replacement buy means it cannot reduce taxable gains. |
 | 2025-01-05 | Buy the same investment. | Check it only for the 30-day loss rule in the 2024 run. | Nothing. |
@@ -193,6 +193,8 @@ Tests based on this document must prove that:
 - older buys and sales create the correct opening FIFO position;
 - corporate actions before and during the year are applied;
 - corporate actions after the year are ignored;
+- a supported corporate action is applied before same-day trades for the same ISIN;
+- corporate-action errors leave the affected ISIN unprocessed without blocking unrelated reports;
 - FIFO matches below, at, and above a holding-period limit are all reported;
 - a sale containing both older and newer shares reports every FIFO match;
 - holding time does not change FIFO use or report output;
