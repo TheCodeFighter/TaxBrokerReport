@@ -54,10 +54,23 @@ deduplicated.
 
 ### Deterministic ordering
 
-Events are ordered by tax date, timestamp presence, timestamp value, and stable input sequence, in
-that order. On the same tax date, timestamped events precede events without timestamps. Broker,
-filename, row, and transaction ID are not ordering fallbacks. The placement of untimestamped events
-is a deterministic policy and does not claim that they occurred after every timestamped event.
+Events are normally ordered by tax date, timestamp presence, timestamp value, and stable input
+sequence, in that order. On the same tax date, timestamped events precede events without
+timestamps. Broker, filename, row, and transaction ID are not ordering fallbacks. The placement of
+untimestamped events is a deterministic policy and does not claim that they occurred after every
+timestamped event.
+
+Tax processing has one event-kind priority: a supported split or reverse split is applied before
+every purchase or sale for the same ISIN on its effective tax date. Trades on that date use the
+adjusted position. Several actions for the same ISIN and date use reliable source timestamps. If
+their order cannot be established, stable input sequence keeps the diagnostics deterministic but
+must not be used to guess the result. The processor reports the ambiguity and leaves that ISIN
+unprocessed.
+
+Broker values whose meaning is not verified remain source data, not calculated tax inputs. In
+particular, a Trade Republic split row's decimal `shares` value does not establish the split ratio.
+The application result asks the frontend for the action's new-shares-to-old-shares ratio. Only a
+validated user confirmation turns that action into a processable split or reverse split.
 
 ## Parser diagnostics
 
