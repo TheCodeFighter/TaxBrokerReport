@@ -122,23 +122,18 @@ void TradeRepublicParser::RowContext::addDiagnostic(DiagnosticSeverity aSeverity
                                                     DiagnosticCode aCode,
                                                     std::string aMessage,
                                                     std::optional<std::string> aField) const {
-    const std::string_view transactionId =
-        mTransactionId.empty() ? "<unavailable>" : mTransactionId;
-
     if (aSeverity == DiagnosticSeverity::Warning)
     {
-        LOG_WARNING("CSV diagnostic in {} row {} (transaction ID '{}'): {}",
-                    mSourceFile.value(),
+        LOG_WARNING("Trade Republic CSV source {} row {}: {}",
+                    mInputSequence.mSourceIndex,
                     mRowIndex,
-                    transactionId,
                     aMessage);
     }
     else
     {
-        LOG_ERROR("CSV diagnostic in {} row {} (transaction ID '{}'): {}",
-                  mSourceFile.value(),
+        LOG_ERROR("Trade Republic CSV source {} row {}: {}",
+                  mInputSequence.mSourceIndex,
                   mRowIndex,
-                  transactionId,
                   aMessage);
     }
 
@@ -298,13 +293,10 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                 break;
             }
         }
-    } catch (const std::runtime_error& exception)
+    } catch (const std::runtime_error&)
     {
-        LOG_ERROR("Failed to parse Trade Republic CSV '{}': {}",
-                  aCsvPath.string(),
-                  exception.what());
-        // A file-level failure may happen after some rows were yielded. Never return a statement
-        // that could be mistaken for a complete import.
+        LOG_ERROR("Trade Republic CSV source {} could not be parsed", aSourceIndex);
+        // Discard partial results after a file-level failure.
         parsedResult.mStatement = {};
         parsedResult.mDiagnostics.emplace_back(ParseDiagnostic{
             .mSeverity = DiagnosticSeverity::Error,

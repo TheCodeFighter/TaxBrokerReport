@@ -114,7 +114,8 @@ as `null`.
 
 The strings used by `severity`, `code`, `broker`, and `status` are API values. Existing values must
 not be renamed within a schema version. Add a new code for new behavior, and increment
-`schemaVersion` for a breaking contract change.
+`schemaVersion` for a breaking contract change. This versioning protects the current backend and
+future frontend contract; it does not cover the legacy project.
 
 For privacy, the response exposes only the uploaded filename, never an absolute host path. It also
 does not duplicate raw financial field values. The CSV row, transaction ID, field name, and a
@@ -127,5 +128,9 @@ Running `scripts/dump_tr_parse.sh` produces:
 - `runtime/debug/tr_parsed_debug.txt` for the parsed C++ data;
 - `runtime/diagnostics/tr_parse_diagnostics.json` for the frontend-shaped diagnostics.
 
-The whole `runtime/` directory is ignored by Git. These files are inspection aids, not an API or a
-source of application state.
+The tool shows what the parser retains from a local export, including parsed financial data and
+complete event metadata. Only the source filename is stored, never its path. The `runtime/`
+directory is ignored by Git; its potentially private artifacts must remain local.
+
+Parser logs may later be shared for support, so they follow a stricter boundary: source index, CSV
+row, and diagnostic reason are allowed; paths, transaction IDs, and raw financial values are not.

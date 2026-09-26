@@ -9,6 +9,9 @@ usage() {
     cat <<'EOF'
 Usage: dump_tr_parse.sh [csv-path] [parsed-output-path] [diagnostics-output-path]
 
+    Parses a local Trade Republic export for direct inspection. Output can contain private
+    financial data and must remain local.
+
     csv-path                Path relative to the repository
                             (default: tmp/TransactionExport.csv)
     parsed-output-path      Human-readable parsed-data output
