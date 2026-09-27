@@ -7,7 +7,8 @@ report, but the app must still read older trades to calculate those results corr
 
 The app first combines the imported files, removes duplicates, and sorts all events as described
 in [`architecture.md`](architecture.md). Detailed FIFO and corporate-action rules belong in
-[`fifo.md`](fifo.md).
+[`fifo.md`](fifo.md). Currency conversion, rounding, and broker-fee rules belong in
+[`calculations.md`](calculations.md).
 
 ## Useful terms
 
@@ -70,6 +71,23 @@ rules decide how quantities, values, and purchase dates change.
 
 Dividends and interest do not create FIFO shares. They can appear in their reports only when their
 tax date is inside the selected year.
+
+## Currency conversion and fees
+
+Foreign values are converted separately on the tax date that applies to them. By default, the
+frontend asks the user for the official Banka Slovenije rate in the form `1 EUR = rate in the
+foreign currency`. One official rate is requested for each required currency and date, then reused
+for all matching instruments and brokers in that report run.
+
+The user may explicitly choose a broker rate after a prominent warning that it is probably not the
+official rate required by FURS. Broker rates remain event-specific and are never presented as
+official rates.
+
+Broker fees are shown only as selected-year information, grouped by broker and original currency.
+They use a broker-provided conversion rate when one is available and never ask the user for an
+official rate. A broker or overall EUR total is shown only when all fees included in that total
+can be converted. Fees never change a FURS purchase value, sale value, income amount, or XML
+field. The exact rules and error scopes are in [`calculations.md`](calculations.md).
 
 ## Long-held investments
 
@@ -195,6 +213,10 @@ Tests based on this document must prove that:
 - corporate actions after the year are ignored;
 - a supported corporate action is applied before same-day trades for the same ISIN;
 - corporate-action errors leave the affected ISIN unprocessed without blocking unrelated reports;
+- an official exchange rate is requested once and reused only for the same currency and tax date;
+- choosing a broker rate requires the documented warning and keeps a visible warning in the result;
+- broker fees use available broker rates without a prompt, otherwise remain in their original
+  currency, and never change FURS values;
 - FIFO matches below, at, and above a holding-period limit are all reported;
 - a sale containing both older and newer shares reports every FIFO match;
 - holding time does not change FIFO use or report output;

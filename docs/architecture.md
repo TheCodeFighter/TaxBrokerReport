@@ -72,6 +72,18 @@ particular, a Trade Republic split row's decimal `shares` value does not establi
 The application result asks the frontend for the action's new-shares-to-old-shares ratio. Only a
 validated user confirmation turns that action into a processable split or reverse split.
 
+Foreign-currency processing follows [`calculations.md`](calculations.md). The application result
+contains one structured request for every missing official `(currency, tax date)` rate. A
+user-entered official rate is shared across brokers and instruments only for that exact pair. A
+broker rate is an event-specific fallback, requires an explicit frontend warning, and remains
+marked as non-official in the result.
+
+The application result also contains the selected-year informational fee summary. It groups
+preserved fees by broker and original currency. It provides a broker-rate EUR equivalent only
+when every required fee rate is available from that broker. A fee never creates an official-rate
+request. Missing fee rates leave the affected EUR totals unavailable and do not block FURS XML
+output.
+
 ## Parser diagnostics
 
 Parser diagnostics have three separate responsibilities:
