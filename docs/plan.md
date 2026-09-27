@@ -111,6 +111,10 @@ Republic split row has no verified ratio, the frontend asks for the number of ne
 shares from the broker's announcement. The backend validates the ratio and never infers it from an
 undocumented decimal value.
 
+The same result carries missing exchange-rate requests grouped by currency and tax date. Official
+Banka Slovenije input is the default and is reused for that exact pair across the current run. A
+broker-rate fallback requires a prominent explicit warning and remains event-specific.
+
 ## Multi-file merging
 
 Implement merging as a deterministic, single-threaded operation.
@@ -165,8 +169,9 @@ Document and implement the following rules before considering the processor comp
   FURS calculations because the applicable FURS deduction is handled by FURS; and
 - incomplete or contradictory history produces structured errors.
 
-Detailed, source-backed rules belong in `docs/fifo.md` and `docs/tax_rules.md`. Legacy behavior can
-be used as a tested reference, but the new implementation and tests must state the rules explicitly.
+Detailed, source-backed rules belong in `docs/fifo.md`, `docs/tax_rules.md`, and
+`docs/calculations.md`. Legacy behavior can be used as a tested reference, but the new
+implementation and tests must state the rules explicitly.
 
 ## Final report models
 
@@ -211,6 +216,9 @@ Its conceptual input is:
 Its result contains:
 
 - parse and processing diagnostics;
+- structured requests for missing official exchange rates and other required user decisions;
+- informational fee totals by broker and original currency, with complete broker-rate EUR totals
+  where available;
 - status for each report type; and
 - every successfully generated XML document.
 
@@ -225,8 +233,12 @@ Build the minimum usable local frontend against the tested API contract. It must
 - select one or more broker files;
 - select the reporting tax year;
 - enter required taxpayer and report metadata;
+- enter each missing official Banka Slovenije rate once per currency and date;
+- choose a broker-rate fallback only after a prominent warning;
 - start processing;
 - see warnings and errors with useful source locations;
+- see selected-year fees by broker and original currency, with broker-rate EUR totals only when
+  complete and without any rate prompt for fees;
 - understand which report files succeeded or failed; and
 - download every successfully generated XML file.
 

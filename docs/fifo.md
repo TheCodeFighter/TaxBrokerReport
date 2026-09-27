@@ -6,7 +6,8 @@ This document explains how the app matches sales to earlier purchases. It also e
 happens when the imported files do not contain enough purchase history.
 
 The selected-year rules are in [`tax_rules.md`](tax_rules.md). Event ordering and source details
-are defined in [`architecture.md`](architecture.md).
+are defined in [`architecture.md`](architecture.md). Shared conversion and rounding rules are in
+[`calculations.md`](calculations.md).
 
 ## One FIFO pool for the same investment
 
@@ -60,7 +61,26 @@ For example:
   `0.55000000` units; and
 - a later sale of `0.55000000` units uses the rest of that lot and leaves exactly zero.
 
-FIFO matching must not use floating-point comparison, an approximate tolerance, or early rounding.
+FIFO matching must not use floating-point comparison, an unsupported tolerance, or early
+rounding.
+
+### Rounding differences and inventory balance
+
+The importer keeps the original quantity text and any digits discarded at the eight-decimal
+`Units` boundary. Purchases, sales, and the running position are otherwise added and subtracted
+exactly.
+
+A shortage smaller than `0.00000100` may be reconciled only when the source proves it is a
+rounding difference. Proof can be discarded source digits, a documented full-position sale, a
+broker ending position, or a broker control total. The processor applies the smallest possible
+adjustment to the documented source quantity and records a `quantity_rounding_reconciled` notice
+with the original value, adjusted value, difference, and supporting source. It must not create a
+purchase lot or cost basis.
+
+If several rounded parts come from one known exact total, use the largest-remainder method so the
+parts add back to that total. If a small difference has no supporting evidence, the frontend asks
+the user to verify and correct the affected source quantity. Without a confirmed correction, or
+when the difference is `0.00000100` or greater, the shortage is `incomplete_history`.
 
 ## Trades before the selected year
 
@@ -197,7 +217,8 @@ lots disagree with the exact combined target.
 Each lot keeps its exact total purchase value. Its adjusted value per unit is that unchanged total
 divided by its adjusted units. The calculation stays exact until output and is then rounded once
 to eight decimal places, with halves rounded away from zero. A rounded value per unit must never
-replace the preserved total purchase value used by later calculations.
+replace the preserved total purchase value used by later calculations. The shared arithmetic and
+XML boundary rules are defined in [`calculations.md`](calculations.md).
 
 If an adjusted non-empty lot would become zero, its purchase value could not be preserved without
 a cash or fractional-share rule. The action is then unrepresentable and must not be applied.
@@ -416,6 +437,12 @@ Tests based on this document must prove that:
 - a partial sale leaves the correct remaining units with their original purchase details;
 - one sale can use several purchase lots;
 - fractional units are exact to eight decimal places;
+- a positive quantity balance remains as open inventory and is not forced to zero;
+- a shortage below `0.00000100` is reconciled only with documented rounding evidence or a
+  user-confirmed source correction;
+- every reconciliation records its original value, adjusted value, difference, and evidence;
+- a reconciliation never creates a purchase lot or cost basis;
+- an unsupported or larger shortage produces `incomplete_history`;
 - a split increases units, reduces value per unit, and preserves purchase dates and total values;
 - a reverse split reduces units, increases value per unit, and preserves the same details;
 - a Trade Republic decimal `shares` value is not treated as a ratio, unit change, or resulting
@@ -429,7 +456,8 @@ Tests based on this document must prove that:
 - a source-provided ratio is accepted automatically only when its meaning is unambiguous;
 - adjusted lots use deterministic largest-remainder allocation and total exactly the post-action
   position;
-- adjusted output values per unit are rounded once to eight decimal places;
+- adjusted output values per unit are rounded once to eight decimal places and serialized with
+  four to eight decimal places as defined in `calculations.md`;
 - a supported action is applied before same-day trades for the same ISIN;
 - ambiguous same-day actions produce `corporate_action_ambiguous`;
 - missing, inconsistent, overflowing, and unrepresentable actions produce their documented errors;
@@ -459,9 +487,12 @@ ZDoh-2 Article 103 requires FIFO records for the taxpayer's stock of the same ty
 
 - [ZDoh-2 in the Slovenian Legal Information System](https://pisrs.si/Pis.web/pregledPredpisa?id=ZAKO4697)
 
-The FURS schema allows eight decimal places for security quantities and purchase values per unit:
+The FURS schema allows up to eight decimal places for security quantities and values per unit. The
+official display transform keeps at least four decimal places and preserves up to eight:
 
-- [Doh-KDVP schema](../legacy-QT-GUI/resources/xml/edavk/schemas/Doh_KDVP_9.xsd)
+- [Current official Doh-KDVP schema](https://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd)
+- [Current official Doh-KDVP display transform](https://edavki.durs.si/Documents/Transforms/Doh_KDVP_9.23-display-sl.xslt)
+- [Repository Doh-KDVP schema snapshot](../legacy-QT-GUI/resources/xml/edavk/schemas/Doh_KDVP_9.xsd)
 
 Trade Republic describes splits by ratio and directs users to the action announcement for its
 details. Its public guidance does not define the split row's CSV `shares` value:
