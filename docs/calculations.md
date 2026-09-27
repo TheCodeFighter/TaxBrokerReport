@@ -226,9 +226,47 @@ At an exact half step:
 The negative example proves symmetric arithmetic. A field that does not allow negative money is
 still rejected by its domain validation.
 
-## Money and units
+## Exact FIFO lot basis and money totals
 
-Multiplying a unit price by units uses:
+Convert an original acquisition unit price on its acquisition date to four-decimal EUR `Money`
+using the conversion rules above. Multiply that price by the original eight-decimal quantity and
+retain the complete wide-integer product as the lot basis, with 12 effective decimal places. This
+is an exact product of imported facts, not an extra rounded calculation scale. A split does not
+reconvert that acquisition at its action date and does not replace its basis with a rounded total.
+
+For a partial sale of `matchedUnits` from `remainingUnits`, allocate
+`remainingBasis * matchedUnits / remainingUnits` exactly as a checked rational. Subtract that exact
+allocation from the remaining basis. The final consumption receives the entire remaining basis.
+Reduce fractions to avoid needless intermediate growth; checked range failures retain their normal
+diagnostic scope. Do not feed rounded XML unit values or rounded informational totals back into a lot.
+
+When several exact allocations must be emitted as four-decimal money parts of one known total,
+round the combined total once and allocate its smallest-unit remainder by largest fractional
+remainder, breaking ties by FIFO lot and then sale order. Those emitted parts must add to the
+emitted total; their rounded values do not replace the exact internal allocations.
+
+### Foreign acquisition, split and partial disposals
+
+Buy `0.14760000` units at `255.3750 USD` per unit on a date with `1 EUR = 1.25000000 USD`:
+
+```text
+converted original unit price       204.3000 EUR
+exact lot basis                     30.154680000000 EUR
+informational Money total           30.1547 EUR
+2 / 1 split quantity                0.29520000
+adjusted value per unit              102.1500 EUR
+first sale of 0.10000000: basis      10.215000000000 EUR
+remaining 0.19520000: basis          19.939680000000 EUR
+emitted basis totals                 10.2150 + 19.9397 = 30.1547 EUR
+```
+
+Both disposals retain the original acquisition date. The original exact basis, rather than
+`30.1547`, produces the adjusted unit price. A new sale uses its own disposal-date exchange rate.
+The amount of cash settled by the broker is not substituted for this tax basis.
+
+### Money totals
+
+Multiplying a unit price by units to produce a `Money` total uses:
 
 ```text
 totalMoney = roundHalfAwayFromZero(
@@ -265,9 +303,16 @@ add up.
   allocation rule. Do not use this rule to reconcile independent source transactions.
 
 If a broker supplies both detail rows and a control total that its documented format says must
-match, compare them before XML output at their common stored scale. An unexplained difference is
-invalid source data, not a rounding adjustment. The processor must report it and must not guess
-which value is correct.
+match, compare them before XML output at their common stored scale. A documented source-rounding
+difference may use the bounded reconciliation rules in `fifo.md`. An unexplained difference returns
+a source-correction request or error; the processor must not guess which value is correct. Neither a
+net settlement amount nor a fee-inclusive cash amount is a gross tax-value control total.
+
+An ordinary XML reconstruction difference is not itself missing history. Preserve the exact lot
+basis and the correctly rounded XML unit value, and show `xml_basis_rounding_difference` when the
+reconstructed value differs at `Money` precision. Include the difference without changing a price
+or inventing a balancing event. This output-rounding notice is distinct from the EUR 0.01 budget
+for corrections to inventory quantities. Repeated notices do not authorize source corrections.
 
 ## FURS XML boundaries
 
@@ -280,8 +325,8 @@ invalid value.
 | Ordinary Doh-KDVP unit values (`F4`, `F9`) | 4 decimals | Write `Money` without changing its value. |
 | Corporate-action-adjusted Doh-KDVP unit values | 4 to 8 decimals | Round once as defined in `fifo.md`; remove trailing zeros only down to four decimals. |
 | Dividend value and foreign tax | 2 decimals | Round `Money` once at XML output. |
-| Interest value and foreign tax | 2 decimals | Round `Money` once at XML output. |
-| Interest totals | 2 decimals | Sum the already emitted two-decimal row values. |
+| Doh-DHO and Doh-Obr income and foreign tax | 2 decimals | Round `Money` once at the documented form-row boundary. |
+| Doh-DHO and Doh-Obr totals | 2 decimals | Sum the already emitted two-decimal row values. |
 
 The current official Doh-KDVP schema accepts up to eight decimal places for quantities, stock, and
 unit values. The official FURS display transform shows these fields with at least four decimal
@@ -301,9 +346,15 @@ Doh-KDVP unit values must not be rounded to two decimals. A per-unit value can n
 cent, and FURS explicitly accepts and displays that precision. Dividend or interest `12.3450` is
 instead written as `12.35` because those XML fields use two decimals.
 
-If two interest rows each contain `0.0050`, each row is written as `0.01` and their XML total is
-`0.02`. Summing `0.0100` first and emitting a total of `0.01` would make the total disagree with
+If two emitted interest rows each contain `0.0050`, each row is written as `0.01` and their XML
+total is `0.02`. Summing `0.0100` first and emitting a total of `0.01` would make the total disagree with
 the rows and is not allowed.
+
+Grouping follows each form's instructions: Doh-DHO groups qualifying income by the required payer,
+interest type and source-country fields; sum stored values exactly before rounding each grouped
+row. Doh-Obr preserves the payment detail required by its form. Bank-interest threshold comparisons
+use the full four-decimal selected-year qualifying total before XML rounding. An ordinary-interest
+amount never enters that threshold. Tests must distinguish payment totals from emitted form rows.
 
 XML decimals use `.` as the decimal separator, contain no digit grouping or exponent, and use the
 documented number of decimal places.
@@ -390,7 +441,8 @@ Error scope is limited to the affected output:
 | --- | --- |
 | Capital value needed for one ISIN | Mark that ISIN unsafe and use the normal confirmed-exclusion flow. |
 | Dividend value | Block the dividend XML, but keep valid capital and interest outputs. |
-| Interest value | Block the interest XML, but keep valid capital and dividend outputs. |
+| Doh-Obr value safely isolated to one ISIN | Request exclusion of failed ISINs from Doh-Obr or failure of that form, as defined in `diagnostics.md`; keep unrelated reports available. |
+| Other interest value | Block only the affected interest form pending its normal correction or failure resolution; keep unrelated outputs available. |
 | Final XML field range | Block only the XML file containing that field. |
 
 Developer mode must not bypass a missing rate, arithmetic overflow, or XML range error.
@@ -446,7 +498,16 @@ Tests based on this document must prove that:
   and overall EUR totals unavailable, and creates no processing error;
 - complete converted broker fee totals and the overall total equal the documented example;
 - fees never change a FURS calculation or XML field;
+- exact acquisition products remain lot basis instead of rounded Money totals;
+- acquisition-date conversion precedes split adjustment and is not repeated at the action date;
+- the documented foreign acquisition, split and partial-disposal example preserves its exact basis;
+- partial allocations preserve the residual basis and final consumption leaves exactly zero;
+- rounded money allocations add to their rounded known total without changing internal basis;
+- reconstruction differences are notices, not invented balancing amounts;
+- deposit thresholds use full stored totals and the required form-row grouping is respected;
 - internal overflow returns `arithmetic_overflow` without changing the value;
+- a Doh-Obr calculation error safely isolated to an ISIN uses the confirmed exclusion/failure
+  choice, retaining unaffected income and errors without inventing replacement values;
 - an XML range overflow blocks only its report file; and
 - every diagnostic has the documented output scope.
 
