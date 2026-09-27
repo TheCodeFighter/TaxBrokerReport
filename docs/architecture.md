@@ -25,6 +25,18 @@ and Windows directory components and rejects empty, `.` and `..` basenames, so e
 cannot retain an absolute host path. Source rows are one-based logical rows; for CSV input, the
 header is row 1 and the first data row is row 2.
 
+Different selected files may have the same sanitized filename. The application therefore derives
+a run-local source ID from the file's request position: `source-0001`, `source-0002`, and so on.
+The frontend keeps the selected-file list in that same order. When filenames collide, it shows a
+label such as `taxreport.csv (file 2)` instead of exposing either file's directory. The source ID
+identifies an upload only within that report run and does not change event ordering or duplicate
+detection.
+
+When duplicate names would still be confusing, the frontend may let the user add a run-local
+display label such as `2022` or `pension account`. The frontend keeps that label locally with the
+source ID and may show `taxreport.csv (2022, file 1)`. It does not send the label as broker data,
+use it for processing, or replace the source ID with it.
+
 When a broker omits a timestamp, `mSourceTimestamp` is empty. When it supplies an invalid timestamp
 for an otherwise valid event, the parser keeps the event, leaves the timestamp empty, and reports a
 warning. The tax date remains unchanged in both cases.
@@ -38,7 +50,8 @@ event index. Parser completion order is never used, so files can be parsed concu
 changing event order.
 
 The pair must uniquely identify each imported event in a request. It is the final ordering key and
-does not represent broker time.
+does not represent broker time. Application JSON may expose only the derived source ID, never the
+raw source index.
 
 ### Equality and duplicate identity
 
@@ -83,6 +96,9 @@ preserved fees by broker and original currency. It provides a broker-rate EUR eq
 when every required fee rate is available from that broker. A fee never creates an official-rate
 request. Missing fee rates leave the affected EUR totals unavailable and do not block FURS XML
 output.
+
+The complete application diagnostic model, deterministic ordering, privacy boundary, and
+per-report statuses are defined in [`diagnostics.md`](diagnostics.md).
 
 ## Parser diagnostics
 
@@ -143,8 +159,10 @@ not be renamed within a schema version. Add a new code for new behavior, and inc
 future frontend contract; it does not cover the legacy project.
 
 For privacy, the response exposes only the uploaded filename, never an absolute host path. It also
-does not duplicate raw financial field values. The CSV row, transaction ID, field name, and a
-human-readable message provide enough context for the local UI.
+does not duplicate raw financial field values. The CSV row number, transaction ID, field name, and
+a human-readable message provide enough context for the local UI. The parser version 1 contract is
+unchanged when its diagnostics are adapted into the separate application result defined in
+[`diagnostics.md`](diagnostics.md).
 
 ### Local debug artifacts
 

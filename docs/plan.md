@@ -73,6 +73,7 @@ Retain:
 - the complete source timestamp when the broker supplies one;
 - the broker;
 - the source filename, without exposing an absolute path;
+- a run-local source ID derived from file request order, so equal filenames remain distinguishable;
 - the source CSV row;
 - the broker transaction ID; and
 - a stable input sequence.
@@ -87,7 +88,8 @@ Rounding is performed only at the processing or output boundary defined by the a
 ## Diagnostics
 
 The existing parser diagnostics remain a stable frontend contract. Introduce a broader application
-result for diagnostics produced by later pipeline stages.
+result for diagnostics produced by later pipeline stages. The complete contract is defined in
+[`diagnostics.md`](diagnostics.md).
 
 Diagnostics must identify their stage, such as:
 
@@ -101,10 +103,13 @@ Diagnostics must identify their stage, such as:
 Where available, diagnostics include broker, source filename, source row, transaction ID, and field
 name. They must not expose absolute paths or duplicate sensitive raw financial values.
 
-Warnings allow processing to continue. Errors have an explicit scope. Incomplete capital-gains
-history excludes the affected ISIN after user confirmation, while other ISINs and valid dividend
-or interest XML files can still be generated. The API returns both successful outputs and all
-diagnostics so the frontend can explain exclusions and partial success.
+Warnings allow processing to continue. Errors have an explicit scope. Each capital-gains,
+dividend, and interest result is independently `generated`, `no_data`, `needs_input`, or `failed`.
+For safely isolatable capital errors, one request lists every affected ISIN. The user either
+excludes all listed ISINs or fails the capital-gains report. The result records that choice and
+lists every excluded ISIN, while valid dividend or interest XML files can still be generated. The
+API returns both successful outputs and all diagnostics so the frontend can explain exclusions and
+partial success.
 
 The application result also carries structured requests for missing user decisions. When a Trade
 Republic split row has no verified ratio, the frontend asks for the number of new shares and old
@@ -153,8 +158,9 @@ selected year immediately after parsing.
 
 If a disposal cannot be matched because acquisition history is missing, produce a structured
 incomplete-history error. In normal mode, identify the investment by name and ISIN and require user
-confirmation before excluding the whole ISIN. Developer mode may include known incomplete data
-only after three separate warnings. Neither mode may invent a cost basis.
+confirmation before excluding every listed unsafe ISIN; the other normal choice is to generate no
+capital-gains XML. Developer mode may include known incomplete data only after three separate
+warnings. Neither mode may invent a cost basis.
 
 ## Tax processing rules
 
@@ -201,8 +207,9 @@ Verify each generated report with:
 - multiple instruments and transactions; and
 - isolated failures for capital-gains, dividend, and interest outputs.
 
-A failure in one generator blocks only its affected XML file and is returned through structured
-diagnostics. Other valid report files remain available.
+A failure in one generator blocks only its affected XML file and is returned through the
+structured result defined in [`diagnostics.md`](diagnostics.md). Other valid report files remain
+available.
 
 ## Backend application service and API
 
@@ -221,6 +228,9 @@ Its result contains:
   where available;
 - status for each report type; and
 - every successfully generated XML document.
+
+The result and its JSON boundary follow [`diagnostics.md`](diagnostics.md), including deterministic
+diagnostic ordering, safe source-row locations, independent report status, and partial success.
 
 Exercise this complete operation through unit and integration tests before exposing it through the
 local HTTP API. The API serializes the application result but does not contain parsing, tax, or XML

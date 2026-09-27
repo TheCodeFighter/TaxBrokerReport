@@ -8,7 +8,8 @@ report, but the app must still read older trades to calculate those results corr
 The app first combines the imported files, removes duplicates, and sorts all events as described
 in [`architecture.md`](architecture.md). Detailed FIFO and corporate-action rules belong in
 [`fifo.md`](fifo.md). Currency conversion, rounding, and broker-fee rules belong in
-[`calculations.md`](calculations.md).
+[`calculations.md`](calculations.md). Application diagnostics and independent XML result statuses
+belong in [`diagnostics.md`](diagnostics.md).
 
 ## Useful terms
 
