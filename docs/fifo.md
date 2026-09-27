@@ -71,17 +71,50 @@ The importer keeps the original quantity text and any digits discarded at the ei
 `Units` boundary. Purchases, sales, and the running position are otherwise added and subtracted
 exactly.
 
-A shortage smaller than `0.00000100` may be reconciled only when the source proves it is a
-rounding difference. Proof can be discarded source digits, a documented full-position sale, a
-broker ending position, or a broker control total. The processor applies the smallest possible
-adjustment to the documented source quantity and records a `quantity_rounding_reconciled` notice
+A shortage smaller than `0.00000100` may be reconciled automatically only when the source proves
+it is a rounding difference and it passes the EUR impact budget below. Proof can be discarded source
+digits, a documented full-position sale, a broker ending position, or a broker control total. The
+processor applies the smallest possible adjustment to the documented source quantity and records a `quantity_rounding_reconciled` notice
 with the original value, adjusted value, difference, and supporting source. It must not create a
 purchase lot or cost basis.
 
 If several rounded parts come from one known exact total, use the largest-remainder method so the
-parts add back to that total. If a small difference has no supporting evidence, the frontend asks
-the user to verify and correct the affected source quantity. Without a confirmed correction, or
-when the difference is `0.00000100` or greater, the shortage is `incomplete_history`.
+parts add back to that total. A small difference without supporting evidence returns a
+`quantity_correction_required` request. Without a confirmed correction, or when the difference is
+`0.00000100` or greater, the shortage is `incomplete_history`.
+
+For controlled reconciliation, bound the absolute EUR acquisition and disposal-value changes
+using the affected prices; use the larger impact, not a signed difference that can cancel out.
+Track the sum of absolute reconciliation impacts for the ISIN across all processed history in the
+current run, including rounded corporate-action quantities. It must remain strictly below EUR
+`0.01`. Use exact integer/rational comparisons rather than rounding the impact down to cents.
+A difference of EUR `0.01` or more, an unknown impact, or an exhausted budget is not accepted as
+rounding reconciliation, even with user acknowledgement. Request missing rates or source correction
+as appropriate; otherwise use the normal incomplete-history or corporate-action error flow. Repeating a tiny adjustment does not reset the
+budget. Display rounding adjustments and their cumulative impact beside the final result. For
+action rounding, value the absolute residual in post-action share units using the highest affected EUR unit value. A warning acknowledgement alone never increases the budget.
+
+Example: a documented full-position sale reports `1.00000000` units while imported inventory is
+`0.99999999`. At EUR `50.0000` per unit, reducing the sale by `0.00000001` has EUR `0.00000050`
+impact and can be reconciled with its evidence. Two corrections each with EUR `0.006` impact would
+exceed the combined budget: the second is not accepted as rounding recovery.
+
+### Confirming a source-quantity correction
+
+The request contains the ISIN, event source and tax date, original quantity and source text, proposed
+quantity, quantity difference, evidence if available, estimated EUR impact and current budget,
+and the resulting position. If impact is unknown, include its missing currency/date requirements
+instead of an invented EUR value. The user must confirm the proposed correction or supply a corrected
+quantity. Validation rejects non-positive, out-of-range, or more-than-eight-decimal quantities.
+A correction of a documented source error larger than the reconciliation limit requires supporting
+broker data and is recorded as `source_quantity_corrected`, not as automatic rounding recovery.
+
+Preserve the original event and apply a run-local correction overlay. After confirmation, rebuild
+that ISIN from the complete input history and recalculate any loss checks. Do not patch only its
+closing balance or create a purchase lot. Record old and new quantities, evidence or the explicit
+user assertion, and whether the correction was automatic or user supplied. A changed input event
+invalidates its correction. Cancelling or rejecting a correction returns to the ordinary ISIN
+failure-resolution flow; it does not silently approve the proposed quantity.
 
 ## Trades before the selected year
 
@@ -174,8 +207,8 @@ request. The affected ISIN waits for an answer, but unrelated ISINs, dividends, 
 not. The frontend must use this request instead of reading a log message. Invalid entries are
 rejected with a clear field error and do not change inventory.
 
-The confirmation applies only to that ISIN, action date, and report run. It must not be saved and
-silently reused for another action. The application result records that the ratio was supplied by
+The confirmation applies only to the combined action identity, complete source set, and report run.
+It must not be saved and silently reused for another action. The application result records that the ratio was supplied by
 the user, together with the original action source, but must not claim that the broker supplied it.
 
 If the user cancels or cannot find the ratio, the app reports `corporate_action_ambiguous`. The
@@ -183,8 +216,49 @@ affected ISIN follows the normal exclusion flow. No developer-mode option may by
 ratio.
 
 After a reliable or user-confirmed ratio is known, it is applied once to every open FIFO lot for
-that ISIN. Multiple broker records describing the same economic action must not cause the ratio to
-be applied more than once. Conflicting records are an error.
+that ISIN across every supplied broker and account. A split is an instrument event, not a separate
+broker event. Multiple broker records describing the same economic action must not apply it twice.
+
+### Combining action sources and warning about mismatches
+
+First deduplicate exact broker transactions as defined in `architecture.md`, preserving every
+source reference. Then build economic-action candidates by ISIN, effective tax date and action
+type. A verified global action identifier may establish identity across sources; a broker's
+transaction ID alone cannot. Combine records automatically only when dates, types and verified
+ratios agree and the sources do not indicate distinct actions. Equal ratios alone are not proof
+that two actions on one date are the same action.
+
+For each ISIN and calendar year represented by actions used in either the FIFO ledger or the
+separate loss-analysis view, if action records originate from more than one source file or broker,
+emit one `corporate_action_sources_mismatch_possible` warning. This includes relevant actions in
+January following the selected year; they affect only loss analysis, not the closing FIFO position.
+This applies even when records agree or are exact copies from overlapping exports. List all action
+dates, source references, types and known ratios for that ISIN/year. The user-facing message asks
+the user to check for a potential mismatch; it does not claim the records are wrong. Acknowledgeable
+warnings remain visible beside the download and do not themselves block processing.
+
+The same calendar year is a warning group, never a deduplication key. Two established actions on
+different dates remain two actions. If records could describe the same action but disagree about
+the effective date, type or ratio, or could describe distinct actions on one date, return
+`corporate_action_identity_required`. Show all candidates and ask the user to confirm one action
+with its effective date or identify separate actions and their order. A user-selected ratio cannot
+silently override a contradictory verified broker ratio; the user must correct or identify the
+conflicting source. Unresolved conflicts produce `corporate_action_inconsistent` or
+`corporate_action_ambiguous` as appropriate.
+
+Once identity is established, one `corporate_action_ratio_required` request covers every source of
+that action when the ratio is still unknown. The confirmation is keyed to the combined action and
+its source set, not just the ISIN and date. New or changed source records invalidate it. One confirmed
+ratio adjusts the complete ISIN pool once, including lots at a broker that omitted the action row.
+
+Example: TR and IBKR each record a 2-for-1 split for the same ISIN on 1 June 2024. Warn about the
+multiple sources, retain both references, and apply one split to the combined position. If IBKR
+records 3 June instead, the warning is accompanied by an identity-resolution request. If two
+verified splits occurred in February and November, warn for their shared year but apply both once.
+
+Mergers follow the same instrument-wide principle, but a merger may change ISINs, pay cash or
+require tax deferral rules. They remain unsupported until old-to-new instrument mapping and tax
+treatment are specified. A split-ratio confirmation does not authorize a merger.
 
 The ratio is kept as an exact fraction during processing. The app must not round it to the
 eight-decimal `CorpRatio` scale and then use the rounded value to adjust lots.
@@ -198,24 +272,28 @@ open FIFO lots for the ISIN. The combined target is:
 inventoryAfter = inventoryBefore * newShares / oldShares
 ```
 
-The target must be exactly representable with eight decimal places. Otherwise the source does not
-provide enough information about fractional units or cash treatment, and the action is
-unrepresentable.
+Keep the exact rational target, then round the combined target once to eight decimals with halves
+away from zero. A sub-step rounding residual is permitted when the action is documented as
+unit-only, the EUR impact budget is satisfied, and no source indicates cash or cancellation of
+fractions. Record `corporate_action_quantity_rounded` with the exact target, rounded target,
+difference and impact. Do not infer cash in lieu from that residual. Unknown cash treatment or an
+unresolved budget/impact produces an action error or a request for the missing facts.
 
 For every open lot:
 
 1. Calculate `old lot units * newShares / oldShares` with a wide integer intermediate.
 2. Keep the whole eight-decimal unit portion and its discarded remainder.
 3. Add the kept portions from every lot.
-4. Compare that sum with `inventoryAfter`.
+4. Compare that sum with the once-rounded combined `inventoryAfter`.
 5. Distribute any remaining smallest units, `0.00000001`, to lots in order of largest discarded
    remainder.
 6. When remainders are equal, give the unit to the older FIFO lot first.
 
 This is the largest-remainder method. It prevents independent rounding from making the adjusted
-lots disagree with the exact combined target.
+lots disagree with the once-rounded combined target.
 
-Each lot keeps its exact total purchase value. Its adjusted value per unit is that unchanged total
+Each lot keeps its exact total purchase value, including digits beyond `Money` precision as
+defined in `calculations.md`. Its adjusted value per unit is that unchanged total
 divided by its adjusted units. The calculation stays exact until output and is then rounded once
 to eight decimal places, with halves rounded away from zero. A rounded value per unit must never
 replace the preserved total purchase value used by later calculations. The shared arithmetic and
@@ -271,6 +349,15 @@ The final lots are therefore:
 Their sum is exactly `5.00000000`. If their unchanged total purchase values are `10.00000000`
 and `20.00000000`, their output values per unit are `5.99999999` and `6.00000001`. The
 unchanged lot totals, not these rounded output values, remain authoritative.
+
+### A unit-only action with a sub-step residual
+
+One lot contains `1.00000000` units with EUR `10.000000000000` exact purchase basis. A confirmed
+`1 / 3` reverse split has exact target `1/3`, rounded once to `0.33333333` units. Its unchanged
+basis gives an output value per unit of `30.00000030`. The absolute residual is `1/300000000`
+post-action units, with an impact of about EUR `0.00000010`, below the budget. Record
+`corporate_action_quantity_rounded` and continue when the source confirms unit-only treatment.
+The lot remains non-empty and keeps its original acquisition date and entire basis.
 
 ## Corporate-action errors
 
@@ -365,8 +452,15 @@ Normal mode first collects every unsafe ISIN. An ISIN made unsafe by incomplete 
 corporate-action error is excluded from the Doh-KDVP report only after the user confirms that
 choice. Developer mode provides an override only for incomplete history.
 
-The app must exclude every purchase, sale, and calculated match for that ISIN. It must not exclude
-only the unmatched sale because the remaining rows would show an unreliable history.
+These exclusions apply only to Doh-KDVP. Doh-Obr has its own analogous ISIN exclusion/failure
+choice for safely isolated income errors, defined in `diagnostics.md`; neither form's decision
+authorizes an exclusion from the other form. Both retain original source evidence.
+
+The app must exclude every purchase, sale, and calculated match for that ISIN from capital report
+output. It must not exclude only the unmatched sale because the remaining rows would show an
+unreliable history. Preserve source evidence and existing replacement allocations needed by retained
+losses in the separate analysis view, as defined in `tax_rules.md`. An exclusion does not resolve
+uncertain evidence for another ISIN: request its dependent loss decision before generating XML.
 
 The frontend presents one list containing every unsafe investment's name, ISIN, error reason, and
 source location when available. The list is sorted by ISIN and then name. The user chooses one of
@@ -443,9 +537,21 @@ a saved preference is not enough. Cancelling at any step returns to the normal c
 the affected ISINs or adding more statements. The three confirmations apply only to the current
 run and must be repeated next time.
 
-After the third confirmation, the developer-mode XML includes only the purchases and sales that
-exist in the input. It may include the unmatched sale and an incomplete running position. The app
-must not create a fake purchase or cost, even in developer mode.
+After the third confirmation, rebuild a separate source-event export for every overridden ISIN.
+Include all known acquisitions needed to describe the position and all selected-year source sales,
+including the unmatched sale in full. Calculate the running quantity by applying known historical
+and in-year events; it may become negative after a shortage. Preserve the actual acquisition dates,
+quantities and converted unit values. No fabricated acquisition date or cost is attached to an
+unmatched sale, and no guessed FIFO matches are generated after the first shortage. For an
+unmatched sale with unknown basis, omit optional `F10` and record that loss eligibility could not
+be assessed; do not invent a gain/loss or assert loss eligibility.
+
+Unresolved loss-eligibility questions still require their normal answers. A corporate action that
+cannot be applied from reliable pre-action inventory still fails; developer mode cannot bypass it.
+The signed running stock is emitted only where the applicable XSD permits it. Structurally invalid
+XML or any other blocking error still fails the affected report. Rejoining a positive raw balance
+does not re-establish reliable FIFO state. Normal mode always returns to the unchanged strict FIFO
+rules when the override is cancelled or the input changes.
 
 The processing result and download screen must mark this file as unsafe and list every affected
 name and ISIN. The `incomplete_history` error remains present; developer mode does not turn it into
@@ -468,6 +574,10 @@ Tests based on this document must prove that:
   user-confirmed source correction;
 - every reconciliation records its original value, adjusted value, difference, and evidence;
 - a reconciliation never creates a purchase lot or cost basis;
+- cumulative absolute EUR reconciliation impact stays below EUR 0.01 for the whole ISIN/run;
+- equal-to-limit, unknown-impact, and repeatedly accumulated differences require resolution;
+- quantity corrections use structured requests and preserve original events in a run-local overlay;
+- confirmed corrections rebuild history and invalidate when their source changes;
 - an unsupported or larger shortage produces `incomplete_history`;
 - a split increases units, reduces value per unit, and preserves purchase dates and total values;
 - a reverse split reduces units, increases value per unit, and preserves the same details;
@@ -480,8 +590,14 @@ Tests based on this document must prove that:
 - a cancelled ratio request leaves the action ambiguous and excludes only its ISIN after
   confirmation;
 - a source-provided ratio is accepted automatically only when its meaning is unambiguous;
-- adjusted lots use deterministic largest-remainder allocation and total exactly the post-action
-  position;
+- adjusted lots use deterministic largest-remainder allocation and total the once-rounded position;
+- representable unit-only splits continue after a bounded sub-step rounding adjustment;
+- multiple action sources within one calendar year always show the potential-mismatch warning;
+- relevant following-January actions receive the same warning without altering year-end inventory;
+- matching action records apply once to all brokers' lots, including brokers without an action row;
+- the warning year never merges distinct action dates;
+- ambiguous identity or conflicting source facts require explicit resolution;
+- source-set changes invalidate action identity and ratio confirmations;
 - adjusted output values per unit are rounded once to eight decimal places and serialized with
   four to eight decimal places as defined in `calculations.md`;
 - a supported action is applied before same-day trades for the same ISIN;
@@ -509,7 +625,9 @@ Tests based on this document must prove that:
 - developer mode is disabled by default;
 - developer mode requires three separate confirmations for each run;
 - cancelling any developer confirmation does not generate unsafe output;
-- developer mode includes only known source events and never invents a purchase cost; and
+- developer mode includes the whole known source sale and permits signed stock only under its XSD;
+- developer mode never restarts guessed FIFO matching after a history gap;
+- developer mode cannot bypass loss decisions, action errors or XML schema validation; and
 - developer output remains marked unsafe with the `incomplete_history` error.
 
 ## Sources

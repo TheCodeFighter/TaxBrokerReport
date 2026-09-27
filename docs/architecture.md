@@ -85,6 +85,33 @@ particular, a Trade Republic split row's decimal `shares` value does not establi
 The application result asks the frontend for the action's new-shares-to-old-shares ratio. Only a
 validated user confirmation turns that action into a processable split or reverse split.
 
+After transaction deduplication, economic corporate-action identity is resolved separately across
+all sources. One confirmed action changes all open lots of its ISIN across brokers exactly once.
+Grouping by ISIN and calendar year is used only for
+`corporate_action_sources_mismatch_possible`: always warn when action records for that ISIN/year
+come from multiple source files or brokers, and show every date, type, ratio and source. The year
+is never an action identity or a reason to combine two distinct actions. Ambiguous grouping returns
+`corporate_action_identity_required`; a ratio prompt covers the combined action's complete source
+set. The detailed identity, ordering and conflict rules are in `fifo.md`.
+
+The processing request also retains a separate analysis view for 30-day loss eligibility, including
+required previous-December and next-January events. It does not mutate the selected-year closing
+FIFO position. Partially eligible losses become separate report rows, without duplicating their
+inventory consumption. User confirmations of missing coverage and external activity are explicit
+run-local inputs, as defined in `tax_rules.md`.
+
+Report exclusions preserve source facts and replacement allocations needed by retained losses.
+Unresolved dependencies on excluded data require a loss decision for the dependent sale; they
+cannot be cleared by removing the source instrument's report rows. Relevant following-January
+actions use the same identity, ratio and multiple-source warning rules in the analysis view.
+
+Exact FIFO lot basis retains the complete product of the acquisition-date converted Money unit
+price and imported Units. Proportional allocations remain exact rational values until their
+specified output boundary. Controlled quantity adjustments retain their original source values,
+apply through a run-local overlay and rebuild affected history. The backend tracks the cumulative
+absolute EUR impact of inventory reconciliation per ISIN/run; details are in `calculations.md`
+and `fifo.md`. This additional processor state does not change parser diagnostic version 1.
+
 Foreign-currency processing follows [`calculations.md`](calculations.md). The application result
 contains one structured request for every missing official `(currency, tax date)` rate. A
 user-entered official rate is shared across brokers and instruments only for that exact pair. A
@@ -97,8 +124,33 @@ when every required fee rate is available from that broker. A fee never creates 
 request. Missing fee rates leave the affected EUR totals unavailable and do not block FURS XML
 output.
 
-The complete application diagnostic model, deterministic ordering, privacy boundary, and
-per-report statuses are defined in [`diagnostics.md`](diagnostics.md).
+Final models and result statuses are split by form: capital gains (Doh-KDVP), dividends (Doh-Div),
+bank-deposit interest (Doh-DHO), and other interest (Doh-Obr). Broker cash interest and ordinary bond
+coupons remain separate subtypes inside the common other-interest report. A broker parser supplies
+facts such as product category and payer identity; the tax processor applies date-specific rules.
+Unknown classifications and missing income fields produce structured requests. Explicit
+classification exclusions remain visible in `excludedItems`, separate from each report's failed ISINs.
+
+A Doh-Obr error safely isolated to an ISIN produces
+`other_interest_failure_resolution_required`. The user excludes all listed failed ISINs' Doh-Obr
+income or fails that form. Each report owns its exclusion list and failure choice; capital and
+other-interest choices never apply to each other. Preserve original evidence and unaffected income.
+Non-isolatable errors and final XML failures retain their normal scope, as defined in `diagnostics.md`.
+
+A standalone reference catalogue supplies verified Slovenian-company and imported company/ETF
+metadata with source, revision and effective-date provenance. It can prefill payer and treaty
+facts; payment evidence determines settled Slovenian withholding and actual foreign tax.
+Treaty exemptions require a separate applicable legal basis. The income result retains treatment
+decisions and filing-evidence requirements. Catalogue conflicts and missing facts use
+`income_details_required`; changing a referenced catalogue revision invalidates affected decisions.
+
+The deposit allowance considers all imported and user-supplied qualifying bank interest. A
+below-threshold TR total retains its reminder about other banks. Slovenian retail government bonds
+are outside the current TR/IBKR import scope; their special treatment is not part of this workflow.
+
+The complete application diagnostic model, revision-bound decisions, deterministic ordering,
+privacy boundary, and four independent form statuses are defined in [`diagnostics.md`](diagnostics.md).
+Application JSON uses version 2 for this expanded result; existing parser JSON remains version 1.
 
 ## Parser diagnostics
 
