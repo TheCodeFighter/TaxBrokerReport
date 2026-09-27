@@ -7,7 +7,8 @@ happens when the imported files do not contain enough purchase history.
 
 The selected-year rules are in [`tax_rules.md`](tax_rules.md). Event ordering and source details
 are defined in [`architecture.md`](architecture.md). Shared conversion and rounding rules are in
-[`calculations.md`](calculations.md).
+[`calculations.md`](calculations.md). Application error scope and per-XML status are defined in
+[`diagnostics.md`](diagnostics.md).
 
 ## One FIFO pool for the same investment
 
@@ -360,12 +361,24 @@ can continue with that whole ISIN excluded.
 
 ## Normal mode
 
-Normal mode handles every unsafe ISIN. An ISIN made unsafe by incomplete history or a
+Normal mode first collects every unsafe ISIN. An ISIN made unsafe by incomplete history or a
 corporate-action error is excluded from the Doh-KDVP report only after the user confirms that
 choice. Developer mode provides an override only for incomplete history.
 
 The app must exclude every purchase, sale, and calculated match for that ISIN. It must not exclude
 only the unmatched sale because the remaining rows would show an unreliable history.
+
+The frontend presents one list containing every unsafe investment's name, ISIN, error reason, and
+source location when available. The list is sorted by ISIN and then name. The user chooses one of
+these actions:
+
+1. **Continue without all listed investments.** Exclude every listed ISIN and generate Doh-KDVP
+   from the processable investments that remain.
+2. **Do not generate Doh-KDVP.** Fail the capital-gains report and generate no capital-gains XML.
+
+Neither action is selected by default. The user may instead return to file selection and add or
+correct statements. The app must not offer exclusion for an error that cannot be isolated safely
+to a complete ISIN.
 
 | Output | Result |
 | --- | --- |
@@ -376,7 +389,18 @@ only the unmatched sale because the remaining rows would show an unreliable hist
 If no processable ISIN remains, no Doh-KDVP file is generated. Dividend and interest reports still
 continue.
 
-If another report has its own error, that error may block that report under its own rules.
+If the user chooses not to generate Doh-KDVP, its result is `failed` and contains no XML. If
+another report has its own error, that error may block that report under its own rules.
+
+After exclusion, the result contains one deduplicated `excludedInvestments` entry for every
+excluded ISIN. Each entry contains its name, ISIN, reason codes, and diagnostic IDs. The result
+screen and download screen show the complete list; they must not show only the first failure or a
+count without the names and ISINs. The capital-gains result records
+`failureResolution: exclude_failed_instruments`.
+
+When the user chooses not to generate Doh-KDVP, the result records
+`failureResolution: fail_report` and has an empty `excludedInvestments` list because no ISIN was
+silently skipped. `failureResolution` is absent when the run did not need this choice.
 
 ## What the frontend shows
 
@@ -386,7 +410,8 @@ the frontend must:
 - show an error with the affected investment's name and ISIN;
 - explain that purchase history is missing and that older or missing statements may fix it;
 - show the failing sale's source location when available;
-- offer a clear choice to go back or continue without every affected ISIN;
+- offer clear choices to go back, continue without every listed affected ISIN, or generate no
+  Doh-KDVP XML;
 - list every excluded name and ISIN before the user confirms;
 - state on the result screen that the downloaded Doh-KDVP does not contain those investments;
 - keep successful dividend and interest downloads available; and
@@ -397,7 +422,8 @@ The main message must be clear and specific, for example: "Cannot process Exampl
 without this investment."
 
 The user-facing error comes from structured processing data. The frontend must not parse logs or
-hide the error behind a general failure message.
+hide the error behind a general failure message. Filename and source row number are safe location
+details; the diagnostic must not contain the raw CSV row.
 
 ## Developer mode
 
@@ -475,6 +501,11 @@ Tests based on this document must prove that:
 - no Doh-KDVP file is generated when every ISIN is excluded;
 - successful dividend and interest XML files remain available;
 - the frontend lists every excluded investment;
+- one prompt lists all unsafe ISINs and offers exclusion of all of them or failure of Doh-KDVP;
+- choosing failure creates no Doh-KDVP XML and keeps valid dividend and interest files available;
+- the final result lists every excluded name, ISIN, reason code, and diagnostic ID;
+- the final result records whether the user chose exclusion or failure of Doh-KDVP;
+- an error without a complete, safely isolatable ISIN cannot use the exclusion flow;
 - developer mode is disabled by default;
 - developer mode requires three separate confirmations for each run;
 - cancelling any developer confirmation does not generate unsafe output;

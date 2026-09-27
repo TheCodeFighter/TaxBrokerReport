@@ -7,7 +7,8 @@ and rejects values that cannot be represented safely. These rules apply to capit
 dividends, interest, and the final FURS XML files.
 
 The selected-year rules are in [`tax_rules.md`](tax_rules.md). FIFO and corporate actions are in
-[`fifo.md`](fifo.md).
+[`fifo.md`](fifo.md). Application error scope and independent XML results are in
+[`diagnostics.md`](diagnostics.md).
 
 ## Fixed-point values
 
