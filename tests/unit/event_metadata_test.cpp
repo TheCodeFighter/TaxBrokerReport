@@ -114,6 +114,37 @@ TEST(EventMetadataTest, ExactEqualityIncludesEveryMetadataField) {
     });
 }
 
+TEST(EventMetadataTest, StableSourceOrderUsesEveryDeterministicTieBreaker) {
+    const auto metadata = makeMetadata("transaction-1", 4, {.mSourceIndex = 1, .mEventIndex = 2});
+    const auto base = primarySource(metadata);
+    const StableSourceOrder order;
+
+    const auto expectOrderedAfter = [&](auto aMutate) {
+        auto later = base;
+        aMutate(later);
+        EXPECT_TRUE(order(base, later));
+        EXPECT_FALSE(order(later, base));
+    };
+
+    expectOrderedAfter([](SourceReference& aSource) { ++aSource.mInputSequence.mEventIndex; });
+    expectOrderedAfter([](SourceReference& aSource) {
+        aSource.mFilename = SourceFilename::fromPath("z-export.csv");
+    });
+    expectOrderedAfter([](SourceReference& aSource) { ++aSource.mSourceRow; });
+    expectOrderedAfter(
+        [](SourceReference& aSource) { aSource.mBroker = Broker::InteractiveBrokers; });
+    expectOrderedAfter([](SourceReference& aSource) { aSource.mTransactionId = "transaction-2"; });
+
+    EXPECT_FALSE(order(base, base));
+}
+
+TEST(EventMetadataTest, EmptyMetadataHasNoPrimarySourceOrTransactionIdentity) {
+    const EventMetadata metadata;
+
+    EXPECT_THROW((void)primarySource(metadata), std::logic_error);
+    EXPECT_FALSE(transactionIdentity(metadata).has_value());
+}
+
 TEST(EventMetadataTest, TransactionIdentityIsScopedByBrokerAndIgnoresSourceLocation) {
     const auto first = makeMetadata("shared-id", 2, {.mSourceIndex = 0, .mEventIndex = 0});
     const auto overlap = makeMetadata("shared-id",
@@ -182,6 +213,19 @@ TEST(EventMetadataTest, StableInputSequenceBreaksOtherwiseIdenticalTies) {
     EXPECT_TRUE(less(first, second));
     EXPECT_FALSE(less(second, first));
     EXPECT_FALSE(less(first, first));
+}
+
+TEST(EventMetadataTest, MetadataWithoutSourcesSortsAfterSourcedMetadata) {
+    const auto sourced = makeMetadata("transaction-1", 2, {.mSourceIndex = 0, .mEventIndex = 0});
+    const EventMetadata withoutSource{
+        .mTaxDate = sourced.mTaxDate,
+        .mSourceTimestamp = sourced.mSourceTimestamp,
+    };
+    const EventMetadataChronologicalLess order;
+
+    EXPECT_TRUE(order(sourced, withoutSource));
+    EXPECT_FALSE(order(withoutSource, sourced));
+    EXPECT_FALSE(order(withoutSource, withoutSource));
 }
 
 } // namespace
