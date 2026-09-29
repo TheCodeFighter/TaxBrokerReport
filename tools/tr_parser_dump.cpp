@@ -211,14 +211,18 @@ void writeMetadata(std::ostream& aOutput,
         aOutput << "<none>";
     }
 
-    const auto& source = aMetadata.mSource;
-    aOutput << '\n'
-            << aIndent << "broker: " << toString(source.mBroker) << '\n'
-            << aIndent << "source_file: " << source.mFilename.value() << '\n'
-            << aIndent << "source_row: " << source.mSourceRow << '\n'
-            << aIndent << "transaction_id: " << source.mTransactionId.value_or("<none>") << '\n'
-            << aIndent << "source_index: " << source.mInputSequence.mSourceIndex << '\n'
-            << aIndent << "event_index: " << source.mInputSequence.mEventIndex;
+    aOutput << '\n' << aIndent << "sources: " << aMetadata.mSources.size();
+    for (const auto& source : aMetadata.mSources)
+    {
+        aOutput << '\n'
+                << aIndent << "  - broker: " << toString(source.mBroker) << '\n'
+                << aIndent << "    source_file: " << source.mFilename.value() << '\n'
+                << aIndent << "    source_row: " << source.mSourceRow << '\n'
+                << aIndent << "    transaction_id: " << source.mTransactionId.value_or("<none>")
+                << '\n'
+                << aIndent << "    source_index: " << source.mInputSequence.mSourceIndex << '\n'
+                << aIndent << "    event_index: " << source.mInputSequence.mEventIndex;
+    }
 }
 
 std::string safeSourceFile(std::string_view aSourceFile) {

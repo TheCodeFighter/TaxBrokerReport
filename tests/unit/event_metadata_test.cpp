@@ -38,16 +38,14 @@ EventMetadata makeMetadata(std::string_view aTransactionId,
     return EventMetadata{
         .mTaxDate = aDate,
         .mSourceTimestamp = aTimestamp,
-        .mSource =
-            SourceReference{
-                .mBroker = aBroker,
-                .mFilename = SourceFilename::fromPath(aFilename),
-                .mSourceRow = aRow,
-                .mTransactionId = aTransactionId.empty()
-                                      ? std::nullopt
-                                      : std::optional<std::string>{aTransactionId},
-                .mInputSequence = aSequence,
-            },
+        .mSources = {SourceReference{
+            .mBroker = aBroker,
+            .mFilename = SourceFilename::fromPath(aFilename),
+            .mSourceRow = aRow,
+            .mTransactionId =
+                aTransactionId.empty() ? std::nullopt : std::optional<std::string>{aTransactionId},
+            .mInputSequence = aSequence,
+        }},
     };
 }
 
@@ -98,18 +96,53 @@ TEST(EventMetadataTest, ExactEqualityIncludesEveryMetadataField) {
     expectDifferent([](EventMetadata& aMetadata) {
         aMetadata.mSourceTimestamp = makeTimestamp(2024, 1, 15, 11);
     });
-    expectDifferent(
-        [](EventMetadata& aMetadata) { aMetadata.mSource.mBroker = Broker::InteractiveBrokers; });
     expectDifferent([](EventMetadata& aMetadata) {
-        aMetadata.mSource.mFilename = SourceFilename::fromPath("other.csv");
+        aMetadata.mSources.front().mBroker = Broker::InteractiveBrokers;
     });
-    expectDifferent([](EventMetadata& aMetadata) { aMetadata.mSource.mSourceRow = 5; });
-    expectDifferent(
-        [](EventMetadata& aMetadata) { aMetadata.mSource.mTransactionId = "transaction-2"; });
-    expectDifferent(
-        [](EventMetadata& aMetadata) { aMetadata.mSource.mInputSequence.mSourceIndex = 2; });
-    expectDifferent(
-        [](EventMetadata& aMetadata) { aMetadata.mSource.mInputSequence.mEventIndex = 3; });
+    expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mSources.front().mFilename = SourceFilename::fromPath("other.csv");
+    });
+    expectDifferent([](EventMetadata& aMetadata) { aMetadata.mSources.front().mSourceRow = 5; });
+    expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mSources.front().mTransactionId = "transaction-2";
+    });
+    expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mSources.front().mInputSequence.mSourceIndex = 2;
+    });
+    expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mSources.front().mInputSequence.mEventIndex = 3;
+    });
+}
+
+TEST(EventMetadataTest, StableSourceOrderUsesEveryDeterministicTieBreaker) {
+    const auto metadata = makeMetadata("transaction-1", 4, {.mSourceIndex = 1, .mEventIndex = 2});
+    const auto base = primarySource(metadata);
+    const StableSourceOrder order;
+
+    const auto expectOrderedAfter = [&](auto aMutate) {
+        auto later = base;
+        aMutate(later);
+        EXPECT_TRUE(order(base, later));
+        EXPECT_FALSE(order(later, base));
+    };
+
+    expectOrderedAfter([](SourceReference& aSource) { ++aSource.mInputSequence.mEventIndex; });
+    expectOrderedAfter([](SourceReference& aSource) {
+        aSource.mFilename = SourceFilename::fromPath("z-export.csv");
+    });
+    expectOrderedAfter([](SourceReference& aSource) { ++aSource.mSourceRow; });
+    expectOrderedAfter(
+        [](SourceReference& aSource) { aSource.mBroker = Broker::InteractiveBrokers; });
+    expectOrderedAfter([](SourceReference& aSource) { aSource.mTransactionId = "transaction-2"; });
+
+    EXPECT_FALSE(order(base, base));
+}
+
+TEST(EventMetadataTest, EmptyMetadataHasNoPrimarySourceOrTransactionIdentity) {
+    const EventMetadata metadata;
+
+    EXPECT_THROW((void)primarySource(metadata), std::logic_error);
+    EXPECT_FALSE(transactionIdentity(metadata).has_value());
 }
 
 TEST(EventMetadataTest, TransactionIdentityIsScopedByBrokerAndIgnoresSourceLocation) {
@@ -166,8 +199,9 @@ TEST(EventMetadataTest, ChronologicalComparisonUsesTimestampThenInputSequence) {
     const std::array expectedIds{"date", "timestamp-1", "timestamp-2", "fallback-1", "fallback-2"};
     for (std::size_t index = 0; index < events.size(); ++index)
     {
-        ASSERT_TRUE(events[index].mSource.mTransactionId.has_value());
-        EXPECT_EQ(*events[index].mSource.mTransactionId, expectedIds[index]);
+        const auto& source = primarySource(events[index]);
+        ASSERT_TRUE(source.mTransactionId.has_value());
+        EXPECT_EQ(*source.mTransactionId, expectedIds[index]);
     }
 }
 
@@ -179,6 +213,19 @@ TEST(EventMetadataTest, StableInputSequenceBreaksOtherwiseIdenticalTies) {
     EXPECT_TRUE(less(first, second));
     EXPECT_FALSE(less(second, first));
     EXPECT_FALSE(less(first, first));
+}
+
+TEST(EventMetadataTest, MetadataWithoutSourcesSortsAfterSourcedMetadata) {
+    const auto sourced = makeMetadata("transaction-1", 2, {.mSourceIndex = 0, .mEventIndex = 0});
+    const EventMetadata withoutSource{
+        .mTaxDate = sourced.mTaxDate,
+        .mSourceTimestamp = sourced.mSourceTimestamp,
+    };
+    const EventMetadataChronologicalLess order;
+
+    EXPECT_TRUE(order(sourced, withoutSource));
+    EXPECT_FALSE(order(withoutSource, sourced));
+    EXPECT_FALSE(order(withoutSource, withoutSource));
 }
 
 } // namespace

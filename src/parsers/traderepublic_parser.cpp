@@ -179,16 +179,14 @@ EventMetadata TradeRepublicParser::RowContext::metadata(Date aTaxDate) const {
     return EventMetadata{
         .mTaxDate = aTaxDate,
         .mSourceTimestamp = mSourceTimestamp,
-        .mSource =
-            SourceReference{
-                .mBroker = Broker::TradeRepublic,
-                .mFilename = mSourceFile,
-                .mSourceRow = mRowIndex,
-                .mTransactionId = mTransactionId.empty()
-                                      ? std::nullopt
-                                      : std::optional<std::string>{mTransactionId},
-                .mInputSequence = mInputSequence,
-            },
+        .mSources = {SourceReference{
+            .mBroker = Broker::TradeRepublic,
+            .mFilename = mSourceFile,
+            .mSourceRow = mRowIndex,
+            .mTransactionId =
+                mTransactionId.empty() ? std::nullopt : std::optional<std::string>{mTransactionId},
+            .mInputSequence = mInputSequence,
+        }},
     };
 }
 

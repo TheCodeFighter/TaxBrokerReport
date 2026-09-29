@@ -17,8 +17,9 @@ event owns the same `EventMetadata`:
   the source timestamp.
 - `mSourceTimestamp` is an optional UTC instant with millisecond precision. Fractions finer than
   milliseconds are truncated.
-- `mSource` is a `SourceReference` containing the broker, source filename, source row, optional
-  transaction ID, and stable input sequence.
+- `mSources` contains every contributing `SourceReference`, each with the broker, source filename,
+  source row, optional transaction ID, and stable input sequence. A parsed event starts with one
+  source. An exact duplicate adds its source to the retained event instead of replacing provenance.
 
 These types depend only on the C++ standard library. `SourceFilename::fromPath` removes both POSIX
 and Windows directory components and rejects empty, `.` and `..` basenames, so event metadata
@@ -55,8 +56,10 @@ raw source index.
 
 ### Equality and duplicate identity
 
-`EventMetadata` equality compares every metadata field, including filename, row, and stable input
-sequence. This exact value equality is separate from duplicate detection.
+`EventMetadata` equality compares every metadata field, including the complete source collection.
+This exact value equality is separate from duplicate detection. Source references are presented in
+stable input-sequence, filename and row order; the earliest source is the event's primary ordering
+source.
 
 A transaction identity consists of the broker and transaction ID. The same ID from different
 brokers therefore identifies different transactions. Matching identities mark duplicate
@@ -79,6 +82,54 @@ adjusted position. Several actions for the same ISIN and date use reliable sourc
 their order cannot be established, stable input sequence keeps the diagnostics deterministic but
 must not be used to guess the result. The processor reports the ambiguity and leaves that ISIN
 unprocessed.
+
+## Statement-merger contract
+
+`StatementMerger` is a transport-independent operation over parsed domain results. Each
+`StatementMergeInput` carries the source file's request index separately from the collection's
+arrival order. Request indices must be unique and must agree with the stable source indices on the
+input's events. The merger may therefore receive parse results in task-completion order while still
+producing the same result. A repeated or inconsistent source index is an input error and must be
+reported; it is never repaired from vector position, filename or broker.
+
+The operation is single-threaded. Its result owns one `BrokerStatement` presentation structure and
+a separate chronological sequence of `StatementEventReference` values into that structure. Event
+payloads and provenance are stored only in the presentation structure. A reference contains the
+event kind, event index and an instrument index when that collection is instrument-based. Benefit
+and private-market references have no instrument index.
+
+Presentation order is independent of economic processing order:
+
+1. collections appear as trades, dividends, interest, benefits and private-market events;
+2. instrument collections use their broker-neutral identity, with deterministic identity and name
+   ordering; and
+3. events within an instrument use the normal event chronology.
+
+The chronological reference sequence crosses every presentation collection and uses tax date,
+timestamp presence, timestamp value and stable input sequence. It does not process one broker or
+one presentation collection to completion first. The merger does not apply the processing-only
+same-day corporate-action priority, calculate FIFO, or resolve economic corporate-action identity.
+
+Parser and merger diagnostics share the result without changing parser diagnostics. A
+`SourcedParseDiagnostic` contains the original `ParseDiagnostic` plus its broker and source request
+index. Merger diagnostics have their own typed codes and retain every relevant source reference.
+Parsing diagnostics precede merging diagnostics; within those stages, the deterministic ordering
+from [`diagnostics.md`](diagnostics.md) applies. Final application diagnostic IDs are assigned only
+after diagnostics from all pipeline stages are combined.
+
+Input outcomes are defined as follows:
+
+- no inputs produce empty presentation and chronological collections with no diagnostics;
+- a row-level parse error preserves the parser's valid events and diagnostic;
+- a file-level parse failure contributes its diagnostics and no events, while other inputs remain
+  available;
+- when every file fails, merged domain data is empty and every parser error remains visible; and
+- inputs from different known brokers are accepted and combined through the same broker-neutral
+  result.
+
+The merger result has no report status. The later application service derives report and overall
+statuses after applying each diagnostic's scope. Empty merged data is therefore not itself an error,
+and parser errors cannot disappear merely because another input supplied valid data.
 
 Broker values whose meaning is not verified remain source data, not calculated tax inputs. In
 particular, a Trade Republic split row's decimal `shares` value does not establish the split ratio.
