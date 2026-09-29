@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <compare>
 #include <cstddef>
@@ -10,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace taxbroker {
 
@@ -71,13 +73,46 @@ struct SourceReference {
     bool operator==(const SourceReference&) const = default;
 };
 
+struct StableSourceOrder {
+    [[nodiscard]] bool operator()(const SourceReference& aLeft,
+                                  const SourceReference& aRight) const {
+        if (aLeft.mInputSequence != aRight.mInputSequence)
+        {
+            return aLeft.mInputSequence < aRight.mInputSequence;
+        }
+        if (aLeft.mFilename.value() != aRight.mFilename.value())
+        {
+            return aLeft.mFilename.value() < aRight.mFilename.value();
+        }
+        if (aLeft.mSourceRow != aRight.mSourceRow)
+        {
+            return aLeft.mSourceRow < aRight.mSourceRow;
+        }
+        if (aLeft.mBroker != aRight.mBroker)
+        {
+            return aLeft.mBroker < aRight.mBroker;
+        }
+        return aLeft.mTransactionId < aRight.mTransactionId;
+    }
+};
+
 struct EventMetadata {
     Date mTaxDate{};
     std::optional<SourceTimestamp> mSourceTimestamp;
-    SourceReference mSource;
+    std::vector<SourceReference> mSources;
 
     bool operator==(const EventMetadata&) const = default;
 };
+
+[[nodiscard]] inline const SourceReference& primarySource(const EventMetadata& aMetadata) {
+    if (aMetadata.mSources.empty())
+    {
+        throw std::logic_error{"Event metadata has no source reference"};
+    }
+    return *std::min_element(aMetadata.mSources.begin(),
+                             aMetadata.mSources.end(),
+                             StableSourceOrder{});
+}
 
 // Filename, row, and sequence do not identify a transaction across overlapping exports.
 struct TransactionIdentity {
@@ -101,7 +136,22 @@ transactionIdentity(const SourceReference& aSource) {
 
 [[nodiscard]] inline std::optional<TransactionIdentity>
 transactionIdentity(const EventMetadata& aMetadata) {
-    return transactionIdentity(aMetadata.mSource);
+    if (aMetadata.mSources.empty())
+    {
+        return std::nullopt;
+    }
+
+    const auto identity = transactionIdentity(aMetadata.mSources.front());
+    if (!identity)
+    {
+        return std::nullopt;
+    }
+
+    const bool allSourcesMatch = std::all_of(
+        aMetadata.mSources.begin() + 1,
+        aMetadata.mSources.end(),
+        [&](const SourceReference& aSource) { return transactionIdentity(aSource) == identity; });
+    return allSourcesMatch ? identity : std::nullopt;
 }
 
 // Matching identity makes events duplicate candidates. Their kind, timing, instrument, and payload
@@ -131,7 +181,11 @@ struct EventMetadataChronologicalLess {
             return aLeft.mSourceTimestamp < aRight.mSourceTimestamp;
         }
 
-        return aLeft.mSource.mInputSequence < aRight.mSource.mInputSequence;
+        if (aLeft.mSources.empty() || aRight.mSources.empty())
+        {
+            return !aLeft.mSources.empty() && aRight.mSources.empty();
+        }
+        return primarySource(aLeft).mInputSequence < primarySource(aRight).mInputSequence;
     }
 };
 

@@ -17,6 +17,7 @@ add_executable(taxbroker_unit_tests
     unit/fifo_matcher_test.cpp
     unit/diagnostics_json_test.cpp
     unit/ibkr_parser_test.cpp
+    unit/statement_merger_test.cpp
     unit/tax_processor_test.cpp
     unit/traderepublic_parser_test.cpp
     unit/xml_generator_test.cpp

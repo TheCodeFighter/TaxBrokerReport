@@ -175,8 +175,8 @@ Date makeDate(int aYear, unsigned aMonth, unsigned aDay) {
 }
 
 std::string_view transactionId(const EventMetadata& aMetadata) {
-    return aMetadata.mSource.mTransactionId ? *aMetadata.mSource.mTransactionId
-                                            : std::string_view{};
+    const auto& source = primarySource(aMetadata);
+    return source.mTransactionId ? *source.mTransactionId : std::string_view{};
 }
 
 void expectSourceMetadata(const EventMetadata& aMetadata,
@@ -191,12 +191,14 @@ void expectSourceMetadata(const EventMetadata& aMetadata,
 
     EXPECT_EQ(aMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(aMetadata.mSourceTimestamp, expectedTimestamp);
-    EXPECT_EQ(aMetadata.mSource.mBroker, Broker::TradeRepublic);
-    EXPECT_EQ(aMetadata.mSource.mFilename.value(), aSourcePath.filename().string());
-    EXPECT_EQ(aMetadata.mSource.mSourceRow, aSourceRow);
+    ASSERT_EQ(aMetadata.mSources.size(), 1U);
+    const auto& source = primarySource(aMetadata);
+    EXPECT_EQ(source.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(source.mFilename.value(), aSourcePath.filename().string());
+    EXPECT_EQ(source.mSourceRow, aSourceRow);
     EXPECT_EQ(transactionId(aMetadata), aTransactionId);
-    EXPECT_EQ(aMetadata.mSource.mInputSequence.mSourceIndex, aSourceIndex);
-    EXPECT_EQ(aMetadata.mSource.mInputSequence.mEventIndex, aEventIndex);
+    EXPECT_EQ(source.mInputSequence.mSourceIndex, aSourceIndex);
+    EXPECT_EQ(source.mInputSequence.mEventIndex, aEventIndex);
 }
 
 const TradeInstrument* findTradeInstrument(const BrokerStatement& aStatement,
