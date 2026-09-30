@@ -99,6 +99,16 @@ scripts/dump_tr_parse.sh
 
 Generated debug files are written below `runtime/`, which is ignored by Git.
 
+To split a local Trade Republic export into three inputs and inspect the merged result, run:
+
+```sh
+scripts/dump_tr_merge.sh
+```
+
+The script writes the split CSVs below `runtime/debug/tr_merge_inputs/` and the human-readable
+merged result to `runtime/debug/tr_merged_debug.txt`. The tracked script accepts alternate relative
+paths; generated financial data must remain below the ignored `runtime/` directory.
+
 ## Initialization model
 
 ### Important

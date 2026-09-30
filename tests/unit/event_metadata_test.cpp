@@ -194,7 +194,7 @@ TEST(EventMetadataTest, ChronologicalComparisonUsesTimestampThenInputSequence) {
         noTimestampFirst,
         earlyTimestamp,
     };
-    std::sort(events.begin(), events.end(), EventMetadataChronologicalLess{});
+    std::sort(events.begin(), events.end(), ChronologicalEventOrder{});
 
     const std::array expectedIds{"date", "timestamp-1", "timestamp-2", "fallback-1", "fallback-2"};
     for (std::size_t index = 0; index < events.size(); ++index)
@@ -208,11 +208,11 @@ TEST(EventMetadataTest, ChronologicalComparisonUsesTimestampThenInputSequence) {
 TEST(EventMetadataTest, StableInputSequenceBreaksOtherwiseIdenticalTies) {
     const auto first = makeMetadata("same", 2, {.mSourceIndex = 0, .mEventIndex = 1});
     const auto second = makeMetadata("same", 2, {.mSourceIndex = 1, .mEventIndex = 0});
-    const EventMetadataChronologicalLess less;
+    const ChronologicalEventOrder order;
 
-    EXPECT_TRUE(less(first, second));
-    EXPECT_FALSE(less(second, first));
-    EXPECT_FALSE(less(first, first));
+    EXPECT_TRUE(order(first, second));
+    EXPECT_FALSE(order(second, first));
+    EXPECT_FALSE(order(first, first));
 }
 
 TEST(EventMetadataTest, MetadataWithoutSourcesSortsAfterSourcedMetadata) {
@@ -221,7 +221,7 @@ TEST(EventMetadataTest, MetadataWithoutSourcesSortsAfterSourcedMetadata) {
         .mTaxDate = sourced.mTaxDate,
         .mSourceTimestamp = sourced.mSourceTimestamp,
     };
-    const EventMetadataChronologicalLess order;
+    const ChronologicalEventOrder order;
 
     EXPECT_TRUE(order(sourced, withoutSource));
     EXPECT_FALSE(order(withoutSource, sourced));

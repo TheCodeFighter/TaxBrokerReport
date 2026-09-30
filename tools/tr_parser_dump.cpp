@@ -1,5 +1,6 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
+#include "taxbroker/statement_merger.hpp"
 #include "taxbroker/types.hpp"
 
 #include <chrono>
@@ -9,9 +10,12 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <numeric>
 #include <ostream>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -267,6 +271,24 @@ std::string_view toString(DiagnosticCode aDiagnosticCode) {
     return "Unknown";
 }
 
+std::string_view toString(MergeDiagnosticCode aDiagnosticCode) {
+    switch (aDiagnosticCode)
+    {
+    case MergeDiagnosticCode::DuplicateSourceIndex:
+        return "DuplicateSourceIndex";
+    case MergeDiagnosticCode::InconsistentSourceIndex:
+        return "InconsistentSourceIndex";
+    case MergeDiagnosticCode::ConflictingDuplicate:
+        return "ConflictingDuplicate";
+    case MergeDiagnosticCode::InstrumentNameConflict:
+        return "InstrumentNameConflict";
+    case MergeDiagnosticCode::InstrumentAssetClassConflict:
+        return "InstrumentAssetClassConflict";
+    }
+
+    return "Unknown";
+}
+
 void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
     aOutput << "TRADE INSTRUMENTS: " << aStatement.mTradeInstruments.size() << "\n\n";
 
@@ -450,6 +472,35 @@ void writeParseResult(std::ostream& aOutput, const ParseResult& aParseResult) {
     writeDiagnostics(aOutput, aParseResult);
 }
 
+std::size_t eventCount(const BrokerStatement& aStatement) {
+    const auto tradeCount = std::accumulate(
+        aStatement.mTradeInstruments.begin(),
+        aStatement.mTradeInstruments.end(),
+        std::size_t{},
+        [](std::size_t aCount, const TradeInstrument& aInstrument) {
+            return aCount + aInstrument.mTransactions.size() + aInstrument.mCorporateActions.size();
+        });
+
+    const auto dividendCount =
+        std::accumulate(aStatement.mDividendInstruments.begin(),
+                        aStatement.mDividendInstruments.end(),
+                        std::size_t{},
+                        [](std::size_t aCount, const DividendInstrument& aInstrument) {
+                            return aCount + aInstrument.mTransactions.size();
+                        });
+
+    const auto interestCount =
+        std::accumulate(aStatement.mInterestInstruments.begin(),
+                        aStatement.mInterestInstruments.end(),
+                        std::size_t{},
+                        [](std::size_t aCount, const InterestInstrument& aInstrument) {
+                            return aCount + aInstrument.mTransactions.size();
+                        });
+
+    return aStatement.mBenefitEvents.size() + aStatement.mPrivateMarketEvents.size() + tradeCount +
+           dividendCount + interestCount;
+}
+
 void createParentDirectory(const std::filesystem::path& aPath) {
     if (aPath.has_parent_path())
     {
@@ -457,13 +508,131 @@ void createParentDirectory(const std::filesystem::path& aPath) {
     }
 }
 
+void writeMergeDiagnostics(std::ostream& aOutput, const StatementMergeResult& aMergeResult) {
+    aOutput << "DIAGNOSTICS: " << aMergeResult.mDiagnostics.size() << "\n\n";
+
+    for (const auto& diagnostic : aMergeResult.mDiagnostics)
+    {
+        if (const auto* parseDiagnostic = std::get_if<SourcedParseDiagnostic>(&diagnostic))
+        {
+            aOutput << "- stage: Parsing\n"
+                    << "  source_index: " << parseDiagnostic->mSourceIndex
+                    << "\n  severity: " << toString(parseDiagnostic->mDiagnostic.mSeverity)
+                    << "\n  code: " << toString(parseDiagnostic->mDiagnostic.mCode)
+                    << "\n  source: " << safeSourceFile(parseDiagnostic->mDiagnostic.mSourceFile)
+                    << "\n  message: " << parseDiagnostic->mDiagnostic.mMessage << "\n\n";
+            continue;
+        }
+
+        const auto& mergeDiagnostic = std::get<MergeDiagnostic>(diagnostic);
+
+        aOutput << "- stage: Merging\n"
+                << "  severity: " << toString(mergeDiagnostic.mSeverity)
+                << "\n  code: " << toString(mergeDiagnostic.mCode)
+                << "\n  message: " << mergeDiagnostic.mMessage
+                << "\n  sources: " << mergeDiagnostic.mSources.size() << '\n';
+
+        for (const auto& source : mergeDiagnostic.mSources)
+        {
+            aOutput << "    - source_index: " << source.mInputSequence.mSourceIndex
+                    << "\n      event_index: " << source.mInputSequence.mEventIndex
+                    << "\n      source_file: " << source.mFilename.value()
+                    << "\n      source_row: " << source.mSourceRow << '\n';
+        }
+
+        aOutput << '\n';
+    }
+}
+
+int writeMergedResult(std::span<char*> aArguments) {
+    const std::filesystem::path outputPath{aArguments[0]};
+
+    std::vector<StatementMergeInput> inputs;
+    inputs.reserve(aArguments.size() - 1);
+
+    taxbroker::tr::TradeRepublicParser parser;
+
+    for (std::size_t index = 1; index < aArguments.size(); ++index)
+    {
+        inputs.push_back(StatementMergeInput{
+            .mSourceIndex = index - 1,
+            .mParseResult = parser.parse(aArguments[index], index - 1),
+        });
+    }
+
+    const auto mergeResult = DeterministicStatementMerger{}.merge(inputs);
+    const auto parsedEventCount =
+        std::accumulate(inputs.begin(),
+                        inputs.end(),
+                        std::size_t{},
+                        [](std::size_t aCount, const StatementMergeInput& aInput) {
+                            return aCount + eventCount(aInput.mParseResult.mStatement);
+                        });
+    const auto mergedEventCount = eventCount(mergeResult.mStatement.mPresentation);
+
+    createParentDirectory(outputPath);
+    std::ofstream output{outputPath};
+
+    if (!output)
+    {
+        std::cerr << "Failed to open output file: " << outputPath << '\n';
+        return 1;
+    }
+
+    output << "MERGE SUMMARY\n"
+           << "  input_files: " << inputs.size() << "\n  parsed_events: " << parsedEventCount
+           << "\n  merged_events: " << mergedEventCount << "\n  all_parsed_events_retained: "
+           << (parsedEventCount == mergedEventCount ? "yes" : "no")
+           << "\n  diagnostics: " << mergeResult.mDiagnostics.size() << "\n\n"
+           << "INPUT FILES: " << inputs.size() << "\n\n";
+
+    for (const auto& input : inputs)
+    {
+        output << "- source_index: " << input.mSourceIndex << "\n  source_file: "
+               << SourceFilename::fromPath(aArguments[input.mSourceIndex + 1]).value() << '\n';
+    }
+
+    output << '\n';
+
+    writeTrades(output, mergeResult.mStatement.mPresentation);
+    writeDividends(output, mergeResult.mStatement.mPresentation);
+    writeInterests(output, mergeResult.mStatement.mPresentation);
+    writeBenefits(output, mergeResult.mStatement.mPresentation);
+    writePrivateMarketEvents(output, mergeResult.mStatement.mPresentation);
+    writeMergeDiagnostics(output, mergeResult);
+
+    if (!output)
+    {
+        std::cerr << "Failed to write merged output file: " << outputPath << '\n';
+        return 1;
+    }
+
+    std::cout << "Wrote merged Trade Republic data to " << outputPath << '\n';
+
+    return 0;
+}
+
 } // namespace
 
 int main(int aArgumentCount, char** aArguments) {
+    if (aArgumentCount >= 4 && std::string_view{aArguments[1]} == "--merge")
+    {
+        try
+        {
+            return writeMergedResult(
+                std::span{aArguments + 2, static_cast<std::size_t>(aArgumentCount - 2)});
+        } catch (const std::exception& exception)
+        {
+            std::cerr << "Failed to merge Trade Republic CSVs: " << exception.what() << '\n';
+            return 1;
+        }
+    }
+
     if (aArgumentCount != 4)
     {
         std::cerr << "Usage: taxbroker_tr_dump <Trade Republic CSV> <parsed output> "
-                     "<diagnostics JSON>\n";
+                     "<diagnostics JSON>\n"
+                     "       taxbroker_tr_dump --merge <merged output> <CSV> <CSV> [...]\n";
         return 2;
     }
 

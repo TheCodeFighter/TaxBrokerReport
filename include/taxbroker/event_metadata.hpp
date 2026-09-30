@@ -163,7 +163,7 @@ transactionIdentity(const EventMetadata& aMetadata) {
 }
 
 // On the same tax date, known timestamps precede unknown times; input sequence breaks ties.
-struct EventMetadataChronologicalLess {
+struct ChronologicalEventOrder {
     [[nodiscard]] bool operator()(const EventMetadata& aLeft, const EventMetadata& aRight) const {
         if (aLeft.mTaxDate != aRight.mTaxDate)
         {

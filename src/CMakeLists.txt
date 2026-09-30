@@ -9,6 +9,7 @@ add_library(taxbroker_core STATIC
     parsers/traderepublic_parser.cpp
     processors/fifo_matcher.cpp
     processors/report_processor.cpp
+    processors/statement_merger.cpp
     processors/tax_processor.cpp
     utils/date_utils.cpp
     utils/logger.cpp
