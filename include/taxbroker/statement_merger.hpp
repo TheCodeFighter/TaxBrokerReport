@@ -54,6 +54,16 @@ enum class MergeDiagnosticCode {
     InstrumentAssetClassConflict,
 };
 
+struct InstrumentNameVariant {
+    std::string mName;
+    std::vector<SourceReference> mSources;
+};
+
+struct InstrumentAssetClassVariant {
+    AssetClass mAssetClass{AssetClass::Unknown};
+    std::vector<SourceReference> mSources;
+};
+
 struct MergeDiagnostic {
     DiagnosticSeverity mSeverity{DiagnosticSeverity::Error};
     MergeDiagnosticCode mCode{MergeDiagnosticCode::ConflictingDuplicate};
@@ -62,6 +72,9 @@ struct MergeDiagnostic {
     std::optional<Date> mTaxDate;
     std::optional<std::string> mInstrumentName;
     std::optional<Isin> mIsin;
+    std::optional<std::size_t> mSourceIndex;
+    std::vector<InstrumentNameVariant> mNameVariants;
+    std::vector<InstrumentAssetClassVariant> mAssetClassVariants;
 };
 
 using StatementMergeDiagnostic = std::variant<SourcedParseDiagnostic, MergeDiagnostic>;
@@ -90,6 +103,13 @@ class StatementMerger {
     [[nodiscard("Merged statement data and diagnostics should not be "
                 "ignored")]] virtual StatementMergeResult
     merge(std::span<const StatementMergeInput> aInputs) const = 0;
+};
+
+class DeterministicStatementMerger final : public StatementMerger {
+  public:
+    [[nodiscard("Merged statement data and diagnostics should not be "
+                "ignored")]] StatementMergeResult
+    merge(std::span<const StatementMergeInput> aInputs) const override;
 };
 
 } // namespace taxbroker

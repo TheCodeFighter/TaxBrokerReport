@@ -105,10 +105,26 @@ Presentation order is independent of economic processing order:
    ordering; and
 3. events within an instrument use the normal event chronology.
 
+Trade and dividend instruments use ISIN as their identity. Interest instruments use interest type
+plus ISIN when one exists; without an ISIN, interest type plus payer or instrument name is the
+available broker-neutral identity. Benefits and private-market records remain standalone events.
+Names never replace an ISIN: when names differ for one identity, the earliest name under
+`StableSourceOrder` is used for presentation and a warning retains every name variant and source.
+A trade asset-class disagreement is an error, retains every class variant and source, and leaves
+the merged class `Unknown` rather than choosing a tax-relevant value.
+
+Collection merging retains every event and normalizes each event's complete source list. It does
+not treat similar payloads or transaction IDs as duplicates; that separate merge phase decides
+exact duplicate and conflict identity. Instrument collections are ordered by their documented
+identity, and events inside each concrete collection use `ChronologicalEventOrder`.
+
 The chronological reference sequence crosses every presentation collection and uses tax date,
 timestamp presence, timestamp value and stable input sequence. It does not process one broker or
 one presentation collection to completion first. The merger does not apply the processing-only
 same-day corporate-action priority, calculate FIFO, or resolve economic corporate-action identity.
+Collection aggregation and chronological-reference construction are separate implementation
+phases. Until the reference sequence is populated, consumers must not process the grouped
+presentation structure as a ledger.
 
 Parser and merger diagnostics share the result without changing parser diagnostics. A
 `SourcedParseDiagnostic` contains the original `ParseDiagnostic` plus its broker and source request
