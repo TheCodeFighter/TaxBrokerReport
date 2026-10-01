@@ -46,6 +46,7 @@ gtest_discover_tests(taxbroker_unit_tests)
 add_executable(taxbroker_integration_tests
     integration/full_pipeline_test.cpp
     integration/server_integration_test.cpp
+    integration/statement_merger_integration_test.cpp
 )
 
 target_include_directories(taxbroker_integration_tests PRIVATE 

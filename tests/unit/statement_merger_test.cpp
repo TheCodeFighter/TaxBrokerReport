@@ -1,10 +1,12 @@
 #include "taxbroker/statement_merger.hpp"
+#include "../support/statement_merge_assertions.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <iterator>
 #include <numeric>
 #include <optional>
 #include <span>
@@ -848,6 +850,8 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
     {
         const auto actual = DeterministicStatementMerger{}.merge(inputs);
 
+        test::expectMergeResultsEqual(actual, expected);
+
         EXPECT_EQ(actual.mStatement.mChronologicalOrder, expected.mStatement.mChronologicalOrder);
         ASSERT_EQ(actual.mStatement.mChronologicalOrder.size(), 5U);
 
@@ -1599,6 +1603,7 @@ TEST(DeterministicStatementMergerTest, BuildsChronologyAcrossEveryCollectionAndI
         .mName = "Reward",
     }};
     std::array inputs{first, second, third};
+    const auto baseline = DeterministicStatementMerger{}.merge(inputs);
     const std::vector<StatementEventReference> expected{
         {StatementEventKind::Trade, 0, 0},
         {StatementEventKind::Dividend, 0, 0},
@@ -1613,6 +1618,8 @@ TEST(DeterministicStatementMergerTest, BuildsChronologyAcrossEveryCollectionAndI
     do
     {
         const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        test::expectMergeResultsEqual(result, baseline);
 
         EXPECT_EQ(result.mStatement.mChronologicalOrder, expected);
         EXPECT_EQ(result.mStatement.mChronologicalOrder.size(),
@@ -1896,6 +1903,392 @@ TEST(DeterministicStatementMergerTest, MissingSourceDiagnosticsUseTaxDateThenCre
     EXPECT_EQ(diagnostics[1]->mInstrumentName, "Alpha event");
     EXPECT_EQ(diagnostics[2]->mInstrumentName, "Future event");
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+}
+
+std::vector<EventMetadata*> eventMetadataInTestOrder(BrokerStatement& aStatement) {
+    std::vector<EventMetadata*> metadata;
+    const auto appendMetadata = [&metadata](auto& aEvents) {
+        std::transform(aEvents.begin(),
+                       aEvents.end(),
+                       std::back_inserter(metadata),
+                       [](auto& aEvent) { return &aEvent.mMetadata; });
+    };
+
+    for (auto& instrument : aStatement.mTradeInstruments)
+    {
+        appendMetadata(instrument.mTransactions);
+        appendMetadata(instrument.mCorporateActions);
+    }
+
+    for (auto& instrument : aStatement.mDividendInstruments)
+    {
+        appendMetadata(instrument.mTransactions);
+    }
+
+    for (auto& instrument : aStatement.mInterestInstruments)
+    {
+        appendMetadata(instrument.mTransactions);
+    }
+
+    appendMetadata(aStatement.mBenefitEvents);
+    appendMetadata(aStatement.mPrivateMarketEvents);
+
+    return metadata;
+}
+
+TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcrossThreeFiles) {
+    std::array inputs{makeDuplicateTestInput(0, "same.csv"),
+                      makeDuplicateTestInput(1, "same.csv"),
+                      makeDuplicateTestInput(2, "same.csv")};
+    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+    const std::array kinds{StatementEventKind::Trade,
+                           StatementEventKind::CorporateAction,
+                           StatementEventKind::Dividend,
+                           StatementEventKind::Interest,
+                           StatementEventKind::Benefit,
+                           StatementEventKind::PrivateMarket};
+    const std::array ids{"trade-id",
+                         "action-id",
+                         "dividend-id",
+                         "interest-id",
+                         "benefit-id",
+                         "private-id"};
+
+    do
+    {
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        test::expectMergeResultsEqual(result, expected);
+        ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), kinds.size());
+        EXPECT_TRUE(result.mDiagnostics.empty());
+
+        for (std::size_t event = 0; event < kinds.size(); ++event)
+        {
+            SCOPED_TRACE(event);
+            const auto& reference = result.mStatement.mChronologicalOrder[event];
+            const std::vector sources{
+                makeSource(Broker::TradeRepublic, "same.csv", event + 2, ids[event], {0, event}),
+                makeSource(Broker::TradeRepublic, "same.csv", event + 2, ids[event], {1, event}),
+                makeSource(Broker::TradeRepublic, "same.csv", event + 2, ids[event], {2, event}),
+            };
+
+            EXPECT_EQ(reference.mKind, kinds[event]);
+            EXPECT_EQ(referencedMetadata(result.mStatement, reference).mSources, sources);
+        }
+    } while (std::next_permutation(inputs.begin(),
+                                   inputs.end(),
+                                   [](const auto& aLeft, const auto& aRight) {
+                                       return aLeft.mSourceIndex < aRight.mSourceIndex;
+                                   }));
+}
+
+TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependentAcrossFiles) {
+    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
+                      makeDuplicateTestInput(1, "second.csv")};
+
+    for (auto& input : inputs)
+    {
+        for (auto* metadata : eventMetadataInTestOrder(input.mParseResult.mStatement))
+        {
+            auto& id = metadata->mSources.front().mTransactionId;
+
+            if (input.mSourceIndex == 0)
+            {
+                id.reset();
+            }
+            else
+            {
+                id = "";
+            }
+        }
+    }
+
+    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+
+    do
+    {
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        test::expectMergeResultsEqual(result, expected);
+        ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 12U);
+        EXPECT_TRUE(result.mDiagnostics.empty());
+
+        for (std::size_t event = 0; event < 6; ++event)
+        {
+            for (std::size_t source = 0; source < 2; ++source)
+            {
+                const auto& metadata =
+                    referencedMetadata(result.mStatement,
+                                       result.mStatement.mChronologicalOrder[event * 2 + source]);
+
+                ASSERT_EQ(metadata.mSources.size(), 1U);
+                EXPECT_EQ(metadata.mSources.front().mInputSequence,
+                          (StableInputSequence{source, event}));
+                EXPECT_FALSE(transactionIdentity(metadata).has_value());
+                EXPECT_EQ(metadata.mSources.front().mTransactionId.has_value(), source == 1);
+            }
+        }
+    } while (std::next_permutation(inputs.begin(),
+                                   inputs.end(),
+                                   [](const auto& aLeft, const auto& aRight) {
+                                       return aLeft.mSourceIndex < aRight.mSourceIndex;
+                                   }));
+}
+
+TEST(DeterministicStatementMergerTest, EveryKindRejectsChangedTaxDateOrTimestampFacts) {
+    const std::array kinds{StatementEventKind::Trade,
+                           StatementEventKind::CorporateAction,
+                           StatementEventKind::Dividend,
+                           StatementEventKind::Interest,
+                           StatementEventKind::Benefit,
+                           StatementEventKind::PrivateMarket};
+
+    for (std::size_t kind = 0; kind < kinds.size(); ++kind)
+    {
+        for (const auto change : {"tax date", "timestamp value", "timestamp presence"})
+        {
+            SCOPED_TRACE(kind);
+            SCOPED_TRACE(change);
+            std::array inputs{makeDuplicateTestInput(0, "first.csv"),
+                              makeDuplicateTestInput(1, "second.csv"),
+                              makeDuplicateTestInput(2, "third.csv")};
+
+            for (auto& input : inputs)
+            {
+                auto* metadata = eventMetadataInTestOrder(input.mParseResult.mStatement)[kind];
+                metadata->mSourceTimestamp =
+                    makeTimestamp(2024, 1, static_cast<unsigned>(kind + 1), 9);
+            }
+
+            auto* changed = eventMetadataInTestOrder(inputs[2].mParseResult.mStatement)[kind];
+
+            if (std::string_view{change} == "tax date")
+            {
+                changed->mTaxDate += DayDuration{1};
+            }
+            else if (std::string_view{change} == "timestamp value")
+            {
+                *changed->mSourceTimestamp += std::chrono::milliseconds{1};
+            }
+            else
+            {
+                changed->mSourceTimestamp.reset();
+            }
+
+            const auto expected = DeterministicStatementMerger{}.merge(inputs);
+
+            do
+            {
+                const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+                test::expectMergeResultsEqual(result, expected);
+                ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 5U);
+                ASSERT_EQ(result.mDiagnostics.size(), 1U);
+                const auto& diagnostic = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+                const auto originalMetadata =
+                    eventMetadataInTestOrder(inputs[0].mParseResult.mStatement);
+                const auto id = originalMetadata[kind]->mSources.front().mTransactionId;
+                const std::vector sources{
+                    makeSource(Broker::TradeRepublic, "first.csv", kind + 2, *id, {0, kind}),
+                    makeSource(Broker::TradeRepublic, "second.csv", kind + 2, *id, {1, kind}),
+                    makeSource(Broker::TradeRepublic, "third.csv", kind + 2, *id, {2, kind}),
+                };
+
+                EXPECT_EQ(diagnostic.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+                EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+                EXPECT_EQ(diagnostic.mEventKinds, std::vector{kinds[kind]});
+                EXPECT_EQ(diagnostic.mSources, sources);
+                EXPECT_EQ(diagnostic.mTaxDate.has_value(), std::string_view{change} != "tax date");
+
+                for (const auto& reference : result.mStatement.mChronologicalOrder)
+                {
+                    EXPECT_NE(reference.mKind, kinds[kind]);
+                }
+            } while (std::next_permutation(inputs.begin(),
+                                           inputs.end(),
+                                           [](const auto& aLeft, const auto& aRight) {
+                                               return aLeft.mSourceIndex < aRight.mSourceIndex;
+                                           }));
+        }
+    }
+}
+
+TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResultsAndInputs) {
+    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
+                      makeDuplicateTestInput(1, "second.csv"),
+                      makeDuplicateTestInput(2, "third.csv")};
+    inputs[1].mParseResult.mStatement.mTradeInstruments.front().mName = "Alternative name";
+    inputs[2].mParseResult.mStatement.mPrivateMarketEvents.front().mFeePaid += 1;
+
+    for (auto& input : inputs)
+    {
+        auto& statement = input.mParseResult.mStatement;
+        auto other = statement.mTradeInstruments.front();
+        other.mIsin = "XX0000000099";
+        other.mName = "Other instrument";
+        other.mAssetClass = input.mSourceIndex == 1 ? AssetClass::Fund : AssetClass::Stock;
+
+        for (auto* metadata : eventMetadataInTestOrder(input.mParseResult.mStatement))
+        {
+            metadata->mSourceTimestamp.reset();
+        }
+
+        for (auto& event : other.mTransactions)
+        {
+            event.mMetadata.mSources.front().mInputSequence.mEventIndex += 10;
+            event.mMetadata.mSources.front().mSourceRow += 10;
+            event.mMetadata.mSources.front().mTransactionId =
+                "other-trade-" + std::to_string(input.mSourceIndex);
+        }
+
+        other.mCorporateActions.clear();
+        statement.mTradeInstruments.push_back(other);
+        auto extraTrade = statement.mTradeInstruments.front().mTransactions.front();
+        extraTrade.mMetadata.mSources.front().mInputSequence.mEventIndex += 20;
+        extraTrade.mMetadata.mSources.front().mSourceRow += 20;
+        extraTrade.mMetadata.mSources.front().mTransactionId.reset();
+        statement.mTradeInstruments.front().mTransactions.push_back(extraTrade);
+        const auto appendExtraEvent = [](auto& aEvents) {
+            auto extra = aEvents.front();
+            auto& source = extra.mMetadata.mSources.front();
+            source.mInputSequence.mEventIndex += 30;
+            source.mSourceRow += 30;
+            source.mTransactionId.reset();
+            aEvents.push_back(extra);
+        };
+
+        appendExtraEvent(statement.mTradeInstruments.front().mCorporateActions);
+        appendExtraEvent(statement.mDividendInstruments.front().mTransactions);
+        appendExtraEvent(statement.mInterestInstruments.front().mTransactions);
+        appendExtraEvent(statement.mBenefitEvents);
+        appendExtraEvent(statement.mPrivateMarketEvents);
+        auto otherDividend = statement.mDividendInstruments.front();
+        otherDividend.mIsin = "XX0000000099";
+        auto otherInterest = statement.mInterestInstruments.front();
+        otherInterest.mName = "Other account";
+
+        for (auto& event : otherDividend.mTransactions)
+        {
+            auto& source = event.mMetadata.mSources.front();
+            source.mInputSequence.mEventIndex += 40;
+            source.mSourceRow += 40;
+            source.mTransactionId.reset();
+        }
+
+        for (auto& event : otherInterest.mTransactions)
+        {
+            auto& source = event.mMetadata.mSources.front();
+            source.mInputSequence.mEventIndex += 40;
+            source.mSourceRow += 40;
+            source.mTransactionId.reset();
+        }
+
+        statement.mDividendInstruments.push_back(otherDividend);
+        statement.mInterestInstruments.push_back(otherInterest);
+        input.mParseResult.mDiagnostics = {ParseDiagnostic{.mSeverity = DiagnosticSeverity::Warning,
+                                                           .mCode = DiagnosticCode::InvalidValue,
+                                                           .mSourceFile = "synthetic.csv",
+                                                           .mRowIndex = 8,
+                                                           .mTransactionId = "synthetic-warning",
+                                                           .mField = "datetime",
+                                                           .mMessage = "Synthetic warning."}};
+    }
+
+    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(expected.mStatement.mChronologicalOrder.size(), 38U);
+    ASSERT_EQ(expected.mDiagnostics.size(), 6U);
+    ASSERT_NE(findMergeDiagnostic(expected, MergeDiagnosticCode::InstrumentAssetClassConflict),
+              nullptr);
+    ASSERT_NE(findMergeDiagnostic(expected, MergeDiagnosticCode::InstrumentNameConflict), nullptr);
+    ASSERT_NE(findMergeDiagnostic(expected, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
+
+    for (auto& input : inputs)
+    {
+        auto& statement = input.mParseResult.mStatement;
+
+        for (auto& instrument : statement.mTradeInstruments)
+        {
+            std::reverse(instrument.mTransactions.begin(), instrument.mTransactions.end());
+            std::reverse(instrument.mCorporateActions.begin(), instrument.mCorporateActions.end());
+        }
+
+        std::reverse(statement.mTradeInstruments.begin(), statement.mTradeInstruments.end());
+
+        for (auto& instrument : statement.mDividendInstruments)
+        {
+            std::reverse(instrument.mTransactions.begin(), instrument.mTransactions.end());
+        }
+
+        for (auto& instrument : statement.mInterestInstruments)
+        {
+            std::reverse(instrument.mTransactions.begin(), instrument.mTransactions.end());
+        }
+
+        std::reverse(statement.mDividendInstruments.begin(), statement.mDividendInstruments.end());
+        std::reverse(statement.mInterestInstruments.begin(), statement.mInterestInstruments.end());
+        std::reverse(statement.mBenefitEvents.begin(), statement.mBenefitEvents.end());
+        std::reverse(statement.mPrivateMarketEvents.begin(), statement.mPrivateMarketEvents.end());
+    }
+
+    const auto originalInputs = inputs;
+
+    do
+    {
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        test::expectMergeResultsEqual(result, expected);
+
+        for (const auto& input : inputs)
+        {
+            const auto& original = originalInputs[input.mSourceIndex];
+
+            test::expectStatementsEqual(input.mParseResult.mStatement,
+                                        original.mParseResult.mStatement);
+        }
+    } while (std::next_permutation(inputs.begin(),
+                                   inputs.end(),
+                                   [](const auto& aLeft, const auto& aRight) {
+                                       return aLeft.mSourceIndex < aRight.mSourceIndex;
+                                   }));
+}
+
+TEST(DeterministicStatementMergerTest,
+     CorporateActionsKeepEconomicCandidatesAcrossFilesAndBrokers) {
+    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
+                      makeDuplicateTestInput(1, "overlap.csv"),
+                      makeDuplicateTestInput(2, "other-broker.csv")};
+    auto& other = inputs[2].mParseResult;
+    other.mBroker = Broker::InteractiveBrokers;
+
+    for (auto* metadata : eventMetadataInTestOrder(other.mStatement))
+    {
+        metadata->mSources.front().mBroker = Broker::InteractiveBrokers;
+    }
+
+    auto& instrument = inputs[1].mParseResult.mStatement.mTradeInstruments.front();
+    auto distinctAction = instrument.mCorporateActions.front();
+    distinctAction.mMetadata.mSources.front().mInputSequence.mEventIndex = 6;
+    distinctAction.mMetadata.mSources.front().mSourceRow = 8;
+    distinctAction.mMetadata.mSources.front().mTransactionId = "different-action-id";
+    instrument.mCorporateActions.push_back(distinctAction);
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto& actions =
+        result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions;
+
+    ASSERT_EQ(actions.size(), 3U);
+    EXPECT_EQ(
+        actions[0].mMetadata.mSources,
+        (std::vector{makeSource(Broker::TradeRepublic, "first.csv", 3, "action-id", {0, 1}),
+                     makeSource(Broker::TradeRepublic, "overlap.csv", 3, "action-id", {1, 1})}));
+    EXPECT_EQ(actions[1].mMetadata.mSources,
+              std::vector{distinctAction.mMetadata.mSources.front()});
+    EXPECT_EQ(
+        actions[2].mMetadata.mSources,
+        other.mStatement.mTradeInstruments.front().mCorporateActions.front().mMetadata.mSources);
+    EXPECT_EQ(test::eventFacts(actions[0]), test::eventFacts(actions[1]));
+    EXPECT_EQ(test::eventFacts(actions[1]), test::eventFacts(actions[2]));
+    EXPECT_TRUE(result.mDiagnostics.empty());
 }
 
 } // namespace
