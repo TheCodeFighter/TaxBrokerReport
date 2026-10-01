@@ -8,6 +8,7 @@
 #include <numeric>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -104,6 +105,37 @@ const MergeDiagnostic* findMergeDiagnostic(const StatementMergeResult& aResult,
     });
 
     return found == diagnostics.end() ? nullptr : *found;
+}
+
+const EventMetadata& referencedMetadata(const MergedStatement& aStatement,
+                                        const StatementEventReference& aReference) {
+    const auto& presentation = aStatement.mPresentation;
+
+    switch (aReference.mKind)
+    {
+    case StatementEventKind::Trade:
+        return presentation.mTradeInstruments.at(aReference.mInstrumentIndex.value())
+            .mTransactions.at(aReference.mEventIndex)
+            .mMetadata;
+    case StatementEventKind::CorporateAction:
+        return presentation.mTradeInstruments.at(aReference.mInstrumentIndex.value())
+            .mCorporateActions.at(aReference.mEventIndex)
+            .mMetadata;
+    case StatementEventKind::Dividend:
+        return presentation.mDividendInstruments.at(aReference.mInstrumentIndex.value())
+            .mTransactions.at(aReference.mEventIndex)
+            .mMetadata;
+    case StatementEventKind::Interest:
+        return presentation.mInterestInstruments.at(aReference.mInstrumentIndex.value())
+            .mTransactions.at(aReference.mEventIndex)
+            .mMetadata;
+    case StatementEventKind::Benefit:
+        return presentation.mBenefitEvents.at(aReference.mEventIndex).mMetadata;
+    case StatementEventKind::PrivateMarket:
+        return presentation.mPrivateMarketEvents.at(aReference.mEventIndex).mMetadata;
+    }
+
+    throw std::logic_error{"Unsupported event reference"};
 }
 
 static_assert(std::is_abstract_v<StatementMerger>);
@@ -358,7 +390,7 @@ TEST(DeterministicStatementMergerTest, GroupsTradesByIsinAcrossBrokersAndOrdersE
     EXPECT_EQ(conflict->mInstrumentName, "Earlier source name");
     EXPECT_EQ(conflict->mNameVariants.size(), 2U);
     EXPECT_EQ(conflict->mSources.size(), 3U);
-    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+    EXPECT_EQ(result.mStatement.mChronologicalOrder.size(), 4U);
 }
 
 TEST(DeterministicStatementMergerTest, AssetClassConflictIsErrorAndUsesUnknown) {
@@ -815,6 +847,15 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
     do
     {
         const auto actual = DeterministicStatementMerger{}.merge(inputs);
+
+        EXPECT_EQ(actual.mStatement.mChronologicalOrder, expected.mStatement.mChronologicalOrder);
+        ASSERT_EQ(actual.mStatement.mChronologicalOrder.size(), 5U);
+
+        for (const auto& reference : actual.mStatement.mChronologicalOrder)
+        {
+            EXPECT_EQ(referencedMetadata(actual.mStatement, reference),
+                      referencedMetadata(expected.mStatement, reference));
+        }
 
         EXPECT_EQ(mergedEventCount(actual.mStatement.mPresentation), 5U);
         EXPECT_TRUE(actual.mStatement.mPresentation.mPrivateMarketEvents.empty());
@@ -1494,6 +1535,367 @@ TEST(DeterministicStatementMergerTest, TimestampOrderingDoesNotUseCollectionArri
     ASSERT_EQ(transactions.size(), 2U);
     EXPECT_EQ(primarySource(transactions[0].mMetadata).mInputSequence.mEventIndex, 1U);
     EXPECT_EQ(primarySource(transactions[1].mMetadata).mInputSequence.mEventIndex, 0U);
+}
+
+TEST(DeterministicStatementMergerTest, BuildsChronologyAcrossEveryCollectionAndInstrument) {
+    StatementMergeInput first{.mSourceIndex = 0};
+    auto futureTrade = makeTrade(0, 0, makeDate(2025, 1, 1));
+    futureTrade.mMetadata.mSourceTimestamp = makeTimestamp(2023, 1, 1, 8);
+    auto morningTrade = makeTrade(0, 1, makeDate(2024, 1, 2));
+    morningTrade.mMetadata.mSourceTimestamp = makeTimestamp(2024, 1, 2, 8);
+    first.mParseResult.mStatement.mTradeInstruments = {
+        TradeInstrument{
+            .mName = "Second ISIN",
+            .mIsin = "XX0000000002",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions = {futureTrade, morningTrade},
+        },
+        TradeInstrument{
+            .mName = "First ISIN",
+            .mIsin = "XX0000000001",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions = {makeTrade(0, 2, makeDate(2023, 12, 31))},
+            .mCorporateActions = {CorporateAction{
+                .mMetadata = makeMetadata(0,
+                                          3,
+                                          makeDate(2024, 1, 2),
+                                          Broker::TradeRepublic,
+                                          "first.csv",
+                                          makeTimestamp(2024, 1, 2, 12)),
+                .mType = CorporateActionType::Split,
+            }},
+        },
+    };
+
+    StatementMergeInput second{.mSourceIndex = 1};
+    second.mParseResult.mBroker = Broker::InteractiveBrokers;
+    second.mParseResult.mStatement.mDividendInstruments = {DividendInstrument{
+        .mName = "Dividend",
+        .mIsin = "XX0000000003",
+        .mTransactions = {DividendTransaction{
+            .mMetadata = makeMetadata(1, 0, makeDate(2024, 1, 1), Broker::InteractiveBrokers),
+        }},
+    }};
+    second.mParseResult.mStatement.mInterestInstruments = {InterestInstrument{
+        .mName = "Account",
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions = {InterestTransaction{
+            .mMetadata = makeMetadata(1,
+                                      1,
+                                      makeDate(2024, 1, 2),
+                                      Broker::InteractiveBrokers,
+                                      "second.csv",
+                                      makeTimestamp(2024, 1, 2, 7)),
+        }},
+    }};
+    second.mParseResult.mStatement.mPrivateMarketEvents = {PrivateMarketEvent{
+        .mMetadata = makeMetadata(1, 2, makeDate(2024, 1, 2), Broker::InteractiveBrokers),
+        .mName = "Private fund",
+    }};
+
+    StatementMergeInput third{.mSourceIndex = 2};
+    third.mParseResult.mStatement.mBenefitEvents = {BenefitEvent{
+        .mMetadata = makeMetadata(2, 0, makeDate(2024, 1, 2)),
+        .mName = "Reward",
+    }};
+    std::array inputs{first, second, third};
+    const std::vector<StatementEventReference> expected{
+        {StatementEventKind::Trade, 0, 0},
+        {StatementEventKind::Dividend, 0, 0},
+        {StatementEventKind::Interest, 0, 0},
+        {StatementEventKind::Trade, 1, 0},
+        {StatementEventKind::CorporateAction, 0, 0},
+        {StatementEventKind::PrivateMarket, std::nullopt, 0},
+        {StatementEventKind::Benefit, std::nullopt, 0},
+        {StatementEventKind::Trade, 1, 1},
+    };
+
+    do
+    {
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        EXPECT_EQ(result.mStatement.mChronologicalOrder, expected);
+        EXPECT_EQ(result.mStatement.mChronologicalOrder.size(),
+                  mergedEventCount(result.mStatement.mPresentation));
+        EXPECT_TRUE(result.mDiagnostics.empty());
+
+        for (const auto& reference : result.mStatement.mChronologicalOrder)
+        {
+            EXPECT_NO_THROW((void)referencedMetadata(result.mStatement, reference));
+        }
+
+        EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments[0].mIsin, "XX0000000001");
+        EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments[1].mTransactions[0].mMetadata,
+                  morningTrade.mMetadata);
+        EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments[1].mTransactions[1].mMetadata,
+                  futureTrade.mMetadata);
+    } while (std::next_permutation(inputs.begin(),
+                                   inputs.end(),
+                                   [](const auto& aLeft, const auto& aRight) {
+                                       return aLeft.mSourceIndex < aRight.mSourceIndex;
+                                   }));
+}
+
+TEST(DeterministicStatementMergerTest, EqualTimesUseOnlyStableSourceAndEventSequence) {
+    const auto date = makeDate(2024, 1, 1);
+
+    for (const auto timestamp :
+         {std::optional<SourceTimestamp>{}, std::optional{makeTimestamp(2024, 1, 1, 8)}})
+    {
+        StatementMergeInput first{.mSourceIndex = 0};
+        auto metadata =
+            makeMetadata(0, 3, date, Broker::InteractiveBrokers, "z.csv", timestamp, "z-id");
+        metadata.mSources.front().mSourceRow = 99;
+        first.mParseResult.mStatement.mBenefitEvents = {BenefitEvent{
+            .mMetadata = metadata,
+            .mName = "First source benefit",
+        }};
+        first.mParseResult.mStatement.mPrivateMarketEvents = {PrivateMarketEvent{
+            .mMetadata =
+                makeMetadata(0, 1, date, Broker::InteractiveBrokers, "z.csv", timestamp, "y-id"),
+            .mName = "First source private event",
+        }};
+
+        StatementMergeInput second{.mSourceIndex = 1};
+        second.mParseResult.mStatement.mBenefitEvents = {BenefitEvent{
+            .mMetadata =
+                makeMetadata(1, 0, date, Broker::TradeRepublic, "a.csv", timestamp, "a-id"),
+            .mName = "Second source benefit",
+        }};
+        const std::array inputs{second, first};
+
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const std::vector<StatementEventReference> expected{
+            {StatementEventKind::PrivateMarket, std::nullopt, 0},
+            {StatementEventKind::Benefit, std::nullopt, 0},
+            {StatementEventKind::Benefit, std::nullopt, 1},
+        };
+
+        EXPECT_EQ(result.mStatement.mChronologicalOrder, expected);
+        EXPECT_EQ(primarySource(referencedMetadata(result.mStatement, expected[1])).mSourceRow,
+                  99U);
+    }
+}
+
+TEST(DeterministicStatementMergerTest, RequestReorderingChangesOnlyChronologicalTies) {
+    const auto date = makeDate(2024, 1, 1);
+    StatementMergeInput first{.mSourceIndex = 0};
+    first.mParseResult.mStatement.mBenefitEvents = {
+        BenefitEvent{.mMetadata = makeMetadata(0, 0, date), .mName = "First tied event"},
+        BenefitEvent{.mMetadata = makeMetadata(0, 1, makeDate(2023, 12, 31)),
+                     .mName = "Older event"},
+    };
+    StatementMergeInput second{.mSourceIndex = 1};
+    second.mParseResult.mStatement.mPrivateMarketEvents = {PrivateMarketEvent{
+        .mMetadata = makeMetadata(1, 0, date),
+        .mName = "Second tied event",
+    }};
+    std::array inputs{first, second};
+    const auto original = DeterministicStatementMerger{}.merge(inputs);
+
+    inputs[0].mSourceIndex = 1;
+    inputs[1].mSourceIndex = 0;
+
+    for (auto& event : inputs[0].mParseResult.mStatement.mBenefitEvents)
+    {
+        event.mMetadata.mSources.front().mInputSequence.mSourceIndex = 1;
+    }
+
+    inputs[1]
+        .mParseResult.mStatement.mPrivateMarketEvents.front()
+        .mMetadata.mSources.front()
+        .mInputSequence.mSourceIndex = 0;
+    const auto reordered = DeterministicStatementMerger{}.merge(inputs);
+    const std::vector<StatementEventReference> originalOrder{
+        {StatementEventKind::Benefit, std::nullopt, 0},
+        {StatementEventKind::Benefit, std::nullopt, 1},
+        {StatementEventKind::PrivateMarket, std::nullopt, 0},
+    };
+    const std::vector<StatementEventReference> reorderedOrder{
+        originalOrder[0],
+        originalOrder[2],
+        originalOrder[1],
+    };
+
+    EXPECT_EQ(original.mStatement.mChronologicalOrder, originalOrder);
+    EXPECT_EQ(reordered.mStatement.mChronologicalOrder, reorderedOrder);
+}
+
+TEST(DeterministicStatementMergerTest, MergerDoesNotPrioritizeSameDaySplitsOverTrades) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    const auto date = makeDate(2024, 1, 1);
+    auto trade = makeTrade(0, 0, date);
+    trade.mMetadata.mSourceTimestamp = makeTimestamp(2024, 1, 1, 8);
+    input.mParseResult.mStatement.mTradeInstruments = {TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions = {trade},
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(0,
+                                      1,
+                                      date,
+                                      Broker::TradeRepublic,
+                                      "statement.csv",
+                                      makeTimestamp(2024, 1, 1, 12)),
+            .mType = CorporateActionType::Split,
+            .mRatio = 2 * CORP_RATIO_SCALE,
+        }},
+    }};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const std::vector<StatementEventReference> expected{
+        {StatementEventKind::Trade, 0, 0},
+        {StatementEventKind::CorporateAction, 0, 0},
+    };
+
+    EXPECT_EQ(result.mStatement.mChronologicalOrder, expected);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments[0].mTransactions[0].mUnits,
+              trade.mUnits);
+}
+
+TEST(DeterministicStatementMergerTest, FailedFilesPreserveDiagnosticsAndUnaffectedLedger) {
+    StatementMergeInput failed{.mSourceIndex = 0};
+    failed.mParseResult.mDiagnostics = {ParseDiagnostic{
+        .mCode = DiagnosticCode::ParseError,
+        .mSourceFile = "failed.csv",
+        .mMessage = "Synthetic file failure.",
+    }};
+    auto partial = makeDuplicateTestInput(1, "partial.csv");
+    partial.mParseResult.mDiagnostics = {ParseDiagnostic{
+        .mCode = DiagnosticCode::InvalidValue,
+        .mSourceFile = "partial.csv",
+        .mRowIndex = 20,
+        .mMessage = "Synthetic rejected row.",
+    }};
+    std::array inputs{partial, failed};
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 6U);
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mSourceIndex, 0U);
+    EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]).mDiagnostic.mRowIndex, 20U);
+
+    for (const auto& reference : result.mStatement.mChronologicalOrder)
+    {
+        EXPECT_EQ(primarySource(referencedMetadata(result.mStatement, reference))
+                      .mInputSequence.mSourceIndex,
+                  1U);
+    }
+
+    inputs[0].mParseResult.mStatement = {};
+    const auto allFailed = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(allFailed.mStatement.mChronologicalOrder.empty());
+    EXPECT_EQ(mergedEventCount(allFailed.mStatement.mPresentation), 0U);
+    EXPECT_EQ(allFailed.mDiagnostics.size(), 2U);
+}
+
+TEST(DeterministicStatementMergerTest, DiagnosticsUseSourceOrderAndPreserveParserCreationOrder) {
+    auto first = makeDuplicateTestInput(0, "first.csv");
+    first.mParseResult.mDiagnostics = {
+        ParseDiagnostic{.mSeverity = DiagnosticSeverity::Warning,
+                        .mCode = DiagnosticCode::InvalidValue,
+                        .mRowIndex = 12,
+                        .mMessage = "Z first parser diagnostic."},
+        ParseDiagnostic{.mCode = DiagnosticCode::InvalidValue,
+                        .mRowIndex = 2,
+                        .mMessage = "A second parser diagnostic."},
+    };
+    auto second = makeDuplicateTestInput(1, "second.csv");
+    second.mParseResult.mStatement.mTradeInstruments[0].mTransactions[0].mUnitPrice += 1;
+    second.mParseResult.mStatement.mPrivateMarketEvents[0].mAmount += 1;
+    second.mParseResult.mDiagnostics = {ParseDiagnostic{
+        .mCode = DiagnosticCode::ParseError,
+        .mMessage = "Later source diagnostic.",
+    }};
+    std::array inputs{first, second};
+
+    do
+    {
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        ASSERT_EQ(result.mDiagnostics.size(), 5U);
+        EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mDiagnostic.mMessage,
+                  "Z first parser diagnostic.");
+        EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]).mDiagnostic.mRowIndex,
+                  2U);
+        EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[2]).mSourceIndex, 1U);
+
+        const auto& firstConflict = std::get<MergeDiagnostic>(result.mDiagnostics[3]);
+        const auto& secondConflict = std::get<MergeDiagnostic>(result.mDiagnostics[4]);
+
+        EXPECT_EQ(firstConflict.mEventKinds, std::vector{StatementEventKind::Trade});
+        EXPECT_EQ(secondConflict.mEventKinds, std::vector{StatementEventKind::PrivateMarket});
+        ASSERT_EQ(firstConflict.mSources.size(), 2U);
+        EXPECT_EQ(firstConflict.mSources[0].mInputSequence.mSourceIndex, 0U);
+        EXPECT_EQ(firstConflict.mSources[1].mInputSequence.mSourceIndex, 1U);
+        EXPECT_EQ(result.mStatement.mChronologicalOrder.size(), 4U);
+    } while (std::next_permutation(inputs.begin(),
+                                   inputs.end(),
+                                   [](const auto& aLeft, const auto& aRight) {
+                                       return aLeft.mSourceIndex < aRight.mSourceIndex;
+                                   }));
+}
+
+TEST(DeterministicStatementMergerTest, InstrumentDiagnosticsUseEventSequenceThenSeverity) {
+    StatementMergeInput first{.mSourceIndex = 0};
+    first.mParseResult.mStatement.mTradeInstruments = {
+        TradeInstrument{
+            .mName = "First name",
+            .mIsin = "XX0000000001",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions = {makeTrade(0, 2, makeDate(2024, 1, 1))},
+        },
+        TradeInstrument{
+            .mName = "Second name",
+            .mIsin = "XX0000000002",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions = {makeTrade(0, 0, makeDate(2025, 1, 1))},
+        },
+    };
+    StatementMergeInput second{.mSourceIndex = 1};
+    second.mParseResult.mStatement.mTradeInstruments = {
+        TradeInstrument{
+            .mName = "Other first name",
+            .mIsin = "XX0000000001",
+            .mAssetClass = AssetClass::Fund,
+            .mTransactions = {makeTrade(1, 0, makeDate(2024, 1, 1))},
+        },
+        TradeInstrument{
+            .mName = "Other second name",
+            .mIsin = "XX0000000002",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions = {makeTrade(1, 1, makeDate(2025, 1, 1))},
+        },
+    };
+    const std::array inputs{second, first};
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
+
+    ASSERT_EQ(diagnostics.size(), 3U);
+    EXPECT_EQ(diagnostics[0]->mIsin, "XX0000000002");
+    EXPECT_EQ(diagnostics[0]->mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(diagnostics[1]->mIsin, "XX0000000001");
+    EXPECT_EQ(diagnostics[1]->mCode, MergeDiagnosticCode::InstrumentAssetClassConflict);
+    EXPECT_EQ(diagnostics[2]->mCode, MergeDiagnosticCode::InstrumentNameConflict);
+}
+
+TEST(DeterministicStatementMergerTest, MissingSourceDiagnosticsUseTaxDateThenCreationOrder) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mBenefitEvents = {
+        BenefitEvent{.mMetadata = {.mTaxDate = makeDate(2025, 1, 1)}, .mName = "Future event"},
+        BenefitEvent{.mMetadata = {.mTaxDate = makeDate(2024, 1, 1)}, .mName = "Zulu event"},
+        BenefitEvent{.mMetadata = {.mTaxDate = makeDate(2024, 1, 1)}, .mName = "Alpha event"},
+    };
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
+
+    ASSERT_EQ(diagnostics.size(), 3U);
+    EXPECT_EQ(diagnostics[0]->mInstrumentName, "Zulu event");
+    EXPECT_EQ(diagnostics[1]->mInstrumentName, "Alpha event");
+    EXPECT_EQ(diagnostics[2]->mInstrumentName, "Future event");
+    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
 }
 
 } // namespace

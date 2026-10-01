@@ -109,6 +109,25 @@ The script writes the split CSVs below `runtime/debug/tr_merge_inputs/` and the 
 merged result to `runtime/debug/tr_merged_debug.txt`. The tracked script accepts alternate relative
 paths; generated financial data must remain below the ignored `runtime/` directory.
 
+For a separate text file containing only parser and merger diagnostics, run:
+
+```sh
+scripts/dump_tr_diagnostics.sh
+```
+
+The default output is `runtime/diagnostics/tr_merge_diagnostics.txt`, also ignored by Git.
+To inspect the same three files used by the merge dump, supply them in request order:
+
+```sh
+scripts/dump_tr_diagnostics.sh runtime/debug/tr_merge_inputs/tr_merge_part_1.csv \
+    runtime/debug/tr_merge_inputs/tr_merge_part_2.csv \
+    runtime/debug/tr_merge_inputs/tr_merge_part_3.csv
+```
+
+Use `--output runtime/path.txt` before the CSV paths to choose another local output file.
+The text retains structured source locations without dumping event payloads. It may still contain
+private identifiers and must remain local; it is not the application's JSON contract.
+
 ## Initialization model
 
 ### Important

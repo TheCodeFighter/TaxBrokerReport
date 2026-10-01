@@ -17,6 +17,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -574,40 +575,80 @@ void createParentDirectory(const std::filesystem::path& aPath) {
 void writeMergeDiagnostics(std::ostream& aOutput, const StatementMergeResult& aMergeResult) {
     aOutput << "DIAGNOSTICS: " << aMergeResult.mDiagnostics.size() << "\n\n";
 
+    const auto writeDiagnostic = [&aOutput](const auto& aDiagnostic) {
+        using Diagnostic = std::decay_t<decltype(aDiagnostic)>;
+
+        if constexpr (std::is_same_v<Diagnostic, SourcedParseDiagnostic>)
+        {
+            const auto& diagnostic = aDiagnostic.mDiagnostic;
+
+            aOutput << "- stage: Parsing\n"
+                    << "  source_index: " << aDiagnostic.mSourceIndex
+                    << "\n  broker: " << toString(aDiagnostic.mBroker)
+                    << "\n  severity: " << toString(diagnostic.mSeverity)
+                    << "\n  code: " << toString(diagnostic.mCode)
+                    << "\n  source: " << safeSourceFile(diagnostic.mSourceFile) << "\n  row: ";
+
+            if (diagnostic.mRowIndex)
+            {
+                aOutput << *diagnostic.mRowIndex;
+            }
+            else
+            {
+                aOutput << "<none>";
+            }
+
+            aOutput << "\n  transaction_id: " << diagnostic.mTransactionId.value_or("<none>")
+                    << "\n  field: " << diagnostic.mField.value_or("<none>")
+                    << "\n  message: " << diagnostic.mMessage << "\n\n";
+        }
+        else if constexpr (std::is_same_v<Diagnostic, MergeDiagnostic>)
+        {
+            aOutput << "- stage: Merging\n"
+                    << "  severity: " << toString(aDiagnostic.mSeverity)
+                    << "\n  code: " << toString(aDiagnostic.mCode)
+                    << "\n  message: " << aDiagnostic.mMessage
+                    << "\n  instrument: " << aDiagnostic.mInstrumentName.value_or("<none>")
+                    << "\n  isin: " << aDiagnostic.mIsin.value_or("<none>") << "\n  tax_date: ";
+
+            if (aDiagnostic.mTaxDate)
+            {
+                writeDate(aOutput, *aDiagnostic.mTaxDate);
+            }
+            else
+            {
+                aOutput << "<none>";
+            }
+
+            aOutput << "\n  sources: " << aDiagnostic.mSources.size() << '\n';
+
+            for (const auto& source : aDiagnostic.mSources)
+            {
+                aOutput << "    - source_index: " << source.mInputSequence.mSourceIndex
+                        << "\n      event_index: " << source.mInputSequence.mEventIndex
+                        << "\n      broker: " << toString(source.mBroker)
+                        << "\n      source_file: " << source.mFilename.value()
+                        << "\n      source_row: " << source.mSourceRow
+                        << "\n      transaction_id: " << source.mTransactionId.value_or("<none>")
+                        << '\n';
+            }
+
+            aOutput << '\n';
+        }
+        else
+        {
+            static_assert(std::is_same_v<Diagnostic, void>,
+                          "Missing diagnostic text handling for this diagnostic type.");
+        }
+    };
+
     for (const auto& diagnostic : aMergeResult.mDiagnostics)
     {
-        if (const auto* parseDiagnostic = std::get_if<SourcedParseDiagnostic>(&diagnostic))
-        {
-            aOutput << "- stage: Parsing\n"
-                    << "  source_index: " << parseDiagnostic->mSourceIndex
-                    << "\n  severity: " << toString(parseDiagnostic->mDiagnostic.mSeverity)
-                    << "\n  code: " << toString(parseDiagnostic->mDiagnostic.mCode)
-                    << "\n  source: " << safeSourceFile(parseDiagnostic->mDiagnostic.mSourceFile)
-                    << "\n  message: " << parseDiagnostic->mDiagnostic.mMessage << "\n\n";
-            continue;
-        }
-
-        const auto& mergeDiagnostic = std::get<MergeDiagnostic>(diagnostic);
-
-        aOutput << "- stage: Merging\n"
-                << "  severity: " << toString(mergeDiagnostic.mSeverity)
-                << "\n  code: " << toString(mergeDiagnostic.mCode)
-                << "\n  message: " << mergeDiagnostic.mMessage
-                << "\n  sources: " << mergeDiagnostic.mSources.size() << '\n';
-
-        for (const auto& source : mergeDiagnostic.mSources)
-        {
-            aOutput << "    - source_index: " << source.mInputSequence.mSourceIndex
-                    << "\n      event_index: " << source.mInputSequence.mEventIndex
-                    << "\n      source_file: " << source.mFilename.value()
-                    << "\n      source_row: " << source.mSourceRow << '\n';
-        }
-
-        aOutput << '\n';
+        std::visit(writeDiagnostic, diagnostic);
     }
 }
 
-int writeMergedResult(std::span<char*> aArguments) {
+int writeMergedResult(std::span<char*> aArguments, bool aDiagnosticsOnly = false) {
     const std::filesystem::path outputPath{aArguments[0]};
 
     std::vector<StatementMergeInput> inputs;
@@ -643,6 +684,21 @@ int writeMergedResult(std::span<char*> aArguments) {
     {
         std::cerr << "Failed to open output file: " << outputPath << '\n';
         return 1;
+    }
+
+    if (aDiagnosticsOnly)
+    {
+        writeMergeDiagnostics(output, mergeResult);
+
+        if (!output)
+        {
+            std::cerr << "Failed to write diagnostics file: " << outputPath << '\n';
+            return 1;
+        }
+
+        std::cout << "Wrote Trade Republic diagnostics to " << outputPath << '\n';
+
+        return 0;
     }
 
     output << "MERGE SUMMARY\n"
@@ -681,12 +737,14 @@ int writeMergedResult(std::span<char*> aArguments) {
 } // namespace
 
 int main(int aArgumentCount, char** aArguments) {
-    if (aArgumentCount >= 4 && std::string_view{aArguments[1]} == "--merge")
+    if (aArgumentCount >= 4 && (std::string_view{aArguments[1]} == "--merge" ||
+                                std::string_view{aArguments[1]} == "--diagnostics"))
     {
         try
         {
             return writeMergedResult(
-                std::span{aArguments + 2, static_cast<std::size_t>(aArgumentCount - 2)});
+                std::span{aArguments + 2, static_cast<std::size_t>(aArgumentCount - 2)},
+                std::string_view{aArguments[1]} == "--diagnostics");
         } catch (const std::exception& exception)
         {
             std::cerr << "Failed to merge Trade Republic CSVs: " << exception.what() << '\n';
@@ -698,7 +756,8 @@ int main(int aArgumentCount, char** aArguments) {
     {
         std::cerr << "Usage: taxbroker_tr_dump <Trade Republic CSV> <parsed output> "
                      "<diagnostics JSON>\n"
-                     "       taxbroker_tr_dump --merge <merged output> <CSV> <CSV> [...]\n";
+                     "       taxbroker_tr_dump --merge <merged output> <CSV> <CSV> [...]\n"
+                     "       taxbroker_tr_dump --diagnostics <diagnostics text> <CSV> [...]\n";
         return 2;
     }
 

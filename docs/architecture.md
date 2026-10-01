@@ -137,15 +137,20 @@ timestamp presence, timestamp value and stable input sequence. It does not proce
 one presentation collection to completion first. The merger does not apply the processing-only
 same-day corporate-action priority, calculate FIFO, or resolve economic corporate-action identity.
 Collection aggregation and chronological-reference construction are separate implementation
-phases. Until the reference sequence is populated, consumers must not process the grouped
-presentation structure as a ledger.
+phases. The merger populates one reference per retained event after presentation ordering is final.
+Consumers use this sequence, not collection traversal, as the chronological ledger. The sequence
+retains all supplied years; reporting-year preparation belongs to the later processing stage.
 
 Parser and merger diagnostics share the result without changing parser diagnostics. A
 `SourcedParseDiagnostic` contains the original `ParseDiagnostic` plus its broker and source request
 index. Merger diagnostics have their own typed codes and retain every relevant source reference.
-Parsing diagnostics precede merging diagnostics; within those stages, the deterministic ordering
-from [`diagnostics.md`](diagnostics.md) applies. Final application diagnostic IDs are assigned only
-after diagnostics from all pipeline stages are combined.
+Parsing diagnostics precede merging diagnostics. Parser diagnostics use file request order and
+preserve each parser's diagnostic creation order. Merger diagnostics use earliest source request
+index, earliest source event index, tax date, ISIN, severity (errors first), diagnostic code enum
+order, then deterministic creation order; missing source, event, date and ISIN values sort last.
+Messages are never sorting keys. Report scopes and final application diagnostic IDs are added
+later: after all pipeline stages are combined, the full report-aware ordering from
+[`diagnostics.md`](diagnostics.md) applies.
 
 Input outcomes are defined as follows:
 

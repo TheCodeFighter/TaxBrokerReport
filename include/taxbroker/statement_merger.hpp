@@ -37,6 +37,7 @@ struct StatementEventReference {
 
 struct MergedStatement {
     BrokerStatement mPresentation;
+    // Cross-collection chronology; same-day split priority belongs to tax processing.
     std::vector<StatementEventReference> mChronologicalOrder;
 };
 
