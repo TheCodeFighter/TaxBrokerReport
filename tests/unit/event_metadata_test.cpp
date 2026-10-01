@@ -228,4 +228,28 @@ TEST(EventMetadataTest, MetadataWithoutSourcesSortsAfterSourcedMetadata) {
     EXPECT_FALSE(order(withoutSource, withoutSource));
 }
 
+TEST(EventMetadataTest, ChronologicalComparisonHasNoEconomicSourceLocationFallbacks) {
+    const auto timestamp = makeTimestamp(2024, 1, 15, 8);
+    const auto first = makeMetadata("z-id",
+                                    99,
+                                    {.mSourceIndex = 0, .mEventIndex = 2},
+                                    timestamp,
+                                    Broker::InteractiveBrokers,
+                                    "z.csv");
+    const auto second = makeMetadata("a-id",
+                                     2,
+                                     {.mSourceIndex = 1, .mEventIndex = 0},
+                                     timestamp,
+                                     Broker::TradeRepublic,
+                                     "a.csv");
+    auto equalSequence = second;
+    equalSequence.mSources.front().mInputSequence = first.mSources.front().mInputSequence;
+    const ChronologicalEventOrder order;
+
+    EXPECT_TRUE(order(first, second));
+    EXPECT_FALSE(order(second, first));
+    EXPECT_FALSE(order(first, equalSequence));
+    EXPECT_FALSE(order(equalSequence, first));
+}
+
 } // namespace

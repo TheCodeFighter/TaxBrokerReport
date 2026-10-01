@@ -446,6 +446,11 @@ always keep their original severity. New application rules do not mutate parser 
 
 ## Deterministic ordering
 
+The intermediate statement-merger result retains parser diagnostic creation order within each
+source and deterministically orders merger diagnostics using their available fields, as described
+in [`architecture.md`](architecture.md). The following full ordering applies to application
+diagnostics after report scopes and diagnostics from the later stages are available.
+
 Diagnostics are collected without relying on parser thread completion, container iteration order,
 filesystem order, or log timing. Before serialization, sort them by these keys in order:
 

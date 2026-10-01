@@ -216,6 +216,81 @@ template <typename Event> void sortEvents(std::vector<Event>& aEvents) {
     });
 }
 
+struct ChronologicalEntry {
+    StatementEventReference mReference;
+    const EventMetadata* mMetadata;
+};
+
+template <typename Event>
+void appendChronologicalEntries(std::vector<ChronologicalEntry>& aEntries,
+                                const std::vector<Event>& aEvents,
+                                StatementEventKind aKind,
+                                std::optional<std::size_t> aInstrumentIndex = std::nullopt) {
+    for (std::size_t index = 0; index < aEvents.size(); ++index)
+    {
+        aEntries.push_back(ChronologicalEntry{
+            .mReference =
+                {
+                    .mKind = aKind,
+                    .mInstrumentIndex = aInstrumentIndex,
+                    .mEventIndex = index,
+                },
+            .mMetadata = &aEvents[index].mMetadata,
+        });
+    }
+}
+
+void buildChronologicalOrder(MergedStatement& aStatement) {
+    const auto& presentation = aStatement.mPresentation;
+    std::vector<ChronologicalEntry> entries;
+
+    for (std::size_t index = 0; index < presentation.mTradeInstruments.size(); ++index)
+    {
+        const auto& instrument = presentation.mTradeInstruments[index];
+
+        appendChronologicalEntries(entries,
+                                   instrument.mTransactions,
+                                   StatementEventKind::Trade,
+                                   index);
+        appendChronologicalEntries(entries,
+                                   instrument.mCorporateActions,
+                                   StatementEventKind::CorporateAction,
+                                   index);
+    }
+
+    for (std::size_t index = 0; index < presentation.mDividendInstruments.size(); ++index)
+    {
+        appendChronologicalEntries(entries,
+                                   presentation.mDividendInstruments[index].mTransactions,
+                                   StatementEventKind::Dividend,
+                                   index);
+    }
+
+    for (std::size_t index = 0; index < presentation.mInterestInstruments.size(); ++index)
+    {
+        appendChronologicalEntries(entries,
+                                   presentation.mInterestInstruments[index].mTransactions,
+                                   StatementEventKind::Interest,
+                                   index);
+    }
+
+    appendChronologicalEntries(entries, presentation.mBenefitEvents, StatementEventKind::Benefit);
+    appendChronologicalEntries(entries,
+                               presentation.mPrivateMarketEvents,
+                               StatementEventKind::PrivateMarket);
+
+    std::stable_sort(entries.begin(), entries.end(), [](const auto& aLeft, const auto& aRight) {
+        return ChronologicalEventOrder{}(*aLeft.mMetadata, *aRight.mMetadata);
+    });
+
+    aStatement.mChronologicalOrder.reserve(entries.size());
+
+    for (const auto& entry : entries)
+    {
+        aStatement.mChronologicalOrder.push_back(entry.mReference);
+    }
+}
+
 [[nodiscard]] const EventMetadata& eventMetadata(const MergeEvent& aEvent) {
     const auto getMetadata = [](const auto& aValue) -> const EventMetadata& {
         if constexpr (std::is_same_v<std::decay_t<decltype(aValue)>, BenefitEvent> ||
@@ -1009,6 +1084,8 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
 
     result.mStatement.mPresentation.mBenefitEvents = std::move(benefitEvents);
     result.mStatement.mPresentation.mPrivateMarketEvents = std::move(privateMarketEvents);
+
+    buildChronologicalOrder(result.mStatement);
 
     std::stable_sort(mergeDiagnostics.begin(),
                      mergeDiagnostics.end(),
