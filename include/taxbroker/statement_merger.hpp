@@ -73,6 +73,7 @@ struct MergeDiagnostic {
     std::optional<std::string> mInstrumentName;
     std::optional<Isin> mIsin;
     std::optional<std::size_t> mSourceIndex;
+    std::vector<StatementEventKind> mEventKinds;
     std::vector<InstrumentNameVariant> mNameVariants;
     std::vector<InstrumentAssetClassVariant> mAssetClassVariants;
 };

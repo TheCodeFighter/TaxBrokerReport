@@ -2,6 +2,7 @@
 #include "taxbroker/api/diagnostics_json.hpp"
 #include "taxbroker/statement_merger.hpp"
 #include "taxbroker/types.hpp"
+#include "utils/logger.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -13,6 +14,7 @@
 #include <numeric>
 #include <ostream>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -289,6 +291,67 @@ std::string_view toString(MergeDiagnosticCode aDiagnosticCode) {
     return "Unknown";
 }
 
+std::string diagnosticLocations(const MergeDiagnostic& aDiagnostic) {
+    std::ostringstream locations;
+
+    if (aDiagnostic.mSources.empty())
+    {
+        if (aDiagnostic.mSourceIndex)
+        {
+            locations << "source " << *aDiagnostic.mSourceIndex;
+        }
+        else
+        {
+            locations << "no source location";
+        }
+
+        return locations.str();
+    }
+
+    for (std::size_t index = 0; index < aDiagnostic.mSources.size(); ++index)
+    {
+        if (index > 0)
+        {
+            locations << "; ";
+        }
+
+        const auto& source = aDiagnostic.mSources[index];
+        locations << "source " << source.mInputSequence.mSourceIndex << " row "
+                  << source.mSourceRow;
+    }
+
+    return locations.str();
+}
+
+void logMergeDiagnostics(const StatementMergeResult& aMergeResult) {
+    for (const auto& diagnostic : aMergeResult.mDiagnostics)
+    {
+        const auto* mergeDiagnostic = std::get_if<MergeDiagnostic>(&diagnostic);
+
+        if (!mergeDiagnostic)
+        {
+            continue;
+        }
+
+        const auto locations = diagnosticLocations(*mergeDiagnostic);
+
+        if (mergeDiagnostic->mSeverity == DiagnosticSeverity::Warning)
+        {
+            LOG_WARNING("Statement merge {} at {}: {}",
+                        toString(mergeDiagnostic->mCode),
+                        locations,
+                        mergeDiagnostic->mMessage);
+        }
+        else
+        {
+            LOG_ERROR("Statement merge {} at {}: {}",
+                      toString(mergeDiagnostic->mCode),
+                      locations,
+                      mergeDiagnostic->mMessage);
+        }
+    }
+}
+
 void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
     aOutput << "TRADE INSTRUMENTS: " << aStatement.mTradeInstruments.size() << "\n\n";
 
@@ -561,6 +624,9 @@ int writeMergedResult(std::span<char*> aArguments) {
     }
 
     const auto mergeResult = DeterministicStatementMerger{}.merge(inputs);
+
+    logMergeDiagnostics(mergeResult);
+
     const auto parsedEventCount =
         std::accumulate(inputs.begin(),
                         inputs.end(),

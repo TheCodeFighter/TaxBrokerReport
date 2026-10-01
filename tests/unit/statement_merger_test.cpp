@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -392,7 +393,7 @@ TEST(DeterministicStatementMergerTest, AssetClassConflictIsErrorAndUsesUnknown) 
     EXPECT_EQ(conflict->mSources.size(), 2U);
 }
 
-TEST(DeterministicStatementMergerTest, KeepsDuplicateLookingTradesForLaterDeduplication) {
+TEST(DeterministicStatementMergerTest, DeduplicatesExactTradesAndRetainsEverySource) {
     StatementMergeInput first{.mSourceIndex = 0};
     first.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
         .mName = "Synthetic instrument",
@@ -422,8 +423,699 @@ TEST(DeterministicStatementMergerTest, KeepsDuplicateLookingTradesForLaterDedupl
     const auto result = DeterministicStatementMerger{}.merge(inputs);
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
-    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 2U);
+    const auto& transactions =
+        result.mStatement.mPresentation.mTradeInstruments.front().mTransactions;
+    ASSERT_EQ(transactions.size(), 1U);
+    ASSERT_EQ(transactions.front().mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(transactions.front().mMetadata.mSources[0].mFilename.value(), "first.csv");
+    EXPECT_EQ(transactions.front().mMetadata.mSources[1].mFilename.value(), "overlap.csv");
     EXPECT_TRUE(diagnosticsOf<MergeDiagnostic>(result).empty());
+}
+
+StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string_view aFilename) {
+    StatementMergeInput input{.mSourceIndex = aSourceIndex};
+
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions = {TradeTransaction{
+            .mMetadata = makeMetadata(aSourceIndex,
+                                      0,
+                                      makeDate(2024, 1, 1),
+                                      Broker::TradeRepublic,
+                                      aFilename,
+                                      makeTimestamp(2024, 1, 1, 9),
+                                      "trade-id"),
+            .mTradeSide = TradeSide::Sell,
+            .mUnitPrice = 12000,
+            .mUnits = 2 * UNITS_SCALE,
+            .mAmount = 24000,
+            .mFeePaid = 100,
+            .mExchangeRate = 110000000,
+            .mCurrency = Currency::USD,
+        }},
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(aSourceIndex,
+                                      1,
+                                      makeDate(2024, 1, 2),
+                                      Broker::TradeRepublic,
+                                      aFilename,
+                                      std::nullopt,
+                                      "action-id"),
+            .mType = CorporateActionType::ReverseSplit,
+            .mUnitsDelta = -UNITS_SCALE,
+            .mRatio = 50000000,
+        }},
+    });
+    input.mParseResult.mStatement.mDividendInstruments.push_back(DividendInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mTransactions = {DividendTransaction{
+            .mMetadata = makeMetadata(aSourceIndex,
+                                      2,
+                                      makeDate(2024, 1, 3),
+                                      Broker::TradeRepublic,
+                                      aFilename,
+                                      std::nullopt,
+                                      "dividend-id"),
+            .mGrossAmount = 5000,
+            .mTaxPaid = 1000,
+            .mExchangeRate = 110000000,
+            .mCurrency = Currency::USD,
+            .mTaxCurrency = Currency::EUR,
+        }},
+    });
+    input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+        .mName = "Cash account",
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions = {InterestTransaction{
+            .mMetadata = makeMetadata(aSourceIndex,
+                                      3,
+                                      makeDate(2024, 1, 4),
+                                      Broker::TradeRepublic,
+                                      aFilename,
+                                      std::nullopt,
+                                      "interest-id"),
+            .mGrossAmount = 6000,
+            .mTaxPaid = 1200,
+            .mExchangeRate = 120000000,
+            .mCurrency = Currency::GBP,
+            .mTaxCurrency = Currency::EUR,
+        }},
+    });
+    input.mParseResult.mStatement.mBenefitEvents.push_back(BenefitEvent{
+        .mMetadata = makeMetadata(aSourceIndex,
+                                  4,
+                                  makeDate(2024, 1, 5),
+                                  Broker::TradeRepublic,
+                                  aFilename,
+                                  std::nullopt,
+                                  "benefit-id"),
+        .mType = BenefitType::StockPerk,
+        .mName = "Reward",
+        .mIsin = "XX0000000002",
+        .mAssetClass = AssetClass::Stock,
+        .mAmount = 7000,
+        .mCurrency = Currency::EUR,
+    });
+    input.mParseResult.mStatement.mPrivateMarketEvents.push_back(PrivateMarketEvent{
+        .mMetadata = makeMetadata(aSourceIndex,
+                                  5,
+                                  makeDate(2024, 1, 6),
+                                  Broker::TradeRepublic,
+                                  aFilename,
+                                  std::nullopt,
+                                  "private-id"),
+        .mType = PrivateMarketEventType::Sell,
+        .mName = "Private fund",
+        .mIsin = "XX0000000003",
+        .mAssetClass = AssetClass::PrivateFund,
+        .mAmount = 8000,
+        .mFeePaid = 200,
+        .mCurrency = Currency::EUR,
+        .mDescription = "Synthetic sale",
+    });
+
+    return input;
+}
+
+TEST(DeterministicStatementMergerTest, DeduplicatesEverySupportedEventKind) {
+    const std::array inputs{makeDuplicateTestInput(1, "overlap.csv"),
+                            makeDuplicateTestInput(0, "complete.csv")};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    const auto& tradeInstrument = result.mStatement.mPresentation.mTradeInstruments.front();
+    ASSERT_EQ(tradeInstrument.mTransactions.size(), 1U);
+    ASSERT_EQ(tradeInstrument.mCorporateActions.size(), 1U);
+    EXPECT_EQ(tradeInstrument.mTransactions.front().mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(tradeInstrument.mCorporateActions.front().mMetadata.mSources.size(), 2U);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mDividendInstruments.front()
+                  .mTransactions.front()
+                  .mMetadata.mSources.size(),
+              2U);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mInterestInstruments.front()
+                  .mTransactions.front()
+                  .mMetadata.mSources.size(),
+              2U);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mBenefitEvents.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mBenefitEvents.front().mMetadata.mSources.size(), 2U);
+    ASSERT_EQ(result.mStatement.mPresentation.mPrivateMarketEvents.size(), 1U);
+    EXPECT_EQ(
+        result.mStatement.mPresentation.mPrivateMarketEvents.front().mMetadata.mSources.size(),
+        2U);
+    EXPECT_TRUE(diagnosticsOf<MergeDiagnostic>(result).empty());
+}
+
+std::size_t mergedEventCount(const BrokerStatement& aStatement) {
+    const auto countTransactions = [](std::size_t aCount, const auto& aInstrument) {
+        return aCount + aInstrument.mTransactions.size();
+    };
+    const auto tradeCount = std::accumulate(
+        aStatement.mTradeInstruments.begin(),
+        aStatement.mTradeInstruments.end(),
+        std::size_t{},
+        [](std::size_t aCount, const TradeInstrument& aInstrument) {
+            return aCount + aInstrument.mTransactions.size() + aInstrument.mCorporateActions.size();
+        });
+
+    return tradeCount + aStatement.mBenefitEvents.size() + aStatement.mPrivateMarketEvents.size() +
+           std::accumulate(aStatement.mDividendInstruments.begin(),
+                           aStatement.mDividendInstruments.end(),
+                           std::size_t{},
+                           countTransactions) +
+           std::accumulate(aStatement.mInterestInstruments.begin(),
+                           aStatement.mInterestInstruments.end(),
+                           std::size_t{},
+                           countTransactions);
+}
+
+template <typename Record> struct FieldChange {
+    std::string_view mField;
+    void (*mApply)(Record&);
+};
+
+template <typename Record, std::size_t Count, typename SelectRecord>
+void expectFieldConflicts(StatementEventKind aKind,
+                          const std::array<FieldChange<Record>, Count>& aChanges,
+                          SelectRecord aSelectRecord) {
+    for (const auto& change : aChanges)
+    {
+        SCOPED_TRACE(change.mField);
+
+        auto first = makeDuplicateTestInput(0, "first.csv");
+        auto second = makeDuplicateTestInput(1, "overlap.csv");
+
+        if (aKind == StatementEventKind::Trade || aKind == StatementEventKind::CorporateAction)
+        {
+            auto& instruments = second.mParseResult.mStatement.mTradeInstruments;
+            auto separateInstrument = instruments.front();
+
+            if (aKind == StatementEventKind::Trade)
+            {
+                separateInstrument.mTransactions.clear();
+                instruments.front().mCorporateActions.clear();
+            }
+            else
+            {
+                separateInstrument.mCorporateActions.clear();
+                instruments.front().mTransactions.clear();
+            }
+
+            instruments.push_back(std::move(separateInstrument));
+        }
+
+        change.mApply(aSelectRecord(second.mParseResult.mStatement));
+        const std::array inputs{second, first};
+
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        // Only the conflicting identity is removed; the five unrelated identities survive.
+        EXPECT_EQ(mergedEventCount(result.mStatement.mPresentation), 5U);
+
+        const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
+        ASSERT_EQ(diagnostics.size(), 1U);
+        EXPECT_EQ(diagnostics.front()->mCode, MergeDiagnosticCode::ConflictingDuplicate);
+        EXPECT_EQ(diagnostics.front()->mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(diagnostics.front()->mEventKinds, std::vector{aKind});
+        ASSERT_EQ(diagnostics.front()->mSources.size(), 2U);
+        EXPECT_EQ(diagnostics.front()->mSources[0].mInputSequence.mSourceIndex, 0U);
+        EXPECT_EQ(diagnostics.front()->mSources[1].mInputSequence.mSourceIndex, 1U);
+    }
+}
+
+TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
+    const std::array<FieldChange<TradeInstrument>, 13> changes{{
+        {"tax date",
+         [](TradeInstrument& aValue) {
+             aValue.mTransactions.front().mMetadata.mTaxDate += DayDuration{1};
+         }},
+        {"timestamp",
+         [](TradeInstrument& aValue) {
+             *aValue.mTransactions.front().mMetadata.mSourceTimestamp += std::chrono::seconds{1};
+         }},
+        {"missing timestamp",
+         [](TradeInstrument& aValue) {
+             aValue.mTransactions.front().mMetadata.mSourceTimestamp.reset();
+         }},
+        {"ISIN", [](TradeInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
+        {"asset class", [](TradeInstrument& aValue) { aValue.mAssetClass = AssetClass::Fund; }},
+        {"side",
+         [](TradeInstrument& aValue) { aValue.mTransactions.front().mTradeSide = TradeSide::Buy; }},
+        {"unit price", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mUnitPrice; }},
+        {"units", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mUnits; }},
+        {"amount", [](TradeInstrument& aValue) { ++*aValue.mTransactions.front().mAmount; }},
+        {"missing amount",
+         [](TradeInstrument& aValue) { aValue.mTransactions.front().mAmount.reset(); }},
+        {"fee", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mFeePaid; }},
+        {"exchange rate",
+         [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate; }},
+        {"currency",
+         [](TradeInstrument& aValue) { aValue.mTransactions.front().mCurrency = Currency::GBP; }},
+    }};
+
+    expectFieldConflicts(
+        StatementEventKind::Trade,
+        changes,
+        [](BrokerStatement& aStatement) -> auto& { return aStatement.mTradeInstruments.front(); });
+}
+
+TEST(DeterministicStatementMergerTest, RejectsEachChangedCorporateActionFact) {
+    const std::array<FieldChange<TradeInstrument>, 7> changes{{
+        {"ISIN", [](TradeInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
+        {"asset class", [](TradeInstrument& aValue) { aValue.mAssetClass = AssetClass::Fund; }},
+        {"type",
+         [](TradeInstrument& aValue) {
+             aValue.mCorporateActions.front().mType = CorporateActionType::Split;
+         }},
+        {"units delta",
+         [](TradeInstrument& aValue) { ++aValue.mCorporateActions.front().mUnitsDelta; }},
+        {"ratio", [](TradeInstrument& aValue) { ++*aValue.mCorporateActions.front().mRatio; }},
+        {"missing ratio",
+         [](TradeInstrument& aValue) { aValue.mCorporateActions.front().mRatio.reset(); }},
+        {"timestamp",
+         [](TradeInstrument& aValue) {
+             aValue.mCorporateActions.front().mMetadata.mSourceTimestamp =
+                 makeTimestamp(2024, 1, 2, 9);
+         }},
+    }};
+
+    expectFieldConflicts(
+        StatementEventKind::CorporateAction,
+        changes,
+        [](BrokerStatement& aStatement) -> auto& { return aStatement.mTradeInstruments.front(); });
+}
+
+TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
+    const std::array<FieldChange<DividendInstrument>, 6> changes{{
+        {"ISIN", [](DividendInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
+        {"gross", [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mGrossAmount; }},
+        {"tax", [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mTaxPaid; }},
+        {"exchange rate",
+         [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate; }},
+        {"currency",
+         [](DividendInstrument& aValue) {
+             aValue.mTransactions.front().mCurrency = Currency::GBP;
+         }},
+        {"tax currency",
+         [](DividendInstrument& aValue) {
+             aValue.mTransactions.front().mTaxCurrency = Currency::USD;
+         }},
+    }};
+
+    expectFieldConflicts(StatementEventKind::Dividend,
+                         changes,
+                         [](BrokerStatement& aStatement) -> auto& {
+                             return aStatement.mDividendInstruments.front();
+                         });
+}
+
+TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
+    const std::array<FieldChange<InterestInstrument>, 8> changes{{
+        {"name without ISIN", [](InterestInstrument& aValue) { aValue.mName = "Other payer"; }},
+        {"ISIN presence", [](InterestInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
+        {"type",
+         [](InterestInstrument& aValue) { aValue.mInterestType = InterestType::OtherInterest; }},
+        {"gross", [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mGrossAmount; }},
+        {"tax", [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mTaxPaid; }},
+        {"exchange rate",
+         [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate; }},
+        {"currency",
+         [](InterestInstrument& aValue) {
+             aValue.mTransactions.front().mCurrency = Currency::USD;
+         }},
+        {"tax currency",
+         [](InterestInstrument& aValue) {
+             aValue.mTransactions.front().mTaxCurrency = Currency::USD;
+         }},
+    }};
+
+    expectFieldConflicts(StatementEventKind::Interest,
+                         changes,
+                         [](BrokerStatement& aStatement) -> auto& {
+                             return aStatement.mInterestInstruments.front();
+                         });
+}
+
+TEST(DeterministicStatementMergerTest, RejectsEachChangedBenefitFact) {
+    const std::array<FieldChange<BenefitEvent>, 6> changes{{
+        {"type", [](BenefitEvent& aValue) { aValue.mType = BenefitType::Saveback; }},
+        {"name", [](BenefitEvent& aValue) { aValue.mName = "Other reward"; }},
+        {"ISIN", [](BenefitEvent& aValue) { aValue.mIsin.reset(); }},
+        {"asset class", [](BenefitEvent& aValue) { aValue.mAssetClass = AssetClass::Fund; }},
+        {"amount", [](BenefitEvent& aValue) { ++aValue.mAmount; }},
+        {"currency", [](BenefitEvent& aValue) { aValue.mCurrency = Currency::USD; }},
+    }};
+
+    expectFieldConflicts(
+        StatementEventKind::Benefit,
+        changes,
+        [](BrokerStatement& aStatement) -> auto& { return aStatement.mBenefitEvents.front(); });
+}
+
+TEST(DeterministicStatementMergerTest, RejectsEachChangedPrivateMarketFact) {
+    const std::array<FieldChange<PrivateMarketEvent>, 8> changes{{
+        {"type", [](PrivateMarketEvent& aValue) { aValue.mType = PrivateMarketEventType::Buy; }},
+        {"name", [](PrivateMarketEvent& aValue) { aValue.mName = "Other fund"; }},
+        {"ISIN", [](PrivateMarketEvent& aValue) { aValue.mIsin.reset(); }},
+        {"asset class", [](PrivateMarketEvent& aValue) { aValue.mAssetClass = AssetClass::Fund; }},
+        {"amount", [](PrivateMarketEvent& aValue) { ++aValue.mAmount; }},
+        {"fee", [](PrivateMarketEvent& aValue) { ++aValue.mFeePaid; }},
+        {"currency", [](PrivateMarketEvent& aValue) { aValue.mCurrency = Currency::USD; }},
+        {"description",
+         [](PrivateMarketEvent& aValue) { aValue.mDescription = "Different description"; }},
+    }};
+
+    expectFieldConflicts(StatementEventKind::PrivateMarket,
+                         changes,
+                         [](BrokerStatement& aStatement) -> auto& {
+                             return aStatement.mPrivateMarketEvents.front();
+                         });
+}
+
+TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArrivalOrder) {
+    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
+                      makeDuplicateTestInput(1, "second.csv"),
+                      makeDuplicateTestInput(2, "third.csv")};
+    inputs[1].mParseResult.mStatement.mTradeInstruments.front().mName = "Different display name";
+    inputs[2].mParseResult.mStatement.mPrivateMarketEvents.front().mFeePaid += 1;
+    const auto originalFirst = inputs.front()
+                                   .mParseResult.mStatement.mTradeInstruments.front()
+                                   .mTransactions.front()
+                                   .mMetadata;
+    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+
+    do
+    {
+        const auto actual = DeterministicStatementMerger{}.merge(inputs);
+
+        EXPECT_EQ(mergedEventCount(actual.mStatement.mPresentation), 5U);
+        EXPECT_TRUE(actual.mStatement.mPresentation.mPrivateMarketEvents.empty());
+        ASSERT_EQ(actual.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+        const auto& instrument = actual.mStatement.mPresentation.mTradeInstruments.front();
+
+        EXPECT_EQ(instrument.mName, "Security");
+        ASSERT_EQ(instrument.mTransactions.size(), 1U);
+        EXPECT_EQ(instrument.mTransactions.front().mMetadata,
+                  expected.mStatement.mPresentation.mTradeInstruments.front()
+                      .mTransactions.front()
+                      .mMetadata);
+        EXPECT_EQ(instrument.mTransactions.front().mMetadata.mSources.size(), 3U);
+
+        const auto diagnostics = diagnosticsOf<MergeDiagnostic>(actual);
+        const auto expectedDiagnostics = diagnosticsOf<MergeDiagnostic>(expected);
+        ASSERT_EQ(diagnostics.size(), expectedDiagnostics.size());
+
+        for (std::size_t index = 0; index < diagnostics.size(); ++index)
+        {
+            EXPECT_EQ(diagnostics[index]->mCode, expectedDiagnostics[index]->mCode);
+            EXPECT_EQ(diagnostics[index]->mSources, expectedDiagnostics[index]->mSources);
+            EXPECT_EQ(diagnostics[index]->mEventKinds, expectedDiagnostics[index]->mEventKinds);
+        }
+    } while (std::next_permutation(inputs.begin(),
+                                   inputs.end(),
+                                   [](const auto& aLeft, const auto& aRight) {
+                                       return aLeft.mSourceIndex < aRight.mSourceIndex;
+                                   }));
+
+    EXPECT_EQ(inputs.front()
+                  .mParseResult.mStatement.mTradeInstruments.front()
+                  .mTransactions.front()
+                  .mMetadata,
+              originalFirst);
+}
+
+TEST(DeterministicStatementMergerTest, KeepsIncomeNameSourcesAfterDeduplicationByIsin) {
+    auto first = makeDuplicateTestInput(0, "first.csv");
+    auto second = makeDuplicateTestInput(1, "second.csv");
+    first.mParseResult.mStatement.mInterestInstruments.front().mIsin = "XX0000000042";
+    second.mParseResult.mStatement.mInterestInstruments.front().mIsin = "XX0000000042";
+    second.mParseResult.mStatement.mInterestInstruments.front().mName = "Other bond name";
+    second.mParseResult.mStatement.mDividendInstruments.front().mName = "Other issuer name";
+    const std::array inputs{second, first};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    const auto& dividends = result.mStatement.mPresentation.mDividendInstruments;
+    const auto& interest = result.mStatement.mPresentation.mInterestInstruments;
+    ASSERT_EQ(dividends.size(), 1U);
+    ASSERT_EQ(interest.size(), 1U);
+    ASSERT_EQ(dividends.front().mTransactions.size(), 1U);
+    ASSERT_EQ(interest.front().mTransactions.size(), 1U);
+    EXPECT_EQ(dividends.front().mName, "Security");
+    EXPECT_EQ(interest.front().mName, "Cash account");
+    EXPECT_EQ(dividends.front().mTransactions.front().mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(interest.front().mTransactions.front().mMetadata.mSources.size(), 2U);
+
+    const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
+    ASSERT_EQ(diagnostics.size(), 2U);
+
+    for (const auto* diagnostic : diagnostics)
+    {
+        EXPECT_EQ(diagnostic->mCode, MergeDiagnosticCode::InstrumentNameConflict);
+        ASSERT_EQ(diagnostic->mNameVariants.size(), 2U);
+
+        for (const auto& variant : diagnostic->mNameVariants)
+        {
+            ASSERT_EQ(variant.mSources.size(), 1U);
+            EXPECT_EQ(variant.mSources.front().mInputSequence.mSourceIndex,
+                      variant.mName.starts_with("Other") ? 1U : 0U);
+        }
+    }
+}
+
+TEST(DeterministicStatementMergerTest, NormalizesOverlappingSourceSetsOnExactCopies) {
+    auto first = makeTrade(0, 0, makeDate(2024, 1, 1), Broker::TradeRepublic, "same.csv", "id");
+    auto second = makeTrade(0, 1, makeDate(2024, 1, 1), Broker::TradeRepublic, "same.csv", "id");
+    const auto shared = makeSource(Broker::TradeRepublic, "same.csv", 4, "id", {0, 2});
+    first.mMetadata.mSources.push_back(shared);
+    second.mMetadata.mSources.push_back(shared);
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions = {second, first},
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    const auto& transactions =
+        result.mStatement.mPresentation.mTradeInstruments.front().mTransactions;
+
+    ASSERT_EQ(transactions.size(), 1U);
+    const auto& sources = transactions.front().mMetadata.mSources;
+
+    ASSERT_EQ(sources.size(), 3U);
+    EXPECT_EQ(sources[0].mInputSequence.mEventIndex, 0U);
+    EXPECT_EQ(sources[1].mInputSequence.mEventIndex, 1U);
+    EXPECT_EQ(sources[2], shared);
+}
+
+TEST(DeterministicStatementMergerTest, DeduplicatesWithinOneFileButNotEventsWithoutIds) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                makeTrade(0, 0, date, Broker::TradeRepublic, "one.csv", "duplicate-id"),
+                makeTrade(0, 1, date, Broker::TradeRepublic, "one.csv", "duplicate-id"),
+                makeTrade(0, 2, date),
+                makeTrade(0, 3, date),
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    const auto& transactions =
+        result.mStatement.mPresentation.mTradeInstruments.front().mTransactions;
+    ASSERT_EQ(transactions.size(), 3U);
+    EXPECT_EQ(transactions.front().mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(transactions[1].mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(transactions[2].mMetadata.mSources.size(), 1U);
+}
+
+TEST(DeterministicStatementMergerTest, ScopesTransactionIdsByBroker) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                makeTrade(0, 0, makeDate(2024, 2, 1), Broker::TradeRepublic, "tr.csv", "shared-id"),
+                makeTrade(0,
+                          1,
+                          makeDate(2024, 2, 1),
+                          Broker::InteractiveBrokers,
+                          "ibkr.csv",
+                          "shared-id"),
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 2U);
+    EXPECT_EQ(findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
+}
+
+TEST(DeterministicStatementMergerTest, RejectsEveryCandidateForAConflictingTransactionId) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    auto first =
+        makeTrade(0, 0, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "conflict-id");
+    auto exactCopy =
+        makeTrade(0, 1, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "conflict-id");
+    auto conflicting =
+        makeTrade(0, 2, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "conflict-id");
+    conflicting.mFeePaid = 100;
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions = {first, exactCopy, conflicting},
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    const auto* diagnostic = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+    ASSERT_NE(diagnostic, nullptr);
+    EXPECT_EQ(diagnostic->mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic->mTaxDate, makeDate(2024, 3, 1));
+    EXPECT_EQ(diagnostic->mInstrumentName, "Security");
+    EXPECT_EQ(diagnostic->mIsin, "XX0000000001");
+    ASSERT_EQ(diagnostic->mEventKinds.size(), 1U);
+    EXPECT_EQ(diagnostic->mEventKinds.front(), StatementEventKind::Trade);
+    EXPECT_EQ(diagnostic->mSources.size(), 3U);
+}
+
+TEST(DeterministicStatementMergerTest, RejectsCrossKindTransactionIdConflicts) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions = {makeTrade(0,
+                                    0,
+                                    makeDate(2024, 4, 1),
+                                    Broker::TradeRepublic,
+                                    "one.csv",
+                                    "cross-kind-id")},
+    });
+    input.mParseResult.mStatement.mDividendInstruments.push_back(DividendInstrument{
+        .mName = "Other issuer",
+        .mIsin = "XX0000000002",
+        .mTransactions = {DividendTransaction{
+            .mMetadata = makeMetadata(0,
+                                      1,
+                                      makeDate(2024, 4, 2),
+                                      Broker::TradeRepublic,
+                                      "one.csv",
+                                      std::nullopt,
+                                      "cross-kind-id"),
+            .mGrossAmount = 1000,
+        }},
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mPresentation.mDividendInstruments.empty());
+    const auto* diagnostic = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+    ASSERT_NE(diagnostic, nullptr);
+    EXPECT_FALSE(diagnostic->mTaxDate.has_value());
+    EXPECT_FALSE(diagnostic->mInstrumentName.has_value());
+    EXPECT_FALSE(diagnostic->mIsin.has_value());
+    ASSERT_EQ(diagnostic->mEventKinds.size(), 2U);
+    EXPECT_EQ(diagnostic->mEventKinds[0], StatementEventKind::Trade);
+    EXPECT_EQ(diagnostic->mEventKinds[1], StatementEventKind::Dividend);
+    EXPECT_EQ(diagnostic->mSources.size(), 2U);
+}
+
+TEST(DeterministicStatementMergerTest, KeepsNameProvenanceWhenExactCopiesUseDifferentNames) {
+    StatementMergeInput first{.mSourceIndex = 0};
+    first.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Earlier name",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {makeTrade(0, 0, makeDate(2024, 5, 1), Broker::TradeRepublic, "first.csv", "same-id")},
+    });
+    StatementMergeInput second{.mSourceIndex = 1};
+    second.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Later name",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {makeTrade(1, 0, makeDate(2024, 5, 1), Broker::TradeRepublic, "second.csv", "same-id")},
+    });
+    const std::array inputs{second, first};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+    EXPECT_EQ(instrument.mName, "Earlier name");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions.front().mMetadata.mSources.size(), 2U);
+    const auto* warning = findMergeDiagnostic(result, MergeDiagnosticCode::InstrumentNameConflict);
+    ASSERT_NE(warning, nullptr);
+    ASSERT_EQ(warning->mNameVariants.size(), 2U);
+    EXPECT_EQ(warning->mNameVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(warning->mNameVariants[1].mSources.size(), 1U);
+}
+
+TEST(DeterministicStatementMergerTest, DoesNotUseTransactionIdsForCorporateActionEconomics) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions =
+            {
+                CorporateAction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              makeDate(2024, 6, 1),
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "first-action"),
+                    .mType = CorporateActionType::Split,
+                    .mUnitsDelta = UNITS_SCALE,
+                    .mRatio = 200000000,
+                },
+                CorporateAction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              makeDate(2024, 6, 1),
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "second-action"),
+                    .mType = CorporateActionType::Split,
+                    .mUnitsDelta = UNITS_SCALE,
+                    .mRatio = 200000000,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions.size(),
+              2U);
+    EXPECT_EQ(findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
 }
 
 TEST(DeterministicStatementMergerTest, MergesDividendsAndPreservesNameConflictProvenance) {
