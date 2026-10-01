@@ -5,12 +5,14 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace {
 using namespace taxbroker;
 
-// remove identical source references (from different inputs)
+// Remove identical source references contributed by overlapping exports.
 void normalizeSources(std::vector<SourceReference>& aSources) {
     std::sort(aSources.begin(), aSources.end(), StableSourceOrder{});
     aSources.erase(std::unique(aSources.begin(), aSources.end()), aSources.end());
@@ -56,21 +58,30 @@ std::vector<SourceReference> statementSources(const BrokerStatement& aStatement)
     return sources;
 }
 
+struct NameContribution {
+    std::string mName;
+    std::vector<SourceReference> mSources;
+};
+
 struct NameVariantSet {
     std::string mCanonicalName;
     std::optional<SourceReference> mCanonicalSource;
     std::map<std::string, std::vector<SourceReference>> mSourcesByName;
 
-    void add(const std::string& aName, const EventMetadata& aMetadata) {
-        const auto& source = primarySource(aMetadata);
+    void add(const NameContribution& aContribution) {
+        const auto source = std::min_element(aContribution.mSources.begin(),
+                                             aContribution.mSources.end(),
+                                             StableSourceOrder{});
 
-        if (!mCanonicalSource || StableSourceOrder{}(source, *mCanonicalSource))
+        if (source != aContribution.mSources.end() &&
+            (!mCanonicalSource || StableSourceOrder{}(*source, *mCanonicalSource)))
         {
-            mCanonicalName = aName;
-            mCanonicalSource = source;
+            mCanonicalName = aContribution.mName;
+            mCanonicalSource = *source;
         }
 
-        appendSources(mSourcesByName[aName], aMetadata);
+        auto& sources = mSourcesByName[aContribution.mName];
+        sources.insert(sources.end(), aContribution.mSources.begin(), aContribution.mSources.end());
     }
 };
 
@@ -112,6 +123,7 @@ struct InterestIdentity {
     case InterestType::UnknownInterest:
         return 3;
     }
+
     return 3;
 }
 
@@ -148,10 +160,338 @@ struct InterestBucket {
     std::vector<InterestTransaction> mTransactions;
 };
 
+struct TradeRecord {
+    std::string mName;
+    Isin mIsin;
+    AssetClass mAssetClass{AssetClass::Unknown};
+    std::vector<NameContribution> mNameContributions;
+    TradeTransaction mEvent;
+};
+
+struct CorporateActionRecord {
+    std::string mName;
+    Isin mIsin;
+    AssetClass mAssetClass{AssetClass::Unknown};
+    std::vector<NameContribution> mNameContributions;
+    CorporateAction mEvent;
+};
+
+struct DividendRecord {
+    std::string mName;
+    Isin mIsin;
+    std::vector<NameContribution> mNameContributions;
+    DividendTransaction mEvent;
+};
+
+struct InterestRecord {
+    std::string mName;
+    std::optional<Isin> mIsin;
+    InterestType mInterestType{InterestType::UnknownInterest};
+    std::vector<NameContribution> mNameContributions;
+    InterestTransaction mEvent;
+};
+
+using MergeEvent = std::variant<TradeRecord,
+                                CorporateActionRecord,
+                                DividendRecord,
+                                InterestRecord,
+                                BenefitEvent,
+                                PrivateMarketEvent>;
+
+struct TransactionIdentityOrder {
+    [[nodiscard]] bool operator()(const TransactionIdentity& aLeft,
+                                  const TransactionIdentity& aRight) const {
+        if (aLeft.mBroker != aRight.mBroker)
+        {
+            return aLeft.mBroker < aRight.mBroker;
+        }
+
+        return aLeft.mTransactionId < aRight.mTransactionId;
+    }
+};
+
 template <typename Event> void sortEvents(std::vector<Event>& aEvents) {
     std::stable_sort(aEvents.begin(), aEvents.end(), [](const Event& aLeft, const Event& aRight) {
         return ChronologicalEventOrder{}(aLeft.mMetadata, aRight.mMetadata);
     });
+}
+
+[[nodiscard]] const EventMetadata& eventMetadata(const MergeEvent& aEvent) {
+    const auto getMetadata = [](const auto& aValue) -> const EventMetadata& {
+        if constexpr (std::is_same_v<std::decay_t<decltype(aValue)>, BenefitEvent> ||
+                      std::is_same_v<std::decay_t<decltype(aValue)>, PrivateMarketEvent>)
+        {
+            return aValue.mMetadata;
+        }
+        else
+        {
+            return aValue.mEvent.mMetadata;
+        }
+    };
+
+    return std::visit(getMetadata, aEvent);
+}
+
+[[nodiscard]] StatementEventKind eventKind(const MergeEvent& aEvent) {
+    const auto getKind = [](const auto& aValue) {
+        using Value = std::decay_t<decltype(aValue)>;
+
+        if constexpr (std::is_same_v<Value, TradeRecord>)
+        {
+            return StatementEventKind::Trade;
+        }
+        else if constexpr (std::is_same_v<Value, CorporateActionRecord>)
+        {
+            return StatementEventKind::CorporateAction;
+        }
+        else if constexpr (std::is_same_v<Value, DividendRecord>)
+        {
+            return StatementEventKind::Dividend;
+        }
+        else if constexpr (std::is_same_v<Value, InterestRecord>)
+        {
+            return StatementEventKind::Interest;
+        }
+        else if constexpr (std::is_same_v<Value, BenefitEvent>)
+        {
+            return StatementEventKind::Benefit;
+        }
+        else if constexpr (std::is_same_v<Value, PrivateMarketEvent>)
+        {
+            return StatementEventKind::PrivateMarket;
+        }
+        else
+        {
+            static_assert(std::is_same_v<Value, void>,
+                          "Missing StatementEventKind mapping for this event type.");
+        }
+    };
+
+    return std::visit(getKind, aEvent);
+}
+
+[[nodiscard]] std::optional<Isin> eventIsin(const MergeEvent& aEvent) {
+    const auto getIsin = [](const auto& aValue) -> std::optional<Isin> { return aValue.mIsin; };
+
+    return std::visit(getIsin, aEvent);
+}
+
+[[nodiscard]] std::string eventName(const MergeEvent& aEvent) {
+    const auto getName = [](const auto& aValue) { return aValue.mName; };
+
+    return std::visit(getName, aEvent);
+}
+
+[[nodiscard]] bool sameMetadataFacts(const EventMetadata& aLeft, const EventMetadata& aRight) {
+    return aLeft.mTaxDate == aRight.mTaxDate && aLeft.mSourceTimestamp == aRight.mSourceTimestamp;
+}
+
+[[nodiscard]] bool sameEventFacts(const TradeRecord& aLeft, const TradeRecord& aRight) {
+    return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) &&
+           aLeft.mIsin == aRight.mIsin && aLeft.mAssetClass == aRight.mAssetClass &&
+           aLeft.mEvent.mTradeSide == aRight.mEvent.mTradeSide &&
+           aLeft.mEvent.mUnitPrice == aRight.mEvent.mUnitPrice &&
+           aLeft.mEvent.mUnits == aRight.mEvent.mUnits &&
+           aLeft.mEvent.mAmount == aRight.mEvent.mAmount &&
+           aLeft.mEvent.mFeePaid == aRight.mEvent.mFeePaid &&
+           aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
+           aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency;
+}
+
+[[nodiscard]] bool sameEventFacts(const CorporateActionRecord& aLeft,
+                                  const CorporateActionRecord& aRight) {
+    return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) &&
+           aLeft.mIsin == aRight.mIsin && aLeft.mAssetClass == aRight.mAssetClass &&
+           aLeft.mEvent.mType == aRight.mEvent.mType &&
+           aLeft.mEvent.mUnitsDelta == aRight.mEvent.mUnitsDelta &&
+           aLeft.mEvent.mRatio == aRight.mEvent.mRatio;
+}
+
+[[nodiscard]] bool sameEventFacts(const DividendRecord& aLeft, const DividendRecord& aRight) {
+    return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) &&
+           aLeft.mIsin == aRight.mIsin && aLeft.mEvent.mGrossAmount == aRight.mEvent.mGrossAmount &&
+           aLeft.mEvent.mTaxPaid == aRight.mEvent.mTaxPaid &&
+           aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
+           aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
+           aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency;
+}
+
+[[nodiscard]] bool sameEventFacts(const InterestRecord& aLeft, const InterestRecord& aRight) {
+    const bool sameInstrument =
+        aLeft.mIsin ? aLeft.mIsin == aRight.mIsin : !aRight.mIsin && aLeft.mName == aRight.mName;
+
+    return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) && sameInstrument &&
+           aLeft.mInterestType == aRight.mInterestType &&
+           aLeft.mEvent.mGrossAmount == aRight.mEvent.mGrossAmount &&
+           aLeft.mEvent.mTaxPaid == aRight.mEvent.mTaxPaid &&
+           aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
+           aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
+           aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency;
+}
+
+[[nodiscard]] bool sameEventFacts(const BenefitEvent& aLeft, const BenefitEvent& aRight) {
+    return sameMetadataFacts(aLeft.mMetadata, aRight.mMetadata) && aLeft.mType == aRight.mType &&
+           aLeft.mName == aRight.mName && aLeft.mIsin == aRight.mIsin &&
+           aLeft.mAssetClass == aRight.mAssetClass && aLeft.mAmount == aRight.mAmount &&
+           aLeft.mCurrency == aRight.mCurrency;
+}
+
+[[nodiscard]] bool sameEventFacts(const PrivateMarketEvent& aLeft,
+                                  const PrivateMarketEvent& aRight) {
+    return sameMetadataFacts(aLeft.mMetadata, aRight.mMetadata) && aLeft.mType == aRight.mType &&
+           aLeft.mName == aRight.mName && aLeft.mIsin == aRight.mIsin &&
+           aLeft.mAssetClass == aRight.mAssetClass && aLeft.mAmount == aRight.mAmount &&
+           aLeft.mFeePaid == aRight.mFeePaid && aLeft.mCurrency == aRight.mCurrency &&
+           aLeft.mDescription == aRight.mDescription;
+}
+
+[[nodiscard]] bool sameEventFacts(const MergeEvent& aLeft, const MergeEvent& aRight) {
+    if (aLeft.index() != aRight.index())
+    {
+        return false;
+    }
+
+    const auto compareFacts = [&aRight](const auto& aLeftValue) {
+        using Value = std::decay_t<decltype(aLeftValue)>;
+
+        return sameEventFacts(aLeftValue, std::get<Value>(aRight));
+    };
+
+    return std::visit(compareFacts, aLeft);
+}
+
+void mergeExactEvent(MergeEvent& aDestination, const MergeEvent& aSource) {
+    const auto mergeProvenance = [&aSource](auto& aDestinationValue) {
+        using Value = std::decay_t<decltype(aDestinationValue)>;
+        const auto& source = std::get<Value>(aSource);
+
+        if constexpr (std::is_same_v<Value, BenefitEvent> ||
+                      std::is_same_v<Value, PrivateMarketEvent>)
+        {
+            appendSources(aDestinationValue.mMetadata.mSources, source.mMetadata);
+            normalizeSources(aDestinationValue.mMetadata.mSources);
+        }
+        else
+        {
+            appendSources(aDestinationValue.mEvent.mMetadata.mSources, source.mEvent.mMetadata);
+            aDestinationValue.mNameContributions.insert(aDestinationValue.mNameContributions.end(),
+                                                        source.mNameContributions.begin(),
+                                                        source.mNameContributions.end());
+
+            normalizeSources(aDestinationValue.mEvent.mMetadata.mSources);
+        }
+    };
+
+    std::visit(mergeProvenance, aDestination);
+}
+
+void addConflictingDuplicateDiagnostic(const std::vector<MergeEvent>& aEvents,
+                                       std::span<const std::size_t> aCandidates,
+                                       std::vector<MergeDiagnostic>& aDiagnostics) {
+    const auto& first = aEvents[aCandidates.front()];
+
+    MergeDiagnostic diagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = MergeDiagnosticCode::ConflictingDuplicate,
+        .mMessage = "Events with the same broker transaction ID have conflicting "
+                    "tax-relevant data and were not merged.",
+        .mTaxDate = eventMetadata(first).mTaxDate,
+        .mInstrumentName = eventName(first),
+        .mIsin = eventIsin(first),
+    };
+
+    for (const auto index : aCandidates)
+    {
+        const auto& event = aEvents[index];
+
+        appendSources(diagnostic.mSources, eventMetadata(event));
+        diagnostic.mEventKinds.push_back(eventKind(event));
+
+        if (diagnostic.mTaxDate != eventMetadata(event).mTaxDate)
+        {
+            diagnostic.mTaxDate.reset();
+        }
+
+        if (diagnostic.mInstrumentName != eventName(event) || eventName(event).empty())
+        {
+            diagnostic.mInstrumentName.reset();
+        }
+
+        if (diagnostic.mIsin != eventIsin(event))
+        {
+            diagnostic.mIsin.reset();
+        }
+    }
+
+    normalizeSources(diagnostic.mSources);
+
+    auto& kinds = diagnostic.mEventKinds;
+    std::sort(kinds.begin(), kinds.end());
+    kinds.erase(std::unique(kinds.begin(), kinds.end()), kinds.end());
+
+    aDiagnostics.push_back(std::move(diagnostic));
+}
+
+void deduplicateEvents(std::vector<MergeEvent>& aEvents,
+                       std::vector<MergeDiagnostic>& aDiagnostics) {
+    std::stable_sort(aEvents.begin(),
+                     aEvents.end(),
+                     [](const MergeEvent& aLeft, const MergeEvent& aRight) {
+                         return StableSourceOrder{}(primarySource(eventMetadata(aLeft)),
+                                                    primarySource(eventMetadata(aRight)));
+                     });
+
+    std::map<TransactionIdentity, std::vector<std::size_t>, TransactionIdentityOrder> groups;
+    std::vector<bool> rejected(aEvents.size(), false);
+
+    for (std::size_t index = 0; index < aEvents.size(); ++index)
+    {
+        const auto identity = transactionIdentity(eventMetadata(aEvents[index]));
+
+        if (identity)
+        {
+            groups[*identity].push_back(index);
+        }
+    }
+
+    for (auto& group : groups)
+    {
+        auto& candidates = group.second;
+        auto& canonical = aEvents[candidates.front()];
+
+        const bool allMatch =
+            std::all_of(candidates.begin() + 1, candidates.end(), [&](std::size_t aIndex) {
+                return sameEventFacts(canonical, aEvents[aIndex]);
+            });
+
+        if (!allMatch)
+        {
+            addConflictingDuplicateDiagnostic(aEvents, candidates, aDiagnostics);
+            rejected[candidates.front()] = true;
+        }
+
+        for (std::size_t index = 1; index < candidates.size(); ++index)
+        {
+            if (allMatch)
+            {
+                mergeExactEvent(canonical, aEvents[candidates[index]]);
+            }
+
+            rejected[candidates[index]] = true;
+        }
+    }
+
+    std::vector<MergeEvent> retainedEvents;
+
+    for (std::size_t index = 0; index < aEvents.size(); ++index)
+    {
+        if (!rejected[index])
+        {
+            retainedEvents.push_back(std::move(aEvents[index]));
+        }
+    }
+
+    aEvents = std::move(retainedEvents);
 }
 
 [[nodiscard]] std::vector<InstrumentNameVariant> makeNameVariants(NameVariantSet& aNames) {
@@ -288,11 +628,11 @@ template <typename Event>
     return false;
 }
 
-[[nodiscard]] InterestIdentity interestIdentity(const InterestInstrument& aInstrument) {
+[[nodiscard]] InterestIdentity interestIdentity(const InterestRecord& aRecord) {
     return InterestIdentity{
-        .mType = aInstrument.mInterestType,
-        .mIsin = aInstrument.mIsin,
-        .mNameWithoutIsin = aInstrument.mIsin ? std::string{} : aInstrument.mName,
+        .mType = aRecord.mInterestType,
+        .mIsin = aRecord.mIsin,
+        .mNameWithoutIsin = aRecord.mIsin ? std::string{} : aRecord.mName,
     };
 }
 
@@ -341,6 +681,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                          {
                              return aLeft->mSourceIndex < aRight->mSourceIndex;
                          }
+
                          return aLeft->mParseResult.mBroker < aRight->mParseResult.mBroker;
                      });
 
@@ -398,11 +739,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
         begin = end;
     }
 
-    std::map<Isin, TradeBucket> tradeBuckets;
-    std::map<Isin, DividendBucket> dividendBuckets;
-    std::map<InterestIdentity, InterestBucket, InterestIdentityOrder> interestBuckets;
-    std::vector<BenefitEvent> benefitEvents;
-    std::vector<PrivateMarketEvent> privateMarketEvents;
+    std::vector<MergeEvent> events;
 
     for (const auto* input : orderedInputs)
     {
@@ -413,8 +750,6 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
 
         for (const auto& sourceInstrument : input->mParseResult.mStatement.mTradeInstruments)
         {
-            auto& bucket = tradeBuckets[sourceInstrument.mIsin];
-
             for (auto event : sourceInstrument.mTransactions)
             {
                 if (!normalizeAndValidateEvent(event,
@@ -426,9 +761,16 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                     continue;
                 }
 
-                bucket.mNames.add(sourceInstrument.mName, event.mMetadata);
-                bucket.mAssetClasses.add(sourceInstrument.mAssetClass, event.mMetadata);
-                bucket.mTransactions.push_back(std::move(event));
+                events.emplace_back(TradeRecord{
+                    .mName = sourceInstrument.mName,
+                    .mIsin = sourceInstrument.mIsin,
+                    .mAssetClass = sourceInstrument.mAssetClass,
+                    .mNameContributions = {{
+                        .mName = sourceInstrument.mName,
+                        .mSources = event.mMetadata.mSources,
+                    }},
+                    .mEvent = std::move(event),
+                });
             }
 
             for (auto event : sourceInstrument.mCorporateActions)
@@ -442,16 +784,21 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                     continue;
                 }
 
-                bucket.mNames.add(sourceInstrument.mName, event.mMetadata);
-                bucket.mAssetClasses.add(sourceInstrument.mAssetClass, event.mMetadata);
-                bucket.mCorporateActions.push_back(std::move(event));
+                events.emplace_back(CorporateActionRecord{
+                    .mName = sourceInstrument.mName,
+                    .mIsin = sourceInstrument.mIsin,
+                    .mAssetClass = sourceInstrument.mAssetClass,
+                    .mNameContributions = {{
+                        .mName = sourceInstrument.mName,
+                        .mSources = event.mMetadata.mSources,
+                    }},
+                    .mEvent = std::move(event),
+                });
             }
         }
 
         for (const auto& sourceInstrument : input->mParseResult.mStatement.mDividendInstruments)
         {
-            auto& bucket = dividendBuckets[sourceInstrument.mIsin];
-
             for (auto event : sourceInstrument.mTransactions)
             {
                 if (!normalizeAndValidateEvent(event,
@@ -463,16 +810,20 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                     continue;
                 }
 
-                bucket.mNames.add(sourceInstrument.mName, event.mMetadata);
-                bucket.mTransactions.push_back(std::move(event));
+                events.emplace_back(DividendRecord{
+                    .mName = sourceInstrument.mName,
+                    .mIsin = sourceInstrument.mIsin,
+                    .mNameContributions = {{
+                        .mName = sourceInstrument.mName,
+                        .mSources = event.mMetadata.mSources,
+                    }},
+                    .mEvent = std::move(event),
+                });
             }
         }
 
         for (const auto& sourceInstrument : input->mParseResult.mStatement.mInterestInstruments)
         {
-            const auto identity = interestIdentity(sourceInstrument);
-            auto& bucket = interestBuckets[identity];
-
             for (auto event : sourceInstrument.mTransactions)
             {
                 if (!normalizeAndValidateEvent(event,
@@ -484,8 +835,16 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                     continue;
                 }
 
-                bucket.mNames.add(sourceInstrument.mName, event.mMetadata);
-                bucket.mTransactions.push_back(std::move(event));
+                events.emplace_back(InterestRecord{
+                    .mName = sourceInstrument.mName,
+                    .mIsin = sourceInstrument.mIsin,
+                    .mInterestType = sourceInstrument.mInterestType,
+                    .mNameContributions = {{
+                        .mName = sourceInstrument.mName,
+                        .mSources = event.mMetadata.mSources,
+                    }},
+                    .mEvent = std::move(event),
+                });
             }
         }
 
@@ -497,7 +856,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                                           event.mIsin,
                                           mergeDiagnostics))
             {
-                benefitEvents.push_back(std::move(event));
+                events.emplace_back(std::move(event));
             }
         }
 
@@ -509,18 +868,90 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                                           event.mIsin,
                                           mergeDiagnostics))
             {
-                privateMarketEvents.push_back(std::move(event));
+                events.emplace_back(std::move(event));
             }
         }
     }
 
+    deduplicateEvents(events, mergeDiagnostics);
+
+    std::map<Isin, TradeBucket> tradeBuckets;
+    std::map<Isin, DividendBucket> dividendBuckets;
+    std::map<InterestIdentity, InterestBucket, InterestIdentityOrder> interestBuckets;
+    std::vector<BenefitEvent> benefitEvents;
+    std::vector<PrivateMarketEvent> privateMarketEvents;
+
+    const auto addToPresentation = [&](auto& aValue) {
+        using Value = std::decay_t<decltype(aValue)>;
+
+        if constexpr (std::is_same_v<Value, TradeRecord>)
+        {
+            auto& bucket = tradeBuckets[aValue.mIsin];
+
+            for (const auto& contribution : aValue.mNameContributions)
+            {
+                bucket.mNames.add(contribution);
+            }
+
+            bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent.mMetadata);
+            bucket.mTransactions.push_back(std::move(aValue.mEvent));
+        }
+        else if constexpr (std::is_same_v<Value, CorporateActionRecord>)
+        {
+            auto& bucket = tradeBuckets[aValue.mIsin];
+
+            for (const auto& contribution : aValue.mNameContributions)
+            {
+                bucket.mNames.add(contribution);
+            }
+
+            bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent.mMetadata);
+            bucket.mCorporateActions.push_back(std::move(aValue.mEvent));
+        }
+        else if constexpr (std::is_same_v<Value, DividendRecord>)
+        {
+            auto& bucket = dividendBuckets[aValue.mIsin];
+
+            for (const auto& contribution : aValue.mNameContributions)
+            {
+                bucket.mNames.add(contribution);
+            }
+
+            bucket.mTransactions.push_back(std::move(aValue.mEvent));
+        }
+        else if constexpr (std::is_same_v<Value, InterestRecord>)
+        {
+            auto& bucket = interestBuckets[interestIdentity(aValue)];
+
+            for (const auto& contribution : aValue.mNameContributions)
+            {
+                bucket.mNames.add(contribution);
+            }
+
+            bucket.mTransactions.push_back(std::move(aValue.mEvent));
+        }
+        else if constexpr (std::is_same_v<Value, BenefitEvent>)
+        {
+            benefitEvents.push_back(std::move(aValue));
+        }
+        else if constexpr (std::is_same_v<Value, PrivateMarketEvent>)
+        {
+            privateMarketEvents.push_back(std::move(aValue));
+        }
+        else
+        {
+            static_assert(std::is_same_v<Value, void>,
+                          "Missing presentation handling for this event type.");
+        }
+    };
+
+    for (auto& event : events)
+    {
+        std::visit(addToPresentation, event);
+    }
+
     for (auto& [isin, bucket] : tradeBuckets)
     {
-        if (bucket.mTransactions.empty() && bucket.mCorporateActions.empty())
-        {
-            continue;
-        }
-
         sortEvents(bucket.mTransactions);
         sortEvents(bucket.mCorporateActions);
 
@@ -545,11 +976,6 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
 
     for (auto& [isin, bucket] : dividendBuckets)
     {
-        if (bucket.mTransactions.empty())
-        {
-            continue;
-        }
-
         sortEvents(bucket.mTransactions);
 
         result.mStatement.mPresentation.mDividendInstruments.push_back(DividendInstrument{
@@ -563,11 +989,6 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
 
     for (auto& [identity, bucket] : interestBuckets)
     {
-        if (bucket.mTransactions.empty())
-        {
-            continue;
-        }
-
         sortEvents(bucket.mTransactions);
 
         result.mStatement.mPresentation.mInterestInstruments.push_back(InterestInstrument{

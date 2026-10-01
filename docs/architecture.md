@@ -113,10 +113,24 @@ Names never replace an ISIN: when names differ for one identity, the earliest na
 A trade asset-class disagreement is an error, retains every class variant and source, and leaves
 the merged class `Unknown` rather than choosing a tax-relevant value.
 
-Collection merging retains every event and normalizes each event's complete source list. It does
-not treat similar payloads or transaction IDs as duplicates; that separate merge phase decides
-exact duplicate and conflict identity. Instrument collections are ordered by their documented
-identity, and events inside each concrete collection use `ChronologicalEventOrder`.
+Before presentation grouping, the merger classifies every valid event with a non-empty transaction
+ID by `(broker, transaction ID)`. Events in one identity group are exact duplicates only when all
+of these values match:
+
+- event kind, tax date and optional source timestamp;
+- broker-neutral instrument identity and tax-relevant classification; and
+- every event-specific monetary, unit, ratio, currency, fee, tax and descriptive value.
+
+For an ISIN-identified instrument, a display-name difference does not make the events conflict;
+the normal instrument-name warning retains each name and its sources. An exact duplicate produces
+one event under its earliest `StableSourceOrder` source and combines every contributing source
+reference. If any candidate in the identity group differs, no candidate enters the merged ledger
+and one `ConflictingDuplicate` error retains all sources and involved event kinds. Missing or empty
+transaction IDs never trigger this classification. Different transaction IDs do not establish
+economic equivalence, including for corporate actions.
+
+After transaction classification, instrument collections are ordered by their documented identity,
+and events inside each concrete collection use `ChronologicalEventOrder`.
 
 The chronological reference sequence crosses every presentation collection and uses tax date,
 timestamp presence, timestamp value and stable input sequence. It does not process one broker or
