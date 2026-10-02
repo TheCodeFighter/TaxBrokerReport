@@ -64,6 +64,24 @@ test discovered by CTest.
 The dedicated `Valgrind` workflow runs the same memory checks for pull requests and after changes
 reach `main`.
 
+### Test suites
+
+Unit and integration tests live in `tests/unit/` and `tests/integration/`, respectively, and use
+separate executables. Every discovered CTest test has its corresponding `unit` or `integration`
+label. Run both suites, one suite, or a filtered selection:
+
+```sh
+scripts/test.sh
+scripts/test.sh --suite unit
+scripts/test.sh --suite integration
+scripts/test.sh --suite integration StatementMergerIntegrationTest
+```
+
+Inside the development container, `ctest --test-dir /workspace/build -L unit` and
+`ctest --test-dir /workspace/build -L integration` select the same suites. CI runs them in separate
+steps, including integration tests after a unit-test failure when the build succeeded. The existing
+**Required tests** check still requires both suites to pass.
+
 ### Test coverage
 
 Run the test suite with coverage instrumentation inside the development container:
@@ -79,10 +97,15 @@ The script keeps its instrumented build separate from the normal development bui
 - a short summary and exact line-coverage metrics to `coverage/summary.txt` and
   `coverage/metrics.env`.
 
+The same reports are also written to `coverage/unit/` and `coverage/integration/` for each suite.
+Counters are reset between suites, and all three reports use the same production-code denominator
+(`include/` and `src/`, excluding tests and dependencies). Combined coverage is the union of covered
+lines, not an average or sum of the two suite percentages.
+
 The `Test Coverage` GitHub Action compares every pull request with its exact base commit. Its job
-summary shows both results and provides the HTML report as an artifact. It creates or updates one
-pull-request comment with the current summary. A decrease is highlighted prominently but does not
-currently block merging.
+summary and pull-request comment show unit, integration, and combined coverage against the base.
+All three HTML reports are available in one artifact. Only a decrease in combined coverage triggers
+the existing warning; it does not currently block merging.
 
 ## Logging
 

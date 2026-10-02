@@ -40,7 +40,7 @@ target_link_libraries(taxbroker_unit_tests
     nlohmann_json::nlohmann_json
 )
 
-gtest_discover_tests(taxbroker_unit_tests)
+gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 
 # Integration Tests
 add_executable(taxbroker_integration_tests
@@ -60,4 +60,4 @@ target_link_libraries(taxbroker_integration_tests
     GTest::gtest_main
 )
 
-gtest_discover_tests(taxbroker_integration_tests)
+gtest_discover_tests(taxbroker_integration_tests PROPERTIES LABELS integration)

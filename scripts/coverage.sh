@@ -10,7 +10,8 @@ usage() {
 Usage: coverage.sh
 
   Builds and runs all tests with GCC coverage instrumentation inside the
-  development container. Reports are written to coverage/.
+  development container. Combined reports are written to coverage/;
+  unit-only and integration-only reports are written to its suite subdirectories.
 EOF
 }
 
@@ -87,64 +88,87 @@ if ! lcov $lcov_options \
     exit 1
 fi
 
-echo "==> Running all tests with coverage instrumentation..."
-ctest --test-dir "$coverage_build_dir" --output-on-failure --no-tests=error
+write_report() {
+    local report_dir="$1"
+    local report_title="$2"
+    local lines_found lines_hit line_rate
+
+    genhtml $lcov_options \
+        "$report_dir/lcov.info" \
+        --output-directory "$report_dir/html" \
+        --title "$report_title" \
+        --legend
+
+    lcov --rc lcov_branch_coverage=1 \
+        --summary "$report_dir/lcov.info" \
+        >"$report_dir/summary.txt" 2>&1
+
+    lines_found="$(awk -F: '$1 == "LF" { total += $2 } END { print total + 0 }' \
+        "$report_dir/lcov.info")"
+    lines_hit="$(awk -F: '$1 == "LH" { total += $2 } END { print total + 0 }' \
+        "$report_dir/lcov.info")"
+
+    if [ "$lines_found" -eq 0 ]; then
+        echo "Coverage report contains no instrumented project lines: $report_title" >&2
+        exit 1
+    fi
+
+    line_rate="$(awk -v hit="$lines_hit" -v found="$lines_found" \
+        'BEGIN { printf "%.4f", (100 * hit) / found }')"
+
+    {
+        printf "lines_hit=%s\n" "$lines_hit"
+        printf "lines_found=%s\n" "$lines_found"
+        printf "line_rate=%s\n" "$line_rate"
+    } >"$report_dir/metrics.env"
+
+    cat "$report_dir/summary.txt"
+    printf "%s: %s%% (%s of %s lines)\n" \
+        "$report_title" "$line_rate" "$lines_hit" "$lines_found"
+}
+
+for suite in unit integration; do
+    suite_report_dir="$coverage_report_dir/$suite"
+    cmake -E make_directory "$suite_report_dir"
+
+    lcov $lcov_options \
+        --zerocounters \
+        --directory "$coverage_build_dir"
+
+    # Separate executables also work when measuring base commits without CTest labels.
+    echo "==> Running $suite tests with coverage instrumentation..."
+    "$coverage_build_dir/tests/taxbroker_${suite}_tests"
+
+    lcov $lcov_options \
+        --capture \
+        --directory "$coverage_build_dir" \
+        --output-file "$suite_report_dir/tests.info"
+
+    # The shared zero-hit baseline keeps every suite's production-code denominator identical.
+    lcov $lcov_options \
+        --add-tracefile "$coverage_report_dir/initial.info" \
+        --add-tracefile "$suite_report_dir/tests.info" \
+        --output-file "$suite_report_dir/combined.info"
+
+    lcov $lcov_options \
+        --extract "$suite_report_dir/combined.info" \
+        "/workspace/include/*" \
+        "/workspace/src/*" \
+        --output-file "$suite_report_dir/lcov.info"
+
+    cmake -E rm -f "$suite_report_dir/tests.info" "$suite_report_dir/combined.info"
+    write_report "$suite_report_dir" "TaxBrokerReport $suite coverage"
+done
 
 lcov $lcov_options \
-    --capture \
-    --directory "$coverage_build_dir" \
-    --output-file "$coverage_report_dir/tests.info"
-
-lcov $lcov_options \
-    --add-tracefile "$coverage_report_dir/initial.info" \
-    --add-tracefile "$coverage_report_dir/tests.info" \
-    --output-file "$coverage_report_dir/combined.info"
-
-lcov $lcov_options \
-    --extract "$coverage_report_dir/combined.info" \
-    "/workspace/include/*" \
-    "/workspace/src/*" \
+    --add-tracefile "$coverage_report_dir/unit/lcov.info" \
+    --add-tracefile "$coverage_report_dir/integration/lcov.info" \
     --output-file "$coverage_report_dir/lcov.info"
 
-cmake -E rm -f \
-    "$coverage_report_dir/initial.info" \
-    "$coverage_report_dir/tests.info" \
-    "$coverage_report_dir/combined.info"
-
-genhtml $lcov_options \
-    "$coverage_report_dir/lcov.info" \
-    --output-directory "$coverage_report_dir/html" \
-    --title "TaxBrokerReport coverage" \
-    --legend
-
-lcov --rc lcov_branch_coverage=1 \
-    --summary "$coverage_report_dir/lcov.info" \
-    >"$coverage_report_dir/summary.txt" 2>&1
-
-lines_found="$(awk -F: '$1 == "LF" { total += $2 } END { print total + 0 }' \
-    "$coverage_report_dir/lcov.info")"
-lines_hit="$(awk -F: '$1 == "LH" { total += $2 } END { print total + 0 }' \
-    "$coverage_report_dir/lcov.info")"
-
-if [ "$lines_found" -eq 0 ]; then
-    echo "Coverage report contains no instrumented project lines." >&2
-    exit 1
-fi
-
-line_rate="$(awk -v hit="$lines_hit" -v found="$lines_found" \
-    'BEGIN { printf "%.4f", (100 * hit) / found }')"
-
-{
-    printf "lines_hit=%s\n" "$lines_hit"
-    printf "lines_found=%s\n" "$lines_found"
-    printf "line_rate=%s\n" "$line_rate"
-} >"$coverage_report_dir/metrics.env"
-
-cat "$coverage_report_dir/summary.txt"
-printf "Exact line coverage: %s%% (%s of %s lines)\n" \
-    "$line_rate" \
-    "$lines_hit" \
-    "$lines_found"
+cmake -E rm -f "$coverage_report_dir/initial.info"
+write_report "$coverage_report_dir" "TaxBrokerReport combined coverage"
 CONTAINER_SCRIPT
 
-echo "==> HTML report: $repo_root/coverage/html/index.html"
+echo "==> Combined HTML report: $repo_root/coverage/html/index.html"
+echo "==> Unit HTML report: $repo_root/coverage/unit/html/index.html"
+echo "==> Integration HTML report: $repo_root/coverage/integration/html/index.html"
