@@ -1,4 +1,5 @@
 #include "utils/numeric_util.hpp"
+#include "taxbroker/exact_arithmetic.hpp"
 
 #include <charconv>
 #include <cctype>
@@ -8,25 +9,12 @@
 #include <string_view>
 #include <system_error>
 
-#if defined(_MSC_VER) && defined(_M_X64)
-#include <immintrin.h>
-#include <intrin.h>
-#endif
-
 namespace {
 
 constexpr std::uint64_t signedMagnitudeLimit(bool aNegative) {
     constexpr auto positiveLimit =
         static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     return aNegative ? positiveLimit + 1U : positiveLimit;
-}
-
-constexpr std::uint64_t unsignedMagnitude(std::int64_t aValue) {
-    if (aValue >= 0)
-        return static_cast<std::uint64_t>(aValue);
-
-    // Avoid negating INT64_MIN, which is not representable as a positive int64_t.
-    return static_cast<std::uint64_t>(-(aValue + 1)) + 1U;
 }
 
 std::optional<std::int64_t> applySign(std::uint64_t aMagnitude, bool aNegative) {
@@ -39,25 +27,6 @@ std::optional<std::int64_t> applySign(std::uint64_t aMagnitude, bool aNegative) 
     if (aMagnitude == limit)
         return std::numeric_limits<std::int64_t>::min();
     return -static_cast<std::int64_t>(aMagnitude);
-}
-
-std::optional<std::int64_t> roundAndApplySign(std::uint64_t aQuotient,
-                                              std::uint64_t aRemainder,
-                                              std::uint64_t aDivisor,
-                                              bool aNegative) {
-    const auto limit = signedMagnitudeLimit(aNegative);
-    if (aQuotient > limit)
-        return std::nullopt;
-
-    // Round halves away from zero. All current scales are powers of ten and therefore even.
-    if (aRemainder >= aDivisor / 2U)
-    {
-        if (aQuotient == limit)
-            return std::nullopt;
-        ++aQuotient;
-    }
-
-    return applySign(aQuotient, aNegative);
 }
 
 std::string_view trim(std::string_view aValue) {
@@ -126,37 +95,18 @@ bool parseInteger(std::string_view aValue, int& aResult) {
 
 std::optional<taxbroker::Money> multiplyMoneyUnits(taxbroker::Money aPrice,
                                                    taxbroker::Units aUnits) {
-    const bool negative = (aPrice < 0) != (aUnits < 0);
-    const auto priceMagnitude = unsignedMagnitude(aPrice);
-    const auto unitsMagnitude = unsignedMagnitude(aUnits);
-    constexpr auto divisor = static_cast<std::uint64_t>(taxbroker::UNITS_SCALE);
+    const auto exactProduct =
+        taxbroker::ExactRational::create(taxbroker::WideInteger{aPrice} * aUnits,
+                                         taxbroker::UNITS_SCALE);
+    const auto roundedProductResult =
+        taxbroker::roundToScaled(std::get<taxbroker::ExactRational>(exactProduct), 1);
 
-#if defined(__SIZEOF_INT128__)
-    __extension__ using WideInteger = unsigned __int128;
-    const auto result = static_cast<WideInteger>(priceMagnitude) * unitsMagnitude;
-    const auto quotient = result / divisor;
-    const auto remainder = result % divisor;
+    if (const auto* roundedProduct = std::get_if<taxbroker::Money>(&roundedProductResult))
+    {
+        return *roundedProduct;
+    }
 
-    if (quotient > std::numeric_limits<std::uint64_t>::max())
-        return std::nullopt;
-    return roundAndApplySign(static_cast<std::uint64_t>(quotient),
-                             static_cast<std::uint64_t>(remainder),
-                             divisor,
-                             negative);
-#elif defined(_MSC_VER) && defined(_M_X64)
-    std::uint64_t high{};
-    const auto low = _umul128(priceMagnitude, unitsMagnitude, &high);
-
-    // A quotient wider than 64 bits cannot fit in Money and _udiv128 requires this guard.
-    if (high >= divisor)
-        return std::nullopt;
-
-    std::uint64_t remainder{};
-    const auto quotient = _udiv128(high, low, divisor, &remainder);
-    return roundAndApplySign(quotient, remainder, divisor, negative);
-#else
-#error "Exact wide integer arithmetic is not implemented for this target"
-#endif
+    return std::nullopt;
 }
 
 namespace numeric_detail {

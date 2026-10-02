@@ -12,6 +12,7 @@ add_library(taxbroker_core STATIC
     processors/statement_merger.cpp
     processors/tax_processor.cpp
     utils/date_utils.cpp
+    utils/exact_arithmetic.cpp
     utils/logger.cpp
     utils/numeric_util.cpp
     utils/string_utils.cpp
@@ -25,6 +26,7 @@ target_include_directories(taxbroker_core PUBLIC
 
 target_link_libraries(taxbroker_core
     PUBLIC
+    Boost::headers
     spdlog::spdlog
 )
 

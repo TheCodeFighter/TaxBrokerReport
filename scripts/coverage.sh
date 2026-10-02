@@ -52,14 +52,6 @@ coverage_build_dir=/workspace/build/coverage
 coverage_report_dir=/workspace/coverage
 lcov_options="--quiet --rc lcov_branch_coverage=1"
 
-# CMake's GoogleTest discovery executes the rebuilt test binary during the build. Clear counters
-# from the previous binary first so libgcov never sees stale checksums during that discovery run.
-if [ -d "$coverage_build_dir" ]; then
-    lcov $lcov_options \
-        --zerocounters \
-        --directory "$coverage_build_dir"
-fi
-
 cmake \
     -S /workspace \
     -B "$coverage_build_dir" \
@@ -67,6 +59,11 @@ cmake \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path -Wno-missing-field-initializers" \
     -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+
+# Removed targets leave gcno files behind, and zeroing counters only removes gcda files.
+# Rebuild objects and coverage metadata together so capture uses only the current source tree.
+cmake --build "$coverage_build_dir" --target clean
+find "$coverage_build_dir" -type f \( -name '*.gcno' -o -name '*.gcda' \) -delete
 
 cmake --build "$coverage_build_dir" --parallel
 
