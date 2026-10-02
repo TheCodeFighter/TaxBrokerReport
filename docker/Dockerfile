@@ -3,6 +3,7 @@ FROM alpine:3.19 AS dev
 
 RUN apk add --no-cache \
     bash \
+    boost-dev \
     ca-certificates \
     git \
     clang \

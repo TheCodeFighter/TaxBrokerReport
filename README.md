@@ -21,6 +21,9 @@ TaxBrokerReport is available under the [MIT License](LICENSE).
 
 ## Development Workflow
 
+The C++20 build requires Boost headers for checked 256-bit exact arithmetic. The development Docker
+image installs `boost-dev`; production needs no additional Boost runtime library.
+
 Run `scripts/format.sh` before opening a pull request. To make Git reject unformatted commits and pushes locally, run `scripts/install_hooks.sh` once; it wires the repo-local hooks in `.githooks/` to `scripts/format.sh --check`.
 
 The `Format Check` GitHub Action runs `scripts/format.sh --check` on every PR to `main`, so
@@ -89,6 +92,9 @@ Run the test suite with coverage instrumentation inside the development containe
 ```sh
 scripts/coverage.sh
 ```
+
+Each run rebuilds the isolated coverage target and clears its instrumentation metadata so removed
+or stashed sources cannot leak into the reports.
 
 The script keeps its instrumented build separate from the normal development build and writes:
 

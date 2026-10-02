@@ -27,6 +27,12 @@ first rounded to `CorpRatio` precision.
 Every multiplication or division uses a checked wide-integer intermediate. The processor rounds
 only at a boundary defined below. It must not round an operand early to make an operation easier.
 
+The shared C++ arithmetic primitives use Boost.Multiprecision checked 256-bit integers and reduced
+exact fractions. This width is an integer range, not a decimal calculation precision. Factors are
+cancelled before products; a fraction or intermediate that still exceeds the supported range
+returns `arithmetic_overflow`. Results are also checked against the destination `int64_t` range
+and its sign/positive-value policy. A failed operation does not mutate its input state.
+
 ### Stored precision is not calculation precision
 
 The scales in the table describe stored values, not a smaller workspace used for calculations. A
