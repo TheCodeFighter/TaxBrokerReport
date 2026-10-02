@@ -1,0 +1,2 @@
+"datetime","date","account_type","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","currency","original_amount","original_currency","fx_rate","description","transaction_id","counterparty_name","counterparty_iban","payment_reference","mcc_code"
+"2024-01-02T09:00:01.000Z","2024-01-02","DEFAULT","TRADING","BUY","STOCK","Synthetic Merger Share","XX8000000001","1.2500000000","10.000000","-12.50","-0.25","","EUR","","","","Synthetic contradictory timestamp","synthetic-tied","","","",""

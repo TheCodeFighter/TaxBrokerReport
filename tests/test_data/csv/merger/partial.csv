@@ -1,0 +1,3 @@
+"datetime","date","account_type","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","currency","original_amount","original_currency","fx_rate","description","transaction_id","counterparty_name","counterparty_iban","payment_reference","mcc_code"
+"2024-01-04T10:00:00.000Z","2024-01-04","DEFAULT","TRADING","BUY","STOCK","Synthetic Rejected Share","XX8000000099","1.0000000000","invalid","-10.00","","","EUR","","","","Synthetic invalid price","synthetic-rejected","","","",""
+"2024-01-04T10:00:00.000Z","2024-01-04","DEFAULT","TRADING","BUY","FUND","Synthetic Alternative Name","XX8000000001","1.0000000000","10.000000","-10.00","","","EUR","","","","Synthetic class and name disagreement","synthetic-class","","","",""

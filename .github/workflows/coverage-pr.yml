@@ -67,6 +67,29 @@ jobs:
             result="decreased"
           fi
 
+          print_coverage_row() {
+            local suite="$1"
+            local report_path="$2"
+            local lines_hit lines_found line_rate
+            local current_hit current_found current_rate
+            local baseline_hit baseline_found baseline_rate suite_delta
+
+            source "current/coverage/${report_path}metrics.env"
+            current_hit="$lines_hit"
+            current_found="$lines_found"
+            current_rate="$line_rate"
+
+            source "baseline/coverage/${report_path}metrics.env"
+            baseline_hit="$lines_hit"
+            baseline_found="$lines_found"
+            baseline_rate="$line_rate"
+
+            suite_delta="$(awk -v current="$current_rate" -v baseline="$baseline_rate" \
+              'BEGIN { printf "%+.4f", current - baseline }')"
+
+            echo "| ${suite} | ${baseline_hit} / ${baseline_found} (${baseline_rate}%) | ${current_hit} / ${current_found} (${current_rate}%) | ${suite_delta} pp |"
+          }
+
           report_file="current/coverage/pr-summary.md"
           {
             echo '<!-- taxbroker-coverage-report -->'
@@ -76,11 +99,13 @@ jobs:
               echo '## Test coverage'
             fi
             echo
-            echo '| Revision | Covered lines | Line coverage |'
-            echo '| --- | ---: | ---: |'
-            echo "| Base | ${baseline_lines_hit} / ${baseline_lines_found} | ${baseline_line_rate}% |"
-            echo "| Pull request | ${current_lines_hit} / ${current_lines_found} | ${current_line_rate}% |"
-            echo "| Change |  | ${delta} percentage points |"
+            echo '| Suite | Base covered lines (coverage) | PR covered lines (coverage) | Change |'
+            echo '| --- | ---: | ---: | ---: |'
+            print_coverage_row 'Combined' ''
+            print_coverage_row 'Unit' 'unit/'
+            print_coverage_row 'Integration' 'integration/'
+            echo
+            echo 'All reports measure production code only. Combined coverage is the union of both suites, not the sum of their percentages; only the combined result controls the coverage warning.'
             echo
 
             if [[ "$dropped" == "true" ]]; then
@@ -103,11 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-coverage-html
-          path: |
-            current/coverage/html
-            current/coverage/lcov.info
-            current/coverage/summary.txt
-            current/coverage/metrics.env
+          path: current/coverage/
           if-no-files-found: warn
           retention-days: 14
 
