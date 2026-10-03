@@ -411,6 +411,11 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
         exchangeRate = parseExchangeRate(aCsvRow["fx_rate"].get<std::string>());
     }
 
+    if (grossAmount && *grossAmount < 0)
+    {
+        grossAmount.reset();
+    }
+
     return GetAmount{
         .mGrossAmount = grossAmount,
         .mExchangeRate = exchangeRate,
@@ -446,7 +451,9 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     auto tradeSide = parseTradeSide(typeValue);
     auto unitPrice = parseMoney(aCsvRow["price"].get<std::string>());
-    auto units = parseUnits(aCsvRow["shares"].get<std::string>());
+    const auto sharesText = aCsvRow["shares"].get<std::string>();
+    const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
+    const auto* units = std::get_if<ParsedFixedPoint>(&importedUnits);
     const auto amountValue = aCsvRow["amount"].get<std::string>();
     auto amount = amountValue.empty() ? std::optional<Money>{} : parseMoney(amountValue);
     auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
@@ -481,7 +488,8 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return false;
     }
 
-    const auto normalizedUnits = normalizeTradeUnits(*tradeSide, *units);
+    // Normalize stored trade units; evidence retains the original source sign.
+    const auto normalizedUnits = normalizeTradeUnits(*tradeSide, units->mValue);
     if (!normalizedUnits)
     {
         aContext.addDiagnostic(
@@ -547,8 +555,11 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     }
     instrument.mAssetClass = assetClass;
 
+    auto metadata = aContext.metadata(*date);
+    auto evidence = unitSourceEvidence(*units, sharesText, primarySource(metadata));
+
     instrument.mTransactions.emplace_back(TradeTransaction{
-        .mMetadata = aContext.metadata(*date),
+        .mMetadata = std::move(metadata),
         .mTradeSide = *tradeSide,
         .mUnitPrice = *unitPrice,
         .mUnits = *normalizedUnits,
@@ -556,6 +567,7 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mFeePaid = *feePaid,
         .mExchangeRate = EXCHANGE_RATE_SCALE,
         .mCurrency = currency,
+        .mUnitEvidence = {std::move(evidence)},
     });
 
     return true;
@@ -842,7 +854,9 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
     }
 
     const auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
-    const auto unitsDelta = parseUnits(aCsvRow["shares"].get<std::string>());
+    const auto sharesText = aCsvRow["shares"].get<std::string>();
+    const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
+    const auto* unitsDelta = std::get_if<ParsedFixedPoint>(&importedUnits);
     const auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
 
     if (!date)
@@ -853,7 +867,7 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    if (!unitsDelta || *unitsDelta == 0)
+    if (!unitsDelta || unitsDelta->mValue == 0)
     {
         aContext.addInvalidFieldDiagnostic("shares",
                                            aCsvRow["shares"].get<std::string>(),
@@ -882,14 +896,18 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
     }
     instrument.mAssetClass = assetClass;
 
-    // Trade Republic exports the signed change in units, not the split ratio. The ratio can only
-    // be derived after statements are merged and the open position immediately before this event
-    // is known.
+    // The meaning of TR shares is unverified. Preserve its text; this source label is not a ratio
+    // or authority to apply an action without the later identity/ratio resolution.
+    auto metadata = aContext.metadata(*date);
+    auto evidence = unitSourceEvidence(*unitsDelta, sharesText, primarySource(metadata));
+
     instrument.mCorporateActions.emplace_back(CorporateAction{
-        .mMetadata = aContext.metadata(*date),
-        .mType = *unitsDelta > 0 ? CorporateActionType::Split : CorporateActionType::ReverseSplit,
-        .mUnitsDelta = *unitsDelta,
+        .mMetadata = std::move(metadata),
+        .mType =
+            unitsDelta->mValue > 0 ? CorporateActionType::Split : CorporateActionType::ReverseSplit,
+        .mUnitsDelta = unitsDelta->mValue,
         .mRatio = std::nullopt,
+        .mUnitEvidence = {std::move(evidence)},
     });
 }
 
@@ -1008,21 +1026,26 @@ void TradeRepublicParser::parsePrivateMarketRow(
 }
 
 std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
-    return parseScaledNumber<Money, MONEY_SCALE>(aValue);
+    const auto imported = importFixedPoint(aValue, MONEY_SCALE);
+
+    if (const auto* value = std::get_if<ParsedFixedPoint>(&imported))
+    {
+        return value->mValue;
+    }
+
+    return std::nullopt;
 }
 
 std::optional<ExchangeRate> TradeRepublicParser::parseExchangeRate(std::string_view aValue) {
-    const auto exchangeRate = parseScaledNumber<ExchangeRate, EXCHANGE_RATE_SCALE>(aValue);
-    if (!exchangeRate || *exchangeRate <= 0)
+    // Preserve broker import rounding; official user input is validated separately.
+    const auto imported = importExchangeRate(aValue, true);
+
+    if (const auto* value = std::get_if<ExchangeRate>(&imported))
     {
-        return std::nullopt;
+        return *value;
     }
 
-    return exchangeRate;
-}
-
-std::optional<Units> TradeRepublicParser::parseUnits(std::string_view aValue) {
-    return parseScaledNumber<Units, UNITS_SCALE>(aValue);
+    return std::nullopt;
 }
 
 std::optional<Units> TradeRepublicParser::normalizeTradeUnits(TradeSide aTradeSide,
@@ -1066,7 +1089,9 @@ std::optional<Money> TradeRepublicParser::parseTaxPaid(std::string_view aValue) 
         return Money{0};
     }
 
-    const auto signedTax = parseScaledNumber<Money, MONEY_SCALE>(aValue);
+    const auto imported = importFixedPoint(aValue, MONEY_SCALE);
+    const auto* value = std::get_if<ParsedFixedPoint>(&imported);
+    const auto signedTax = value ? std::optional<Money>{value->mValue} : std::nullopt;
 
     if (!signedTax || *signedTax > 0 || *signedTax == std::numeric_limits<Money>::min())
     {
@@ -1082,7 +1107,10 @@ std::optional<Money> TradeRepublicParser::parseFeePaid(std::string_view aValue) 
         return Money{0};
     }
 
-    const auto signedFee = parseScaledNumber<Money, MONEY_SCALE>(aValue);
+    const auto imported = importFixedPoint(aValue, MONEY_SCALE);
+    const auto* value = std::get_if<ParsedFixedPoint>(&imported);
+    const auto signedFee = value ? std::optional<Money>{value->mValue} : std::nullopt;
+
     if (!signedFee || *signedFee > 0 || *signedFee == std::numeric_limits<Money>::min())
     {
         return std::nullopt;

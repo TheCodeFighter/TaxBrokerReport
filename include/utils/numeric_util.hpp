@@ -1,9 +1,11 @@
 #pragma once
 
 #include "taxbroker/types.hpp"
+#include "taxbroker/exact_arithmetic.hpp"
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -33,3 +35,35 @@ std::optional<ScaledType> parseScaledNumber(std::string_view aValue) {
 
     return numeric_detail::parseScaledInt64(aValue, Scale);
 }
+
+namespace taxbroker {
+
+/// Stored value plus source facts that would otherwise be lost during import rounding.
+struct ParsedFixedPoint {
+    std::int64_t mValue{};
+    bool mSourceNegative{};
+    bool mSourceNonzero{};
+    std::size_t mFractionalDigits{};
+    std::string mDiscardedDigits;
+    std::string mCanonicalValue; ///< Exact signed source decimal without redundant zeros.
+    bool mRoundedAwayFromZero{}; ///< Import rounding increased the magnitude.
+};
+
+/// Rounds once, halves away from zero; optionally rejects excess precision or nonzero-to-zero loss.
+[[nodiscard]] NumericResult<ParsedFixedPoint>
+importFixedPoint(std::string_view aValue,
+                 std::int64_t aScale,
+                 ValuePolicy aPolicy = ValuePolicy::Signed,
+                 bool aRejectNonzeroRoundedToZero = true,
+                 bool aAllowExtraPrecision = true);
+
+/// Requires a positive rate; extra precision needs explicit rounding permission.
+[[nodiscard]] NumericResult<ExchangeRate> importExchangeRate(std::string_view aValue,
+                                                             bool aAllowExtraPrecision = false);
+
+/// Links pre-normalization quantity evidence to its input row.
+[[nodiscard]] UnitSourceEvidence unitSourceEvidence(const ParsedFixedPoint& aParsed,
+                                                    std::string_view aSourceText,
+                                                    SourceReference aSource);
+
+} // namespace taxbroker

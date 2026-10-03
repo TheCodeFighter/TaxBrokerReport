@@ -353,6 +353,19 @@ void logMergeDiagnostics(const StatementMergeResult& aMergeResult) {
     }
 }
 
+void writeUnitEvidence(std::ostream& aOutput, const std::vector<UnitSourceEvidence>& aEvidence) {
+    for (const auto& evidence : aEvidence)
+    {
+        aOutput << "      unit_source: " << evidence.mSource.mFilename.value() << ':'
+                << evidence.mSource.mSourceRow
+                << "\n        original_text: " << std::quoted(evidence.mSourceText)
+                << "\n        discarded_digits: " << std::quoted(evidence.mDiscardedDigits)
+                << "\n        canonical_value: " << evidence.mCanonicalValue
+                << "\n        rounded_away_from_zero: "
+                << (evidence.mRoundedAwayFromZero ? "true" : "false") << '\n';
+    }
+}
+
 void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
     aOutput << "TRADE INSTRUMENTS: " << aStatement.mTradeInstruments.size() << "\n\n";
 
@@ -387,6 +400,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      exchange_rate: ";
             writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
+            writeUnitEvidence(aOutput, transaction.mUnitEvidence);
         }
 
         aOutput << "  corporate_actions: " << instrument.mCorporateActions.size() << '\n';
@@ -407,6 +421,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
                 aOutput << "<unresolved>";
             }
             aOutput << '\n';
+            writeUnitEvidence(aOutput, action.mUnitEvidence);
         }
 
         aOutput << '\n';

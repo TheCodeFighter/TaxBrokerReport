@@ -226,3 +226,175 @@ std::optional<std::int64_t> parseScaledInt64(std::string_view aValue, std::int64
 }
 
 } // namespace numeric_detail
+
+namespace taxbroker {
+
+NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
+                                                 std::int64_t aScale,
+                                                 ValuePolicy aPolicy,
+                                                 bool aRejectNonzeroRoundedToZero,
+                                                 bool aAllowExtraPrecision) {
+    if (aScale <= 0)
+    {
+        return NumericError::InvalidInput;
+    }
+
+    std::size_t precision = 0;
+
+    for (auto scale = aScale; scale > 1; scale /= 10)
+    {
+        if (scale % 10 != 0)
+        {
+            return NumericError::InvalidInput;
+        }
+
+        ++precision;
+    }
+
+    aValue = trim(aValue);
+
+    if (aValue.empty())
+    {
+        return NumericError::InvalidInput;
+    }
+
+    const auto original = aValue;
+    ParsedFixedPoint parsed;
+
+    if (aValue.front() == '(')
+    {
+        if (aValue.size() < 3 || aValue.back() != ')')
+        {
+            return NumericError::InvalidInput;
+        }
+
+        parsed.mSourceNegative = true;
+        aValue.remove_prefix(1);
+        aValue.remove_suffix(1);
+    }
+    else if (aValue.front() == '+' || aValue.front() == '-')
+    {
+        parsed.mSourceNegative = aValue.front() == '-';
+        aValue.remove_prefix(1);
+    }
+
+    const auto decimalPoint = aValue.find('.');
+    const auto integerPart = aValue.substr(0, decimalPoint);
+    const auto fractionalPart = decimalPoint == std::string_view::npos
+                                    ? std::string_view{}
+                                    : aValue.substr(decimalPoint + 1);
+
+    if ((integerPart.empty() && fractionalPart.empty()) || !hasValidIntegerGrouping(integerPart))
+    {
+        return NumericError::InvalidInput;
+    }
+
+    std::string integerDigits;
+
+    for (const auto character : integerPart)
+    {
+        if (character == ',')
+        {
+            continue;
+        }
+
+        if (character < '0' || character > '9')
+        {
+            return NumericError::InvalidInput;
+        }
+
+        integerDigits += character;
+        parsed.mSourceNonzero = parsed.mSourceNonzero || character != '0';
+    }
+
+    for (const auto character : fractionalPart)
+    {
+        if (character < '0' || character > '9')
+        {
+            return NumericError::InvalidInput;
+        }
+
+        parsed.mSourceNonzero = parsed.mSourceNonzero || character != '0';
+    }
+
+    parsed.mFractionalDigits = fractionalPart.size();
+
+    if (!aAllowExtraPrecision && parsed.mFractionalDigits > precision)
+    {
+        return NumericError::InvalidInput;
+    }
+
+    if (parsed.mFractionalDigits > precision)
+    {
+        parsed.mDiscardedDigits = fractionalPart.substr(precision);
+        parsed.mRoundedAwayFromZero = parsed.mDiscardedDigits.front() >= '5';
+    }
+
+    // Normalize spelling without rounding, so exact source quantities remain comparable.
+    const auto firstDigit = integerDigits.find_first_not_of('0');
+    integerDigits = firstDigit == std::string::npos ? "0" : integerDigits.substr(firstDigit);
+    auto significantFraction = fractionalPart;
+
+    while (!significantFraction.empty() && significantFraction.back() == '0')
+    {
+        significantFraction.remove_suffix(1);
+    }
+
+    parsed.mCanonicalValue = parsed.mSourceNegative && parsed.mSourceNonzero ? "-" : "";
+    parsed.mCanonicalValue += integerDigits;
+
+    if (!significantFraction.empty())
+    {
+        parsed.mCanonicalValue += '.';
+        parsed.mCanonicalValue += significantFraction;
+    }
+
+    if ((aPolicy != ValuePolicy::Signed && parsed.mSourceNegative && parsed.mSourceNonzero) ||
+        (aPolicy == ValuePolicy::Positive && !parsed.mSourceNonzero))
+    {
+        return NumericError::UnrepresentableValue;
+    }
+
+    const auto value = numeric_detail::parseScaledInt64(original, aScale);
+
+    if (!value)
+    {
+        return NumericError::Overflow;
+    }
+
+    parsed.mValue = *value;
+
+    if (aRejectNonzeroRoundedToZero && parsed.mSourceNonzero && parsed.mValue == 0)
+    {
+        return NumericError::UnrepresentableValue;
+    }
+
+    return parsed;
+}
+
+NumericResult<ExchangeRate> importExchangeRate(std::string_view aValue, bool aAllowExtraPrecision) {
+    const auto imported = importFixedPoint(aValue,
+                                           EXCHANGE_RATE_SCALE,
+                                           ValuePolicy::Positive,
+                                           true,
+                                           aAllowExtraPrecision);
+
+    if (const auto* value = std::get_if<ParsedFixedPoint>(&imported))
+    {
+        return value->mValue;
+    }
+
+    return NumericError::InvalidExchangeRate;
+}
+
+UnitSourceEvidence unitSourceEvidence(const ParsedFixedPoint& aParsed,
+                                      std::string_view aSourceText,
+                                      SourceReference aSource) {
+    return UnitSourceEvidence{std::move(aSource),
+                              std::string{aSourceText},
+                              aParsed.mDiscardedDigits,
+                              aParsed.mCanonicalValue,
+                              aParsed.mRoundedAwayFromZero};
+}
+
+} // namespace taxbroker

@@ -361,12 +361,50 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
     return aLeft.mTaxDate == aRight.mTaxDate && aLeft.mSourceTimestamp == aRight.mSourceTimestamp;
 }
 
+[[nodiscard]] bool sameUnitEvidence(const std::vector<UnitSourceEvidence>& aLeft,
+                                    const std::vector<UnitSourceEvidence>& aRight) {
+    if (aLeft.empty() || aRight.empty())
+    {
+        // Missing evidence is unknown, not proof of an exact source quantity.
+        return true;
+    }
+
+    const auto& canonical = aLeft.front().mCanonicalValue;
+    const auto matches = [&canonical](const UnitSourceEvidence& aEvidence) {
+        return aEvidence.mCanonicalValue == canonical;
+    };
+
+    return std::all_of(aLeft.begin(), aLeft.end(), matches) &&
+           std::all_of(aRight.begin(), aRight.end(), matches);
+}
+
+void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
+                       const std::vector<UnitSourceEvidence>& aSource) {
+    aDestination.insert(aDestination.end(), aSource.begin(), aSource.end());
+    std::sort(aDestination.begin(), aDestination.end(), [](const auto& aLeft, const auto& aRight) {
+        if (aLeft.mSource != aRight.mSource)
+        {
+            return StableSourceOrder{}(aLeft.mSource, aRight.mSource);
+        }
+
+        return std::tie(aLeft.mSourceText,
+                        aLeft.mDiscardedDigits,
+                        aLeft.mCanonicalValue,
+                        aLeft.mRoundedAwayFromZero) < std::tie(aRight.mSourceText,
+                                                               aRight.mDiscardedDigits,
+                                                               aRight.mCanonicalValue,
+                                                               aRight.mRoundedAwayFromZero);
+    });
+    aDestination.erase(std::unique(aDestination.begin(), aDestination.end()), aDestination.end());
+}
+
 [[nodiscard]] bool sameEventFacts(const TradeRecord& aLeft, const TradeRecord& aRight) {
     return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) &&
            aLeft.mIsin == aRight.mIsin && aLeft.mAssetClass == aRight.mAssetClass &&
            aLeft.mEvent.mTradeSide == aRight.mEvent.mTradeSide &&
            aLeft.mEvent.mUnitPrice == aRight.mEvent.mUnitPrice &&
            aLeft.mEvent.mUnits == aRight.mEvent.mUnits &&
+           sameUnitEvidence(aLeft.mEvent.mUnitEvidence, aRight.mEvent.mUnitEvidence) &&
            aLeft.mEvent.mAmount == aRight.mEvent.mAmount &&
            aLeft.mEvent.mFeePaid == aRight.mEvent.mFeePaid &&
            aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
@@ -379,6 +417,7 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
            aLeft.mIsin == aRight.mIsin && aLeft.mAssetClass == aRight.mAssetClass &&
            aLeft.mEvent.mType == aRight.mEvent.mType &&
            aLeft.mEvent.mUnitsDelta == aRight.mEvent.mUnitsDelta &&
+           sameUnitEvidence(aLeft.mEvent.mUnitEvidence, aRight.mEvent.mUnitEvidence) &&
            aLeft.mEvent.mRatio == aRight.mEvent.mRatio;
 }
 
@@ -446,7 +485,10 @@ void mergeExactEvent(MergeEvent& aDestination, const MergeEvent& aSource) {
             appendSources(aDestinationValue.mMetadata.mSources, source.mMetadata);
             normalizeSources(aDestinationValue.mMetadata.mSources);
         }
-        else
+        else if constexpr (std::is_same_v<Value, TradeRecord> ||
+                           std::is_same_v<Value, CorporateActionRecord> ||
+                           std::is_same_v<Value, DividendRecord> ||
+                           std::is_same_v<Value, InterestRecord>)
         {
             appendSources(aDestinationValue.mEvent.mMetadata.mSources, source.mEvent.mMetadata);
             aDestinationValue.mNameContributions.insert(aDestinationValue.mNameContributions.end(),
@@ -454,6 +496,17 @@ void mergeExactEvent(MergeEvent& aDestination, const MergeEvent& aSource) {
                                                         source.mNameContributions.end());
 
             normalizeSources(aDestinationValue.mEvent.mMetadata.mSources);
+
+            if constexpr (std::is_same_v<Value, TradeRecord> ||
+                          std::is_same_v<Value, CorporateActionRecord>)
+            {
+                mergeUnitEvidence(aDestinationValue.mEvent.mUnitEvidence,
+                                  source.mEvent.mUnitEvidence);
+            }
+        }
+        else
+        {
+            static_assert(std::is_same_v<Value, void>, "Unsupported event provenance merge");
         }
     };
 
@@ -533,10 +586,19 @@ void deduplicateEvents(std::vector<MergeEvent>& aEvents,
     {
         auto& candidates = group.second;
         auto& canonical = aEvents[candidates.front()];
+        // Accumulate evidence so an evidence-free first event cannot hide later conflicts.
+        auto combined = canonical;
 
         const bool allMatch =
             std::all_of(candidates.begin() + 1, candidates.end(), [&](std::size_t aIndex) {
-                return sameEventFacts(canonical, aEvents[aIndex]);
+                if (!sameEventFacts(combined, aEvents[aIndex]))
+                {
+                    return false;
+                }
+
+                mergeExactEvent(combined, aEvents[aIndex]);
+
+                return true;
             });
 
         if (!allMatch)
@@ -544,14 +606,13 @@ void deduplicateEvents(std::vector<MergeEvent>& aEvents,
             addConflictingDuplicateDiagnostic(aEvents, candidates, aDiagnostics);
             rejected[candidates.front()] = true;
         }
+        else
+        {
+            canonical = std::move(combined);
+        }
 
         for (std::size_t index = 1; index < candidates.size(); ++index)
         {
-            if (allMatch)
-            {
-                mergeExactEvent(canonical, aEvents[candidates[index]]);
-            }
-
             rejected[candidates[index]] = true;
         }
     }

@@ -88,6 +88,12 @@ available for the controlled FIFO reconciliation defined in `fifo.md`. A broker 
 once to eight decimals only when its documented source format permits extra precision. A
 user-entered official rate must have no more than eight decimals and is not rounded for the user.
 
+`importFixedPoint` retains the exact source sign, canonical decimal value and discarded digits.
+Trade and action `UnitSourceEvidence` entries additionally retain the original text and its source
+reference. Trade-side normalization changes stored units, not the signed source evidence. True
+zero remains valid where the field permits it; a nonzero fee, tax or required amount that rounds
+to zero is rejected rather than silently lost. Parser diagnostics retain their version 1 codes.
+
 Unit examples:
 
 | Input | Stored `Units` |

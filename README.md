@@ -128,6 +128,9 @@ scripts/dump_tr_parse.sh
 
 Generated debug files are written below `runtime/`, which is ignored by Git.
 
+The Trade Republic parse/merge dumps also retain each quantity source text and discarded digits
+in their local text output.
+
 To split a local Trade Republic export into three inputs and inspect the merged result, run:
 
 ```sh

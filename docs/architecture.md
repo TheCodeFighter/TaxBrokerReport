@@ -68,6 +68,14 @@ duplicate only when its event kind, tax date, timestamp, instrument, and event-s
 match; otherwise it is a conflict. Events without transaction IDs are not automatically
 deduplicated.
 
+Trade and corporate-action quantities retain source-linked `UnitSourceEvidence`: original decimal
+text, discarded fractional digits, exact canonical source value and rounding direction. Evidence
+from every exact duplicate is kept in stable source order. Canonical source quantities compare
+numerically, so extra trailing zeros do not create a conflict. Different exact source quantities
+that round to the same stored units do create a conflict. An input without evidence can still
+match stored facts, but supplies no rounding proof; known evidence across the complete identity
+group must agree even when its first event has no evidence.
+
 ### Deterministic ordering
 
 Events are normally ordered by tax date, timestamp presence, timestamp value, and stable input
