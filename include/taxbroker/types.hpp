@@ -98,11 +98,23 @@ enum class PrivateMarketEventType {
     Bonus
 };
 
+/// Preserves pre-rounding quantities for duplicate checks and later FIFO management.
+struct UnitSourceEvidence {
+    SourceReference mSource;
+    std::string mSourceText;
+    std::string mDiscardedDigits;
+    std::string mCanonicalValue; ///< Exact signed source decimal without redundant zeros.
+    bool mRoundedAwayFromZero{}; ///< Import rounding increased the magnitude.
+
+    bool operator==(const UnitSourceEvidence&) const = default;
+};
+
 struct CorporateAction {
     EventMetadata mMetadata;
     CorporateActionType mType{};
     Units mUnitsDelta{};
     std::optional<CorpRatio> mRatio;
+    std::vector<UnitSourceEvidence> mUnitEvidence;
 };
 
 struct TradeTransaction {
@@ -116,6 +128,7 @@ struct TradeTransaction {
     Money mFeePaid{};
     ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::Unknown};
+    std::vector<UnitSourceEvidence> mUnitEvidence;
 };
 
 struct TradeInstrument {

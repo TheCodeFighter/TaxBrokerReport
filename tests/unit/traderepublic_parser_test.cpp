@@ -1518,4 +1518,110 @@ TEST(TradeRepublicParserTest, ReportsUnknownAndKnownTypesInTheWrongCategory) {
     }
 }
 
+TEST(TradeRepublicParserTest, KeepsSignedSourceUnitsAndDiscardedDigitsForReconciliation) {
+    SyntheticCsvRow buy;
+    buy.mShares = "0.12345678400";
+    SyntheticCsvRow sell;
+    sell.mType = "SELL";
+    sell.mShares = "-0.123456785";
+    sell.mAmount = "1.00";
+    sell.mTransactionId = "synthetic-evidence-sell";
+    SyntheticCsvRow action;
+    action.mCategory = "CORPORATE_ACTION";
+    action.mType = "SPLIT";
+    action.mShares = "0.123456785";
+    action.mTransactionId = "synthetic-evidence-action";
+    const auto result = parseRows({buy, sell, action});
+    const auto& instrument = result.mStatement.mTradeInstruments.at(0);
+
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    const auto& buyEvidence = instrument.mTransactions[0].mUnitEvidence.at(0);
+    const auto& sellEvidence = instrument.mTransactions[1].mUnitEvidence.at(0);
+
+    EXPECT_EQ(buyEvidence.mSourceText, buy.mShares);
+    EXPECT_EQ(buyEvidence.mDiscardedDigits, "400");
+    EXPECT_FALSE(buyEvidence.mRoundedAwayFromZero);
+    EXPECT_EQ(sellEvidence.mSourceText, sell.mShares);
+    EXPECT_EQ(sellEvidence.mCanonicalValue, "-0.123456785");
+    EXPECT_EQ(sellEvidence.mDiscardedDigits, "5");
+    EXPECT_TRUE(sellEvidence.mRoundedAwayFromZero);
+    EXPECT_EQ(instrument.mTransactions[1].mUnits, 12'345'679);
+    EXPECT_EQ(sellEvidence.mSource, instrument.mTransactions[1].mMetadata.mSources.at(0));
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+    EXPECT_EQ(instrument.mCorporateActions[0].mUnitEvidence.at(0).mSourceText, action.mShares);
+    EXPECT_FALSE(instrument.mCorporateActions[0].mRatio.has_value());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, RejectsSourceAmountsThatLoseTheirMagnitudeAtImport) {
+    for (const auto field : {"price", "shares", "amount", "fee"})
+    {
+        SCOPED_TRACE(field);
+        SyntheticCsvRow row;
+
+        if (std::string_view{field} == "price")
+        {
+            row.mPrice = "0.00004";
+        }
+        else if (std::string_view{field} == "shares")
+        {
+            row.mShares = "0.000000004";
+        }
+        else if (std::string_view{field} == "amount")
+        {
+            row.mAmount = "-0.00004";
+        }
+        else
+        {
+            row.mFee = "-0.00004";
+        }
+
+        const auto result = parseRows({row});
+
+        EXPECT_EQ(tradeTransactionCount(result.mStatement), 0U);
+        ASSERT_EQ(result.mDiagnostics.size(), 1U);
+        EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+        EXPECT_EQ(result.mDiagnostics[0].mField, field);
+        EXPECT_EQ(result.mDiagnostics[0].mMessage.find("0.000"), std::string::npos);
+    }
+}
+
+TEST(TradeRepublicParserTest, ValidatesIncomeSignsTinyAmountsAndTaxWithoutRejectingTrueZeroTax) {
+    for (const auto kind : {"DIVIDEND", "BOND_INTEREST", "INTEREST_PAYMENT"})
+    {
+        for (const auto amount : {"-1.00", "0.00004", "-0.00004"})
+        {
+            SCOPED_TRACE(kind);
+            SCOPED_TRACE(amount);
+            SyntheticCsvRow row;
+            row.mCategory = "CASH";
+            row.mType = kind;
+            row.mAmount = amount;
+            const auto result = parseRows({row});
+
+            EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+            EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+            ASSERT_EQ(result.mDiagnostics.size(), 1U);
+            EXPECT_EQ(result.mDiagnostics[0].mField, "amount");
+        }
+    }
+
+    SyntheticCsvRow row;
+    row.mCategory = "CASH";
+    row.mType = "DIVIDEND";
+    row.mAmount = "1.00";
+    row.mTax = "-0.00004";
+    const auto rejected = parseRows({row});
+
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+    EXPECT_EQ(rejected.mDiagnostics[0].mField, "tax");
+    row.mTax = "0.0000";
+    const auto accepted = parseRows({row});
+
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.size(), 1U);
+    EXPECT_EQ(accepted.mStatement.mDividendInstruments[0].mTransactions[0].mTaxPaid, 0);
+    EXPECT_TRUE(accepted.mDiagnostics.empty());
+}
+
 } // namespace

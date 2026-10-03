@@ -111,6 +111,12 @@ void expectEventsEqual(const std::vector<Event>& aActual,
         if (aCompareSources)
         {
             EXPECT_EQ(actual.mMetadata.mSources, expected.mMetadata.mSources);
+
+            if constexpr (std::is_same_v<Event, TradeTransaction> ||
+                          std::is_same_v<Event, CorporateAction>)
+            {
+                EXPECT_EQ(actual.mUnitEvidence, expected.mUnitEvidence);
+            }
         }
     }
 }
