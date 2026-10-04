@@ -128,6 +128,30 @@ scripts/dump_tr_parse.sh
 
 Generated debug files are written below `runtime/`, which is ignored by Git.
 
+To inspect splits from a local Trade Republic export:
+
+```sh
+scripts/dump_exact_arithmetic.sh
+# Or supply another repository-relative CSV:
+scripts/dump_exact_arithmetic.sh tmp/another-export.csv
+# After checking a split's CSV row and verified new/old share counts:
+scripts/dump_exact_arithmetic.sh --split-row ROW NEW_SHARES OLD_SHARES
+```
+
+The default input is `tmp/TransactionExport.csv`; output stays in the ignored
+`runtime/debug/exact_arithmetic.txt` and is also printed in the terminal. Only scripts, helpers and
+synthetic fixtures are committed.
+The dump shows only instruments with split rows: split dates and source rows, factor comparisons,
+units before/after the split, and each open purchase lot's exact cost and readable price per unit.
+Trades are read internally to reconstruct the position before each split; purchase and sale
+transactions and unrelated instruments are not printed. TR's exported split quantity field is shown as evidence, not interpreted
+as a verified ratio. The tool shows separate what-if previews for two readings of that field
+(added units or total units after the action), plus an imaginary 1 new / 2 old comparison. These
+previews do not change the inspected position or establish the real factor. Supply `--split-row` for a local preview; without it, the position after that
+action remains unresolved. Non-EUR trades also remain unresolved until verified conversion inputs
+are supported. This tool previews arithmetic; full action validation and tax reporting remain later
+processor work. Use `--output runtime/path.txt` to choose another local output file.
+
 The Trade Republic parse/merge dumps also retain each quantity source text and discarded digits
 in their local text output.
 
