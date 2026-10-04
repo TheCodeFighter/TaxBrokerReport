@@ -206,6 +206,11 @@ apply through a run-local overlay and rebuild affected history. The backend trac
 absolute EUR impact of inventory reconciliation per ISIN/run; details are in `calculations.md`
 and `fifo.md`. This additional processor state does not change parser diagnostic version 1.
 
+The arithmetic layer returns typed numeric failures without report assumptions. The intermediate
+`ProcessingDiagnostic` adapter adds the caller's stage, affected reports and safe source/instrument
+context. It is the arithmetic subset shared with issue #214, not the complete application result:
+final diagnostic IDs, blocking resolution, exclusion requests and JSON remain later integration.
+
 Foreign-currency processing follows [`calculations.md`](calculations.md). The application result
 contains one structured request for every missing official `(currency, tax date)` rate. A
 user-entered official rate is shared across brokers and instruments only for that exact pair. A

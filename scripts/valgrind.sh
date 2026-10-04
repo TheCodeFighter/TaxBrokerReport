@@ -87,12 +87,17 @@ compose run --rm -T \
     -DCMAKE_BUILD_TYPE=Debug \
     -DBUILD_DEBUG_TOOLS=ON
 
-echo "==> Building the Trade Republic dump tool..."
+echo "==> Building the local dump tools..."
 compose run --rm -T \
-    dev cmake --build "$debug_tools_build_dir" --target taxbroker_tr_dump --parallel
+    dev cmake --build "$debug_tools_build_dir" --target taxbroker_tr_dump taxbroker_exact_dump --parallel
 
 run_valgrind \
     "$debug_tools_build_dir/tools/taxbroker_tr_dump" \
     /workspace/tests/test_data/csv/traderepublic_parser_supported_fixture.csv \
     /tmp/taxbroker-tr-parsed.txt \
     /tmp/taxbroker-tr-diagnostics.json
+
+run_valgrind \
+    "$debug_tools_build_dir/tools/taxbroker_exact_dump" \
+    /workspace/tests/test_data/csv/traderepublic_parser_supported_fixture.csv \
+    /tmp/taxbroker-exact-arithmetic.txt

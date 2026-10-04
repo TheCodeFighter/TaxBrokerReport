@@ -252,6 +252,11 @@ allocation from the remaining basis. The final consumption receives the entire r
 Reduce fractions to avoid needless intermediate growth; checked range failures retain their normal
 diagnostic scope. Do not feed rounded XML unit values or rounded informational totals back into a lot.
 
+The reusable `LotBasisState` stores remaining units and an exact rational number of `10^-12` EUR
+basis ticks. Its consumer owns purchase date, sources and FIFO order. `consumeLotBasis` returns
+the allocated basis and next state together; `adjustLotUnits` changes only units. Neither helper
+applies an action, selects an exchange rate or performs chronological FIFO matching.
+
 When several exact allocations must be emitted as four-decimal money parts of one known total,
 round the combined total once and allocate its smallest-unit remainder by largest fractional
 remainder, breaking ties by FIFO lot and then sale order. Those emitted parts must add to the
