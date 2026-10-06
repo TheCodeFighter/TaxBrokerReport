@@ -77,7 +77,8 @@ enum class EventType {
 enum class CorporateActionType {
     Split,
     ReverseSplit,
-    Merger
+    Merger,
+    UnresolvedSplit
 };
 
 enum class InterestType {
@@ -111,7 +112,8 @@ struct UnitSourceEvidence {
 
 struct CorporateAction {
     EventMetadata mMetadata;
-    CorporateActionType mType{};
+    CorporateActionType mType{CorporateActionType::UnresolvedSplit};
+    /// Raw broker quantity for UnresolvedSplit; its sign does not establish action direction.
     Units mUnitsDelta{};
     std::optional<CorpRatio> mRatio;
     std::vector<UnitSourceEvidence> mUnitEvidence;
@@ -142,8 +144,10 @@ struct TradeInstrument {
 struct DividendTransaction {
     EventMetadata mMetadata;
     Money mGrossAmount{};
-    Money mTaxPaid{};
-    ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
+    /// Positive withholding in mTaxCurrency; absent means unknown, including blank source tax.
+    std::optional<Money> mTaxPaid;
+    /// Optional broker rate, separate from the official rate selected during processing.
+    std::optional<ExchangeRate> mExchangeRate;
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
 };
@@ -157,8 +161,10 @@ struct DividendInstrument {
 struct InterestTransaction {
     EventMetadata mMetadata;
     Money mGrossAmount{};
-    Money mTaxPaid{};
-    ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
+    /// Positive withholding in mTaxCurrency; absent means unknown, including blank source tax.
+    std::optional<Money> mTaxPaid;
+    /// Optional broker rate, separate from the official rate selected during processing.
+    std::optional<ExchangeRate> mExchangeRate;
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
 };

@@ -97,6 +97,9 @@ TEST(EventMetadataTest, ExactEqualityIncludesEveryMetadataField) {
         aMetadata.mSourceTimestamp = makeTimestamp(2024, 1, 15, 11);
     });
     expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mOrderingTimestamp = makeTimestamp(2024, 1, 15, 9);
+    });
+    expectDifferent([](EventMetadata& aMetadata) {
         aMetadata.mSources.front().mBroker = Broker::InteractiveBrokers;
     });
     expectDifferent([](EventMetadata& aMetadata) {

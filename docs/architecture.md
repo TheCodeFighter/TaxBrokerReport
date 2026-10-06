@@ -17,6 +17,8 @@ event owns the same `EventMetadata`:
   the source timestamp.
 - `mSourceTimestamp` is an optional UTC instant with millisecond precision. Fractions finer than
   milliseconds are truncated.
+- `mOrderingTimestamp` optionally supplies an explicitly assumed ordering instant. When absent,
+  ordering uses `mSourceTimestamp`. Keep the original source instant for overlap/conflict checks.
 - `mSources` contains every contributing `SourceReference`, each with the broker, source filename,
   source row, optional transaction ID, and stable input sequence. A parsed event starts with one
   source. An exact duplicate adds its source to the retained event instead of replacing provenance.
@@ -38,9 +40,23 @@ display label such as `2022` or `pension account`. The frontend keeps that label
 source ID and may show `taxreport.csv (2022, file 1)`. It does not send the label as broker data,
 use it for processing, or replace the source ID with it.
 
-When a broker omits a timestamp, `mSourceTimestamp` is empty. When it supplies an invalid timestamp
-for an otherwise valid event, the parser keeps the event, leaves the timestamp empty, and reports a
-warning. The tax date remains unchanged in both cases.
+Trade Republic requires a non-empty `datetime` for imported events. A missing value produces a
+`MissingField` error on `datetime` and excludes that row before instrument or event creation.
+The diagnostic retains the source file, row and transaction ID for the user to review. Other
+valid rows remain available. Ignored cash movements do not require a timestamp.
+
+An invalid non-empty TR timestamp retains the otherwise valid event, leaves `mSourceTimestamp`
+empty, and reports an `InvalidValue` warning that exact transaction order is unknown. The tax
+date remains unchanged.
+
+When a valid TR timestamp's original calendar date differs from `date`, report an
+`InconsistentValue` warning on `datetime`. Retain `date` for reporting and set
+`mOrderingTimestamp` to that date at 09:00:00 UTC. The hour is defined by
+`TR_DATE_MISMATCH_DEFAULT_HOUR` in `traderepublic_parser.hpp`. The warning explicitly states
+that the default hour is assumed and FIFO/corporate-action order may be incorrect. Preserve the
+original `mSourceTimestamp`, so equal fallback times cannot hide conflicting exports.
+Compare before UTC normalization: crossing midnight while normalizing an offset is not itself
+a mismatch. Do not silently discard purchases or replace the broker tax date.
 
 ### Stable input sequence
 
@@ -78,9 +94,11 @@ group must agree even when its first event has no evidence.
 
 ### Deterministic ordering
 
-Events are normally ordered by tax date, timestamp presence, timestamp value, and stable input
-sequence, in that order. On the same tax date, timestamped events precede events without
-timestamps. Broker, filename, row, and transaction ID are not ordering fallbacks. The placement of
+Events are normally ordered by tax date, effective timestamp presence, effective timestamp value,
+and stable input sequence, in that order. The effective timestamp uses `mOrderingTimestamp` when
+present, otherwise `mSourceTimestamp`. A default ordering time is not evidence of execution time.
+On the same tax date, timestamped events precede events without timestamps. Broker, filename, row,
+and transaction ID are not ordering fallbacks. The placement of
 untimestamped events is a deterministic policy and does not claim that they occurred after every
 timestamped event.
 
@@ -125,7 +143,7 @@ Before presentation grouping, the merger classifies every valid event with a non
 ID by `(broker, transaction ID)`. Events in one identity group are exact duplicates only when all
 of these values match:
 
-- event kind, tax date and optional source timestamp;
+- event kind, tax date, optional source timestamp and optional ordering timestamp;
 - broker-neutral instrument identity and tax-relevant classification; and
 - every event-specific monetary, unit, ratio, currency, fee, tax and descriptive value.
 
@@ -141,7 +159,7 @@ After transaction classification, instrument collections are ordered by their do
 and events inside each concrete collection use `ChronologicalEventOrder`.
 
 The chronological reference sequence crosses every presentation collection and uses tax date,
-timestamp presence, timestamp value and stable input sequence. It does not process one broker or
+effective timestamp presence/value and stable input sequence. It does not process one broker or
 one presentation collection to completion first. The merger does not apply the processing-only
 same-day corporate-action priority, calculate FIFO, or resolve economic corporate-action identity.
 Collection aggregation and chronological-reference construction are separate implementation

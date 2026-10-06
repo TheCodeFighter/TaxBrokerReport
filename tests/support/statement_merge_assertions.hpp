@@ -107,6 +107,7 @@ void expectEventsEqual(const std::vector<Event>& aActual,
         EXPECT_EQ(eventFacts(actual), eventFacts(expected));
         EXPECT_EQ(actual.mMetadata.mTaxDate, expected.mMetadata.mTaxDate);
         EXPECT_EQ(actual.mMetadata.mSourceTimestamp, expected.mMetadata.mSourceTimestamp);
+        EXPECT_EQ(actual.mMetadata.mOrderingTimestamp, expected.mMetadata.mOrderingTimestamp);
 
         if (aCompareSources)
         {

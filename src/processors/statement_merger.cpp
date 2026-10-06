@@ -358,7 +358,8 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
 }
 
 [[nodiscard]] bool sameMetadataFacts(const EventMetadata& aLeft, const EventMetadata& aRight) {
-    return aLeft.mTaxDate == aRight.mTaxDate && aLeft.mSourceTimestamp == aRight.mSourceTimestamp;
+    return aLeft.mTaxDate == aRight.mTaxDate && aLeft.mSourceTimestamp == aRight.mSourceTimestamp &&
+           aLeft.mOrderingTimestamp == aRight.mOrderingTimestamp;
 }
 
 [[nodiscard]] bool sameUnitEvidence(const std::vector<UnitSourceEvidence>& aLeft,

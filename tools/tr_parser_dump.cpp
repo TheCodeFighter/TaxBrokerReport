@@ -13,6 +13,7 @@
 #include <iostream>
 #include <numeric>
 #include <ostream>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <string>
@@ -55,6 +56,19 @@ void writeFixedPoint(std::ostream& aOutput, std::int64_t aValue, std::int64_t aS
     aOutput << unsignedValue / unsignedScale << '.' << std::setfill('0')
             << std::setw(decimalPlaces(aScale)) << unsignedValue % unsignedScale
             << std::setfill(' ');
+}
+
+void writeOptionalFixedPoint(std::ostream& aOutput,
+                             std::optional<std::int64_t> aValue,
+                             std::int64_t aScale) {
+    if (aValue)
+    {
+        writeFixedPoint(aOutput, *aValue, aScale);
+    }
+    else
+    {
+        aOutput << "<unknown>";
+    }
 }
 
 void writeCalendarDate(std::ostream& aOutput, std::chrono::year_month_day aDate) {
@@ -158,6 +172,8 @@ std::string_view toString(CorporateActionType aCorporateActionType) {
         return "ReverseSplit";
     case CorporateActionType::Merger:
         return "Merger";
+    case CorporateActionType::UnresolvedSplit:
+        return "UnresolvedSplit";
     }
 
     return "Unknown";
@@ -216,6 +232,12 @@ void writeMetadata(std::ostream& aOutput,
     else
     {
         aOutput << "<none>";
+    }
+
+    if (aMetadata.mOrderingTimestamp)
+    {
+        aOutput << '\n' << aIndent << "ordering_timestamp (assumed): ";
+        writeTimestamp(aOutput, *aMetadata.mOrderingTimestamp);
     }
 
     aOutput << '\n' << aIndent << "sources: " << aMetadata.mSources.size();
@@ -409,7 +431,10 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
         {
             aOutput << "    - ";
             writeMetadata(aOutput, action.mMetadata, "      ");
-            aOutput << "\n      type: " << toString(action.mType) << "\n      units_delta: ";
+            aOutput << "\n      type: " << toString(action.mType)
+                    << (action.mType == CorporateActionType::UnresolvedSplit
+                            ? "\n      source_quantity: "
+                            : "\n      units_delta: ");
             writeFixedPoint(aOutput, action.mUnitsDelta, UNITS_SCALE);
             aOutput << "\n      ratio: ";
             if (action.mRatio)
@@ -445,9 +470,9 @@ void writeDividends(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      gross_amount: ";
             writeFixedPoint(aOutput, transaction.mGrossAmount, MONEY_SCALE);
             aOutput << "\n      tax_paid: ";
-            writeFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
+            writeOptionalFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
                     << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
         }
@@ -474,9 +499,9 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      gross_amount: ";
             writeFixedPoint(aOutput, transaction.mGrossAmount, MONEY_SCALE);
             aOutput << "\n      tax_paid: ";
-            writeFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
+            writeOptionalFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
                     << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
         }

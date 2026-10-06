@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <csv.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -18,6 +19,8 @@
 #include <utility>
 
 namespace {
+static_assert(TR_DATE_MISMATCH_DEFAULT_HOUR >= 0 && TR_DATE_MISMATCH_DEFAULT_HOUR < 24);
+
 struct TransactionTypeMapping {
     std::string_view mType;
     std::string_view mExpectedCategory;
@@ -33,7 +36,6 @@ constexpr auto kTransactionTypeMappings = std::array{
     TransactionTypeMapping{"DIVIDEND", "CASH", taxbroker::RowType::Dividend},
     TransactionTypeMapping{"DISTRIBUTION", "CASH", taxbroker::RowType::Dividend},
     TransactionTypeMapping{"INTEREST_PAYMENT", "CASH", taxbroker::RowType::Interest},
-    TransactionTypeMapping{"BOND_INTEREST", "CASH", taxbroker::RowType::Interest},
     TransactionTypeMapping{"FIXED_INCOME", "CASH", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"SPLIT", "CORPORATE_ACTION", taxbroker::RowType::CorporateAction},
 
@@ -64,7 +66,6 @@ constexpr auto kTransactionTypeMappings = std::array{
     TransactionTypeMapping{"TRANSFER_INSTANT_INBOUND", "CASH", taxbroker::RowType::Ignored},
     TransactionTypeMapping{"TRANSFER_INSTANT_OUTBOUND", "CASH", taxbroker::RowType::Ignored},
     TransactionTypeMapping{"TRANSFER_OUTBOUND", "CASH", taxbroker::RowType::Ignored},
-    TransactionTypeMapping{"CREDIT", "CASH", taxbroker::RowType::Ignored},
 };
 
 template <typename InstrumentT>
@@ -104,6 +105,7 @@ struct TradeRepublicParser::RowContext {
     StableInputSequence mInputSequence;
     std::string_view mTransactionId;
     std::optional<SourceTimestamp> mSourceTimestamp;
+    std::optional<Date> mSourceCalendarDate;
     bool mSourceTimestampInvalid{};
 
     [[nodiscard]] EventMetadata metadata(Date aTaxDate) const;
@@ -116,6 +118,15 @@ struct TradeRepublicParser::RowContext {
     void addInvalidFieldDiagnostic(std::string_view aField,
                                    std::string_view aValue,
                                    std::string_view aRowKind) const;
+};
+
+struct TradeRepublicParser::ParsedIncome {
+    Date mDate;
+    Money mGrossAmount;
+    std::optional<Money> mTaxPaid;
+    std::optional<ExchangeRate> mExchangeRate;
+    Currency mCurrency;
+    Currency mTaxCurrency;
 };
 
 void TradeRepublicParser::RowContext::addDiagnostic(DiagnosticSeverity aSeverity,
@@ -168,17 +179,37 @@ void TradeRepublicParser::RowContext::addInvalidFieldDiagnostic(std::string_view
 }
 
 EventMetadata TradeRepublicParser::RowContext::metadata(Date aTaxDate) const {
+    std::optional<SourceTimestamp> orderingTimestamp;
+
     if (mSourceTimestampInvalid)
     {
         addDiagnostic(DiagnosticSeverity::Warning,
                       DiagnosticCode::InvalidValue,
-                      "Field 'datetime' has an invalid value; the event will use its tax date and "
-                      "deterministic source ordering.",
+                      "Field 'datetime' is invalid; exact transaction order is unknown. "
+                      "The event retains its tax date and uses deterministic source ordering.",
                       "datetime");
     }
+
+    if (mSourceCalendarDate && *mSourceCalendarDate != aTaxDate)
+    {
+        orderingTimestamp = SourceTimestamp{aTaxDate.time_since_epoch() +
+                                            std::chrono::hours{TR_DATE_MISMATCH_DEFAULT_HOUR}};
+
+        addDiagnostic(
+            DiagnosticSeverity::Warning,
+            DiagnosticCode::InconsistentValue,
+            "The calendar date in 'datetime' differs from 'date'; reporting uses 'date' "
+            "and ordering uses that date at the default hour " +
+                std::to_string(TR_DATE_MISMATCH_DEFAULT_HOUR) +
+                ":00:00 UTC. The original timestamp is retained. FIFO or corporate-action "
+                "order may be incorrect; review the transaction order.",
+            "datetime");
+    }
+
     return EventMetadata{
         .mTaxDate = aTaxDate,
         .mSourceTimestamp = mSourceTimestamp,
+        .mOrderingTimestamp = orderingTimestamp,
         .mSources = {SourceReference{
             .mBroker = Broker::TradeRepublic,
             .mFilename = mSourceFile,
@@ -221,8 +252,29 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                     },
                 .mTransactionId = rowMeta.mParsedValues.mTransactionId,
                 .mSourceTimestamp = sourceTimestamp,
+                .mSourceCalendarDate =
+                    sourceTimestamp
+                        ? parseCalendarDate(std::string_view{datetimeValue}.substr(0, 10))
+                        : std::nullopt,
                 .mSourceTimestampInvalid = !datetimeValue.empty() && !sourceTimestamp,
             };
+
+            const bool isImportedEvent =
+                rowMeta.mRowType == RowType::Trade || rowMeta.mRowType == RowType::Dividend ||
+                rowMeta.mRowType == RowType::Interest ||
+                rowMeta.mRowType == RowType::CorporateAction ||
+                rowMeta.mRowType == RowType::Benefit || rowMeta.mRowType == RowType::PrivateMarket;
+
+            if (isImportedEvent && datetimeValue.empty())
+            {
+                context.addDiagnostic(DiagnosticSeverity::Error,
+                                      DiagnosticCode::MissingField,
+                                      "Required field 'datetime' is missing; transaction order "
+                                      "cannot be established. "
+                                      "The row was skipped; review the source transaction.",
+                                      "datetime");
+                continue;
+            }
 
             switch (rowMeta.mRowType)
             {
@@ -249,7 +301,7 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                 parseDividendRow(row, parsedResult.mStatement.mDividendInstruments, context);
                 break;
             case RowType::Interest: {
-                const auto interestType = detectInterestType(rowMeta.mParsedValues.mType);
+                const auto interestType = detectInterestType(row);
                 parseInterestRow(row,
                                  parsedResult.mStatement.mInterestInstruments,
                                  interestType,
@@ -341,15 +393,17 @@ RowMeta TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) const {
     };
 }
 
-InterestType TradeRepublicParser::detectInterestType(std::string_view aType) const {
-    if (aType == "INTEREST_PAYMENT")
-    {
-        return InterestType::BrokerInterest;
-    }
-    // TODO: Check what is actually type for bond interest
-    if (aType == "BOND_INTEREST")
+InterestType TradeRepublicParser::detectInterestType(const csv::CSVRow& aCsvRow) const {
+    const auto assetClass = aCsvRow["asset_class"].get<std::string>();
+
+    if (assetClass == "BOND")
     {
         return InterestType::BondInterest;
+    }
+    if (assetClass.empty() && aCsvRow["symbol"].get<std::string>().empty() &&
+        aCsvRow["name"].get<std::string>().empty())
+    {
+        return InterestType::BrokerInterest;
     }
 
     return InterestType::UnknownInterest;
@@ -573,6 +627,64 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     return true;
 }
 
+std::optional<TradeRepublicParser::ParsedIncome> TradeRepublicParser::parseIncome(
+    const csv::CSVRow& aCsvRow, std::string_view aRowKind, const RowContext& aContext) {
+    const auto dateText = aCsvRow["date"].get<std::string>();
+    const auto taxText = aCsvRow["tax"].get<std::string>();
+    const auto currencyText = aCsvRow["currency"].get<std::string>();
+    const auto rateText = aCsvRow["fx_rate"].get<std::string>();
+    const auto date = parseCalendarDate(dateText);
+    const auto taxPaid = parseTaxPaid(taxText);
+    const auto taxCurrency = parseCurrency(currencyText);
+    const auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
+
+    if (!date)
+    {
+        aContext.addInvalidFieldDiagnostic("date", dateText, aRowKind);
+        return std::nullopt;
+    }
+    if (!taxPaid && !taxText.empty())
+    {
+        aContext.addInvalidFieldDiagnostic("tax", taxText, aRowKind);
+        return std::nullopt;
+    }
+    if (taxCurrency == Currency::Unknown)
+    {
+        aContext.addInvalidFieldDiagnostic("currency", currencyText, aRowKind);
+        return std::nullopt;
+    }
+    if (!amountAndCurrency.mCurrency)
+    {
+        const auto field = aCsvRow["original_currency"].get<std::string>().empty()
+                               ? "currency"
+                               : "original_currency";
+
+        aContext.addInvalidFieldDiagnostic(field, getAmountCurrencyValue(aCsvRow), aRowKind);
+        return std::nullopt;
+    }
+    if (!amountAndCurrency.mExchangeRate && !rateText.empty())
+    {
+        aContext.addInvalidFieldDiagnostic("fx_rate", rateText, aRowKind);
+        return std::nullopt;
+    }
+    if (!amountAndCurrency.mGrossAmount)
+    {
+        const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
+
+        aContext.addInvalidFieldDiagnostic(fieldName, fieldValue, aRowKind);
+        return std::nullopt;
+    }
+
+    return ParsedIncome{
+        .mDate = *date,
+        .mGrossAmount = *amountAndCurrency.mGrossAmount,
+        .mTaxPaid = taxPaid,
+        .mExchangeRate = amountAndCurrency.mExchangeRate,
+        .mCurrency = *amountAndCurrency.mCurrency,
+        .mTaxCurrency = taxCurrency,
+    };
+}
+
 void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
                                            std::vector<DividendInstrument>& aInstruments,
                                            const RowContext& aContext) {
@@ -584,68 +696,22 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
-    auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
-    auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
-    auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
+    const auto income = parseIncome(aCsvRow, "dividend row", aContext);
 
-    if (!date)
+    if (!income)
     {
-        aContext.addInvalidFieldDiagnostic("date",
-                                           aCsvRow["date"].get<std::string>(),
-                                           "dividend row");
-        return;
-    }
-
-    if (!taxPaid)
-    {
-        aContext.addInvalidFieldDiagnostic("tax",
-                                           aCsvRow["tax"].get<std::string>(),
-                                           "dividend row");
-        return;
-    }
-
-    if (taxCurrency == Currency::Unknown)
-    {
-        aContext.addInvalidFieldDiagnostic("currency",
-                                           aCsvRow["currency"].get<std::string>(),
-                                           "dividend row");
-        return;
-    }
-
-    if (!amountAndCurrency.mCurrency.has_value())
-    {
-        const auto field = aCsvRow["original_currency"].get<std::string>().empty()
-                               ? "currency"
-                               : "original_currency";
-        aContext.addInvalidFieldDiagnostic(field, getAmountCurrencyValue(aCsvRow), "dividend row");
-        return;
-    }
-
-    if (!amountAndCurrency.mExchangeRate.has_value())
-    {
-        aContext.addInvalidFieldDiagnostic("fx_rate",
-                                           aCsvRow["fx_rate"].get<std::string>(),
-                                           "dividend row");
-        return;
-    }
-
-    if (!amountAndCurrency.mGrossAmount.has_value())
-    {
-        const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-        aContext.addInvalidFieldDiagnostic(fieldName, fieldValue, "dividend row");
         return;
     }
 
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
 
     instrument.mTransactions.emplace_back(DividendTransaction{
-        .mMetadata = aContext.metadata(*date),
-        .mGrossAmount = *amountAndCurrency.mGrossAmount,
-        .mTaxPaid = *taxPaid,
-        .mExchangeRate = *amountAndCurrency.mExchangeRate,
-        .mCurrency = *amountAndCurrency.mCurrency,
-        .mTaxCurrency = taxCurrency,
+        .mMetadata = aContext.metadata(income->mDate),
+        .mGrossAmount = income->mGrossAmount,
+        .mTaxPaid = income->mTaxPaid,
+        .mExchangeRate = income->mExchangeRate,
+        .mCurrency = income->mCurrency,
+        .mTaxCurrency = income->mTaxCurrency,
     });
 }
 
@@ -656,190 +722,64 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
     if (aInterestType == InterestType::UnknownInterest)
     {
         aContext.addDiagnostic(DiagnosticSeverity::Error,
-                               DiagnosticCode::InvalidValue,
-                               "The interest transaction type is unknown; the row was skipped.",
-                               "type");
+                               DiagnosticCode::UnsupportedAssetClass,
+                               "The interest row has no verified cash-interest or bond-coupon "
+                               "mapping; the row was skipped.",
+                               "asset_class");
+        return;
+    }
+    if (aInterestType == InterestType::OtherInterest)
+    {
+        aContext.addDiagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticCode::UnsupportedRowType,
+            "This interest transaction type is not supported; the row was skipped.",
+            "type");
         return;
     }
 
-    if (aInterestType == InterestType::BondInterest)
+    const bool isBond = aInterestType == InterestType::BondInterest;
+    const auto name = isBond ? aCsvRow["name"].get<std::string>() : "Trade Republic";
+    const auto isin = isBond ? aCsvRow["symbol"].get<std::string>() : std::string{};
+    const auto rowKind = isBond ? "bond-interest row" : "broker-interest row";
+
+    if (isBond && !isInstrumentValid(rowKind, isin, name, aContext))
     {
-        const auto nameValue = aCsvRow["name"].get<std::string>();
-        std::string isinValue = aCsvRow["symbol"].get<std::string>();
-
-        if (!isInstrumentValid("bond-interest row", isinValue, nameValue, aContext))
-        {
-            return;
-        }
-
-        auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
-        auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
-        auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
-
-        auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
-
-        if (!date)
-        {
-            aContext.addInvalidFieldDiagnostic("date",
-                                               aCsvRow["date"].get<std::string>(),
-                                               "bond-interest row");
-            return;
-        }
-
-        if (!taxPaid)
-        {
-            aContext.addInvalidFieldDiagnostic("tax",
-                                               aCsvRow["tax"].get<std::string>(),
-                                               "bond-interest row");
-            return;
-        }
-
-        if (taxCurrency == Currency::Unknown)
-        {
-            aContext.addInvalidFieldDiagnostic("currency",
-                                               aCsvRow["currency"].get<std::string>(),
-                                               "bond-interest row");
-            return;
-        }
-
-        if (!amountAndCurrency.mCurrency.has_value())
-        {
-            const auto field = aCsvRow["original_currency"].get<std::string>().empty()
-                                   ? "currency"
-                                   : "original_currency";
-            aContext.addInvalidFieldDiagnostic(field,
-                                               getAmountCurrencyValue(aCsvRow),
-                                               "bond-interest row");
-            return;
-        }
-
-        if (!amountAndCurrency.mExchangeRate.has_value())
-        {
-            aContext.addInvalidFieldDiagnostic("fx_rate",
-                                               aCsvRow["fx_rate"].get<std::string>(),
-                                               "bond-interest row");
-            return;
-        }
-
-        if (!amountAndCurrency.mGrossAmount.has_value())
-        {
-            const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-            aContext.addInvalidFieldDiagnostic(fieldName, fieldValue, "bond-interest row");
-            return;
-        }
-
-        auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
-
-        instrument.mInterestType = InterestType::BondInterest;
-
-        instrument.mTransactions.emplace_back(InterestTransaction{
-            .mMetadata = aContext.metadata(*date),
-            .mGrossAmount = *amountAndCurrency.mGrossAmount,
-            .mTaxPaid = *taxPaid,
-            .mExchangeRate = *amountAndCurrency.mExchangeRate,
-            .mCurrency = *amountAndCurrency.mCurrency,
-            .mTaxCurrency = taxCurrency,
-        });
+        return;
     }
-    // Broker interest and other interest types don't have ISIN
-    else
+
+    const auto income = parseIncome(aCsvRow, rowKind, aContext);
+
+    if (!income)
     {
-        // Currently we don't have info how fixed income interest looks like and will be skipped for
-        // now
-        if (aInterestType == InterestType::OtherInterest)
-        {
-            aContext.addDiagnostic(
-                DiagnosticSeverity::Error,
-                DiagnosticCode::UnsupportedRowType,
-                "This interest transaction type is not supported; the row was skipped.",
-                "type");
-            return;
-        }
-
-        if (aInterestType == InterestType::BrokerInterest)
-        {
-            const auto brokerName = "Trade Republic";
-            auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
-            auto taxPaid = parseTaxPaid(aCsvRow["tax"].get<std::string>());
-            auto taxCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
-
-            auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
-
-            if (!date)
-            {
-                aContext.addInvalidFieldDiagnostic("date",
-                                                   aCsvRow["date"].get<std::string>(),
-                                                   "broker-interest row");
-                return;
-            }
-
-            if (!taxPaid)
-            {
-                aContext.addInvalidFieldDiagnostic("tax",
-                                                   aCsvRow["tax"].get<std::string>(),
-                                                   "broker-interest row");
-                return;
-            }
-
-            if (taxCurrency == Currency::Unknown)
-            {
-                aContext.addInvalidFieldDiagnostic("currency",
-                                                   aCsvRow["currency"].get<std::string>(),
-                                                   "broker-interest row");
-                return;
-            }
-
-            if (!amountAndCurrency.mCurrency.has_value())
-            {
-                const auto field = aCsvRow["original_currency"].get<std::string>().empty()
-                                       ? "currency"
-                                       : "original_currency";
-                aContext.addInvalidFieldDiagnostic(field,
-                                                   getAmountCurrencyValue(aCsvRow),
-                                                   "broker-interest row");
-                return;
-            }
-
-            if (!amountAndCurrency.mExchangeRate.has_value())
-            {
-                aContext.addInvalidFieldDiagnostic("fx_rate",
-                                                   aCsvRow["fx_rate"].get<std::string>(),
-                                                   "broker-interest row");
-                return;
-            }
-
-            if (!amountAndCurrency.mGrossAmount)
-            {
-                const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
-                aContext.addInvalidFieldDiagnostic(fieldName, fieldValue, "broker-interest row");
-                return;
-            }
-
-            auto instrumentIt = std::find_if(aInstruments.begin(),
-                                             aInstruments.end(),
-                                             [&](const InterestInstrument& aInstrument) {
-                                                 return aInstrument.mName == brokerName;
-                                             });
-
-            if (instrumentIt == aInstruments.end())
-            {
-                aInstruments.emplace_back(
-                    InterestInstrument{.mName = brokerName,
-                                       .mInterestType = InterestType::BrokerInterest});
-                instrumentIt = std::prev(aInstruments.end());
-            }
-
-            instrumentIt->mTransactions.emplace_back(
-                InterestTransaction{.mMetadata = aContext.metadata(*date),
-                                    .mGrossAmount = *amountAndCurrency.mGrossAmount,
-                                    .mTaxPaid = *taxPaid,
-                                    .mExchangeRate = *amountAndCurrency.mExchangeRate,
-                                    .mCurrency = *amountAndCurrency.mCurrency,
-                                    .mTaxCurrency = taxCurrency});
-        }
-
-        // Broker interest
+        return;
     }
+
+    auto instrument =
+        std::find_if(aInstruments.begin(),
+                     aInstruments.end(),
+                     [&](const InterestInstrument& aInstrument) {
+                         return aInstrument.mInterestType == aInterestType &&
+                                (isBond ? aInstrument.mIsin == isin : aInstrument.mName == name);
+                     });
+
+    if (instrument == aInstruments.end())
+    {
+        aInstruments.emplace_back(
+            InterestInstrument{.mName = name,
+                               .mIsin = isBond ? std::optional<Isin>{isin} : std::nullopt,
+                               .mInterestType = aInterestType});
+        instrument = std::prev(aInstruments.end());
+    }
+
+    instrument->mTransactions.emplace_back(InterestTransaction{
+        .mMetadata = aContext.metadata(income->mDate),
+        .mGrossAmount = income->mGrossAmount,
+        .mTaxPaid = income->mTaxPaid,
+        .mExchangeRate = income->mExchangeRate,
+        .mCurrency = income->mCurrency,
+        .mTaxCurrency = income->mTaxCurrency,
+    });
 }
 
 void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
@@ -896,15 +836,13 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
     }
     instrument.mAssetClass = assetClass;
 
-    // The meaning of TR shares is unverified. Preserve its text; this source label is not a ratio
-    // or authority to apply an action without the later identity/ratio resolution.
+    // TR shares has no verified economic meaning; only a confirmed ratio establishes direction.
     auto metadata = aContext.metadata(*date);
     auto evidence = unitSourceEvidence(*unitsDelta, sharesText, primarySource(metadata));
 
     instrument.mCorporateActions.emplace_back(CorporateAction{
         .mMetadata = std::move(metadata),
-        .mType =
-            unitsDelta->mValue > 0 ? CorporateActionType::Split : CorporateActionType::ReverseSplit,
+        .mType = CorporateActionType::UnresolvedSplit,
         .mUnitsDelta = unitsDelta->mValue,
         .mRatio = std::nullopt,
         .mUnitEvidence = {std::move(evidence)},
@@ -1086,7 +1024,7 @@ std::optional<Money> TradeRepublicParser::normalizeTradeAmount(TradeSide aTradeS
 std::optional<Money> TradeRepublicParser::parseTaxPaid(std::string_view aValue) {
     if (aValue.empty())
     {
-        return Money{0};
+        return std::nullopt;
     }
 
     const auto imported = importFixedPoint(aValue, MONEY_SCALE);

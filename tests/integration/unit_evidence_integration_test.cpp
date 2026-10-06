@@ -36,6 +36,9 @@ class QuantityInputs {
         {
             throw std::runtime_error{"Unable to read synthetic quantity fixture"};
         }
+
+        // Quantity tests need consistent dates, independent of the chronology fixture's warning.
+        mRow.replace(1, 10, "2025-01-01");
     }
 
     QuantityInputs(const QuantityInputs&) = delete;
@@ -154,6 +157,7 @@ TEST(ExactArithmeticIntegrationTest, CorporateActionEvidenceSurvivesEquivalentOv
     EXPECT_EQ(action.mUnitsDelta, 12'345'679);
     ASSERT_EQ(action.mUnitEvidence.size(), 2U);
     EXPECT_EQ(action.mUnitEvidence[1].mDiscardedDigits, "50");
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
     EXPECT_FALSE(action.mRatio.has_value());
     EXPECT_TRUE(merged.mDiagnostics.empty());
 }
