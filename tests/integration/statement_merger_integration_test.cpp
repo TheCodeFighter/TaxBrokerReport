@@ -831,4 +831,361 @@ TEST(StatementMergerIntegrationTest, EqualFallbackTimesDoNotHideDifferentSourceT
     EXPECT_EQ(conflict.mSources.size(), 2U);
 }
 
+TEST(StatementMergerIntegrationTest, IdenticalBlankIncomeFactsDeduplicateWithoutInventingValues) {
+    const std::array files{fixturePath("unknown_income.csv"), fixturePath("unknown_income.csv")};
+    const auto inputs = parseInOrder(files, {1, 0});
+    const auto forwardInputs = parseInOrder(files, {0, 1});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+
+    test::expectMergeResultsEqual(result, forward);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_EQ(ledgerIds(result),
+              (std::vector<std::string>{"synthetic-healthy-trade",
+                                        "synthetic-optional-dividend",
+                                        "synthetic-optional-deposit",
+                                        "synthetic-optional-coupon",
+                                        "synthetic-healthy-dividend"}));
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& dividends = result.mStatement.mPresentation.mDividendInstruments.front();
+
+    EXPECT_EQ(dividends.mIsin, "XX9000000001");
+    ASSERT_EQ(dividends.mTransactions.size(), 2U);
+
+    const auto& dividend = dividends.mTransactions[0];
+    const auto& knownDividend = dividends.mTransactions[1];
+
+    EXPECT_EQ(dividend.mGrossAmount, 123'400);
+    EXPECT_EQ(dividend.mCurrency, Currency::USD);
+    EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(dividend.mTaxPaid.has_value());
+    EXPECT_FALSE(dividend.mExchangeRate.has_value());
+    EXPECT_EQ(
+        dividend.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 2,
+                                       .mTransactionId = "synthetic-optional-dividend",
+                                       .mInputSequence = {0, 0}},
+                                      {.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 2,
+                                       .mTransactionId = "synthetic-optional-dividend",
+                                       .mInputSequence = {1, 0}}}));
+
+    EXPECT_EQ(knownDividend.mGrossAmount, 50'000);
+    EXPECT_EQ(knownDividend.mTaxPaid, 0);
+    EXPECT_EQ(knownDividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(knownDividend.mCurrency, Currency::EUR);
+    EXPECT_EQ(knownDividend.mTaxCurrency, Currency::EUR);
+    ASSERT_EQ(knownDividend.mMetadata.mSources.size(), 2U);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 2U);
+
+    const auto& bond = result.mStatement.mPresentation.mInterestInstruments[0];
+    const auto& deposit = result.mStatement.mPresentation.mInterestInstruments[1];
+
+    EXPECT_EQ(bond.mInterestType, InterestType::BondInterest);
+    EXPECT_EQ(bond.mIsin, "XX9000000002");
+    EXPECT_EQ(bond.mName, "Synthetic Optional Bond");
+    ASSERT_EQ(bond.mTransactions.size(), 1U);
+
+    const auto& coupon = bond.mTransactions.front();
+
+    EXPECT_EQ(coupon.mGrossAmount, 67'800);
+    EXPECT_EQ(coupon.mCurrency, Currency::USD);
+    EXPECT_EQ(coupon.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(coupon.mTaxPaid.has_value());
+    EXPECT_FALSE(coupon.mExchangeRate.has_value());
+    EXPECT_EQ(
+        coupon.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 4,
+                                       .mTransactionId = "synthetic-optional-coupon",
+                                       .mInputSequence = {0, 2}},
+                                      {.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 4,
+                                       .mTransactionId = "synthetic-optional-coupon",
+                                       .mInputSequence = {1, 2}}}));
+
+    EXPECT_EQ(deposit.mInterestType, InterestType::BrokerInterest);
+    EXPECT_FALSE(deposit.mIsin.has_value());
+    EXPECT_EQ(deposit.mName, "Trade Republic");
+    ASSERT_EQ(deposit.mTransactions.size(), 1U);
+
+    const auto& cashInterest = deposit.mTransactions.front();
+
+    EXPECT_EQ(cashInterest.mGrossAmount, 34'500);
+    EXPECT_EQ(cashInterest.mCurrency, Currency::USD);
+    EXPECT_EQ(cashInterest.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(cashInterest.mTaxPaid.has_value());
+    EXPECT_FALSE(cashInterest.mExchangeRate.has_value());
+    EXPECT_EQ(
+        cashInterest.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 3,
+                                       .mTransactionId = "synthetic-optional-deposit",
+                                       .mInputSequence = {0, 1}},
+                                      {.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 3,
+                                       .mTransactionId = "synthetic-optional-deposit",
+                                       .mInputSequence = {1, 1}}}));
+}
+
+TEST(StatementMergerIntegrationTest,
+     BlankIncomeTaxConflictsWithExplicitZeroWhileHealthyRowsSurvive) {
+    // Blank tax is unknown; an overlapping explicit zero is a different fact.
+    const std::array files{fixturePath("unknown_income.csv"),
+                           fixturePath("confirmed_tax_income.csv")};
+    const auto inputs = parseInOrder(files, {1, 0});
+    const auto forwardInputs = parseInOrder(files, {0, 1});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+
+    test::expectMergeResultsEqual(result, forward);
+    EXPECT_EQ(ledgerIds(result),
+              (std::vector<std::string>{"synthetic-healthy-trade", "synthetic-healthy-dividend"}));
+    EXPECT_TRUE(result.mStatement.mPresentation.mInterestInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& trade = instrument.mTransactions.front();
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(trade.mUnitPrice, 80'000);
+    EXPECT_EQ(trade.mUnits, 125'000'000);
+    EXPECT_EQ(trade.mAmount, 100'000);
+    EXPECT_EQ(trade.mFeePaid, 2'500);
+    EXPECT_EQ(
+        trade.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 5,
+                                       .mTransactionId = "synthetic-healthy-trade",
+                                       .mInputSequence = {0, 3}}}));
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& dividends = result.mStatement.mPresentation.mDividendInstruments.front();
+
+    ASSERT_EQ(dividends.mTransactions.size(), 1U);
+
+    const auto& dividend = dividends.mTransactions.front();
+
+    EXPECT_EQ(dividend.mGrossAmount, 50'000);
+    EXPECT_EQ(dividend.mTaxPaid, 0);
+    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        dividend.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 6,
+                                       .mTransactionId = "synthetic-healthy-dividend",
+                                       .mInputSequence = {0, 4}}}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[0]));
+
+    const auto& dividendConflict = std::get<MergeDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(dividendConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dividendConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(dividendConflict.mEventKinds, (std::vector{StatementEventKind::Dividend}));
+    EXPECT_EQ(dividendConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(dividendConflict.mIsin, "XX9000000001");
+    EXPECT_EQ(dividendConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {0, 0}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("confirmed_tax_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {1, 0}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[1]));
+
+    const auto& depositConflict = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(depositConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(depositConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(depositConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(depositConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(depositConflict.mIsin, std::nullopt);
+    EXPECT_EQ(depositConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {0, 1}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("confirmed_tax_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {1, 1}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[2]));
+
+    const auto& couponConflict = std::get<MergeDiagnostic>(result.mDiagnostics[2]);
+
+    EXPECT_EQ(couponConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(couponConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(couponConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(couponConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(couponConflict.mIsin, "XX9000000002");
+    EXPECT_EQ(couponConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {0, 2}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("confirmed_tax_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {1, 2}}}));
+}
+
+TEST(StatementMergerIntegrationTest,
+     AbsentIncomeRateConflictsWithPopulatedRateWhileHealthyRowsSurvive) {
+    // An absent broker rate cannot be silently filled from an overlapping export.
+    const std::array files{fixturePath("unknown_income.csv"),
+                           fixturePath("broker_rate_income.csv")};
+    const auto inputs = parseInOrder(files, {1, 0});
+    const auto forwardInputs = parseInOrder(files, {0, 1});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+
+    test::expectMergeResultsEqual(result, forward);
+    EXPECT_EQ(ledgerIds(result),
+              (std::vector<std::string>{"synthetic-healthy-trade", "synthetic-healthy-dividend"}));
+    EXPECT_TRUE(result.mStatement.mPresentation.mInterestInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& trade = instrument.mTransactions.front();
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(trade.mUnitPrice, 80'000);
+    EXPECT_EQ(trade.mUnits, 125'000'000);
+    EXPECT_EQ(trade.mAmount, 100'000);
+    EXPECT_EQ(trade.mFeePaid, 2'500);
+    EXPECT_EQ(
+        trade.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 5,
+                                       .mTransactionId = "synthetic-healthy-trade",
+                                       .mInputSequence = {0, 3}}}));
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& dividends = result.mStatement.mPresentation.mDividendInstruments.front();
+
+    ASSERT_EQ(dividends.mTransactions.size(), 1U);
+
+    const auto& dividend = dividends.mTransactions.front();
+
+    EXPECT_EQ(dividend.mGrossAmount, 50'000);
+    EXPECT_EQ(dividend.mTaxPaid, 0);
+    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        dividend.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 6,
+                                       .mTransactionId = "synthetic-healthy-dividend",
+                                       .mInputSequence = {0, 4}}}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[0]));
+
+    const auto& dividendConflict = std::get<MergeDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(dividendConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dividendConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(dividendConflict.mEventKinds, (std::vector{StatementEventKind::Dividend}));
+    EXPECT_EQ(dividendConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(dividendConflict.mIsin, "XX9000000001");
+    EXPECT_EQ(dividendConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {0, 0}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("broker_rate_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {1, 0}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[1]));
+
+    const auto& depositConflict = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(depositConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(depositConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(depositConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(depositConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(depositConflict.mIsin, std::nullopt);
+    EXPECT_EQ(depositConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {0, 1}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("broker_rate_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {1, 1}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[2]));
+
+    const auto& couponConflict = std::get<MergeDiagnostic>(result.mDiagnostics[2]);
+
+    EXPECT_EQ(couponConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(couponConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(couponConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(couponConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(couponConflict.mIsin, "XX9000000002");
+    EXPECT_EQ(couponConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {0, 2}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("broker_rate_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {1, 2}}}));
+}
+
 } // namespace

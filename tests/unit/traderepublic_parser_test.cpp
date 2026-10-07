@@ -2171,4 +2171,648 @@ TEST(TradeRepublicParserTest, RejectsTinyWithholdingButAcceptsExplicitZeroTax) {
     EXPECT_TRUE(zeroTaxResult.mDiagnostics.empty());
 }
 
+TEST(TradeRepublicParserTest, RoundsForeignDividendAndWithholdingAtTheirImportScales) {
+    auto row = makeDividendRow();
+    row.mAmount = "11.11";
+    row.mOriginalAmount = "12.34565";
+    row.mOriginalCurrency = "USD";
+    row.mTax = "-2.34565";
+    row.mFxRate = "0.900000005";
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mDividendInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& income = instrument.mTransactions.front();
+
+    // Gross income and withholding round separately; the tax never increases gross income.
+    EXPECT_EQ(income.mGrossAmount, 123'457);
+    EXPECT_EQ(income.mTaxPaid, 23'457);
+    EXPECT_EQ(income.mExchangeRate, 90'000'001);
+    EXPECT_EQ(income.mCurrency, Currency::USD);
+    EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
+}
+
+TEST(TradeRepublicParserTest, RejectsTinyOriginalDividendInsteadOfUsingLocalAmount) {
+    auto row = makeDividendRow();
+    row.mAmount = "10.00";
+    row.mOriginalAmount = "0.00004";
+    row.mOriginalCurrency = "USD";
+    row.mFxRate.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path(), 4);
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "original_amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mMessage.find("0.00004"), std::string::npos);
+    EXPECT_EQ(error.mMessage.find(csvFile.path().parent_path().string()), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, KeepsDividendTaxYearWhenDatetimeFallsInTheNextYear) {
+    auto row = makeDividendRow();
+    row.mDate = "2023-12-31";
+    row.mDatetime = "2024-01-01T10:00:00Z";
+
+    const auto result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mDividendInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& metadata = instrument.mTransactions.front().mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2023, 12, 31));
+    EXPECT_EQ(metadata.mSourceTimestamp,
+              SourceTimestamp{makeDate(2024, 1, 1).time_since_epoch() + std::chrono::hours{10}});
+    EXPECT_EQ(metadata.mOrderingTimestamp,
+              SourceTimestamp{makeDate(2023, 12, 31).time_since_epoch() + std::chrono::hours{9}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(warning.mField, "datetime");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
+    EXPECT_NE(warning.mMessage.find("9:00:00 UTC"), std::string::npos);
+    EXPECT_NE(warning.mMessage.find("order may be incorrect"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, RoundsForeignDepositInterestAndWithholdingAtTheirImportScales) {
+    auto row = makeBrokerInterestRow();
+    row.mAmount = "11.11";
+    row.mOriginalAmount = "12.34565";
+    row.mOriginalCurrency = "USD";
+    row.mTax = "-2.34565";
+    row.mFxRate = "0.900000005";
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& income = instrument.mTransactions.front();
+
+    // Gross income and withholding round separately; the tax never increases gross income.
+    EXPECT_EQ(income.mGrossAmount, 123'457);
+    EXPECT_EQ(income.mTaxPaid, 23'457);
+    EXPECT_EQ(income.mExchangeRate, 90'000'001);
+    EXPECT_EQ(income.mCurrency, Currency::USD);
+    EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
+}
+
+TEST(TradeRepublicParserTest, RejectsTinyOriginalDepositInterestInsteadOfUsingLocalAmount) {
+    auto row = makeBrokerInterestRow();
+    row.mAmount = "10.00";
+    row.mOriginalAmount = "0.00004";
+    row.mOriginalCurrency = "USD";
+    row.mFxRate.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path(), 4);
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "original_amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mMessage.find("0.00004"), std::string::npos);
+    EXPECT_EQ(error.mMessage.find(csvFile.path().parent_path().string()), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, KeepsDepositInterestTaxYearWhenDatetimeFallsInTheNextYear) {
+    auto row = makeBrokerInterestRow();
+    row.mDate = "2023-12-31";
+    row.mDatetime = "2024-01-01T10:00:00Z";
+
+    const auto result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& metadata = instrument.mTransactions.front().mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2023, 12, 31));
+    EXPECT_EQ(metadata.mSourceTimestamp,
+              SourceTimestamp{makeDate(2024, 1, 1).time_since_epoch() + std::chrono::hours{10}});
+    EXPECT_EQ(metadata.mOrderingTimestamp,
+              SourceTimestamp{makeDate(2023, 12, 31).time_since_epoch() + std::chrono::hours{9}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(warning.mField, "datetime");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
+    EXPECT_NE(warning.mMessage.find("9:00:00 UTC"), std::string::npos);
+    EXPECT_NE(warning.mMessage.find("order may be incorrect"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, RoundsForeignBondInterestAndWithholdingAtTheirImportScales) {
+    auto row = makeBondInterestRow();
+    row.mAmount = "11.11";
+    row.mOriginalAmount = "12.34565";
+    row.mOriginalCurrency = "USD";
+    row.mTax = "-2.34565";
+    row.mFxRate = "0.900000005";
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& income = instrument.mTransactions.front();
+
+    // Gross income and withholding round separately; the tax never increases gross income.
+    EXPECT_EQ(income.mGrossAmount, 123'457);
+    EXPECT_EQ(income.mTaxPaid, 23'457);
+    EXPECT_EQ(income.mExchangeRate, 90'000'001);
+    EXPECT_EQ(income.mCurrency, Currency::USD);
+    EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
+}
+
+TEST(TradeRepublicParserTest, RejectsTinyOriginalBondInterestInsteadOfUsingLocalAmount) {
+    auto row = makeBondInterestRow();
+    row.mAmount = "10.00";
+    row.mOriginalAmount = "0.00004";
+    row.mOriginalCurrency = "USD";
+    row.mFxRate.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path(), 4);
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "original_amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mMessage.find("0.00004"), std::string::npos);
+    EXPECT_EQ(error.mMessage.find(csvFile.path().parent_path().string()), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, KeepsBondInterestTaxYearWhenDatetimeFallsInTheNextYear) {
+    auto row = makeBondInterestRow();
+    row.mDate = "2023-12-31";
+    row.mDatetime = "2024-01-01T10:00:00Z";
+
+    const auto result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& metadata = instrument.mTransactions.front().mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2023, 12, 31));
+    EXPECT_EQ(metadata.mSourceTimestamp,
+              SourceTimestamp{makeDate(2024, 1, 1).time_since_epoch() + std::chrono::hours{10}});
+    EXPECT_EQ(metadata.mOrderingTimestamp,
+              SourceTimestamp{makeDate(2023, 12, 31).time_since_epoch() + std::chrono::hours{9}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(warning.mField, "datetime");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
+    EXPECT_NE(warning.mMessage.find("9:00:00 UTC"), std::string::npos);
+    EXPECT_NE(warning.mMessage.find("order may be incorrect"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, RetainsDividendWithInvalidNonEmptyDatetime) {
+    auto row = makeDividendRow();
+    row.mDatetime = "invalid-time";
+
+    const auto result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mDividendInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& metadata = instrument.mTransactions.front().mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_FALSE(metadata.mSourceTimestamp.has_value());
+    EXPECT_FALSE(metadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(metadata.mSources.size(), 1U);
+    EXPECT_EQ(metadata.mSources.front().mSourceRow, 2U);
+    EXPECT_EQ(metadata.mSources.front().mTransactionId, row.mTransactionId);
+    EXPECT_EQ(metadata.mSources.front().mInputSequence, (StableInputSequence{0, 0}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(warning.mField, "datetime");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RetainsDepositInterestWithInvalidNonEmptyDatetime) {
+    auto row = makeBrokerInterestRow();
+    row.mDatetime = "invalid-time";
+
+    const auto result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& metadata = instrument.mTransactions.front().mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_FALSE(metadata.mSourceTimestamp.has_value());
+    EXPECT_FALSE(metadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(metadata.mSources.size(), 1U);
+    EXPECT_EQ(metadata.mSources.front().mSourceRow, 2U);
+    EXPECT_EQ(metadata.mSources.front().mTransactionId, row.mTransactionId);
+    EXPECT_EQ(metadata.mSources.front().mInputSequence, (StableInputSequence{0, 0}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(warning.mField, "datetime");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RetainsBondInterestWithInvalidNonEmptyDatetime) {
+    auto row = makeBondInterestRow();
+    row.mDatetime = "invalid-time";
+
+    const auto result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments.front();
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& metadata = instrument.mTransactions.front().mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_FALSE(metadata.mSourceTimestamp.has_value());
+    EXPECT_FALSE(metadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(metadata.mSources.size(), 1U);
+    EXPECT_EQ(metadata.mSources.front().mSourceRow, 2U);
+    EXPECT_EQ(metadata.mSources.front().mTransactionId, row.mTransactionId);
+    EXPECT_EQ(metadata.mSources.front().mInputSequence, (StableInputSequence{0, 0}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(warning.mField, "datetime");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RetainsUnresolvedSplitWithInvalidNonEmptyDatetime) {
+    auto row = makeCorporateActionRow();
+    row.mDatetime = "invalid-time";
+
+    const auto result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& metadata = instrument.mCorporateActions.front().mMetadata;
+
+    EXPECT_EQ(metadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_FALSE(metadata.mSourceTimestamp.has_value());
+    EXPECT_FALSE(metadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(metadata.mSources.size(), 1U);
+    EXPECT_EQ(metadata.mSources.front().mSourceRow, 2U);
+    EXPECT_EQ(metadata.mSources.front().mTransactionId, row.mTransactionId);
+    EXPECT_EQ(metadata.mSources.front().mInputSequence, (StableInputSequence{0, 0}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(warning.mField, "datetime");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyASymbolAsCashInterest) {
+    auto row = makeBrokerInterestRow();
+    row.mSymbol = "XX9000000002";
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-broker-interest-validation");
+}
+
+TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyANameAsCashInterest) {
+    auto row = makeBrokerInterestRow();
+    row.mName = "Synthetic Unclassified Payer";
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-broker-interest-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsUnverifiedBondInterestLabelWithoutCreatingACoupon) {
+    auto row = makeBondInterestRow();
+    row.mType = "BOND_INTEREST";
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::UnknownRowType);
+    EXPECT_EQ(error.mField, "type");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-bond-interest-validation");
+}
+
+TEST(TradeRepublicParserTest, IgnoredCashMovementsDoNotRequireDatetime) {
+    SyntheticCsvRow row;
+    row.mCategory = "CASH";
+    row.mType = "CUSTOMER_INBOUND";
+    row.mDatetime.clear();
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, CreditWithoutDatetimeOrIdStillReportsItsUnknownType) {
+    SyntheticCsvRow row;
+    row.mCategory = "CASH";
+    row.mType = "CREDIT";
+    row.mDatetime.clear();
+    row.mTransactionId.clear();
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::UnknownRowType);
+    EXPECT_EQ(error.mField, "type");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_FALSE(error.mTransactionId.has_value());
+}
+
+TEST(TradeRepublicParserTest, RejectsTinyBrokerRateInsteadOfTreatingItAsAbsent) {
+    auto row = makeDividendRow();
+    row.mOriginalAmount = "12.34";
+    row.mOriginalCurrency = "USD";
+    row.mFxRate = "0.000000004";
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fx_rate");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-dividend-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsNegativeOriginalBondIncomeInsteadOfUsingLocalAmount) {
+    auto row = makeBondInterestRow();
+    row.mAmount = "10.00";
+    row.mOriginalAmount = "-12.34";
+    row.mOriginalCurrency = "USD";
+    row.mFxRate.clear();
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "original_amount");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-bond-interest-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsTinyDepositInterestWithholdingInsteadOfLosingIt) {
+    auto row = makeBrokerInterestRow();
+    row.mTax = "-0.00004";
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTinyBondInterestWithholdingInsteadOfLosingIt) {
+    auto row = makeBondInterestRow();
+    row.mTax = "-0.00004";
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, MissingDatetimeDoesNotCreateAnInstrumentBeforeALaterValidTrade) {
+    SyntheticCsvRow missingTime;
+    missingTime.mDatetime.clear();
+    missingTime.mName = "Synthetic Rejected Share";
+    SyntheticCsvRow validBond;
+    validBond.mAssetClass = "BOND";
+    validBond.mName = "Synthetic Valid Bond";
+    validBond.mTransactionId = "synthetic-valid-bond-trade";
+
+    const auto result = parseRows({missingTime, validBond});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_EQ(instrument.mName, "Synthetic Valid Bond");
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Bond);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& trade = instrument.mTransactions.front();
+
+    EXPECT_EQ(trade.mUnitPrice, 100'000);
+    EXPECT_EQ(trade.mUnits, 100'000'000);
+    EXPECT_EQ(trade.mAmount, 100'000);
+    ASSERT_EQ(trade.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(trade.mMetadata.mSources.front().mSourceRow, 3U);
+    EXPECT_EQ(trade.mMetadata.mSources.front().mTransactionId, "synthetic-valid-bond-trade");
+    EXPECT_EQ(trade.mMetadata.mSources.front().mInputSequence, (StableInputSequence{0, 1}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, InvalidIncomeDoesNotSuppressALaterDividendForTheSameIsin) {
+    auto invalid = makeDividendRow();
+    invalid.mTax = "not-a-number";
+    auto valid = makeDividendRow();
+    valid.mAmount = "5.00";
+    valid.mTax = "0.00";
+    valid.mTransactionId = "synthetic-valid-dividend";
+
+    const auto result = parseRows({invalid, valid});
+
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mDividendInstruments.front();
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& dividend = instrument.mTransactions.front();
+
+    EXPECT_EQ(dividend.mGrossAmount, 50'000);
+    EXPECT_EQ(dividend.mTaxPaid, 0);
+    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    ASSERT_EQ(dividend.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(dividend.mMetadata.mSources.front().mSourceRow, 3U);
+    EXPECT_EQ(dividend.mMetadata.mSources.front().mTransactionId, "synthetic-valid-dividend");
+    EXPECT_EQ(dividend.mMetadata.mSources.front().mInputSequence, (StableInputSequence{0, 1}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-dividend-validation");
+}
+
 } // namespace

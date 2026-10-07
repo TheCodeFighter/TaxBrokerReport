@@ -9,6 +9,13 @@ was used or copied. The CSV column layout matches the existing Trade Republic pa
 - `partial.csv` contains one invalid-price row and one valid row with a conflicting instrument
   name and asset class.
 - `invalid.csv` has an invalid header and produces a file-level diagnostic.
+- `unknown_income.csv` contains a foreign dividend, cash interest and bond coupon with blank tax
+  and broker rate, plus a healthy trade and a separate dividend with explicit zero tax.
+- `confirmed_tax_income.csv` repeats only the three foreign-income rows with explicit zero tax.
+- `broker_rate_income.csv` repeats only those rows with a broker rate of `0.90` and blank tax.
+
+The income fixtures exercise the parser's current import policy. They do not supply independent
+broker payment evidence or establish the direction of the broker rate.
 
 Integration tests create disjoint, overlapping and header-only files from `history.csv` inside
 an owned temporary directory. Their provenance differs intentionally from the whole-file input.

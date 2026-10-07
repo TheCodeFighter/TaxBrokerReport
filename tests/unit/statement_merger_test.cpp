@@ -2714,4 +2714,83 @@ TEST(DeterministicStatementMergerTest,
     EXPECT_TRUE(result.mDiagnostics.empty());
 }
 
+TEST(DeterministicStatementMergerTest, UnresolvedSplitDuplicatesKeepEachQuantitySourceOnce) {
+    const auto firstSource = makeSource(Broker::TradeRepublic, "same.csv", 2, "split-id", {0, 0});
+    const auto secondSource = makeSource(Broker::TradeRepublic, "same.csv", 3, "split-id", {0, 1});
+    const auto sharedSource = makeSource(Broker::TradeRepublic, "same.csv", 4, "split-id", {0, 2});
+    const UnitSourceEvidence sharedEvidence{
+        .mSource = sharedSource,
+        .mSourceText = "-0.12345678500",
+        .mDiscardedDigits = "500",
+        .mCanonicalValue = "-0.123456785",
+        .mRoundedAwayFromZero = true,
+    };
+    const CorporateAction first{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource, sharedSource}},
+        .mType = CorporateActionType::UnresolvedSplit,
+        .mUnitsDelta = -12'345'679,
+        .mUnitEvidence = {{.mSource = firstSource,
+                           .mSourceText = "-0.123456785",
+                           .mDiscardedDigits = "5",
+                           .mCanonicalValue = "-0.123456785",
+                           .mRoundedAwayFromZero = true},
+                          sharedEvidence},
+    };
+    const CorporateAction second{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource, sharedSource}},
+        .mType = CorporateActionType::UnresolvedSplit,
+        .mUnitsDelta = -12'345'679,
+        .mUnitEvidence = {sharedEvidence,
+                          {.mSource = secondSource,
+                           .mSourceText = "-0.1234567850",
+                           .mDiscardedDigits = "50",
+                           .mCanonicalValue = "-0.123456785",
+                           .mRoundedAwayFromZero = true}},
+    };
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(
+        {.mName = "Synthetic Share",
+         .mIsin = "XX9000000001",
+         .mAssetClass = AssetClass::Stock,
+         .mCorporateActions = {second, first}});
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+    EXPECT_EQ(result.mStatement.mChronologicalOrder.front().mKind,
+              StatementEventKind::CorporateAction);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    // A negative broker quantity still leaves the split direction unresolved.
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(action.mUnitsDelta, -12'345'679);
+    EXPECT_FALSE(action.mRatio.has_value());
+    EXPECT_EQ(action.mMetadata.mSources, (std::vector{firstSource, secondSource, sharedSource}));
+    ASSERT_EQ(action.mUnitEvidence.size(), 3U);
+
+    const auto& firstEvidence = action.mUnitEvidence[0];
+    const auto& secondEvidence = action.mUnitEvidence[1];
+
+    EXPECT_EQ(firstEvidence.mSource, firstSource);
+    EXPECT_EQ(firstEvidence.mSourceText, "-0.123456785");
+    EXPECT_EQ(firstEvidence.mDiscardedDigits, "5");
+    EXPECT_EQ(firstEvidence.mCanonicalValue, "-0.123456785");
+    EXPECT_TRUE(firstEvidence.mRoundedAwayFromZero);
+
+    EXPECT_EQ(secondEvidence.mSource, secondSource);
+    EXPECT_EQ(secondEvidence.mSourceText, "-0.1234567850");
+    EXPECT_EQ(secondEvidence.mDiscardedDigits, "50");
+    EXPECT_EQ(secondEvidence.mCanonicalValue, "-0.123456785");
+    EXPECT_TRUE(secondEvidence.mRoundedAwayFromZero);
+    EXPECT_EQ(action.mUnitEvidence[2], sharedEvidence);
+}
+
 } // namespace

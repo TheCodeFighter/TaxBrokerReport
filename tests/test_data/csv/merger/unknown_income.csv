@@ -1,0 +1,6 @@
+"datetime","date","account_type","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","currency","original_amount","original_currency","fx_rate","description","transaction_id","counterparty_name","counterparty_iban","payment_reference","mcc_code"
+"2024-01-15T10:00:00Z","2024-01-15","DEFAULT","CASH","DIVIDEND","STOCK","Synthetic Optional Share","XX9000000001","","","11.11","","","EUR","12.34","USD","","Synthetic optional income facts","synthetic-optional-dividend","","","",""
+"2024-01-15T10:00:00Z","2024-01-15","DEFAULT","CASH","INTEREST_PAYMENT","","","","","","3.10","","","EUR","3.45","USD","","Synthetic optional income facts","synthetic-optional-deposit","","","",""
+"2024-01-15T10:00:00Z","2024-01-15","DEFAULT","CASH","INTEREST_PAYMENT","BOND","Synthetic Optional Bond","XX9000000002","","","6.10","","","EUR","6.78","USD","","Synthetic optional income facts","synthetic-optional-coupon","","","",""
+"2024-01-15T08:00:00Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK","Synthetic Optional Share","XX9000000001","1.25","8.00","-10.00","-0.25","","EUR","","","","","synthetic-healthy-trade","","","",""
+"2024-01-16T10:00:00Z","2024-01-16","DEFAULT","CASH","DIVIDEND","STOCK","Synthetic Optional Share","XX9000000001","","","5.00","","0.00","EUR","","","","","synthetic-healthy-dividend","","","",""

@@ -1,0 +1,4 @@
+"datetime","date","account_type","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","currency","original_amount","original_currency","fx_rate","description","transaction_id","counterparty_name","counterparty_iban","payment_reference","mcc_code"
+"2024-01-15T10:00:00Z","2024-01-15","DEFAULT","CASH","DIVIDEND","STOCK","Synthetic Optional Share","XX9000000001","","","11.11","","","EUR","12.34","USD","0.90","Synthetic optional income facts","synthetic-optional-dividend","","","",""
+"2024-01-15T10:00:00Z","2024-01-15","DEFAULT","CASH","INTEREST_PAYMENT","","","","","","3.10","","","EUR","3.45","USD","0.90","Synthetic optional income facts","synthetic-optional-deposit","","","",""
+"2024-01-15T10:00:00Z","2024-01-15","DEFAULT","CASH","INTEREST_PAYMENT","BOND","Synthetic Optional Bond","XX9000000002","","","6.10","","","EUR","6.78","USD","0.90","Synthetic optional income facts","synthetic-optional-coupon","","","",""
