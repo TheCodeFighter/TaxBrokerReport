@@ -22,6 +22,7 @@ std::filesystem::path fixturePath(std::string_view aFilename) {
            "merger" / aFilename;
 }
 
+// Read synthetic history.csv once, then copy selected rows into temporary CSV inputs.
 class TemporaryHistory {
   public:
     TemporaryHistory() {
@@ -66,6 +67,7 @@ class TemporaryHistory {
         std::filesystem::remove_all(mDirectory, error);
     }
 
+    // Row indices start at zero after the header. An optional timestamp replaces only datetime.
     std::filesystem::path
     writeRows(std::string_view aFilename,
               std::initializer_list<std::size_t> aRows,
@@ -103,8 +105,12 @@ class TemporaryHistory {
     std::vector<std::string> mRows;
 };
 
-std::vector<StatementMergeInput> parseInOrder(const std::array<std::filesystem::path, 3>& aFiles,
-                                              const std::array<std::size_t, 3>& aOrder) {
+// aFiles fixes file request indices; aOrder simulates parser-result arrival order.
+// Each returned input holds that file's parsed statement and parser diagnostics.
+template <std::size_t SourceCount>
+std::vector<StatementMergeInput>
+parseInOrder(const std::array<std::filesystem::path, SourceCount>& aFiles,
+             const std::array<std::size_t, SourceCount>& aOrder) {
     tr::TradeRepublicParser parser;
     std::vector<StatementMergeInput> inputs(aOrder.size());
     const auto parseInput = [&parser, &aFiles](std::size_t aSourceIndex) {
@@ -152,14 +158,21 @@ SourceReference expectedSource(std::size_t aSource, std::size_t aEvent, std::str
 
 TEST(StatementMergerIntegrationTest,
      DisjointFilesMatchWholeHistoryWithoutChangingTaxDatesOrValues) {
+    // Getting data from history.csv
     const TemporaryHistory history;
+
+    // These three files together contain every data row from history.csv, with no overlap.
     const std::array files{history.writeRows("part-0.csv", {0, 1, 2, 3}),
                            history.writeRows("part-1.csv", {4, 5, 6}),
-                           history.writeRows("part-2.csv", {7, 8, 9})};
+                           history.writeRows("part-2.csv", {7, 8, 9, 10, 11})};
+
+    // Parse and merge the unsplit history as a baseline for the three-file result.
     const StatementMergeInput whole{
         .mSourceIndex = 0,
         .mParseResult = tr::TradeRepublicParser{}.parse(fixturePath("history.csv"), 0)};
+
     const auto expected = DeterministicStatementMerger{}.merge(std::span{&whole, 1U});
+
     const std::vector<std::string> ids{"synthetic-older",
                                        "synthetic-dividend",
                                        "synthetic-interest",
@@ -169,16 +182,22 @@ TEST(StatementMergerIntegrationTest,
                                        "synthetic-private",
                                        "",
                                        "synthetic-future"};
+
+    // For each chronological ID above: file request index and data-row index within that file.
     const std::array<std::pair<std::size_t, std::size_t>, 9> sourcePositions{
         {{0, 1}, {1, 0}, {1, 1}, {0, 2}, {2, 0}, {1, 2}, {2, 1}, {2, 2}, {0, 0}}};
+
     std::array<std::size_t, 3> order{0, 1, 2};
 
-    ASSERT_TRUE(whole.mParseResult.mDiagnostics.empty());
+    ASSERT_EQ(whole.mParseResult.mDiagnostics.size(), 4U);
     EXPECT_EQ(ledgerIds(expected), ids);
 
     do
     {
+        // Parse the temporary history parts in this arrival order, keeping their file indices.
         const auto inputs = parseInOrder(files, order);
+        // Combine parsed records into presentation storage, chronological references
+        // and diagnostics.
         const auto result = DeterministicStatementMerger{}.merge(inputs);
 
         test::expectStatementsEqual(result.mStatement.mPresentation,
@@ -186,7 +205,56 @@ TEST(StatementMergerIntegrationTest,
                                     false);
         EXPECT_EQ(result.mStatement.mChronologicalOrder, expected.mStatement.mChronologicalOrder);
         EXPECT_EQ(ledgerIds(result), ids);
-        EXPECT_TRUE(result.mDiagnostics.empty());
+        ASSERT_EQ(result.mDiagnostics.size(), 4U);
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[0]));
+
+        const auto& futureDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+        EXPECT_EQ(futureDateWarning.mSourceIndex, 0U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSourceFile, "part-0.csv");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mRowIndex, 2U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mTransactionId, "synthetic-future");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[1]));
+
+        const auto& olderDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]);
+
+        EXPECT_EQ(olderDateWarning.mSourceIndex, 0U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSourceFile, "part-0.csv");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mRowIndex, 3U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mTransactionId, "synthetic-older");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[2]));
+        const auto& missingDividendTimeError =
+            std::get<SourcedParseDiagnostic>(result.mDiagnostics[2]);
+
+        EXPECT_EQ(missingDividendTimeError.mSourceIndex, 2U);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mSourceFile, "part-2.csv");
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mRowIndex, 5U);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mTransactionId,
+                  "synthetic-missing-dividend-time");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[3]));
+        const auto& missingPrivateTimeError =
+            std::get<SourcedParseDiagnostic>(result.mDiagnostics[3]);
+
+        EXPECT_EQ(missingPrivateTimeError.mSourceIndex, 2U);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mSourceFile, "part-2.csv");
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mRowIndex, 6U);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mTransactionId,
+                  "synthetic-missing-private-time");
 
         ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), sourcePositions.size());
 
@@ -240,6 +308,7 @@ TEST(StatementMergerIntegrationTest,
 TEST(StatementMergerIntegrationTest,
      OverlappingFilesPreserveAllSixKindsAndEverySourceButKeepIdlessRows) {
     const TemporaryHistory history;
+    // Repeat history.csv rows across files: matching IDs merge, but each ID-less row survives.
     const std::array files{history.writeRows("part-0.csv", {1, 2, 3, 4, 5, 6, 7, 8, 9}),
                            history.writeRows("part-1.csv", {0, 2, 4, 5, 6, 7, 8, 9}),
                            history.writeRows("part-2.csv", {2, 4, 5, 6, 7, 8, 9})};
@@ -271,7 +340,28 @@ TEST(StatementMergerIntegrationTest,
 
         test::expectMergeResultsEqual(result, expected);
         EXPECT_EQ(ledgerIds(result), expectedIds);
-        EXPECT_TRUE(result.mDiagnostics.empty());
+        ASSERT_EQ(result.mDiagnostics.size(), 2U);
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[0]));
+        const auto& olderDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+        EXPECT_EQ(olderDateWarning.mSourceIndex, 0U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSourceFile, "part-0.csv");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mRowIndex, 2U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mTransactionId, "synthetic-older");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[1]));
+        const auto& futureDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]);
+
+        EXPECT_EQ(futureDateWarning.mSourceIndex, 1U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSourceFile, "part-1.csv");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mRowIndex, 2U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mTransactionId, "synthetic-future");
 
         for (const auto& reference : result.mStatement.mChronologicalOrder)
         {
@@ -311,7 +401,9 @@ TEST(StatementMergerIntegrationTest,
     const std::array files{fixturePath("history.csv"),
                            fixturePath("conflict.csv"),
                            fixturePath("partial.csv")};
+
     std::array<std::size_t, 3> order{0, 1, 2};
+
     const auto expected = DeterministicStatementMerger{}.merge(parseInOrder(files, order));
 
     do
@@ -326,16 +418,63 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(std::count(ids.begin(), ids.end(), "synthetic-tied"), 0);
         EXPECT_EQ(std::count(ids.begin(), ids.end(), "synthetic-rejected"), 0);
         EXPECT_EQ(std::count(ids.begin(), ids.end(), "synthetic-class"), 1);
-        ASSERT_EQ(result.mDiagnostics.size(), 4U);
+        ASSERT_EQ(result.mDiagnostics.size(), 8U);
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[0]));
+        const auto& futureDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
 
-        const auto& parser = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+        EXPECT_EQ(futureDateWarning.mSourceIndex, 0U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mRowIndex, 2U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mTransactionId, "synthetic-future");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[1]));
+        const auto& olderDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]);
+
+        EXPECT_EQ(olderDateWarning.mSourceIndex, 0U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mRowIndex, 3U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mTransactionId, "synthetic-older");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[2]));
+        const auto& missingDividendTimeError =
+            std::get<SourcedParseDiagnostic>(result.mDiagnostics[2]);
+
+        EXPECT_EQ(missingDividendTimeError.mSourceIndex, 0U);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mRowIndex, 12U);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mTransactionId,
+                  "synthetic-missing-dividend-time");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[3]));
+        const auto& missingPrivateTimeError =
+            std::get<SourcedParseDiagnostic>(result.mDiagnostics[3]);
+
+        EXPECT_EQ(missingPrivateTimeError.mSourceIndex, 0U);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mRowIndex, 13U);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mTransactionId,
+                  "synthetic-missing-private-time");
+
+        const auto& parser = std::get<SourcedParseDiagnostic>(result.mDiagnostics[4]);
         const auto partial = std::find_if(inputs.begin(), inputs.end(), [](const auto& aInput) {
             return aInput.mSourceIndex == 2;
         });
 
         ASSERT_EQ(partial->mParseResult.mDiagnostics.size(), 1U);
         test::expectDiagnosticsEqual(
-            {result.mDiagnostics[0]},
+            {result.mDiagnostics[4]},
             {SourcedParseDiagnostic{.mSourceIndex = 2,
                                     .mBroker = partial->mParseResult.mBroker,
                                     .mDiagnostic = partial->mParseResult.mDiagnostics[0]}});
@@ -349,9 +488,9 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(parser.mDiagnostic.mTransactionId, "synthetic-rejected");
         EXPECT_EQ(parser.mDiagnostic.mField, "price");
 
-        const auto& classConflict = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
-        const auto& nameConflict = std::get<MergeDiagnostic>(result.mDiagnostics[2]);
-        const auto& transactionConflict = std::get<MergeDiagnostic>(result.mDiagnostics[3]);
+        const auto& classConflict = std::get<MergeDiagnostic>(result.mDiagnostics[5]);
+        const auto& nameConflict = std::get<MergeDiagnostic>(result.mDiagnostics[6]);
+        const auto& transactionConflict = std::get<MergeDiagnostic>(result.mDiagnostics[7]);
 
         EXPECT_EQ(classConflict.mCode, MergeDiagnosticCode::InstrumentAssetClassConflict);
         EXPECT_EQ(classConflict.mSeverity, DiagnosticSeverity::Error);
@@ -387,10 +526,13 @@ TEST(StatementMergerIntegrationTest,
 }
 
 TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAllFailures) {
+    // We get data from history.csv
     const TemporaryHistory history;
+
     const auto empty = history.writeRows("empty.csv", {});
     const std::array files{empty, fixturePath("invalid.csv"), fixturePath("history.csv")};
     std::array<std::size_t, 3> order{0, 1, 2};
+
     const auto expected = DeterministicStatementMerger{}.merge(parseInOrder(files, order));
 
     do
@@ -400,7 +542,54 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
 
         test::expectMergeResultsEqual(result, expected);
         EXPECT_EQ(ledgerIds(result).size(), 9U);
-        ASSERT_EQ(result.mDiagnostics.size(), 1U);
+        ASSERT_EQ(result.mDiagnostics.size(), 5U);
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[1]));
+        const auto& futureDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]);
+
+        EXPECT_EQ(futureDateWarning.mSourceIndex, 2U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mRowIndex, 2U);
+        EXPECT_EQ(futureDateWarning.mDiagnostic.mTransactionId, "synthetic-future");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[2]));
+        const auto& olderDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[2]);
+
+        EXPECT_EQ(olderDateWarning.mSourceIndex, 2U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mRowIndex, 3U);
+        EXPECT_EQ(olderDateWarning.mDiagnostic.mTransactionId, "synthetic-older");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[3]));
+        const auto& missingDividendTimeError =
+            std::get<SourcedParseDiagnostic>(result.mDiagnostics[3]);
+
+        EXPECT_EQ(missingDividendTimeError.mSourceIndex, 2U);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mRowIndex, 12U);
+        EXPECT_EQ(missingDividendTimeError.mDiagnostic.mTransactionId,
+                  "synthetic-missing-dividend-time");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[4]));
+        const auto& missingPrivateTimeError =
+            std::get<SourcedParseDiagnostic>(result.mDiagnostics[4]);
+
+        EXPECT_EQ(missingPrivateTimeError.mSourceIndex, 2U);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mSourceFile, "history.csv");
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mRowIndex, 13U);
+        EXPECT_EQ(missingPrivateTimeError.mDiagnostic.mTransactionId,
+                  "synthetic-missing-private-time");
 
         const auto& diagnostic = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
 
@@ -431,37 +620,81 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
     EXPECT_TRUE(allEmpty.mDiagnostics.empty());
 }
 
-TEST(StatementMergerIntegrationTest, RequestOrderChangesEqualAndMissingTimestampTiesButNotDates) {
+TEST(StatementMergerIntegrationTest, RequestOrderBreaksEqualTimestampTiesWithoutChangingDates) {
     const TemporaryHistory history;
+    const auto tradeFile = history.writeRows("trade.csv", {2}, "2024-01-02T09:00:00.000Z");
+    const auto benefitFile = history.writeRows("benefit.csv", {7}, "2024-01-02T09:00:00.000Z");
+    const auto olderFile = history.writeRows("older.csv", {1});
+    const std::array tradeFirstFiles{tradeFile, benefitFile, olderFile};
+    const std::array benefitFirstFiles{benefitFile, tradeFile, olderFile};
+    const auto tradeFirstInputs = parseInOrder(tradeFirstFiles, {2, 1, 0});
+    const auto benefitFirstInputs = parseInOrder(benefitFirstFiles, {1, 2, 0});
 
-    for (const auto timestamp : {"2024-01-02T09:00:00.000Z", ""})
-    {
-        SCOPED_TRACE(timestamp);
-        const auto trade = history.writeRows("trade.csv", {2}, timestamp);
-        const auto benefit = history.writeRows("benefit.csv", {7}, timestamp);
-        const auto older = history.writeRows("older.csv", {1});
-        const std::array firstFiles{trade, benefit, older};
-        const std::array reversedFiles{benefit, trade, older};
-        const auto first =
-            DeterministicStatementMerger{}.merge(parseInOrder(firstFiles, {2, 1, 0}));
-        const auto reversed =
-            DeterministicStatementMerger{}.merge(parseInOrder(reversedFiles, {1, 2, 0}));
+    const auto tradeFirstResult = DeterministicStatementMerger{}.merge(tradeFirstInputs);
+    const auto benefitFirstResult = DeterministicStatementMerger{}.merge(benefitFirstInputs);
 
-        EXPECT_EQ(
-            ledgerIds(first),
-            (std::vector<std::string>{"synthetic-older", "synthetic-tied", "synthetic-benefit"}));
-        EXPECT_EQ(
-            ledgerIds(reversed),
-            (std::vector<std::string>{"synthetic-older", "synthetic-benefit", "synthetic-tied"}));
-        test::expectStatementsEqual(first.mStatement.mPresentation,
-                                    reversed.mStatement.mPresentation,
-                                    false);
-        EXPECT_TRUE(first.mDiagnostics.empty());
-        EXPECT_TRUE(reversed.mDiagnostics.empty());
-    }
+    EXPECT_EQ(ledgerIds(tradeFirstResult),
+              (std::vector<std::string>{"synthetic-older", "synthetic-tied", "synthetic-benefit"}));
+    EXPECT_EQ(ledgerIds(benefitFirstResult),
+              (std::vector<std::string>{"synthetic-older", "synthetic-benefit", "synthetic-tied"}));
+    test::expectStatementsEqual(tradeFirstResult.mStatement.mPresentation,
+                                benefitFirstResult.mStatement.mPresentation,
+                                false);
+    ASSERT_EQ(tradeFirstResult.mDiagnostics.size(), 1U);
+    ASSERT_EQ(benefitFirstResult.mDiagnostics.size(), 1U);
+
+    const auto& olderDateWarning =
+        std::get<SourcedParseDiagnostic>(tradeFirstResult.mDiagnostics[0]);
+
+    EXPECT_EQ(olderDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(olderDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(olderDateWarning.mDiagnostic.mField, "datetime");
 }
 
-TEST(StatementMergerIntegrationTest, InvalidAndMissingTimestampsKeepEventsAndParserWarnings) {
+TEST(StatementMergerIntegrationTest, MissingDatetimesRejectTransactionsRegardlessOfRequestOrder) {
+    const TemporaryHistory history;
+    const auto tradeFile = history.writeRows("trade.csv", {2}, "");
+    const auto benefitFile = history.writeRows("benefit.csv", {7}, "");
+    const auto olderFile = history.writeRows("older.csv", {1});
+    const std::array tradeFirstFiles{tradeFile, benefitFile, olderFile};
+    const std::array benefitFirstFiles{benefitFile, tradeFile, olderFile};
+    const auto tradeFirstInputs = parseInOrder(tradeFirstFiles, {2, 1, 0});
+    const auto benefitFirstInputs = parseInOrder(benefitFirstFiles, {1, 2, 0});
+
+    const auto tradeFirstResult = DeterministicStatementMerger{}.merge(tradeFirstInputs);
+    const auto benefitFirstResult = DeterministicStatementMerger{}.merge(benefitFirstInputs);
+
+    EXPECT_EQ(ledgerIds(tradeFirstResult), (std::vector<std::string>{"synthetic-older"}));
+    EXPECT_EQ(ledgerIds(benefitFirstResult), (std::vector<std::string>{"synthetic-older"}));
+    test::expectStatementsEqual(tradeFirstResult.mStatement.mPresentation,
+                                benefitFirstResult.mStatement.mPresentation,
+                                false);
+    ASSERT_EQ(tradeFirstResult.mDiagnostics.size(), 3U);
+    ASSERT_EQ(benefitFirstResult.mDiagnostics.size(), 3U);
+
+    const auto& missingTradeTimeError =
+        std::get<SourcedParseDiagnostic>(tradeFirstResult.mDiagnostics[0]);
+
+    EXPECT_EQ(missingTradeTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(missingTradeTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missingTradeTimeError.mDiagnostic.mField, "datetime");
+
+    const auto& missingBenefitTimeError =
+        std::get<SourcedParseDiagnostic>(tradeFirstResult.mDiagnostics[1]);
+
+    EXPECT_EQ(missingBenefitTimeError.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(missingBenefitTimeError.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missingBenefitTimeError.mDiagnostic.mField, "datetime");
+
+    const auto& olderDateWarning =
+        std::get<SourcedParseDiagnostic>(tradeFirstResult.mDiagnostics[2]);
+
+    EXPECT_EQ(olderDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(olderDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(olderDateWarning.mDiagnostic.mField, "datetime");
+}
+
+TEST(StatementMergerIntegrationTest, InvalidDatetimeWarnsButMissingDatetimeRejectsTheTransaction) {
     const TemporaryHistory history;
     const std::array files{history.writeRows("invalid-time.csv", {2}, "invalid-time"),
                            history.writeRows("missing-time.csv", {7}, ""),
@@ -476,10 +709,8 @@ TEST(StatementMergerIntegrationTest, InvalidAndMissingTimestampsKeepEventsAndPar
 
         test::expectMergeResultsEqual(result, expected);
         EXPECT_EQ(ledgerIds(result),
-                  (std::vector<std::string>{"synthetic-interest",
-                                            "synthetic-tied",
-                                            "synthetic-benefit"}));
-        ASSERT_EQ(result.mDiagnostics.size(), 1U);
+                  (std::vector<std::string>{"synthetic-interest", "synthetic-tied"}));
+        ASSERT_EQ(result.mDiagnostics.size(), 2U);
 
         const auto& diagnostic = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
         const auto invalid = std::find_if(inputs.begin(), inputs.end(), [](const auto& aInput) {
@@ -487,11 +718,28 @@ TEST(StatementMergerIntegrationTest, InvalidAndMissingTimestampsKeepEventsAndPar
         });
 
         ASSERT_EQ(invalid->mParseResult.mDiagnostics.size(), 1U);
+        const auto missing = std::find_if(inputs.begin(), inputs.end(), [](const auto& aInput) {
+            return aInput.mSourceIndex == 1;
+        });
+
+        ASSERT_NE(missing, inputs.end());
+        ASSERT_EQ(missing->mParseResult.mDiagnostics.size(), 1U);
         test::expectDiagnosticsEqual(
-            {result.mDiagnostics[0]},
+            result.mDiagnostics,
             {SourcedParseDiagnostic{.mSourceIndex = 0,
                                     .mBroker = invalid->mParseResult.mBroker,
-                                    .mDiagnostic = invalid->mParseResult.mDiagnostics[0]}});
+                                    .mDiagnostic = invalid->mParseResult.mDiagnostics[0]},
+             SourcedParseDiagnostic{.mSourceIndex = 1,
+                                    .mBroker = missing->mParseResult.mBroker,
+                                    .mDiagnostic = missing->mParseResult.mDiagnostics[0]}});
+
+        const auto& missingDiagnostic = std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]);
+
+        EXPECT_EQ(missingDiagnostic.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(missingDiagnostic.mDiagnostic.mCode, DiagnosticCode::MissingField);
+        EXPECT_EQ(missingDiagnostic.mDiagnostic.mSourceFile, "missing-time.csv");
+        EXPECT_EQ(missingDiagnostic.mDiagnostic.mRowIndex, 2U);
+        EXPECT_EQ(missingDiagnostic.mDiagnostic.mField, "datetime");
 
         EXPECT_EQ(diagnostic.mSourceIndex, 0U);
         EXPECT_EQ(diagnostic.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
@@ -502,10 +750,442 @@ TEST(StatementMergerIntegrationTest, InvalidAndMissingTimestampsKeepEventsAndPar
         EXPECT_FALSE(
             test::referencedMetadata(result.mStatement, result.mStatement.mChronologicalOrder[1])
                 .mSourceTimestamp.has_value());
-        EXPECT_FALSE(
-            test::referencedMetadata(result.mStatement, result.mStatement.mChronologicalOrder[2])
-                .mSourceTimestamp.has_value());
+        EXPECT_TRUE(result.mStatement.mPresentation.mBenefitEvents.empty());
     } while (std::next_permutation(order.begin(), order.end()));
+}
+
+TEST(StatementMergerIntegrationTest, DateMismatchUsesNineOClockBetweenReliableTimes) {
+    const TemporaryHistory history;
+    const auto tradeAndSplitFile =
+        history.writeRows("mismatch.csv", {2, 6}, "2024-01-03T23:00:00.000Z");
+    const auto earlyInterestFile = history.writeRows("early.csv", {5}, "2024-01-02T08:00:00.000Z");
+    const auto lateBenefitFile = history.writeRows("late.csv", {7}, "2024-01-02T10:00:00.000Z");
+    const std::array files{tradeAndSplitFile, earlyInterestFile, lateBenefitFile};
+    std::array<std::size_t, 3> order{0, 1, 2};
+
+    do
+    {
+        const auto inputs = parseInOrder(files, order);
+
+        const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+        EXPECT_EQ(ledgerIds(result),
+                  (std::vector<std::string>{"synthetic-interest",
+                                            "synthetic-tied",
+                                            "synthetic-action",
+                                            "synthetic-benefit"}));
+        ASSERT_EQ(result.mDiagnostics.size(), 2U);
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[0]));
+        const auto& tradeDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+        EXPECT_EQ(tradeDateWarning.mSourceIndex, 0U);
+        EXPECT_EQ(tradeDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(tradeDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(tradeDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(tradeDateWarning.mDiagnostic.mSourceFile, "mismatch.csv");
+        EXPECT_EQ(tradeDateWarning.mDiagnostic.mRowIndex, 2U);
+        EXPECT_EQ(tradeDateWarning.mDiagnostic.mTransactionId, "synthetic-tied");
+
+        ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[1]));
+        const auto& splitDateWarning = std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]);
+
+        EXPECT_EQ(splitDateWarning.mSourceIndex, 0U);
+        EXPECT_EQ(splitDateWarning.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(splitDateWarning.mDiagnostic.mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(splitDateWarning.mDiagnostic.mField, "datetime");
+        EXPECT_EQ(splitDateWarning.mDiagnostic.mSourceFile, "mismatch.csv");
+        EXPECT_EQ(splitDateWarning.mDiagnostic.mRowIndex, 3U);
+        EXPECT_EQ(splitDateWarning.mDiagnostic.mTransactionId, "synthetic-action");
+
+        const auto& tradeMetadata =
+            test::referencedMetadata(result.mStatement, result.mStatement.mChronologicalOrder[1]);
+        const auto& splitMetadata =
+            test::referencedMetadata(result.mStatement, result.mStatement.mChronologicalOrder[2]);
+
+        EXPECT_EQ(tradeMetadata.mTaxDate, parseCalendarDate("2024-01-02"));
+        EXPECT_EQ(tradeMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-03T23:00:00Z"));
+        EXPECT_EQ(tradeMetadata.mOrderingTimestamp, parseSourceTimestamp("2024-01-02T09:00:00Z"));
+
+        EXPECT_EQ(splitMetadata.mTaxDate, parseCalendarDate("2024-01-02"));
+        EXPECT_EQ(splitMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-03T23:00:00Z"));
+        EXPECT_EQ(splitMetadata.mOrderingTimestamp, parseSourceTimestamp("2024-01-02T09:00:00Z"));
+    } while (std::next_permutation(order.begin(), order.end()));
+}
+
+TEST(StatementMergerIntegrationTest, EqualFallbackTimesDoNotHideDifferentSourceTimestamps) {
+    const TemporaryHistory history;
+    const std::array files{
+        history.writeRows("first.csv", {2}, "2024-01-03T08:00:00.000Z"),
+        history.writeRows("second.csv", {2}, "2024-01-04T08:00:00.000Z"),
+    };
+    const auto inputs = parseInOrder(files, {1, 0});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+    const auto& conflict = std::get<MergeDiagnostic>(result.mDiagnostics[2]);
+
+    EXPECT_EQ(conflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(conflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(conflict.mSources.size(), 2U);
+}
+
+TEST(StatementMergerIntegrationTest, IdenticalBlankIncomeFactsDeduplicateWithoutInventingValues) {
+    const std::array files{fixturePath("unknown_income.csv"), fixturePath("unknown_income.csv")};
+    const auto inputs = parseInOrder(files, {1, 0});
+    const auto forwardInputs = parseInOrder(files, {0, 1});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+
+    test::expectMergeResultsEqual(result, forward);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_EQ(ledgerIds(result),
+              (std::vector<std::string>{"synthetic-healthy-trade",
+                                        "synthetic-optional-dividend",
+                                        "synthetic-optional-deposit",
+                                        "synthetic-optional-coupon",
+                                        "synthetic-healthy-dividend"}));
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& dividends = result.mStatement.mPresentation.mDividendInstruments.front();
+
+    EXPECT_EQ(dividends.mIsin, "XX9000000001");
+    ASSERT_EQ(dividends.mTransactions.size(), 2U);
+
+    const auto& dividend = dividends.mTransactions[0];
+    const auto& knownDividend = dividends.mTransactions[1];
+
+    EXPECT_EQ(dividend.mGrossAmount, 123'400);
+    EXPECT_EQ(dividend.mCurrency, Currency::USD);
+    EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(dividend.mTaxPaid.has_value());
+    EXPECT_FALSE(dividend.mExchangeRate.has_value());
+    EXPECT_EQ(
+        dividend.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 2,
+                                       .mTransactionId = "synthetic-optional-dividend",
+                                       .mInputSequence = {0, 0}},
+                                      {.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 2,
+                                       .mTransactionId = "synthetic-optional-dividend",
+                                       .mInputSequence = {1, 0}}}));
+
+    EXPECT_EQ(knownDividend.mGrossAmount, 50'000);
+    EXPECT_EQ(knownDividend.mTaxPaid, 0);
+    EXPECT_EQ(knownDividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(knownDividend.mCurrency, Currency::EUR);
+    EXPECT_EQ(knownDividend.mTaxCurrency, Currency::EUR);
+    ASSERT_EQ(knownDividend.mMetadata.mSources.size(), 2U);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 2U);
+
+    const auto& bond = result.mStatement.mPresentation.mInterestInstruments[0];
+    const auto& deposit = result.mStatement.mPresentation.mInterestInstruments[1];
+
+    EXPECT_EQ(bond.mInterestType, InterestType::BondInterest);
+    EXPECT_EQ(bond.mIsin, "XX9000000002");
+    EXPECT_EQ(bond.mName, "Synthetic Optional Bond");
+    ASSERT_EQ(bond.mTransactions.size(), 1U);
+
+    const auto& coupon = bond.mTransactions.front();
+
+    EXPECT_EQ(coupon.mGrossAmount, 67'800);
+    EXPECT_EQ(coupon.mCurrency, Currency::USD);
+    EXPECT_EQ(coupon.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(coupon.mTaxPaid.has_value());
+    EXPECT_FALSE(coupon.mExchangeRate.has_value());
+    EXPECT_EQ(
+        coupon.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 4,
+                                       .mTransactionId = "synthetic-optional-coupon",
+                                       .mInputSequence = {0, 2}},
+                                      {.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 4,
+                                       .mTransactionId = "synthetic-optional-coupon",
+                                       .mInputSequence = {1, 2}}}));
+
+    EXPECT_EQ(deposit.mInterestType, InterestType::BrokerInterest);
+    EXPECT_FALSE(deposit.mIsin.has_value());
+    EXPECT_EQ(deposit.mName, "Trade Republic");
+    ASSERT_EQ(deposit.mTransactions.size(), 1U);
+
+    const auto& cashInterest = deposit.mTransactions.front();
+
+    EXPECT_EQ(cashInterest.mGrossAmount, 34'500);
+    EXPECT_EQ(cashInterest.mCurrency, Currency::USD);
+    EXPECT_EQ(cashInterest.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(cashInterest.mTaxPaid.has_value());
+    EXPECT_FALSE(cashInterest.mExchangeRate.has_value());
+    EXPECT_EQ(
+        cashInterest.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 3,
+                                       .mTransactionId = "synthetic-optional-deposit",
+                                       .mInputSequence = {0, 1}},
+                                      {.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 3,
+                                       .mTransactionId = "synthetic-optional-deposit",
+                                       .mInputSequence = {1, 1}}}));
+}
+
+TEST(StatementMergerIntegrationTest,
+     BlankIncomeTaxConflictsWithExplicitZeroWhileHealthyRowsSurvive) {
+    // Blank tax is unknown; an overlapping explicit zero is a different fact.
+    const std::array files{fixturePath("unknown_income.csv"),
+                           fixturePath("confirmed_tax_income.csv")};
+    const auto inputs = parseInOrder(files, {1, 0});
+    const auto forwardInputs = parseInOrder(files, {0, 1});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+
+    test::expectMergeResultsEqual(result, forward);
+    EXPECT_EQ(ledgerIds(result),
+              (std::vector<std::string>{"synthetic-healthy-trade", "synthetic-healthy-dividend"}));
+    EXPECT_TRUE(result.mStatement.mPresentation.mInterestInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& trade = instrument.mTransactions.front();
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(trade.mUnitPrice, 80'000);
+    EXPECT_EQ(trade.mUnits, 125'000'000);
+    EXPECT_EQ(trade.mAmount, 100'000);
+    EXPECT_EQ(trade.mFeePaid, 2'500);
+    EXPECT_EQ(
+        trade.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 5,
+                                       .mTransactionId = "synthetic-healthy-trade",
+                                       .mInputSequence = {0, 3}}}));
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& dividends = result.mStatement.mPresentation.mDividendInstruments.front();
+
+    ASSERT_EQ(dividends.mTransactions.size(), 1U);
+
+    const auto& dividend = dividends.mTransactions.front();
+
+    EXPECT_EQ(dividend.mGrossAmount, 50'000);
+    EXPECT_EQ(dividend.mTaxPaid, 0);
+    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        dividend.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 6,
+                                       .mTransactionId = "synthetic-healthy-dividend",
+                                       .mInputSequence = {0, 4}}}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[0]));
+
+    const auto& dividendConflict = std::get<MergeDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(dividendConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dividendConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(dividendConflict.mEventKinds, (std::vector{StatementEventKind::Dividend}));
+    EXPECT_EQ(dividendConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(dividendConflict.mIsin, "XX9000000001");
+    EXPECT_EQ(dividendConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {0, 0}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("confirmed_tax_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {1, 0}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[1]));
+
+    const auto& depositConflict = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(depositConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(depositConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(depositConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(depositConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(depositConflict.mIsin, std::nullopt);
+    EXPECT_EQ(depositConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {0, 1}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("confirmed_tax_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {1, 1}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[2]));
+
+    const auto& couponConflict = std::get<MergeDiagnostic>(result.mDiagnostics[2]);
+
+    EXPECT_EQ(couponConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(couponConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(couponConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(couponConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(couponConflict.mIsin, "XX9000000002");
+    EXPECT_EQ(couponConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {0, 2}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("confirmed_tax_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {1, 2}}}));
+}
+
+TEST(StatementMergerIntegrationTest,
+     AbsentIncomeRateConflictsWithPopulatedRateWhileHealthyRowsSurvive) {
+    // An absent broker rate cannot be silently filled from an overlapping export.
+    const std::array files{fixturePath("unknown_income.csv"),
+                           fixturePath("broker_rate_income.csv")};
+    const auto inputs = parseInOrder(files, {1, 0});
+    const auto forwardInputs = parseInOrder(files, {0, 1});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+
+    test::expectMergeResultsEqual(result, forward);
+    EXPECT_EQ(ledgerIds(result),
+              (std::vector<std::string>{"synthetic-healthy-trade", "synthetic-healthy-dividend"}));
+    EXPECT_TRUE(result.mStatement.mPresentation.mInterestInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& trade = instrument.mTransactions.front();
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(trade.mUnitPrice, 80'000);
+    EXPECT_EQ(trade.mUnits, 125'000'000);
+    EXPECT_EQ(trade.mAmount, 100'000);
+    EXPECT_EQ(trade.mFeePaid, 2'500);
+    EXPECT_EQ(
+        trade.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 5,
+                                       .mTransactionId = "synthetic-healthy-trade",
+                                       .mInputSequence = {0, 3}}}));
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& dividends = result.mStatement.mPresentation.mDividendInstruments.front();
+
+    ASSERT_EQ(dividends.mTransactions.size(), 1U);
+
+    const auto& dividend = dividends.mTransactions.front();
+
+    EXPECT_EQ(dividend.mGrossAmount, 50'000);
+    EXPECT_EQ(dividend.mTaxPaid, 0);
+    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        dividend.mMetadata.mSources,
+        (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                       .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                                       .mSourceRow = 6,
+                                       .mTransactionId = "synthetic-healthy-dividend",
+                                       .mInputSequence = {0, 4}}}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[0]));
+
+    const auto& dividendConflict = std::get<MergeDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(dividendConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dividendConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(dividendConflict.mEventKinds, (std::vector{StatementEventKind::Dividend}));
+    EXPECT_EQ(dividendConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(dividendConflict.mIsin, "XX9000000001");
+    EXPECT_EQ(dividendConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {0, 0}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("broker_rate_income.csv"),
+                   .mSourceRow = 2,
+                   .mTransactionId = "synthetic-optional-dividend",
+                   .mInputSequence = {1, 0}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[1]));
+
+    const auto& depositConflict = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(depositConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(depositConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(depositConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(depositConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(depositConflict.mIsin, std::nullopt);
+    EXPECT_EQ(depositConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {0, 1}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("broker_rate_income.csv"),
+                   .mSourceRow = 3,
+                   .mTransactionId = "synthetic-optional-deposit",
+                   .mInputSequence = {1, 1}}}));
+
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[2]));
+
+    const auto& couponConflict = std::get<MergeDiagnostic>(result.mDiagnostics[2]);
+
+    EXPECT_EQ(couponConflict.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(couponConflict.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(couponConflict.mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(couponConflict.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(couponConflict.mIsin, "XX9000000002");
+    EXPECT_EQ(couponConflict.mSources,
+              (std::vector<SourceReference>{
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("unknown_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {0, 2}},
+                  {.mBroker = Broker::TradeRepublic,
+                   .mFilename = SourceFilename::fromPath("broker_rate_income.csv"),
+                   .mSourceRow = 4,
+                   .mTransactionId = "synthetic-optional-coupon",
+                   .mInputSequence = {1, 2}}}));
 }
 
 } // namespace

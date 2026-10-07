@@ -99,6 +99,8 @@ struct StableSourceOrder {
 struct EventMetadata {
     Date mTaxDate{};
     std::optional<SourceTimestamp> mSourceTimestamp;
+    /// Explicit ordering fallback; absent uses mSourceTimestamp. This is not broker time evidence.
+    std::optional<SourceTimestamp> mOrderingTimestamp;
     std::vector<SourceReference> mSources;
 
     bool operator==(const EventMetadata&) const = default;
@@ -162,7 +164,7 @@ transactionIdentity(const EventMetadata& aMetadata) {
     return leftIdentity && leftIdentity == transactionIdentity(aRight);
 }
 
-// On the same tax date, known timestamps precede unknown times; input sequence breaks ties.
+// On the same tax date, available ordering times precede missing times; input sequence breaks ties.
 struct ChronologicalEventOrder {
     [[nodiscard]] bool operator()(const EventMetadata& aLeft, const EventMetadata& aRight) const {
         if (aLeft.mTaxDate != aRight.mTaxDate)
@@ -170,15 +172,19 @@ struct ChronologicalEventOrder {
             return aLeft.mTaxDate < aRight.mTaxDate;
         }
 
-        const bool leftMissingTimestamp = !aLeft.mSourceTimestamp.has_value();
-        const bool rightMissingTimestamp = !aRight.mSourceTimestamp.has_value();
+        const auto leftTimestamp =
+            aLeft.mOrderingTimestamp ? aLeft.mOrderingTimestamp : aLeft.mSourceTimestamp;
+        const auto rightTimestamp =
+            aRight.mOrderingTimestamp ? aRight.mOrderingTimestamp : aRight.mSourceTimestamp;
+        const bool leftMissingTimestamp = !leftTimestamp.has_value();
+        const bool rightMissingTimestamp = !rightTimestamp.has_value();
         if (leftMissingTimestamp != rightMissingTimestamp)
         {
             return !leftMissingTimestamp;
         }
-        if (aLeft.mSourceTimestamp != aRight.mSourceTimestamp)
+        if (leftTimestamp != rightTimestamp)
         {
-            return aLeft.mSourceTimestamp < aRight.mSourceTimestamp;
+            return leftTimestamp < rightTimestamp;
         }
 
         if (aLeft.mSources.empty() || aRight.mSources.empty())

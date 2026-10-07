@@ -36,6 +36,9 @@ class QuantityInputs {
         {
             throw std::runtime_error{"Unable to read synthetic quantity fixture"};
         }
+
+        // Quantity tests need consistent dates, independent of the chronology fixture's warning.
+        mRow.replace(1, 10, "2025-01-01");
     }
 
     QuantityInputs(const QuantityInputs&) = delete;
@@ -154,8 +157,63 @@ TEST(ExactArithmeticIntegrationTest, CorporateActionEvidenceSurvivesEquivalentOv
     EXPECT_EQ(action.mUnitsDelta, 12'345'679);
     ASSERT_EQ(action.mUnitEvidence.size(), 2U);
     EXPECT_EQ(action.mUnitEvidence[1].mDiscardedDigits, "50");
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
     EXPECT_FALSE(action.mRatio.has_value());
     EXPECT_TRUE(merged.mDiagnostics.empty());
+}
+
+TEST(ExactArithmeticIntegrationTest, NegativeSplitEvidenceDeduplicatesWithoutInferringDirection) {
+    const QuantityInputs files;
+    const std::array inputs{files.parse("first.csv", "-0.123456785", 0, true),
+                            files.parse("second.csv", "-0.12345678500", 1, true)};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+    EXPECT_EQ(result.mStatement.mChronologicalOrder.front().mKind,
+              StatementEventKind::CorporateAction);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(action.mUnitsDelta, -12'345'679);
+    EXPECT_FALSE(action.mRatio.has_value());
+    EXPECT_EQ(action.mMetadata.mTaxDate,
+              Date{std::chrono::sys_days{std::chrono::year{2025} / 1 / 1}.time_since_epoch()});
+    ASSERT_EQ(action.mUnitEvidence.size(), 2U);
+
+    const auto& first = action.mUnitEvidence[0];
+    const auto& second = action.mUnitEvidence[1];
+
+    EXPECT_EQ(first.mSourceText, "-0.123456785");
+    EXPECT_EQ(first.mDiscardedDigits, "5");
+    EXPECT_EQ(first.mCanonicalValue, "-0.123456785");
+    EXPECT_TRUE(first.mRoundedAwayFromZero);
+
+    EXPECT_EQ(second.mSourceText, "-0.12345678500");
+    EXPECT_EQ(second.mDiscardedDigits, "500");
+    EXPECT_EQ(second.mCanonicalValue, "-0.123456785");
+    EXPECT_TRUE(second.mRoundedAwayFromZero);
+    EXPECT_EQ(action.mMetadata.mSources,
+              (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("first.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-future",
+                                             .mInputSequence = {0, 0}},
+                                            {.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("second.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-future",
+                                             .mInputSequence = {1, 0}}}));
+    EXPECT_EQ(first.mSource, action.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mSource, action.mMetadata.mSources[1]);
 }
 
 } // namespace

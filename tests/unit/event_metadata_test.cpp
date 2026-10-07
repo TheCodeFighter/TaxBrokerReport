@@ -97,6 +97,9 @@ TEST(EventMetadataTest, ExactEqualityIncludesEveryMetadataField) {
         aMetadata.mSourceTimestamp = makeTimestamp(2024, 1, 15, 11);
     });
     expectDifferent([](EventMetadata& aMetadata) {
+        aMetadata.mOrderingTimestamp = makeTimestamp(2024, 1, 15, 9);
+    });
+    expectDifferent([](EventMetadata& aMetadata) {
         aMetadata.mSources.front().mBroker = Broker::InteractiveBrokers;
     });
     expectDifferent([](EventMetadata& aMetadata) {
@@ -250,6 +253,54 @@ TEST(EventMetadataTest, ChronologicalComparisonHasNoEconomicSourceLocationFallba
     EXPECT_FALSE(order(second, first));
     EXPECT_FALSE(order(first, equalSequence));
     EXPECT_FALSE(order(equalSequence, first));
+}
+
+TEST(EventMetadataTest, OrderingTimestampOverridesSourceTimeOnEitherSideOfComparison) {
+    auto assumed = makeMetadata("assumed", 2, {0, 0}, makeTimestamp(2024, 1, 16, 23));
+    assumed.mOrderingTimestamp = makeTimestamp(2024, 1, 15, 9);
+    const auto before = makeMetadata("before", 2, {1, 0}, makeTimestamp(2024, 1, 15, 8));
+    const auto after = makeMetadata("after", 2, {2, 0}, makeTimestamp(2024, 1, 15, 10));
+    const ChronologicalEventOrder order;
+
+    EXPECT_TRUE(order(before, assumed));
+    EXPECT_FALSE(order(assumed, before));
+    EXPECT_TRUE(order(assumed, after));
+    EXPECT_FALSE(order(after, assumed));
+    EXPECT_FALSE(order(assumed, assumed));
+}
+
+TEST(EventMetadataTest, EqualOrderingTimesUseRequestOrderDespiteDifferentSourceTimes) {
+    auto first = makeMetadata("first", 2, {0, 0}, makeTimestamp(2024, 1, 17, 23));
+    auto second = makeMetadata("second", 2, {1, 0}, makeTimestamp(2024, 1, 16, 8));
+    first.mOrderingTimestamp = makeTimestamp(2024, 1, 15, 9);
+    second.mOrderingTimestamp = makeTimestamp(2024, 1, 15, 9);
+    const ChronologicalEventOrder order;
+
+    // Once ordering times tie, the preserved source times are not another ordering key.
+    EXPECT_TRUE(order(first, second));
+    EXPECT_FALSE(order(second, first));
+}
+
+TEST(EventMetadataTest, TaxDatePrecedesOrderingTimestampAcrossAYearBoundary) {
+    auto december = makeMetadata("december",
+                                 2,
+                                 {1, 0},
+                                 makeTimestamp(2024, 1, 1, 23),
+                                 Broker::TradeRepublic,
+                                 "december.csv",
+                                 makeDate(2023, 12, 31));
+    december.mOrderingTimestamp = makeTimestamp(2023, 12, 31, 9);
+    const auto january = makeMetadata("january",
+                                      2,
+                                      {0, 0},
+                                      makeTimestamp(2024, 1, 1, 8),
+                                      Broker::TradeRepublic,
+                                      "january.csv",
+                                      makeDate(2024, 1, 1));
+    const ChronologicalEventOrder order;
+
+    EXPECT_TRUE(order(december, january));
+    EXPECT_FALSE(order(january, december));
 }
 
 } // namespace

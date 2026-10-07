@@ -6,6 +6,9 @@
 #include <string_view>
 #include <utility>
 
+// UTC ordering hour when the original datetime calendar date disagrees with date.
+#define TR_DATE_MISMATCH_DEFAULT_HOUR 9
+
 namespace csv {
 class CSVRow;
 }
@@ -18,11 +21,12 @@ class TradeRepublicParser final : public CsvParser {
 
   private:
     struct RowContext;
+    struct ParsedIncome;
 
     static constexpr char delimiter = ',';
 
     RowMeta detectRowType(const csv::CSVRow& aCsvRow) const;
-    InterestType detectInterestType(std::string_view aType) const;
+    InterestType detectInterestType(const csv::CSVRow& aCsvRow) const;
 
     bool parseTradeRow(const csv::CSVRow& aCsvRow,
                        std::vector<TradeInstrument>& aInstruments,
@@ -46,6 +50,10 @@ class TradeRepublicParser final : public CsvParser {
                                std::vector<PrivateMarketEvent>& aPrivateMarketEvents,
                                const RowParsedValues& aParsedValues,
                                const RowContext& aContext);
+
+    /// Shared income validation; blank withholding and absent broker FX remain unknown.
+    std::optional<ParsedIncome>
+    parseIncome(const csv::CSVRow& aCsvRow, std::string_view aRowKind, const RowContext& aContext);
 
     // Parsing helpers
     std::optional<Money> parseMoney(std::string_view aValue);
