@@ -742,12 +742,516 @@ TEST(TradeRepublicParserTest, PreservesBothQuantitySignsWithoutInferringSplitDir
     EXPECT_EQ(positiveQuantityAction.mUnitsDelta, 200'000'000);
     EXPECT_FALSE(positiveQuantityAction.mRatio.has_value());
     EXPECT_EQ(transactionId(positiveQuantityAction.mMetadata), "synthetic-split-001");
+    ASSERT_EQ(positiveQuantityAction.mUnitEvidence.size(), 1U);
+
+    const auto& positiveEvidence = positiveQuantityAction.mUnitEvidence.front();
+
+    EXPECT_EQ(positiveEvidence.mSourceText, "2.0000000000");
+    EXPECT_EQ(positiveEvidence.mCanonicalValue, "2");
+    EXPECT_EQ(positiveEvidence.mSource.mSourceRow, 17U);
+    EXPECT_EQ(positiveEvidence.mSource, positiveQuantityAction.mMetadata.mSources.front());
 
     const auto& negativeQuantityAction = instrument->mCorporateActions[1];
     EXPECT_EQ(negativeQuantityAction.mType, CorporateActionType::UnresolvedSplit);
     EXPECT_EQ(negativeQuantityAction.mUnitsDelta, -50'000'000);
     EXPECT_FALSE(negativeQuantityAction.mRatio.has_value());
-    EXPECT_EQ(transactionId(negativeQuantityAction.mMetadata), "synthetic-reverse-split-001");
+    EXPECT_EQ(transactionId(negativeQuantityAction.mMetadata), "synthetic-negative-split-001");
+    ASSERT_EQ(negativeQuantityAction.mUnitEvidence.size(), 1U);
+
+    const auto& negativeEvidence = negativeQuantityAction.mUnitEvidence.front();
+
+    EXPECT_EQ(negativeEvidence.mSourceText, "-0.5000000000");
+    EXPECT_EQ(negativeEvidence.mCanonicalValue, "-0.5");
+    EXPECT_EQ(negativeEvidence.mSource.mSourceRow, 18U);
+    EXPECT_EQ(negativeEvidence.mSource, negativeQuantityAction.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesPositiveHalfStepSplitEvidenceWithoutEconomics) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0.12345678500",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // 0.12345678500 rounds to 0.12345679; 0.12345679 * 100,000,000 = 12,345,679.
+    EXPECT_EQ(action.mUnitsDelta, 12'345'679);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "0.12345678500");
+    EXPECT_EQ(evidence.mCanonicalValue, "0.123456785");
+    EXPECT_EQ(evidence.mDiscardedDigits, "500");
+    EXPECT_TRUE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesPositiveSplitEvidenceWhenRoundingTowardZero) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0.12345678400",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // 0.12345678400 rounds to 0.12345678; 0.12345678 * 100,000,000 = 12,345,678.
+    EXPECT_EQ(action.mUnitsDelta, 12'345'678);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "0.12345678400");
+    EXPECT_EQ(evidence.mCanonicalValue, "0.123456784");
+    EXPECT_EQ(evidence.mDiscardedDigits, "400");
+    EXPECT_FALSE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesPositiveSplitEvidenceWhenRoundingAboveHalfStep) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0.12345678600",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // 0.12345678600 rounds to 0.12345679; 0.12345679 * 100,000,000 = 12,345,679.
+    EXPECT_EQ(action.mUnitsDelta, 12'345'679);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "0.12345678600");
+    EXPECT_EQ(evidence.mCanonicalValue, "0.123456786");
+    EXPECT_EQ(evidence.mDiscardedDigits, "600");
+    EXPECT_TRUE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesNegativeSplitEvidenceWhenRoundingAboveHalfStep) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-0.12345678600",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // -0.12345678600 rounds to -0.12345679; -0.12345679 * 100,000,000 = -12,345,679.
+    EXPECT_EQ(action.mUnitsDelta, -12'345'679);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "-0.12345678600");
+    EXPECT_EQ(evidence.mCanonicalValue, "-0.123456786");
+    EXPECT_EQ(evidence.mDiscardedDigits, "600");
+    EXPECT_TRUE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesNegativeHalfStepSplitEvidenceWithoutEconomics) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-0.12345678500",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // -0.12345678500 rounds to -0.12345679; -0.12345679 * 100,000,000 = -12,345,679.
+    EXPECT_EQ(action.mUnitsDelta, -12'345'679);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "-0.12345678500");
+    EXPECT_EQ(evidence.mCanonicalValue, "-0.123456785");
+    EXPECT_EQ(evidence.mDiscardedDigits, "500");
+    EXPECT_TRUE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesNegativeSplitEvidenceWhenRoundingTowardZero) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-0.12345678400",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // -0.12345678400 rounds to -0.12345678; -0.12345678 * 100,000,000 = -12,345,678.
+    EXPECT_EQ(action.mUnitsDelta, -12'345'678);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "-0.12345678400");
+    EXPECT_EQ(evidence.mCanonicalValue, "-0.123456784");
+    EXPECT_EQ(evidence.mDiscardedDigits, "400");
+    EXPECT_FALSE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesSmallestPositiveRoundedSplitQuantity) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0.000000005",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // 0.000000005 rounds away from zero to 0.00000001 shares, stored as 1.
+    EXPECT_EQ(action.mUnitsDelta, 1);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "0.000000005");
+    EXPECT_EQ(evidence.mCanonicalValue, "0.000000005");
+    EXPECT_EQ(evidence.mDiscardedDigits, "5");
+    EXPECT_TRUE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, PreservesSmallestNegativeRoundedSplitQuantity) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-0.000000005",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // -0.000000005 rounds away from zero to -0.00000001 shares, stored as -1.
+    EXPECT_EQ(action.mUnitsDelta, -1);
+    EXPECT_FALSE(action.mRatio.has_value());
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+
+    const auto& evidence = action.mUnitEvidence.front();
+
+    EXPECT_EQ(evidence.mSourceText, "-0.000000005");
+    EXPECT_EQ(evidence.mCanonicalValue, "-0.000000005");
+    EXPECT_EQ(evidence.mDiscardedDigits, "5");
+    EXPECT_TRUE(evidence.mRoundedAwayFromZero);
+    EXPECT_EQ(evidence.mSource.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(evidence.mSource.mSourceRow, 2U);
+    EXPECT_EQ(evidence.mSource.mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(evidence.mSource.mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(evidence.mSource, action.mMetadata.mSources.front());
+}
+
+TEST(TradeRepublicParserTest, RejectsPositiveSplitQuantityBelowHalfStep) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0.000000004",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(diagnostic.mField, "shares");
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-split-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsNegativeSplitQuantityBelowHalfStep) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-0.000000004",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(diagnostic.mField, "shares");
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-split-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsNegativeZeroSplitQuantity) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-0.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(diagnostic.mField, "shares");
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-split-validation");
 }
 
 TEST(TradeRepublicParserTest, PreservesBenefitsAndEveryPrivateMarketEventType) {
@@ -2035,38 +2539,95 @@ TEST(TradeRepublicParserTest, ReportsUnknownAndKnownTypesInTheWrongCategory) {
 }
 
 TEST(TradeRepublicParserTest, KeepsSignedSourceUnitsAndDiscardedDigitsForReconciliation) {
-    SyntheticCsvRow buy;
-    buy.mShares = "0.12345678400";
-    SyntheticCsvRow sell;
-    sell.mType = "SELL";
-    sell.mShares = "-0.123456785";
-    sell.mAmount = "1.00";
-    sell.mTransactionId = "synthetic-evidence-sell";
-    SyntheticCsvRow action;
-    action.mCategory = "CORPORATE_ACTION";
-    action.mType = "SPLIT";
-    action.mShares = "0.123456785";
-    action.mTransactionId = "synthetic-evidence-action";
-    const auto result = parseRows({buy, sell, action});
-    const auto& instrument = result.mStatement.mTradeInstruments.at(0);
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0.12345678400",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const SyntheticCsvRow sell{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-0.123456785",
+        .mPrice = "10.000000",
+        .mAmount = "1.00",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-evidence-sell",
+    };
+    const SyntheticCsvRow split{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0.123456785",
+        .mPrice = "",
+        .mAmount = "",
+        .mCurrency = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-evidence-action",
+    };
+
+    const auto result = parseRows({buy, sell, split});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
 
     ASSERT_EQ(instrument.mTransactions.size(), 2U);
-    const auto& buyEvidence = instrument.mTransactions[0].mUnitEvidence.at(0);
-    const auto& sellEvidence = instrument.mTransactions[1].mUnitEvidence.at(0);
 
-    EXPECT_EQ(buyEvidence.mSourceText, buy.mShares);
+    const auto& purchase = instrument.mTransactions[0];
+
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+
+    const auto& buyEvidence = purchase.mUnitEvidence.front();
+
+    EXPECT_EQ(buyEvidence.mSourceText, "0.12345678400");
     EXPECT_EQ(buyEvidence.mDiscardedDigits, "400");
     EXPECT_FALSE(buyEvidence.mRoundedAwayFromZero);
-    EXPECT_EQ(sellEvidence.mSourceText, sell.mShares);
+
+    const auto& sale = instrument.mTransactions[1];
+
+    ASSERT_EQ(sale.mUnitEvidence.size(), 1U);
+
+    const auto& sellEvidence = sale.mUnitEvidence.front();
+
+    EXPECT_EQ(sellEvidence.mSourceText, "-0.123456785");
     EXPECT_EQ(sellEvidence.mCanonicalValue, "-0.123456785");
     EXPECT_EQ(sellEvidence.mDiscardedDigits, "5");
     EXPECT_TRUE(sellEvidence.mRoundedAwayFromZero);
-    EXPECT_EQ(instrument.mTransactions[1].mUnits, 12'345'679);
-    EXPECT_EQ(sellEvidence.mSource, instrument.mTransactions[1].mMetadata.mSources.at(0));
+    // The signed source rounds to -0.12345679; a sale stores its positive magnitude.
+    EXPECT_EQ(sale.mUnits, 12'345'679);
+    EXPECT_EQ(sellEvidence.mSource, sale.mMetadata.mSources.at(0));
+
     ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
-    EXPECT_EQ(instrument.mCorporateActions[0].mUnitEvidence.at(0).mSourceText, action.mShares);
-    EXPECT_FALSE(instrument.mCorporateActions[0].mRatio.has_value());
-    EXPECT_TRUE(result.mDiagnostics.empty());
+
+    const auto& action = instrument.mCorporateActions.front();
+
+    ASSERT_EQ(action.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(action.mUnitEvidence.front().mSourceText, "0.123456785");
+    EXPECT_FALSE(action.mRatio.has_value());
 }
 
 TEST(TradeRepublicParserTest, RejectsSourceAmountsThatLoseTheirMagnitudeAtImport) {

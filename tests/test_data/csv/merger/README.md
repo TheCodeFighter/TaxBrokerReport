@@ -19,3 +19,9 @@ broker payment evidence or establish the direction of the broker rate.
 
 Integration tests create disjoint, overlapping and header-only files from `history.csv` inside
 an owned temporary directory. Their provenance differs intentionally from the whole-file input.
+
+The `history.csv` action is units-only evidence with no cash or price fields. Its positive
+`shares` value is unresolved source information, not an established inventory change or ratio.
+Quantity-evidence integration tests define their synthetic row fields directly in each test and
+write temporary CSVs without reading `history.csv`. Both signs remain unresolved after merging
+overlapping exports; original decimals and their source references must survive.
