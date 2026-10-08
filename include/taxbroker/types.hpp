@@ -113,7 +113,8 @@ struct UnitSourceEvidence {
 struct CorporateAction {
     EventMetadata mMetadata;
     CorporateActionType mType{CorporateActionType::UnresolvedSplit};
-    /// Raw broker quantity for UnresolvedSplit; its sign does not establish action direction.
+    /// Rounded source quantity for UnresolvedSplit, not a verified inventory change.
+    /// Its sign does not establish direction; mUnitEvidence retains the exact source decimal.
     Units mUnitsDelta{};
     std::optional<CorpRatio> mRatio;
     std::vector<UnitSourceEvidence> mUnitEvidence;

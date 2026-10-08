@@ -197,6 +197,27 @@ particular, a Trade Republic split row's decimal `shares` value does not establi
 The application result asks the frontend for the action's new-shares-to-old-shares ratio. Only a
 validated user confirmation turns that action into a processable split or reverse split.
 
+The current `CorporateAction` model uses `UnresolvedSplit` with an empty `mRatio` for
+unverified split evidence. In that state, `mUnitsDelta` stores the signed quantity rounded to
+`Units` precision; it is not a verified change in inventory. `mUnitEvidence` retains the original
+signed decimal, canonical exact value, discarded digits and source reference. Neither a positive
+nor a negative quantity establishes economic direction. Explicitly resolved evidence uses `Split`
+with a known `2 / 1` ratio or `ReverseSplit` with a known `1 / 10` ratio, for example. Direction
+comes from the verified new-shares-to-old-shares ratio, never from the source quantity's sign.
+
+Current consumers preserve this distinction:
+
+- the Trade Republic parser creates unresolved actions and preserves signed source evidence;
+- the statement merger compares type, quantity, exact source value and optional ratio, retaining
+  each source through deduplication without resolving an action;
+- the parser dump labels an unresolved value as `source_quantity` and the ratio as unresolved;
+- the exact-arithmetic dump shows labeled hypothetical previews or an explicit caller-supplied
+  preview ratio, without establishing the real economics from the CSV quantity.
+
+Actual ratio confirmation, economic action identity and inventory application belong to the
+corporate-action processor described in `fifo.md`. A resolved input supplied to a merger test
+represents explicit synthetic evidence; it does not demonstrate broker verification or resolution.
+
 After transaction deduplication, economic corporate-action identity is resolved separately across
 all sources. One confirmed action changes all open lots of its ISIN across brokers exactly once.
 Grouping by ISIN and calendar year is used only for

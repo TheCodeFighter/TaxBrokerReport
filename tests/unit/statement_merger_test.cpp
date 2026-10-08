@@ -2714,6 +2714,181 @@ TEST(DeterministicStatementMergerTest,
     EXPECT_TRUE(result.mDiagnostics.empty());
 }
 
+TEST(DeterministicStatementMergerTest, PreservesExplicitTwoForOneSplitEvidence) {
+    // The type and ratio are explicit synthetic evidence, not derived from TR shares.
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments = {TradeInstrument{
+        .mName = "Synthetic Share",
+        .mIsin = "XX9000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions = {CorporateAction{
+                                  .mMetadata = makeMetadata(0,
+                                                            0,
+                                                            makeDate(2024, 1, 15),
+                                                            Broker::InteractiveBrokers,
+                                                            "verified.csv",
+                                                            std::nullopt,
+                                                            "verified-action"),
+                                  .mType = CorporateActionType::Split,
+                                  .mUnitsDelta = 100'000'000,
+                                  .mRatio = 200'000'000,
+                              },
+                              CorporateAction{
+                                  .mMetadata = makeMetadata(0,
+                                                            1,
+                                                            makeDate(2024, 1, 15),
+                                                            Broker::TradeRepublic,
+                                                            "unresolved.csv",
+                                                            std::nullopt,
+                                                            "unresolved-action"),
+                                  .mUnitsDelta = -50'000'000,
+                              }},
+    }};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 2U);
+
+    const auto& resolved = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(resolved.mType, CorporateActionType::Split);
+    EXPECT_EQ(resolved.mUnitsDelta, 100'000'000);
+    ASSERT_TRUE(resolved.mRatio.has_value());
+    EXPECT_EQ(*resolved.mRatio, 200'000'000);
+    EXPECT_EQ(
+        resolved.mMetadata.mSources,
+        (std::vector{
+            makeSource(Broker::InteractiveBrokers, "verified.csv", 2, "verified-action", {0, 0})}));
+
+    const auto& unresolved = instrument.mCorporateActions[1];
+
+    EXPECT_EQ(unresolved.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(unresolved.mUnitsDelta, -50'000'000);
+    EXPECT_FALSE(unresolved.mRatio.has_value());
+    EXPECT_EQ(
+        unresolved.mMetadata.mSources,
+        (std::vector{
+            makeSource(Broker::TradeRepublic, "unresolved.csv", 3, "unresolved-action", {0, 1})}));
+}
+
+TEST(DeterministicStatementMergerTest, PreservesExplicitOneForTenReverseSplitEvidence) {
+    // The type and ratio are explicit synthetic evidence, not derived from TR shares.
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments = {TradeInstrument{
+        .mName = "Synthetic Share",
+        .mIsin = "XX9000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions = {CorporateAction{
+                                  .mMetadata = makeMetadata(0,
+                                                            0,
+                                                            makeDate(2024, 1, 15),
+                                                            Broker::InteractiveBrokers,
+                                                            "verified.csv",
+                                                            std::nullopt,
+                                                            "verified-action"),
+                                  .mType = CorporateActionType::ReverseSplit,
+                                  .mUnitsDelta = -900'000'000,
+                                  .mRatio = 10'000'000,
+                              },
+                              CorporateAction{
+                                  .mMetadata = makeMetadata(0,
+                                                            1,
+                                                            makeDate(2024, 1, 15),
+                                                            Broker::TradeRepublic,
+                                                            "unresolved.csv",
+                                                            std::nullopt,
+                                                            "unresolved-action"),
+                                  .mUnitsDelta = -50'000'000,
+                              }},
+    }};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
+
+    EXPECT_TRUE(instrument.mTransactions.empty());
+    ASSERT_EQ(instrument.mCorporateActions.size(), 2U);
+
+    const auto& resolved = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(resolved.mType, CorporateActionType::ReverseSplit);
+    EXPECT_EQ(resolved.mUnitsDelta, -900'000'000);
+    ASSERT_TRUE(resolved.mRatio.has_value());
+    EXPECT_EQ(*resolved.mRatio, 10'000'000);
+    EXPECT_EQ(
+        resolved.mMetadata.mSources,
+        (std::vector{
+            makeSource(Broker::InteractiveBrokers, "verified.csv", 2, "verified-action", {0, 0})}));
+
+    const auto& unresolved = instrument.mCorporateActions[1];
+
+    EXPECT_EQ(unresolved.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(unresolved.mUnitsDelta, -50'000'000);
+    EXPECT_FALSE(unresolved.mRatio.has_value());
+    EXPECT_EQ(
+        unresolved.mMetadata.mSources,
+        (std::vector{
+            makeSource(Broker::TradeRepublic, "unresolved.csv", 3, "unresolved-action", {0, 1})}));
+}
+
+TEST(DeterministicStatementMergerTest, RejectsSameIdentityWithResolvedAndUnresolvedSplitEvidence) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments = {TradeInstrument{
+        .mName = "Synthetic Share",
+        .mIsin = "XX9000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions = {CorporateAction{
+                                  .mMetadata = makeMetadata(0,
+                                                            0,
+                                                            makeDate(2024, 1, 15),
+                                                            Broker::TradeRepublic,
+                                                            "unresolved.csv",
+                                                            std::nullopt,
+                                                            "same-action"),
+                                  .mUnitsDelta = 100'000'000,
+                              },
+                              CorporateAction{
+                                  .mMetadata = makeMetadata(0,
+                                                            1,
+                                                            makeDate(2024, 1, 15),
+                                                            Broker::TradeRepublic,
+                                                            "resolved.csv",
+                                                            std::nullopt,
+                                                            "same-action"),
+                                  .mType = CorporateActionType::Split,
+                                  .mUnitsDelta = 100'000'000,
+                                  .mRatio = 200'000'000,
+                              }},
+    }};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    ASSERT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics.front()));
+
+    const auto& diagnostic = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(
+        diagnostic.mSources,
+        (std::vector{makeSource(Broker::TradeRepublic, "unresolved.csv", 2, "same-action", {0, 0}),
+                     makeSource(Broker::TradeRepublic, "resolved.csv", 3, "same-action", {0, 1})}));
+}
+
 TEST(DeterministicStatementMergerTest, UnresolvedSplitDuplicatesKeepEachQuantitySourceOnce) {
     const auto firstSource = makeSource(Broker::TradeRepublic, "same.csv", 2, "split-id", {0, 0});
     const auto secondSource = makeSource(Broker::TradeRepublic, "same.csv", 3, "split-id", {0, 1});
@@ -2728,6 +2903,7 @@ TEST(DeterministicStatementMergerTest, UnresolvedSplitDuplicatesKeepEachQuantity
     const CorporateAction first{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource, sharedSource}},
         .mType = CorporateActionType::UnresolvedSplit,
+        // -0.123456785 rounds to -0.12345679 shares, stored at a scale of 100,000,000.
         .mUnitsDelta = -12'345'679,
         .mUnitEvidence = {{.mSource = firstSource,
                            .mSourceText = "-0.123456785",
@@ -2771,6 +2947,7 @@ TEST(DeterministicStatementMergerTest, UnresolvedSplitDuplicatesKeepEachQuantity
 
     // A negative broker quantity still leaves the split direction unresolved.
     EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    // Keep the supplied -0.12345679 shares: -0.12345679 * 100,000,000 = -12,345,679.
     EXPECT_EQ(action.mUnitsDelta, -12'345'679);
     EXPECT_FALSE(action.mRatio.has_value());
     EXPECT_EQ(action.mMetadata.mSources, (std::vector{firstSource, secondSource, sharedSource}));
