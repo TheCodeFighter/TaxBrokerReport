@@ -136,6 +136,12 @@ interpolate rates or silently choose an average, annual, current, or nearby rate
 
 ## Asking the user for official rates
 
+Importing foreign dividends or interest does not require a broker exchange rate. Retain the
+original payment amount, currency, tax date and provenance when that optional value is absent;
+the event then has no broker fallback. A supplied invalid broker rate is a separate sourced
+parser error under the income policy in [`architecture.md`](architecture.md). It is never
+silently treated as absent or replaced with a fabricated rate.
+
 After merging and deduplicating the input, the processor collects every foreign currency and date
 needed for a FURS report value. Older acquisition dates are included when those acquisitions are
 matched to a sale in the selected year. A currency and date needed only for an informational fee

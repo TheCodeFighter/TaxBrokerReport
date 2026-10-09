@@ -58,6 +58,30 @@ original `mSourceTimestamp`, so equal fallback times cannot hide conflicting exp
 Compare before UTC normalization: crossing midnight while normalizing an offset is not itself
 a mismatch. Do not silently discard purchases or replace the broker tax date.
 
+### Trade Republic income and optional broker FX
+
+Dividends, broker cash interest and bond interest share income validation. When
+`original_currency` is supplied, preserve `original_amount` in that currency; otherwise use
+`amount` and `currency`. Do not replace an invalid original amount with the local amount.
+Preserve the tax date, source timestamp and complete source reference alongside the income.
+Withholding remains separate in `currency`; blank tax is unknown, while explicit zero is known.
+
+An empty `fx_rate` never rejects otherwise valid foreign income. Store no broker rate, including
+when the foreign payment is supplied directly in `amount`/`currency`. Do not invent a unit rate
+or infer a rate from the local and original amounts. Direct EUR income without broker FX keeps
+its existing identity conversion; it does not establish a foreign-currency fallback.
+
+A supplied `fx_rate` is validated even without `original_currency`. Malformed, whitespace-only,
+zero, negative, out-of-range or nonzero values rounded to zero produce an `InvalidValue` error
+on `fx_rate` and skip that row. The diagnostic retains filename, row and transaction ID without
+repeating the value. Other valid rows and their diagnostics remain available through merging.
+Valid source rates retain the established eight-decimal import rounding; a positive rate that
+rounds to one rate tick is representable. This numeric validation does not verify rate direction.
+
+Required income facts remain required even when broker FX is absent. Empty fields produce
+`MissingField`; invalid supplied fields produce `InvalidValue`. Trade Republic's required
+`datetime` policy above applies to income as well.
+
 ### Stable input sequence
 
 The stable input sequence is scoped to the complete input request. `mSourceIndex` is the zero-based
