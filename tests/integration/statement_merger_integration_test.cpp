@@ -10,6 +10,7 @@
 #include <initializer_list>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -21,6 +22,129 @@ std::filesystem::path fixturePath(std::string_view aFilename) {
     return std::filesystem::path{__FILE__}.parent_path().parent_path() / "test_data" / "csv" /
            "merger" / aFilename;
 }
+
+// Tests supply synthetic CSV fields directly; unspecified fields are empty.
+struct IncomeCsvRow {
+    std::string_view mDatetime;
+    std::string_view mDate;
+    std::string_view mAccountType;
+    std::string_view mCategory;
+    std::string_view mType;
+    std::string_view mAssetClass;
+    std::string_view mName;
+    std::string_view mSymbol;
+    std::string_view mShares;
+    std::string_view mPrice;
+    std::string_view mAmount;
+    std::string_view mFee;
+    std::string_view mTax;
+    std::string_view mCurrency;
+    std::string_view mOriginalAmount;
+    std::string_view mOriginalCurrency;
+    std::string_view mFxRate;
+    std::string_view mDescription;
+    std::string_view mTransactionId;
+    std::string_view mCounterpartyName;
+    std::string_view mCounterpartyIban;
+    std::string_view mPaymentReference;
+    std::string_view mMccCode;
+};
+
+class TemporaryIncomeInputs {
+  public:
+    TemporaryIncomeInputs() {
+        const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+        mDirectory = std::filesystem::temp_directory_path() /
+                     ("taxbroker_income_synthetic_" + std::to_string(token));
+
+        if (!std::filesystem::create_directory(mDirectory))
+        {
+            throw std::runtime_error{"Unable to create synthetic income directory"};
+        }
+    }
+
+    TemporaryIncomeInputs(const TemporaryIncomeInputs&) = delete;
+    TemporaryIncomeInputs& operator=(const TemporaryIncomeInputs&) = delete;
+
+    ~TemporaryIncomeInputs() {
+        std::error_code error;
+        std::filesystem::remove_all(mDirectory, error);
+    }
+
+    std::filesystem::path write(std::string_view aName,
+                                std::initializer_list<IncomeCsvRow> aRows) const {
+        const auto path = mDirectory / aName;
+        std::ofstream output{path};
+
+        output << "datetime,date,account_type,category,type,asset_class,name,symbol,shares,"
+                  "price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,"
+                  "description,transaction_id,counterparty_name,counterparty_iban,"
+                  "payment_reference,mcc_code\n";
+
+        for (const auto& aRow : aRows)
+        {
+            const std::array fields{aRow.mDatetime,
+                                    aRow.mDate,
+                                    aRow.mAccountType,
+                                    aRow.mCategory,
+                                    aRow.mType,
+                                    aRow.mAssetClass,
+                                    aRow.mName,
+                                    aRow.mSymbol,
+                                    aRow.mShares,
+                                    aRow.mPrice,
+                                    aRow.mAmount,
+                                    aRow.mFee,
+                                    aRow.mTax,
+                                    aRow.mCurrency,
+                                    aRow.mOriginalAmount,
+                                    aRow.mOriginalCurrency,
+                                    aRow.mFxRate,
+                                    aRow.mDescription,
+                                    aRow.mTransactionId,
+                                    aRow.mCounterpartyName,
+                                    aRow.mCounterpartyIban,
+                                    aRow.mPaymentReference,
+                                    aRow.mMccCode};
+
+            for (std::size_t index = 0; index < fields.size(); ++index)
+            {
+                if (index != 0)
+                {
+                    output << ',';
+                }
+
+                output << '"';
+
+                for (const char character : fields[index])
+                {
+                    if (character == '"')
+                    {
+                        output << '"';
+                    }
+
+                    output << character;
+                }
+
+                output << '"';
+            }
+
+            output << '\n';
+        }
+
+        output.close();
+
+        if (!output)
+        {
+            throw std::runtime_error{"Unable to write synthetic income input"};
+        }
+
+        return path;
+    }
+
+  private:
+    std::filesystem::path mDirectory;
+};
 
 // Read synthetic history.csv once, then copy selected rows into temporary CSV inputs.
 class TemporaryHistory {
@@ -1186,6 +1310,335 @@ TEST(StatementMergerIntegrationTest,
                    .mSourceRow = 4,
                    .mTransactionId = "synthetic-optional-coupon",
                    .mInputSequence = {1, 2}}}));
+}
+
+TEST(StatementMergerIntegrationTest, RetainsDividendWithoutFxWhileInvalidFxIsReported) {
+    const TemporaryIncomeInputs files;
+    const auto first = files.write("first.csv",
+                                   {{.mDatetime = "2024-01-15T10:00:00.000Z",
+                                     .mDate = "2024-01-15",
+                                     .mAccountType = "DEFAULT",
+                                     .mCategory = "CASH",
+                                     .mType = "DIVIDEND",
+                                     .mAssetClass = "STOCK",
+                                     .mName = "Synthetic Optional Share",
+                                     .mSymbol = "XX9000000001",
+                                     .mAmount = "9.00",
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "10.00",
+                                     .mOriginalCurrency = "USD",
+                                     .mFxRate = "",
+                                     .mTransactionId = "synthetic-retained-dividend"},
+                                    {.mDatetime = "2024-01-15T10:00:00.000Z",
+                                     .mDate = "2024-01-15",
+                                     .mAccountType = "DEFAULT",
+                                     .mCategory = "CASH",
+                                     .mType = "DIVIDEND",
+                                     .mAssetClass = "STOCK",
+                                     .mName = "Synthetic Optional Share",
+                                     .mSymbol = "XX9000000001",
+                                     .mAmount = "9.00",
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "10.00",
+                                     .mOriginalCurrency = "USD",
+                                     .mFxRate = "not-a-number",
+                                     .mTransactionId = "synthetic-invalid-dividend"}});
+    const auto second = files.write("second.csv",
+                                    {{.mDatetime = "2024-01-15T10:00:00.000Z",
+                                      .mDate = "2024-01-15",
+                                      .mAccountType = "DEFAULT",
+                                      .mCategory = "CASH",
+                                      .mType = "DIVIDEND",
+                                      .mAssetClass = "STOCK",
+                                      .mName = "Synthetic Optional Share",
+                                      .mSymbol = "XX9000000001",
+                                      .mAmount = "9.00",
+                                      .mTax = "",
+                                      .mCurrency = "EUR",
+                                      .mOriginalAmount = "10.00",
+                                      .mOriginalCurrency = "USD",
+                                      .mFxRate = "",
+                                      .mTransactionId = "synthetic-retained-dividend"}});
+    tr::TradeRepublicParser parser;
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mDividendInstruments.front();
+
+    EXPECT_EQ(instrument.mName, "Synthetic Optional Share");
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& income = instrument.mTransactions.front();
+    const auto date =
+        Date{std::chrono::sys_days{std::chrono::year{2024} / 1 / 15}.time_since_epoch()};
+
+    EXPECT_EQ(income.mGrossAmount, 100'000);
+    EXPECT_EQ(income.mCurrency, Currency::USD);
+    EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(income.mTaxPaid.has_value());
+    EXPECT_FALSE(income.mExchangeRate.has_value());
+    EXPECT_EQ(income.mMetadata.mTaxDate, date);
+    EXPECT_EQ(income.mMetadata.mSourceTimestamp,
+              SourceTimestamp{date.time_since_epoch() + std::chrono::hours{10}});
+    EXPECT_FALSE(income.mMetadata.mOrderingTimestamp.has_value());
+    EXPECT_EQ(income.mMetadata.mSources,
+              (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("first.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-retained-dividend",
+                                             .mInputSequence = {0, 0}},
+                                            {.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("second.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-retained-dividend",
+                                             .mInputSequence = {1, 0}}}));
+    EXPECT_EQ(
+        result.mStatement.mChronologicalOrder,
+        (std::vector<StatementEventReference>{
+            {.mKind = StatementEventKind::Dividend, .mInstrumentIndex = 0, .mEventIndex = 0}}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics.front()));
+
+    const auto& sourced = std::get<SourcedParseDiagnostic>(result.mDiagnostics.front());
+    const auto& error = sourced.mDiagnostic;
+
+    EXPECT_EQ(sourced.mSourceIndex, 0U);
+    EXPECT_EQ(sourced.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fx_rate");
+    EXPECT_EQ(error.mSourceFile, "first.csv");
+    EXPECT_EQ(error.mRowIndex, 3U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-invalid-dividend");
+}
+
+TEST(StatementMergerIntegrationTest, RetainsDepositInterestWithoutFxWhileInvalidFxIsReported) {
+    const TemporaryIncomeInputs files;
+    const auto first = files.write("first.csv",
+                                   {{.mDatetime = "2024-01-15T10:00:00.000Z",
+                                     .mDate = "2024-01-15",
+                                     .mAccountType = "DEFAULT",
+                                     .mCategory = "CASH",
+                                     .mType = "INTEREST_PAYMENT",
+                                     .mAssetClass = "",
+                                     .mName = "",
+                                     .mSymbol = "",
+                                     .mAmount = "9.00",
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "10.00",
+                                     .mOriginalCurrency = "USD",
+                                     .mFxRate = "",
+                                     .mTransactionId = "synthetic-retained-depositinterest"},
+                                    {.mDatetime = "2024-01-15T10:00:00.000Z",
+                                     .mDate = "2024-01-15",
+                                     .mAccountType = "DEFAULT",
+                                     .mCategory = "CASH",
+                                     .mType = "INTEREST_PAYMENT",
+                                     .mAssetClass = "",
+                                     .mName = "",
+                                     .mSymbol = "",
+                                     .mAmount = "9.00",
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "10.00",
+                                     .mOriginalCurrency = "USD",
+                                     .mFxRate = "not-a-number",
+                                     .mTransactionId = "synthetic-invalid-depositinterest"}});
+    const auto second = files.write("second.csv",
+                                    {{.mDatetime = "2024-01-15T10:00:00.000Z",
+                                      .mDate = "2024-01-15",
+                                      .mAccountType = "DEFAULT",
+                                      .mCategory = "CASH",
+                                      .mType = "INTEREST_PAYMENT",
+                                      .mAssetClass = "",
+                                      .mName = "",
+                                      .mSymbol = "",
+                                      .mAmount = "9.00",
+                                      .mTax = "",
+                                      .mCurrency = "EUR",
+                                      .mOriginalAmount = "10.00",
+                                      .mOriginalCurrency = "USD",
+                                      .mFxRate = "",
+                                      .mTransactionId = "synthetic-retained-depositinterest"}});
+    tr::TradeRepublicParser parser;
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mInterestInstruments.front();
+
+    EXPECT_EQ(instrument.mName, "Trade Republic");
+    EXPECT_EQ(instrument.mInterestType, InterestType::BrokerInterest);
+    EXPECT_FALSE(instrument.mIsin.has_value());
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& income = instrument.mTransactions.front();
+    const auto date =
+        Date{std::chrono::sys_days{std::chrono::year{2024} / 1 / 15}.time_since_epoch()};
+
+    EXPECT_EQ(income.mGrossAmount, 100'000);
+    EXPECT_EQ(income.mCurrency, Currency::USD);
+    EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(income.mTaxPaid.has_value());
+    EXPECT_FALSE(income.mExchangeRate.has_value());
+    EXPECT_EQ(income.mMetadata.mTaxDate, date);
+    EXPECT_EQ(income.mMetadata.mSourceTimestamp,
+              SourceTimestamp{date.time_since_epoch() + std::chrono::hours{10}});
+    EXPECT_FALSE(income.mMetadata.mOrderingTimestamp.has_value());
+    EXPECT_EQ(income.mMetadata.mSources,
+              (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("first.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-retained-depositinterest",
+                                             .mInputSequence = {0, 0}},
+                                            {.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("second.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-retained-depositinterest",
+                                             .mInputSequence = {1, 0}}}));
+    EXPECT_EQ(
+        result.mStatement.mChronologicalOrder,
+        (std::vector<StatementEventReference>{
+            {.mKind = StatementEventKind::Interest, .mInstrumentIndex = 0, .mEventIndex = 0}}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics.front()));
+
+    const auto& sourced = std::get<SourcedParseDiagnostic>(result.mDiagnostics.front());
+    const auto& error = sourced.mDiagnostic;
+
+    EXPECT_EQ(sourced.mSourceIndex, 0U);
+    EXPECT_EQ(sourced.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fx_rate");
+    EXPECT_EQ(error.mSourceFile, "first.csv");
+    EXPECT_EQ(error.mRowIndex, 3U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-invalid-depositinterest");
+}
+
+TEST(StatementMergerIntegrationTest, RetainsBondInterestWithoutFxWhileInvalidFxIsReported) {
+    const TemporaryIncomeInputs files;
+    const auto first = files.write("first.csv",
+                                   {{.mDatetime = "2024-01-15T10:00:00.000Z",
+                                     .mDate = "2024-01-15",
+                                     .mAccountType = "DEFAULT",
+                                     .mCategory = "CASH",
+                                     .mType = "INTEREST_PAYMENT",
+                                     .mAssetClass = "BOND",
+                                     .mName = "Synthetic Optional Bond",
+                                     .mSymbol = "XX9000000002",
+                                     .mAmount = "9.00",
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "10.00",
+                                     .mOriginalCurrency = "USD",
+                                     .mFxRate = "",
+                                     .mTransactionId = "synthetic-retained-bondinterest"},
+                                    {.mDatetime = "2024-01-15T10:00:00.000Z",
+                                     .mDate = "2024-01-15",
+                                     .mAccountType = "DEFAULT",
+                                     .mCategory = "CASH",
+                                     .mType = "INTEREST_PAYMENT",
+                                     .mAssetClass = "BOND",
+                                     .mName = "Synthetic Optional Bond",
+                                     .mSymbol = "XX9000000002",
+                                     .mAmount = "9.00",
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "10.00",
+                                     .mOriginalCurrency = "USD",
+                                     .mFxRate = "not-a-number",
+                                     .mTransactionId = "synthetic-invalid-bondinterest"}});
+    const auto second = files.write("second.csv",
+                                    {{.mDatetime = "2024-01-15T10:00:00.000Z",
+                                      .mDate = "2024-01-15",
+                                      .mAccountType = "DEFAULT",
+                                      .mCategory = "CASH",
+                                      .mType = "INTEREST_PAYMENT",
+                                      .mAssetClass = "BOND",
+                                      .mName = "Synthetic Optional Bond",
+                                      .mSymbol = "XX9000000002",
+                                      .mAmount = "9.00",
+                                      .mTax = "",
+                                      .mCurrency = "EUR",
+                                      .mOriginalAmount = "10.00",
+                                      .mOriginalCurrency = "USD",
+                                      .mFxRate = "",
+                                      .mTransactionId = "synthetic-retained-bondinterest"}});
+    tr::TradeRepublicParser parser;
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mInterestInstruments.front();
+
+    EXPECT_EQ(instrument.mName, "Synthetic Optional Bond");
+    EXPECT_EQ(instrument.mInterestType, InterestType::BondInterest);
+    EXPECT_EQ(instrument.mIsin, "XX9000000002");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& income = instrument.mTransactions.front();
+    const auto date =
+        Date{std::chrono::sys_days{std::chrono::year{2024} / 1 / 15}.time_since_epoch()};
+
+    EXPECT_EQ(income.mGrossAmount, 100'000);
+    EXPECT_EQ(income.mCurrency, Currency::USD);
+    EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(income.mTaxPaid.has_value());
+    EXPECT_FALSE(income.mExchangeRate.has_value());
+    EXPECT_EQ(income.mMetadata.mTaxDate, date);
+    EXPECT_EQ(income.mMetadata.mSourceTimestamp,
+              SourceTimestamp{date.time_since_epoch() + std::chrono::hours{10}});
+    EXPECT_FALSE(income.mMetadata.mOrderingTimestamp.has_value());
+    EXPECT_EQ(income.mMetadata.mSources,
+              (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("first.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-retained-bondinterest",
+                                             .mInputSequence = {0, 0}},
+                                            {.mBroker = Broker::TradeRepublic,
+                                             .mFilename = SourceFilename::fromPath("second.csv"),
+                                             .mSourceRow = 2,
+                                             .mTransactionId = "synthetic-retained-bondinterest",
+                                             .mInputSequence = {1, 0}}}));
+    EXPECT_EQ(
+        result.mStatement.mChronologicalOrder,
+        (std::vector<StatementEventReference>{
+            {.mKind = StatementEventKind::Interest, .mInstrumentIndex = 0, .mEventIndex = 0}}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics.front()));
+
+    const auto& sourced = std::get<SourcedParseDiagnostic>(result.mDiagnostics.front());
+    const auto& error = sourced.mDiagnostic;
+
+    EXPECT_EQ(sourced.mSourceIndex, 0U);
+    EXPECT_EQ(sourced.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fx_rate");
+    EXPECT_EQ(error.mSourceFile, "first.csv");
+    EXPECT_EQ(error.mRowIndex, 3U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-invalid-bondinterest");
 }
 
 } // namespace

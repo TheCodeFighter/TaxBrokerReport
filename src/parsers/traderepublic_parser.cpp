@@ -439,7 +439,7 @@ bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
 
 GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) {
     std::optional<Money> grossAmount{};
-    std::optional<ExchangeRate> exchangeRate{EXCHANGE_RATE_SCALE};
+    std::optional<ExchangeRate> exchangeRate{};
 
     const auto originalCurrencyValue = aCsvRow["original_currency"].get<std::string>();
     const bool usesOriginalCurrency = !originalCurrencyValue.empty();
@@ -448,7 +448,6 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
 
     if (currency == Currency::Unknown)
     {
-        exchangeRate.reset();
         return GetAmount{
             .mGrossAmount = grossAmount,
             .mExchangeRate = exchangeRate,
@@ -462,7 +461,15 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     else
     {
         grossAmount = parseMoney(aCsvRow["original_amount"].get<std::string>());
-        exchangeRate = parseExchangeRate(aCsvRow["fx_rate"].get<std::string>());
+    }
+
+    const auto rateText = aCsvRow["fx_rate"].get<std::string>();
+
+    exchangeRate = parseExchangeRate(rateText);
+
+    if (!usesOriginalCurrency && currency == Currency::EUR && rateText.empty())
+    {
+        exchangeRate = EXCHANGE_RATE_SCALE;
     }
 
     if (grossAmount && *grossAmount < 0)
