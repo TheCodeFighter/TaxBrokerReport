@@ -293,6 +293,16 @@ Classify the legal instrument and income, not just the broker name or its CSV ca
 | Unknown instruments, private-market events, and benefits | Ask for classification and required facts; cash movements alone do not establish a purchase quantity or cost basis. |
 
 Known broker facts may suggest a classification but cannot resolve contradictory source evidence.
+Import retains otherwise valid trade/action facts when a broker class is missing, unrecognized or
+contradictory. Keep every original class label and source; file boundaries and row order cannot
+choose the tax treatment. The instrument stays unresolved until the classification stage resolves
+it. This preservation does not relax required ISIN, numeric or date validation, or the separate
+whole-group rejection rule for conflicting broker transaction identities.
+
+A missing display name does not block tax reporting for a valid ISIN-identified event. Retain the
+original blank and warn; presentation uses the first non-empty supplied name for that same ISIN
+under the documented source ordering. If no name is available, leave the name empty.
+
 A `tax_classification_required` request identifies the investment or standalone event, all relevant
 sources, proposed treatment if justified, and `missingFields`. Offer `capital_gains`, `dividends`,
 `bank_deposit_interest`, `other_interest`, or `exclude_from_supported_reports`. Other interest also

@@ -388,6 +388,19 @@ void writeUnitEvidence(std::ostream& aOutput, const std::vector<UnitSourceEviden
     }
 }
 
+/// Writes original instrument names and class labels with their sources for local inspection.
+void writeInstrumentEvidence(std::ostream& aOutput,
+                             const std::vector<InstrumentSourceEvidence>& aEvidence) {
+    for (const auto& evidence : aEvidence)
+    {
+        aOutput << "      instrument_source: " << evidence.mSource.mFilename.value() << ':'
+                << evidence.mSource.mSourceRow
+                << "\n        original_name: " << std::quoted(evidence.mName)
+                << "\n        original_class: " << std::quoted(evidence.mAssetClassLabel)
+                << "\n        mapped_class: " << toString(evidence.mAssetClass) << '\n';
+    }
+}
+
 void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
     aOutput << "TRADE INSTRUMENTS: " << aStatement.mTradeInstruments.size() << "\n\n";
 
@@ -423,6 +436,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
             writeUnitEvidence(aOutput, transaction.mUnitEvidence);
+            writeInstrumentEvidence(aOutput, transaction.mInstrumentEvidence);
         }
 
         aOutput << "  corporate_actions: " << instrument.mCorporateActions.size() << '\n';
@@ -447,6 +461,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             }
             aOutput << '\n';
             writeUnitEvidence(aOutput, action.mUnitEvidence);
+            writeInstrumentEvidence(aOutput, action.mInstrumentEvidence);
         }
 
         aOutput << '\n';
@@ -475,6 +490,7 @@ void writeDividends(std::ostream& aOutput, const BrokerStatement& aStatement) {
             writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
                     << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
+            writeInstrumentEvidence(aOutput, transaction.mInstrumentEvidence);
         }
 
         aOutput << '\n';
@@ -504,6 +520,7 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
             writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
                     << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
+            writeInstrumentEvidence(aOutput, transaction.mInstrumentEvidence);
         }
 
         aOutput << '\n';

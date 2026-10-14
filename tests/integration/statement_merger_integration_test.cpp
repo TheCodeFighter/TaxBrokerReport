@@ -1641,4 +1641,4832 @@ TEST(StatementMergerIntegrationTest, RetainsBondInterestWithoutFxWhileInvalidFxI
     EXPECT_EQ(error.mTransactionId, "synthetic-invalid-bondinterest");
 }
 
+TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const IncomeCsvRow otherRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {purchaseRow, otherRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mTransactions[1];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    EXPECT_EQ(other.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(other.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(other.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(other.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(other.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(other.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(other.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource, other.mMetadata.mSources[0]);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(other.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(other.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(other.mAmount, 120000);
+    EXPECT_EQ(other.mFeePaid, 2000);
+    EXPECT_EQ(other.mCurrency, Currency::EUR);
+    EXPECT_EQ(other.mExchangeRate, 100'000'000);
+    ASSERT_EQ(other.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], other.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInTwoFiles) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow otherRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {purchaseRow});
+    const auto file1 = files.write("part-1.csv", {otherRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mTransactions[1];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    EXPECT_EQ(other.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(other.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(other.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(other.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(other.mMetadata.mSources[0].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(other.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(other.mMetadata.mSources[0].mInputSequence, (StableInputSequence{1, 0}));
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource, other.mMetadata.mSources[0]);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(other.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(other.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(other.mAmount, 120000);
+    EXPECT_EQ(other.mFeePaid, 2000);
+    EXPECT_EQ(other.mCurrency, Currency::EUR);
+    EXPECT_EQ(other.mExchangeRate, 100'000'000);
+    ASSERT_EQ(other.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], other.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInReversedRows) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow otherRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {otherRow, purchaseRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mTransactions[1];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    EXPECT_EQ(other.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(other.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(other.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(other.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(other.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(other.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(other.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource, other.mMetadata.mSources[0]);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(other.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(other.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(other.mAmount, 120000);
+    EXPECT_EQ(other.mFeePaid, 2000);
+    EXPECT_EQ(other.mCurrency, Currency::EUR);
+    EXPECT_EQ(other.mExchangeRate, 100'000'000);
+    ASSERT_EQ(other.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], other.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInOneFile) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow otherRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {purchaseRow, otherRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    EXPECT_EQ(other.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(other.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(other.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(other.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(other.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(other.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mTransactionId, "synthetic-action");
+    EXPECT_EQ(other.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource, other.mMetadata.mSources[0]);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(other.mUnitsDelta, 400'000'000); // Source 4 units, not a verified split change.
+    EXPECT_FALSE(other.mRatio.has_value());
+    ASSERT_EQ(other.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "4.000000000");
+    EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], other.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInTwoFiles) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow otherRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {purchaseRow});
+    const auto file1 = files.write("part-1.csv", {otherRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    EXPECT_EQ(other.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(other.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(other.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(other.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(other.mMetadata.mSources[0].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(other.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mTransactionId, "synthetic-action");
+    EXPECT_EQ(other.mMetadata.mSources[0].mInputSequence, (StableInputSequence{1, 0}));
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource, other.mMetadata.mSources[0]);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(other.mUnitsDelta, 400'000'000); // Source 4 units, not a verified split change.
+    EXPECT_FALSE(other.mRatio.has_value());
+    ASSERT_EQ(other.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "4.000000000");
+    EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], other.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInReversedRows) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow otherRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {otherRow, purchaseRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    EXPECT_EQ(other.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(other.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(other.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(other.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(other.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(other.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(other.mMetadata.mSources[0].mTransactionId, "synthetic-action");
+    EXPECT_EQ(other.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource, other.mMetadata.mSources[0]);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(other.mUnitsDelta, 400'000'000); // Source 4 units, not a verified split change.
+    EXPECT_FALSE(other.mRatio.has_value());
+    ASSERT_EQ(other.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "4.000000000");
+    EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], other.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow saleRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow thirdRow{
+        .mDatetime = "2024-01-17T10:00:00.000Z",
+        .mDate = "2024-01-17",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "3.000000000",
+        .mPrice = "8.0000",
+        .mAmount = "-24.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-third",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {purchaseRow, saleRow, thirdRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 3U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 3U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& sale = instrument.mTransactions[1];
+    const auto& laterPurchase = instrument.mTransactions[2];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    EXPECT_EQ(sale.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(sale.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(sale.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(sale.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(sale.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(sale.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(sale.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(sale.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(sale.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(sale.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(sale.mInstrumentEvidence[0].mSource, sale.mMetadata.mSources[0]);
+    EXPECT_EQ(sale.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(sale.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(sale.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(sale.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(sale.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(sale.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(sale.mAmount, 120000);
+    EXPECT_EQ(sale.mFeePaid, 2000);
+    EXPECT_EQ(sale.mCurrency, Currency::EUR);
+    EXPECT_EQ(sale.mExchangeRate, 100'000'000);
+    ASSERT_EQ(sale.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(sale.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(sale.mUnitEvidence[0].mSource, sale.mMetadata.mSources[0]);
+
+    EXPECT_EQ(laterPurchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-17"));
+    EXPECT_EQ(laterPurchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-17T10:00:00.000Z"));
+    EXPECT_FALSE(laterPurchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(laterPurchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(laterPurchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(laterPurchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(laterPurchase.mMetadata.mSources[0].mSourceRow, 4U);
+    EXPECT_EQ(laterPurchase.mMetadata.mSources[0].mTransactionId, "synthetic-third");
+    EXPECT_EQ(laterPurchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 2}));
+    ASSERT_EQ(laterPurchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(laterPurchase.mInstrumentEvidence[0].mSource, laterPurchase.mMetadata.mSources[0]);
+    EXPECT_EQ(laterPurchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(laterPurchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(laterPurchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(laterPurchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(laterPurchase.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
+    EXPECT_EQ(laterPurchase.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(laterPurchase.mAmount, 240000);
+    EXPECT_EQ(laterPurchase.mFeePaid, 0);
+    EXPECT_EQ(laterPurchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(laterPurchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(laterPurchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(laterPurchase.mUnitEvidence[0].mSourceText, "3.000000000");
+    EXPECT_EQ(laterPurchase.mUnitEvidence[0].mSource, laterPurchase.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[1], laterPurchase.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], sale.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockLast) {
+    const IncomeCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow knownRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unknownRow, knownRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& unknown = instrument.mTransactions[0];
+    const auto& known = instrument.mTransactions[1];
+
+    EXPECT_EQ(unknown.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unknown.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unknown.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unknown.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unknown.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "");
+    EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mAmount, 200000);
+    EXPECT_EQ(unknown.mFeePaid, 1000);
+    EXPECT_EQ(unknown.mCurrency, Currency::EUR);
+    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+
+    EXPECT_EQ(known.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(known.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(known.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(known.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(known.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(known.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(known.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(known.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mSource, known.mMetadata.mSources[0]);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mAmount, 120000);
+    EXPECT_EQ(known.mFeePaid, 2000);
+    EXPECT_EQ(known.mCurrency, Currency::EUR);
+    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    ASSERT_EQ(known.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], known.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mUnrecognizedLabel, "");
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& parsed = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(parsed.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(parsed.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(parsed.mDiagnostic.mField, "asset_class");
+    EXPECT_EQ(parsed.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(parsed.mDiagnostic.mTransactionId, "synthetic-purchase");
+}
+
+TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockFirst) {
+    const IncomeCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow knownRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {knownRow, unknownRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& unknown = instrument.mTransactions[0];
+    const auto& known = instrument.mTransactions[1];
+
+    EXPECT_EQ(unknown.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unknown.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unknown.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unknown.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(unknown.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "");
+    EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mAmount, 200000);
+    EXPECT_EQ(unknown.mFeePaid, 1000);
+    EXPECT_EQ(unknown.mCurrency, Currency::EUR);
+    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+
+    EXPECT_EQ(known.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(known.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(known.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(known.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(known.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(known.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(known.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(known.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mSource, known.mMetadata.mSources[0]);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mAmount, 120000);
+    EXPECT_EQ(known.mFeePaid, 2000);
+    EXPECT_EQ(known.mCurrency, Currency::EUR);
+    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    ASSERT_EQ(known.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], known.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mUnrecognizedLabel, "");
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& parsed = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(parsed.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(parsed.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(parsed.mDiagnostic.mField, "asset_class");
+    EXPECT_EQ(parsed.mDiagnostic.mRowIndex, 3U);
+    EXPECT_EQ(parsed.mDiagnostic.mTransactionId, "synthetic-purchase");
+}
+
+TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockLast) {
+    const IncomeCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow knownRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unknownRow, knownRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& unknown = instrument.mTransactions[0];
+    const auto& known = instrument.mTransactions[1];
+
+    EXPECT_EQ(unknown.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unknown.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unknown.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unknown.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unknown.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
+    EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mAmount, 200000);
+    EXPECT_EQ(unknown.mFeePaid, 1000);
+    EXPECT_EQ(unknown.mCurrency, Currency::EUR);
+    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+
+    EXPECT_EQ(known.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(known.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(known.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(known.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(known.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(known.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(known.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(known.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mSource, known.mMetadata.mSources[0]);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mAmount, 120000);
+    EXPECT_EQ(known.mFeePaid, 2000);
+    EXPECT_EQ(known.mCurrency, Currency::EUR);
+    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    ASSERT_EQ(known.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], known.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mUnrecognizedLabel, "COMMODITY");
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& parsed = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(parsed.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(parsed.mDiagnostic.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(parsed.mDiagnostic.mField, "asset_class");
+    EXPECT_EQ(parsed.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(parsed.mDiagnostic.mTransactionId, "synthetic-purchase");
+}
+
+TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockFirst) {
+    const IncomeCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow knownRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {knownRow, unknownRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& unknown = instrument.mTransactions[0];
+    const auto& known = instrument.mTransactions[1];
+
+    EXPECT_EQ(unknown.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unknown.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unknown.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unknown.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(unknown.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(unknown.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
+    EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mAmount, 200000);
+    EXPECT_EQ(unknown.mFeePaid, 1000);
+    EXPECT_EQ(unknown.mCurrency, Currency::EUR);
+    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
+
+    EXPECT_EQ(known.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(known.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(known.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(known.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(known.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(known.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(known.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(known.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(known.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mSource, known.mMetadata.mSources[0]);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mAmount, 120000);
+    EXPECT_EQ(known.mFeePaid, 2000);
+    EXPECT_EQ(known.mCurrency, Currency::EUR);
+    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    ASSERT_EQ(known.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], known.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], unknown.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mUnrecognizedLabel, "COMMODITY");
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& parsed = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(parsed.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(parsed.mDiagnostic.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(parsed.mDiagnostic.mField, "asset_class");
+    EXPECT_EQ(parsed.mDiagnostic.mRowIndex, 3U);
+    EXPECT_EQ(parsed.mDiagnostic.mTransactionId, "synthetic-purchase");
+}
+
+TEST(StatementMergerIntegrationTest, RetainsDistinctUnrecognizedClassLabels) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "UNLISTED",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {firstRow, secondRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(first.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(first.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
+    EXPECT_EQ(first.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(first.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(first.mAmount, 200000);
+    EXPECT_EQ(first.mFeePaid, 1000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+    EXPECT_EQ(first.mExchangeRate, 100'000'000);
+    ASSERT_EQ(first.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(first.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(first.mUnitEvidence[0].mSource, first.mMetadata.mSources[0]);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(second.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(second.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "UNLISTED");
+    EXPECT_EQ(second.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(second.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(second.mAmount, 120000);
+    EXPECT_EQ(second.mFeePaid, 2000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+    EXPECT_EQ(second.mExchangeRate, 100'000'000);
+    ASSERT_EQ(second.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(second.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(second.mUnitEvidence[0].mSource, second.mMetadata.mSources[0]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 1U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mUnrecognizedLabel, "COMMODITY");
+    EXPECT_EQ(error.mAssetClassVariants[1].mUnrecognizedLabel, "UNLISTED");
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources[0], first.mMetadata.mSources[0]);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources[0], second.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInOneFileLayout) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-17T10:00:00.000Z",
+        .mDate = "2024-01-17",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "3.000000000",
+        .mPrice = "8.0000",
+        .mAmount = "-24.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-third",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {firstRow, secondRow, healthyRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& survivor = instrument.mTransactions[0];
+
+    EXPECT_EQ(survivor.mMetadata.mTaxDate, parseCalendarDate("2024-01-17"));
+    EXPECT_EQ(survivor.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-17T10:00:00.000Z"));
+    EXPECT_FALSE(survivor.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(survivor.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mSourceRow, 4U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mTransactionId, "synthetic-third");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 2}));
+    ASSERT_EQ(survivor.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mAmount, 240000);
+    EXPECT_EQ(survivor.mFeePaid, 0);
+    EXPECT_EQ(survivor.mCurrency, Currency::EUR);
+    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+
+    const auto conflict =
+        std::find_if(result.mDiagnostics.begin(),
+                     result.mDiagnostics.end(),
+                     [](const auto& diagnostic) {
+                         const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+                         return merge && merge->mCode == MergeDiagnosticCode::ConflictingDuplicate;
+                     });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(error.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mSources[1].mFilename.value(), "history.csv");
+    EXPECT_EQ(error.mSources[1].mSourceRow, 3U);
+    EXPECT_EQ(error.mSources[1].mInputSequence, (StableInputSequence{0, 1}));
+    EXPECT_EQ(error.mSources[1].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mEventKinds, (std::vector{StatementEventKind::Trade}));
+}
+
+TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInTwoFileLayout) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-17T10:00:00.000Z",
+        .mDate = "2024-01-17",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "3.000000000",
+        .mPrice = "8.0000",
+        .mAmount = "-24.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-third",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {firstRow});
+    const auto file1 = files.write("part-1.csv", {secondRow});
+    const auto file2 = files.write("part-2.csv", {healthyRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(file2, 2)},
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& survivor = instrument.mTransactions[0];
+
+    EXPECT_EQ(survivor.mMetadata.mTaxDate, parseCalendarDate("2024-01-17"));
+    EXPECT_EQ(survivor.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-17T10:00:00.000Z"));
+    EXPECT_FALSE(survivor.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(survivor.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mFilename.value(), "part-2.csv");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mTransactionId, "synthetic-third");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mInputSequence, (StableInputSequence{2, 0}));
+    ASSERT_EQ(survivor.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mAmount, 240000);
+    EXPECT_EQ(survivor.mFeePaid, 0);
+    EXPECT_EQ(survivor.mCurrency, Currency::EUR);
+    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+
+    const auto conflict =
+        std::find_if(result.mDiagnostics.begin(),
+                     result.mDiagnostics.end(),
+                     [](const auto& diagnostic) {
+                         const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+                         return merge && merge->mCode == MergeDiagnosticCode::ConflictingDuplicate;
+                     });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(error.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mSources[1].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(error.mSources[1].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[1].mInputSequence, (StableInputSequence{1, 0}));
+    EXPECT_EQ(error.mSources[1].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mEventKinds, (std::vector{StatementEventKind::Trade}));
+}
+
+TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabelsInOneFileLayout) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "UNLISTED",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-17T10:00:00.000Z",
+        .mDate = "2024-01-17",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "3.000000000",
+        .mPrice = "8.0000",
+        .mAmount = "-24.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-third",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {firstRow, secondRow, healthyRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& survivor = instrument.mTransactions[0];
+
+    EXPECT_EQ(survivor.mMetadata.mTaxDate, parseCalendarDate("2024-01-17"));
+    EXPECT_EQ(survivor.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-17T10:00:00.000Z"));
+    EXPECT_FALSE(survivor.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(survivor.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mSourceRow, 4U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mTransactionId, "synthetic-third");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 2}));
+    ASSERT_EQ(survivor.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mAmount, 240000);
+    EXPECT_EQ(survivor.mFeePaid, 0);
+    EXPECT_EQ(survivor.mCurrency, Currency::EUR);
+    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+
+    const auto conflict =
+        std::find_if(result.mDiagnostics.begin(),
+                     result.mDiagnostics.end(),
+                     [](const auto& diagnostic) {
+                         const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+                         return merge && merge->mCode == MergeDiagnosticCode::ConflictingDuplicate;
+                     });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(error.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mSources[1].mFilename.value(), "history.csv");
+    EXPECT_EQ(error.mSources[1].mSourceRow, 3U);
+    EXPECT_EQ(error.mSources[1].mInputSequence, (StableInputSequence{0, 1}));
+    EXPECT_EQ(error.mSources[1].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mEventKinds, (std::vector{StatementEventKind::Trade}));
+}
+
+TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabelsInTwoFileLayout) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "UNLISTED",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-17T10:00:00.000Z",
+        .mDate = "2024-01-17",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "3.000000000",
+        .mPrice = "8.0000",
+        .mAmount = "-24.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-third",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {firstRow});
+    const auto file1 = files.write("part-1.csv", {secondRow});
+    const auto file2 = files.write("part-2.csv", {healthyRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(file2, 2)},
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& survivor = instrument.mTransactions[0];
+
+    EXPECT_EQ(survivor.mMetadata.mTaxDate, parseCalendarDate("2024-01-17"));
+    EXPECT_EQ(survivor.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-17T10:00:00.000Z"));
+    EXPECT_FALSE(survivor.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(survivor.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mFilename.value(), "part-2.csv");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mTransactionId, "synthetic-third");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mInputSequence, (StableInputSequence{2, 0}));
+    ASSERT_EQ(survivor.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mAmount, 240000);
+    EXPECT_EQ(survivor.mFeePaid, 0);
+    EXPECT_EQ(survivor.mCurrency, Currency::EUR);
+    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+
+    const auto conflict =
+        std::find_if(result.mDiagnostics.begin(),
+                     result.mDiagnostics.end(),
+                     [](const auto& diagnostic) {
+                         const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+                         return merge && merge->mCode == MergeDiagnosticCode::ConflictingDuplicate;
+                     });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(error.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mSources[1].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(error.mSources[1].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[1].mInputSequence, (StableInputSequence{1, 0}));
+    EXPECT_EQ(error.mSources[1].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mEventKinds, (std::vector{StatementEventKind::Trade}));
+}
+
+TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionInOneFileLayout) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-17T10:00:00.000Z",
+        .mDate = "2024-01-17",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "3.000000000",
+        .mPrice = "8.0000",
+        .mAmount = "-24.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-third",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {firstRow, secondRow, healthyRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& survivor = instrument.mTransactions[0];
+
+    EXPECT_EQ(survivor.mMetadata.mTaxDate, parseCalendarDate("2024-01-17"));
+    EXPECT_EQ(survivor.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-17T10:00:00.000Z"));
+    EXPECT_FALSE(survivor.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(survivor.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mSourceRow, 4U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mTransactionId, "synthetic-third");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 2}));
+    ASSERT_EQ(survivor.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mAmount, 240000);
+    EXPECT_EQ(survivor.mFeePaid, 0);
+    EXPECT_EQ(survivor.mCurrency, Currency::EUR);
+    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+
+    const auto conflict =
+        std::find_if(result.mDiagnostics.begin(),
+                     result.mDiagnostics.end(),
+                     [](const auto& diagnostic) {
+                         const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+                         return merge && merge->mCode == MergeDiagnosticCode::ConflictingDuplicate;
+                     });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(error.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mSources[1].mFilename.value(), "history.csv");
+    EXPECT_EQ(error.mSources[1].mSourceRow, 3U);
+    EXPECT_EQ(error.mSources[1].mInputSequence, (StableInputSequence{0, 1}));
+    EXPECT_EQ(error.mSources[1].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mEventKinds,
+              (std::vector{StatementEventKind::Trade, StatementEventKind::CorporateAction}));
+}
+
+TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionInTwoFileLayout) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-17T10:00:00.000Z",
+        .mDate = "2024-01-17",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "3.000000000",
+        .mPrice = "8.0000",
+        .mAmount = "-24.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-third",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {firstRow});
+    const auto file1 = files.write("part-1.csv", {secondRow});
+    const auto file2 = files.write("part-2.csv", {healthyRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(file2, 2)},
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& survivor = instrument.mTransactions[0];
+
+    EXPECT_EQ(survivor.mMetadata.mTaxDate, parseCalendarDate("2024-01-17"));
+    EXPECT_EQ(survivor.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-17T10:00:00.000Z"));
+    EXPECT_FALSE(survivor.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(survivor.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mFilename.value(), "part-2.csv");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mTransactionId, "synthetic-third");
+    EXPECT_EQ(survivor.mMetadata.mSources[0].mInputSequence, (StableInputSequence{2, 0}));
+    ASSERT_EQ(survivor.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mAmount, 240000);
+    EXPECT_EQ(survivor.mFeePaid, 0);
+    EXPECT_EQ(survivor.mCurrency, Currency::EUR);
+    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
+    EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
+
+    const auto conflict =
+        std::find_if(result.mDiagnostics.begin(),
+                     result.mDiagnostics.end(),
+                     [](const auto& diagnostic) {
+                         const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+                         return merge && merge->mCode == MergeDiagnosticCode::ConflictingDuplicate;
+                     });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(error.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mSources[1].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(error.mSources[1].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[1].mInputSequence, (StableInputSequence{1, 0}));
+    EXPECT_EQ(error.mSources[1].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(error.mEventKinds,
+              (std::vector{StatementEventKind::Trade, StatementEventKind::CorporateAction}));
+}
+
+TEST(StatementMergerIntegrationTest, RetainsTwoClassifiedEventsWithoutTransactionIds) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {firstRow});
+    const auto file1 = files.write("part-1.csv", {secondRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(first.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(first.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_FALSE(first.mMetadata.mSources[0].mTransactionId.has_value());
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(first.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(first.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(first.mAmount, 200000);
+    EXPECT_EQ(first.mFeePaid, 1000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+    EXPECT_EQ(first.mExchangeRate, 100'000'000);
+    ASSERT_EQ(first.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(first.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(first.mUnitEvidence[0].mSource, first.mMetadata.mSources[0]);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(second.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(second.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_FALSE(second.mMetadata.mSources[0].mTransactionId.has_value());
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{1, 0}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(second.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(second.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(second.mAmount, 200000);
+    EXPECT_EQ(second.mFeePaid, 1000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+    EXPECT_EQ(second.mExchangeRate, 100'000'000);
+    ASSERT_EQ(second.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(second.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(second.mUnitEvidence[0].mSource, second.mMetadata.mSources[0]);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInOneFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow, namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& unnamed = instrument.mTransactions[0];
+    const auto& named = instrument.mTransactions[1];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(unnamed.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(unnamed.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unnamed.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unnamed.mAmount, 200000);
+    EXPECT_EQ(unnamed.mFeePaid, 1000);
+    EXPECT_EQ(unnamed.mCurrency, Currency::EUR);
+    EXPECT_EQ(unnamed.mExchangeRate, 100'000'000);
+    ASSERT_EQ(unnamed.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(named.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(named.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(named.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(named.mAmount, 120000);
+    EXPECT_EQ(named.mFeePaid, 2000);
+    EXPECT_EQ(named.mCurrency, Currency::EUR);
+    EXPECT_EQ(named.mExchangeRate, 100'000'000);
+    ASSERT_EQ(named.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(named.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(named.mUnitEvidence[0].mSource, named.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInTwoFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {unnamedRow});
+    const auto file1 = files.write("part-1.csv", {namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& unnamed = instrument.mTransactions[0];
+    const auto& named = instrument.mTransactions[1];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(unnamed.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(unnamed.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unnamed.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unnamed.mAmount, 200000);
+    EXPECT_EQ(unnamed.mFeePaid, 1000);
+    EXPECT_EQ(unnamed.mCurrency, Currency::EUR);
+    EXPECT_EQ(unnamed.mExchangeRate, 100'000'000);
+    ASSERT_EQ(unnamed.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{1, 0}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(named.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(named.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(named.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(named.mAmount, 120000);
+    EXPECT_EQ(named.mFeePaid, 2000);
+    EXPECT_EQ(named.mCurrency, Currency::EUR);
+    EXPECT_EQ(named.mExchangeRate, 100'000'000);
+    ASSERT_EQ(named.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(named.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(named.mUnitEvidence[0].mSource, named.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingActionNameInOneFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action-one",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action-two",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow, namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mCorporateActions.size(), 2U);
+
+    const auto& unnamed = instrument.mCorporateActions[0];
+    const auto& named = instrument.mCorporateActions[1];
+
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-action-one");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(unnamed.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(unnamed.mUnitsDelta, 400'000'000); // Source 4 units, not a verified split change.
+    EXPECT_FALSE(unnamed.mRatio.has_value());
+    ASSERT_EQ(unnamed.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSourceText, "4.000000000");
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-action-two");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(named.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(named.mUnitsDelta, 400'000'000); // Source 4 units, not a verified split change.
+    EXPECT_FALSE(named.mRatio.has_value());
+    ASSERT_EQ(named.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(named.mUnitEvidence[0].mSourceText, "4.000000000");
+    EXPECT_EQ(named.mUnitEvidence[0].mSource, named.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingActionNameInTwoFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action-one",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "4.000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action-two",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {unnamedRow});
+    const auto file1 = files.write("part-1.csv", {namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mCorporateActions.size(), 2U);
+
+    const auto& unnamed = instrument.mCorporateActions[0];
+    const auto& named = instrument.mCorporateActions[1];
+
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-action-one");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(unnamed.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(unnamed.mUnitsDelta, 400'000'000); // Source 4 units, not a verified split change.
+    EXPECT_FALSE(unnamed.mRatio.has_value());
+    ASSERT_EQ(unnamed.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSourceText, "4.000000000");
+    EXPECT_EQ(unnamed.mUnitEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-action-two");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{1, 0}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(named.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(named.mUnitsDelta, 400'000'000); // Source 4 units, not a verified split change.
+    EXPECT_FALSE(named.mRatio.has_value());
+    ASSERT_EQ(named.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(named.mUnitEvidence[0].mSourceText, "4.000000000");
+    EXPECT_EQ(named.mUnitEvidence[0].mSource, named.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingDividendNameInOneFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.0000",
+        .mFee = "",
+        .mTax = "-1.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-one",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "12.0000",
+        .mFee = "",
+        .mTax = "-2.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-two",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow, namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mDividendInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& unnamed = instrument.mTransactions[0];
+    const auto& named = instrument.mTransactions[1];
+
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-income-one");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-income-two");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(unnamed.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(named.mGrossAmount, 120'000);   // EUR 12 at four decimal places.
+    EXPECT_EQ(unnamed.mTaxPaid, 10'000);
+    EXPECT_EQ(named.mTaxPaid, 20'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingDividendNameInTwoFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.0000",
+        .mFee = "",
+        .mTax = "-1.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-one",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "12.0000",
+        .mFee = "",
+        .mTax = "-2.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-two",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {unnamedRow});
+    const auto file1 = files.write("part-1.csv", {namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mDividendInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& unnamed = instrument.mTransactions[0];
+    const auto& named = instrument.mTransactions[1];
+
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-income-one");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-income-two");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{1, 0}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(unnamed.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(named.mGrossAmount, 120'000);   // EUR 12 at four decimal places.
+    EXPECT_EQ(unnamed.mTaxPaid, 10'000);
+    EXPECT_EQ(named.mTaxPaid, 20'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingBondInterestNameInOneFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.0000",
+        .mFee = "",
+        .mTax = "-1.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-one",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "12.0000",
+        .mFee = "",
+        .mTax = "-2.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-two",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow, namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mInterestInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& unnamed = instrument.mTransactions[0];
+    const auto& named = instrument.mTransactions[1];
+
+    EXPECT_EQ(instrument.mInterestType, InterestType::BondInterest);
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-income-one");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Bond);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "BOND");
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-income-two");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Bond);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "BOND");
+    EXPECT_EQ(unnamed.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(named.mGrossAmount, 120'000);   // EUR 12 at four decimal places.
+    EXPECT_EQ(unnamed.mTaxPaid, 10'000);
+    EXPECT_EQ(named.mTaxPaid, 20'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, CompletesMissingBondInterestNameInTwoFileLayout) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.0000",
+        .mFee = "",
+        .mTax = "-1.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-one",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow namedRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Supplied Evidence Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "12.0000",
+        .mFee = "",
+        .mTax = "-2.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-income-two",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {unnamedRow});
+    const auto file1 = files.write("part-1.csv", {namedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mInterestInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Supplied Evidence Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& unnamed = instrument.mTransactions[0];
+    const auto& named = instrument.mTransactions[1];
+
+    EXPECT_EQ(instrument.mInterestType, InterestType::BondInterest);
+    EXPECT_EQ(unnamed.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(unnamed.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(unnamed.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(unnamed.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mTransactionId, "synthetic-income-one");
+    EXPECT_EQ(unnamed.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(unnamed.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Bond);
+    EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "BOND");
+
+    EXPECT_EQ(named.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(named.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(named.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(named.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(named.mMetadata.mSources[0].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(named.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(named.mMetadata.mSources[0].mTransactionId, "synthetic-income-two");
+    EXPECT_EQ(named.mMetadata.mSources[0].mInputSequence, (StableInputSequence{1, 0}));
+    ASSERT_EQ(named.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mSource, named.mMetadata.mSources[0]);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mName, "Supplied Evidence Name");
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Bond);
+    EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "BOND");
+    EXPECT_EQ(unnamed.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(named.mGrossAmount, 120'000);   // EUR 12 at four decimal places.
+    EXPECT_EQ(unnamed.mTaxPaid, 10'000);
+    EXPECT_EQ(named.mTaxPaid, 20'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& missing = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(missing.mDiagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(missing.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(missing.mDiagnostic.mField, "name");
+    EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, unnamed.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, named.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, DoesNotUseAnotherIsinsNameForAnUnnamedTrade) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow otherIsinRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Other Instrument",
+        .mSymbol = "XX9000000249",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-other-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow, otherIsinRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 2U);
+
+    const auto& unnamedInstrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(unnamedInstrument.mIsin, "XX9000000248");
+    EXPECT_EQ(unnamedInstrument.mName, "");
+    ASSERT_EQ(unnamedInstrument.mTransactions.size(), 1U);
+    EXPECT_EQ(unnamedInstrument.mTransactions[0].mUnits, 200'000'000); // 2 units at eight decimals.
+    EXPECT_EQ(unnamedInstrument.mTransactions[0].mAmount, 200'000);    // EUR 20 at four decimals.
+    ASSERT_EQ(unnamedInstrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(unnamedInstrument.mTransactions[0].mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(unnamedInstrument.mTransactions[0].mInstrumentEvidence[0].mSource.mSourceRow, 2U);
+
+    const auto& namedInstrument = result.mStatement.mPresentation.mTradeInstruments[1];
+
+    EXPECT_EQ(namedInstrument.mIsin, "XX9000000249");
+    EXPECT_EQ(namedInstrument.mName, "Other Instrument");
+    ASSERT_EQ(namedInstrument.mTransactions.size(), 1U);
+    ASSERT_EQ(namedInstrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(namedInstrument.mTransactions[0].mInstrumentEvidence[0].mName, "Other Instrument");
+    EXPECT_EQ(namedInstrument.mTransactions[0].mInstrumentEvidence[0].mSource.mSourceRow, 3U);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mDiagnostic;
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mField, "name");
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+}
+
+TEST(StatementMergerIntegrationTest, LeavesNameEmptyWhenEveryTradeNameIsMissing) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mName, "");
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mName, "");
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mDiagnostic.mSeverity,
+              DiagnosticSeverity::Warning);
+}
+
+TEST(StatementMergerIntegrationTest, LeavesNameEmptyWhenEveryDividendNameIsMissing) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.0000",
+        .mFee = "",
+        .mTax = "-1.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mDividendInstruments[0];
+
+    EXPECT_EQ(instrument.mName, "");
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mName, "");
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mDiagnostic.mSeverity,
+              DiagnosticSeverity::Warning);
+}
+
+TEST(StatementMergerIntegrationTest, LeavesNameEmptyWhenEveryBondInterestNameIsMissing) {
+    const IncomeCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.0000",
+        .mFee = "",
+        .mTax = "-1.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {unnamedRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mInterestInstruments[0];
+
+    EXPECT_EQ(instrument.mName, "");
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mName, "");
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mDiagnostic.mSeverity,
+              DiagnosticSeverity::Warning);
+}
+
+TEST(StatementMergerIntegrationTest, PreservesEveryNameVariantWithinOneFile) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "First Source Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Second Source Name",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {firstRow, secondRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "First Source Name");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(first.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(first.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "First Source Name");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(first.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(first.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(first.mAmount, 200000);
+    EXPECT_EQ(first.mFeePaid, 1000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+    EXPECT_EQ(first.mExchangeRate, 100'000'000);
+    ASSERT_EQ(first.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(first.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(first.mUnitEvidence[0].mSource, first.mMetadata.mSources[0]);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, parseCalendarDate("2024-01-16"));
+    EXPECT_EQ(second.mMetadata.mSourceTimestamp, parseSourceTimestamp("2024-01-16T10:00:00.000Z"));
+    EXPECT_FALSE(second.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Second Source Name");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(second.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(second.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(second.mAmount, 120000);
+    EXPECT_EQ(second.mFeePaid, 2000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+    EXPECT_EQ(second.mExchangeRate, 100'000'000);
+    ASSERT_EQ(second.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(second.mUnitEvidence[0].mSourceText, "-1.000000000");
+    EXPECT_EQ(second.mUnitEvidence[0].mSource, second.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& names = std::get<MergeDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    ASSERT_EQ(names.mNameVariants.size(), 2U);
+    EXPECT_EQ(names.mNameVariants[0].mName, "First Source Name");
+    EXPECT_EQ(names.mNameVariants[1].mName, "Second Source Name");
+    EXPECT_EQ(names.mNameVariants[0].mSources, first.mMetadata.mSources);
+    EXPECT_EQ(names.mNameVariants[1].mSources, second.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest, OverlappingExportsRetainAllOriginalClassSources) {
+    const IncomeCsvRow purchaseRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow saleRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "12.0000",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+    const auto first = files.write("first.csv", {purchaseRow, saleRow});
+    const auto second = files.write("second.csv", {purchaseRow, saleRow});
+    const auto third = files.write("third.csv", {purchaseRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(third, 2)},
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)},
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& sale = instrument.mTransactions[1];
+
+    EXPECT_EQ(purchase.mUnits, 200'000'000); // Source 2 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200'000);
+    EXPECT_EQ(sale.mUnits, 100'000'000);
+    EXPECT_EQ(sale.mUnitPrice, 120'000);
+    EXPECT_EQ(sale.mAmount, 120'000);
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 3U);
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 3U);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 3U);
+    ASSERT_EQ(sale.mMetadata.mSources.size(), 2U);
+    ASSERT_EQ(sale.mInstrumentEvidence.size(), 2U);
+    ASSERT_EQ(sale.mUnitEvidence.size(), 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "first.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mMetadata.mSources[1].mFilename.value(), "second.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[1].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[1].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mInstrumentEvidence[1].mSource, purchase.mMetadata.mSources[1]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[1].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[1].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mUnitEvidence[1].mSource, purchase.mMetadata.mSources[1]);
+    EXPECT_EQ(purchase.mMetadata.mSources[2].mFilename.value(), "third.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[2].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[2].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mInstrumentEvidence[2].mSource, purchase.mMetadata.mSources[2]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[2].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[2].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mUnitEvidence[2].mSource, purchase.mMetadata.mSources[2]);
+    EXPECT_EQ(sale.mMetadata.mSources[0].mFilename.value(), "first.csv");
+    EXPECT_EQ(sale.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(sale.mMetadata.mSources[0].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(sale.mInstrumentEvidence[0].mSource, sale.mMetadata.mSources[0]);
+    EXPECT_EQ(sale.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(sale.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(sale.mUnitEvidence[0].mSource, sale.mMetadata.mSources[0]);
+    EXPECT_EQ(sale.mMetadata.mSources[1].mFilename.value(), "second.csv");
+    EXPECT_EQ(sale.mMetadata.mSources[1].mSourceRow, 3U);
+    EXPECT_EQ(sale.mMetadata.mSources[1].mTransactionId, "synthetic-sale");
+    EXPECT_EQ(sale.mInstrumentEvidence[1].mSource, sale.mMetadata.mSources[1]);
+    EXPECT_EQ(sale.mInstrumentEvidence[1].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(sale.mInstrumentEvidence[1].mAssetClassLabel, "FUND");
+    EXPECT_EQ(sale.mUnitEvidence[1].mSource, sale.mMetadata.mSources[1]);
+
+    const auto conflict = std::find_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const auto& diagnostic) {
+            const auto* merge = std::get_if<MergeDiagnostic>(&diagnostic);
+
+            return merge && merge->mCode == MergeDiagnosticCode::InstrumentAssetClassConflict;
+        });
+
+    ASSERT_NE(conflict, result.mDiagnostics.end());
+
+    const auto& error = std::get<MergeDiagnostic>(*conflict);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mIsin, "XX9000000248");
+    ASSERT_EQ(error.mAssetClassVariants.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(error.mAssetClassVariants[0].mSources.size(), 3U);
+    EXPECT_EQ(error.mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
+    ASSERT_EQ(error.mAssetClassVariants[1].mSources.size(), 2U);
+    EXPECT_EQ(error.mAssetClassVariants[0].mSources, purchase.mMetadata.mSources);
+    EXPECT_EQ(error.mAssetClassVariants[1].mSources, sale.mMetadata.mSources);
+}
+
+TEST(StatementMergerIntegrationTest,
+     InvalidUnrecognizedTradeDoesNotContaminateHealthyClassification) {
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow invalidRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "UNLISTED",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "not-a-number",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {healthyRow, invalidRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& purchase = instrument.mTransactions[0];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(error.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mDiagnostic.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mDiagnostic.mField, "price");
+    EXPECT_EQ(error.mDiagnostic.mSourceFile, "history.csv");
+    EXPECT_EQ(error.mDiagnostic.mRowIndex, 3U);
+    EXPECT_EQ(error.mDiagnostic.mTransactionId, "synthetic-sale");
+}
+
+TEST(StatementMergerIntegrationTest,
+     InvalidConflictingActionDoesNotContaminateHealthyClassification) {
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow invalidRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "not-a-number",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-action",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {healthyRow, invalidRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& purchase = instrument.mTransactions[0];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(error.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mDiagnostic.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mDiagnostic.mField, "shares");
+    EXPECT_EQ(error.mDiagnostic.mSourceFile, "history.csv");
+    EXPECT_EQ(error.mDiagnostic.mRowIndex, 3U);
+    EXPECT_EQ(error.mDiagnostic.mTransactionId, "synthetic-action");
+}
+
+TEST(StatementMergerIntegrationTest, InvalidNamelessTradeDoesNotContaminateHealthyClassification) {
+    const IncomeCsvRow healthyRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000248",
+        .mShares = "2.000000000",
+        .mPrice = "10.0000",
+        .mAmount = "-20.0000",
+        .mFee = "-0.1000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow invalidRow{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "XX9000000248",
+        .mShares = "-1.000000000",
+        .mPrice = "",
+        .mAmount = "12.0000",
+        .mFee = "-0.2000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-sale",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto history = files.write("history.csv", {healthyRow, invalidRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mPresentation.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000248");
+    EXPECT_EQ(instrument.mName, "Synthetic Evidence Share");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 0U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& purchase = instrument.mTransactions[0];
+
+    EXPECT_EQ(purchase.mMetadata.mTaxDate, parseCalendarDate("2024-01-15"));
+    EXPECT_EQ(purchase.mMetadata.mSourceTimestamp,
+              parseSourceTimestamp("2024-01-15T10:00:00.000Z"));
+    EXPECT_FALSE(purchase.mMetadata.mOrderingTimestamp.has_value());
+    ASSERT_EQ(purchase.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mFilename.value(), "history.csv");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mTransactionId, "synthetic-purchase");
+    EXPECT_EQ(purchase.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mName, "Synthetic Evidence Share");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mAmount, 200000);
+    EXPECT_EQ(purchase.mFeePaid, 1000);
+    EXPECT_EQ(purchase.mCurrency, Currency::EUR);
+    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
+    EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
+
+    EXPECT_EQ(error.mDiagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mDiagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mDiagnostic.mField, "price");
+    EXPECT_EQ(error.mDiagnostic.mSourceFile, "history.csv");
+    EXPECT_EQ(error.mDiagnostic.mRowIndex, 3U);
+    EXPECT_EQ(error.mDiagnostic.mTransactionId, "synthetic-sale");
+}
+
 } // namespace

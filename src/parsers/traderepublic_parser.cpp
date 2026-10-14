@@ -86,6 +86,11 @@ InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
         instrumentIt = std::prev(aInstruments.end());
     }
 
+    if (instrumentIt->mName.empty())
+    {
+        instrumentIt->mName = aName;
+    }
+
     return *instrumentIt;
 }
 
@@ -109,6 +114,14 @@ struct TradeRepublicParser::RowContext {
     bool mSourceTimestampInvalid{};
 
     [[nodiscard]] EventMetadata metadata(Date aTaxDate) const;
+    [[nodiscard]] std::vector<InstrumentSourceEvidence>
+    instrumentEvidence(const EventMetadata& aMetadata,
+                       std::string aName,
+                       AssetClass aAssetClass,
+                       std::string aLabel) const;
+    void preserveAssetClass(TradeInstrument& aInstrument,
+                            AssetClass aAssetClass,
+                            std::string_view aLabel) const;
 
     void addDiagnostic(DiagnosticSeverity aSeverity,
                        DiagnosticCode aCode,
@@ -119,6 +132,65 @@ struct TradeRepublicParser::RowContext {
                                    std::string_view aValue,
                                    std::string_view aRowKind) const;
 };
+
+/// Preserves the original name and classification with the event source; warns on a blank name.
+std::vector<InstrumentSourceEvidence>
+TradeRepublicParser::RowContext::instrumentEvidence(const EventMetadata& aMetadata,
+                                                    std::string aName,
+                                                    AssetClass aAssetClass,
+                                                    std::string aLabel) const {
+    if (aName.empty())
+    {
+        addDiagnostic(DiagnosticSeverity::Warning,
+                      DiagnosticCode::MissingField,
+                      "Display name is missing; the identified event was retained.",
+                      "name");
+    }
+
+    std::vector<InstrumentSourceEvidence> evidence;
+
+    evidence.push_back(InstrumentSourceEvidence{
+        .mSource = primarySource(aMetadata),
+        .mName = std::move(aName),
+        .mAssetClass = aAssetClass,
+        .mAssetClassLabel = std::move(aLabel),
+    });
+
+    return evidence;
+}
+
+/// Retains valid events while diagnosing missing or conflicting classification.
+/// An unknown summary stays unresolved even when a later row supplies a known class.
+void TradeRepublicParser::RowContext::preserveAssetClass(TradeInstrument& aInstrument,
+                                                         AssetClass aAssetClass,
+                                                         std::string_view aLabel) const {
+    if (aAssetClass == AssetClass::Unknown)
+    {
+        addDiagnostic(DiagnosticSeverity::Error,
+                      aLabel.empty() ? DiagnosticCode::MissingField
+                                     : DiagnosticCode::UnsupportedAssetClass,
+                      "Asset classification is unresolved; the event was retained.",
+                      "asset_class");
+    }
+
+    if (aInstrument.mTransactions.empty() && aInstrument.mCorporateActions.empty())
+    {
+        aInstrument.mAssetClass = aAssetClass;
+    }
+    else if (aInstrument.mAssetClass != aAssetClass)
+    {
+        if (aInstrument.mAssetClass != AssetClass::Unknown && aAssetClass != AssetClass::Unknown)
+        {
+            addDiagnostic(DiagnosticSeverity::Error,
+                          DiagnosticCode::InconsistentValue,
+                          "Asset classes differ for the same ISIN; events were retained with "
+                          "unresolved classification.",
+                          "asset_class");
+        }
+
+        aInstrument.mAssetClass = AssetClass::Unknown;
+    }
+}
 
 struct TradeRepublicParser::ParsedIncome {
     Date mDate;
@@ -428,12 +500,6 @@ bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
         return false;
     }
 
-    if (aName.empty())
-    {
-        aRowContext.addInvalidFieldDiagnostic("name", aName, aContext);
-        return false;
-    }
-
     return true;
 }
 
@@ -519,7 +585,8 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     auto amount = amountValue.empty() ? std::optional<Money>{} : parseMoney(amountValue);
     auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
     auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
-    auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
+    const auto& classLabel = aParsedValues.mAssetClass;
+    const auto assetClass = parseAssetClass(classLabel);
 
     if (!date)
     {
@@ -595,29 +662,14 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return false;
     }
 
-    if (assetClass == AssetClass::Unknown)
-    {
-        aContext.addInvalidFieldDiagnostic("asset_class",
-                                           aCsvRow["asset_class"].get<std::string>(),
-                                           "trade row");
-        return false;
-    }
-
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
-    if (instrument.mAssetClass != AssetClass::Unknown && instrument.mAssetClass != assetClass)
-    {
-        aContext.addDiagnostic(
-            DiagnosticSeverity::Error,
-            DiagnosticCode::InconsistentValue,
-            "Field 'asset_class' conflicts with an earlier row for the same symbol; the "
-            "row was skipped.",
-            "asset_class");
-        return false;
-    }
-    instrument.mAssetClass = assetClass;
+
+    aContext.preserveAssetClass(instrument, assetClass, classLabel);
 
     auto metadata = aContext.metadata(*date);
     auto evidence = unitSourceEvidence(*units, sharesText, primarySource(metadata));
+    auto instrumentEvidence =
+        aContext.instrumentEvidence(metadata, nameValue, assetClass, classLabel);
 
     instrument.mTransactions.emplace_back(TradeTransaction{
         .mMetadata = std::move(metadata),
@@ -629,6 +681,7 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mExchangeRate = EXCHANGE_RATE_SCALE,
         .mCurrency = currency,
         .mUnitEvidence = {std::move(evidence)},
+        .mInstrumentEvidence = std::move(instrumentEvidence),
     });
 
     return true;
@@ -711,14 +764,19 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     }
 
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+    auto metadata = aContext.metadata(income->mDate);
+    const auto classLabel = aCsvRow["asset_class"].get<std::string>();
+    auto evidence =
+        aContext.instrumentEvidence(metadata, nameValue, parseAssetClass(classLabel), classLabel);
 
     instrument.mTransactions.emplace_back(DividendTransaction{
-        .mMetadata = aContext.metadata(income->mDate),
+        .mMetadata = std::move(metadata),
         .mGrossAmount = income->mGrossAmount,
         .mTaxPaid = income->mTaxPaid,
         .mExchangeRate = income->mExchangeRate,
         .mCurrency = income->mCurrency,
         .mTaxCurrency = income->mTaxCurrency,
+        .mInstrumentEvidence = std::move(evidence),
     });
 }
 
@@ -779,13 +837,27 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         instrument = std::prev(aInstruments.end());
     }
 
+    if (instrument->mName.empty())
+    {
+        instrument->mName = name;
+    }
+
+    auto metadata = aContext.metadata(income->mDate);
+    std::vector<InstrumentSourceEvidence> evidence;
+
+    if (isBond)
+    {
+        evidence = aContext.instrumentEvidence(metadata, name, AssetClass::Bond, "BOND");
+    }
+
     instrument->mTransactions.emplace_back(InterestTransaction{
-        .mMetadata = aContext.metadata(income->mDate),
+        .mMetadata = std::move(metadata),
         .mGrossAmount = income->mGrossAmount,
         .mTaxPaid = income->mTaxPaid,
         .mExchangeRate = income->mExchangeRate,
         .mCurrency = income->mCurrency,
         .mTaxCurrency = income->mTaxCurrency,
+        .mInstrumentEvidence = std::move(evidence),
     });
 }
 
@@ -804,7 +876,8 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
     const auto sharesText = aCsvRow["shares"].get<std::string>();
     const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
     const auto* unitsDelta = std::get_if<ParsedFixedPoint>(&importedUnits);
-    const auto assetClass = parseAssetClass(aCsvRow["asset_class"].get<std::string>());
+    const auto classLabel = aCsvRow["asset_class"].get<std::string>();
+    const auto assetClass = parseAssetClass(classLabel);
 
     if (!date)
     {
@@ -822,30 +895,15 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    if (assetClass == AssetClass::Unknown)
-    {
-        aContext.addInvalidFieldDiagnostic("asset_class",
-                                           aCsvRow["asset_class"].get<std::string>(),
-                                           "corporate-action row");
-        return;
-    }
-
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
-    if (instrument.mAssetClass != AssetClass::Unknown && instrument.mAssetClass != assetClass)
-    {
-        aContext.addDiagnostic(
-            DiagnosticSeverity::Error,
-            DiagnosticCode::InconsistentValue,
-            "Field 'asset_class' conflicts with an earlier row for the same symbol; the "
-            "row was skipped.",
-            "asset_class");
-        return;
-    }
-    instrument.mAssetClass = assetClass;
+
+    aContext.preserveAssetClass(instrument, assetClass, classLabel);
 
     // TR shares has no verified economic meaning; only a confirmed ratio establishes direction.
     auto metadata = aContext.metadata(*date);
     auto evidence = unitSourceEvidence(*unitsDelta, sharesText, primarySource(metadata));
+    auto instrumentEvidence =
+        aContext.instrumentEvidence(metadata, nameValue, assetClass, classLabel);
 
     instrument.mCorporateActions.emplace_back(CorporateAction{
         .mMetadata = std::move(metadata),
@@ -853,6 +911,7 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
         .mUnitsDelta = unitsDelta->mValue,
         .mRatio = std::nullopt,
         .mUnitEvidence = {std::move(evidence)},
+        .mInstrumentEvidence = std::move(instrumentEvidence),
     });
 }
 

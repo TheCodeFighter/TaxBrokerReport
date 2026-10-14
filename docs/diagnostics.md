@@ -412,6 +412,21 @@ The parsing stage keeps the existing codes `unknown_row_type`, `unsupported_row_
 `unsupported_asset_class`, `missing_field`, `invalid_value`, `inconsistent_value`, and
 `parse_error`.
 
+For otherwise valid trades/actions, missing classification is a `missing_field` error and an
+unrecognized class is an `unsupported_asset_class` error on `asset_class`. The event is retained
+as unresolved; messages must not say it was skipped. A same-file class disagreement produces
+`inconsistent_value` while retaining both events. The merger preserves all original class evidence
+and reports its instrument conflict after rejecting any conflicting transaction identity groups.
+Classification requests and report blocking remain the processor's responsibility.
+
+A missing display name with a known ISIN is a `missing_field` warning on `name`, not rejection.
+The original blank remains source evidence even if another supplied name completes presentation.
+The merger uses the first non-empty supplied name for that same ISIN under the documented source
+ordering. If all names are blank, the name remains empty; no ISIN is substituted into a name field.
+Required missing ISINs and malformed numeric facts keep their existing rejection errors. Original
+names and class labels belong to domain evidence and local debug dumps; this change adds no raw
+row fields, paths or source indices to the version 1 parser JSON contract.
+
 The later stages use the codes defined by their rule documents. These include:
 
 - `conflicting_duplicate` for two records with the same broker transaction identity but different
