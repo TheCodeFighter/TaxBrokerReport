@@ -158,10 +158,33 @@ Presentation order is independent of economic processing order:
 Trade and dividend instruments use ISIN as their identity. Interest instruments use interest type
 plus ISIN when one exists; without an ISIN, interest type plus payer or instrument name is the
 available broker-neutral identity. Benefits and private-market records remain standalone events.
-Names never replace an ISIN: when names differ for one identity, the earliest name under
-`StableSourceOrder` is used for presentation and a warning retains every name variant and source.
-A trade asset-class disagreement is an error, retains every class variant and source, and leaves
-the merged class `Unknown` rather than choosing a tax-relevant value.
+Names never replace an ISIN. A valid trade, action, dividend or bond coupon with a known ISIN and
+blank display name is retained with a `MissingField` warning on `name`. Presentation uses the
+earliest non-empty supplied name for the same ISIN under `StableSourceOrder`. If every supplied name
+is blank.
+identity, a warning retains every name variant and source, including original blanks.
+
+Trades and actions retain source-linked `InstrumentSourceEvidence` with the original name, class
+label and mapped class on each event. Dividends and bond coupons retain the same evidence for name
+completion; broker cash interest keeps its established broker identity. Instrument summaries never
+replace these original facts. Older in-memory inputs without evidence use their instrument fields;
+missing evidence is not proof of an original label.
+
+Valid trade/action facts are retained when `asset_class` is blank or unrecognized. Blank classes
+produce a `MissingField` error; unrecognized labels produce `UnsupportedAssetClass`, both on
+`asset_class`, with messages saying the event was retained. Required identity, date/datetime,
+quantity and monetary validation still rejects unusable rows before classification evidence is
+created. Recognized Crypto and PrivateFund categories retain their mapped class and existing
+unsupported-treatment warnings.
+
+A trade/action class disagreement retains every event and source and leaves the instrument class
+`Unknown`. Within one CSV the parser reports `InconsistentValue`; merging reports
+`InstrumentAssetClassConflict` from surviving event evidence in every file layout. Parser diagnostics
+may therefore differ with file layout, but retained facts, unresolved classification and error state
+do not. A later Stock row cannot clear an earlier Stock/Fund conflict. Missing/unrecognized evidence
+also stays unresolved alongside a known class. Distinct unrecognized labels remain separate
+`Unknown` variants, with `mUnrecognizedLabel` in merger diagnostics; original recognized labels
+remain in event evidence. Sources and presentation follow the normal ordering rules.
 
 Before presentation grouping, the merger classifies every valid event with a non-empty transaction
 ID by `(broker, transaction ID)`. Events in one identity group are exact duplicates only when all
@@ -170,6 +193,13 @@ of these values match:
 - event kind, tax date, optional source timestamp and optional ordering timestamp;
 - broker-neutral instrument identity and tax-relevant classification; and
 - every event-specific monetary, unit, ratio, currency, fee, tax and descriptive value.
+
+Trade/action duplicate comparison uses each event's original mapped class, never its instrument's
+summary. When both inputs retain unrecognized labels, different labels conflict even though both
+map to `Unknown`. Exact duplicates combine all original evidence and sources. Accumulated evidence
+must agree across the whole group, including when its first candidate has no source evidence.
+Duplicate classification happens before instrument aggregation; rejected same-ID groups cannot
+contaminate the class of unrelated surviving events.
 
 For an ISIN-identified instrument, a display-name difference does not make the events conflict;
 the normal instrument-name warning retains each name and its sources. An exact duplicate produces

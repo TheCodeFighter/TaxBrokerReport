@@ -63,6 +63,28 @@ struct NameContribution {
     std::vector<SourceReference> mSources;
 };
 
+/// Keeps each original name, including blanks, linked to its source for merger name selection.
+/// Older events without instrument evidence use the supplied instrument name and event sources.
+template <typename Event>
+std::vector<NameContribution> nameContributions(const Event& aEvent, const std::string& aName) {
+    if (aEvent.mInstrumentEvidence.empty())
+    {
+        return {{.mName = aName, .mSources = aEvent.mMetadata.mSources}};
+    }
+
+    std::vector<NameContribution> contributions(aEvent.mInstrumentEvidence.size());
+
+    std::transform(aEvent.mInstrumentEvidence.begin(),
+                   aEvent.mInstrumentEvidence.end(),
+                   contributions.begin(),
+                   [](const auto& aEvidence) {
+                       return NameContribution{.mName = aEvidence.mName,
+                                               .mSources = {aEvidence.mSource}};
+                   });
+
+    return contributions;
+}
+
 struct NameVariantSet {
     std::string mCanonicalName;
     std::optional<SourceReference> mCanonicalSource;
@@ -73,7 +95,7 @@ struct NameVariantSet {
                                              aContribution.mSources.end(),
                                              StableSourceOrder{});
 
-        if (source != aContribution.mSources.end() &&
+        if (!aContribution.mName.empty() && source != aContribution.mSources.end() &&
             (!mCanonicalSource || StableSourceOrder{}(*source, *mCanonicalSource)))
         {
             mCanonicalName = aContribution.mName;
@@ -86,10 +108,40 @@ struct NameVariantSet {
 };
 
 struct AssetClassVariantSet {
-    std::map<AssetClass, std::vector<SourceReference>> mSourcesByAssetClass;
+    using Key = std::pair<AssetClass, std::optional<std::string>>;
+    std::map<Key, std::vector<SourceReference>> mSourcesByAssetClass;
 
-    void add(AssetClass aAssetClass, const EventMetadata& aMetadata) {
-        appendSources(mSourcesByAssetClass[aAssetClass], aMetadata);
+    /// Collects original class variants and sources, keeping distinct unknown labels separate.
+    /// Sources without original evidence use the supplied asset class.
+    template <typename Event> void add(AssetClass aAssetClass, const Event& aEvent) {
+        if (aEvent.mInstrumentEvidence.empty())
+        {
+            appendSources(mSourcesByAssetClass[{aAssetClass, {}}], aEvent.mMetadata);
+            return;
+        }
+
+        for (const auto& evidence : aEvent.mInstrumentEvidence)
+        {
+            const auto label = evidence.mAssetClass == AssetClass::Unknown
+                                   ? std::optional<std::string>{evidence.mAssetClassLabel}
+                                   : std::nullopt;
+
+            mSourcesByAssetClass[{evidence.mAssetClass, label}].push_back(evidence.mSource);
+        }
+
+        // Older duplicates may contribute sources without original row evidence.
+        for (const auto& source : aEvent.mMetadata.mSources)
+        {
+            const bool hasEvidence = std::any_of(
+                aEvent.mInstrumentEvidence.begin(),
+                aEvent.mInstrumentEvidence.end(),
+                [&source](const auto& aEvidence) { return aEvidence.mSource == source; });
+
+            if (!hasEvidence)
+            {
+                mSourcesByAssetClass[{aAssetClass, std::nullopt}].push_back(source);
+            }
+        }
     }
 };
 
@@ -379,6 +431,44 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
            std::all_of(aRight.begin(), aRight.end(), matches);
 }
 
+/// Checks that both evidence sets agree on mapped class and, for Unknown, the original label.
+/// Missing evidence adds no constraint; duplicate checks still compare the stored asset class.
+[[nodiscard]] bool sameOriginalClassification(const std::vector<InstrumentSourceEvidence>& aLeft,
+                                              const std::vector<InstrumentSourceEvidence>& aRight) {
+    if (aLeft.empty() || aRight.empty())
+    {
+        return true;
+    }
+
+    const auto& first = aLeft.front();
+    const auto matches = [&first](const InstrumentSourceEvidence& aEvidence) {
+        return aEvidence.mAssetClass == first.mAssetClass &&
+               (first.mAssetClass != AssetClass::Unknown ||
+                aEvidence.mAssetClassLabel == first.mAssetClassLabel);
+    };
+
+    return std::all_of(aLeft.begin(), aLeft.end(), matches) &&
+           std::all_of(aRight.begin(), aRight.end(), matches);
+}
+
+/// Combines original instrument evidence from exact duplicates in stable source order.
+/// Removes only identical evidence entries; different names or class labels remain distinct.
+void mergeInstrumentEvidence(std::vector<InstrumentSourceEvidence>& aDestination,
+                             const std::vector<InstrumentSourceEvidence>& aSource) {
+    aDestination.insert(aDestination.end(), aSource.begin(), aSource.end());
+
+    std::sort(aDestination.begin(), aDestination.end(), [](const auto& aLeft, const auto& aRight) {
+        if (aLeft.mSource != aRight.mSource)
+        {
+            return StableSourceOrder{}(aLeft.mSource, aRight.mSource);
+        }
+
+        return std::tie(aLeft.mName, aLeft.mAssetClass, aLeft.mAssetClassLabel) <
+               std::tie(aRight.mName, aRight.mAssetClass, aRight.mAssetClassLabel);
+    });
+    aDestination.erase(std::unique(aDestination.begin(), aDestination.end()), aDestination.end());
+}
+
 void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
                        const std::vector<UnitSourceEvidence>& aSource) {
     aDestination.insert(aDestination.end(), aSource.begin(), aSource.end());
@@ -402,6 +492,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
 [[nodiscard]] bool sameEventFacts(const TradeRecord& aLeft, const TradeRecord& aRight) {
     return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) &&
            aLeft.mIsin == aRight.mIsin && aLeft.mAssetClass == aRight.mAssetClass &&
+           sameOriginalClassification(aLeft.mEvent.mInstrumentEvidence,
+                                      aRight.mEvent.mInstrumentEvidence) &&
            aLeft.mEvent.mTradeSide == aRight.mEvent.mTradeSide &&
            aLeft.mEvent.mUnitPrice == aRight.mEvent.mUnitPrice &&
            aLeft.mEvent.mUnits == aRight.mEvent.mUnits &&
@@ -416,6 +508,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
                                   const CorporateActionRecord& aRight) {
     return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) &&
            aLeft.mIsin == aRight.mIsin && aLeft.mAssetClass == aRight.mAssetClass &&
+           sameOriginalClassification(aLeft.mEvent.mInstrumentEvidence,
+                                      aRight.mEvent.mInstrumentEvidence) &&
            aLeft.mEvent.mType == aRight.mEvent.mType &&
            aLeft.mEvent.mUnitsDelta == aRight.mEvent.mUnitsDelta &&
            sameUnitEvidence(aLeft.mEvent.mUnitEvidence, aRight.mEvent.mUnitEvidence) &&
@@ -497,6 +591,8 @@ void mergeExactEvent(MergeEvent& aDestination, const MergeEvent& aSource) {
                                                         source.mNameContributions.end());
 
             normalizeSources(aDestinationValue.mEvent.mMetadata.mSources);
+            mergeInstrumentEvidence(aDestinationValue.mEvent.mInstrumentEvidence,
+                                    source.mEvent.mInstrumentEvidence);
 
             if constexpr (std::is_same_v<Value, TradeRecord> ||
                           std::is_same_v<Value, CorporateActionRecord>)
@@ -648,18 +744,21 @@ void deduplicateEvents(std::vector<MergeEvent>& aEvents,
     return variants;
 }
 
+/// Builds classification variants with sorted, deduplicated sources for merger diagnostics.
+/// Preserves distinct unrecognized labels even when they map to the same Unknown class.
 [[nodiscard]] std::vector<InstrumentAssetClassVariant>
 makeAssetClassVariants(AssetClassVariantSet& aAssetClasses) {
     std::vector<InstrumentAssetClassVariant> variants;
     variants.reserve(aAssetClasses.mSourcesByAssetClass.size());
 
-    for (auto& [assetClass, sources] : aAssetClasses.mSourcesByAssetClass)
+    for (auto& [key, sources] : aAssetClasses.mSourcesByAssetClass)
     {
         normalizeSources(sources);
 
         variants.push_back(InstrumentAssetClassVariant{
-            .mAssetClass = assetClass,
+            .mAssetClass = key.first,
             .mSources = sources,
+            .mUnrecognizedLabel = key.second,
         });
     }
 
@@ -695,8 +794,8 @@ void addNameConflictDiagnostic(const Isin& aIsin,
         .mSeverity = DiagnosticSeverity::Warning,
         .mCode = MergeDiagnosticCode::InstrumentNameConflict,
         .mMessage =
-            "Instrument names differ for the same identity; the earliest source name is used "
-            "for presentation.",
+            "Instrument names differ for the same identity; the earliest non-empty name is used "
+            "for presentation; blank source names remain evidence.",
         .mSources = std::move(sources),
         .mInstrumentName = aNames.mCanonicalName,
         .mIsin = aIsin,
@@ -901,11 +1000,10 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                 events.emplace_back(TradeRecord{
                     .mName = sourceInstrument.mName,
                     .mIsin = sourceInstrument.mIsin,
-                    .mAssetClass = sourceInstrument.mAssetClass,
-                    .mNameContributions = {{
-                        .mName = sourceInstrument.mName,
-                        .mSources = event.mMetadata.mSources,
-                    }},
+                    .mAssetClass = event.mInstrumentEvidence.empty()
+                                       ? sourceInstrument.mAssetClass
+                                       : event.mInstrumentEvidence.front().mAssetClass,
+                    .mNameContributions = nameContributions(event, sourceInstrument.mName),
                     .mEvent = std::move(event),
                 });
             }
@@ -924,11 +1022,10 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                 events.emplace_back(CorporateActionRecord{
                     .mName = sourceInstrument.mName,
                     .mIsin = sourceInstrument.mIsin,
-                    .mAssetClass = sourceInstrument.mAssetClass,
-                    .mNameContributions = {{
-                        .mName = sourceInstrument.mName,
-                        .mSources = event.mMetadata.mSources,
-                    }},
+                    .mAssetClass = event.mInstrumentEvidence.empty()
+                                       ? sourceInstrument.mAssetClass
+                                       : event.mInstrumentEvidence.front().mAssetClass,
+                    .mNameContributions = nameContributions(event, sourceInstrument.mName),
                     .mEvent = std::move(event),
                 });
             }
@@ -950,10 +1047,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                 events.emplace_back(DividendRecord{
                     .mName = sourceInstrument.mName,
                     .mIsin = sourceInstrument.mIsin,
-                    .mNameContributions = {{
-                        .mName = sourceInstrument.mName,
-                        .mSources = event.mMetadata.mSources,
-                    }},
+                    .mNameContributions = nameContributions(event, sourceInstrument.mName),
                     .mEvent = std::move(event),
                 });
             }
@@ -976,10 +1070,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                     .mName = sourceInstrument.mName,
                     .mIsin = sourceInstrument.mIsin,
                     .mInterestType = sourceInstrument.mInterestType,
-                    .mNameContributions = {{
-                        .mName = sourceInstrument.mName,
-                        .mSources = event.mMetadata.mSources,
-                    }},
+                    .mNameContributions = nameContributions(event, sourceInstrument.mName),
                     .mEvent = std::move(event),
                 });
             }
@@ -1030,7 +1121,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                 bucket.mNames.add(contribution);
             }
 
-            bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent.mMetadata);
+            bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent);
             bucket.mTransactions.push_back(std::move(aValue.mEvent));
         }
         else if constexpr (std::is_same_v<Value, CorporateActionRecord>)
@@ -1042,7 +1133,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                 bucket.mNames.add(contribution);
             }
 
-            bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent.mMetadata);
+            bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent);
             bucket.mCorporateActions.push_back(std::move(aValue.mEvent));
         }
         else if constexpr (std::is_same_v<Value, DividendRecord>)
@@ -1093,7 +1184,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
         sortEvents(bucket.mCorporateActions);
 
         const auto assetClass = bucket.mAssetClasses.mSourcesByAssetClass.size() == 1
-                                    ? bucket.mAssetClasses.mSourcesByAssetClass.begin()->first
+                                    ? bucket.mAssetClasses.mSourcesByAssetClass.begin()->first.first
                                     : AssetClass::Unknown;
 
         result.mStatement.mPresentation.mTradeInstruments.push_back(TradeInstrument{

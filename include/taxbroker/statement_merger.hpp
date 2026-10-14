@@ -63,6 +63,8 @@ struct InstrumentNameVariant {
 struct InstrumentAssetClassVariant {
     AssetClass mAssetClass{AssetClass::Unknown};
     std::vector<SourceReference> mSources;
+    /// Unrecognized labels remain distinct even when they all map to Unknown.
+    std::optional<std::string> mUnrecognizedLabel;
 };
 
 struct MergeDiagnostic {

@@ -1632,19 +1632,94 @@ TEST(TradeRepublicParserTest, AcceptsAnOmittedTradeAmountAndAnExplicitZeroFee) {
     EXPECT_TRUE(parseResult.mDiagnostics.empty());
 }
 
-TEST(TradeRepublicParserTest, RejectsAnAssetClassConflictForTheSameIsin) {
-    SyntheticCsvRow stock;
-    SyntheticCsvRow conflictingFund = stock;
-    conflictingFund.mAssetClass = "FUND";
-    conflictingFund.mTransactionId = "synthetic-conflicting-asset";
+TEST(TradeRepublicParserTest, RetainsTradeClassificationConflictForTheSameIsin) {
+    const SyntheticCsvRow stock{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow fund{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-conflicting-asset",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{stock, fund};
+    tr::TradeRepublicParser parser;
 
-    const ParseResult parseResult = parseRows({stock, conflictingFund});
-    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
-    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.front().mAssetClass, AssetClass::Stock);
-    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
-    EXPECT_EQ(transactionId(
-                  parseResult.mStatement.mTradeInstruments.front().mTransactions.front().mMetadata),
-              "synthetic-test-transaction");
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mTransactions[1];
+
+    EXPECT_EQ(purchase.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(primarySource(purchase.mMetadata).mTransactionId, "synthetic-test-transaction");
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource.mSourceRow, 2U);
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource.mSourceRow, 3U);
+    EXPECT_EQ(primarySource(other.mMetadata).mTransactionId, "synthetic-conflicting-asset");
+    EXPECT_EQ(other.mUnits, 100'000'000);
+    EXPECT_EQ(other.mUnitPrice, 100'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[0].mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 3U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, fund.mTransactionId);
 }
 
 TEST(TradeRepublicParserTest, WarnsAboutUnsupportedAssetsOnlyAfterAValidTradeIsPreserved) {
@@ -1662,96 +1737,2557 @@ struct InvalidRowCase {
     void (*mMutate)(SyntheticCsvRow&);
 };
 
-void PrintTo(const InvalidRowCase& aCase, std::ostream* aOutput) {
-    *aOutput << aCase.mName;
+TEST(TradeRepublicParserTest, RejectsTradeWithMissingIdentity) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_FALSE(error.mField.has_value());
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
 }
 
-std::string invalidRowCaseName(const testing::TestParamInfo<InvalidRowCase>& aInfo) {
-    return aInfo.param.mName;
+TEST(TradeRepublicParserTest, RejectsTradeWithMissingIsin) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "symbol");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
 }
 
-class InvalidTradeRowTest : public testing::TestWithParam<InvalidRowCase> {};
+TEST(TradeRepublicParserTest, RejectsTradeWithShortDate) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
 
-TEST_P(InvalidTradeRowTest, SkipsTheRowWithoutCreatingPartialData) {
-    SyntheticCsvRow row;
-    GetParam().mMutate(row);
+    const auto baseline = parseRows({validRow});
 
-    const ParseResult parseResult = parseRows({row});
-    expectNoParsedRecords(parseResult);
-    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mRowIndex, 2U);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mTransactionId, row.mTransactionId);
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-1-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "date");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    TradeValidation,
-    InvalidTradeRowTest,
-    testing::Values(
-        InvalidRowCase{"MissingIdentity",
-                       +[](SyntheticCsvRow& aRow) {
-                           aRow.mName.clear();
-                           aRow.mSymbol.clear();
-                       }},
-        InvalidRowCase{"MissingIsin", +[](SyntheticCsvRow& aRow) { aRow.mSymbol.clear(); }},
-        InvalidRowCase{"MissingName", +[](SyntheticCsvRow& aRow) { aRow.mName.clear(); }},
-        InvalidRowCase{"ShortDate", +[](SyntheticCsvRow& aRow) { aRow.mDate = "2024-1-15"; }},
-        InvalidRowCase{"WrongDateSeparators",
-                       +[](SyntheticCsvRow& aRow) { aRow.mDate = "2024/01/15"; }},
-        InvalidRowCase{"NonNumericDate", +[](SyntheticCsvRow& aRow) { aRow.mDate = "202A-01-15"; }},
-        InvalidRowCase{"ImpossibleDate", +[](SyntheticCsvRow& aRow) { aRow.mDate = "2023-02-29"; }},
-        InvalidRowCase{"MissingPrice", +[](SyntheticCsvRow& aRow) { aRow.mPrice.clear(); }},
-        InvalidRowCase{"MalformedPrice",
-                       +[](SyntheticCsvRow& aRow) { aRow.mPrice = "not-a-number"; }},
-        InvalidRowCase{"ZeroPrice", +[](SyntheticCsvRow& aRow) { aRow.mPrice = "0"; }},
-        InvalidRowCase{"NegativePrice", +[](SyntheticCsvRow& aRow) { aRow.mPrice = "-0.01"; }},
-        InvalidRowCase{"OverflowingPrice",
-                       +[](SyntheticCsvRow& aRow) { aRow.mPrice = "922337203685477.5808"; }},
-        InvalidRowCase{"MissingUnits", +[](SyntheticCsvRow& aRow) { aRow.mShares.clear(); }},
-        InvalidRowCase{"MalformedUnits",
-                       +[](SyntheticCsvRow& aRow) { aRow.mShares = "not-a-number"; }},
-        InvalidRowCase{"OverflowingUnits",
-                       +[](SyntheticCsvRow& aRow) { aRow.mShares = "92233720368.54775808"; }},
-        InvalidRowCase{"ZeroUnits", +[](SyntheticCsvRow& aRow) { aRow.mShares = "0"; }},
-        InvalidRowCase{"NegativeBuyUnits", +[](SyntheticCsvRow& aRow) { aRow.mShares = "-1.00"; }},
-        InvalidRowCase{"PositiveSellUnits",
-                       +[](SyntheticCsvRow& aRow) {
-                           aRow.mType = "SELL";
-                           aRow.mShares = "1.00";
-                           aRow.mAmount = "10.00";
-                       }},
-        InvalidRowCase{"MinimumSignedUnits",
-                       +[](SyntheticCsvRow& aRow) {
-                           aRow.mType = "SELL";
-                           aRow.mShares = "-92233720368.54775808";
-                           aRow.mAmount = "10.00";
-                       }},
-        InvalidRowCase{"MalformedAmount",
-                       +[](SyntheticCsvRow& aRow) { aRow.mAmount = "not-a-number"; }},
-        InvalidRowCase{"OverflowingAmount",
-                       +[](SyntheticCsvRow& aRow) { aRow.mAmount = "-922337203685477.5809"; }},
-        InvalidRowCase{"ZeroAmount", +[](SyntheticCsvRow& aRow) { aRow.mAmount = "0"; }},
-        InvalidRowCase{"PositiveBuyAmount", +[](SyntheticCsvRow& aRow) { aRow.mAmount = "10.00"; }},
-        InvalidRowCase{"NegativeSellAmount",
-                       +[](SyntheticCsvRow& aRow) {
-                           aRow.mType = "SELL";
-                           aRow.mShares = "-1.00";
-                           aRow.mAmount = "-10.00";
-                       }},
-        InvalidRowCase{"MinimumSignedAmount",
-                       +[](SyntheticCsvRow& aRow) { aRow.mAmount = "-922337203685477.5808"; }},
-        InvalidRowCase{"MalformedFee", +[](SyntheticCsvRow& aRow) { aRow.mFee = "not-a-number"; }},
-        InvalidRowCase{"PositiveFee", +[](SyntheticCsvRow& aRow) { aRow.mFee = "0.01"; }},
-        InvalidRowCase{"MinimumSignedFee",
-                       +[](SyntheticCsvRow& aRow) { aRow.mFee = "-922337203685477.5808"; }},
-        InvalidRowCase{"MissingCurrency", +[](SyntheticCsvRow& aRow) { aRow.mCurrency.clear(); }},
-        InvalidRowCase{"UnsupportedCurrency",
-                       +[](SyntheticCsvRow& aRow) { aRow.mCurrency = "CAD"; }},
-        InvalidRowCase{"MissingAssetClass",
-                       +[](SyntheticCsvRow& aRow) { aRow.mAssetClass.clear(); }},
-        InvalidRowCase{"UnsupportedAssetClass",
-                       +[](SyntheticCsvRow& aRow) { aRow.mAssetClass = "COMMODITY"; }}),
-    invalidRowCaseName);
+TEST(TradeRepublicParserTest, RejectsTradeWithWrongDateSeparators) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024/01/15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "date");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithNonNumericDate) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "202A-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "date");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithImpossibleDate) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2023-02-29",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "date");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMissingPrice) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMalformedPrice) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "not-a-number",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithZeroPrice) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "0",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithNegativePrice) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "-0.01",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingPrice) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "922337203685477.5808",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMissingUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMalformedUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "not-a-number",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "92233720368.54775808",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithZeroUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithNegativeBuyUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.00",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithPositiveSellUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "10.000000",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-92233720368.54775808",
+        .mPrice = "10.000000",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMalformedAmount) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "not-a-number",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingAmount) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-922337203685477.5809",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithZeroAmount) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "0",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithPositiveBuyAmount) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithNegativeSellAmount) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.00",
+        .mPrice = "10.000000",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedAmount) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-922337203685477.5808",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMalformedFee) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "not-a-number",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fee");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithPositiveFee) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "0.01",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fee");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedFee) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "-922337203685477.5808",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fee");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithMissingCurrency) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "currency");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeWithUnsupportedCurrency) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "CAD",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "currency");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
 
 TEST(TradeRepublicParserTest, RejectsDividendWithInvalidDate) {
     SyntheticCsvRow row{.mDatetime = "2024-01-15T10:00:00.000Z",
@@ -6087,101 +8623,1071 @@ TEST(TradeRepublicParserTest, ReportsUnverifiedCreditInsteadOfSilentlyIgnoringIt
               healthy.mTransactionId);
 }
 
-struct InstrumentIncomeKindCase {
-    const char* mName;
-    SyntheticCsvRow (*mMakeRow)();
-};
-
-void PrintTo(const InstrumentIncomeKindCase& aCase, std::ostream* aOutput) {
-    *aOutput << aCase.mName;
-}
-
-class InvalidIncomeInstrumentTest : public testing::TestWithParam<InstrumentIncomeKindCase> {};
-
-TEST_P(InvalidIncomeInstrumentTest, RequiresBothIsinAndName) {
-    const std::array invalidCases{
-        InvalidRowCase{"MissingIdentity",
-                       +[](SyntheticCsvRow& aRow) {
-                           aRow.mName.clear();
-                           aRow.mSymbol.clear();
-                       }},
-        InvalidRowCase{"MissingIsin", +[](SyntheticCsvRow& aRow) { aRow.mSymbol.clear(); }},
-        InvalidRowCase{"MissingName", +[](SyntheticCsvRow& aRow) { aRow.mName.clear(); }},
+TEST(TradeRepublicParserTest, RejectsDividendWithMissingIdentity) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
     };
 
-    for (const auto& invalidCase : invalidCases)
-    {
-        SCOPED_TRACE(std::string{GetParam().mName} + '/' + invalidCase.mName);
-        SyntheticCsvRow row = GetParam().mMakeRow();
-        invalidCase.mMutate(row);
+    const auto baseline = parseRows({validRow});
 
-        const ParseResult parseResult = parseRows({row});
-        expectNoParsedRecords(parseResult);
-        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
-        EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::MissingField);
-    }
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mDividendInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mDividendInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mTaxPaid, 10'000);      // EUR 1 withholding at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_FALSE(error.mField.has_value());
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
 }
 
-INSTANTIATE_TEST_SUITE_P(IncomeInstrumentValidation,
-                         InvalidIncomeInstrumentTest,
-                         testing::Values(InstrumentIncomeKindCase{"Dividend", makeDividendRow},
-                                         InstrumentIncomeKindCase{"BondInterest",
-                                                                  makeBondInterestRow}),
-                         [](const testing::TestParamInfo<InstrumentIncomeKindCase>& aInfo) {
-                             return std::string{aInfo.param.mName};
-                         });
-
-TEST(TradeRepublicParserTest, RejectsInvalidCorporateActions) {
-    const std::array invalidCases{
-        InvalidRowCase{"MissingIdentity",
-                       +[](SyntheticCsvRow& aRow) {
-                           aRow.mName.clear();
-                           aRow.mSymbol.clear();
-                       }},
-        InvalidRowCase{"MissingIsin", +[](SyntheticCsvRow& aRow) { aRow.mSymbol.clear(); }},
-        InvalidRowCase{"MissingName", +[](SyntheticCsvRow& aRow) { aRow.mName.clear(); }},
-        InvalidRowCase{"InvalidDate", +[](SyntheticCsvRow& aRow) { aRow.mDate = "2024-13-01"; }},
-        InvalidRowCase{"MissingUnits", +[](SyntheticCsvRow& aRow) { aRow.mShares.clear(); }},
-        InvalidRowCase{"MalformedUnits",
-                       +[](SyntheticCsvRow& aRow) { aRow.mShares = "not-a-number"; }},
-        InvalidRowCase{"OverflowingUnits",
-                       +[](SyntheticCsvRow& aRow) { aRow.mShares = "92233720368.54775808"; }},
-        InvalidRowCase{"ZeroUnits", +[](SyntheticCsvRow& aRow) { aRow.mShares = "0"; }},
-        InvalidRowCase{"MissingAssetClass",
-                       +[](SyntheticCsvRow& aRow) { aRow.mAssetClass.clear(); }},
-        InvalidRowCase{"UnsupportedAssetClass",
-                       +[](SyntheticCsvRow& aRow) { aRow.mAssetClass = "COMMODITY"; }},
+TEST(TradeRepublicParserTest, RejectsDividendWithMissingIsin) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
     };
 
-    for (const auto& invalidCase : invalidCases)
-    {
-        SCOPED_TRACE(invalidCase.mName);
-        SyntheticCsvRow row = makeCorporateActionRow();
-        invalidCase.mMutate(row);
+    const auto baseline = parseRows({validRow});
 
-        const ParseResult parseResult = parseRows({row});
-        expectNoParsedRecords(parseResult);
-        ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
-        EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
-    }
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mDividendInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mDividendInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mTaxPaid, 10'000);      // EUR 1 withholding at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "symbol");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
 }
 
-TEST(TradeRepublicParserTest, RejectsACorporateActionAssetConflictForTheSameIsin) {
-    SyntheticCsvRow trade;
-    SyntheticCsvRow conflictingAction = makeCorporateActionRow();
-    conflictingAction.mSymbol = trade.mSymbol;
-    conflictingAction.mName = trade.mName;
-    conflictingAction.mAssetClass = "FUND";
+TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingIdentity) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-bond-interest-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
 
-    const ParseResult parseResult = parseRows({trade, conflictingAction});
-    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
-    const auto& instrument = parseResult.mStatement.mTradeInstruments.front();
-    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
-    EXPECT_EQ(instrument.mTransactions.size(), 1U);
-    EXPECT_TRUE(instrument.mCorporateActions.empty());
-    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::InconsistentValue);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mField, "asset_class");
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mInterestInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mInterestInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mTaxPaid, 10'000);      // EUR 1 withholding at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-bond-interest-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_FALSE(error.mField.has_value());
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingIsin) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-bond-interest-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mInterestInstruments[0].mTransactions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mInterestInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mTaxPaid, 10'000);      // EUR 1 withholding at four decimal places.
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-bond-interest-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "symbol");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsActionWithMissingIdentity) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mCorporateActions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mCorporateActions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(accepted.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(accepted.mRatio.has_value());
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_FALSE(error.mField.has_value());
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsActionWithMissingIsin) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mCorporateActions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mCorporateActions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(accepted.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(accepted.mRatio.has_value());
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "symbol");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsActionWithInvalidDate) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mCorporateActions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mCorporateActions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(accepted.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(accepted.mRatio.has_value());
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-13-01",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "date");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsActionWithMissingUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mCorporateActions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mCorporateActions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(accepted.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(accepted.mRatio.has_value());
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsActionWithMalformedUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mCorporateActions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mCorporateActions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(accepted.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(accepted.mRatio.has_value());
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "not-a-number",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsActionWithOverflowingUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mCorporateActions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mCorporateActions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(accepted.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(accepted.mRatio.has_value());
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "92233720368.54775808",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RejectsActionWithZeroUnits) {
+    const SyntheticCsvRow validRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const auto baseline = parseRows({validRow});
+
+    ASSERT_TRUE(baseline.mDiagnostics.empty());
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(baseline.mStatement.mTradeInstruments[0].mCorporateActions.size(), 1U);
+
+    const auto& accepted = baseline.mStatement.mTradeInstruments[0].mCorporateActions[0];
+
+    EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
+    EXPECT_EQ(accepted.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(accepted.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(accepted.mRatio.has_value());
+
+    const SyntheticCsvRow invalidRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{invalidRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics[0];
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, invalidRow.mTransactionId);
+}
+
+TEST(TradeRepublicParserTest, RetainsActionClassificationConflictForTheSameIsin) {
+    const SyntheticCsvRow stock{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow fund{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{stock, fund};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& purchase = instrument.mTransactions[0];
+    const auto& other = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(purchase.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(primarySource(purchase.mMetadata).mTransactionId, "synthetic-test-transaction");
+    ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(purchase.mInstrumentEvidence[0].mSource.mSourceRow, 2U);
+    ASSERT_EQ(other.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(other.mInstrumentEvidence[0].mSource.mSourceRow, 3U);
+    EXPECT_EQ(primarySource(other.mMetadata).mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(other.mUnitsDelta, 100'000'000);
+    EXPECT_EQ(other.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_FALSE(other.mRatio.has_value());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[0].mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 3U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, fund.mTransactionId);
 }
 
 TEST(TradeRepublicParserTest, RejectsInvalidBenefits) {
@@ -7962,6 +11468,1500 @@ TEST(TradeRepublicParserTest, RetainsBondInterestEurIncomeWithSuppliedBrokerRate
                    .mSourceRow = 2,
                    .mTransactionId = "synthetic-bond-interest-validation",
                    .mInputSequence = {0, 0}}}));
+}
+
+TEST(TradeRepublicParserTest, RetainsTradeWithMissingName) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& event = instrument.mTransactions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(event.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(event.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(event.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(event.mAmount, 100'000);
+    EXPECT_EQ(event.mFeePaid, 0);
+    EXPECT_EQ(event.mCurrency, Currency::EUR);
+    ASSERT_EQ(event.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(event.mUnitEvidence[0].mSourceText, "1.0000000000");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mField, "name");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RetainsTradeWithMissingClass) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Synthetic Test Share");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& event = instrument.mTransactions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(event.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(event.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(event.mAmount, 100'000);
+    EXPECT_EQ(event.mFeePaid, 0);
+    EXPECT_EQ(event.mCurrency, Currency::EUR);
+    ASSERT_EQ(event.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(event.mUnitEvidence[0].mSourceText, "1.0000000000");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mField, "asset_class");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RetainsTradeWithUnrecognizedClass) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Synthetic Test Share");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& event = instrument.mTransactions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(event.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(event.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(event.mAmount, 100'000);
+    EXPECT_EQ(event.mFeePaid, 0);
+    EXPECT_EQ(event.mCurrency, Currency::EUR);
+    ASSERT_EQ(event.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(event.mUnitEvidence[0].mSourceText, "1.0000000000");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(diagnostic.mField, "asset_class");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RetainsActionWithMissingName) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "");
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& event = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(event.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(event.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(event.mRatio.has_value());
+    ASSERT_EQ(event.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(event.mUnitEvidence[0].mSourceText, "1.00");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mField, "name");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-split-validation");
+}
+
+TEST(TradeRepublicParserTest, RetainsActionWithMissingClass) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Synthetic Test Share");
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& event = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(event.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(event.mRatio.has_value());
+    ASSERT_EQ(event.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(event.mUnitEvidence[0].mSourceText, "1.00");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mField, "asset_class");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-split-validation");
+}
+
+TEST(TradeRepublicParserTest, RetainsActionWithUnrecognizedClass) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Synthetic Test Share");
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& event = instrument.mCorporateActions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-split-validation");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(event.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(event.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(event.mRatio.has_value());
+    ASSERT_EQ(event.mUnitEvidence.size(), 1U);
+    EXPECT_EQ(event.mUnitEvidence[0].mSourceText, "1.00");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(diagnostic.mField, "asset_class");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-split-validation");
+}
+
+TEST(TradeRepublicParserTest, RetainsDividendWithMissingName) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mDividendInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& event = instrument.mTransactions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-dividend-validation");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(event.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(event.mTaxPaid, 10'000);      // EUR 1 withholding at four decimal places.
+    EXPECT_EQ(event.mCurrency, Currency::EUR);
+    EXPECT_EQ(event.mTaxCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mField, "name");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-dividend-validation");
+}
+
+TEST(TradeRepublicParserTest, RetainsBondInterestWithMissingName) {
+    const SyntheticCsvRow sourceRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-bond-interest-validation",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{sourceRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000002");
+    EXPECT_EQ(instrument.mName, "");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& event = instrument.mTransactions[0];
+
+    EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(event.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(event.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(event.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(event.mMetadata.mSources[0].mTransactionId, "synthetic-bond-interest-validation");
+    EXPECT_EQ(event.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(event.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mSource, event.mMetadata.mSources[0]);
+    EXPECT_EQ(event.mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClassLabel, "BOND");
+    EXPECT_EQ(event.mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(event.mTaxPaid, 10'000);      // EUR 1 withholding at four decimal places.
+    EXPECT_EQ(event.mCurrency, Currency::EUR);
+    EXPECT_EQ(event.mTaxCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mField, "name");
+    EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(diagnostic.mRowIndex, 2U);
+    EXPECT_EQ(diagnostic.mTransactionId, "synthetic-bond-interest-validation");
+}
+
+TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassLast) {
+    const SyntheticCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-unknown",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow knownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-known",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{unknownRow, knownRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mTransactionId, "synthetic-unknown");
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mAmount, 100'000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mTransactionId, "synthetic-known");
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mAmount, 100'000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unknown");
+}
+
+TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassFirst) {
+    const SyntheticCsvRow knownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-known",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-unknown",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{knownRow, unknownRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mTransactionId, "synthetic-known");
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mAmount, 100'000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mTransactionId, "synthetic-unknown");
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mAmount, 100'000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 3U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unknown");
+}
+
+TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassLast) {
+    const SyntheticCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-unknown",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow knownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-known",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{unknownRow, knownRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mTransactionId, "synthetic-unknown");
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mAmount, 100'000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mTransactionId, "synthetic-known");
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mAmount, 100'000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unknown");
+}
+
+TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassFirst) {
+    const SyntheticCsvRow knownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-known",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow unknownRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "COMMODITY",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-unknown",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{knownRow, unknownRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mTransactionId, "synthetic-known");
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mAmount, 100'000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mTransactionId, "synthetic-unknown");
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mAmount, 100'000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 3U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unknown");
+}
+
+TEST(TradeRepublicParserTest, LaterMatchingClassCannotClearAClassConflict) {
+    const SyntheticCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-stock-first",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-fund",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow thirdRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-stock-last",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{firstRow, secondRow, thirdRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 3U);
+
+    const auto& first = instrument.mTransactions[0];
+    const auto& second = instrument.mTransactions[1];
+    const auto& third = instrument.mTransactions[2];
+
+    EXPECT_EQ(first.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(first.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(first.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mMetadata.mSources[0].mTransactionId, "synthetic-stock-first");
+    EXPECT_EQ(first.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(first.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mSource, first.mMetadata.mSources[0]);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mAmount, 100'000);
+    EXPECT_EQ(first.mCurrency, Currency::EUR);
+
+    EXPECT_EQ(second.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(second.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(second.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(second.mMetadata.mSources[0].mTransactionId, "synthetic-fund");
+    EXPECT_EQ(second.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(second.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mSource, second.mMetadata.mSources[0]);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mAmount, 100'000);
+    EXPECT_EQ(second.mCurrency, Currency::EUR);
+
+    EXPECT_EQ(third.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(third.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(third.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(third.mMetadata.mSources[0].mSourceRow, 4U);
+    EXPECT_EQ(third.mMetadata.mSources[0].mTransactionId, "synthetic-stock-last");
+    EXPECT_EQ(third.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 2}));
+    ASSERT_EQ(third.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(third.mInstrumentEvidence[0].mSource, third.mMetadata.mSources[0]);
+    EXPECT_EQ(third.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(third.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(third.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(third.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(third.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(third.mAmount, 100'000);
+    EXPECT_EQ(third.mCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-fund");
+}
+
+TEST(TradeRepublicParserTest, RetainsClassConflictWhenActionPrecedesTrade) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.00",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-action-first",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow tradeRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-trade-last",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{actionRow, tradeRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    ASSERT_EQ(instrument.mCorporateActions.size(), 1U);
+
+    const auto& action = instrument.mCorporateActions[0];
+    const auto& trade = instrument.mTransactions[0];
+
+    EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(action.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(action.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(action.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(action.mMetadata.mSources[0].mTransactionId, "synthetic-action-first");
+    EXPECT_EQ(action.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    ASSERT_EQ(action.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(action.mInstrumentEvidence[0].mSource, action.mMetadata.mSources[0]);
+    EXPECT_EQ(action.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
+    EXPECT_EQ(action.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
+    EXPECT_EQ(action.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+    EXPECT_EQ(action.mUnitsDelta, 100'000'000); // Source 1 unit, not a verified split change.
+    EXPECT_FALSE(action.mRatio.has_value());
+
+    EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    ASSERT_EQ(trade.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mFilename.value(), csvFile.path().filename().string());
+    EXPECT_EQ(trade.mMetadata.mSources[0].mSourceRow, 3U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mTransactionId, "synthetic-trade-last");
+    EXPECT_EQ(trade.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 1}));
+    ASSERT_EQ(trade.mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(trade.mInstrumentEvidence[0].mSource, trade.mMetadata.mSources[0]);
+    EXPECT_EQ(trade.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(trade.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+    EXPECT_EQ(trade.mInstrumentEvidence[0].mName, "Synthetic Test Share");
+    EXPECT_EQ(trade.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
+    EXPECT_EQ(trade.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(trade.mAmount, 100'000);
+    EXPECT_EQ(trade.mCurrency, Currency::EUR);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-trade-last");
+}
+
+TEST(TradeRepublicParserTest, CompletesMissingTradeNameWithoutChangingOriginalEvidence) {
+    const SyntheticCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-unnamed",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow namedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Name",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-named",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{unnamedRow, namedRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Supplied Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    ASSERT_EQ(instrument.mTransactions[1].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(instrument.mTransactions[1].mInstrumentEvidence[0].mName, "Supplied Name");
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mSource.mSourceRow, 2U);
+    EXPECT_EQ(instrument.mTransactions[1].mInstrumentEvidence[0].mSource.mSourceRow, 3U);
+    EXPECT_EQ(instrument.mTransactions[0].mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(instrument.mTransactions[1].mUnits, 100'000'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "name");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unnamed");
+}
+
+TEST(TradeRepublicParserTest, CompletesMissingDividendNameWithoutChangingOriginalEvidence) {
+    const SyntheticCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-unnamed",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow namedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Supplied Name",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-named",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{unnamedRow, namedRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mDividendInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Supplied Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    ASSERT_EQ(instrument.mTransactions[1].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(instrument.mTransactions[1].mInstrumentEvidence[0].mName, "Supplied Name");
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mSource.mSourceRow, 2U);
+    EXPECT_EQ(instrument.mTransactions[1].mInstrumentEvidence[0].mSource.mSourceRow, 3U);
+    EXPECT_EQ(instrument.mTransactions[0].mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(instrument.mTransactions[1].mGrossAmount, 100'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "name");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unnamed");
+}
+
+TEST(TradeRepublicParserTest, CompletesMissingBondInterestNameWithoutChangingOriginalEvidence) {
+    const SyntheticCsvRow unnamedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-unnamed",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow namedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Supplied Name",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-named",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{unnamedRow, namedRow};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments[0];
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Supplied Name");
+    ASSERT_EQ(instrument.mTransactions.size(), 2U);
+    ASSERT_EQ(instrument.mTransactions[0].mInstrumentEvidence.size(), 1U);
+    ASSERT_EQ(instrument.mTransactions[1].mInstrumentEvidence.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mName, "");
+    EXPECT_EQ(instrument.mTransactions[1].mInstrumentEvidence[0].mName, "Supplied Name");
+    EXPECT_EQ(instrument.mTransactions[0].mInstrumentEvidence[0].mSource.mSourceRow, 2U);
+    EXPECT_EQ(instrument.mTransactions[1].mInstrumentEvidence[0].mSource.mSourceRow, 3U);
+    EXPECT_EQ(instrument.mTransactions[0].mGrossAmount, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(instrument.mTransactions[1].mGrossAmount, 100'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "name");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unnamed");
 }
 
 } // namespace

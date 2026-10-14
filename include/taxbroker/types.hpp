@@ -110,6 +110,16 @@ struct UnitSourceEvidence {
     bool operator==(const UnitSourceEvidence&) const = default;
 };
 
+/// Original row metadata stays attached to the event, independently of instrument presentation.
+struct InstrumentSourceEvidence {
+    SourceReference mSource;
+    std::string mName;
+    AssetClass mAssetClass{AssetClass::Unknown};
+    std::string mAssetClassLabel;
+
+    bool operator==(const InstrumentSourceEvidence&) const = default;
+};
+
 struct CorporateAction {
     EventMetadata mMetadata;
     CorporateActionType mType{CorporateActionType::UnresolvedSplit};
@@ -118,6 +128,7 @@ struct CorporateAction {
     Units mUnitsDelta{};
     std::optional<CorpRatio> mRatio;
     std::vector<UnitSourceEvidence> mUnitEvidence;
+    std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };
 
 struct TradeTransaction {
@@ -132,6 +143,7 @@ struct TradeTransaction {
     ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
     Currency mCurrency{Currency::Unknown};
     std::vector<UnitSourceEvidence> mUnitEvidence;
+    std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };
 
 struct TradeInstrument {
@@ -151,6 +163,7 @@ struct DividendTransaction {
     std::optional<ExchangeRate> mExchangeRate;
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
+    std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };
 
 struct DividendInstrument {
@@ -168,6 +181,7 @@ struct InterestTransaction {
     std::optional<ExchangeRate> mExchangeRate;
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
+    std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };
 
 struct InterestInstrument {

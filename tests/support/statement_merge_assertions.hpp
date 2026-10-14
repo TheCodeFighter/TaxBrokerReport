@@ -114,6 +114,14 @@ void expectEventsEqual(const std::vector<Event>& aActual,
             EXPECT_EQ(actual.mMetadata.mSources, expected.mMetadata.mSources);
 
             if constexpr (std::is_same_v<Event, TradeTransaction> ||
+                          std::is_same_v<Event, CorporateAction> ||
+                          std::is_same_v<Event, DividendTransaction> ||
+                          std::is_same_v<Event, InterestTransaction>)
+            {
+                EXPECT_EQ(actual.mInstrumentEvidence, expected.mInstrumentEvidence);
+            }
+
+            if constexpr (std::is_same_v<Event, TradeTransaction> ||
                           std::is_same_v<Event, CorporateAction>)
             {
                 EXPECT_EQ(actual.mUnitEvidence, expected.mUnitEvidence);
@@ -236,6 +244,8 @@ inline void expectDiagnosticsEqual(const std::vector<StatementMergeDiagnostic>& 
                               other.mAssetClassVariants[variant].mAssetClass);
                     EXPECT_EQ(aValue.mAssetClassVariants[variant].mSources,
                               other.mAssetClassVariants[variant].mSources);
+                    EXPECT_EQ(aValue.mAssetClassVariants[variant].mUnrecognizedLabel,
+                              other.mAssetClassVariants[variant].mUnrecognizedLabel);
                 }
             }
             else
