@@ -7,5 +7,6 @@
     "C_Cpp.default.cppStandard": "c++20",
     "C_Cpp.default.compilerPath": "/usr/bin/c++",
     "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "debug.inlineValues": "on"
 }
