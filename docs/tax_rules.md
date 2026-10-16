@@ -34,8 +34,13 @@ For a selected year `Y`:
 The tax date controls these limits. A broker timestamp must not move an event into another tax
 year.
 
-The app must accept any valid calendar year. It must reject an invalid year before processing
+The app must accept any supported reporting year. It must reject an invalid year before processing
 starts. It must not silently replace an invalid year with the current year or another value.
+
+The selected-year input is a required integer from 2000 through 9999, inclusive. There is no
+restriction to the current year. Missing values, values below 2000 and larger integers produce
+`invalid_reporting_year` before ledger preparation. Validate the integer before converting it to
+`std::chrono::year`, whose narrower representation must not wrap a rejected selection.
 
 ## How the report is built
 
@@ -225,6 +230,13 @@ Examples include:
 
 Older events are still processed when they are needed to build the ledger. Missing required
 history or another processing error is still an error. An empty year alone is not an error.
+
+When there are no reportable capital sales and no unresolved blocking problems, capital gains
+returns `no_data`, with reason `no_selected_year_disposals`, and no XML. The later GUI explains:
+"No Doh-KDVP return is needed for [year] based on the supplied data." Purchases and supported
+corporate actions alone do not require this return. Dividend and interest results remain independent.
+The absence of source sales is a preparation fact, not proof that rejected or unclassified events
+are harmless; later processing must resolve their scope before assigning the final report status.
 
 ## Files covering several years
 

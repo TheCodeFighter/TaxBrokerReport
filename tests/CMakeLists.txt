@@ -49,6 +49,7 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 # Integration Tests
 add_executable(taxbroker_integration_tests
     integration/full_pipeline_test.cpp
+    integration/reporting_year_integration_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/server_integration_test.cpp
     integration/statement_merger_integration_test.cpp

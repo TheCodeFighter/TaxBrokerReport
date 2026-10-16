@@ -181,6 +181,12 @@ For selected year `Y`:
 Filtering must therefore occur at the ledger/output stages, not by discarding all rows outside the
 selected year immediately after parsing.
 
+The boundary processor's ownership, candidate views and explicit invalid-year result are defined
+in [`architecture.md`](architecture.md#reporting-year-preparation-contract). Valid empty years
+succeed; once blocking problems are resolved, a year without reportable capital sales returns
+capital `no_data` and a clear explanation that Doh-KDVP is not needed from the supplied data.
+Final report statuses and GUI presentation are integrated later.
+
 If a disposal cannot be matched because acquisition history is missing, produce a structured
 incomplete-history error. In normal mode, identify the investment by name and ISIN and require user
 confirmation before excluding every listed unsafe ISIN; the other normal choice is to generate no

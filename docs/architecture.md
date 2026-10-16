@@ -287,6 +287,40 @@ FIFO position. Partially eligible losses become separate report rows, without du
 inventory consumption. User confirmations of missing coverage and external activity are explicit
 run-local inputs, as defined in `tax_rules.md`.
 
+### Reporting-year preparation contract
+
+`TaxProcessor::prepareReportingYear` accepts a `TaxProcessingRequest` containing the optional
+selected-year integer and a merger-produced `StatementMergeResult`. The returned
+`TaxProcessingResult` owns that complete merged result once, including all upstream diagnostics,
+source facts and years. Its candidate views contain `StatementEventReference` indices into the
+owned presentation, so copying or moving the result does not invalidate them. Keep that presentation
+unchanged while using the indices.
+
+A missing year or a value outside 2000..9999 returns no `mLedger` and one `InvalidReportingYear`
+processing diagnostic at `HistoricalValidation`, on `reporting_year`, affecting all four reports.
+It invents no source, date or instrument. Upstream data and diagnostics remain available.
+A valid year returns a `ReportingYearLedger`, even when all its views are empty:
+
+- `mCapitalEvents` retains trades and corporate-action evidence through inclusive 31 December.
+  Its first `mHistoricalCapitalEventCount` entries precede 1 January and establish opening inventory.
+- `mSelectedYearEvents` retains all six event kinds within inclusive 1 January–31 December for
+  later classification and report preparation. These are candidates, not final report rows.
+- `mLossAnalysisEvents` retains trades and corporate-action evidence between 1 January minus
+  30 days and 31 December plus 30 days, inclusive. For 2024 these bounds are 2 December 2023
+  and 30 January 2025. All supplied ISINs remain candidates; equivalent-instrument declarations
+  and the exact windows of individual losses belong to later loss processing.
+- `mHasSelectedYearSales` records whether an in-year source trade is a sale. A false value supports
+  the later capital `no_data` explanation only after classification and blocking errors are resolved.
+
+Every view preserves merger chronology and uses only `mTaxDate` for membership. Earlier history
+outside the analysis window remains owned and available as its opening context. Following-year
+analysis events never enter the selected-year ledger or output candidates. Unresolved classifications
+and action evidence are preserved; preparation does not infer support, apply actions, reorder same-day
+splits, consume inventory, calculate loss eligibility or establish statement coverage. Those operations
+belong to later processors. Boundary preparation success does not assign final report statuses,
+clear upstream errors or mean that XML was generated. Full application status/API integration remains
+later work; the parser JSON contract stays at version 1.
+
 Report exclusions preserve source facts and replacement allocations needed by retained losses.
 Unresolved dependencies on excluded data require a loss decision for the dependent sale; they
 cannot be cleared by removing the source instrument's report rows. Relevant following-January
@@ -300,9 +334,11 @@ absolute EUR impact of inventory reconciliation per ISIN/run; details are in `ca
 and `fifo.md`. This additional processor state does not change parser diagnostic version 1.
 
 The arithmetic layer returns typed numeric failures without report assumptions. The intermediate
-`ProcessingDiagnostic` adapter adds the caller's stage, affected reports and safe source/instrument
-context. It is the arithmetic subset shared with issue #214, not the complete application result:
-final diagnostic IDs, blocking resolution, exclusion requests and JSON remain later integration.
+`ProcessingDiagnostic` carries the stage, affected reports and safe source/instrument context.
+The numeric adapter supplies caller-scoped arithmetic errors; reporting-year preparation reuses
+the same envelope for year validation. These are the implemented portions shared with issue #214,
+not the complete application result: final diagnostic IDs, blocking resolution, exclusion requests
+and JSON remain later integration.
 
 Foreign-currency processing follows [`calculations.md`](calculations.md). The application result
 contains one structured request for every missing official `(currency, tax date)` rate. A

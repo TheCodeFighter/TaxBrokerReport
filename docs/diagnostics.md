@@ -85,7 +85,8 @@ Each report result contains:
   and
 - an `unsafe` marker for developer-mode output; and
 - an optional machine-readable `reason`, including `below_deposit_interest_threshold` for a
-  bank-interest `no_data` result.
+  bank-interest `no_data` result and `no_selected_year_disposals` for a capital-gains result
+  without reportable selected-year sales.
 
 The status is one of:
 
@@ -99,6 +100,12 @@ The status is one of:
 An XML payload is present only for `generated`. It is absent for `no_data`, `needs_input`, and
 `failed`. `needs_input` is not a failure and must identify at least one unanswered request.
 `failed` must identify at least one blocking diagnostic.
+
+A capital `no_data` result with reason `no_selected_year_disposals` tells the later GUI to explain
+that no Doh-KDVP return is needed for the selected year based on the supplied data. This includes
+valid empty years and years with only purchases or supported corporate actions. It does not suppress
+unresolved history, rejected-row or classification problems, or change dividend/interest outcomes.
+The boundary processor exposes source-sale presence; later report processing determines this status.
 
 `unsafe` is `false` unless the user completes the three developer-mode confirmations for
 incomplete history. Excluding an unsafe ISIN in normal mode does not make the remaining XML
