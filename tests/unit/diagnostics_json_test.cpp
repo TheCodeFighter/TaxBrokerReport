@@ -20,7 +20,7 @@ TEST(DiagnosticsJsonTest, SerializesAnEmptySuccessfulResult) {
 
     const auto response = nlohmann::json::parse(api::serializeDiagnosticsJson(parseResult));
 
-    EXPECT_EQ(response.at("schemaVersion"), api::kDiagnosticsSchemaVersion);
+    EXPECT_EQ(response.at("schemaVersion"), 1);
     EXPECT_EQ(response.at("broker"), "trade_republic");
     EXPECT_EQ(response.at("status"), "success");
     EXPECT_EQ(response.at("summary").at("warningCount"), 0U);

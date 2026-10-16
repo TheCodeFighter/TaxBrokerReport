@@ -1123,6 +1123,94 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
 
         test::expectMergeResultsEqual(actual, expected);
 
+        std::vector<std::string> survivingIds;
+
+        std::transform(actual.mStatement.mChronologicalOrder.begin(),
+                       actual.mStatement.mChronologicalOrder.end(),
+                       std::back_inserter(survivingIds),
+                       [&actual](const auto& aReference) {
+                           return primarySource(referencedMetadata(actual.mStatement, aReference))
+                               .mTransactionId.value_or("");
+                       });
+
+        EXPECT_EQ(survivingIds,
+                  (std::vector<std::string>{"trade-id",
+                                            "action-id",
+                                            "dividend-id",
+                                            "interest-id",
+                                            "benefit-id"}));
+
+        const auto& presentation = actual.mStatement.mPresentation;
+
+        for (const auto& instrument : presentation.mTradeInstruments)
+        {
+            for (const auto& trade : instrument.mTransactions)
+            {
+                EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
+                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnits, 200'000'000);
+                EXPECT_EQ(trade.mAmount, 24'000);
+                EXPECT_EQ(trade.mFeePaid, 100);
+                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(trade.mCurrency, Currency::USD);
+                EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
+            }
+
+            for (const auto& action : instrument.mCorporateActions)
+            {
+                EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
+                EXPECT_EQ(action.mUnitsDelta, -100'000'000);
+                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
+            }
+        }
+
+        for (const auto& instrument : presentation.mDividendInstruments)
+        {
+            for (const auto& dividend : instrument.mTransactions)
+            {
+                EXPECT_EQ(dividend.mGrossAmount, 5'000);
+                EXPECT_EQ(dividend.mTaxPaid, 1'000);
+                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(dividend.mCurrency, Currency::USD);
+                EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
+            }
+        }
+
+        for (const auto& instrument : presentation.mInterestInstruments)
+        {
+            EXPECT_EQ(instrument.mInterestType, InterestType::BrokerInterest);
+            EXPECT_FALSE(instrument.mIsin.has_value());
+
+            for (const auto& interest : instrument.mTransactions)
+            {
+                EXPECT_EQ(interest.mGrossAmount, 6'000);
+                EXPECT_EQ(interest.mTaxPaid, 1'200);
+                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(interest.mCurrency, Currency::GBP);
+                EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
+            }
+        }
+
+        for (const auto& benefit : presentation.mBenefitEvents)
+        {
+            EXPECT_EQ(benefit.mType, BenefitType::StockPerk);
+            EXPECT_EQ(benefit.mName, "Reward");
+            EXPECT_EQ(benefit.mIsin, "XX0000000002");
+            EXPECT_EQ(benefit.mAssetClass, AssetClass::Stock);
+            EXPECT_EQ(benefit.mAmount, 7'000);
+            EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+            EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 1, 5));
+        }
+
+        ASSERT_EQ(actual.mDiagnostics.size(), 2U);
+        EXPECT_EQ(std::get<MergeDiagnostic>(actual.mDiagnostics[0]).mCode,
+                  MergeDiagnosticCode::InstrumentNameConflict);
+        EXPECT_EQ(std::get<MergeDiagnostic>(actual.mDiagnostics[1]).mCode,
+                  MergeDiagnosticCode::ConflictingDuplicate);
+
         EXPECT_EQ(actual.mStatement.mChronologicalOrder, expected.mStatement.mChronologicalOrder);
         ASSERT_EQ(actual.mStatement.mChronologicalOrder.size(), 5U);
 
@@ -2232,6 +2320,86 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
         const auto result = DeterministicStatementMerger{}.merge(inputs);
 
         test::expectMergeResultsEqual(result, expected);
+
+        const auto& presentation = result.mStatement.mPresentation;
+
+        for (const auto& instrument : presentation.mTradeInstruments)
+        {
+            for (const auto& trade : instrument.mTransactions)
+            {
+                EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
+                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnits, 200'000'000);
+                EXPECT_EQ(trade.mAmount, 24'000);
+                EXPECT_EQ(trade.mFeePaid, 100);
+                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(trade.mCurrency, Currency::USD);
+                EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
+            }
+
+            for (const auto& action : instrument.mCorporateActions)
+            {
+                EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
+                EXPECT_EQ(action.mUnitsDelta, -100'000'000);
+                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
+            }
+        }
+
+        for (const auto& instrument : presentation.mDividendInstruments)
+        {
+            for (const auto& dividend : instrument.mTransactions)
+            {
+                EXPECT_EQ(dividend.mGrossAmount, 5'000);
+                EXPECT_EQ(dividend.mTaxPaid, 1'000);
+                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(dividend.mCurrency, Currency::USD);
+                EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
+            }
+        }
+
+        for (const auto& instrument : presentation.mInterestInstruments)
+        {
+            EXPECT_EQ(instrument.mInterestType, InterestType::BrokerInterest);
+            EXPECT_FALSE(instrument.mIsin.has_value());
+
+            for (const auto& interest : instrument.mTransactions)
+            {
+                EXPECT_EQ(interest.mGrossAmount, 6'000);
+                EXPECT_EQ(interest.mTaxPaid, 1'200);
+                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(interest.mCurrency, Currency::GBP);
+                EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
+            }
+        }
+
+        for (const auto& benefit : presentation.mBenefitEvents)
+        {
+            EXPECT_EQ(benefit.mType, BenefitType::StockPerk);
+            EXPECT_EQ(benefit.mName, "Reward");
+            EXPECT_EQ(benefit.mIsin, "XX0000000002");
+            EXPECT_EQ(benefit.mAssetClass, AssetClass::Stock);
+            EXPECT_EQ(benefit.mAmount, 7'000);
+            EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+            EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 1, 5));
+        }
+
+        for (const auto& event : presentation.mPrivateMarketEvents)
+        {
+            EXPECT_EQ(event.mType, PrivateMarketEventType::Sell);
+            EXPECT_EQ(event.mName, "Private fund");
+            EXPECT_EQ(event.mIsin, "XX0000000003");
+            EXPECT_EQ(event.mAssetClass, AssetClass::PrivateFund);
+            EXPECT_EQ(event.mAmount, 8'000);
+            EXPECT_EQ(event.mCurrency, Currency::EUR);
+            EXPECT_EQ(event.mDescription, "Synthetic sale");
+            EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 6));
+        }
+
+        ASSERT_EQ(presentation.mPrivateMarketEvents.size(), 1U);
+        EXPECT_EQ(presentation.mPrivateMarketEvents.front().mFeePaid, 200);
         ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), kinds.size());
         EXPECT_TRUE(result.mDiagnostics.empty());
 
@@ -2283,6 +2451,87 @@ TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependen
         const auto result = DeterministicStatementMerger{}.merge(inputs);
 
         test::expectMergeResultsEqual(result, expected);
+
+        const auto& presentation = result.mStatement.mPresentation;
+
+        for (const auto& instrument : presentation.mTradeInstruments)
+        {
+            for (const auto& trade : instrument.mTransactions)
+            {
+                EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
+                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnits, 200'000'000);
+                EXPECT_EQ(trade.mAmount, 24'000);
+                EXPECT_EQ(trade.mFeePaid, 100);
+                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(trade.mCurrency, Currency::USD);
+                EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
+            }
+
+            for (const auto& action : instrument.mCorporateActions)
+            {
+                EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
+                EXPECT_EQ(action.mUnitsDelta, -100'000'000);
+                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
+            }
+        }
+
+        for (const auto& instrument : presentation.mDividendInstruments)
+        {
+            for (const auto& dividend : instrument.mTransactions)
+            {
+                EXPECT_EQ(dividend.mGrossAmount, 5'000);
+                EXPECT_EQ(dividend.mTaxPaid, 1'000);
+                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(dividend.mCurrency, Currency::USD);
+                EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
+            }
+        }
+
+        for (const auto& instrument : presentation.mInterestInstruments)
+        {
+            EXPECT_EQ(instrument.mInterestType, InterestType::BrokerInterest);
+            EXPECT_FALSE(instrument.mIsin.has_value());
+
+            for (const auto& interest : instrument.mTransactions)
+            {
+                EXPECT_EQ(interest.mGrossAmount, 6'000);
+                EXPECT_EQ(interest.mTaxPaid, 1'200);
+                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(interest.mCurrency, Currency::GBP);
+                EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
+            }
+        }
+
+        for (const auto& benefit : presentation.mBenefitEvents)
+        {
+            EXPECT_EQ(benefit.mType, BenefitType::StockPerk);
+            EXPECT_EQ(benefit.mName, "Reward");
+            EXPECT_EQ(benefit.mIsin, "XX0000000002");
+            EXPECT_EQ(benefit.mAssetClass, AssetClass::Stock);
+            EXPECT_EQ(benefit.mAmount, 7'000);
+            EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+            EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 1, 5));
+        }
+
+        for (const auto& event : presentation.mPrivateMarketEvents)
+        {
+            EXPECT_EQ(event.mType, PrivateMarketEventType::Sell);
+            EXPECT_EQ(event.mName, "Private fund");
+            EXPECT_EQ(event.mIsin, "XX0000000003");
+            EXPECT_EQ(event.mAssetClass, AssetClass::PrivateFund);
+            EXPECT_EQ(event.mAmount, 8'000);
+            EXPECT_EQ(event.mCurrency, Currency::EUR);
+            EXPECT_EQ(event.mDescription, "Synthetic sale");
+            EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 6));
+        }
+
+        ASSERT_EQ(presentation.mPrivateMarketEvents.size(), 2U);
+        EXPECT_EQ(presentation.mPrivateMarketEvents[0].mFeePaid, 200);
+        EXPECT_EQ(presentation.mPrivateMarketEvents[1].mFeePaid, 200);
         ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 12U);
         EXPECT_TRUE(result.mDiagnostics.empty());
 
@@ -2543,13 +2792,15 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
     inputs[1].mParseResult.mStatement.mTradeInstruments.front().mName = "Alternative name";
     inputs[2].mParseResult.mStatement.mPrivateMarketEvents.front().mFeePaid += 1;
 
+    const std::array originalClasses{AssetClass::Stock, AssetClass::Fund, AssetClass::Stock};
+
     for (auto& input : inputs)
     {
         auto& statement = input.mParseResult.mStatement;
         auto other = statement.mTradeInstruments.front();
         other.mIsin = "XX0000000099";
         other.mName = "Other instrument";
-        other.mAssetClass = input.mSourceIndex == 1 ? AssetClass::Fund : AssetClass::Stock;
+        other.mAssetClass = originalClasses[input.mSourceIndex];
 
         for (auto* metadata : eventMetadataInTestOrder(input.mParseResult.mStatement))
         {
@@ -2661,6 +2912,177 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
         const auto result = DeterministicStatementMerger{}.merge(inputs);
 
         test::expectMergeResultsEqual(result, expected);
+
+        std::vector<std::string> survivingIds;
+
+        std::transform(result.mStatement.mChronologicalOrder.begin(),
+                       result.mStatement.mChronologicalOrder.end(),
+                       std::back_inserter(survivingIds),
+                       [&result](const auto& aReference) {
+                           return primarySource(referencedMetadata(result.mStatement, aReference))
+                               .mTransactionId.value_or("");
+                       });
+
+        EXPECT_EQ(survivingIds,
+                  (std::vector<std::string>{"other-trade-0",
+                                            "other-trade-1",
+                                            "other-trade-2",
+                                            "trade-id",
+                                            "",
+                                            "",
+                                            "",
+                                            "action-id",
+                                            "",
+                                            "",
+                                            "",
+                                            "dividend-id",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "interest-id",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "benefit-id",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            "",
+                                            ""}));
+
+        const auto& presentation = result.mStatement.mPresentation;
+
+        for (const auto& instrument : presentation.mTradeInstruments)
+        {
+            for (const auto& trade : instrument.mTransactions)
+            {
+                EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
+                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnits, 200'000'000);
+                EXPECT_EQ(trade.mAmount, 24'000);
+                EXPECT_EQ(trade.mFeePaid, 100);
+                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(trade.mCurrency, Currency::USD);
+                EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
+            }
+
+            for (const auto& action : instrument.mCorporateActions)
+            {
+                EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
+                EXPECT_EQ(action.mUnitsDelta, -100'000'000);
+                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
+            }
+        }
+
+        for (const auto& instrument : presentation.mDividendInstruments)
+        {
+            for (const auto& dividend : instrument.mTransactions)
+            {
+                EXPECT_EQ(dividend.mGrossAmount, 5'000);
+                EXPECT_EQ(dividend.mTaxPaid, 1'000);
+                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(dividend.mCurrency, Currency::USD);
+                EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
+            }
+        }
+
+        for (const auto& instrument : presentation.mInterestInstruments)
+        {
+            EXPECT_EQ(instrument.mInterestType, InterestType::BrokerInterest);
+            EXPECT_FALSE(instrument.mIsin.has_value());
+
+            for (const auto& interest : instrument.mTransactions)
+            {
+                EXPECT_EQ(interest.mGrossAmount, 6'000);
+                EXPECT_EQ(interest.mTaxPaid, 1'200);
+                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(interest.mCurrency, Currency::GBP);
+                EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
+                EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
+            }
+        }
+
+        for (const auto& benefit : presentation.mBenefitEvents)
+        {
+            EXPECT_EQ(benefit.mType, BenefitType::StockPerk);
+            EXPECT_EQ(benefit.mName, "Reward");
+            EXPECT_EQ(benefit.mIsin, "XX0000000002");
+            EXPECT_EQ(benefit.mAssetClass, AssetClass::Stock);
+            EXPECT_EQ(benefit.mAmount, 7'000);
+            EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+            EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 1, 5));
+        }
+
+        for (const auto& event : presentation.mPrivateMarketEvents)
+        {
+            EXPECT_EQ(event.mType, PrivateMarketEventType::Sell);
+            EXPECT_EQ(event.mName, "Private fund");
+            EXPECT_EQ(event.mIsin, "XX0000000003");
+            EXPECT_EQ(event.mAssetClass, AssetClass::PrivateFund);
+            EXPECT_EQ(event.mAmount, 8'000);
+            EXPECT_EQ(event.mCurrency, Currency::EUR);
+            EXPECT_EQ(event.mDescription, "Synthetic sale");
+            EXPECT_EQ(event.mMetadata.mTaxDate, makeDate(2024, 1, 6));
+        }
+
+        ASSERT_EQ(presentation.mPrivateMarketEvents.size(), 3U);
+        EXPECT_EQ(presentation.mPrivateMarketEvents[0].mFeePaid, 200);
+        EXPECT_EQ(presentation.mPrivateMarketEvents[1].mFeePaid, 200);
+        EXPECT_EQ(presentation.mPrivateMarketEvents[2].mFeePaid, 201);
+
+        ASSERT_EQ(presentation.mTradeInstruments.size(), 2U);
+        EXPECT_EQ(presentation.mTradeInstruments[0].mIsin, "XX0000000001");
+        EXPECT_EQ(presentation.mTradeInstruments[0].mAssetClass, AssetClass::Stock);
+        EXPECT_EQ(presentation.mTradeInstruments[0].mTransactions.size(), 4U);
+        EXPECT_EQ(presentation.mTradeInstruments[0].mCorporateActions.size(), 4U);
+        EXPECT_EQ(presentation.mTradeInstruments[1].mIsin, "XX0000000099");
+        EXPECT_EQ(presentation.mTradeInstruments[1].mAssetClass, AssetClass::Unknown);
+        EXPECT_EQ(presentation.mTradeInstruments[1].mTransactions.size(), 3U);
+        EXPECT_TRUE(presentation.mTradeInstruments[1].mCorporateActions.empty());
+        ASSERT_EQ(presentation.mDividendInstruments.size(), 2U);
+        EXPECT_EQ(presentation.mDividendInstruments[0].mIsin, "XX0000000001");
+        EXPECT_EQ(presentation.mDividendInstruments[0].mTransactions.size(), 4U);
+        EXPECT_EQ(presentation.mDividendInstruments[1].mIsin, "XX0000000099");
+        EXPECT_EQ(presentation.mDividendInstruments[1].mTransactions.size(), 6U);
+        ASSERT_EQ(presentation.mInterestInstruments.size(), 2U);
+        EXPECT_EQ(presentation.mInterestInstruments[0].mName, "Cash account");
+        EXPECT_EQ(presentation.mInterestInstruments[0].mTransactions.size(), 4U);
+        EXPECT_EQ(presentation.mInterestInstruments[1].mName, "Other account");
+        EXPECT_EQ(presentation.mInterestInstruments[1].mTransactions.size(), 6U);
+        EXPECT_EQ(presentation.mBenefitEvents.size(), 4U);
+
+        std::vector<StableInputSequence> survivingSources;
+
+        std::transform(result.mStatement.mChronologicalOrder.begin(),
+                       result.mStatement.mChronologicalOrder.end(),
+                       std::back_inserter(survivingSources),
+                       [&result](const auto& aReference) {
+                           return primarySource(referencedMetadata(result.mStatement, aReference))
+                               .mInputSequence;
+                       });
+
+        EXPECT_EQ(survivingSources,
+                  (std::vector<StableInputSequence>{
+                      {0, 10}, {1, 10}, {2, 10}, {0, 0},  {0, 20}, {1, 20}, {2, 20}, {0, 1},
+                      {0, 31}, {1, 31}, {2, 31}, {0, 2},  {0, 32}, {0, 42}, {0, 72}, {1, 32},
+                      {1, 42}, {1, 72}, {2, 32}, {2, 42}, {2, 72}, {0, 3},  {0, 33}, {0, 43},
+                      {0, 73}, {1, 33}, {1, 43}, {1, 73}, {2, 33}, {2, 43}, {2, 73}, {0, 4},
+                      {0, 34}, {1, 34}, {2, 34}, {0, 35}, {1, 35}, {2, 35}}));
 
         for (const auto& input : inputs)
         {

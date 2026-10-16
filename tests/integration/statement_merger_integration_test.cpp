@@ -463,6 +463,109 @@ TEST(StatementMergerIntegrationTest,
         const auto result = DeterministicStatementMerger{}.merge(inputs);
 
         test::expectMergeResultsEqual(result, expected);
+
+        const auto& presentation = result.mStatement.mPresentation;
+
+        ASSERT_EQ(presentation.mTradeInstruments.size(), 1U);
+
+        const auto& trades = presentation.mTradeInstruments.front().mTransactions;
+
+        ASSERT_EQ(trades.size(), 6U);
+
+        EXPECT_EQ(trades[0].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[0].mUnits, 200'000'000);
+        EXPECT_EQ(trades[0].mUnitPrice, 90'000);
+        EXPECT_EQ(trades[0].mAmount, 180'000);
+        EXPECT_EQ(trades[0].mFeePaid, 0);
+        EXPECT_EQ(trades[0].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[0].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[0].mMetadata.mTaxDate, parseCalendarDate("2023-12-31"));
+
+        EXPECT_EQ(trades[1].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[1].mUnits, 125'000'000);
+        EXPECT_EQ(trades[1].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[1].mAmount, 125'000);
+        EXPECT_EQ(trades[1].mFeePaid, 2'500);
+        EXPECT_EQ(trades[1].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[1].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[1].mMetadata.mTaxDate, parseCalendarDate("2024-01-02"));
+
+        EXPECT_EQ(trades[2].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[2].mUnits, 12'500'000);
+        EXPECT_EQ(trades[2].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[2].mAmount, 10'000);
+        EXPECT_EQ(trades[2].mFeePaid, 0);
+        EXPECT_EQ(trades[2].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[2].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[2].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
+
+        EXPECT_EQ(trades[3].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[3].mUnits, 12'500'000);
+        EXPECT_EQ(trades[3].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[3].mAmount, 10'000);
+        EXPECT_EQ(trades[3].mFeePaid, 0);
+        EXPECT_EQ(trades[3].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[3].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[3].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
+
+        EXPECT_EQ(trades[4].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[4].mUnits, 12'500'000);
+        EXPECT_EQ(trades[4].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[4].mAmount, 10'000);
+        EXPECT_EQ(trades[4].mFeePaid, 0);
+        EXPECT_EQ(trades[4].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[4].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[4].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
+
+        EXPECT_EQ(trades[5].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[5].mUnits, 100'000'000);
+        EXPECT_EQ(trades[5].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[5].mAmount, 100'000);
+        EXPECT_EQ(trades[5].mFeePaid, 0);
+        EXPECT_EQ(trades[5].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[5].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[5].mMetadata.mTaxDate, parseCalendarDate("2025-01-01"));
+
+        ASSERT_EQ(presentation.mDividendInstruments.size(), 1U);
+        ASSERT_EQ(presentation.mDividendInstruments.front().mTransactions.size(), 1U);
+
+        const auto& dividend = presentation.mDividendInstruments.front().mTransactions.front();
+
+        EXPECT_EQ(dividend.mGrossAmount, 123'400);
+        EXPECT_EQ(dividend.mTaxPaid, 23'400);
+        EXPECT_EQ(dividend.mCurrency, Currency::EUR);
+        EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+        EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+        ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
+        ASSERT_EQ(presentation.mInterestInstruments.front().mTransactions.size(), 1U);
+
+        const auto& interest = presentation.mInterestInstruments.front().mTransactions.front();
+
+        EXPECT_EQ(interest.mGrossAmount, 12'300);
+        EXPECT_FALSE(interest.mTaxPaid.has_value());
+        EXPECT_EQ(interest.mCurrency, Currency::EUR);
+        EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
+        EXPECT_EQ(interest.mExchangeRate, 100'000'000);
+        ASSERT_EQ(presentation.mBenefitEvents.size(), 1U);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mType, BenefitType::Saveback);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mAmount, 25'000);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mCurrency, Currency::EUR);
+        ASSERT_EQ(presentation.mPrivateMarketEvents.size(), 1U);
+
+        const auto& privatePurchase = presentation.mPrivateMarketEvents.front();
+
+        EXPECT_EQ(privatePurchase.mType, PrivateMarketEventType::Buy);
+        EXPECT_EQ(privatePurchase.mAmount, -250'000);
+        EXPECT_EQ(privatePurchase.mFeePaid, 5'000);
+        EXPECT_EQ(privatePurchase.mCurrency, Currency::EUR);
+        ASSERT_EQ(presentation.mTradeInstruments.front().mCorporateActions.size(), 1U);
+
+        const auto& action = presentation.mTradeInstruments.front().mCorporateActions.front();
+
+        EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+        EXPECT_EQ(action.mUnitsDelta, 200'000'000);
+        EXPECT_FALSE(action.mRatio.has_value());
+
         EXPECT_EQ(ledgerIds(result), expectedIds);
         ASSERT_EQ(result.mDiagnostics.size(), 2U);
         ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[0]));
@@ -536,6 +639,102 @@ TEST(StatementMergerIntegrationTest,
         const auto result = DeterministicStatementMerger{}.merge(inputs);
 
         test::expectMergeResultsEqual(result, expected);
+
+        const auto& presentation = result.mStatement.mPresentation;
+
+        ASSERT_EQ(presentation.mTradeInstruments.size(), 1U);
+
+        const auto& survivingTrades = presentation.mTradeInstruments.front().mTransactions;
+
+        ASSERT_EQ(survivingTrades.size(), 4U);
+
+        EXPECT_EQ(survivingTrades[0].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(survivingTrades[0].mUnits, 200'000'000);
+        EXPECT_EQ(survivingTrades[0].mUnitPrice, 90'000);
+        EXPECT_EQ(survivingTrades[0].mAmount, 180'000);
+        EXPECT_EQ(survivingTrades[0].mFeePaid, 0);
+        EXPECT_EQ(survivingTrades[0].mCurrency, Currency::EUR);
+        EXPECT_EQ(survivingTrades[0].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[0].mMetadata.mTaxDate, parseCalendarDate("2023-12-31"));
+
+        EXPECT_EQ(survivingTrades[1].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(survivingTrades[1].mUnits, 12'500'000);
+        EXPECT_EQ(survivingTrades[1].mUnitPrice, 80'000);
+        EXPECT_EQ(survivingTrades[1].mAmount, 10'000);
+        EXPECT_EQ(survivingTrades[1].mFeePaid, 0);
+        EXPECT_EQ(survivingTrades[1].mCurrency, Currency::EUR);
+        EXPECT_EQ(survivingTrades[1].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[1].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
+
+        EXPECT_EQ(survivingTrades[2].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(survivingTrades[2].mUnits, 100'000'000);
+        EXPECT_EQ(survivingTrades[2].mUnitPrice, 100'000);
+        EXPECT_EQ(survivingTrades[2].mAmount, 100'000);
+        EXPECT_EQ(survivingTrades[2].mFeePaid, 0);
+        EXPECT_EQ(survivingTrades[2].mCurrency, Currency::EUR);
+        EXPECT_EQ(survivingTrades[2].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[2].mMetadata.mTaxDate, parseCalendarDate("2024-01-04"));
+
+        EXPECT_EQ(survivingTrades[3].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(survivingTrades[3].mUnits, 100'000'000);
+        EXPECT_EQ(survivingTrades[3].mUnitPrice, 100'000);
+        EXPECT_EQ(survivingTrades[3].mAmount, 100'000);
+        EXPECT_EQ(survivingTrades[3].mFeePaid, 0);
+        EXPECT_EQ(survivingTrades[3].mCurrency, Currency::EUR);
+        EXPECT_EQ(survivingTrades[3].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[3].mMetadata.mTaxDate, parseCalendarDate("2025-01-01"));
+
+        ASSERT_EQ(presentation.mDividendInstruments.size(), 1U);
+        ASSERT_EQ(presentation.mDividendInstruments.front().mTransactions.size(), 1U);
+
+        const auto& dividend = presentation.mDividendInstruments.front().mTransactions.front();
+
+        EXPECT_EQ(dividend.mGrossAmount, 123'400);
+        EXPECT_EQ(dividend.mTaxPaid, 23'400);
+        EXPECT_EQ(dividend.mCurrency, Currency::EUR);
+        EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+        EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+        ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
+        ASSERT_EQ(presentation.mInterestInstruments.front().mTransactions.size(), 1U);
+
+        const auto& interest = presentation.mInterestInstruments.front().mTransactions.front();
+
+        EXPECT_EQ(interest.mGrossAmount, 12'300);
+        EXPECT_FALSE(interest.mTaxPaid.has_value());
+        EXPECT_EQ(interest.mCurrency, Currency::EUR);
+        EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
+        EXPECT_EQ(interest.mExchangeRate, 100'000'000);
+        ASSERT_EQ(presentation.mBenefitEvents.size(), 1U);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mType, BenefitType::Saveback);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mAmount, 25'000);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mCurrency, Currency::EUR);
+        ASSERT_EQ(presentation.mPrivateMarketEvents.size(), 1U);
+
+        const auto& privatePurchase = presentation.mPrivateMarketEvents.front();
+
+        EXPECT_EQ(privatePurchase.mType, PrivateMarketEventType::Buy);
+        EXPECT_EQ(privatePurchase.mAmount, -250'000);
+        EXPECT_EQ(privatePurchase.mFeePaid, 5'000);
+        EXPECT_EQ(privatePurchase.mCurrency, Currency::EUR);
+        ASSERT_EQ(presentation.mTradeInstruments.front().mCorporateActions.size(), 1U);
+
+        const auto& action = presentation.mTradeInstruments.front().mCorporateActions.front();
+
+        EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+        EXPECT_EQ(action.mUnitsDelta, 200'000'000);
+        EXPECT_FALSE(action.mRatio.has_value());
+
+        EXPECT_EQ(ledgerIds(result),
+                  (std::vector<std::string>{"synthetic-older",
+                                            "synthetic-dividend",
+                                            "synthetic-interest",
+                                            "synthetic-benefit",
+                                            "synthetic-action",
+                                            "synthetic-private",
+                                            "",
+                                            "synthetic-class",
+                                            "synthetic-future"}));
+
         const auto ids = ledgerIds(result);
 
         EXPECT_EQ(ids.size(), 9U);
@@ -665,6 +864,102 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         const auto result = DeterministicStatementMerger{}.merge(inputs);
 
         test::expectMergeResultsEqual(result, expected);
+
+        const auto& presentation = result.mStatement.mPresentation;
+
+        ASSERT_EQ(presentation.mTradeInstruments.size(), 1U);
+
+        const auto& trades = presentation.mTradeInstruments.front().mTransactions;
+
+        ASSERT_EQ(trades.size(), 4U);
+
+        EXPECT_EQ(trades[0].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[0].mUnits, 200'000'000);
+        EXPECT_EQ(trades[0].mUnitPrice, 90'000);
+        EXPECT_EQ(trades[0].mAmount, 180'000);
+        EXPECT_EQ(trades[0].mFeePaid, 0);
+        EXPECT_EQ(trades[0].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[0].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[0].mMetadata.mTaxDate, parseCalendarDate("2023-12-31"));
+
+        EXPECT_EQ(trades[1].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[1].mUnits, 125'000'000);
+        EXPECT_EQ(trades[1].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[1].mAmount, 125'000);
+        EXPECT_EQ(trades[1].mFeePaid, 2'500);
+        EXPECT_EQ(trades[1].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[1].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[1].mMetadata.mTaxDate, parseCalendarDate("2024-01-02"));
+
+        EXPECT_EQ(trades[2].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[2].mUnits, 12'500'000);
+        EXPECT_EQ(trades[2].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[2].mAmount, 10'000);
+        EXPECT_EQ(trades[2].mFeePaid, 0);
+        EXPECT_EQ(trades[2].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[2].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[2].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
+
+        EXPECT_EQ(trades[3].mTradeSide, TradeSide::Buy);
+        EXPECT_EQ(trades[3].mUnits, 100'000'000);
+        EXPECT_EQ(trades[3].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[3].mAmount, 100'000);
+        EXPECT_EQ(trades[3].mFeePaid, 0);
+        EXPECT_EQ(trades[3].mCurrency, Currency::EUR);
+        EXPECT_EQ(trades[3].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[3].mMetadata.mTaxDate, parseCalendarDate("2025-01-01"));
+
+        ASSERT_EQ(presentation.mDividendInstruments.size(), 1U);
+        ASSERT_EQ(presentation.mDividendInstruments.front().mTransactions.size(), 1U);
+
+        const auto& dividend = presentation.mDividendInstruments.front().mTransactions.front();
+
+        EXPECT_EQ(dividend.mGrossAmount, 123'400);
+        EXPECT_EQ(dividend.mTaxPaid, 23'400);
+        EXPECT_EQ(dividend.mCurrency, Currency::EUR);
+        EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
+        EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+        ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
+        ASSERT_EQ(presentation.mInterestInstruments.front().mTransactions.size(), 1U);
+
+        const auto& interest = presentation.mInterestInstruments.front().mTransactions.front();
+
+        EXPECT_EQ(interest.mGrossAmount, 12'300);
+        EXPECT_FALSE(interest.mTaxPaid.has_value());
+        EXPECT_EQ(interest.mCurrency, Currency::EUR);
+        EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
+        EXPECT_EQ(interest.mExchangeRate, 100'000'000);
+        ASSERT_EQ(presentation.mBenefitEvents.size(), 1U);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mType, BenefitType::Saveback);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mAmount, 25'000);
+        EXPECT_EQ(presentation.mBenefitEvents.front().mCurrency, Currency::EUR);
+        ASSERT_EQ(presentation.mPrivateMarketEvents.size(), 1U);
+
+        const auto& privatePurchase = presentation.mPrivateMarketEvents.front();
+
+        EXPECT_EQ(privatePurchase.mType, PrivateMarketEventType::Buy);
+        EXPECT_EQ(privatePurchase.mAmount, -250'000);
+        EXPECT_EQ(privatePurchase.mFeePaid, 5'000);
+        EXPECT_EQ(privatePurchase.mCurrency, Currency::EUR);
+        ASSERT_EQ(presentation.mTradeInstruments.front().mCorporateActions.size(), 1U);
+
+        const auto& action = presentation.mTradeInstruments.front().mCorporateActions.front();
+
+        EXPECT_EQ(action.mType, CorporateActionType::UnresolvedSplit);
+        EXPECT_EQ(action.mUnitsDelta, 200'000'000);
+        EXPECT_FALSE(action.mRatio.has_value());
+
+        EXPECT_EQ(ledgerIds(result),
+                  (std::vector<std::string>{"synthetic-older",
+                                            "synthetic-dividend",
+                                            "synthetic-interest",
+                                            "synthetic-tied",
+                                            "synthetic-benefit",
+                                            "synthetic-action",
+                                            "synthetic-private",
+                                            "",
+                                            "synthetic-future"}));
+
         EXPECT_EQ(ledgerIds(result).size(), 9U);
         ASSERT_EQ(result.mDiagnostics.size(), 5U);
         ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[1]));
