@@ -1,0 +1,16 @@
+# Alpine installs these printers without GDB auto-load registration.
+python
+import sys
+from pathlib import Path
+
+printer_directory = next(Path("/usr/share").glob("gcc-*/python"))
+sys.path.insert(0, str(printer_directory))
+
+from libstdcxx.v6.printers import register_libstdcxx_printers
+from libstdcxx.v6.xmethods import register_libstdcxx_xmethods
+
+register_libstdcxx_printers(None)
+register_libstdcxx_xmethods(None)
+end
+
+set print pretty on

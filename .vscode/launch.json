@@ -1,0 +1,87 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Docker: debug unit tests",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/workspace/build/test-debug/tests/taxbroker_unit_tests",
+            "args": [
+                "--gtest_filter=${input:gtestFilter}",
+                "--gtest_break_on_failure"
+            ],
+            "cwd": "/workspace/build/test-debug/tests",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Docker: build unit tests for debugging",
+            "pipeTransport": {
+                "pipeProgram": "${workspaceFolder}/scripts/debug_tests.sh",
+                "pipeArgs": ["gdb"],
+                "pipeCwd": "${workspaceFolder}",
+                "debuggerPath": "/usr/bin/gdb",
+                "quoteArgs": false
+            },
+            "sourceFileMap": {
+                "/workspace": "${workspaceFolder}"
+            },
+            "setupCommands": [
+                {
+                    "description": "Load the development container's C++ pretty-printers",
+                    "text": "-interpreter-exec console \"source /workspace/docker/gdbinit\"",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Show readable C++ containers and strings",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": false
+                }
+            ]
+        },
+        {
+            "name": "Docker: debug integration tests",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/workspace/build/test-debug/tests/taxbroker_integration_tests",
+            "args": [
+                "--gtest_filter=${input:gtestFilter}",
+                "--gtest_break_on_failure"
+            ],
+            "cwd": "/workspace/build/test-debug/tests",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Docker: build integration tests for debugging",
+            "pipeTransport": {
+                "pipeProgram": "${workspaceFolder}/scripts/debug_tests.sh",
+                "pipeArgs": ["gdb"],
+                "pipeCwd": "${workspaceFolder}",
+                "debuggerPath": "/usr/bin/gdb",
+                "quoteArgs": false
+            },
+            "sourceFileMap": {
+                "/workspace": "${workspaceFolder}"
+            },
+            "setupCommands": [
+                {
+                    "description": "Load the development container's C++ pretty-printers",
+                    "text": "-interpreter-exec console \"source /workspace/docker/gdbinit\"",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Show readable C++ containers and strings",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": false
+                }
+            ]
+        }
+    ],
+    "inputs": [
+        {
+            "id": "gtestFilter",
+            "type": "promptString",
+            "description": "GoogleTest filter: Suite.Test, Suite.*, or * for all tests",
+            "default": "*"
+        }
+    ]
+}

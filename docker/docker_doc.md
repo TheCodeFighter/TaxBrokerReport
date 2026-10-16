@@ -8,8 +8,13 @@ We use **Docker Compose** to bridge local source-code access dynamically without
 - Docker Engine & Docker Compose
 
 ## Recommended IDE Setup
-If you use **VS Code**, the easiest way to develop is using the DevContainers extension.
-Click **"Reopen in Container"** when prompted. The IDE will automatically map into the `dev` stage container, initialize the CMake Ninja build generator, and configure LLDB properly for C++ debugging.
+For test debugging, open the repository locally in **VS Code** with Microsoft's **C/C++** extension
+and select **Docker: debug unit tests** or **Docker: debug integration tests**. The build, GDB, and
+tests run inside the existing `dev` image. See the [debugging guide](../docs/debugging.md) for
+step-by-step instructions and variable inspection.
+
+The existing Dev Containers configuration can also open the editor workspace inside `dev`.
+The Docker test launch profiles above expect a local VS Code window with host Docker access.
 
 ---
 

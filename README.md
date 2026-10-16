@@ -85,6 +85,13 @@ Inside the development container, `ctest --test-dir /workspace/build -L unit` an
 steps, including integration tests after a unit-test failure when the build succeeded. The existing
 **Required tests** check still requires both suites to pass.
 
+### Debug tests in VS Code
+
+Open this repository locally in VS Code, install Microsoft's **C/C++** extension, and use the
+**Docker: debug unit tests** or **Docker: debug integration tests** profile. The build, GDB, and test
+process all run inside the existing development Docker image. See the
+[debugging guide](docs/debugging.md) for breakpoints, stepping, and inspecting variables.
+
 ### Test coverage
 
 Run the test suite with coverage instrumentation inside the development container:
