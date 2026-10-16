@@ -59,22 +59,52 @@ TEST(FifoBasisTest, PreservesTheForeignPurchaseSplitAndPartialDisposalExample) {
     EXPECT_EQ(acquired.mRemainingBasis.mTicks, fraction(30'154'680'000'000));
 }
 
-TEST(FifoBasisTest, ConservesNonterminatingAllocationsAcrossRepeatedSalesAndAdjustments) {
+TEST(FifoBasisTest, AllocatesExactNonterminatingCostsAcrossRepeatedSalesAfterOneAdjustment) {
     const auto original = requireValue(createLotBasis(1, 3));
-    auto state = requireValue(adjustLotUnits(original, 7));
-    ExactRational allocated;
+    const auto adjusted = requireValue(adjustLotUnits(original, 7));
 
-    for (const Units quantity : {1, 2, 1, 3})
-    {
-        const auto sale = requireValue(consumeLotBasis(state, quantity));
-        allocated = requireValue(addExact(allocated, sale.mAllocatedBasis.mTicks));
-        state = sale.mRemaining;
+    EXPECT_EQ(original.mRemainingBasis.mTicks, fraction(3));
+    EXPECT_EQ(adjusted.mRemainingUnits, 7);
+    EXPECT_EQ(adjusted.mRemainingBasis.mTicks, fraction(3));
 
-        EXPECT_EQ(requireValue(addExact(allocated, state.mRemainingBasis.mTicks)),
-                  original.mRemainingBasis.mTicks);
-    }
+    // Three cost ticks (10^-12 EUR each) across seven quantity ticks give 3/7 cost ticks
+    // per quantity tick. These fractions stay exact; no rounding applies between sales.
+    const auto first = requireValue(consumeLotBasis(adjusted, 1));
+    auto allocated = first.mAllocatedBasis.mTicks;
 
-    EXPECT_EQ(state, LotBasisState{});
+    EXPECT_EQ(first.mAllocatedBasis.mTicks, fraction(3, 7));
+    EXPECT_EQ(first.mRemaining.mRemainingUnits, 6);
+    EXPECT_EQ(first.mRemaining.mRemainingBasis.mTicks, fraction(18, 7));
+    EXPECT_EQ(requireValue(addExact(allocated, first.mRemaining.mRemainingBasis.mTicks)),
+              original.mRemainingBasis.mTicks);
+
+    const auto second = requireValue(consumeLotBasis(first.mRemaining, 2));
+    allocated = requireValue(addExact(allocated, second.mAllocatedBasis.mTicks));
+
+    EXPECT_EQ(second.mAllocatedBasis.mTicks, fraction(6, 7));
+    EXPECT_EQ(second.mRemaining.mRemainingUnits, 4);
+    EXPECT_EQ(second.mRemaining.mRemainingBasis.mTicks, fraction(12, 7));
+    EXPECT_EQ(requireValue(addExact(allocated, second.mRemaining.mRemainingBasis.mTicks)),
+              original.mRemainingBasis.mTicks);
+
+    const auto third = requireValue(consumeLotBasis(second.mRemaining, 1));
+    allocated = requireValue(addExact(allocated, third.mAllocatedBasis.mTicks));
+
+    EXPECT_EQ(third.mAllocatedBasis.mTicks, fraction(3, 7));
+    EXPECT_EQ(third.mRemaining.mRemainingUnits, 3);
+    EXPECT_EQ(third.mRemaining.mRemainingBasis.mTicks, fraction(9, 7));
+    EXPECT_EQ(requireValue(addExact(allocated, third.mRemaining.mRemainingBasis.mTicks)),
+              original.mRemainingBasis.mTicks);
+
+    const auto final = requireValue(consumeLotBasis(third.mRemaining, 3));
+    allocated = requireValue(addExact(allocated, final.mAllocatedBasis.mTicks));
+
+    EXPECT_EQ(final.mAllocatedBasis.mTicks, fraction(9, 7));
+    EXPECT_EQ(final.mRemaining.mRemainingUnits, 0);
+    EXPECT_EQ(final.mRemaining.mRemainingBasis.mTicks, fraction(0));
+    EXPECT_EQ(requireValue(addExact(allocated, final.mRemaining.mRemainingBasis.mTicks)),
+              original.mRemainingBasis.mTicks);
+    EXPECT_EQ(final.mRemaining, LotBasisState{});
     EXPECT_EQ(allocated, fraction(3));
 }
 
