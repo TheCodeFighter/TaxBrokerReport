@@ -1612,6 +1612,8 @@ TEST(TradeRepublicParserTest, ContinuesParsingAfterAnInvalidRow) {
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(diagnostic.mField, "price");
+    EXPECT_EQ(diagnostic.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ContinuesParsingAfterAnInvalidRow.csv");
     EXPECT_EQ(diagnostic.mRowIndex, 2U);
     EXPECT_EQ(diagnostic.mTransactionId, invalidRow.mTransactionId);
 }
@@ -8445,100 +8447,302 @@ TEST(TradeRepublicParserTest, PreservesNativeCouponIdentitySeparatelyFromCashInt
 }
 
 TEST(TradeRepublicParserTest, DoesNotTreatUnverifiedInstrumentInterestAsBankInterest) {
-    auto row = makeBondInterestRow();
-    row.mAssetClass = "STOCK";
-    const auto result = parseRows({row});
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
 
-    expectNoParsedRecords(result);
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnsupportedAssetClass);
-    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
-    EXPECT_EQ(result.mDiagnostics[0].mTransactionId, row.mTransactionId);
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAssetClass = "STOCK";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsTradeAndReportsErrorWhenDatetimeIsMissing) {
-    auto row = SyntheticCsvRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = accepted.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mAmount, 100'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+
     row.mDatetime.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_EQ(result.mStatement.mTradeInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mDividendInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mInterestInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mBenefitEvents.size(), 0U);
-    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.size(), 0U);
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    const auto& error = result.mDiagnostics.front();
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
     EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsDividendAndReportsErrorWhenDatetimeIsMissing) {
-    auto row = makeDividendRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mDatetime.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_EQ(result.mStatement.mTradeInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mDividendInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mInterestInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mBenefitEvents.size(), 0U);
-    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.size(), 0U);
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    const auto& error = result.mDiagnostics.front();
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
     EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsDepositInterestAndReportsErrorWhenDatetimeIsMissing) {
-    auto row = makeBrokerInterestRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mDatetime.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_EQ(result.mStatement.mTradeInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mDividendInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mInterestInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mBenefitEvents.size(), 0U);
-    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.size(), 0U);
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    const auto& error = result.mDiagnostics.front();
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
     EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsBondInterestAndReportsErrorWhenDatetimeIsMissing) {
-    auto row = makeBondInterestRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mDatetime.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_EQ(result.mStatement.mTradeInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mDividendInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mInterestInstruments.size(), 0U);
-    EXPECT_EQ(result.mStatement.mBenefitEvents.size(), 0U);
-    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.size(), 0U);
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    const auto& error = result.mDiagnostics.front();
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
     EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsCorporateActionAndReportsErrorWhenDatetimeIsMissing) {
@@ -9931,106 +10135,844 @@ TEST(TradeRepublicParserTest, KeepsSignedSourceUnitsAndDiscardedDigitsForReconci
     EXPECT_FALSE(action.mRatio.has_value());
 }
 
-TEST(TradeRepublicParserTest, RejectsSourceAmountsThatLoseTheirMagnitudeAtImport) {
-    for (const auto field : {"price", "shares", "amount", "fee"})
-    {
-        SCOPED_TRACE(field);
-        SyntheticCsvRow row;
+TEST(TradeRepublicParserTest, RejectsTradePriceBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
 
-        if (std::string_view{field} == "price")
-        {
-            row.mPrice = "0.00004";
-        }
-        else if (std::string_view{field} == "shares")
-        {
-            row.mShares = "0.000000004";
-        }
-        else if (std::string_view{field} == "amount")
-        {
-            row.mAmount = "-0.00004";
-        }
-        else
-        {
-            row.mFee = "-0.00004";
-        }
+    const auto accepted = parseRows({row});
 
-        const auto result = parseRows({row});
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
 
-        EXPECT_EQ(tradeTransactionCount(result.mStatement), 0U);
-        ASSERT_EQ(result.mDiagnostics.size(), 1U);
-        EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
-        EXPECT_EQ(result.mDiagnostics[0].mField, field);
-        EXPECT_EQ(result.mDiagnostics[0].mMessage.find("0.000"), std::string::npos);
-    }
+    const auto& transaction = accepted.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mAmount, 100'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+
+    row.mPrice = "0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+    EXPECT_EQ(error.mMessage.find("0.000"), std::string::npos);
 }
 
-TEST(TradeRepublicParserTest, RejectsNegativeAndRoundedToZeroDividendAmounts) {
-    for (const auto amount : {"-1.00", "0.00004", "-0.00004"})
-    {
-        SCOPED_TRACE(amount);
-        auto row = makeDividendRow();
-        row.mAmount = amount;
+TEST(TradeRepublicParserTest, RejectsTradeUnitsBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
 
-        const auto result = parseRows({row});
+    const auto accepted = parseRows({row});
 
-        EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
-        EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-        ASSERT_EQ(result.mDiagnostics.size(), 1U);
-        EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
-    }
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = accepted.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mAmount, 100'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+
+    row.mShares = "0.000000004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+    EXPECT_EQ(error.mMessage.find("0.000"), std::string::npos);
 }
 
-TEST(TradeRepublicParserTest, RejectsNegativeAndRoundedToZeroBondInterestAmounts) {
-    for (const auto amount : {"-1.00", "0.00004", "-0.00004"})
-    {
-        SCOPED_TRACE(amount);
-        auto row = makeBondInterestRow();
-        row.mAmount = amount;
+TEST(TradeRepublicParserTest, RejectsTradeAmountBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
 
-        const auto result = parseRows({row});
+    const auto accepted = parseRows({row});
 
-        EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
-        EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-        ASSERT_EQ(result.mDiagnostics.size(), 1U);
-        EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
-    }
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = accepted.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mAmount, 100'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+
+    row.mAmount = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+    EXPECT_EQ(error.mMessage.find("0.000"), std::string::npos);
 }
 
-TEST(TradeRepublicParserTest, RejectsNegativeAndRoundedToZeroDepositInterestAmounts) {
-    for (const auto amount : {"-1.00", "0.00004", "-0.00004"})
-    {
-        SCOPED_TRACE(amount);
-        auto row = makeBrokerInterestRow();
-        row.mAmount = amount;
+TEST(TradeRepublicParserTest, RejectsTradeFeeBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
 
-        const auto result = parseRows({row});
+    const auto accepted = parseRows({row});
 
-        EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
-        EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-        ASSERT_EQ(result.mDiagnostics.size(), 1U);
-        EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
-    }
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = accepted.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mAmount, 100'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+
+    row.mFee = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "fee");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+    EXPECT_EQ(error.mMessage.find("0.000"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, RejectsDividendNegativeAmount) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "-1.00";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsDividendPositiveAmountBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsDividendNegativeAmountBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsBondInterestNegativeAmount) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "-1.00";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsBondInterestPositiveAmountBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsBondInterestNegativeAmountBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsDepositInterestNegativeAmount) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "-1.00";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsDepositInterestPositiveAmountBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+}
+
+TEST(TradeRepublicParserTest, RejectsDepositInterestNegativeAmountBelowHalfStep) {
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
+    row.mAmount = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto rejected = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+
+    const auto& error = rejected.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsTinyWithholdingButAcceptsExplicitZeroTax) {
-    auto row = makeDividendRow();
-    row.mAmount = "1.00";
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1.00",
+        .mFee = "",
+        .mTax = "0.0000",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 10'000);
+    EXPECT_EQ(transaction.mTaxPaid, 0);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mTax = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto tinyTaxResult = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_TRUE(tinyTaxResult.mStatement.mDividendInstruments.empty());
-    ASSERT_EQ(tinyTaxResult.mDiagnostics.size(), 1U);
-    EXPECT_EQ(tinyTaxResult.mDiagnostics.front().mField, "tax");
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    row.mTax = "0.0000";
+    const auto& error = rejected.mDiagnostics.front();
 
-    const auto zeroTaxResult = parseRows({row});
-
-    ASSERT_EQ(zeroTaxResult.mStatement.mDividendInstruments.size(), 1U);
-    EXPECT_EQ(zeroTaxResult.mStatement.mDividendInstruments.front().mTransactions.front().mTaxPaid,
-              0);
-    EXPECT_TRUE(zeroTaxResult.mDiagnostics.empty());
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RoundsForeignDividendAndWithholdingAtTheirImportScales) {
@@ -10061,28 +11003,64 @@ TEST(TradeRepublicParserTest, RoundsForeignDividendAndWithholdingAtTheirImportSc
 }
 
 TEST(TradeRepublicParserTest, RejectsTinyOriginalDividendInsteadOfUsingLocalAmount) {
-    auto row = makeDividendRow();
-    row.mAmount = "10.00";
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "12.34",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 123'400);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::USD);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(transaction.mExchangeRate.has_value());
+
     row.mOriginalAmount = "0.00004";
-    row.mOriginalCurrency = "USD";
-    row.mFxRate.clear();
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path(), 4);
+    const auto rejected = parser.parse(csvFile.path(), 4);
 
-    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(error.mField, "original_amount");
     EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
     EXPECT_EQ(error.mMessage.find("0.00004"), std::string::npos);
     EXPECT_EQ(error.mMessage.find(csvFile.path().parent_path().string()), std::string::npos);
 }
@@ -10149,28 +11127,64 @@ TEST(TradeRepublicParserTest, RoundsForeignDepositInterestAndWithholdingAtTheirI
 }
 
 TEST(TradeRepublicParserTest, RejectsTinyOriginalDepositInterestInsteadOfUsingLocalAmount) {
-    auto row = makeBrokerInterestRow();
-    row.mAmount = "10.00";
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "12.34",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 123'400);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::USD);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(transaction.mExchangeRate.has_value());
+
     row.mOriginalAmount = "0.00004";
-    row.mOriginalCurrency = "USD";
-    row.mFxRate.clear();
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path(), 4);
+    const auto rejected = parser.parse(csvFile.path(), 4);
 
-    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(error.mField, "original_amount");
     EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
     EXPECT_EQ(error.mMessage.find("0.00004"), std::string::npos);
     EXPECT_EQ(error.mMessage.find(csvFile.path().parent_path().string()), std::string::npos);
 }
@@ -10237,28 +11251,64 @@ TEST(TradeRepublicParserTest, RoundsForeignBondInterestAndWithholdingAtTheirImpo
 }
 
 TEST(TradeRepublicParserTest, RejectsTinyOriginalBondInterestInsteadOfUsingLocalAmount) {
-    auto row = makeBondInterestRow();
-    row.mAmount = "10.00";
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "12.34",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 123'400);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::USD);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(transaction.mExchangeRate.has_value());
+
     row.mOriginalAmount = "0.00004";
-    row.mOriginalCurrency = "USD";
-    row.mFxRate.clear();
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path(), 4);
+    const auto rejected = parser.parse(csvFile.path(), 4);
 
-    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(error.mField, "original_amount");
     EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
     EXPECT_EQ(error.mMessage.find("0.00004"), std::string::npos);
     EXPECT_EQ(error.mMessage.find(csvFile.path().parent_path().string()), std::string::npos);
 }
@@ -10430,57 +11480,183 @@ TEST(TradeRepublicParserTest, RetainsUnresolvedSplitWithInvalidNonEmptyDatetime)
 }
 
 TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyASymbolAsCashInterest) {
-    auto row = makeBrokerInterestRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mSymbol = "XX9000000002";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
     EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, "synthetic-broker-interest-validation");
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyANameAsCashInterest) {
-    auto row = makeBrokerInterestRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mName = "Synthetic Unclassified Payer";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
     EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, "synthetic-broker-interest-validation");
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsUnverifiedBondInterestLabelWithoutCreatingACoupon) {
-    auto row = makeBondInterestRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mType = "BOND_INTEREST";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::UnknownRowType);
     EXPECT_EQ(error.mField, "type");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, "synthetic-bond-interest-validation");
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, IgnoredCashMovementsDoNotRequireDatetime) {
@@ -10522,60 +11698,184 @@ TEST(TradeRepublicParserTest, CreditWithoutDatetimeOrIdStillReportsItsUnknownTyp
 }
 
 TEST(TradeRepublicParserTest, RejectsNegativeOriginalBondIncomeInsteadOfUsingLocalAmount) {
-    auto row = makeBondInterestRow();
-    row.mAmount = "10.00";
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "12.34",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 123'400);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::USD);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+    EXPECT_FALSE(transaction.mExchangeRate.has_value());
+
     row.mOriginalAmount = "-12.34";
-    row.mOriginalCurrency = "USD";
-    row.mFxRate.clear();
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(error.mField, "original_amount");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, "synthetic-bond-interest-validation");
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsTinyDepositInterestWithholdingInsteadOfLosingIt) {
-    auto row = makeBrokerInterestRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mTax = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsTinyBondInterestWithholdingInsteadOfLosingIt) {
-    auto row = makeBondInterestRow();
+    SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Validation Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+
+    const auto accepted = parseRows({row});
+
+    ASSERT_TRUE(accepted.mDiagnostics.empty());
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction =
+        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
+    EXPECT_EQ(transaction.mGrossAmount, 100'000);
+    EXPECT_EQ(transaction.mTaxPaid, 10'000);
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
+
     row.mTax = "-0.00004";
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
 
-    const auto result = parseRows({row});
+    const auto rejected = parser.parse(csvFile.path());
 
-    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
 
-    const auto& error = result.mDiagnostics.front();
+    const auto& error = rejected.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, row.mTransactionId);
+    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, MissingDatetimeDoesNotCreateAnInstrumentBeforeALaterValidTrade) {
@@ -10615,6 +11915,9 @@ TEST(TradeRepublicParserTest, MissingDatetimeDoesNotCreateAnInstrumentBeforeALat
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
     EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_"
+              "MissingDatetimeDoesNotCreateAnInstrumentBeforeALaterValidTrade.csv");
     EXPECT_EQ(error.mRowIndex, 2U);
     EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
 }
@@ -10653,6 +11956,9 @@ TEST(TradeRepublicParserTest, InvalidIncomeDoesNotSuppressALaterDividendForTheSa
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
     EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_"
+              "InvalidIncomeDoesNotSuppressALaterDividendForTheSameIsin.csv");
     EXPECT_EQ(error.mRowIndex, 2U);
     EXPECT_EQ(error.mTransactionId, "synthetic-dividend-validation");
 }
