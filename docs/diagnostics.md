@@ -417,7 +417,9 @@ a different meaning.
 
 The parsing stage keeps the existing codes `unknown_row_type`, `unsupported_row_type`,
 `unsupported_asset_class`, `missing_field`, `invalid_value`, `inconsistent_value`, and
-`parse_error`.
+`parse_error`. It adds `field_count_mismatch`: a CSV record has a different number of fields than
+the header, so the row is skipped and no field of it is trusted. The message gives only the
+expected and found counts.
 
 For otherwise valid trades/actions, missing classification is a `missing_field` error and an
 unrecognized class is an `unsupported_asset_class` error on `asset_class`. The event is retained

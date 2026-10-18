@@ -289,6 +289,8 @@ std::string_view toString(DiagnosticCode aDiagnosticCode) {
         return "InvalidValue";
     case DiagnosticCode::InconsistentValue:
         return "InconsistentValue";
+    case DiagnosticCode::FieldCountMismatch:
+        return "FieldCountMismatch";
     case DiagnosticCode::ParseError:
         return "ParseError";
     }

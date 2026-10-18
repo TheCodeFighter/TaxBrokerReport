@@ -26,7 +26,22 @@ event owns the same `EventMetadata`:
 These types depend only on the C++ standard library. `SourceFilename::fromPath` removes both POSIX
 and Windows directory components and rejects empty, `.` and `..` basenames, so event metadata
 cannot retain an absolute host path. Source rows are one-based logical rows; for CSV input, the
-header is row 1 and the first data row is row 2.
+header is row 1 and the first data row is row 2. A logical row is one CSV record. A quoted field
+that spans several text lines is still one record, so a row number can differ from the line number
+shown in a text editor.
+
+A CSV record whose field count differs from the header is rejected with a `field_count_mismatch`
+error on its own row, before any field is read. Later rows keep their correct numbers. A file with
+an unclosed quote is rejected as a whole with a file-level `parse_error`, because the reader would
+otherwise merge the following records into one field without any error. The check counts quote
+characters, so two unclosed quotes in one file cancel out. The reader then merges rows into one
+record. Such a record has the wrong field count and a line break inside a field, so the whole file
+is rejected with a file-level `parse_error`. A quoted line break inside a record with the right
+field count is valid and stays one row.
+
+An empty line between records: a single empty line is not a record and gets no row number, while
+two or more empty lines in a row become one record with one empty field, rejected on its own row.
+Trade Republic exports contain neither.
 
 Different selected files may have the same sanitized filename. The application therefore derives
 a run-local source ID from the file's request position: `source-0001`, `source-0002`, and so on.

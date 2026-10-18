@@ -120,6 +120,7 @@ TEST(DiagnosticsJsonTest, KeepsEveryDiagnosticCodeStable) {
         ExpectedCode{DiagnosticCode::MissingField, "missing_field"},
         ExpectedCode{DiagnosticCode::InvalidValue, "invalid_value"},
         ExpectedCode{DiagnosticCode::InconsistentValue, "inconsistent_value"},
+        ExpectedCode{DiagnosticCode::FieldCountMismatch, "field_count_mismatch"},
         ExpectedCode{DiagnosticCode::ParseError, "parse_error"},
     };
 
