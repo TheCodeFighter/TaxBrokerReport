@@ -10,6 +10,7 @@
 #include <csv.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -97,6 +98,35 @@ InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
 std::string getAmountCurrencyValue(const csv::CSVRow& aCsvRow) {
     const auto originalCurrency = aCsvRow["original_currency"].get<std::string>();
     return originalCurrency.empty() ? aCsvRow["currency"].get<std::string>() : originalCurrency;
+}
+
+/// An odd number of quote characters means a quoted field never closes. The CSV reader would
+/// then merge the following records into that field without any error, so the file is rejected.
+/// An unreadable file returns false; the reader reports that case itself.
+bool hasUnclosedQuote(const std::filesystem::path& aCsvPath) {
+    std::ifstream input{aCsvPath, std::ios::binary};
+    if (!input)
+    {
+        return false;
+    }
+
+    const auto quoteCount =
+        std::count(std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}, '"');
+
+    return quoteCount % 2 != 0;
+}
+
+/// A line break inside a field of a record with the wrong field count means a quote crossed a
+/// line end, so the reader merged several rows into this record.
+bool hasLineBreakInsideField(const csv::CSVRow& aCsvRow) {
+    bool hasLineBreak = false;
+    for (const csv::CSVField& field : aCsvRow)
+    {
+        hasLineBreak =
+            hasLineBreak || field.get_sv().find_first_of("\r\n") != std::string_view::npos;
+    }
+
+    return hasLineBreak;
 }
 
 } // namespace
@@ -302,14 +332,78 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
 
     try
     {
+        if (hasUnclosedQuote(aCsvPath))
+        {
+            LOG_ERROR("Trade Republic CSV source {} has an unclosed quote", aSourceIndex);
+            parsedResult.mDiagnostics.emplace_back(ParseDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = DiagnosticCode::ParseError,
+                .mSourceFile = sourceFile.value(),
+                .mMessage = "The CSV file has an unclosed quote; it may be cut off or edited. "
+                            "No rows were imported.",
+            });
+
+            return parsedResult;
+        }
+
+        // KEEP delivers every record. The default silently drops records whose field count
+        // differs from the header, which also shifts all later row numbers.
         csv::CSVFormat format;
-        format.delimiter(delimiter);
+        format.delimiter(delimiter).variable_columns(csv::VariableColumnPolicy::KEEP);
         csv::CSVReader reader(aCsvPath.string(), format);
+        const std::size_t headerFieldCount = reader.get_col_names().size();
 
         std::size_t rowIndex = 1;
         for (const csv::CSVRow& row : reader)
         {
             ++rowIndex;
+
+            if (row.size() != headerFieldCount)
+            {
+                if (hasLineBreakInsideField(row))
+                {
+                    // Several rows were merged into this record, so later rows and row numbers
+                    // cannot be trusted.
+                    LOG_ERROR("Trade Republic CSV source {} has merged rows", aSourceIndex);
+                    parsedResult.mStatement = {};
+                    parsedResult.mDiagnostics.emplace_back(ParseDiagnostic{
+                        .mSeverity = DiagnosticSeverity::Error,
+                        .mCode = DiagnosticCode::ParseError,
+                        .mSourceFile = sourceFile.value(),
+                        .mMessage = "A row with the wrong number of fields contains a line break "
+                                    "inside a field; a quote is probably unclosed. No rows were "
+                                    "imported.",
+                    });
+
+                    return parsedResult;
+                }
+
+                // Values of a record with the wrong field count may be shifted, so the row is
+                // rejected before any named field is read.
+                const RowContext mismatchContext{
+                    .mParseResult = parsedResult,
+                    .mSourceFile = sourceFile,
+                    .mRowIndex = rowIndex,
+                    .mInputSequence =
+                        StableInputSequence{
+                            .mSourceIndex = aSourceIndex,
+                            .mEventIndex = rowIndex - 2,
+                        },
+                    .mTransactionId = {},
+                    .mSourceTimestamp = std::nullopt,
+                    .mSourceCalendarDate = std::nullopt,
+                    .mSourceTimestampInvalid = false,
+                };
+
+                mismatchContext.addDiagnostic(
+                    DiagnosticSeverity::Error,
+                    DiagnosticCode::FieldCountMismatch,
+                    "The row has a different number of fields than the header (expected " +
+                        std::to_string(headerFieldCount) + ", found " + std::to_string(row.size()) +
+                        "); the row was skipped.");
+                continue;
+            }
+
             const RowMeta rowMeta = detectRowType(row);
             const auto datetimeValue = row["datetime"].get<std::string>();
             const auto sourceTimestamp = parseSourceTimestamp(datetimeValue);

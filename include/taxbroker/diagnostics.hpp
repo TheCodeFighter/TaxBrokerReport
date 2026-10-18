@@ -20,6 +20,7 @@ enum class DiagnosticCode {
     MissingField,
     InvalidValue,
     InconsistentValue,
+    FieldCountMismatch,
     ParseError,
 };
 

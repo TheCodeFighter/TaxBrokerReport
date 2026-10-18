@@ -12,6 +12,8 @@
 #include <fstream>
 #include <initializer_list>
 #include <numeric>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -122,8 +124,29 @@ std::string sanitizedTestName() {
     return name;
 }
 
+/// CSV text written exactly as given, for records that writeCsvRow cannot produce.
+struct RawCsvText {
+    std::string_view mText;
+};
+
 class TemporaryCsvFile {
   public:
+    explicit TemporaryCsvFile(RawCsvText aRawText)
+        : mPath{std::filesystem::temp_directory_path() /
+                ("taxbroker_" + sanitizedTestName() + ".csv")} {
+        std::ofstream output{mPath, std::ios::binary | std::ios::trunc};
+        if (!output)
+        {
+            throw std::runtime_error{"Unable to create synthetic CSV fixture"};
+        }
+
+        output << aRawText.mText;
+        if (!output)
+        {
+            throw std::runtime_error{"Unable to write synthetic CSV fixture"};
+        }
+    }
+
     explicit TemporaryCsvFile(std::initializer_list<SyntheticCsvRow> aRows,
                               std::string_view aHeader = kCsvHeader)
         : mPath{std::filesystem::temp_directory_path() /
@@ -166,6 +189,22 @@ ParseResult parseRows(std::initializer_list<SyntheticCsvRow> aRows) {
     const TemporaryCsvFile csvFile{aRows};
     tr::TradeRepublicParser parser;
     return parser.parse(csvFile.path());
+}
+
+ParseResult parseRawText(std::string_view aText) {
+    const TemporaryCsvFile csvFile{RawCsvText{aText}};
+    tr::TradeRepublicParser parser;
+    return parser.parse(csvFile.path());
+}
+
+/// One CSV record as text, without the final newline.
+std::string csvLine(const SyntheticCsvRow& aRow) {
+    std::ostringstream output;
+    writeCsvRow(output, aRow);
+    std::string line = output.str();
+    line.pop_back();
+
+    return line;
 }
 
 Date makeDate(int aYear, unsigned aMonth, unsigned aDay) {
@@ -1353,6 +1392,697 @@ TEST(TradeRepublicParserTest, ReturnsAStructuredErrorForAnUnexpectedCsvHeader) {
     EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::ParseError);
     EXPECT_FALSE(parseResult.mDiagnostics.front().mRowIndex.has_value());
+}
+
+TEST(TradeRepublicParserTest, ReportsAShortMiddleRowOnItsOwnRow) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    // 22 fields: the last field (mcc_code) is missing.
+    const std::string shortSellLine =
+        R"("2024-01-16T10:00:00.000Z","2024-01-16","DEFAULT","TRADING","SELL","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","-1.0000000000","12.000000","12.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-sell-short",)"
+        R"("","","")";
+    const SyntheticCsvRow badPriceBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "abc",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-bad-price",
+    };
+
+    const std::string text = std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + '\n' +
+                             shortSellLine + '\n' + csvLine(badPriceBuy) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    // Row 2 is imported; the SELL on row 3 and the BUY on row 4 are rejected.
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 1U);
+
+    const auto* buy = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    ASSERT_NE(buy, nullptr);
+
+    EXPECT_EQ(primarySource(buy->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(buy->mMetadata).mInputSequence.mEventIndex, 0U);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 2U);
+
+    const auto& mismatch = parseResult.mDiagnostics[0];
+
+    EXPECT_EQ(mismatch.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(mismatch.mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mRowIndex, std::optional<std::size_t>{3});
+    EXPECT_FALSE(mismatch.mTransactionId.has_value());
+    EXPECT_FALSE(mismatch.mField.has_value());
+    EXPECT_EQ(mismatch.mMessage,
+              "The row has a different number of fields than the header (expected 23, found "
+              "22); the row was skipped.");
+
+    const auto& invalidPrice = parseResult.mDiagnostics[1];
+
+    EXPECT_EQ(invalidPrice.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(invalidPrice.mRowIndex, std::optional<std::size_t>{4}); // not 3 as before the fix
+    EXPECT_EQ(invalidPrice.mTransactionId, std::optional<std::string>{"synthetic-buy-bad-price"});
+    EXPECT_EQ(invalidPrice.mField, std::optional<std::string>{"price"});
+}
+
+TEST(TradeRepublicParserTest, ReportsALongMiddleRowOnItsOwnRow) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    // 24 fields: one extra field ("extra") after mcc_code.
+    const std::string longSellLine =
+        R"("2024-01-16T10:00:00.000Z","2024-01-16","DEFAULT","TRADING","SELL","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","-1.0000000000","12.000000","12.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-sell-long",)"
+        R"("","","","","extra")";
+    const SyntheticCsvRow badPriceBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "abc",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-bad-price",
+    };
+
+    const std::string text = std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + '\n' +
+                             longSellLine + '\n' + csvLine(badPriceBuy) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 1U);
+
+    const auto* buy = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    ASSERT_NE(buy, nullptr);
+
+    EXPECT_EQ(primarySource(buy->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(buy->mMetadata).mInputSequence.mEventIndex, 0U);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 2U);
+
+    const auto& mismatch = parseResult.mDiagnostics[0];
+
+    EXPECT_EQ(mismatch.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(mismatch.mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mRowIndex, std::optional<std::size_t>{3});
+    EXPECT_FALSE(mismatch.mTransactionId.has_value());
+    EXPECT_FALSE(mismatch.mField.has_value());
+    EXPECT_EQ(mismatch.mMessage,
+              "The row has a different number of fields than the header (expected 23, found "
+              "24); the row was skipped.");
+
+    const auto& invalidPrice = parseResult.mDiagnostics[1];
+
+    EXPECT_EQ(invalidPrice.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(invalidPrice.mRowIndex, std::optional<std::size_t>{4});
+    EXPECT_EQ(invalidPrice.mTransactionId, std::optional<std::string>{"synthetic-buy-bad-price"});
+    EXPECT_EQ(invalidPrice.mField, std::optional<std::string>{"price"});
+}
+
+TEST(TradeRepublicParserTest, ImportsValidRowsBeforeAndAfterAMalformedRow) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-20.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    // 22 fields: the last field (mcc_code) is missing.
+    const std::string shortBuyLine =
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","10.000000","-10.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-buy-short",)"
+        R"("","","")";
+    const SyntheticCsvRow lastSell{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "12.000000",
+        .mAmount = "12.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-sell-last",
+    };
+
+    const std::string text = std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + '\n' +
+                             shortBuyLine + '\n' + csvLine(lastSell) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 2U);
+    EXPECT_EQ(findTradeTransaction(parseResult.mStatement, "synthetic-buy-short"), nullptr);
+
+    const auto* first = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    const auto* last = findTradeTransaction(parseResult.mStatement, "synthetic-sell-last");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(last, nullptr);
+
+    EXPECT_EQ(primarySource(first->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(first->mMetadata).mInputSequence.mEventIndex, 0U);
+    EXPECT_EQ(primarySource(last->mMetadata).mSourceRow, 4U);
+    EXPECT_EQ(primarySource(last->mMetadata).mInputSequence.mEventIndex, 2U);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& mismatch = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(mismatch.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(mismatch.mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mRowIndex, std::optional<std::size_t>{3});
+}
+
+TEST(TradeRepublicParserTest, ReportsATruncatedFinalRowCutAtAFieldBoundary) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    // 10 fields: the SELL is cut after price, and the file has no final newline.
+    const std::string truncatedSell =
+        R"("2024-01-16T10:00:00.000Z","2024-01-16","DEFAULT","TRADING","SELL","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","-1.0000000000","12.000000")";
+
+    const std::string text =
+        std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + '\n' + truncatedSell;
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 1U);
+
+    const auto* buy = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    ASSERT_NE(buy, nullptr);
+
+    EXPECT_EQ(primarySource(buy->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(buy->mMetadata).mInputSequence.mEventIndex, 0U);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& mismatch = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(mismatch.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(mismatch.mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mRowIndex, std::optional<std::size_t>{3});
+    EXPECT_FALSE(mismatch.mTransactionId.has_value());
+    EXPECT_FALSE(mismatch.mField.has_value());
+    EXPECT_EQ(mismatch.mMessage,
+              "The row has a different number of fields than the header (expected 23, found "
+              "10); the row was skipped.");
+}
+
+TEST(TradeRepublicParserTest, FailsTheFileWhenTheFinalRowIsCutInsideAQuotedField) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    // The SELL is cut in the middle of the price value ("12.0): the quote never closes.
+    const std::string truncatedSell =
+        R"("2024-01-16T10:00:00.000Z","2024-01-16","DEFAULT","TRADING","SELL","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","-1.0000000000","12.0)";
+
+    const std::string text =
+        std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + '\n' + truncatedSell;
+
+    const ParseResult parseResult = parseRawText(text);
+
+    expectNoParsedRecords(parseResult);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_EQ(diagnostic.mMessage,
+              "The CSV file has an unclosed quote; it may be cut off or edited. No rows were "
+              "imported.");
+}
+
+TEST(TradeRepublicParserTest, FailsTheFileWhenAQuoteInTheLastFieldNeverCloses) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    // 23 fields, but the last one ("5411) opens a quote that never closes. Without the quote
+    // check the reader would merge row 4 into that field and import no SELL.
+    const std::string openQuoteBuyLine =
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","10.000000","-10.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-buy-open-quote",)"
+        R"("","","","5411)";
+    const SyntheticCsvRow lastSell{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "12.000000",
+        .mAmount = "12.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-sell-last",
+    };
+
+    const std::string text = std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + '\n' +
+                             openQuoteBuyLine + '\n' + csvLine(lastSell) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    expectNoParsedRecords(parseResult);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+}
+
+TEST(TradeRepublicParserTest, FailsTheFileWhenTwoUnclosedQuotesMergeRows) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    // Rows 3 and 5 each open a quote in their last field ("5411). The file has an even number of
+    // quote characters, so the unclosed-quote check does not fire. The reader merges rows 3 and 4
+    // into one record of 45 fields with a line break inside a field, which fails the file.
+    const std::string openQuoteBuyLineOne =
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","10.000000","-10.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-buy-open-quote-one",)"
+        R"("","","","5411)";
+    const SyntheticCsvRow middleSell{
+        .mDatetime = "2024-01-16T10:00:00.000Z",
+        .mDate = "2024-01-16",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "12.000000",
+        .mAmount = "12.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-sell-middle",
+    };
+    const std::string openQuoteBuyLineTwo =
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","10.000000","-10.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-buy-open-quote-two",)"
+        R"("","","","5411)";
+    const SyntheticCsvRow lastBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-last",
+    };
+
+    const std::string text = std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + '\n' +
+                             openQuoteBuyLineOne + '\n' + csvLine(middleSell) + '\n' +
+                             openQuoteBuyLineTwo + '\n' + csvLine(lastBuy) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    expectNoParsedRecords(parseResult);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_EQ(diagnostic.mMessage,
+              "A row with the wrong number of fields contains a line break inside a field; a "
+              "quote is probably unclosed. No rows were imported.");
+}
+
+TEST(TradeRepublicParserTest, QuotedNewlineKeepsLogicalRowNumbers) {
+    const SyntheticCsvRow multilineBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "line one\nline two",
+        .mTransactionId = "synthetic-buy-multiline",
+    };
+    // 22 fields: the last field (mcc_code) is missing.
+    const std::string shortSellLine =
+        R"("2024-01-16T10:00:00.000Z","2024-01-16","DEFAULT","TRADING","SELL","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","-1.0000000000","12.000000","12.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-sell-short",)"
+        R"("","","")";
+    const SyntheticCsvRow badPriceBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "abc",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-bad-price",
+    };
+
+    // Text lines: header 1, multiline BUY 2-3, short SELL 4, bad-price BUY 5.
+    // Logical rows: header 1, multiline BUY 2, short SELL 3, bad-price BUY 4.
+    const std::string text = std::string{kCsvHeader} + '\n' + csvLine(multilineBuy) + '\n' +
+                             shortSellLine + '\n' + csvLine(badPriceBuy) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 1U);
+
+    const auto* buy = findTradeTransaction(parseResult.mStatement, "synthetic-buy-multiline");
+    ASSERT_NE(buy, nullptr);
+
+    EXPECT_EQ(primarySource(buy->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(buy->mMetadata).mInputSequence.mEventIndex, 0U);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 2U);
+
+    const auto& mismatch = parseResult.mDiagnostics[0];
+
+    EXPECT_EQ(mismatch.mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mRowIndex, std::optional<std::size_t>{3}); // text line 4
+    EXPECT_EQ(mismatch.mMessage,
+              "The row has a different number of fields than the header (expected 23, found "
+              "22); the row was skipped.");
+
+    const auto& invalidPrice = parseResult.mDiagnostics[1];
+
+    EXPECT_EQ(invalidPrice.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(invalidPrice.mRowIndex, std::optional<std::size_t>{4}); // text line 5
+    EXPECT_EQ(invalidPrice.mTransactionId, std::optional<std::string>{"synthetic-buy-bad-price"});
+    EXPECT_EQ(invalidPrice.mField, std::optional<std::string>{"price"});
+}
+
+TEST(TradeRepublicParserTest, ReportsABlankRecordAsAFieldCountError) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    const SyntheticCsvRow lastBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-last",
+    };
+
+    // Two empty lines: the reader returns one record with a single empty field on row 3.
+    const std::string text =
+        std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + "\n\n\n" + csvLine(lastBuy) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 2U);
+
+    const auto* first = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    const auto* last = findTradeTransaction(parseResult.mStatement, "synthetic-buy-last");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(last, nullptr);
+
+    EXPECT_EQ(primarySource(first->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(first->mMetadata).mInputSequence.mEventIndex, 0U);
+    EXPECT_EQ(primarySource(last->mMetadata).mSourceRow, 4U);
+    EXPECT_EQ(primarySource(last->mMetadata).mInputSequence.mEventIndex, 2U);
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& mismatch = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(mismatch.mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mRowIndex, std::optional<std::size_t>{3});
+    EXPECT_EQ(mismatch.mMessage,
+              "The row has a different number of fields than the header (expected 23, found "
+              "1); the row was skipped.");
+}
+
+TEST(TradeRepublicParserTest, IgnoresASingleBlankLineBetweenRecords) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    const SyntheticCsvRow lastBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-last",
+    };
+
+    // One empty line is read as part of the line ending, so it is not a record and has no row.
+    const std::string text =
+        std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + "\n\n" + csvLine(lastBuy) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 2U);
+
+    const auto* first = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    const auto* last = findTradeTransaction(parseResult.mStatement, "synthetic-buy-last");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(last, nullptr);
+
+    EXPECT_EQ(primarySource(first->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(first->mMetadata).mInputSequence.mEventIndex, 0U);
+    EXPECT_EQ(primarySource(last->mMetadata).mSourceRow, 3U);
+    EXPECT_EQ(primarySource(last->mMetadata).mInputSequence.mEventIndex, 1U);
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, AcceptsWindowsLineEndings) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    const SyntheticCsvRow lastBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-last",
+    };
+
+    const std::string text =
+        std::string{kCsvHeader} + "\r\n" + csvLine(firstBuy) + "\r\n" + csvLine(lastBuy) + "\r\n";
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 2U);
+
+    const auto* first = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    const auto* last = findTradeTransaction(parseResult.mStatement, "synthetic-buy-last");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(last, nullptr);
+
+    EXPECT_EQ(primarySource(first->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(first->mMetadata).mInputSequence.mEventIndex, 0U);
+    EXPECT_EQ(primarySource(last->mMetadata).mSourceRow, 3U);
+    EXPECT_EQ(primarySource(last->mMetadata).mInputSequence.mEventIndex, 1U);
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
 }
 
 TEST(TradeRepublicParserTest, ParsesAStandaloneDividendInstrument) {
