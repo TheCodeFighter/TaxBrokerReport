@@ -18,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 static_assert(TR_DATE_MISMATCH_DEFAULT_HOUR >= 0 && TR_DATE_MISMATCH_DEFAULT_HOUR < 24);
@@ -100,6 +101,88 @@ std::string getAmountCurrencyValue(const csv::CSVRow& aCsvRow) {
     return originalCurrency.empty() ? aCsvRow["currency"].get<std::string>() : originalCurrency;
 }
 
+/// Number of rows with a comma or parenthesis number from which the file-level hint is added.
+constexpr std::size_t LOCALIZED_NUMBER_HINT_MIN_ROWS = 3;
+
+/// True for the numeric fields that Trade Republic exports as plain dot decimals.
+bool isNumericField(std::string_view aField) {
+    return aField == "price" || aField == "shares" || aField == "amount" ||
+           aField == "original_amount" || aField == "fee" || aField == "tax" || aField == "fx_rate";
+}
+
+/// True when a rejected number contains a comma or a parenthesis, as a spreadsheet program writes
+/// numbers after saving a file again with local number settings.
+bool looksLikeLocalizedNumber(std::string_view aValue) {
+    return aValue.find_first_of(",()") != std::string_view::npos;
+}
+
+/// Columns the parser reads by name. The other columns of the export are not used.
+constexpr std::array<std::string_view, 18> REQUIRED_COLUMNS{
+    "datetime",
+    "date",
+    "category",
+    "type",
+    "asset_class",
+    "name",
+    "symbol",
+    "shares",
+    "price",
+    "amount",
+    "fee",
+    "tax",
+    "currency",
+    "original_amount",
+    "original_currency",
+    "fx_rate",
+    "description",
+    "transaction_id",
+};
+
+/// Required column names that the header does not contain, in REQUIRED_COLUMNS order.
+std::vector<std::string_view> missingRequiredColumns(const std::vector<std::string>& aHeader) {
+    std::vector<std::string_view> missing;
+
+    std::copy_if(REQUIRED_COLUMNS.begin(),
+                 REQUIRED_COLUMNS.end(),
+                 std::back_inserter(missing),
+                 [&aHeader](std::string_view aColumn) {
+                     return std::find(aHeader.begin(), aHeader.end(), aColumn) == aHeader.end();
+                 });
+
+    return missing;
+}
+
+/// True when the whole header is one column that contains a semicolon or a tab, as a
+/// spreadsheet program writes a file saved with local settings.
+bool hasOtherSeparator(const std::vector<std::string>& aHeader) {
+    return aHeader.size() == 1 && aHeader.front().find_first_of(";\t") != std::string::npos;
+}
+
+/// Message of the file-level `invalid_header` error. It lists only our own column names.
+std::string invalidHeaderMessage(const std::vector<std::string>& aHeader,
+                                 const std::vector<std::string_view>& aMissingColumns) {
+    if (hasOtherSeparator(aHeader))
+    {
+        return "The columns are separated by semicolons or tabs, not commas; the file was "
+               "probably opened and saved again in a spreadsheet program. Download the export "
+               "again from Trade Republic and import it unchanged. No rows were imported.";
+    }
+
+    std::string names;
+
+    for (const std::string_view column : aMissingColumns)
+    {
+        names += names.empty() ? "" : ", ";
+        names += column;
+    }
+
+    const bool isSingle = aMissingColumns.size() == 1;
+
+    return "The file is not a Trade Republic transaction export: " +
+           std::to_string(aMissingColumns.size()) + " required column" + (isSingle ? "" : "s") +
+           " " + (isSingle ? "is" : "are") + " missing (" + names + "). No rows were imported.";
+}
+
 /// An odd number of quote characters means a quoted field never closes. The CSV reader would
 /// then merge the following records into that field without any error, so the file is rejected.
 /// An unreadable file returns false; the reader reports that case itself.
@@ -142,6 +225,8 @@ struct TradeRepublicParser::RowContext {
     std::optional<SourceTimestamp> mSourceTimestamp;
     std::optional<Date> mSourceCalendarDate;
     bool mSourceTimestampInvalid{};
+    mutable bool mRowRejected{};        ///< The row has an error that keeps it from being stored.
+    mutable bool mHasLocalizedNumber{}; ///< A rejected numeric field has a comma or parenthesis.
 
     [[nodiscard]] EventMetadata metadata(Date aTaxDate) const;
     [[nodiscard]] std::vector<InstrumentSourceEvidence>
@@ -157,6 +242,11 @@ struct TradeRepublicParser::RowContext {
                        DiagnosticCode aCode,
                        std::string aMessage,
                        std::optional<std::string> aField = std::nullopt) const;
+
+    /// Adds an error and marks the row as rejected; the row parser stores nothing for it.
+    void rejectRow(DiagnosticCode aCode,
+                   std::string aMessage,
+                   std::optional<std::string> aField = std::nullopt) const;
 
     void addInvalidFieldDiagnostic(std::string_view aField,
                                    std::string_view aValue,
@@ -267,10 +357,24 @@ void TradeRepublicParser::RowContext::addDiagnostic(DiagnosticSeverity aSeverity
     });
 }
 
+void TradeRepublicParser::RowContext::rejectRow(DiagnosticCode aCode,
+                                                std::string aMessage,
+                                                std::optional<std::string> aField) const {
+    mRowRejected = true;
+    addDiagnostic(DiagnosticSeverity::Error, aCode, std::move(aMessage), std::move(aField));
+}
+
 void TradeRepublicParser::RowContext::addInvalidFieldDiagnostic(std::string_view aField,
                                                                 std::string_view aValue,
                                                                 std::string_view aRowKind) const {
     const bool isMissing = aValue.empty();
+
+    if (isNumericField(aField) && looksLikeLocalizedNumber(aValue))
+    {
+        mHasLocalizedNumber = true;
+    }
+
+    mRowRejected = true;
     addDiagnostic(DiagnosticSeverity::Error,
                   isMissing ? DiagnosticCode::MissingField : DiagnosticCode::InvalidValue,
                   isMissing ? "Required field '" + std::string{aField} + "' is missing in " +
@@ -351,9 +455,25 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
         csv::CSVFormat format;
         format.delimiter(delimiter).variable_columns(csv::VariableColumnPolicy::KEEP);
         csv::CSVReader reader(aCsvPath.string(), format);
-        const std::size_t headerFieldCount = reader.get_col_names().size();
+        const auto headerNames = reader.get_col_names();
+        const std::size_t headerFieldCount = headerNames.size();
+        const auto missingColumns = missingRequiredColumns(headerNames);
+
+        if (!missingColumns.empty())
+        {
+            LOG_ERROR("Trade Republic CSV source {} has an unexpected header", aSourceIndex);
+            parsedResult.mDiagnostics.emplace_back(ParseDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = DiagnosticCode::InvalidHeader,
+                .mSourceFile = sourceFile.value(),
+                .mMessage = invalidHeaderMessage(headerNames, missingColumns),
+            });
+
+            return parsedResult;
+        }
 
         std::size_t rowIndex = 1;
+        std::size_t localizedNumberRows = 0;
         for (const csv::CSVRow& row : reader)
         {
             ++rowIndex;
@@ -433,13 +553,11 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
 
             if (isImportedEvent && datetimeValue.empty())
             {
-                context.addDiagnostic(DiagnosticSeverity::Error,
-                                      DiagnosticCode::MissingField,
-                                      "Required field 'datetime' is missing; transaction order "
-                                      "cannot be established. "
-                                      "The row was skipped; review the source transaction.",
-                                      "datetime");
-                continue;
+                context.rejectRow(DiagnosticCode::MissingField,
+                                  "Required field 'datetime' is missing; transaction order "
+                                  "cannot be established. "
+                                  "The row was skipped; review the source transaction.",
+                                  "datetime");
             }
 
             switch (rowMeta.mRowType)
@@ -508,6 +626,25 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                                       "type");
                 break;
             }
+
+            if (context.mHasLocalizedNumber)
+            {
+                ++localizedNumberRows;
+            }
+        }
+
+        if (localizedNumberRows >= LOCALIZED_NUMBER_HINT_MIN_ROWS)
+        {
+            parsedResult.mDiagnostics.emplace_back(ParseDiagnostic{
+                .mSeverity = DiagnosticSeverity::Warning,
+                .mCode = DiagnosticCode::LocalizedNumberFormat,
+                .mSourceFile = sourceFile.value(),
+                .mMessage = std::to_string(localizedNumberRows) +
+                            " rows have a number with a comma or parentheses, which Trade "
+                            "Republic does not export; the file was probably opened and saved "
+                            "again in a spreadsheet program. Download the export again from "
+                            "Trade Republic and import it unchanged.",
+            });
         }
     } catch (const std::runtime_error&)
     {
@@ -575,57 +712,37 @@ InterestType TradeRepublicParser::detectInterestType(const csv::CSVRow& aCsvRow)
     return InterestType::UnknownInterest;
 }
 
-bool TradeRepublicParser::isInstrumentValid(std::string_view aContext,
+void TradeRepublicParser::isInstrumentValid(std::string_view aContext,
                                             const std::string& aIsin,
                                             const std::string& aName,
                                             const RowContext& aRowContext) {
     if (aIsin.empty() && aName.empty())
     {
-        aRowContext.addDiagnostic(DiagnosticSeverity::Error,
-                                  DiagnosticCode::MissingField,
-                                  "Required fields 'symbol' and 'name' are missing in " +
-                                      std::string{aContext} + "; the row was skipped.");
-        return false;
+        aRowContext.rejectRow(DiagnosticCode::MissingField,
+                              "Required fields 'symbol' and 'name' are missing in " +
+                                  std::string{aContext} + "; the row was skipped.");
+        return;
     }
 
     if (aIsin.empty())
     {
         aRowContext.addInvalidFieldDiagnostic("symbol", aIsin, aContext);
-        return false;
     }
-
-    return true;
 }
 
 GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) {
-    std::optional<Money> grossAmount{};
-    std::optional<ExchangeRate> exchangeRate{};
-
     const auto originalCurrencyValue = aCsvRow["original_currency"].get<std::string>();
     const bool usesOriginalCurrency = !originalCurrencyValue.empty();
     const auto currency = parseCurrency(
         usesOriginalCurrency ? originalCurrencyValue : aCsvRow["currency"].get<std::string>());
 
-    if (currency == Currency::Unknown)
-    {
-        return GetAmount{
-            .mGrossAmount = grossAmount,
-            .mExchangeRate = exchangeRate,
-            .mCurrency = std::nullopt,
-        };
-    }
-    if (!usesOriginalCurrency)
-    {
-        grossAmount = parseMoney(aCsvRow["amount"].get<std::string>());
-    }
-    else
-    {
-        grossAmount = parseMoney(aCsvRow["original_amount"].get<std::string>());
-    }
-
+    // The amount, the currency and the rate are parsed on their own, so that each invalid
+    // field can be reported.
+    auto grossAmount =
+        parseMoney(usesOriginalCurrency ? aCsvRow["original_amount"].get<std::string>()
+                                        : aCsvRow["amount"].get<std::string>());
     const auto rateText = aCsvRow["fx_rate"].get<std::string>();
-
-    exchangeRate = parseExchangeRate(rateText);
+    auto exchangeRate = parseExchangeRate(rateText);
 
     if (!usesOriginalCurrency && currency == Currency::EUR && rateText.empty())
     {
@@ -640,7 +757,7 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     return GetAmount{
         .mGrossAmount = grossAmount,
         .mExchangeRate = exchangeRate,
-        .mCurrency = currency,
+        .mCurrency = currency == Currency::Unknown ? std::nullopt : std::optional{currency},
     };
 }
 
@@ -664,11 +781,6 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     const auto nameValue = aCsvRow["name"].get<std::string>();
     std::string_view typeValue = aParsedValues.mType;
 
-    if (!isInstrumentValid("trade row", isinValue, nameValue, aContext))
-    {
-        return false;
-    }
-
     auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     auto tradeSide = parseTradeSide(typeValue);
     auto unitPrice = parseMoney(aCsvRow["price"].get<std::string>());
@@ -682,16 +794,24 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     const auto& classLabel = aParsedValues.mAssetClass;
     const auto assetClass = parseAssetClass(classLabel);
 
+    // Every invalid field is reported, in the column order of the export.
     if (!date)
     {
         aContext.addInvalidFieldDiagnostic("date", aCsvRow["date"].get<std::string>(), "trade row");
-        return false;
     }
 
     if (!tradeSide)
     {
         aContext.addInvalidFieldDiagnostic("type", typeValue, "trade row");
-        return false;
+    }
+
+    isInstrumentValid("trade row", isinValue, nameValue, aContext);
+
+    if (!units)
+    {
+        aContext.addInvalidFieldDiagnostic("shares",
+                                           aCsvRow["shares"].get<std::string>(),
+                                           "trade row");
     }
 
     if (!unitPrice || *unitPrice <= 0)
@@ -699,53 +819,16 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         aContext.addInvalidFieldDiagnostic("price",
                                            aCsvRow["price"].get<std::string>(),
                                            "trade row");
-        return false;
-    }
-
-    if (!units)
-    {
-        aContext.addInvalidFieldDiagnostic("shares",
-                                           aCsvRow["shares"].get<std::string>(),
-                                           "trade row");
-        return false;
-    }
-
-    // Normalize stored trade units; evidence retains the original source sign.
-    const auto normalizedUnits = normalizeTradeUnits(*tradeSide, units->mValue);
-    if (!normalizedUnits)
-    {
-        aContext.addDiagnostic(
-            DiagnosticSeverity::Error,
-            DiagnosticCode::InconsistentValue,
-            "Field 'shares' is inconsistent with the trade side; the row was skipped.",
-            "shares");
-        return false;
     }
 
     if (!amountValue.empty() && !amount)
     {
         aContext.addInvalidFieldDiagnostic("amount", amountValue, "trade row");
-        return false;
-    }
-
-    if (amount)
-    {
-        amount = normalizeTradeAmount(*tradeSide, *amount);
-        if (!amount)
-        {
-            aContext.addDiagnostic(
-                DiagnosticSeverity::Error,
-                DiagnosticCode::InconsistentValue,
-                "Field 'amount' is inconsistent with the trade side; the row was skipped.",
-                "amount");
-            return false;
-        }
     }
 
     if (!feePaid)
     {
         aContext.addInvalidFieldDiagnostic("fee", aCsvRow["fee"].get<std::string>(), "trade row");
-        return false;
     }
 
     if (currency == Currency::Unknown)
@@ -753,6 +836,39 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         aContext.addInvalidFieldDiagnostic("currency",
                                            aCsvRow["currency"].get<std::string>(),
                                            "trade row");
+    }
+
+    // The sign checks use only fields that are valid. Normalize stored trade units; evidence
+    // retains the original source sign.
+    std::optional<Units> normalizedUnits;
+
+    if (tradeSide && units)
+    {
+        normalizedUnits = normalizeTradeUnits(*tradeSide, units->mValue);
+        if (!normalizedUnits)
+        {
+            aContext.rejectRow(DiagnosticCode::InconsistentValue,
+                               "Field 'shares' is inconsistent with the trade side; the row was "
+                               "skipped.",
+                               "shares");
+        }
+    }
+
+    if (tradeSide && amount)
+    {
+        const auto normalizedAmount = normalizeTradeAmount(*tradeSide, *amount);
+        if (!normalizedAmount)
+        {
+            aContext.rejectRow(DiagnosticCode::InconsistentValue,
+                               "Field 'amount' is inconsistent with the trade side; the row was "
+                               "skipped.",
+                               "amount");
+        }
+        amount = normalizedAmount;
+    }
+
+    if (aContext.mRowRejected)
+    {
         return false;
     }
 
@@ -781,51 +897,75 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     return true;
 }
 
-std::optional<TradeRepublicParser::ParsedIncome> TradeRepublicParser::parseIncome(
-    const csv::CSVRow& aCsvRow, std::string_view aRowKind, const RowContext& aContext) {
+std::optional<TradeRepublicParser::ParsedIncome>
+TradeRepublicParser::parseIncome(const csv::CSVRow& aCsvRow,
+                                 std::string_view aRowKind,
+                                 bool aCheckInstrument,
+                                 const RowContext& aContext) {
     const auto dateText = aCsvRow["date"].get<std::string>();
     const auto taxText = aCsvRow["tax"].get<std::string>();
     const auto currencyText = aCsvRow["currency"].get<std::string>();
     const auto rateText = aCsvRow["fx_rate"].get<std::string>();
+    const bool usesOriginalCurrency = !aCsvRow["original_currency"].get<std::string>().empty();
     const auto date = parseCalendarDate(dateText);
     const auto taxPaid = parseTaxPaid(taxText);
     const auto taxCurrency = parseCurrency(currencyText);
     const auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
 
+    // Every invalid field is reported, in the column order of the export: amount comes before
+    // tax, original_amount after currency.
     if (!date)
     {
         aContext.addInvalidFieldDiagnostic("date", dateText, aRowKind);
-        return std::nullopt;
     }
-    if (!taxPaid && !taxText.empty())
-    {
-        aContext.addInvalidFieldDiagnostic("tax", taxText, aRowKind);
-        return std::nullopt;
-    }
-    if (taxCurrency == Currency::Unknown)
-    {
-        aContext.addInvalidFieldDiagnostic("currency", currencyText, aRowKind);
-        return std::nullopt;
-    }
-    if (!amountAndCurrency.mCurrency)
-    {
-        const auto field = aCsvRow["original_currency"].get<std::string>().empty()
-                               ? "currency"
-                               : "original_currency";
 
-        aContext.addInvalidFieldDiagnostic(field, getAmountCurrencyValue(aCsvRow), aRowKind);
-        return std::nullopt;
-    }
-    if (!amountAndCurrency.mExchangeRate && !rateText.empty())
+    if (aCheckInstrument)
     {
-        aContext.addInvalidFieldDiagnostic("fx_rate", rateText, aRowKind);
-        return std::nullopt;
+        isInstrumentValid(aRowKind,
+                          aCsvRow["symbol"].get<std::string>(),
+                          aCsvRow["name"].get<std::string>(),
+                          aContext);
     }
-    if (!amountAndCurrency.mGrossAmount)
+
+    if (!usesOriginalCurrency && !amountAndCurrency.mGrossAmount)
     {
         const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
 
         aContext.addInvalidFieldDiagnostic(fieldName, fieldValue, aRowKind);
+    }
+
+    if (!taxPaid && !taxText.empty())
+    {
+        aContext.addInvalidFieldDiagnostic("tax", taxText, aRowKind);
+    }
+
+    // Without original_currency, this is also the currency of the amount.
+    if (taxCurrency == Currency::Unknown)
+    {
+        aContext.addInvalidFieldDiagnostic("currency", currencyText, aRowKind);
+    }
+
+    if (usesOriginalCurrency && !amountAndCurrency.mGrossAmount)
+    {
+        const auto [fieldName, fieldValue] = pickAmountField(aCsvRow);
+
+        aContext.addInvalidFieldDiagnostic(fieldName, fieldValue, aRowKind);
+    }
+
+    if (usesOriginalCurrency && !amountAndCurrency.mCurrency)
+    {
+        aContext.addInvalidFieldDiagnostic("original_currency",
+                                           getAmountCurrencyValue(aCsvRow),
+                                           aRowKind);
+    }
+
+    if (!amountAndCurrency.mExchangeRate && !rateText.empty())
+    {
+        aContext.addInvalidFieldDiagnostic("fx_rate", rateText, aRowKind);
+    }
+
+    if (aContext.mRowRejected)
+    {
         return std::nullopt;
     }
 
@@ -845,12 +985,7 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     const auto isinValue = aCsvRow["symbol"].get<std::string>();
     const auto nameValue = aCsvRow["name"].get<std::string>();
 
-    if (!isInstrumentValid("dividend row", isinValue, nameValue, aContext))
-    {
-        return;
-    }
-
-    const auto income = parseIncome(aCsvRow, "dividend row", aContext);
+    const auto income = parseIncome(aCsvRow, "dividend row", true, aContext);
 
     if (!income)
     {
@@ -902,12 +1037,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
     const auto isin = isBond ? aCsvRow["symbol"].get<std::string>() : std::string{};
     const auto rowKind = isBond ? "bond-interest row" : "broker-interest row";
 
-    if (isBond && !isInstrumentValid(rowKind, isin, name, aContext))
-    {
-        return;
-    }
-
-    const auto income = parseIncome(aCsvRow, rowKind, aContext);
+    const auto income = parseIncome(aCsvRow, rowKind, isBond, aContext);
 
     if (!income)
     {
@@ -961,11 +1091,6 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
     const auto isinValue = aCsvRow["symbol"].get<std::string>();
     const auto nameValue = aCsvRow["name"].get<std::string>();
 
-    if (!isInstrumentValid("corporate-action row", isinValue, nameValue, aContext))
-    {
-        return;
-    }
-
     const auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     const auto sharesText = aCsvRow["shares"].get<std::string>();
     const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
@@ -973,19 +1098,25 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
     const auto classLabel = aCsvRow["asset_class"].get<std::string>();
     const auto assetClass = parseAssetClass(classLabel);
 
+    // Every invalid field is reported, in the column order of the export.
     if (!date)
     {
         aContext.addInvalidFieldDiagnostic("date",
                                            aCsvRow["date"].get<std::string>(),
                                            "corporate-action row");
-        return;
     }
+
+    isInstrumentValid("corporate-action row", isinValue, nameValue, aContext);
 
     if (!unitsDelta || unitsDelta->mValue == 0)
     {
         aContext.addInvalidFieldDiagnostic("shares",
                                            aCsvRow["shares"].get<std::string>(),
                                            "corporate-action row");
+    }
+
+    if (aContext.mRowRejected)
+    {
         return;
     }
 
@@ -1018,18 +1149,17 @@ void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
     const auto amount = parseMoney(aCsvRow["amount"].get<std::string>());
     const auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
+    // Every invalid field is reported, in the column order of the export.
     if (!date)
     {
         aContext.addInvalidFieldDiagnostic("date",
                                            aCsvRow["date"].get<std::string>(),
                                            "benefit row");
-        return;
     }
 
     if (!benefitType)
     {
         aContext.addInvalidFieldDiagnostic("type", aParsedValues.mType, "benefit row");
-        return;
     }
 
     if (!amount)
@@ -1037,7 +1167,6 @@ void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
         aContext.addInvalidFieldDiagnostic("amount",
                                            aCsvRow["amount"].get<std::string>(),
                                            "benefit row");
-        return;
     }
 
     if (currency == Currency::Unknown)
@@ -1045,6 +1174,10 @@ void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
         aContext.addInvalidFieldDiagnostic("currency",
                                            aCsvRow["currency"].get<std::string>(),
                                            "benefit row");
+    }
+
+    if (aContext.mRowRejected)
+    {
         return;
     }
 
@@ -1071,18 +1204,17 @@ void TradeRepublicParser::parsePrivateMarketRow(
     const auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
     const auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
 
+    // Every invalid field is reported, in the column order of the export.
     if (!date)
     {
         aContext.addInvalidFieldDiagnostic("date",
                                            aCsvRow["date"].get<std::string>(),
                                            "private-market row");
-        return;
     }
 
     if (!eventType)
     {
         aContext.addInvalidFieldDiagnostic("type", aParsedValues.mType, "private-market row");
-        return;
     }
 
     if (!amount)
@@ -1090,7 +1222,6 @@ void TradeRepublicParser::parsePrivateMarketRow(
         aContext.addInvalidFieldDiagnostic("amount",
                                            aCsvRow["amount"].get<std::string>(),
                                            "private-market row");
-        return;
     }
 
     if (!feePaid)
@@ -1098,7 +1229,6 @@ void TradeRepublicParser::parsePrivateMarketRow(
         aContext.addInvalidFieldDiagnostic("fee",
                                            aCsvRow["fee"].get<std::string>(),
                                            "private-market row");
-        return;
     }
 
     if (currency == Currency::Unknown)
@@ -1106,6 +1236,10 @@ void TradeRepublicParser::parsePrivateMarketRow(
         aContext.addInvalidFieldDiagnostic("currency",
                                            aCsvRow["currency"].get<std::string>(),
                                            "private-market row");
+    }
+
+    if (aContext.mRowRejected)
+    {
         return;
     }
 

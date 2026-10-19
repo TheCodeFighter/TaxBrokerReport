@@ -49,6 +49,8 @@ struct ParsedFixedPoint {
     bool mRoundedAwayFromZero{}; ///< Import rounding increased the magnitude.
 };
 
+/// Accepts only `[+|-]digits[.digits]` with optional surrounding spaces: no digit grouping, no
+/// decimal comma and no accounting parentheses.
 /// Rounds once, halves away from zero; optionally rejects excess precision or nonzero-to-zero loss.
 [[nodiscard]] NumericResult<ParsedFixedPoint>
 importFixedPoint(std::string_view aValue,

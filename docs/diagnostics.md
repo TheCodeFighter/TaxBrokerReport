@@ -419,7 +419,22 @@ The parsing stage keeps the existing codes `unknown_row_type`, `unsupported_row_
 `unsupported_asset_class`, `missing_field`, `invalid_value`, `inconsistent_value`, and
 `parse_error`. It adds `field_count_mismatch`: a CSV record has a different number of fields than
 the header, so the row is skipped and no field of it is trusted. The message gives only the
-expected and found counts.
+expected and found counts. It also adds `localized_number_format`, a file-level warning without row
+or field. The Trade Republic parser reports it when at least 3 rows of one file were rejected
+because a numeric field has a comma or parentheses, which Trade Republic does not export. It means
+the file was probably saved again in a spreadsheet program. The message gives only the row count.
+Each of those rows still has its own `invalid_value` error, and the count is a number of rows,
+not fields.
+
+It also adds `invalid_header`, a file-level error without row or field. The parser reports it when
+the header misses a column the parser reads (the list is in [`architecture.md`](architecture.md)),
+which includes a file saved with semicolons or tabs instead of commas. No rows are read. The
+message gives only our own column names, never text from the file. A file of 0 bytes is still a
+`parse_error`.
+
+A skipped row reports every invalid field, so one row can have several diagnostics. They follow
+the column order of the export; the sign checks (`inconsistent_value`) come last and only use
+valid fields. The JSON `errorCount` counts diagnostics, not rows.
 
 For otherwise valid trades/actions, missing classification is a `missing_field` error and an
 unrecognized class is an `unsupported_asset_class` error on `asset_class`. The event is retained

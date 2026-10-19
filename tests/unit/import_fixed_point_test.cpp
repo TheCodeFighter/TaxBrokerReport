@@ -40,7 +40,7 @@ TEST(ImportFixedPointTest, PreservesOriginalDigitsAndCanonicalExactValues) {
     EXPECT_TRUE(up.mRoundedAwayFromZero);
     EXPECT_EQ(evidence.mSourceText, "-0.123456785");
     EXPECT_EQ(evidence.mDiscardedDigits, "5");
-    EXPECT_EQ(requireValue(importFixedPoint("(001,234.5000)", MONEY_SCALE)).mCanonicalValue,
+    EXPECT_EQ(requireValue(importFixedPoint("-001234.5000", MONEY_SCALE)).mCanonicalValue,
               "-1234.5");
     EXPECT_EQ(requireValue(importFixedPoint(".5", MONEY_SCALE)).mValue, 5'000);
     EXPECT_EQ(requireValue(importFixedPoint("-0.00000", MONEY_SCALE)).mCanonicalValue, "0");
@@ -61,6 +61,26 @@ TEST(ImportFixedPointTest, PreservesOriginalDigitsAndCanonicalExactValues) {
 
     expectError(importFixedPoint("1", 0), NumericError::InvalidInput);
     expectError(importFixedPoint("1", 12), NumericError::InvalidInput);
+}
+
+TEST(ImportFixedPointTest, RejectsDigitGroupingDecimalCommasAndParentheses) {
+    // Before the strict format these were read as 125 (a 1000x error), 1234.5 and -5.
+    expectError(importFixedPoint("0,125", UNITS_SCALE), NumericError::InvalidInput);
+    expectError(importFixedPoint("0,125", MONEY_SCALE), NumericError::InvalidInput);
+    expectError(importFixedPoint("1,234.5", MONEY_SCALE), NumericError::InvalidInput);
+    expectError(importFixedPoint("(5)", MONEY_SCALE), NumericError::InvalidInput);
+    expectError(importFixedPoint("1.000,50", MONEY_SCALE), NumericError::InvalidInput);
+    expectError(importFixedPoint("(001,234.5000)", MONEY_SCALE), NumericError::InvalidInput);
+    expectError(importFixedPoint("1,000", MONEY_SCALE), NumericError::InvalidInput);
+    expectError(importExchangeRate("0,92", true), NumericError::InvalidExchangeRate);
+}
+
+TEST(ImportFixedPointTest, AcceptsPlainDotDecimalsAtEveryScale) {
+    EXPECT_EQ(requireValue(importFixedPoint("0.125", UNITS_SCALE)).mValue,
+              12'500'000); // 0.125 * 10^8
+    EXPECT_EQ(requireValue(importFixedPoint("-1234.5", MONEY_SCALE)).mValue, -12'345'000); // * 10^4
+    EXPECT_EQ(requireValue(importFixedPoint("1000.50", MONEY_SCALE)).mValue, 10'005'000);
+    EXPECT_EQ(requireValue(importFixedPoint("+5", MONEY_SCALE)).mValue, 50'000);
 }
 
 TEST(ImportFixedPointTest, KeepsOfficialRateInputStrictAndBrokerRoundingExplicit) {

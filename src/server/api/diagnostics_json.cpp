@@ -53,6 +53,10 @@ std::string_view toString(DiagnosticCode aCode) {
         return "inconsistent_value";
     case DiagnosticCode::FieldCountMismatch:
         return "field_count_mismatch";
+    case DiagnosticCode::LocalizedNumberFormat:
+        return "localized_number_format";
+    case DiagnosticCode::InvalidHeader:
+        return "invalid_header";
     case DiagnosticCode::ParseError:
         return "parse_error";
     }

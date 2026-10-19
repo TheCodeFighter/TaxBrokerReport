@@ -21,6 +21,8 @@ enum class DiagnosticCode {
     InvalidValue,
     InconsistentValue,
     FieldCountMismatch,
+    LocalizedNumberFormat,
+    InvalidHeader,
     ParseError,
 };
 

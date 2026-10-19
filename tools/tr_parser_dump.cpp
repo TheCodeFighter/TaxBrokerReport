@@ -291,6 +291,10 @@ std::string_view toString(DiagnosticCode aDiagnosticCode) {
         return "InconsistentValue";
     case DiagnosticCode::FieldCountMismatch:
         return "FieldCountMismatch";
+    case DiagnosticCode::LocalizedNumberFormat:
+        return "LocalizedNumberFormat";
+    case DiagnosticCode::InvalidHeader:
+        return "InvalidHeader";
     case DiagnosticCode::ParseError:
         return "ParseError";
     }

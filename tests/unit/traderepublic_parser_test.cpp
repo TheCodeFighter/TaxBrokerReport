@@ -1373,25 +1373,179 @@ TEST(TradeRepublicParserTest, ReturnsAStructuredErrorWhenTheCsvCannotBeOpened) {
     EXPECT_EQ(diagnostic.mMessage.find(missingPath.parent_path().string()), std::string::npos);
 }
 
-TEST(TradeRepublicParserTest, ReturnsAStructuredErrorForAnUnexpectedCsvHeader) {
-    std::string unexpectedHeader{kCsvHeader};
-    const auto categoryColumn = unexpectedHeader.find("\"category\"");
-    ASSERT_NE(categoryColumn, std::string::npos);
-    unexpectedHeader.replace(categoryColumn,
-                             std::string_view{"\"category\""}.size(),
-                             "\"unexpected_category\"");
+TEST(TradeRepublicParserTest, RejectsAHeaderOnlyFileSeparatedBySemicolons) {
+    // The 23 Trade Republic column names, separated by semicolons: one column for the reader.
+    const ParseResult parseResult = parseRawText(
+        R"("datetime";"date";"account_type";"category";"type";"asset_class";"name";"symbol";)"
+        R"("shares";"price";"amount";"fee";"tax";"currency";"original_amount";)"
+        R"("original_currency";"fx_rate";"description";"transaction_id";"counterparty_name";)"
+        R"("counterparty_iban";"payment_reference";"mcc_code")"
+        "\n");
 
-    const SyntheticCsvRow row{};
-    const TemporaryCsvFile csvFile{{row}, unexpectedHeader};
-    tr::TradeRepublicParser parser;
-    const ParseResult parseResult = parser.parse(csvFile.path());
-
-    EXPECT_EQ(parseResult.mBroker, Broker::TradeRepublic);
     expectNoParsedRecords(parseResult);
     ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::ParseError);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(diagnostic.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsAHeaderOnlyFileSeparatedBySemicolons.csv");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_FALSE(diagnostic.mField.has_value());
+    EXPECT_FALSE(diagnostic.mTransactionId.has_value());
+    EXPECT_NE(diagnostic.mMessage.find("separated by semicolons or tabs"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, RejectsASemicolonFileWithDecimalCommasOnce) {
+    // A spreadsheet program wrote semicolons and decimal commas. Without the header check, every
+    // row would be a field count error.
+    const ParseResult parseResult = parseRawText(
+        R"("datetime";"date";"account_type";"category";"type";"asset_class";"name";"symbol";)"
+        R"("shares";"price";"amount";"fee";"tax";"currency";"original_amount";)"
+        R"("original_currency";"fx_rate";"description";"transaction_id";"counterparty_name";)"
+        R"("counterparty_iban";"payment_reference";"mcc_code")"
+        "\n"
+        R"("2024-01-15T10:00:00.000Z";"2024-01-15";"DEFAULT";"TRADING";"BUY";"STOCK";)"
+        R"("Synthetic Test Share";"XX9000000001";"0,5";"10,25";"-5,125";"";"";"EUR";"";"";"";)"
+        R"("Synthetic test row";"synthetic-semicolon-buy";"";"";"";"")"
+        "\n"
+        R"("2024-01-16T10:00:00.000Z";"2024-01-16";"DEFAULT";"TRADING";"SELL";"STOCK";)"
+        R"("Synthetic Test Share";"XX9000000001";"-0,5";"12,50";"6,25";"";"";"EUR";"";"";"";)"
+        R"("Synthetic test row";"synthetic-semicolon-sell";"";"";"";"")"
+        "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::FieldCountMismatch), 0U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::LocalizedNumberFormat), 0U);
+}
+
+TEST(TradeRepublicParserTest, RejectsAHeaderOnlyFileWithARenamedColumn) {
+    // The 23 column names, but "category" is written as "kategorie".
+    const ParseResult parseResult = parseRawText(
+        R"("datetime","date","account_type","kategorie","type","asset_class","name","symbol",)"
+        R"("shares","price","amount","fee","tax","currency","original_amount",)"
+        R"("original_currency","fx_rate","description","transaction_id","counterparty_name",)"
+        R"("counterparty_iban","payment_reference","mcc_code")"
+        "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(diagnostic.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsAHeaderOnlyFileWithARenamedColumn.csv");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_FALSE(diagnostic.mField.has_value());
+    EXPECT_FALSE(diagnostic.mTransactionId.has_value());
+    EXPECT_EQ(diagnostic.mMessage,
+              "The file is not a Trade Republic transaction export: 1 required column is "
+              "missing (category). No rows were imported.");
+}
+
+TEST(TradeRepublicParserTest, RejectsAHeaderWithSeveralMissingColumns) {
+    // 20 columns: "price", "amount" and "fx_rate" are missing. The row has 20 fields and must not
+    // be read.
+    const ParseResult parseResult = parseRawText(
+        R"("datetime","date","account_type","category","type","asset_class","name","symbol",)"
+        R"("shares","fee","tax","currency","original_amount","original_currency",)"
+        R"("description","transaction_id","counterparty_name","counterparty_iban",)"
+        R"("payment_reference","mcc_code")"
+        "\n"
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","","","EUR","","",)"
+        R"("Synthetic test row","synthetic-test-transaction","","","","")"
+        "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::InvalidHeader);
     EXPECT_FALSE(parseResult.mDiagnostics.front().mRowIndex.has_value());
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessage,
+              "The file is not a Trade Republic transaction export: 3 required columns are "
+              "missing (price, amount, fx_rate). No rows were imported.");
+}
+
+TEST(TradeRepublicParserTest, RejectsAHeaderWithARenamedColumnAndARow) {
+    // The header names "category" as "kategorie"; the row below it is a valid BUY.
+    const ParseResult parseResult = parseRawText(
+        R"("datetime","date","account_type","kategorie","type","asset_class","name","symbol",)"
+        R"("shares","price","amount","fee","tax","currency","original_amount",)"
+        R"("original_currency","fx_rate","description","transaction_id","counterparty_name",)"
+        R"("counterparty_iban","payment_reference","mcc_code")"
+        "\n"
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","10.000000","-10.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-test-transaction","","","","")"
+        "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(diagnostic.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsAHeaderWithARenamedColumnAndARow.csv");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_FALSE(diagnostic.mField.has_value());
+    EXPECT_FALSE(diagnostic.mTransactionId.has_value());
+}
+
+TEST(TradeRepublicParserTest, AcceptsAHeaderWithoutTheUnusedColumns) {
+    // Only the 18 columns the parser reads; the 5 unused export columns are absent.
+    const ParseResult parseResult = parseRawText(
+        R"("datetime","date","category","type","asset_class","name","symbol","shares","price",)"
+        R"("amount","fee","tax","currency","original_amount","original_currency","fx_rate",)"
+        R"("description","transaction_id")"
+        "\n"
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","10.000000","-10.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-test-transaction")"
+        "\n");
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+}
+
+TEST(TradeRepublicParserTest, RejectsASingleColumnHeaderWithoutASeparator) {
+    // One column named "datetime": no semicolon or tab, so this is not a separator problem.
+    const ParseResult parseResult = parseRawText(R"("datetime")"
+                                                 "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(diagnostic.mMessage,
+              "The file is not a Trade Republic transaction export: 17 required columns are "
+              "missing (date, category, type, asset_class, name, symbol, shares, price, amount, "
+              "fee, tax, currency, original_amount, original_currency, fx_rate, description, "
+              "transaction_id). No rows were imported.");
+}
+
+TEST(TradeRepublicParserTest, KeepsParseErrorForAnEmptyFile) {
+    // A file of 0 bytes has no header at all.
+    const ParseResult parseResult = parseRawText("");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
 }
 
 TEST(TradeRepublicParserTest, ReportsAShortMiddleRowOnItsOwnRow) {
@@ -14998,6 +15152,1821 @@ TEST(TradeRepublicParserTest, CompletesMissingBondInterestNameWithoutChangingOri
     EXPECT_EQ(result.mDiagnostics[0].mField, "name");
     EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
     EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unnamed");
+}
+
+TEST(TradeRepublicParserTest, RejectsTradePriceWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "1,250",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsTradePriceWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeSharesWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0,125",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsTradeSharesWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeAmountWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-1,250",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsTradeAmountWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsTradeFeeWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "-1,000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsTradeFeeWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "fee");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsSplitSharesWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0,125",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsSplitSharesWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-split-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsDividendAmountWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1,250",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsDividendAmountWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-dividend-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsDividendOriginalAmountWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "1,250",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.90000000",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(
+        error.mSourceFile,
+        "taxbroker_TradeRepublicParserTest_RejectsDividendOriginalAmountWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "original_amount");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-dividend-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsDividendTaxWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "10.00",
+        .mFee = "",
+        .mTax = "-0,375",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsDividendTaxWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-dividend-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsDividendFxRateWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1.00",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "1.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0,920",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsDividendFxRateWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "fx_rate");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-dividend-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsInterestAmountWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1,250",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-interest-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsInterestAmountWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-interest-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsBenefitAmountWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "BENEFITS_SAVEBACK",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1,250",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-benefit-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsBenefitAmountWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-benefit-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsPrivateMarketAmountWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_BUY",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Test Private Fund",
+        .mSymbol = "XX9000000003",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-1,250",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-private-market-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsPrivateMarketAmountWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-private-market-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsPrivateMarketFeeWithDecimalComma) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_BUY",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Test Private Fund",
+        .mSymbol = "XX9000000003",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-100.00",
+        .mFee = "-1,000",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-private-market-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsPrivateMarketFeeWithDecimalComma.csv");
+    EXPECT_EQ(error.mField, "fee");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-private-market-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsTradePriceInParentheses) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "(10.5)",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsTradePriceInParentheses.csv");
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsTradePriceWithThousandsSeparator) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "1,234.5",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsTradePriceWithThousandsSeparator.csv");
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, RejectsTradePriceWithEuropeanGrouping) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "1.000,50",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U); // One row is below the file-level hint threshold.
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsTradePriceWithEuropeanGrouping.csv");
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-test-transaction");
+}
+
+TEST(TradeRepublicParserTest, DoesNotWarnAboutLocalizedNumbersBelowThreeRows) {
+    const SyntheticCsvRow validBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-valid-buy",
+    };
+    const SyntheticCsvRow commaBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10,5",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-comma-buy",
+    };
+    const SyntheticCsvRow commaDividend{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1,250",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-comma-dividend",
+    };
+    const SyntheticCsvRow validSell{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-valid-sell",
+    };
+
+    const auto result = parseRows({validBuy, commaBuy, commaDividend, validSell});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(),
+              2U); // BUY and SELL.
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U); // Two bad rows are below the hint threshold of 3.
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "price");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 3U);
+    EXPECT_EQ(result.mDiagnostics[1].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[1].mField, "amount");
+    EXPECT_EQ(result.mDiagnostics[1].mRowIndex, 4U);
+    EXPECT_EQ(countDiagnostics(result, DiagnosticCode::LocalizedNumberFormat), 0U);
+}
+
+TEST(TradeRepublicParserTest, WarnsOnceAboutLocalizedNumbersFromThreeRows) {
+    const SyntheticCsvRow validBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-valid-buy",
+    };
+    const SyntheticCsvRow commaBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10,5",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-comma-buy",
+    };
+    const SyntheticCsvRow commaDividend{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1,250",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-comma-dividend",
+    };
+    const SyntheticCsvRow parenthesesBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "(10.5)",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-parentheses-buy",
+    };
+    const SyntheticCsvRow validSell{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-valid-sell",
+    };
+
+    const TemporaryCsvFile csvFile{validBuy, commaBuy, commaDividend, parenthesesBuy, validSell};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(),
+              2U); // BUY and SELL.
+
+    ASSERT_EQ(result.mDiagnostics.size(), 4U); // Three row errors, then one file-level warning.
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 3U);
+    EXPECT_EQ(result.mDiagnostics[1].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[1].mRowIndex, 4U);
+    EXPECT_EQ(result.mDiagnostics[2].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[2].mRowIndex, 5U);
+
+    const auto& warning = result.mDiagnostics[3];
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::LocalizedNumberFormat);
+    EXPECT_EQ(warning.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_WarnsOnceAboutLocalizedNumbersFromThreeRows.csv");
+    EXPECT_FALSE(warning.mRowIndex.has_value());
+    EXPECT_FALSE(warning.mField.has_value());
+    EXPECT_FALSE(warning.mTransactionId.has_value());
+    EXPECT_TRUE(hasDiagnosticContaining(result, "3 rows have a number with a comma"));
+}
+
+TEST(TradeRepublicParserTest, CountsOnlyLocalizedNumbersTowardsTheWarning) {
+    const SyntheticCsvRow commaBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10,5",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-comma-buy",
+    };
+    const SyntheticCsvRow commaDividend{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1,250",
+        .mFee = "",
+        .mTax = "-1.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-comma-dividend",
+    };
+    const SyntheticCsvRow textBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "not-a-number",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-text-buy",
+    };
+    const SyntheticCsvRow dateBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "15,01,2024",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-date-buy",
+    };
+
+    const auto result = parseRows({commaBuy, commaDividend, textBuy, dateBuy});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 4U); // Four row errors; only two use a comma in a number.
+    EXPECT_EQ(countDiagnostics(result, DiagnosticCode::InvalidValue), 4U);
+    EXPECT_EQ(countDiagnostics(result, DiagnosticCode::LocalizedNumberFormat), 0U);
+}
+
+TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfATradeRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-13-01",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0,5",
+        .mPrice = "abc",
+        .mAmount = "-10.000000",
+        .mFee = "1.00",
+        .mTax = "",
+        .mCurrency = "XXX",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              5U); // Five invalid fields; a positive fee and a month 13 are invalid.
+
+    const auto& dateError = result.mDiagnostics[0];
+
+    EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mField, "date");
+    EXPECT_EQ(dateError.mRowIndex, 2U);
+    EXPECT_EQ(dateError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(dateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfATradeRow.csv");
+
+    const auto& sharesError = result.mDiagnostics[1];
+
+    EXPECT_EQ(sharesError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(sharesError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(sharesError.mField, "shares");
+    EXPECT_EQ(sharesError.mRowIndex, 2U);
+    EXPECT_EQ(sharesError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(sharesError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfATradeRow.csv");
+
+    const auto& priceError = result.mDiagnostics[2];
+
+    EXPECT_EQ(priceError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(priceError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(priceError.mField, "price");
+    EXPECT_EQ(priceError.mRowIndex, 2U);
+    EXPECT_EQ(priceError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(priceError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfATradeRow.csv");
+
+    const auto& feeError = result.mDiagnostics[3];
+
+    EXPECT_EQ(feeError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(feeError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(feeError.mField, "fee");
+    EXPECT_EQ(feeError.mRowIndex, 2U);
+    EXPECT_EQ(feeError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(feeError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfATradeRow.csv");
+
+    const auto& currencyError = result.mDiagnostics[4];
+
+    EXPECT_EQ(currencyError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(currencyError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(currencyError.mField, "currency");
+    EXPECT_EQ(currencyError.mRowIndex, 2U);
+    EXPECT_EQ(currencyError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(currencyError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfATradeRow.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsFieldErrorsAroundAMissingSymbolAndNameOfATradeRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-13-01", // Invalid month: checked before the instrument.
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "abc",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "0.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              3U); // A bad date, missing symbol/name, and invalid shares still get reported.
+
+    const auto& dateError = result.mDiagnostics[0];
+
+    EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mField, "date");
+    EXPECT_EQ(dateError.mRowIndex, 2U);
+    EXPECT_EQ(dateError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(dateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_"
+              "ReportsFieldErrorsAroundAMissingSymbolAndNameOfATradeRow.csv");
+
+    const auto& instrumentError = result.mDiagnostics[1];
+
+    EXPECT_EQ(instrumentError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(instrumentError.mCode, DiagnosticCode::MissingField);
+    EXPECT_FALSE(instrumentError.mField.has_value()); // No single field; symbol and name both.
+    EXPECT_EQ(instrumentError.mRowIndex, 2U);
+    EXPECT_EQ(instrumentError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(instrumentError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_"
+              "ReportsFieldErrorsAroundAMissingSymbolAndNameOfATradeRow.csv");
+
+    const auto& sharesError = result.mDiagnostics[2];
+
+    EXPECT_EQ(sharesError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(sharesError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(sharesError.mField, "shares");
+    EXPECT_EQ(sharesError.mRowIndex, 2U);
+    EXPECT_EQ(sharesError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(sharesError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_"
+              "ReportsFieldErrorsAroundAMissingSymbolAndNameOfATradeRow.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsFieldErrorsBeforeTheSignCheck) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "10.000000",
+        .mFee = "abc",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              2U); // The fee error comes first; a positive share count is wrong for a sale.
+
+    const auto& feeError = result.mDiagnostics[0];
+
+    EXPECT_EQ(feeError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(feeError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(feeError.mField, "fee");
+    EXPECT_EQ(feeError.mRowIndex, 2U);
+    EXPECT_EQ(feeError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(feeError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsFieldErrorsBeforeTheSignCheck.csv");
+
+    const auto& signError = result.mDiagnostics[1];
+
+    EXPECT_EQ(signError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(signError.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(signError.mField, "shares");
+    EXPECT_EQ(signError.mRowIndex, 2U);
+    EXPECT_EQ(signError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(signError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsFieldErrorsBeforeTheSignCheck.csv");
+}
+
+TEST(TradeRepublicParserTest, SkipsTheSignCheckWhenSharesAreInvalid) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "x",
+        .mPrice = "10.000000",
+        .mAmount = "10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              1U); // Only the invalid shares; no sign check without a valid share count.
+
+    const auto& sharesError = result.mDiagnostics[0];
+
+    EXPECT_EQ(sharesError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(sharesError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(sharesError.mField, "shares");
+    EXPECT_EQ(sharesError.mRowIndex, 2U);
+    EXPECT_EQ(sharesError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(sharesError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_SkipsTheSignCheckWhenSharesAreInvalid.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfADividendRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "15.01.2024",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1.00",
+        .mFee = "",
+        .mTax = "abc",
+        .mCurrency = "XXX",
+        .mOriginalAmount = "1,25",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "x",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              5U); // Five invalid fields in column order; original_currency USD is valid.
+
+    const auto& dateError = result.mDiagnostics[0];
+
+    EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mField, "date");
+    EXPECT_EQ(dateError.mRowIndex, 2U);
+    EXPECT_EQ(dateError.mTransactionId, "synthetic-dividend-transaction");
+    EXPECT_EQ(dateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfADividendRow.csv");
+
+    const auto& taxError = result.mDiagnostics[1];
+
+    EXPECT_EQ(taxError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(taxError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(taxError.mField, "tax");
+    EXPECT_EQ(taxError.mRowIndex, 2U);
+    EXPECT_EQ(taxError.mTransactionId, "synthetic-dividend-transaction");
+    EXPECT_EQ(taxError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfADividendRow.csv");
+
+    const auto& currencyError = result.mDiagnostics[2];
+
+    EXPECT_EQ(currencyError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(currencyError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(currencyError.mField, "currency");
+    EXPECT_EQ(currencyError.mRowIndex, 2U);
+    EXPECT_EQ(currencyError.mTransactionId, "synthetic-dividend-transaction");
+    EXPECT_EQ(currencyError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfADividendRow.csv");
+
+    const auto& originalAmountError = result.mDiagnostics[3];
+
+    EXPECT_EQ(originalAmountError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(originalAmountError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(originalAmountError.mField, "original_amount");
+    EXPECT_EQ(originalAmountError.mRowIndex, 2U);
+    EXPECT_EQ(originalAmountError.mTransactionId, "synthetic-dividend-transaction");
+    EXPECT_EQ(originalAmountError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfADividendRow.csv");
+
+    const auto& rateError = result.mDiagnostics[4];
+
+    EXPECT_EQ(rateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(rateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(rateError.mField, "fx_rate");
+    EXPECT_EQ(rateError.mRowIndex, 2U);
+    EXPECT_EQ(rateError.mTransactionId, "synthetic-dividend-transaction");
+    EXPECT_EQ(rateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfADividendRow.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsAnUnknownCurrencyOnceForAPlainDividend) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1.250000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "XXX",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              1U); // The currency column is also the amount currency, and is reported once.
+
+    const auto& currencyError = result.mDiagnostics[0];
+
+    EXPECT_EQ(currencyError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(currencyError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(currencyError.mField, "currency");
+    EXPECT_EQ(currencyError.mRowIndex, 2U);
+    EXPECT_EQ(currencyError.mTransactionId, "synthetic-dividend-transaction");
+    EXPECT_EQ(
+        currencyError.mSourceFile,
+        "taxbroker_TradeRepublicParserTest_ReportsAnUnknownCurrencyOnceForAPlainDividend.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfABondInterestRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "x",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Test Bond",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-1.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-interest-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 3U); // A bad date, a missing ISIN and a negative amount.
+
+    const auto& dateError = result.mDiagnostics[0];
+
+    EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mField, "date");
+    EXPECT_EQ(dateError.mRowIndex, 2U);
+    EXPECT_EQ(dateError.mTransactionId, "synthetic-interest-transaction");
+    EXPECT_EQ(dateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfABondInterestRow.csv");
+
+    const auto& symbolError = result.mDiagnostics[1];
+
+    EXPECT_EQ(symbolError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(symbolError.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(symbolError.mField, "symbol");
+    EXPECT_EQ(symbolError.mRowIndex, 2U);
+    EXPECT_EQ(symbolError.mTransactionId, "synthetic-interest-transaction");
+    EXPECT_EQ(symbolError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfABondInterestRow.csv");
+
+    const auto& amountError = result.mDiagnostics[2];
+
+    EXPECT_EQ(amountError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(amountError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(amountError.mField, "amount");
+    EXPECT_EQ(amountError.mRowIndex, 2U);
+    EXPECT_EQ(amountError.mTransactionId, "synthetic-interest-transaction");
+    EXPECT_EQ(amountError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfABondInterestRow.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfASplitRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "x",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-split-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 2U); // A bad date and a share count of zero.
+
+    const auto& dateError = result.mDiagnostics[0];
+
+    EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mField, "date");
+    EXPECT_EQ(dateError.mRowIndex, 2U);
+    EXPECT_EQ(dateError.mTransactionId, "synthetic-split-transaction");
+    EXPECT_EQ(dateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfASplitRow.csv");
+
+    const auto& sharesError = result.mDiagnostics[1];
+
+    EXPECT_EQ(sharesError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(sharesError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(sharesError.mField, "shares");
+    EXPECT_EQ(sharesError.mRowIndex, 2U);
+    EXPECT_EQ(sharesError.mTransactionId, "synthetic-split-transaction");
+    EXPECT_EQ(sharesError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfASplitRow.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfABenefitRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "x",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "BENEFITS_SAVEBACK",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "XXX",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-benefit-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 3U); // A bad date, amount and currency.
+
+    const auto& dateError = result.mDiagnostics[0];
+
+    EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mField, "date");
+    EXPECT_EQ(dateError.mRowIndex, 2U);
+    EXPECT_EQ(dateError.mTransactionId, "synthetic-benefit-transaction");
+    EXPECT_EQ(dateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfABenefitRow.csv");
+
+    const auto& amountError = result.mDiagnostics[1];
+
+    EXPECT_EQ(amountError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(amountError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(amountError.mField, "amount");
+    EXPECT_EQ(amountError.mRowIndex, 2U);
+    EXPECT_EQ(amountError.mTransactionId, "synthetic-benefit-transaction");
+    EXPECT_EQ(amountError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfABenefitRow.csv");
+
+    const auto& currencyError = result.mDiagnostics[2];
+
+    EXPECT_EQ(currencyError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(currencyError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(currencyError.mField, "currency");
+    EXPECT_EQ(currencyError.mRowIndex, 2U);
+    EXPECT_EQ(currencyError.mTransactionId, "synthetic-benefit-transaction");
+    EXPECT_EQ(currencyError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfABenefitRow.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfAPrivateMarketRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "x",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_BUY",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Test Private Fund",
+        .mSymbol = "XX9000000003",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc",
+        .mFee = "1.00",
+        .mTax = "",
+        .mCurrency = "XXX",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-private-market-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 4U); // A bad date, amount, fee and currency.
+
+    const auto& dateError = result.mDiagnostics[0];
+
+    EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mField, "date");
+    EXPECT_EQ(dateError.mRowIndex, 2U);
+    EXPECT_EQ(dateError.mTransactionId, "synthetic-private-market-transaction");
+    EXPECT_EQ(dateError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfAPrivateMarketRow.csv");
+
+    const auto& amountError = result.mDiagnostics[1];
+
+    EXPECT_EQ(amountError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(amountError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(amountError.mField, "amount");
+    EXPECT_EQ(amountError.mRowIndex, 2U);
+    EXPECT_EQ(amountError.mTransactionId, "synthetic-private-market-transaction");
+    EXPECT_EQ(amountError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfAPrivateMarketRow.csv");
+
+    const auto& feeError = result.mDiagnostics[2];
+
+    EXPECT_EQ(feeError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(feeError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(feeError.mField, "fee");
+    EXPECT_EQ(feeError.mRowIndex, 2U);
+    EXPECT_EQ(feeError.mTransactionId, "synthetic-private-market-transaction");
+    EXPECT_EQ(feeError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfAPrivateMarketRow.csv");
+
+    const auto& currencyError = result.mDiagnostics[3];
+
+    EXPECT_EQ(currencyError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(currencyError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(currencyError.mField, "currency");
+    EXPECT_EQ(currencyError.mRowIndex, 2U);
+    EXPECT_EQ(currencyError.mTransactionId, "synthetic-private-market-transaction");
+    EXPECT_EQ(currencyError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsEveryInvalidFieldOfAPrivateMarketRow.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsInvalidFieldsAfterAMissingDatetime) {
+    const SyntheticCsvRow row{
+        .mDatetime = "",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "abc",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              2U); // The missing datetime first, then the invalid price.
+
+    const auto& datetimeError = result.mDiagnostics[0];
+
+    EXPECT_EQ(datetimeError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(datetimeError.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(datetimeError.mField, "datetime");
+    EXPECT_EQ(datetimeError.mRowIndex, 2U);
+    EXPECT_EQ(datetimeError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(datetimeError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsInvalidFieldsAfterAMissingDatetime.csv");
+
+    const auto& priceError = result.mDiagnostics[1];
+
+    EXPECT_EQ(priceError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(priceError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(priceError.mField, "price");
+    EXPECT_EQ(priceError.mRowIndex, 2U);
+    EXPECT_EQ(priceError.mTransactionId, "synthetic-test-transaction");
+    EXPECT_EQ(priceError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_ReportsInvalidFieldsAfterAMissingDatetime.csv");
+}
+
+TEST(TradeRepublicParserTest, ReportsInvalidFieldsAfterAMissingDatetimeForAnUnknownInterestRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "FUND", // Not "BOND" and not empty, so the interest kind is unknown.
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-interest-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(),
+              2U); // The missing datetime first; the unknown interest kind still stops the row.
+
+    const auto& datetimeError = result.mDiagnostics[0];
+
+    EXPECT_EQ(datetimeError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(datetimeError.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(datetimeError.mField, "datetime");
+    EXPECT_EQ(datetimeError.mRowIndex, 2U);
+    EXPECT_EQ(datetimeError.mTransactionId, "synthetic-interest-transaction");
+    EXPECT_EQ(datetimeError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_"
+              "ReportsInvalidFieldsAfterAMissingDatetimeForAnUnknownInterestRow.csv");
+
+    const auto& assetClassError = result.mDiagnostics[1];
+
+    EXPECT_EQ(assetClassError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(assetClassError.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(assetClassError.mField, "asset_class");
+    EXPECT_EQ(assetClassError.mRowIndex, 2U);
+    EXPECT_EQ(assetClassError.mTransactionId, "synthetic-interest-transaction");
+    EXPECT_EQ(assetClassError.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_"
+              "ReportsInvalidFieldsAfterAMissingDatetimeForAnUnknownInterestRow.csv");
+}
+
+TEST(TradeRepublicParserTest, CountsRowsNotFieldsForTheLocalizedNumberWarning) {
+    const SyntheticCsvRow commaPriceAndAmount{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10,5",
+        .mAmount = "-1,250",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+
+    const SyntheticCsvRow commaShares{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0,5",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-second",
+    };
+
+    const SyntheticCsvRow commaDividend{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1,250",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-dividend-third",
+    };
+
+    const auto result = parseRows({commaPriceAndAmount, commaShares, commaDividend});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    // Row 2 has two comma numbers, rows 3 and 4 one each: 4 errors but 3 rows.
+    ASSERT_EQ(result.mDiagnostics.size(), 5U);
+
+    const auto& priceError = result.mDiagnostics[0];
+
+    EXPECT_EQ(priceError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(priceError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(priceError.mField, "price");
+    EXPECT_EQ(priceError.mRowIndex, 2U);
+    EXPECT_EQ(priceError.mTransactionId, "synthetic-buy-first");
+    EXPECT_EQ(
+        priceError.mSourceFile,
+        "taxbroker_TradeRepublicParserTest_CountsRowsNotFieldsForTheLocalizedNumberWarning.csv");
+
+    const auto& amountError = result.mDiagnostics[1];
+
+    EXPECT_EQ(amountError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(amountError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(amountError.mField, "amount");
+    EXPECT_EQ(amountError.mRowIndex, 2U);
+    EXPECT_EQ(amountError.mTransactionId, "synthetic-buy-first");
+    EXPECT_EQ(
+        amountError.mSourceFile,
+        "taxbroker_TradeRepublicParserTest_CountsRowsNotFieldsForTheLocalizedNumberWarning.csv");
+
+    const auto& sharesError = result.mDiagnostics[2];
+
+    EXPECT_EQ(sharesError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(sharesError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(sharesError.mField, "shares");
+    EXPECT_EQ(sharesError.mRowIndex, 3U);
+    EXPECT_EQ(sharesError.mTransactionId, "synthetic-buy-second");
+    EXPECT_EQ(
+        sharesError.mSourceFile,
+        "taxbroker_TradeRepublicParserTest_CountsRowsNotFieldsForTheLocalizedNumberWarning.csv");
+
+    const auto& dividendAmountError = result.mDiagnostics[3];
+
+    EXPECT_EQ(dividendAmountError.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(dividendAmountError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dividendAmountError.mField, "amount");
+    EXPECT_EQ(dividendAmountError.mRowIndex, 4U);
+    EXPECT_EQ(dividendAmountError.mTransactionId, "synthetic-dividend-third");
+    EXPECT_EQ(
+        dividendAmountError.mSourceFile,
+        "taxbroker_TradeRepublicParserTest_CountsRowsNotFieldsForTheLocalizedNumberWarning.csv");
+
+    const auto& warning = result.mDiagnostics[4];
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::LocalizedNumberFormat);
+    EXPECT_EQ(
+        warning.mSourceFile,
+        "taxbroker_TradeRepublicParserTest_CountsRowsNotFieldsForTheLocalizedNumberWarning.csv");
+    EXPECT_FALSE(warning.mRowIndex.has_value());
+    EXPECT_FALSE(warning.mField.has_value());
+    EXPECT_FALSE(warning.mTransactionId.has_value());
+    EXPECT_TRUE(hasDiagnosticContaining(result, "3 rows have a number with a comma"));
+}
+
+TEST(TradeRepublicParserTest, DoesNotWarnForOneRowWithSeveralCommaNumbers) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "0,5",
+        .mPrice = "10,5",
+        .mAmount = "-1,250",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    // Three comma numbers in one row are still one row, below the threshold of 3.
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+    EXPECT_EQ(countDiagnostics(result, DiagnosticCode::InvalidValue), 3U);
+    EXPECT_EQ(countDiagnostics(result, DiagnosticCode::LocalizedNumberFormat), 0U);
 }
 
 } // namespace

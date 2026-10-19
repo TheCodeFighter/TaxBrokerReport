@@ -41,31 +41,6 @@ std::string_view trim(std::string_view aValue) {
     return aValue;
 }
 
-bool hasValidIntegerGrouping(std::string_view aValue) {
-    const auto firstComma = aValue.find(',');
-    if (firstComma == std::string_view::npos)
-        return true;
-    if (firstComma == 0 || firstComma > 3)
-        return false;
-
-    std::size_t groupLength = 0;
-    for (std::size_t index = firstComma + 1; index < aValue.size(); ++index)
-    {
-        if (aValue[index] == ',')
-        {
-            if (groupLength != 3)
-                return false;
-            groupLength = 0;
-        }
-        else
-        {
-            ++groupLength;
-        }
-    }
-
-    return groupLength == 3;
-}
-
 std::int64_t parseOrThrow(std::string_view aValue, std::int64_t aScale) {
     const auto parsed = numeric_detail::parseScaledInt64(aValue, aScale);
     if (!parsed)
@@ -128,15 +103,7 @@ std::optional<std::int64_t> parseScaledInt64(std::string_view aValue, std::int64
         return std::nullopt;
 
     bool negative = false;
-    if (aValue.front() == '(')
-    {
-        if (aValue.size() < 3 || aValue.back() != ')')
-            return std::nullopt;
-        negative = true;
-        aValue.remove_prefix(1);
-        aValue.remove_suffix(1);
-    }
-    else if (aValue.front() == '+' || aValue.front() == '-')
+    if (aValue.front() == '+' || aValue.front() == '-')
     {
         negative = aValue.front() == '-';
         aValue.remove_prefix(1);
@@ -158,8 +125,6 @@ std::optional<std::int64_t> parseScaledInt64(std::string_view aValue, std::int64
                                     : aValue.substr(decimalPoint + 1);
     if (integerPart.empty() && fractionalPart.empty())
         return std::nullopt;
-    if (!hasValidIntegerGrouping(integerPart))
-        return std::nullopt;
 
     const auto limit = signedMagnitudeLimit(negative);
     const auto integerLimit = limit / static_cast<std::uint64_t>(aScale);
@@ -168,8 +133,6 @@ std::optional<std::int64_t> parseScaledInt64(std::string_view aValue, std::int64
 
     for (const char character : integerPart)
     {
-        if (character == ',')
-            continue;
         if (!std::isdigit(static_cast<unsigned char>(character)))
             return std::nullopt;
 
@@ -261,18 +224,7 @@ NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
     const auto original = aValue;
     ParsedFixedPoint parsed;
 
-    if (aValue.front() == '(')
-    {
-        if (aValue.size() < 3 || aValue.back() != ')')
-        {
-            return NumericError::InvalidInput;
-        }
-
-        parsed.mSourceNegative = true;
-        aValue.remove_prefix(1);
-        aValue.remove_suffix(1);
-    }
-    else if (aValue.front() == '+' || aValue.front() == '-')
+    if (aValue.front() == '+' || aValue.front() == '-')
     {
         parsed.mSourceNegative = aValue.front() == '-';
         aValue.remove_prefix(1);
@@ -284,7 +236,7 @@ NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
                                     ? std::string_view{}
                                     : aValue.substr(decimalPoint + 1);
 
-    if ((integerPart.empty() && fractionalPart.empty()) || !hasValidIntegerGrouping(integerPart))
+    if (integerPart.empty() && fractionalPart.empty())
     {
         return NumericError::InvalidInput;
     }
@@ -293,11 +245,6 @@ NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
 
     for (const auto character : integerPart)
     {
-        if (character == ',')
-        {
-            continue;
-        }
-
         if (character < '0' || character > '9')
         {
             return NumericError::InvalidInput;

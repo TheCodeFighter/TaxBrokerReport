@@ -51,9 +51,12 @@ class TradeRepublicParser final : public CsvParser {
                                const RowParsedValues& aParsedValues,
                                const RowContext& aContext);
 
-    /// Shared income validation; blank withholding and absent broker FX remain unknown.
-    std::optional<ParsedIncome>
-    parseIncome(const csv::CSVRow& aCsvRow, std::string_view aRowKind, const RowContext& aContext);
+    /// Shared income validation; blank withholding and absent broker FX remain unknown. Reports
+    /// every invalid field, and the instrument too when aCheckInstrument is set.
+    std::optional<ParsedIncome> parseIncome(const csv::CSVRow& aCsvRow,
+                                            std::string_view aRowKind,
+                                            bool aCheckInstrument,
+                                            const RowContext& aContext);
 
     // Parsing helpers
     std::optional<Money> parseMoney(std::string_view aValue);
@@ -65,7 +68,7 @@ class TradeRepublicParser final : public CsvParser {
     std::optional<TradeSide> parseTradeSide(std::string_view aValue);
 
     // class helpers
-    static bool isInstrumentValid(std::string_view aContext,
+    static void isInstrumentValid(std::string_view aContext,
                                   const std::string& aIsin,
                                   const std::string& aName,
                                   const RowContext& aRowContext);
