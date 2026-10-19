@@ -49,10 +49,15 @@ TEST(ParseScaledNumberTest, RoundsExcessPrecisionAwayFromZeroAtHalf) {
     EXPECT_EQ(parseMoney("9.99999"), 100'000);
 }
 
-TEST(ParseScaledNumberTest, SupportsWhitespaceGroupingAndParenthesizedNegativeValues) {
-    EXPECT_EQ(parseMoney(" 1,234.50 "), 12'345'000);
-    EXPECT_EQ(parseMoney("(12.34)"), -123'400);
+TEST(ParseScaledNumberTest, SupportsWhitespaceAndLeadingDecimalPoint) {
+    EXPECT_EQ(parseMoney(" 1234.50 "), 12'345'000);
     EXPECT_EQ(parseMoney(".5"), 5'000);
+}
+
+TEST(ParseScaledNumberTest, RejectsDigitGroupingDecimalCommasAndParentheses) {
+    EXPECT_FALSE(parseMoney("1,234.50").has_value());
+    EXPECT_FALSE(parseMoney("(12.34)").has_value());
+    EXPECT_FALSE(parseUnits("0,125").has_value());
 }
 
 TEST(ParseScaledNumberTest, RejectsMalformedAndOutOfRangeValues) {

@@ -121,6 +121,8 @@ TEST(DiagnosticsJsonTest, KeepsEveryDiagnosticCodeStable) {
         ExpectedCode{DiagnosticCode::InvalidValue, "invalid_value"},
         ExpectedCode{DiagnosticCode::InconsistentValue, "inconsistent_value"},
         ExpectedCode{DiagnosticCode::FieldCountMismatch, "field_count_mismatch"},
+        ExpectedCode{DiagnosticCode::LocalizedNumberFormat, "localized_number_format"},
+        ExpectedCode{DiagnosticCode::InvalidHeader, "invalid_header"},
         ExpectedCode{DiagnosticCode::ParseError, "parse_error"},
     };
 

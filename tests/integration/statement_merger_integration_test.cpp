@@ -1013,7 +1013,7 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         const auto& diagnostic = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]);
 
         EXPECT_EQ(diagnostic.mSourceIndex, 1U);
-        EXPECT_EQ(diagnostic.mDiagnostic.mCode, DiagnosticCode::ParseError);
+        EXPECT_EQ(diagnostic.mDiagnostic.mCode, DiagnosticCode::InvalidHeader);
         EXPECT_EQ(diagnostic.mDiagnostic.mSourceFile, "invalid.csv");
         EXPECT_FALSE(diagnostic.mDiagnostic.mRowIndex.has_value());
     } while (std::next_permutation(order.begin(), order.end()));

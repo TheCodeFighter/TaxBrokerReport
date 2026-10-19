@@ -102,6 +102,16 @@ Unit examples:
 | `0.123456785` | `0.12345679` |
 | `-0.123456785` | `-0.12345679` before any trade-side normalization |
 
+Broker numbers use one strict format: an optional sign, digits, and an optional `.` with digits
+(`-1234.5`, `0.125`). Digit grouping, a decimal comma and accounting parentheses are never
+accepted, because `0,125` would otherwise be read as 125 instead of 0.125. Such a value is an
+`invalid_value` error on its field and the row is skipped. There is no lenient import mode.
+
+| Input | Result |
+| --- | --- |
+| `0.125`, `-1234.5`, `1000.50` | accepted |
+| `0,125`, `1,234.5`, `1.000,50`, `(5)` | `invalid_value` |
+
 Once imported, money and units keep their stored precision until a later operation explicitly
 defines another boundary. Formatting a value for display must not change the stored value.
 

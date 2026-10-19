@@ -39,6 +39,24 @@ record. Such a record has the wrong field count and a line break inside a field,
 is rejected with a file-level `parse_error`. A quoted line break inside a record with the right
 field count is valid and stays one row.
 
+The header is checked before any row is read. The Trade Republic parser needs these 18 columns:
+`datetime`, `date`, `category`, `type`, `asset_class`, `name`, `symbol`, `shares`, `price`,
+`amount`, `fee`, `tax`, `currency`, `original_amount`, `original_currency`, `fx_rate`,
+`description` and `transaction_id`. The other export columns are not used and may be missing, and
+extra columns are allowed. A header that misses a required column, for example because the file
+was saved with semicolons, is rejected with one file-level `invalid_header` error and no rows are
+read. A file of 0 bytes stays a `parse_error`.
+
+A row with a rejected field is skipped, and every invalid field of that row gets its own
+diagnostic, in the column order of the export. A sign check (shares or amount against the trade
+side) runs after the field checks and only on valid fields. A missing `datetime` is reported
+first, and the other fields of that row are still checked.
+
+Broker numbers must be plain dot decimals (see `calculations.md`). A comma or parentheses makes the
+field `invalid_value` and skips the row. From 3 such rows in one file, the parser adds one
+file-level `localized_number_format` warning that suggests downloading the export again. A row
+counts once, even if several of its fields have a comma.
+
 An empty line between records: a single empty line is not a record and gets no row number, while
 two or more empty lines in a row become one record with one empty field, rejected on its own row.
 Trade Republic exports contain neither.
