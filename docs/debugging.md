@@ -55,7 +55,7 @@ The existing `taxbrokerreport-dev` image already includes the compiler, GDB, and
 The profiles load `docker/gdbinit` explicitly because Alpine does not register these printers for
 automatic loading. It also enables standard-library expressions such as indexing a vector in Watch.
 There is no separate debugger image. The debug build uses `build/test-debug/`, separate from the
-normal `build/` outputs and `build/coverage/`, and explicitly uses Clang with `-g3 -O0`, frame
+normal `build/dev/` outputs and `build/coverage/`, and explicitly uses Clang with `-g3 -O0`, frame
 pointers, and full type debug information. Container source paths under `/workspace` map to the
 open workspace so breakpoints match your local files. The working directory matches the CTest
 test directory, which also keeps relative test fixture paths working.

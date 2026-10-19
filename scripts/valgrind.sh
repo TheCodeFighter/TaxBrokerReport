@@ -7,10 +7,11 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF'
-Usage: valgrind.sh
+Usage: valgrind.sh [--reuse-build]
 
-  Builds every C++ executable, then runs each one under Valgrind inside the
-  development container. The Trade Republic dump tool uses synthetic test data.
+  Builds build/dev from scratch, then runs each C++ executable under Valgrind
+  inside the development container. The dump tools use synthetic test data.
+  --reuse-build runs the existing build/dev as it is and compiles nothing.
 EOF
 }
 
@@ -20,11 +21,16 @@ if [[ $# -gt 1 ]]; then
     exit 1
 fi
 
+reuse_build=false
+
 if [[ $# -eq 1 ]]; then
     case "$1" in
         -h | --help)
             usage
             exit 0
+            ;;
+        --reuse-build)
+            reuse_build=true
             ;;
         *)
             echo "Unknown option: $1" >&2
@@ -34,18 +40,7 @@ if [[ $# -eq 1 ]]; then
     esac
 fi
 
-ensure_build_tree_writable
-
-if [[ ! -f "$repo_root/build/build.ninja" ]]; then
-    echo "==> Build tree not found; building the backend first..."
-    "$script_dir/build.sh" dev
-else
-    ensure_dev_image
-    echo "==> Refreshing the backend build..."
-    compose run --rm -T dev cmake --build /workspace/build --parallel
-fi
-
-ensure_build_outputs_executable
+prepare_dev_build "$reuse_build"
 
 run_valgrind() {
     local executable="$1"
@@ -65,39 +60,22 @@ run_valgrind() {
 }
 
 run_valgrind \
-    /workspace/build/tests/taxbroker_unit_tests \
+    /workspace/build/dev/tests/taxbroker_unit_tests \
     --gtest_brief=1
 
 run_valgrind \
-    /workspace/build/tests/taxbroker_integration_tests \
+    /workspace/build/dev/tests/taxbroker_integration_tests \
     --gtest_brief=1
 
-run_valgrind /workspace/build/src/taxbroker_server
-
-debug_tools_build_dir="/workspace/build/debug-tools"
-
-echo "==> Configuring the isolated debug tools build..."
-compose run --rm -T \
-    -e CC=clang \
-    -e CXX=clang++ \
-    dev cmake \
-    -S /workspace \
-    -B "$debug_tools_build_dir" \
-    -G Ninja \
-    -DCMAKE_BUILD_TYPE=Debug \
-    -DBUILD_DEBUG_TOOLS=ON
-
-echo "==> Building the local dump tools..."
-compose run --rm -T \
-    dev cmake --build "$debug_tools_build_dir" --target taxbroker_tr_dump taxbroker_exact_dump --parallel
+run_valgrind /workspace/build/dev/src/taxbroker_server
 
 run_valgrind \
-    "$debug_tools_build_dir/tools/taxbroker_tr_dump" \
+    /workspace/build/dev/tools/taxbroker_tr_dump \
     /workspace/tests/test_data/csv/traderepublic_parser_supported_fixture.csv \
     /tmp/taxbroker-tr-parsed.txt \
     /tmp/taxbroker-tr-diagnostics.json
 
 run_valgrind \
-    "$debug_tools_build_dir/tools/taxbroker_exact_dump" \
+    /workspace/build/dev/tools/taxbroker_exact_dump \
     /workspace/tests/test_data/csv/traderepublic_parser_supported_fixture.csv \
     /tmp/taxbroker-exact-arithmetic.txt

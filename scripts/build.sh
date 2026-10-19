@@ -7,10 +7,12 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF'
-Usage: build.sh [dev|prod|docker-build]
+Usage: build.sh [dev|image|docker-build|prod]
 
-    dev            Compile the backend with Clang + Ninja (default).
-    docker-build   Build the dev image, then compile the backend.
+    dev            Remove build/dev, then compile the backend and the debug tools
+                   from scratch with Clang + Ninja (default). Needs the dev image.
+    image          Build only the dev image.
+    docker-build   Build the dev image, then run the dev build.
     prod           Build the production image.
 EOF
 }
@@ -28,6 +30,9 @@ if [[ "$mode" == "-h" || "$mode" == "--help" ]]; then
 elif [[ "$mode" == "prod" ]]; then
     echo "==> Building Docker prod image..."
     compose build prod
+elif [[ "$mode" == "image" ]]; then
+    echo "==> Building Docker dev image..."
+    compose build dev
 else
     if [[ "$mode" != "dev" && "$mode" != "docker-build" ]]; then
         echo "Unknown build mode: $mode" >&2
@@ -40,8 +45,11 @@ else
         compose build dev
     fi
 
-    echo "==> Configuring and building the backend inside the dev container..."
+    ensure_dev_image
     ensure_build_tree_writable
-    compose run --rm -e CC=clang -e CXX=clang++ dev sh -lc 'cmake -S /workspace -B /workspace/build -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build /workspace/build --parallel'
+    reset_build_dir dev
+
+    echo "==> Configuring and building the backend inside the dev container..."
+    compose run --rm -e CC=clang -e CXX=clang++ dev sh -lc 'cmake -S /workspace -B /workspace/build/dev -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_DEBUG_TOOLS=ON && cmake --build /workspace/build/dev --parallel'
     ensure_build_outputs_executable
 fi

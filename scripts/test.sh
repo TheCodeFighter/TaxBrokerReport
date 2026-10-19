@@ -7,15 +7,22 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF'
-Usage: test.sh [--suite unit|integration] [ctest-regex]
+Usage: test.sh [--reuse-build] [--suite unit|integration] [ctest-regex]
 
-  With no arguments, runs the full test suite.
+  With no arguments, builds build/dev from scratch and runs the full test suite.
+  --reuse-build runs the existing build/dev as it is and compiles nothing.
   --suite selects tests by their CTest label.
   An optional regular expression further filters tests by name.
 EOF
 }
 
+reuse_build=false
 test_suite=""
+
+if [[ "${1:-}" == "--reuse-build" ]]; then
+    reuse_build=true
+    shift
+fi
 
 if [[ "${1:-}" == "--suite" ]]; then
     if [[ $# -lt 2 || ( "$2" != "unit" && "$2" != "integration" ) ]]; then
@@ -47,20 +54,9 @@ if [[ "$test_filter" == --* ]]; then
     exit 1
 fi
 
-ensure_build_tree_writable
+prepare_dev_build "$reuse_build"
 
-if [[ ! -f "$repo_root/build/build.ninja" ]]; then
-    echo "==> Build tree not found; building the dev image and backend first..."
-    "$script_dir/build.sh" dev
-else
-    ensure_dev_image
-    echo "==> Refreshing the backend build..."
-    compose run --rm dev sh -lc 'cmake --build /workspace/build --parallel'
-fi
-
-ensure_build_outputs_executable
-
-ctest_options=(--test-dir /workspace/build --output-on-failure --no-tests=error)
+ctest_options=(--test-dir /workspace/build/dev --output-on-failure --no-tests=error)
 
 if [[ -n "$test_suite" ]]; then
     echo "==> Selected test suite: $test_suite"

@@ -78,6 +78,7 @@ ensure_build_tree_writable
 ensure_dev_image
 
 debug_build_dir="/workspace/build/debug-tools"
+reset_build_dir debug-tools
 
 echo "==> Created three merge inputs in $split_dir"
 echo "==> Configuring the isolated Trade Republic merge dump tool..."

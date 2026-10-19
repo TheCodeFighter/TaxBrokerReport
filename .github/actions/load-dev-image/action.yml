@@ -1,0 +1,15 @@
+name: Load dev image
+description: Load the dev image that the Dev image job built for this workflow run.
+
+runs:
+  using: composite
+  steps:
+    - name: Download dev image
+      uses: actions/download-artifact@v4
+      with:
+        name: dev-image
+        path: ${{ runner.temp }}/dev-image
+
+    - name: Load dev image
+      shell: bash
+      run: zstd -dc "$RUNNER_TEMP/dev-image/dev-image.tar.zst" | docker load

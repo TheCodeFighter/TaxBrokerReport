@@ -7,10 +7,12 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF'
-Usage: cppcheck.sh
+Usage: cppcheck.sh [--reuse-build]
 
   Runs Cppcheck against all active project-owned C++ source and header files
-  inside the development container.
+  inside the development container. By default, build/cppcheck is removed and
+  configured from scratch to create the compile database.
+  --reuse-build uses the compile database of the existing build/dev instead.
 EOF
 }
 
@@ -20,11 +22,16 @@ if [[ $# -gt 1 ]]; then
     exit 1
 fi
 
+reuse_build=false
+
 if [[ $# -eq 1 ]]; then
     case "$1" in
         -h | --help)
             usage
             exit 0
+            ;;
+        --reuse-build)
+            reuse_build=true
             ;;
         *)
             echo "Unknown option: $1" >&2
@@ -38,22 +45,31 @@ ensure_dev_image
 ensure_build_tree_writable
 
 if ! compose run --rm -T dev cppcheck --version >/dev/null 2>&1; then
-    echo "==> Cppcheck is missing from the development image; rebuilding it..."
-    compose build dev
+    echo "==> Cppcheck is missing from the development image. Rebuild it with: scripts/build.sh image" >&2
+    exit 1
 fi
 
-analysis_build_dir="/workspace/build/cppcheck"
+if [[ "$reuse_build" == true ]]; then
+    ensure_dev_build_exists
+    analysis_build_name="dev"
+    echo "==> Reusing the compile database of build/dev as it is."
+else
+    analysis_build_name="cppcheck"
+    reset_build_dir "$analysis_build_name"
 
-echo "==> Generating the CMake compile database..."
-compose run --rm -T \
-    -e CC=clang \
-    -e CXX=clang++ \
-    dev cmake \
-    -S /workspace \
-    -B "$analysis_build_dir" \
-    -G Ninja \
-    -DCMAKE_BUILD_TYPE=Debug \
-    -DBUILD_DEBUG_TOOLS=ON
+    echo "==> Generating the CMake compile database..."
+    compose run --rm -T \
+        -e CC=clang \
+        -e CXX=clang++ \
+        dev cmake \
+        -S /workspace \
+        -B "/workspace/build/$analysis_build_name" \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DBUILD_DEBUG_TOOLS=ON
+fi
+
+analysis_build_dir="/workspace/build/$analysis_build_name"
 
 # Ignore findings owned by fetched dependencies. Cppcheck 2.12 also needs lightweight models for
 # GoogleTest registration macros and Clang's __SIZEOF_INT128__ built-in in this Linux container.
@@ -68,7 +84,7 @@ compose run --rm -T dev cppcheck \
     --error-exitcode=1 \
     --inline-suppr \
     --quiet \
-    "--suppress=*:build/cppcheck/_deps/*" \
+    "--suppress=*:build/$analysis_build_name/_deps/*" \
     --suppress=missingIncludeSystem \
     --template=gcc \
     --relative-paths=/workspace \

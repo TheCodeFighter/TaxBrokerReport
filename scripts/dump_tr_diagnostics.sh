@@ -70,6 +70,7 @@ ensure_build_tree_writable
 ensure_dev_image
 
 debug_build_dir="/workspace/build/debug-tools"
+reset_build_dir debug-tools
 
 echo "==> Configuring the isolated Trade Republic diagnostics tool..."
 compose run --rm \
