@@ -1,0 +1,370 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run. Runs on main are never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  dev-image:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Dev image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build development image
+        run: scripts/build.sh image
+
+      - name: Save development image
+        run: docker save taxbrokerreport-dev | zstd -T0 -3 -o "$RUNNER_TEMP/dev-image.tar.zst"
+
+      - name: Upload development image
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-image
+          path: ${{ runner.temp }}/dev-image.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  development-build:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Development build
+    needs: dev-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load development image
+        uses: ./.github/actions/load-dev-image
+
+      - name: Build C++ targets from scratch
+        run: scripts/build.sh dev
+
+      - name: Save build tree
+        run: tar -C "$GITHUB_WORKSPACE" -cf - build/dev | zstd -T0 -3 -o "$RUNNER_TEMP/dev-build.tar.zst"
+
+      - name: Upload build tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-build
+          path: ${{ runner.temp }}/dev-build.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  production-image:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Production image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: scripts/build.sh prod
+
+  tests:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Required tests
+    needs: development-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load development image
+        uses: ./.github/actions/load-dev-image
+
+      - name: Load build tree
+        id: load-build
+        uses: ./.github/actions/load-dev-build
+
+      - name: Run unit tests
+        run: scripts/test.sh --reuse-build --suite unit
+
+      - name: Run integration tests
+        if: ${{ !cancelled() && steps.load-build.outcome == 'success' }}
+        run: scripts/test.sh --reuse-build --suite integration
+
+  valgrind:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Valgrind
+    needs: development-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load development image
+        uses: ./.github/actions/load-dev-image
+
+      - name: Load build tree
+        uses: ./.github/actions/load-dev-build
+
+      - name: Run Valgrind memory checks
+        run: scripts/valgrind.sh --reuse-build
+
+  cppcheck:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Cppcheck
+    needs: development-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load development image
+        uses: ./.github/actions/load-dev-image
+
+      - name: Load build tree
+        uses: ./.github/actions/load-dev-build
+
+      - name: Run Cppcheck static analysis
+        run: scripts/cppcheck.sh --reuse-build
+
+  format-check:
+    # Keep this job id stable: it is the check name that the main-branch protection rule requires.
+    if: github.event_name == 'pull_request'
+    needs: dev-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load development image
+        uses: ./.github/actions/load-dev-image
+
+      - name: Validate code formatting
+        run: scripts/format.sh --check
+
+  # The pull-request commit and its base commit are measured in parallel, each from a clean
+  # coverage build. The coverage job then compares them.
+  coverage-measure:
+    # Keep these names stable: the main-branch protection rule should require both checks.
+    name: Coverage (${{ matrix.target }})
+    if: github.event_name == 'pull_request'
+    needs: dev-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: current
+            ref: ${{ github.event.pull_request.head.sha }}
+          - target: baseline
+            ref: ${{ github.event.pull_request.base.sha }}
+
+    steps:
+      - name: Checkout pull-request commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: current
+
+      - name: Checkout base commit
+        if: matrix.target == 'baseline'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: baseline
+
+      - name: Load development image
+        uses: ./current/.github/actions/load-dev-image
+
+      - name: Use the pull-request coverage script for the base commit
+        if: matrix.target == 'baseline'
+        run: |
+          cp current/scripts/coverage.sh baseline/scripts/coverage.sh
+          chmod +x baseline/scripts/coverage.sh
+
+      - name: Measure coverage
+        working-directory: ${{ matrix.target }}
+        run: scripts/coverage.sh
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.target }}
+          path: ${{ matrix.target }}/coverage/
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage:
+    # Keep this job id stable: it is the check name that the main-branch protection rule requires.
+    if: github.event_name == 'pull_request'
+    needs: coverage-measure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Download pull-request coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-current
+          path: current/coverage
+
+      - name: Download base coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-baseline
+          path: baseline/coverage
+
+      - name: Compare coverage
+        id: compare
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source current/coverage/metrics.env
+          current_lines_hit="$lines_hit"
+          current_lines_found="$lines_found"
+          current_line_rate="$line_rate"
+
+          source baseline/coverage/metrics.env
+          baseline_lines_hit="$lines_hit"
+          baseline_lines_found="$lines_found"
+          baseline_line_rate="$line_rate"
+
+          delta="$(awk \
+            -v current="$current_line_rate" \
+            -v baseline="$baseline_line_rate" \
+            'BEGIN { printf "%+.4f", current - baseline }')"
+
+          dropped=false
+          result="maintained or improved"
+          if ((current_lines_hit * baseline_lines_found < baseline_lines_hit * current_lines_found)); then
+            dropped=true
+            result="decreased"
+          fi
+
+          print_coverage_row() {
+            local suite="$1"
+            local report_path="$2"
+            local lines_hit lines_found line_rate
+            local current_hit current_found current_rate
+            local baseline_hit baseline_found baseline_rate suite_delta
+
+            # shellcheck source=/dev/null
+            source "current/coverage/${report_path}metrics.env"
+            current_hit="$lines_hit"
+            current_found="$lines_found"
+            current_rate="$line_rate"
+
+            # shellcheck source=/dev/null
+            source "baseline/coverage/${report_path}metrics.env"
+            baseline_hit="$lines_hit"
+            baseline_found="$lines_found"
+            baseline_rate="$line_rate"
+
+            suite_delta="$(awk -v current="$current_rate" -v baseline="$baseline_rate" \
+              'BEGIN { printf "%+.4f", current - baseline }')"
+
+            echo "| ${suite} | ${baseline_hit} / ${baseline_found} (${baseline_rate}%) | ${current_hit} / ${current_found} (${current_rate}%) | ${suite_delta} pp |"
+          }
+
+          report_file="current/coverage/pr-summary.md"
+          {
+            echo '<!-- taxbroker-coverage-report -->'
+            if [[ "$dropped" == "true" ]]; then
+              echo '## ⚠️ Test coverage decreased'
+            else
+              echo '## Test coverage'
+            fi
+            echo
+            echo '| Suite | Base covered lines (coverage) | PR covered lines (coverage) | Change |'
+            echo '| --- | ---: | ---: | ---: |'
+            print_coverage_row 'Combined' ''
+            print_coverage_row 'Unit' 'unit/'
+            print_coverage_row 'Integration' 'integration/'
+            echo
+            echo 'All reports measure production code only. Combined coverage is the union of both suites, not the sum of their percentages; only the combined result controls the coverage warning.'
+            echo
+
+            if [[ "$dropped" == "true" ]]; then
+              echo '> [!CAUTION]'
+              echo '> **This pull request reduces line coverage. Please add or improve tests before merging.**'
+            else
+              echo "Coverage **${result}** compared with the pull request's base commit."
+            fi
+          } >"$report_file"
+
+          cat "$report_file" >>"$GITHUB_STEP_SUMMARY"
+          echo "dropped=$dropped" >>"$GITHUB_OUTPUT"
+
+          if [[ "$dropped" == "true" ]]; then
+            echo "::warning title=Line coverage decreased::Coverage changed by ${delta} percentage points. Please add or improve tests before merging."
+          fi
+
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage-html
+          path: current/coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Update coverage comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- taxbroker-coverage-report -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number, per_page: 100 }
+            );
+            const existing = comments.find(
+              comment => comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+            const body = fs.readFileSync('current/coverage/pr-summary.md', 'utf8');
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

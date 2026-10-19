@@ -72,6 +72,7 @@ ensure_build_tree_writable
 ensure_dev_image
 
 debug_build_dir="/workspace/build/debug-tools"
+reset_build_dir debug-tools
 compose run --rm -T -e CC=clang -e CXX=clang++ dev cmake \
     -S /workspace -B "$debug_build_dir" -G Ninja \
     -DCMAKE_BUILD_TYPE=Debug -DBUILD_DEBUG_TOOLS=ON

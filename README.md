@@ -26,16 +26,34 @@ image installs `boost-dev`; production needs no additional Boost runtime library
 
 Run `scripts/format.sh` before opening a pull request. To make Git reject unformatted commits and pushes locally, run `scripts/install_hooks.sh` once; it wires the repo-local hooks in `.githooks/` to `scripts/format.sh --check`.
 
-The `Format Check` GitHub Action runs `scripts/format.sh --check` on every PR to `main`, so
-unformatted code will fail CI and should be fixed before merge.
+The `format-check` job of the `CI` workflow runs `scripts/format.sh --check` on every PR to `main`,
+so unformatted code will fail CI and should be fixed before merge.
 
-Separate GitHub Actions build the development and production images, run tests, run Valgrind, and
-run Cppcheck on every pull request to `main` and after changes reach `main`. Keeping them separate
-makes the failing category immediately visible. In the GitHub ruleset or branch-protection rule for
-`main`, enable **Require status checks to pass before merging** and select **Development build**,
-**Production image**, **Required tests**, **Valgrind**, and **Cppcheck**. Also select **Required
-issue reference**, which requires the pull request's `Related issue` section to contain an issue
-reference or exactly `N/A`.
+The `CI` GitHub Actions workflow runs on every pull request to `main` and after changes reach
+`main`. It builds the development image once and compiles the Debug backend once. The tests,
+Valgrind and Cppcheck jobs load that build and compile nothing, so the failing category stays
+visible. The jobs and timings are described in [docker/docker_doc.md](docker/docker_doc.md). The
+`main` ruleset **Required CI checks** requires **Dev image**, **Development build**, **Production
+image**, **Required tests**, **Valgrind**, **Cppcheck**, **format-check**, **Coverage (current)**,
+**Coverage (baseline)** and **coverage**. **Required issue reference** is a separate workflow; it
+requires the pull request's `Related issue` section to contain an issue reference or exactly `N/A`.
+
+### Build scripts
+
+Every script that builds or checks the code starts from an empty build folder, so a local pass
+means a CI pass. Each script owns one folder below `build/` and deletes only that one: `build/dev`
+(`build.sh dev`, `test.sh`, `valgrind.sh`, `run.sh`), `build/cppcheck`, `build/debug-tools` (dump
+scripts) and `build/coverage`. `debug_tests.sh` stays incremental in `build/test-debug`.
+
+```sh
+scripts/build.sh image          # build only the development image (docker-build also does)
+scripts/build.sh dev            # clean Debug build of build/dev
+scripts/test.sh --reuse-build   # use the existing build/dev, compile nothing
+```
+
+A script that needs the image stops with a hint when it is missing. `test.sh`, `valgrind.sh` and
+`cppcheck.sh` accept `--reuse-build`, which uses the existing `build/dev` as it is and fails clearly
+when it is missing. CI uses the same flag in the jobs that follow the build job.
 
 ### Static analysis
 
@@ -48,7 +66,11 @@ scripts/cppcheck.sh
 The analysis uses CMake's compile database to cover `src/`, `tests/`, `tools/`, and all headers they
 include. It also checks every file in `include/` directly so currently unreferenced headers are not
 missed. Third-party dependencies and the deprecated `legacy-QT-GUI/` tree are intentionally
-excluded. Cppcheck findings fail its dedicated pull-request and `main` workflow.
+excluded. Cppcheck findings fail the `Cppcheck` job of the `CI` workflow.
+
+The script configures `build/cppcheck` from scratch to create the compile database. With
+`scripts/cppcheck.sh --reuse-build` it uses the compile database of the existing `build/dev`
+instead, as the CI job does.
 
 ### Memory checks
 
@@ -58,14 +80,15 @@ Run every C++ executable under Valgrind inside the development container:
 scripts/valgrind.sh
 ```
 
-The script refreshes the normal Debug build and runs the unit tests, integration tests, backend
-server, and Trade Republic dump tool. The dump tool is built in its isolated debug-tools build and
-uses synthetic test data. Valgrind reports invalid memory access and fails on definite or indirect
+The script builds `build/dev` from scratch and runs the unit tests, integration tests, backend
+server, and the Trade Republic and exact-arithmetic dump tools from that one build. The dump tools
+use synthetic test data. Valgrind reports invalid memory access and fails on definite or indirect
 memory leaks. Each test executable is started once to avoid Valgrind startup overhead for every
-test discovered by CTest.
+test discovered by CTest. With `scripts/valgrind.sh --reuse-build` it runs the existing `build/dev`
+as it is and compiles nothing.
 
-The dedicated `Valgrind` workflow runs the same memory checks for pull requests and after changes
-reach `main`.
+The `Valgrind` job of the `CI` workflow runs the same memory checks for pull requests and after
+changes reach `main`, on the build that the `Development build` job made.
 
 ### Test suites
 
@@ -80,10 +103,14 @@ scripts/test.sh --suite integration
 scripts/test.sh --suite integration StatementMergerIntegrationTest
 ```
 
-Inside the development container, `ctest --test-dir /workspace/build -L unit` and
-`ctest --test-dir /workspace/build -L integration` select the same suites. CI runs them in separate
-steps, including integration tests after a unit-test failure when the build succeeded. The existing
-**Required tests** check still requires both suites to pass.
+`scripts/test.sh` builds `build/dev` from scratch first. Add `--reuse-build` as the first argument
+(for example `scripts/test.sh --reuse-build --suite unit`) to run the existing `build/dev` as it is
+without compiling.
+
+Inside the development container, `ctest --test-dir /workspace/build/dev -L unit` and
+`ctest --test-dir /workspace/build/dev -L integration` select the same suites. CI runs them in
+separate steps on the shared build, including integration tests after a unit-test failure when the
+build was loaded. The **Required tests** check still requires both suites to pass.
 
 ### Debug tests in VS Code
 
@@ -100,8 +127,8 @@ Run the test suite with coverage instrumentation inside the development containe
 scripts/coverage.sh
 ```
 
-Each run rebuilds the isolated coverage target and clears its instrumentation metadata so removed
-or stashed sources cannot leak into the reports.
+Each run deletes `build/coverage` and builds it from scratch, so removed or stashed sources cannot
+leak into the reports. The script needs the development image and never builds it.
 
 The script keeps its instrumented build separate from the normal development build and writes:
 
@@ -115,7 +142,8 @@ Counters are reset between suites, and all three reports use the same production
 (`include/` and `src/`, excluding tests and dependencies). Combined coverage is the union of covered
 lines, not an average or sum of the two suite percentages.
 
-The `Test Coverage` GitHub Action compares every pull request with its exact base commit. Its job
+The `Coverage (current)` and `Coverage (baseline)` jobs of the `CI` workflow measure the pull-request
+commit and its exact base commit in parallel, and the `coverage` job compares them. Its job
 summary and pull-request comment show unit, integration, and combined coverage against the base.
 All three HTML reports are available in one artifact. Only a decrease in combined coverage triggers
 the existing warning; it does not currently block merging.

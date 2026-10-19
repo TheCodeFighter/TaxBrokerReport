@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 compose_file="$repo_root/docker/docker-compose.yml"
+dev_build_dir="$repo_root/build/dev"
 
 ensure_uid_gid_env() {
     # Export UID for compose user mapping and provide a default GID if missing.
@@ -36,7 +37,7 @@ EOF
         return 1
     fi
 
-    local ninja_log="$build_dir/.ninja_log"
+    local ninja_log="$dev_build_dir/.ninja_log"
     if [[ -e "$ninja_log" && ! -w "$ninja_log" ]]; then
         cat <<EOF >&2
 ==> $ninja_log is not writable by the current user.
@@ -48,7 +49,7 @@ EOF
 }
 
 ensure_build_outputs_executable() {
-    local build_dir="$repo_root/build"
+    local build_dir="$dev_build_dir"
 
     if [[ ! -d "$build_dir" ]]; then
         return 0
@@ -161,7 +162,42 @@ compose() {
 }
 
 ensure_dev_image() {
+    # Scripts never build the image on their own; that happens only on an explicit request.
     if ! docker image inspect taxbrokerreport-dev >/dev/null 2>&1; then
-        compose build dev
+        echo "==> The taxbrokerreport-dev image is missing. Build it with: scripts/build.sh image" >&2
+        return 1
     fi
+}
+
+ensure_dev_build_exists() {
+    if [[ ! -f "$dev_build_dir/build.ninja" ]]; then
+        echo "==> build/dev contains no build. Build it with: scripts/build.sh dev" >&2
+        return 1
+    fi
+}
+
+reset_build_dir() {
+    # Every check starts from an empty build tree, so local results match CI.
+    # The container removes and recreates it: files in it are owned by the container user.
+    local build_name="$1"
+
+    echo "==> Removing build/$build_name for a build from scratch..."
+    compose run --rm -T dev sh -c \
+        'rm -rf -- "/workspace/build/$1" && mkdir -p "/workspace/build/$1"' sh "$build_name"
+}
+
+prepare_dev_build() {
+    # Builds build/dev from scratch, or with "true" uses it as it is and compiles nothing.
+    local reuse_build="$1"
+
+    if [[ "$reuse_build" == true ]]; then
+        ensure_dev_image
+        ensure_build_tree_writable
+        ensure_dev_build_exists
+        echo "==> Reusing build/dev as it is; nothing is compiled."
+    else
+        "$script_dir/build.sh" dev
+    fi
+
+    ensure_build_outputs_executable
 }

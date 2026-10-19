@@ -1,0 +1,16 @@
+name: Load dev build
+description: Unpack the build/dev tree that the Development build job compiled for this workflow run.
+
+runs:
+  using: composite
+  steps:
+    - name: Download dev build
+      uses: actions/download-artifact@v4
+      with:
+        name: dev-build
+        path: ${{ runner.temp }}/dev-build
+
+    # The archive keeps the executable bits and timestamps; upload-artifact alone does not.
+    - name: Unpack dev build
+      shell: bash
+      run: zstd -dc "$RUNNER_TEMP/dev-build/dev-build.tar.zst" | tar -x -C "$GITHUB_WORKSPACE"

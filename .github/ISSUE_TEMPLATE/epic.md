@@ -18,10 +18,10 @@ assignees: ""
 
 <!-- Add implementation issues as they are created. -->
 
-- [ ] #
+- #
 
 ## Acceptance criteria
 
 <!-- List the observable conditions that complete the epic. -->
 
-- [ ]
+-

@@ -22,24 +22,33 @@ The Docker test launch profiles above expect a local VS Code window with host Do
 
 The easiest way to work with this environment is using the pre-configured scripts in the `scripts/` directory. These scripts automatically handle the Docker Compose context and common flags.
 
-### 1. Build the Backend (no image rebuild)
-By default, this script only compiles the C++ code using Clang+Ninja inside the existing dev container image.
+Every script that builds or checks the code **starts from an empty build folder**, so a local pass
+means a CI pass. No script builds the dev image on its own: when it is missing, the script stops
+with the hint `scripts/build.sh image`.
+
+### 1. Build the development image
+Builds only the dev image (`taxbrokerreport-dev`). This is the only way to build it besides
+`docker-build`.
+```bash
+./scripts/build.sh image
+```
+
+### 2. Build the Backend
+Deletes `build/dev`, then compiles the backend and the debug tools from scratch with Clang+Ninja
+inside the existing dev image (Debug, `BUILD_DEBUG_TOOLS=ON`).
 ```bash
 ./scripts/build.sh
 ```
-
-### 2. Build the Development Image and Compile Code
-If you need to rebuild the dev image, pass `docker-build` and it will rebuild the image before compiling.
+`docker-build` builds the dev image first and then runs the same build. `prod` builds the
+production image instead:
 ```bash
 ./scripts/build.sh docker-build
-```
-If you want to build the highly-optimized production image instead, pass the `prod` parameter:
-```bash
 ./scripts/build.sh prod
 ```
 
-### 2. Run Tests
-Execute the entire test suite via CTest inside the container:
+### 3. Run Tests
+Execute the entire test suite via CTest inside the container. This builds `build/dev` from
+scratch first:
 ```bash
 ./scripts/test.sh
 ```
@@ -47,12 +56,58 @@ To run specific tests matching a pattern:
 ```bash
 ./scripts/test.sh "tax_processor"
 ```
+`--reuse-build` (first argument) runs the existing `build/dev` as it is. It configures and compiles
+nothing, and fails with a hint when `build/dev` does not exist:
+```bash
+./scripts/test.sh --reuse-build --suite unit
+```
+`valgrind.sh` and `cppcheck.sh` take the same flag. Without it, `cppcheck.sh` configures
+`build/cppcheck` from scratch; with it, it uses the compile database of `build/dev`.
 
-### 3. Run the Server
-Starts the compiled backend server and maps port 8080 to your host machine:
+### 4. Run the Server
+Builds `build/dev` from scratch, then starts the backend server and maps port 8080 to your host
+machine:
 ```bash
 ./scripts/run.sh
 ```
+
+### Build folders
+
+`build/` only holds sibling folders. Each script owns one of them and deletes only that one:
+
+| Folder | Used by |
+| --- | --- |
+| `build/dev` | `build.sh dev`, `test.sh`, `valgrind.sh`, `run.sh`, the CI build job |
+| `build/cppcheck` | `cppcheck.sh` (configure only) |
+| `build/debug-tools` | the `dump_*.sh` scripts |
+| `build/coverage` | `coverage.sh` |
+| `build/test-debug` | `debug_tests.sh` (VS Code), incremental on purpose |
+
+---
+
+## CI
+
+The `CI` workflow (`.github/workflows/ci.yml`) builds the dev image and the Debug backend once per
+run. Later jobs load them and compile nothing:
+
+```text
+Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reuse-build)
+           │                     ├─ Valgrind         (valgrind.sh --reuse-build)
+           │                     └─ Cppcheck         (cppcheck.sh --reuse-build)
+           ├─ format-check                  (pull requests only)
+           └─ Coverage (current) ─┬─ coverage      (pull requests only)
+              Coverage (baseline) ┘
+Production image                   (own Release build inside the Dockerfile)
+```
+
+- `Dev image` runs `build.sh image` and uploads the image as a compressed artifact. A build tree
+  must run in the exact image that compiled it, so the image is shared, not rebuilt per job.
+- `Development build` loads the image, runs `build.sh dev`, and uploads `build/dev` as a tar
+  archive (it keeps the executable bits; the artifact upload alone does not).
+- Artifacts are kept for one day. A new push to a pull request cancels its older run.
+- The coverage jobs measure the pull-request commit and its base commit in parallel, each from a
+  clean GCC build, and `coverage` compares the two reports.
+- The `Production image` job is its own Release build and shares nothing; it is the shipped image.
 
 ---
 

@@ -9,8 +9,9 @@ usage() {
     cat <<'EOF'
 Usage: coverage.sh
 
-  Builds and runs all tests with GCC coverage instrumentation inside the
-  development container. Combined reports are written to coverage/;
+  Removes build/coverage, then builds and runs all tests from scratch with GCC
+  coverage instrumentation inside the development container. Needs the dev
+  image (scripts/build.sh image). Combined reports are written to coverage/;
   unit-only and integration-only reports are written to its suite subdirectories.
 EOF
 }
@@ -36,21 +37,20 @@ if [[ $# -eq 1 ]]; then
 fi
 
 ensure_build_tree_writable
+ensure_dev_image
 
-if [[ "${TBR_COVERAGE_SKIP_IMAGE_BUILD:-0}" == "1" ]]; then
-    ensure_dev_image
-else
-    echo "==> Ensuring the development image contains the coverage tools..."
-    compose build dev
-fi
-
-echo "==> Configuring the isolated coverage build..."
+echo "==> Configuring the isolated coverage build from scratch..."
 compose run --rm -T -e CC=gcc -e CXX=g++ dev bash -s <<'CONTAINER_SCRIPT'
 set -euo pipefail
 
 coverage_build_dir=/workspace/build/coverage
 coverage_report_dir=/workspace/coverage
 lcov_options="--quiet --rc lcov_branch_coverage=1"
+
+# Start from an empty tree: old gcno and gcda files would otherwise leak into the capture.
+# This stays inside the script because CI also runs it on base commits with their older lib.sh,
+# so use only lib.sh functions that the base commit already has.
+cmake -E rm -rf "$coverage_build_dir"
 
 cmake \
     -S /workspace \
@@ -59,11 +59,6 @@ cmake \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path -Wno-missing-field-initializers" \
     -DCMAKE_EXE_LINKER_FLAGS="--coverage"
-
-# Removed targets leave gcno files behind, and zeroing counters only removes gcda files.
-# Rebuild objects and coverage metadata together so capture uses only the current source tree.
-cmake --build "$coverage_build_dir" --target clean
-find "$coverage_build_dir" -type f \( -name '*.gcno' -o -name '*.gcda' \) -delete
 
 cmake --build "$coverage_build_dir" --parallel
 
