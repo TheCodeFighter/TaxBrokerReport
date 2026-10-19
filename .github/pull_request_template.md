@@ -8,7 +8,7 @@
 
 ## Validation
 
-- New or updated automated tests were added, or tests are not required for this change.
-- The change was tested through the application or relevant debug workflow, or this is not applicable.
-- Documentation was updated where needed.
-- Test data is synthetic or fully anonymized; no real or sensitive broker data was added.
+- [ ] New or updated automated tests were added, or tests are not required for this change.
+- [ ] The change was tested through the application or relevant debug workflow, or this is not applicable.
+- [ ] Documentation was updated where needed.
+- [ ] Test data is synthetic or fully anonymized; no real or sensitive broker data was added.
