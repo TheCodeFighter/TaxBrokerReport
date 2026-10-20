@@ -18,6 +18,10 @@ belong in [`diagnostics.md`](diagnostics.md).
   `EventMetadata::mTaxDate`.
 - **Ledger**: the full ordered history of buys, sales, and corporate actions.
 - **FIFO**: shares bought first are treated as sold first.
+- **FIFO match**: an internal link between one sale and the units it uses from one purchase. It
+  is used for the purchase value, holding periods and the loss rule. It is never a Doh-KDVP row.
+- **Filing row**: one purchase or sale row in the Doh-KDVP *popisni list*, as defined in
+  [Doh-KDVP filing rows](#doh-kdvp-filing-rows).
 - **Corporate action**: an event such as a share split, reverse split, merger, or spin-off.
 
 ## Main rule
@@ -49,16 +53,18 @@ Every report run starts with an empty ledger:
 1. Combine, deduplicate, and sort all imported events.
 2. Process every buy, sale, and relevant corporate action up to the end of the selected year.
 3. Use older buys and sales to build the correct FIFO position.
-4. Add a result to the report only when the event that created it happened in the selected year.
-5. Include every in-year capital sale for each processable ISIN, even when its holding period may
-   make it tax-exempt. [`fifo.md`](fifo.md) defines the explicit incomplete-history exception.
+4. Add a sale to the report only when it happened in the selected year. An earlier purchase
+   appears only as a purchase row for the units that in-year sales use.
+5. Include every in-year capital sale for each processable ISIN. [`fifo.md`](fifo.md) defines the
+   explicit incomplete-history exception. How units past the holding period are listed is open
+   (see [Long-held investments](#long-held-investments)).
 
 Each report run rebuilds its own ledger. Running a report for one year must not change the result
 of a later run for another year.
 
 | Event date | What the app does |
 | --- | --- |
-| Before the selected year | Process it to build the correct history, but do not report its result. |
+| Before the selected year | Process it to build the correct history. Do not report an earlier sale. List an earlier purchase only with the units that in-year sales use. |
 | During the selected year | Process it and report any required result. |
 | After the selected year | Do not add it to the ledger or report it. |
 
@@ -82,6 +88,155 @@ quantities, values, and purchase dates change.
 
 Dividends and interest do not create FIFO shares. They can appear in their reports only when their
 tax date is inside the selected year.
+
+## Doh-KDVP filing rows
+
+The app keeps two separate models:
+
+- **Internal FIFO matches** link each sale to the purchase units it uses. They decide the purchase
+  value, holding periods and the loss rule. They are never written to XML as they are.
+- **Filing rows** are the purchase and sale rows of the Doh-KDVP *popisni list* for one ISIN. They
+  are built from the in-year sales and their FIFO matches.
+
+### What the official instructions say
+
+Section 11 of the Doh-KDVP instructions (`doh_odm_kdvp_25.n.sl.pdf` for 2025 and later; the same
+text is in `doh_odm_kdvp_20.n.sl.pdf`):
+
+> *V popisni list se vpišeta ločeno za vsako vrsto vrednostnega papirja oziroma investicijskega
+> kupona vsaka pridobitev in vsaka odsvojitev vrednostnega papirja oziroma investicijskega kupona.
+> Posamezna pridobitev vrednostnega papirja oziroma investicijskega kupona se vpiše v samostojno
+> vrstico tako, da se izpolnijo stolpci 1, 2, 3, 4, 5 in 8 ter 11. Posamezna odsvojitev
+> vrednostnega papirja oziroma investicijskega kupona se vpiše v samostojno vrstico tako, da se
+> izpolnijo stolpci 6, 7, 8, 9 in 10.*
+>
+> *Popisni list se izpolnjuje za tiste vrednostne papirje oziroma investicijske kupone, ki so bili v
+> koledarskem letu odsvojeni pred potekom petnajstih let od dneva, ko so bili pridobljeni.*
+>
+> *V stolpec 3 se vpiše količina pridobljenih vrednostnih papirjev oziroma investicijskih kuponov v
+> posameznem poslu, razvidna iz obračuna o opravljenem poslu pridobitve oziroma iz drugega
+> dokumenta, iz katerega je razvidna pridobitev.*
+>
+> *V stolpec 8 se vpiše izračunana zaloga vrednostnih papirjev oziroma investicijskih kuponov.
+> Zaloge istovrstnega kapitala se vodijo po metodi zaporednih cen (FIFO).*
+
+In short: each purchase and each sale is its own row; a purchase row fills F1 to F5 (and F11), a
+sale row fills F6, F7, F9 and F10; both fill F8, the stock calculated by FIFO. A list is needed
+only for an investment sold in the year. The schema allows either `Purchase` or `Sale` in a row,
+followed by `F8`.
+
+### Project rule: list only the units this year's sales use
+
+For selected year `Y`, the app writes a *popisni list* only for an ISIN with at least one sale in
+`Y`. The list contains:
+
+- **One sale row for each sale in `Y`**, with the full sale quantity (`F7`) and unit value
+  (`F9`). A sale that uses several purchases stays one sale row. The only exception is the split
+  of a partially eligible loss described in [The 30-day loss rule](#the-30-day-loss-rule).
+- **One purchase row for each purchase that a sale in `Y` uses.** `F1` and `F4` come from that
+  purchase. `F3` is the number of its units used by all sales in `Y` together, not the full
+  purchase quantity.
+- **No row for a sale before `Y`.** It was reported in its own year. The purchase units it used
+  are left out of the purchase rows.
+- **No row for unused units.** Units still held at the end of `Y` appear in the list of the year
+  in which they are sold.
+- Rows follow the ledger order (tax date, timestamp, input sequence). A purchase row sits at its
+  purchase position.
+- `F8` is the running total of the listed purchase units minus the listed sale units. Every sale
+  uses only earlier purchases, so `F8` is never negative, and it is 0 after the last sale row.
+- `F2` (way of purchase) is `A` for every stock purchase.
+- `F10` exists only on sale rows. It is `true` (*Da*) unless the 30-day loss rule blocks the loss,
+  and `false` (*Ne*) for the blocked part. A profitable sale gets `true`. The only exception is the
+  developer-mode export of a sale with unknown purchase value ([`fifo.md`](fifo.md)), which
+  leaves `F10` out.
+
+This is simpler for the user than repeating the full history every year. It differs from a literal
+reading of section 11: `F3` is not always the confirmation quantity, and `F8` is the stock of the
+listed units, not the whole holding. The gains do not change: a FIFO over the listed rows uses the
+same units as the internal matches. This reading must be confirmed with an eDavki draft import
+before release.
+
+The rows for split-adjusted history, long-held units and partially eligible losses are decided
+in #267.
+
+### Example: one sale uses two purchases
+
+Selected year 2024:
+
+| Date | Event | Internal FIFO matches |
+| --- | --- | --- |
+| 2024-01-10 | Buy 10 units at EUR 10. | |
+| 2024-02-10 | Buy 20 units at EUR 20. | |
+| 2024-03-10 | Sell 15 units at EUR 30. | 10 units from the 2024-01-10 purchase, 5 from the 2024-02-10 purchase. |
+
+2024 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2024-01-10 | 10 | 10 | 10 |
+| 2 | Purchase | 2024-02-10 | 5 | 20 | 15 |
+| 3 | Sale | 2024-03-10 | 15 | 30 | 0 |
+
+Gain: 15 × 30 − (10 × 10 + 5 × 20) = 450 − 200 = EUR 250. The sale is one row of 15, not two
+sale rows of 10 and 5. The 15 unused units of the 2024-02-10 purchase are not listed.
+
+### Example: a purchase partly sold in an earlier year
+
+| Date | Event | Internal FIFO matches |
+| --- | --- | --- |
+| 2022-03-01 | Buy 15 units at EUR 10. | |
+| 2023-05-10 | Sell 4 units at EUR 12. | 4 units from the 2022-03-01 purchase; 11 remain. |
+| 2024-06-20 | Sell 6 units at EUR 14. | 6 units from the 2022-03-01 purchase; 5 remain. |
+
+2023 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2022-03-01 | 4 | 10 | 4 |
+| 2 | Sale | 2023-05-10 | 4 | 12 | 0 |
+
+2024 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2022-03-01 | 6 | 10 | 6 |
+| 2 | Sale | 2024-06-20 | 6 | 14 | 0 |
+
+Gains: 2023 is 4 × (12 − 10) = EUR 8; 2024 is 6 × (14 − 10) = EUR 24. The 2023 sale is not
+repeated in 2024. The purchase of 15 is split across years as 4 + 6, and its 5 unsold units are
+not listed yet: 4 + 6 + 5 = 15.
+
+### Example: stock left after the year
+
+| Date | Event | Internal FIFO matches |
+| --- | --- | --- |
+| 2024-02-01 | Buy 10 units at EUR 10. | |
+| 2024-05-01 | Sell 4 units at EUR 12. | 4 units from the 2024-02-01 purchase. |
+| 2024-08-01 | Buy 5 units at EUR 11. | |
+| 2024-10-01 | Sell 8 units at EUR 13. | 6 units from the 2024-02-01 purchase, 2 from the 2024-08-01 purchase. |
+| 2025-01-15 | Sell 3 units at EUR 15. | 3 units from the 2024-08-01 purchase. |
+
+2024 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2024-02-01 | 10 | 10 | 10 |
+| 2 | Sale | 2024-05-01 | 4 | 12 | 6 |
+| 3 | Purchase | 2024-08-01 | 2 | 11 | 8 |
+| 4 | Sale | 2024-10-01 | 8 | 13 | 0 |
+
+Gains: 4 × (12 − 10) = EUR 8 and 6 × (13 − 10) + 2 × (13 − 11) = 18 + 4 = EUR 22, so EUR 30
+in total. The 2024-02-01 purchase is one row of 10 (4 + 6) although two sales use it. The 3 units
+still held on 31 December are not listed for 2024.
+
+2025 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2024-08-01 | 3 | 11 | 3 |
+| 2 | Sale | 2025-01-15 | 3 | 15 | 0 |
+
+Gain: 3 × (15 − 11) = EUR 12.
 
 ## Currency conversion and fees
 
@@ -110,14 +265,17 @@ Slovenian rules use these holding periods:
 | 2021 and earlier | 20 completed calendar years |
 
 Official eDavki guidance says that a Doh-KDVP return is not required for capital sold after the
-applicable holding period. TaxBrokerReport does not remove these sales. It reports every in-year
-FIFO match and includes its purchase and sale information, so FURS can decide the final tax
-treatment.
+applicable holding period. Section 11 of the instructions limits the *popisni list* to securities
+sold "*pred potekom petnajstih let od dneva, ko so bili pridobljeni*" (before 15 years from the day
+they were bought).
 
-The holding period must therefore never change:
+How the filing rows show units at or past the holding period is open and is decided in #267. A
+sale may use both older and newer units, so leaving out only the older purchase rows while keeping
+the whole sale row would make `F8` negative.
 
-- which FIFO shares are used by a sale;
-- which matched shares are included in the report; or
+The holding period never changes:
+
+- which FIFO shares are used by a sale; or
 - how a sale containing both older and newer shares is split into FIFO matches.
 
 ## The 30-day loss rule
@@ -143,10 +301,11 @@ replacement purchase. Process competing loss disposals chronologically and use e
 quantity at most once. Supported splits normalize compared quantities to the same share units.
 
 The report model retains eligible and ineligible quantities separately. Split a partially eligible
-disposal into report rows with the same source sale date and unit value; the quantities must add
-back to the original sale and must not consume FIFO inventory twice. For loss rows, Doh-KDVP `F10`
-is `true` when the loss may reduce gains and `false` when it may not. For rows without a loss,
-omit this optional field. The writer does not perform the eligibility calculation.
+disposal into sale rows with the same source sale date and unit value; the quantities must add
+back to the original sale and must not consume FIFO inventory twice. Doh-KDVP `F10` is
+written on every sale row: `true` when the loss may reduce gains or there is no loss, and `false`
+when the 30-day loss rule blocks the loss. The writer does not perform the eligibility
+calculation.
 
 The check must cover all supplied brokers and accounts. Checking only the last buy before the sale
 is not enough.
@@ -253,15 +412,16 @@ selected year.
 ## Example across several years
 
 Assume the selected year is 2024 and all rows refer to the same investment. Prices are left out
-because this example is about dates, FIFO shares, and report output.
+because this example is about dates, FIFO shares, and report output. The exact filing rows for
+this history need the split and long-held rules from #267.
 
 | Date | Event | Ledger result | 2024 report |
 | --- | --- | --- | --- |
-| 2008-05-10 | Buy 10 shares. | Hold 10 shares bought in 2008. | Nothing. |
+| 2008-05-10 | Buy 10 shares. | Hold 10 shares bought in 2008. | No row of its own; see the 2024-06-20 sale. |
 | 2023-03-01 | Sell 4 shares. | Use 4 shares from the 2008 buy; 6 remain. | Nothing because the sale was before 2024. |
-| 2023-09-01 | Buy 8 shares. | Hold 6 older and 8 newer shares. | Nothing. |
+| 2023-09-01 | Buy 8 shares. | Hold 6 older and 8 newer shares. | No row of its own; see the 2024 sales. |
 | 2024-02-01 | Trade Republic records a split. Its announcement says 2 new shares for 1 old share. | The user confirms `2 / 1`; hold 12 older and 16 newer adjusted shares. | Nothing. |
-| 2024-06-20 | Sell 20 shares. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | Report both matches. The older match exceeds 15 years but is still sent to FURS. |
+| 2024-06-20 | Sell 20 shares. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | One sale row of 20. Its purchase units come from the 2008 and 2023 buys. The 2008 units are past 15 years; how they are listed is open (#267). |
 | 2024-12-20 | Sell 4 shares at a loss. | Use 4 newer shares; 4 remain at year-end. | Report the loss, but the January replacement buy means it cannot reduce taxable gains. |
 | 2025-01-05 | Buy 4 shares of the same investment. | Check it only for the 30-day loss rule in the 2024 run. | Nothing. |
 | 2025-02-10 | Sell 2 shares. | Ignore it in the 2024 run. | Nothing. |
@@ -461,9 +621,14 @@ Tests based on this document must prove that:
 - choosing a broker rate requires the documented warning and keeps a visible warning in the result;
 - broker fees use available broker rates without a prompt, otherwise remain in their original
   currency, and never change FURS values;
-- FIFO matches below, at, and above a holding-period limit are all reported;
-- a sale containing both older and newer shares reports every FIFO match;
-- holding time does not change FIFO use or report output;
+- the Doh-KDVP filing rows of the three examples in [Doh-KDVP filing rows](#doh-kdvp-filing-rows)
+  match their literal rows, `F8` values and gains;
+- a sale that uses several purchases is one sale row, and a purchase used by several in-year sales
+  is one purchase row;
+- earlier-year sales and units still held at the end of the year are not listed;
+- a FIFO over the filing rows, independent of the production code, gives the literal gains and
+  `F8` values;
+- holding time does not change FIFO use;
 - replacement buys exactly 30 days before or after a loss are included in the loss check;
 - a December acquisition can affect a January loss in the next reporting year;
 - a later-year replacement buy can change loss eligibility without changing the earlier ledger;
@@ -472,7 +637,9 @@ Tests based on this document must prove that:
 - replacement quantities are allocated chronologically and are not reused by another loss;
 - complete liquidation and the FURS quantitative examples produce their documented outcomes;
 - split-adjusted replacement quantities use comparable units;
-- loss rows serialize explicit `F10` eligibility and unresolved decisions generate no capital XML;
+- every sale row serializes explicit `F10` (`true` for a profitable sale), purchase rows have no
+  `F10`, and unresolved decisions generate no capital XML;
+- every stock purchase row has `F2` = `A`;
 - missing coverage and non-imported activity produce a structured confirmation request;
 - exclusions preserve reliable replacement evidence and allocations for retained losses, including
   declared equivalent instruments with different ISINs;
@@ -502,6 +669,8 @@ Tests based on this document must prove that:
 - [ZDoh-2 in the Slovenian Legal Information System](https://pisrs.si/Pis.web/pregledPredpisa?id=ZAKO4697)
 - [FURS guidance for sales of securities, interests, and investment coupons](https://www.fu.gov.si/zivljenjski_dogodki_prebivalci/odsvojil_sem_vrednostne_papirje_druge_deleze_ali_investicijske_kupone)
 - [eDavki Doh-KDVP filing guidance](https://edavki.durs.si/EdavkiPortal/OpenPortal/CommonPages/Opdynp/PageD.aspx?category=vrednostni_papirji_drugi_delezi_investicijski_kuponi)
+- [Doh-KDVP instructions for 2025 and later, section 11](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_kdvp_25.n.sl.pdf)
+- [Doh-KDVP instructions before 2025, section 11](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_kdvp_20.n.sl.pdf)
 - [eDavki explanation of the 30-day loss rule](https://edavki.durs.si/EdavkiPortal/OpenPortal/Pages/Faq/Faq.aspx?qq=ZDoh)
 - [FURS detailed quantitative loss-rule examples](https://www.fu.gov.si/fileadmin/Internet/Davki_in_druge_dajatve/Podrocja/Dohodnina/Dohodek_iz_kapitala/Opis/Dobicek_iz_kapitala_-_pravilo_navidezne_odsvojitve_kapitala.docx)
 - [FURS capital-income guidance, including Trade Republic and IBKR](https://www.fu.gov.si/fileadmin/Internet/Davki_in_druge_dajatve/Podrocja/Dohodnina/Dohodek_iz_kapitala/Opis/Obresti_dividende_in_dobicek_iz_kapitala.doc)

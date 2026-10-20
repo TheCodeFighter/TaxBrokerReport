@@ -143,6 +143,9 @@ The 2023 sale is not reported for 2024, but it changes the 2024 opening position
 creates two FIFO matches, even though its purchase lots and sale came from different brokers and
 accounts. The second lot keeps `0.25000000` units.
 
+FIFO matches are internal. The Doh-KDVP filing rows built from them are defined in
+[`tax_rules.md`](tax_rules.md#doh-kdvp-filing-rows).
+
 ## Supported corporate actions
 
 The processor supports a split or reverse split only when:
