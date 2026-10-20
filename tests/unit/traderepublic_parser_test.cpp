@@ -16969,4 +16969,568 @@ TEST(TradeRepublicParserTest, DoesNotWarnForOneRowWithSeveralCommaNumbers) {
     EXPECT_EQ(countDiagnostics(result, DiagnosticCode::LocalizedNumberFormat), 0U);
 }
 
+TEST(TradeRepublicParserTest, KeepsTheIdentityRateForAnEurTrade) {
+    // A plain EUR trade without fx_rate keeps the identity rate 1.0.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(trade.mExchangeRate, 100'000'000); // 1.0 at eight decimals.
+    EXPECT_EQ(trade.mCurrency, Currency::EUR);
+    EXPECT_EQ(trade.mFeeCurrency, Currency::EUR);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, StoresNoRateForAForeignTradeWithoutFxRate) {
+    // The issue case: a USD trade without any rate in the source must not get 1.0.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.0000000000",
+        .mPrice = "10.00",
+        .mAmount = "-20.00",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "USD",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_FALSE(trade.mExchangeRate.has_value());
+    EXPECT_EQ(trade.mCurrency, Currency::USD);
+    EXPECT_EQ(trade.mFeeCurrency, Currency::USD);
+    EXPECT_EQ(trade.mUnitPrice, 100'000); // USD 10.00 at four decimals.
+    EXPECT_EQ(trade.mUnits, 200'000'000); // 2 units at eight decimals.
+    ASSERT_TRUE(trade.mAmount.has_value());
+    EXPECT_EQ(*trade.mAmount, 200'000); // USD 20.00, buy sign removed.
+    EXPECT_EQ(trade.mFeePaid, 10'000);  // USD 1.00.
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, KeepsTheForeignFactsAndBrokerRateOfAForeignBuy) {
+    // Shaped like a foreign dividend: the amount is in original_currency, the fee in currency.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.00",
+        .mAmount = "-90.00",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(trade.mCurrency, Currency::USD);
+    EXPECT_EQ(trade.mFeeCurrency, Currency::EUR);
+    ASSERT_TRUE(trade.mAmount.has_value());
+    EXPECT_EQ(*trade.mAmount, 1'000'000);       // USD 100.00 from original_amount, not EUR 90.00.
+    EXPECT_EQ(trade.mUnitPrice, 100'000);       // 10.00 at four decimals.
+    EXPECT_EQ(trade.mFeePaid, 10'000);          // EUR 1.00.
+    EXPECT_EQ(trade.mExchangeRate, 90'000'000); // 0.9 at eight decimals.
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, StoresNoRateForAForeignBuyWithoutFxRate) {
+    // Like a foreign dividend: an empty fx_rate is not an error and invents no rate.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.00",
+        .mAmount = "-90.00",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_FALSE(trade.mExchangeRate.has_value());
+    EXPECT_EQ(trade.mCurrency, Currency::USD);
+    ASSERT_TRUE(trade.mAmount.has_value());
+    EXPECT_EQ(*trade.mAmount, 1'000'000); // USD 100.00.
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, KeepsTheForeignFactsAndBrokerRateOfAForeignSell) {
+    // A sell has a positive original_amount.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-10.0000000000",
+        .mPrice = "10.00",
+        .mAmount = "90.00",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
+    EXPECT_EQ(trade.mUnits, 1'000'000'000); // 10 units at eight decimals, sell sign removed.
+    EXPECT_EQ(trade.mCurrency, Currency::USD);
+    ASSERT_TRUE(trade.mAmount.has_value());
+    EXPECT_EQ(*trade.mAmount, 1'000'000); // USD 100.00.
+    EXPECT_EQ(trade.mExchangeRate, 90'000'000);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, KeepsASuppliedRateOnAnEurTrade) {
+    // A supplied rate is kept as given, even for EUR.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "1.0",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(trade.mExchangeRate, 100'000'000);
+    EXPECT_EQ(trade.mCurrency, Currency::EUR);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, RejectsATradeWithAZeroFxRate) {
+    // fx_rate 0 is not a usable rate.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-90.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "fx_rate");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+}
+
+TEST(TradeRepublicParserTest, RejectsATradeWithADecimalCommaFxRate) {
+    // fx_rate 0,9 is a decimal comma.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-90.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0,9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "fx_rate");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+}
+
+TEST(TradeRepublicParserTest, RejectsATradeWithAnUnknownOriginalCurrency) {
+    // XYZ is not a known currency.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-90.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.00",
+        .mOriginalCurrency = "XYZ",
+        .mFxRate = "0.9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "original_currency");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+}
+
+TEST(TradeRepublicParserTest, RejectsATradeWithAnInvalidOriginalAmount) {
+    // original_amount is not a number.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-90.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "abc",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "original_amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+}
+
+TEST(TradeRepublicParserTest, RejectsAForeignBuyWithAPositiveOriginalAmount) {
+    // A buy needs a negative original_amount.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-90.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "original_amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+}
+
+TEST(TradeRepublicParserTest, RejectsAForeignTradeWithAnEmptyOriginalAmount) {
+    // original_currency is set, so original_amount is required.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.00",
+        .mAmount = "-90.00",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "original_amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+}
+
+TEST(TradeRepublicParserTest, RejectsAForeignTradeWithAnInvalidEurAmount) {
+    // amount is not stored for a foreign trade, but it must still be a number.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.00",
+        .mAmount = "abc",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+}
+
+TEST(TradeRepublicParserTest, ReportsAForeignTradeAmountBeforeItsFxRate) {
+    // amount is not a number and fx_rate has a decimal comma.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.00",
+        .mAmount = "abc",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0,9",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    expectNoParsedRecords(result);
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
+    EXPECT_EQ(result.mDiagnostics[1].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[1].mField, "fx_rate");
+    EXPECT_EQ(result.mDiagnostics[1].mRowIndex, 2U);
+}
+
 } // namespace

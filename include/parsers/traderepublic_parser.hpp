@@ -75,6 +75,10 @@ class TradeRepublicParser final : public CsvParser {
     static std::optional<Units> normalizeTradeUnits(TradeSide aTradeSide, Units aSignedUnits);
     static std::optional<Money> normalizeTradeAmount(TradeSide aTradeSide, Money aSignedAmount);
     GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow);
+    /// The broker rate of a trade or income row: the supplied `fx_rate`, or the identity rate for a
+    /// plain EUR row, or none. An invalid supplied rate also gives none; the caller reports it.
+    std::optional<ExchangeRate>
+    parseBrokerRate(std::string_view aRateText, bool aUsesOriginalCurrency, Currency aRowCurrency);
     std::pair<std::string_view, std::string> pickAmountField(const csv::CSVRow& aRow);
     static std::optional<Money> parseTaxPaid(std::string_view aValue);
     static std::optional<Money> parseFeePaid(std::string_view aValue);

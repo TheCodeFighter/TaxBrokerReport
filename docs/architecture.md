@@ -91,7 +91,7 @@ original `mSourceTimestamp`, so equal fallback times cannot hide conflicting exp
 Compare before UTC normalization: crossing midnight while normalizing an offset is not itself
 a mismatch. Do not silently discard purchases or replace the broker tax date.
 
-### Trade Republic income and optional broker FX
+### Trade Republic income, trades and optional broker FX
 
 Dividends, broker cash interest and bond interest share income validation. When
 `original_currency` is supplied, preserve `original_amount` in that currency; otherwise use
@@ -114,6 +114,21 @@ rounds to one rate tick is representable. This numeric validation does not verif
 Required income facts remain required even when broker FX is absent. Empty fields produce
 `MissingField`; invalid supplied fields produce `InvalidValue`. Trade Republic's required
 `datetime` policy above applies to income as well.
+
+A trade follows the same broker-rate rule. A trade gets a broker rate only from `fx_rate`, except
+the identity rate 1.0 for a plain EUR trade without `fx_rate`; any other trade without `fx_rate`
+has no broker rate. When `original_currency` is supplied, the unit price and `original_amount` are
+in that currency and the fee stays in `currency`; the trade keeps the fee currency separately.
+Trade Republic trades in EUR today, so this shape is assumed from foreign income, not verified
+from a foreign trade sample. With `original_currency`, `original_amount` is required: an empty
+value is `MissingField` and skips the row. An invalid supplied `fx_rate`, `original_currency` or
+`original_amount` is an `InvalidValue` error on that field and skips the row. Blocking foreign
+trades from a report is a later processor decision.
+
+For a trade with `original_currency`, a supplied `amount` must still be a valid number; it is not
+stored. An invalid value is an `InvalidValue` error on `amount` and skips the row. An empty
+`amount` stays allowed. Foreign income stays lenient: it ignores `amount` when `original_currency`
+is supplied.
 
 ### Stable input sequence
 

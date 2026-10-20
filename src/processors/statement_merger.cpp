@@ -501,7 +501,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mAmount == aRight.mEvent.mAmount &&
            aLeft.mEvent.mFeePaid == aRight.mEvent.mFeePaid &&
            aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
-           aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency;
+           aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
+           aLeft.mEvent.mFeeCurrency == aRight.mEvent.mFeeCurrency;
 }
 
 [[nodiscard]] bool sameEventFacts(const CorporateActionRecord& aLeft,

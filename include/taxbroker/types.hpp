@@ -136,12 +136,16 @@ struct TradeTransaction {
     TradeSide mTradeSide{};
     Money mUnitPrice{};
     Units mUnits{};
-    // Positive transaction value from the broker export. Some executions omit it.
+    /// Positive transaction value from the broker export. Some executions omit it.
     std::optional<Money> mAmount;
-    // Positive fee paid; zero when the export has no fee.
+    /// Positive fee paid; zero when the export has no fee.
     Money mFeePaid{};
-    ExchangeRate mExchangeRate{EXCHANGE_RATE_SCALE};
+    /// Optional broker rate, separate from the official rate selected during processing.
+    std::optional<ExchangeRate> mExchangeRate;
+    /// Currency of the unit price and the amount.
     Currency mCurrency{Currency::Unknown};
+    /// Currency of mFeePaid; the export's `currency` field.
+    Currency mFeeCurrency{Currency::Unknown};
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };

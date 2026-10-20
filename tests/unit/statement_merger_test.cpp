@@ -493,6 +493,7 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
             .mFeePaid = 100,
             .mExchangeRate = 110000000,
             .mCurrency = Currency::USD,
+            .mFeeCurrency = Currency::EUR,
         }},
         .mCorporateActions = {CorporateAction{
             .mMetadata = makeMetadata(aSourceIndex,
@@ -871,7 +872,7 @@ void expectFieldConflicts(StatementEventKind aKind,
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
-    const std::array<FieldChange<TradeInstrument>, 13> changes{{
+    const std::array<FieldChange<TradeInstrument>, 15> changes{{
         {"tax date",
          [](TradeInstrument& aValue) {
              aValue.mTransactions.front().mMetadata.mTaxDate += DayDuration{1};
@@ -894,16 +895,184 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
         {"missing amount",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mAmount.reset(); }},
         {"fee", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mFeePaid; }},
+        {"missing exchange rate",
+         [](TradeInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
-         [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate; }},
+         [](TradeInstrument& aValue) { ++*aValue.mTransactions.front().mExchangeRate; }},
         {"currency",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mCurrency = Currency::GBP; }},
+        {"fee currency",
+         [](TradeInstrument& aValue) {
+             aValue.mTransactions.front().mFeeCurrency = Currency::GBP;
+         }},
     }};
 
     expectFieldConflicts(
         StatementEventKind::Trade,
         changes,
         [](BrokerStatement& aStatement) -> auto& { return aStatement.mTradeInstruments.front(); });
+}
+
+TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdWhenOnlyOneHasABrokerRate) {
+    const SourceReference firstSource{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("source-0.csv"),
+        .mSourceRow = 2,
+        .mTransactionId = "synthetic-shared-id",
+        .mInputSequence = {0, 0},
+    };
+
+    const SourceReference secondSource{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("source-1.csv"),
+        .mSourceRow = 2,
+        .mTransactionId = "synthetic-shared-id",
+        .mInputSequence = {1, 0},
+    };
+
+    const TradeTransaction firstTrade{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
+        .mTradeSide = TradeSide::Buy,
+        .mUnitPrice = 100'000,       // USD 10.00 at four decimal places.
+        .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
+        .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
+        .mFeePaid = 10'000,          // 1.00 at four decimal places.
+        .mExchangeRate = 90'000'000, // 0.9 at eight decimal places.
+        .mCurrency = Currency::USD,
+        .mFeeCurrency = Currency::EUR,
+    };
+    const TradeTransaction secondTrade{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
+        .mTradeSide = TradeSide::Buy,
+        .mUnitPrice = 100'000,   // USD 10.00 at four decimal places.
+        .mUnits = 1'000'000'000, // 10 units at eight decimal places.
+        .mAmount = 1'000'000,    // USD 100.00 at four decimal places.
+        .mFeePaid = 10'000,      // 1.00 at four decimal places.
+        .mExchangeRate = std::nullopt,
+        .mCurrency = Currency::USD,
+        .mFeeCurrency = Currency::EUR,
+    };
+
+    const StatementMergeInput first{
+        .mSourceIndex = 0,
+        .mParseResult =
+            {
+                .mBroker = Broker::TradeRepublic,
+                .mStatement = {.mTradeInstruments = {{
+                                   .mName = "Synthetic Share",
+                                   .mIsin = "XX9000000001",
+                                   .mAssetClass = AssetClass::Stock,
+                                   .mTransactions = {firstTrade},
+                               }}},
+            },
+    };
+    const StatementMergeInput second{
+        .mSourceIndex = 1,
+        .mParseResult =
+            {
+                .mBroker = Broker::TradeRepublic,
+                .mStatement = {.mTradeInstruments = {{
+                                   .mName = "Synthetic Share",
+                                   .mIsin = "XX9000000001",
+                                   .mAssetClass = AssetClass::Stock,
+                                   .mTransactions = {secondTrade},
+                               }}},
+            },
+    };
+    const std::array inputs{first, second};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(conflict->mEventKinds, std::vector{StatementEventKind::Trade});
+    EXPECT_EQ(conflict->mSources, (std::vector{firstSource, secondSource}));
+}
+
+TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdThatDifferOnlyInFeeCurrency) {
+    const SourceReference firstSource{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("source-0.csv"),
+        .mSourceRow = 2,
+        .mTransactionId = "synthetic-shared-id",
+        .mInputSequence = {0, 0},
+    };
+
+    const SourceReference secondSource{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("source-1.csv"),
+        .mSourceRow = 2,
+        .mTransactionId = "synthetic-shared-id",
+        .mInputSequence = {1, 0},
+    };
+
+    const TradeTransaction firstTrade{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
+        .mTradeSide = TradeSide::Buy,
+        .mUnitPrice = 100'000,       // USD 10.00 at four decimal places.
+        .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
+        .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
+        .mFeePaid = 10'000,          // 1.00 at four decimal places.
+        .mExchangeRate = 90'000'000, // 0.9 at eight decimal places.
+        .mCurrency = Currency::USD,
+        .mFeeCurrency = Currency::EUR,
+    };
+    const TradeTransaction secondTrade{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
+        .mTradeSide = TradeSide::Buy,
+        .mUnitPrice = 100'000,       // USD 10.00 at four decimal places.
+        .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
+        .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
+        .mFeePaid = 10'000,          // 1.00 at four decimal places.
+        .mExchangeRate = 90'000'000, // 0.9 at eight decimal places.
+        .mCurrency = Currency::USD,
+        .mFeeCurrency = Currency::USD,
+    };
+
+    const StatementMergeInput first{
+        .mSourceIndex = 0,
+        .mParseResult =
+            {
+                .mBroker = Broker::TradeRepublic,
+                .mStatement = {.mTradeInstruments = {{
+                                   .mName = "Synthetic Share",
+                                   .mIsin = "XX9000000001",
+                                   .mAssetClass = AssetClass::Stock,
+                                   .mTransactions = {firstTrade},
+                               }}},
+            },
+    };
+    const StatementMergeInput second{
+        .mSourceIndex = 1,
+        .mParseResult =
+            {
+                .mBroker = Broker::TradeRepublic,
+                .mStatement = {.mTradeInstruments = {{
+                                   .mName = "Synthetic Share",
+                                   .mIsin = "XX9000000001",
+                                   .mAssetClass = AssetClass::Stock,
+                                   .mTransactions = {secondTrade},
+                               }}},
+            },
+    };
+    const std::array inputs{first, second};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(conflict->mEventKinds, std::vector{StatementEventKind::Trade});
+    EXPECT_EQ(conflict->mSources, (std::vector{firstSource, secondSource}));
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedCorporateActionFact) {
