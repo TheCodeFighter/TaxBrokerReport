@@ -439,8 +439,9 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      fee_paid: ";
             writeFixedPoint(aOutput, transaction.mFeePaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
-            aOutput << "\n      currency: " << toString(transaction.mCurrency) << '\n';
+            writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            aOutput << "\n      currency: " << toString(transaction.mCurrency)
+                    << "\n      fee_currency: " << toString(transaction.mFeeCurrency) << '\n';
             writeUnitEvidence(aOutput, transaction.mUnitEvidence);
             writeInstrumentEvidence(aOutput, transaction.mInstrumentEvidence);
         }

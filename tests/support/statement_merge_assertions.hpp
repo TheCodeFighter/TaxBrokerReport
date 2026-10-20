@@ -49,7 +49,8 @@ inline auto eventFacts(const TradeTransaction& aEvent) {
                       aEvent.mAmount,
                       aEvent.mFeePaid,
                       aEvent.mExchangeRate,
-                      aEvent.mCurrency};
+                      aEvent.mCurrency,
+                      aEvent.mFeeCurrency};
 }
 
 inline auto eventFacts(const CorporateAction& aEvent) {

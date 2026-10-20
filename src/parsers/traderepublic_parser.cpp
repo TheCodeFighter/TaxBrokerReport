@@ -741,13 +741,8 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     auto grossAmount =
         parseMoney(usesOriginalCurrency ? aCsvRow["original_amount"].get<std::string>()
                                         : aCsvRow["amount"].get<std::string>());
-    const auto rateText = aCsvRow["fx_rate"].get<std::string>();
-    auto exchangeRate = parseExchangeRate(rateText);
-
-    if (!usesOriginalCurrency && currency == Currency::EUR && rateText.empty())
-    {
-        exchangeRate = EXCHANGE_RATE_SCALE;
-    }
+    const auto exchangeRate =
+        parseBrokerRate(aCsvRow["fx_rate"].get<std::string>(), usesOriginalCurrency, currency);
 
     if (grossAmount && *grossAmount < 0)
     {
@@ -759,6 +754,17 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
         .mExchangeRate = exchangeRate,
         .mCurrency = currency == Currency::Unknown ? std::nullopt : std::optional{currency},
     };
+}
+
+std::optional<ExchangeRate> TradeRepublicParser::parseBrokerRate(std::string_view aRateText,
+                                                                 bool aUsesOriginalCurrency,
+                                                                 Currency aRowCurrency) {
+    if (!aUsesOriginalCurrency && aRowCurrency == Currency::EUR && aRateText.empty())
+    {
+        return EXCHANGE_RATE_SCALE;
+    }
+
+    return parseExchangeRate(aRateText);
 }
 
 std::pair<std::string_view, std::string>
@@ -787,10 +793,20 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     const auto sharesText = aCsvRow["shares"].get<std::string>();
     const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
     const auto* units = std::get_if<ParsedFixedPoint>(&importedUnits);
-    const auto amountValue = aCsvRow["amount"].get<std::string>();
+    // Like foreign income, a trade with original_currency has its amount and price in that
+    // currency, while the fee stays in currency.
+    const bool usesOriginalCurrency = !aCsvRow["original_currency"].get<std::string>().empty();
+    const std::string_view amountField = usesOriginalCurrency ? "original_amount" : "amount";
+    const auto amountValue = aCsvRow[std::string{amountField}].get<std::string>();
     auto amount = amountValue.empty() ? std::optional<Money>{} : parseMoney(amountValue);
+    // With original_currency the cash amount is not stored, but it must still be a valid number.
+    const auto cashAmountText = aCsvRow["amount"].get<std::string>();
+    const bool cashAmountInvalid = !cashAmountText.empty() && !parseMoney(cashAmountText);
     auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
-    auto currency = parseCurrency(aCsvRow["currency"].get<std::string>());
+    const auto feeCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
+    const auto currency = parseCurrency(getAmountCurrencyValue(aCsvRow));
+    const auto rateText = aCsvRow["fx_rate"].get<std::string>();
+    const auto exchangeRate = parseBrokerRate(rateText, usesOriginalCurrency, feeCurrency);
     const auto& classLabel = aParsedValues.mAssetClass;
     const auto assetClass = parseAssetClass(classLabel);
 
@@ -821,9 +837,9 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
                                            "trade row");
     }
 
-    if (!amountValue.empty() && !amount)
+    if (cashAmountInvalid)
     {
-        aContext.addInvalidFieldDiagnostic("amount", amountValue, "trade row");
+        aContext.addInvalidFieldDiagnostic("amount", cashAmountText, "trade row");
     }
 
     if (!feePaid)
@@ -831,11 +847,28 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         aContext.addInvalidFieldDiagnostic("fee", aCsvRow["fee"].get<std::string>(), "trade row");
     }
 
-    if (currency == Currency::Unknown)
+    if (feeCurrency == Currency::Unknown)
     {
         aContext.addInvalidFieldDiagnostic("currency",
                                            aCsvRow["currency"].get<std::string>(),
                                            "trade row");
+    }
+
+    if (usesOriginalCurrency && !amount)
+    {
+        aContext.addInvalidFieldDiagnostic("original_amount", amountValue, "trade row");
+    }
+
+    if (usesOriginalCurrency && currency == Currency::Unknown)
+    {
+        aContext.addInvalidFieldDiagnostic("original_currency",
+                                           aCsvRow["original_currency"].get<std::string>(),
+                                           "trade row");
+    }
+
+    if (!exchangeRate && !rateText.empty())
+    {
+        aContext.addInvalidFieldDiagnostic("fx_rate", rateText, "trade row");
     }
 
     // The sign checks use only fields that are valid. Normalize stored trade units; evidence
@@ -860,9 +893,9 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         if (!normalizedAmount)
         {
             aContext.rejectRow(DiagnosticCode::InconsistentValue,
-                               "Field 'amount' is inconsistent with the trade side; the row was "
-                               "skipped.",
-                               "amount");
+                               "Field '" + std::string{amountField} +
+                                   "' is inconsistent with the trade side; the row was skipped.",
+                               std::string{amountField});
         }
         amount = normalizedAmount;
     }
@@ -888,8 +921,9 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mUnits = *normalizedUnits,
         .mAmount = amount,
         .mFeePaid = *feePaid,
-        .mExchangeRate = EXCHANGE_RATE_SCALE,
+        .mExchangeRate = exchangeRate,
         .mCurrency = currency,
+        .mFeeCurrency = feeCurrency,
         .mUnitEvidence = {std::move(evidence)},
         .mInstrumentEvidence = std::move(instrumentEvidence),
     });
