@@ -15,17 +15,10 @@ configure_file(utils/diagnostic_messages_table.cpp.in
 
 # Define the core library
 add_library(taxbroker_core STATIC
-    generators/dho_generator.cpp
-    generators/div_generator.cpp
-    generators/kdvp_generator.cpp
-    generators/xml_generator.cpp
     parsers/ibkr_parser.cpp
-    parsers/parser_factory.cpp
     parsers/traderepublic_parser.cpp
-    processors/fifo_matcher.cpp
     processors/fifo_basis.cpp
     processors/processing_diagnostics.cpp
-    processors/report_processor.cpp
     processors/statement_merger.cpp
     processors/tax_processor.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/diagnostic_messages_table.cpp
@@ -34,8 +27,6 @@ add_library(taxbroker_core STATIC
     utils/exact_arithmetic.cpp
     utils/logger.cpp
     utils/numeric_util.cpp
-    utils/string_utils.cpp
-    utils/thread_pool.cpp
 )
 
 target_include_directories(taxbroker_core PUBLIC 
@@ -70,8 +61,6 @@ target_link_libraries(taxbroker_api
 add_executable(taxbroker_server
     main.cpp
     server/server.cpp
-    server/api/health_api.cpp
-    server/api/report_api.cpp
 )
 
 target_include_directories(taxbroker_server PRIVATE 

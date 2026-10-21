@@ -7,19 +7,6 @@ namespace taxbroker::ibkr {
 class IbkrParser final : public CsvParser {
   public:
     ParseResult parse(const std::filesystem::path& aCsvPath, std::size_t aSourceIndex = 0) override;
-
-  private:
-    TradeTransaction parseTradeRow(...);
-
-    DividendTransaction parseDividendRow(...);
-
-    InterestTransaction parseInterestRow(...);
-
-    Date parseDate(...);
-
-    Money parseMoney(...);
-
-    Units parseUnits(...);
 };
 
 } // namespace taxbroker::ibkr
