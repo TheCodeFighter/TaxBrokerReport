@@ -662,6 +662,73 @@ void addConflictingDuplicateDiagnostic(const std::vector<MergeEvent>& aEvents,
     aDiagnostics.push_back(std::move(diagnostic));
 }
 
+/// Adds one warning for each file that contributed two or more exact copies to a merged event.
+/// Copies are counted per event, not per source, so one event that already carries several rows
+/// of its file is not a repeat. Copies with the same rows are one copy given twice, not a repeat.
+/// A file is identified by its request position, so equal file names do not count as one file.
+void addSameFileDuplicateDiagnostics(const MergeEvent& aMerged,
+                                     const std::vector<MergeEvent>& aEvents,
+                                     std::span<const std::size_t> aCandidates,
+                                     std::vector<MergeDiagnostic>& aDiagnostics) {
+    const auto name = eventName(aMerged);
+    std::map<std::size_t, std::vector<std::size_t>> candidatesByFile;
+
+    for (const auto index : aCandidates)
+    {
+        const auto& metadata = eventMetadata(aEvents[index]);
+
+        candidatesByFile[primarySource(metadata).mInputSequence.mSourceIndex].push_back(index);
+    }
+
+    for (const auto& [sourceIndex, fileCandidates] : candidatesByFile)
+    {
+        std::vector<std::vector<SourceReference>> distinctCopies;
+
+        for (const auto index : fileCandidates)
+        {
+            auto copySources = eventMetadata(aEvents[index]).mSources;
+
+            normalizeSources(copySources);
+
+            if (std::find(distinctCopies.begin(), distinctCopies.end(), copySources) ==
+                distinctCopies.end())
+            {
+                distinctCopies.push_back(std::move(copySources));
+            }
+        }
+
+        if (distinctCopies.size() < 2)
+        {
+            continue;
+        }
+
+        std::vector<SourceReference> sources;
+
+        for (const auto& copySources : distinctCopies)
+        {
+            sources.insert(sources.end(), copySources.begin(), copySources.end());
+        }
+
+        normalizeSources(sources);
+
+        auto message = makeDiagnosticMessage(MessageKey::DuplicateTransactionInFile);
+
+        aDiagnostics.push_back(MergeDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = MergeDiagnosticCode::DuplicateTransactionInFile,
+            .mMessage = std::move(message.mEnglish),
+            .mMessageKey = message.mKey,
+            .mMessageParams = std::move(message.mParams),
+            .mSources = std::move(sources),
+            .mTaxDate = eventMetadata(aMerged).mTaxDate,
+            .mInstrumentName = name.empty() ? std::nullopt : std::optional<std::string>{name},
+            .mIsin = eventIsin(aMerged),
+            .mSourceIndex = sourceIndex,
+            .mEventKinds = {eventKind(aMerged)},
+        });
+    }
+}
+
 void deduplicateEvents(std::vector<MergeEvent>& aEvents,
                        std::vector<MergeDiagnostic>& aDiagnostics) {
     std::stable_sort(aEvents.begin(),
@@ -710,6 +777,8 @@ void deduplicateEvents(std::vector<MergeEvent>& aEvents,
         }
         else
         {
+            // The candidates still hold their own sources here; the move below combines them.
+            addSameFileDuplicateDiagnostics(combined, aEvents, candidates, aDiagnostics);
             canonical = std::move(combined);
         }
 

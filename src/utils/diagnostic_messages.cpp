@@ -100,6 +100,7 @@ constexpr std::array kDefinitions{
     MessageDefinition{
         MessageKey::InconsistentSourceIndexMismatch, "inconsistent_source_index.mismatch", {}},
     MessageDefinition{MessageKey::ConflictingDuplicate, "conflicting_duplicate", {}},
+    MessageDefinition{MessageKey::DuplicateTransactionInFile, "duplicate_transaction_in_file", {}},
     MessageDefinition{MessageKey::InstrumentNameConflict, "instrument_name_conflict", {}},
     MessageDefinition{
         MessageKey::InstrumentAssetClassConflict, "instrument_asset_class_conflict", {}},

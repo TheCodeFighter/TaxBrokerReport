@@ -53,6 +53,7 @@ enum class MergeDiagnosticCode {
     ConflictingDuplicate,
     InstrumentNameConflict,
     InstrumentAssetClassConflict,
+    DuplicateTransactionInFile,
 };
 
 struct InstrumentNameVariant {

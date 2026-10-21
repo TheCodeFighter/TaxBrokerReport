@@ -458,6 +458,10 @@ The later stages use the codes defined by their rule documents. These include:
 
 - `conflicting_duplicate` for two records with the same broker transaction identity but different
   event data;
+- `duplicate_transaction_in_file` for exact copies of one transaction inside one file: a merging
+  warning that blocks no report, one per file and transaction ID, with that file's rows in its
+  source references. The copies are merged into one event, as for copies across files, which add
+  no warning;
 - `invalid_reporting_year`, `quantity_rounding_reconciled`, and `incomplete_history` for
   historical validation;
 - the `corporate_action_*` and `unsupported_corporate_action` codes in

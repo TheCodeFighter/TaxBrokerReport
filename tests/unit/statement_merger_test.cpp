@@ -1607,6 +1607,794 @@ TEST(DeterministicStatementMergerTest, DeduplicatesWithinOneFileButNotEventsWith
     EXPECT_EQ(transactions.front().mMetadata.mSources.size(), 2U);
     EXPECT_EQ(transactions[1].mMetadata.mSources.size(), 1U);
     EXPECT_EQ(transactions[2].mMetadata.mSources.size(), 1U);
+
+    // Only the pair with an ID is a repeat: rows 2 and 3. The two rows without an ID add nothing.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    ASSERT_EQ(warning.mSources.size(), 2U);
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
+}
+
+TEST(DeterministicStatementMergerTest, WarnsWhenOneFileRepeatsAnExactTrade) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mPresentation.mTradeInstruments.front().mTransactions[0];
+
+    EXPECT_EQ(trade.mMetadata.mSources.size(), 2U);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::DuplicateTransactionInFile);
+    EXPECT_TRUE(warning.mMessageParams.empty());
+    EXPECT_EQ(warning.mSourceIndex, 0U);
+    EXPECT_EQ(warning.mTaxDate, date);
+    EXPECT_EQ(warning.mInstrumentName, "Security");
+    EXPECT_EQ(warning.mIsin, "XX0000000001");
+    EXPECT_EQ(warning.mEventKinds, (std::vector{StatementEventKind::Trade}));
+    ASSERT_EQ(warning.mSources.size(), 2U);
+    EXPECT_EQ(warning.mSources[0].mFilename.value(), "one.csv");
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U); // Event index 0 is CSV row 2.
+    EXPECT_EQ(warning.mSources[1].mFilename.value(), "one.csv");
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
+}
+
+TEST(DeterministicStatementMergerTest, DoesNotWarnForTheSameTradeInTwoFiles) {
+    const auto date = makeDate(2024, 2, 1);
+    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                              StatementMergeInput{.mSourceIndex = 1}};
+    // Both files have the same name on purpose: the files differ by request position only.
+    inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "same.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+    inputs[1].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(1,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "same.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
+                  .mTransactions.front()
+                  .mMetadata.mSources.size(),
+              2U);
+}
+
+TEST(DeterministicStatementMergerTest, KeepsOnlyTheConflictForDifferentTradesInOneFile) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE,
+                    .mUnits = UNITS_SCALE, // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE,
+                    .mUnits = 2 * UNITS_SCALE, // 2 units
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[1].mSourceRow, 3U);
+}
+
+TEST(DeterministicStatementMergerTest, WarnsOnlyForTheFileThatRepeatsTheTrade) {
+    const auto date = makeDate(2024, 2, 1);
+    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                              StatementMergeInput{.mSourceIndex = 1}};
+    inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "a.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "a.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+    inputs[1].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(1,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "b.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
+                  .mTransactions.front()
+                  .mMetadata.mSources.size(),
+              3U);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mSourceIndex, 0U);
+    ASSERT_EQ(warning.mSources.size(), 2U); // Rows 2 and 3 of a.csv; b.csv row 2 is not named.
+    EXPECT_EQ(warning.mSources[0].mFilename.value(), "a.csv");
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(warning.mSources[1].mFilename.value(), "a.csv");
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
+}
+
+TEST(DeterministicStatementMergerTest, WarnsOnceForThreeCopiesInOneFile) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              2,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
+                  .mTransactions.front()
+                  .mMetadata.mSources.size(),
+              3U);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mSourceIndex, 0U);
+    ASSERT_EQ(warning.mSources.size(), 3U);
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
+    EXPECT_EQ(warning.mSources[2].mSourceRow, 4U);
+}
+
+TEST(DeterministicStatementMergerTest, WarnsOncePerFileWhenTwoFilesRepeatTheTrade) {
+    const auto date = makeDate(2024, 2, 1);
+    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                              StatementMergeInput{.mSourceIndex = 1}};
+    inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "a.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "a.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+    inputs[1].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(1,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "b.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(1,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "b.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
+                  .mTransactions.front()
+                  .mMetadata.mSources.size(),
+              4U);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& first = std::get<MergeDiagnostic>(result.mDiagnostics[0]);
+    const auto& second = std::get<MergeDiagnostic>(result.mDiagnostics[1]);
+
+    EXPECT_EQ(first.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(first.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(first.mSourceIndex, 0U);
+    ASSERT_EQ(first.mSources.size(), 2U);
+    EXPECT_EQ(first.mSources[0].mFilename.value(), "a.csv");
+    EXPECT_EQ(first.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(first.mSources[1].mFilename.value(), "a.csv");
+    EXPECT_EQ(first.mSources[1].mSourceRow, 3U);
+
+    EXPECT_EQ(second.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(second.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(second.mSourceIndex, 1U);
+    ASSERT_EQ(second.mSources.size(), 2U);
+    EXPECT_EQ(second.mSources[0].mFilename.value(), "b.csv");
+    EXPECT_EQ(second.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(second.mSources[1].mFilename.value(), "b.csv");
+    EXPECT_EQ(second.mSources[1].mSourceRow, 3U);
+}
+
+TEST(DeterministicStatementMergerTest, WarnsWithoutANameWhenTheInstrumentNameIsEmpty) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mInstrumentName, std::nullopt); // An empty name is not shown as a name.
+    EXPECT_EQ(warning.mIsin, "XX0000000001");
+    ASSERT_EQ(warning.mSources.size(), 2U);
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
+}
+
+TEST(DeterministicStatementMergerTest, DoesNotWarnWhenTheSameRowIsGivenTwice) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    // Both events carry the same source reference: one.csv row 2, event index 0.
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mPresentation.mTradeInstruments.front().mTransactions[0];
+
+    ASSERT_EQ(trade.mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mSourceRow, 2U);
+}
+
+TEST(DeterministicStatementMergerTest, DoesNotWarnForOneEventThatCarriesTwoRowsOfItsFile) {
+    const auto firstSource = makeSource(Broker::TradeRepublic, "same.csv", 2, "split-id", {0, 0});
+    const auto secondSource = makeSource(Broker::TradeRepublic, "same.csv", 3, "split-id", {0, 1});
+    // One event built from two rows of one file: nothing is merged, so nothing is repeated.
+    const CorporateAction action{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource, secondSource}},
+        .mType = CorporateActionType::UnresolvedSplit,
+        .mUnitsDelta = 100'000'000, // 1 unit at eight decimal places.
+    };
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back({.mName = "Synthetic Share",
+                                                               .mIsin = "XX9000000001",
+                                                               .mAssetClass = AssetClass::Stock,
+                                                               .mCorporateActions = {action}});
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions.size(),
+              1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
+                  .mCorporateActions.front()
+                  .mMetadata.mSources,
+              (std::vector{firstSource, secondSource}));
+}
+
+TEST(DeterministicStatementMergerTest, DoesNotWarnWhenTheSameTwoRowEventIsGivenTwice) {
+    const auto firstSource = makeSource(Broker::TradeRepublic, "same.csv", 2, "split-id", {0, 0});
+    const auto secondSource = makeSource(Broker::TradeRepublic, "same.csv", 3, "split-id", {0, 1});
+    // Both events carry the same two rows of one file: one copy given twice, not a repeat.
+    const CorporateAction firstAction{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource, secondSource}},
+        .mType = CorporateActionType::UnresolvedSplit,
+        .mUnitsDelta = 100'000'000, // 1 unit at eight decimal places.
+    };
+    const CorporateAction secondAction{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource, secondSource}},
+        .mType = CorporateActionType::UnresolvedSplit,
+        .mUnitsDelta = 100'000'000, // 1 unit at eight decimal places.
+    };
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mTradeInstruments.push_back(
+        {.mName = "Synthetic Share",
+         .mIsin = "XX9000000001",
+         .mAssetClass = AssetClass::Stock,
+         .mCorporateActions = {firstAction, secondAction}});
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions.size(),
+              1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
+                  .mCorporateActions.front()
+                  .mMetadata.mSources,
+              (std::vector{firstSource, secondSource}));
+}
+
+TEST(DeterministicStatementMergerTest, WarnsOnceWhenOneRowIsGivenTwiceAndAnotherRowRepeatsIt) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    // Rows 2, 2 and 3 of one.csv: row 2 given twice is one copy, row 3 is a second copy.
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+                TradeTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dup"),
+                    .mTradeSide = TradeSide::Buy,
+                    .mUnitPrice = UNIT_PRICE_SCALE, // EUR 1
+                    .mUnits = UNITS_SCALE,          // 1 unit
+                    .mCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mPresentation.mTradeInstruments.front().mTransactions[0];
+
+    ASSERT_EQ(trade.mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(trade.mMetadata.mSources[1].mSourceRow, 3U);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mSourceIndex, 0U);
+    ASSERT_EQ(warning.mSources.size(), 2U); // Row 2 is named once.
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
+}
+
+TEST(DeterministicStatementMergerTest, DoesNotWarnForTheSameTwoRowEventInTwoFiles) {
+    const auto firstSourceOfFile0 =
+        makeSource(Broker::TradeRepublic, "same.csv", 2, "split-id", {0, 0});
+    const auto secondSourceOfFile0 =
+        makeSource(Broker::TradeRepublic, "same.csv", 3, "split-id", {0, 1});
+    const auto firstSourceOfFile1 =
+        makeSource(Broker::TradeRepublic, "same.csv", 2, "split-id", {1, 0});
+    const auto secondSourceOfFile1 =
+        makeSource(Broker::TradeRepublic, "same.csv", 3, "split-id", {1, 1});
+    // The same two-row event loaded from two files: one copy per file, so no file repeats it.
+    const CorporateAction actionOfFile0{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15),
+                      .mSources = {firstSourceOfFile0, secondSourceOfFile0}},
+        .mType = CorporateActionType::UnresolvedSplit,
+        .mUnitsDelta = 100'000'000, // 1 unit at eight decimal places.
+    };
+    const CorporateAction actionOfFile1{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15),
+                      .mSources = {firstSourceOfFile1, secondSourceOfFile1}},
+        .mType = CorporateActionType::UnresolvedSplit,
+        .mUnitsDelta = 100'000'000, // 1 unit at eight decimal places.
+    };
+    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                              StatementMergeInput{.mSourceIndex = 1}};
+    inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(
+        {.mName = "Synthetic Share",
+         .mIsin = "XX9000000001",
+         .mAssetClass = AssetClass::Stock,
+         .mCorporateActions = {actionOfFile0}});
+    inputs[1].mParseResult.mStatement.mTradeInstruments.push_back(
+        {.mName = "Synthetic Share",
+         .mIsin = "XX9000000001",
+         .mAssetClass = AssetClass::Stock,
+         .mCorporateActions = {actionOfFile1}});
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions.size(),
+              1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
+                  .mCorporateActions.front()
+                  .mMetadata.mSources,
+              (std::vector{firstSourceOfFile0,
+                           secondSourceOfFile0,
+                           firstSourceOfFile1,
+                           secondSourceOfFile1}));
+}
+
+TEST(DeterministicStatementMergerTest, WarnsWhenOneFileRepeatsAnExactDividend) {
+    const auto date = makeDate(2024, 2, 1);
+    StatementMergeInput input{.mSourceIndex = 0};
+    input.mParseResult.mStatement.mDividendInstruments.push_back(DividendInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                DividendTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dividend"),
+                    .mGrossAmount = 5000,
+                    .mCurrency = Currency::EUR,
+                    .mTaxCurrency = Currency::EUR,
+                },
+                DividendTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              date,
+                                              Broker::TradeRepublic,
+                                              "one.csv",
+                                              std::nullopt,
+                                              "synthetic-dividend"),
+                    .mGrossAmount = 5000,
+                    .mCurrency = Currency::EUR,
+                    .mTaxCurrency = Currency::EUR,
+                },
+            },
+    });
+
+    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.front().mTransactions.size(),
+              1U);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mEventKinds, (std::vector{StatementEventKind::Dividend}));
+    ASSERT_EQ(warning.mSources.size(), 2U);
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
 }
 
 TEST(DeterministicStatementMergerTest, ScopesTransactionIdsByBroker) {
@@ -3647,7 +4435,16 @@ TEST(DeterministicStatementMergerTest, UnresolvedSplitDuplicatesKeepEachQuantity
 
     const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
 
-    EXPECT_TRUE(result.mDiagnostics.empty());
+    // Both copies and the shared source come from file 0, so the merger warns once, naming rows
+    // 2, 3 and 4.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mSources, (std::vector{firstSource, secondSource, sharedSource}));
+
     ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
     EXPECT_EQ(result.mStatement.mChronologicalOrder.front().mKind,
               StatementEventKind::CorporateAction);
