@@ -426,7 +426,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             writeMetadata(aOutput, transaction.mMetadata, "      ");
             aOutput << "\n      side: " << toString(transaction.mTradeSide)
                     << "\n      unit_price: ";
-            writeFixedPoint(aOutput, transaction.mUnitPrice, MONEY_SCALE);
+            writeFixedPoint(aOutput, transaction.mUnitPrice, UNIT_PRICE_SCALE);
             aOutput << "\n      units: ";
             writeFixedPoint(aOutput, transaction.mUnits, UNITS_SCALE);
             aOutput << "\n      amount: ";

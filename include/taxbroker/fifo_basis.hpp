@@ -4,7 +4,7 @@
 
 namespace taxbroker {
 
-/// Exact rational ticks of 10^-12 EUR, including residuals after partial consumption.
+/// Exact rational ticks of 10^-16 EUR, including residuals after partial consumption.
 struct ExactBasis {
     ExactRational mTicks;
 
@@ -26,9 +26,9 @@ struct BasisConsumption {
     LotBasisState mRemaining;
 };
 
-/// Creates exact basis from a positive four-decimal EUR unit price and eight-decimal quantity.
+/// Creates exact basis from a positive eight-decimal EUR unit price and eight-decimal quantity.
 /// The caller supplies the price already converted at the purchase-date rate.
-[[nodiscard]] NumericResult<LotBasisState> createLotBasis(Money aConvertedUnitPrice,
+[[nodiscard]] NumericResult<LotBasisState> createLotBasis(UnitPrice aConvertedUnitPrice,
                                                           Units aOriginalUnits);
 /// Allocates basis proportionally without rounding; consuming all units takes all remaining basis.
 /// Requires an open positive lot and 0 < matched units <= remaining units. Never mutates aLot.

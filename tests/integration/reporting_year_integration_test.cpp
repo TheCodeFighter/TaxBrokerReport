@@ -226,7 +226,7 @@ TEST(ReportingYearIntegrationTest,
 
     EXPECT_EQ(sale.mTradeSide, TradeSide::Sell);
     EXPECT_EQ(sale.mUnits, 300'000'000);
-    EXPECT_EQ(sale.mUnitPrice, 100'000);
+    EXPECT_EQ(sale.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(sale.mMetadata.mTaxDate, parseCalendarDate("2024-12-31"));
     ASSERT_EQ(sale.mMetadata.mSources.size(), 2U);
 

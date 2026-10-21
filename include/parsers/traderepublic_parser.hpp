@@ -60,6 +60,7 @@ class TradeRepublicParser final : public CsvParser {
 
     // Parsing helpers
     std::optional<Money> parseMoney(std::string_view aValue);
+    std::optional<UnitPrice> parseUnitPrice(std::string_view aValue);
     std::optional<ExchangeRate> parseExchangeRate(std::string_view aValue);
     Currency parseCurrency(std::string_view aValue);
     AssetClass parseAssetClass(std::string_view aValue);

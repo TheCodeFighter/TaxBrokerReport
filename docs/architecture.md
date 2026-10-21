@@ -374,11 +374,11 @@ Unresolved dependencies on excluded data require a loss decision for the depende
 cannot be cleared by removing the source instrument's report rows. Relevant following-January
 actions use the same identity, ratio and multiple-source warning rules in the analysis view.
 
-Exact FIFO lot basis retains the complete product of the acquisition-date converted Money unit
-price and imported Units. Proportional allocations remain exact rational values until their
-specified output boundary. Controlled quantity adjustments retain their original source values,
-apply through a run-local overlay and rebuild affected history. The backend tracks the cumulative
-absolute EUR impact of inventory reconciliation per ISIN/run; details are in `calculations.md`
+Exact FIFO lot basis retains the complete product of the acquisition-date converted
+eight-decimal `UnitPrice` and imported Units. Proportional allocations remain exact rational
+values until their specified output boundary. Controlled quantity adjustments retain their
+original source values, apply through a run-local overlay and rebuild affected history. The
+backend tracks the cumulative absolute EUR impact of inventory reconciliation per ISIN/run; details are in `calculations.md`
 and `fifo.md`. This additional processor state does not change parser diagnostics.
 
 The arithmetic layer returns typed numeric failures without report assumptions. The intermediate

@@ -21,6 +21,15 @@ namespace taxbroker {
 using Money = std::int64_t;
 constexpr Money MONEY_SCALE = 10000;
 
+/*
+    Fixed-point unit price with 8 decimal precision, the limit FURS accepts for the
+    Doh-KDVP unit values F4 and F9.
+    Example:
+        1234567891 -> 12.34567891
+*/
+using UnitPrice = std::int64_t;
+constexpr UnitPrice UNIT_PRICE_SCALE = 100000000;
+
 using ExchangeRate = std::int64_t;
 constexpr ExchangeRate EXCHANGE_RATE_SCALE = 100000000;
 
@@ -134,7 +143,7 @@ struct CorporateAction {
 struct TradeTransaction {
     EventMetadata mMetadata;
     TradeSide mTradeSide{};
-    Money mUnitPrice{};
+    UnitPrice mUnitPrice{};
     Units mUnits{};
     /// Positive transaction value from the broker export. Some executions omit it.
     std::optional<Money> mAmount;

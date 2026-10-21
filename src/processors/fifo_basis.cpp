@@ -9,13 +9,13 @@ bool validOpenLot(const LotBasisState& aLot) {
 
 } // namespace
 
-NumericResult<LotBasisState> createLotBasis(Money aConvertedUnitPrice, Units aOriginalUnits) {
+NumericResult<LotBasisState> createLotBasis(UnitPrice aConvertedUnitPrice, Units aOriginalUnits) {
     if (aConvertedUnitPrice <= 0 || aOriginalUnits <= 0)
     {
         return NumericError::UnrepresentableValue;
     }
 
-    // Money has four decimals and Units eight: their raw product is exact 10^-12 EUR ticks.
+    // UnitPrice has eight decimals and Units eight: their raw product is exact 10^-16 EUR ticks.
     // Widen before multiplication so the product is not limited to the int64 input range.
     return LotBasisState{
         aOriginalUnits,
@@ -73,7 +73,7 @@ NumericResult<LotBasisState> adjustLotUnits(const LotBasisState& aLot, Units aAd
 }
 
 NumericResult<ExactRational> basisInEur(const ExactBasis& aBasis) {
-    constexpr std::int64_t basisScale = MONEY_SCALE * UNITS_SCALE;
+    constexpr std::int64_t basisScale = UNIT_PRICE_SCALE * UNITS_SCALE;
 
     return divideExact(aBasis.mTicks, ExactRational{basisScale});
 }
@@ -84,10 +84,10 @@ NumericResult<ExactRational> exactLotUnitValue(const LotBasisState& aLot) {
         return NumericError::UnrepresentableValue;
     }
 
-    // (basis ticks / (Money scale * Units scale)) / (raw units / Units scale):
+    // (basis ticks / (UnitPrice scale * Units scale)) / (raw units / Units scale):
     // the Units scale cancels, leaving exact EUR per whole unit.
     return divideExact(aLot.mRemainingBasis.mTicks,
-                       ExactRational{WideInteger{MONEY_SCALE} * aLot.mRemainingUnits});
+                       ExactRational{WideInteger{UNIT_PRICE_SCALE} * aLot.mRemainingUnits});
 }
 
 } // namespace taxbroker

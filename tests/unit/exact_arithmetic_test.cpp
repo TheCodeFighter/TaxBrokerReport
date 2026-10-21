@@ -108,6 +108,58 @@ TEST(ExactArithmeticTest, ConvertsEachMoneyValueInTheExplicitRateDirection) {
                        NumericError::InvalidExchangeRate);
 }
 
+TEST(ExactArithmeticTest, ConvertsEachUnitPriceInTheExplicitRateDirection) {
+    // USD 10 at eight decimals, 1 EUR = 1.0845 USD: 9.220839096... rounds at the eighth decimal.
+    EXPECT_EQ(
+        requireSuccessfulValue(
+            convertUnitPrice(1'000'000'000, 108'450'000, ExchangeRateDirection::ForeignPerEur)),
+        922'083'910);
+    // USD 10 at eight decimals, 1 USD = 0.9 EUR.
+    EXPECT_EQ(
+        requireSuccessfulValue(
+            convertUnitPrice(1'000'000'000, 90'000'000, ExchangeRateDirection::EurPerForeign)),
+        900'000'000);
+    // One tick at 1 EUR = 2 USD is exactly half a tick: rounded away from zero.
+    EXPECT_EQ(requireSuccessfulValue(
+                  convertUnitPrice(1, 200'000'000, ExchangeRateDirection::ForeignPerEur)),
+              1);
+    EXPECT_EQ(requireSuccessfulValue(
+                  convertUnitPrice(-1, 200'000'000, ExchangeRateDirection::ForeignPerEur)),
+              -1);
+    // One tick at 1 USD = 0.5 EUR is exactly half a tick: rounded away from zero.
+    EXPECT_EQ(requireSuccessfulValue(
+                  convertUnitPrice(1, 50'000'000, ExchangeRateDirection::EurPerForeign)),
+              1);
+    EXPECT_EQ(requireSuccessfulValue(
+                  convertUnitPrice(-1, 50'000'000, ExchangeRateDirection::EurPerForeign)),
+              -1);
+    // The largest UnitPrice at the rate 1.00000000 stays unchanged.
+    EXPECT_EQ(requireSuccessfulValue(convertUnitPrice(std::numeric_limits<std::int64_t>::max(),
+                                                      100'000'000,
+                                                      ExchangeRateDirection::ForeignPerEur)),
+              std::numeric_limits<std::int64_t>::max());
+    expectNumericError(convertUnitPrice(1,
+                                        300'000'000,
+                                        ExchangeRateDirection::ForeignPerEur,
+                                        {.mPolicy = ValuePolicy::Positive}),
+                       NumericError::UnrepresentableValue);
+    expectNumericError(convertUnitPrice(1, 0, ExchangeRateDirection::ForeignPerEur),
+                       NumericError::InvalidExchangeRate);
+    expectNumericError(convertUnitPrice(1, -1, ExchangeRateDirection::EurPerForeign),
+                       NumericError::InvalidExchangeRate);
+    expectNumericError(convertUnitPrice(1, 1, static_cast<ExchangeRateDirection>(99)),
+                       NumericError::InvalidExchangeRate);
+    expectNumericError(convertUnitPrice(std::numeric_limits<std::int64_t>::max(),
+                                        1,
+                                        ExchangeRateDirection::ForeignPerEur),
+                       NumericError::Overflow);
+    // The largest UnitPrice at 1 USD = 2 EUR doubles beyond the range.
+    expectNumericError(convertUnitPrice(std::numeric_limits<std::int64_t>::max(),
+                                        200'000'000,
+                                        ExchangeRateDirection::EurPerForeign),
+                       NumericError::Overflow);
+}
+
 TEST(ExactArithmeticTest, ChecksIntegerEndpointsAndRoundingCarry) {
     constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
     constexpr auto minimum = std::numeric_limits<std::int64_t>::min();

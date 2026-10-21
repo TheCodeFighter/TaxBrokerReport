@@ -624,7 +624,7 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
     ASSERT_NE(buy, nullptr);
     EXPECT_EQ(buy->mMetadata.mTaxDate, makeDate(2024, 2, 29));
     EXPECT_EQ(buy->mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(buy->mUnitPrice, 123'457);
+    EXPECT_EQ(buy->mUnitPrice, 1'234'565'000); // Source 12.345650 at eight decimal places.
     EXPECT_EQ(buy->mUnits, 123'456'790);
     ASSERT_TRUE(buy->mAmount.has_value());
     EXPECT_EQ(*buy->mAmount, 152'400);
@@ -2430,7 +2430,7 @@ TEST(TradeRepublicParserTest, UsesTheDateColumnAndPreservesTheBrokerReportedAmou
     ASSERT_NE(transaction, nullptr);
     EXPECT_EQ(transaction->mMetadata.mTaxDate, makeDate(2024, 2, 29));
     EXPECT_FALSE(transaction->mMetadata.mSourceTimestamp.has_value());
-    EXPECT_EQ(transaction->mUnitPrice, 30'000);
+    EXPECT_EQ(transaction->mUnitPrice, 300'000'000);
     EXPECT_EQ(transaction->mUnits, 200'000'000);
     ASSERT_TRUE(transaction->mAmount.has_value());
     EXPECT_EQ(*transaction->mAmount, 990'000);
@@ -2455,7 +2455,7 @@ TEST(TradeRepublicParserTest, UsesDefaultHourWhenSourceDateIsEarlierThanReportin
     EXPECT_EQ(transaction->mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transaction->mMetadata.mSourceTimestamp, originalTimestamp);
     EXPECT_EQ(transaction->mMetadata.mOrderingTimestamp, defaultOrderingTimestamp);
-    EXPECT_EQ(transaction->mUnitPrice, 100'000);
+    EXPECT_EQ(transaction->mUnitPrice, 1'000'000'000);
     EXPECT_EQ(transaction->mUnits, UNITS_SCALE);
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
@@ -2488,7 +2488,7 @@ TEST(TradeRepublicParserTest, UsesDefaultHourWhenSourceDateIsLaterThanReportingD
     EXPECT_EQ(transaction->mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transaction->mMetadata.mSourceTimestamp, originalTimestamp);
     EXPECT_EQ(transaction->mMetadata.mOrderingTimestamp, defaultOrderingTimestamp);
-    EXPECT_EQ(transaction->mUnitPrice, 100'000);
+    EXPECT_EQ(transaction->mUnitPrice, 1'000'000'000);
     EXPECT_EQ(transaction->mUnits, UNITS_SCALE);
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
@@ -2630,8 +2630,8 @@ TEST(TradeRepublicParserTest, RetainsTradeClassificationConflictForTheSameIsin) 
     const auto& purchase = instrument.mTransactions[0];
     const auto& other = instrument.mTransactions[1];
 
-    EXPECT_EQ(purchase.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(primarySource(purchase.mMetadata).mTransactionId, "synthetic-test-transaction");
     ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
@@ -2643,7 +2643,7 @@ TEST(TradeRepublicParserTest, RetainsTradeClassificationConflictForTheSameIsin) 
     EXPECT_EQ(other.mInstrumentEvidence[0].mSource.mSourceRow, 3U);
     EXPECT_EQ(primarySource(other.mMetadata).mTransactionId, "synthetic-conflicting-asset");
     EXPECT_EQ(other.mUnits, 100'000'000);
-    EXPECT_EQ(other.mUnitPrice, 100'000);
+    EXPECT_EQ(other.mUnitPrice, 1'000'000'000);
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
@@ -2706,8 +2706,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingIdentity) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -2794,8 +2794,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingIsin) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -2882,8 +2882,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithShortDate) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -2970,8 +2970,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithWrongDateSeparators) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3058,8 +3058,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNonNumericDate) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3146,8 +3146,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithImpossibleDate) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3234,8 +3234,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingPrice) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3326,8 +3326,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedPrice) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3414,8 +3414,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithZeroPrice) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3502,8 +3502,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNegativePrice) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3590,8 +3590,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingPrice) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3603,7 +3603,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingPrice) {
         .mName = "Synthetic Test Share",
         .mSymbol = "XX9000000001",
         .mShares = "1.0000000000",
-        .mPrice = "922337203685477.5808",
+        .mPrice = "92233720368.54775808", // One step above the largest UnitPrice.
         .mAmount = "-10.000000",
         .mFee = "",
         .mTax = "",
@@ -3678,8 +3678,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingUnits) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3766,8 +3766,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedUnits) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3854,8 +3854,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingUnits) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -3942,8 +3942,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithZeroUnits) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4030,8 +4030,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNegativeBuyUnits) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4120,8 +4120,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithPositiveSellUnits) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4208,8 +4208,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedUnits) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4296,8 +4296,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedAmount) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4384,8 +4384,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingAmount) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4472,8 +4472,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithZeroAmount) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4560,8 +4560,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithPositiveBuyAmount) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4648,8 +4648,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNegativeSellAmount) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4736,8 +4736,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedAmount) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4824,8 +4824,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedFee) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -4912,8 +4912,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithPositiveFee) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -5000,8 +5000,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedFee) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -5088,8 +5088,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingCurrency) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -5176,8 +5176,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithUnsupportedCurrency) {
 
     EXPECT_EQ(accepted.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(primarySource(accepted.mMetadata).mTransactionId, validRow.mTransactionId);
-    EXPECT_EQ(accepted.mUnits, 100'000'000); // 1 unit at eight decimal places.
-    EXPECT_EQ(accepted.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(accepted.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    EXPECT_EQ(accepted.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
 
     const SyntheticCsvRow invalidRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -9476,7 +9476,7 @@ TEST(TradeRepublicParserTest, RejectsTradeAndReportsErrorWhenDatetimeIsMissing) 
     EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
     EXPECT_EQ(transaction.mUnits, 100'000'000);
-    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(transaction.mAmount, 100'000);
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
 
@@ -10812,8 +10812,8 @@ TEST(TradeRepublicParserTest, RetainsActionClassificationConflictForTheSameIsin)
     const auto& purchase = instrument.mTransactions[0];
     const auto& other = instrument.mCorporateActions[0];
 
-    EXPECT_EQ(purchase.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(primarySource(purchase.mMetadata).mTransactionId, "synthetic-test-transaction");
     ASSERT_EQ(purchase.mInstrumentEvidence.size(), 1U);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
@@ -11085,7 +11085,7 @@ TEST(TradeRepublicParserTest, KeepsSignedSourceUnitsAndDiscardedDigitsForReconci
 }
 
 TEST(TradeRepublicParserTest, RejectsTradePriceBelowHalfStep) {
-    SyntheticCsvRow row{
+    const SyntheticCsvRow acceptedRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
         .mDate = "2024-01-15",
         .mCategory = "TRADING",
@@ -11105,7 +11105,7 @@ TEST(TradeRepublicParserTest, RejectsTradePriceBelowHalfStep) {
         .mTransactionId = "synthetic-validation",
     };
 
-    const auto accepted = parseRows({row});
+    const auto accepted = parseRows({acceptedRow});
 
     ASSERT_TRUE(accepted.mDiagnostics.empty());
     ASSERT_EQ(accepted.mStatement.mTradeInstruments.size(), 1U);
@@ -11116,12 +11116,30 @@ TEST(TradeRepublicParserTest, RejectsTradePriceBelowHalfStep) {
     EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
     EXPECT_EQ(transaction.mUnits, 100'000'000);
-    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(transaction.mAmount, 100'000);
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
 
-    row.mPrice = "0.00004";
-    const TemporaryCsvFile csvFile{{row}};
+    const SyntheticCsvRow rejectedRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "0.000000004", // Below half of the eight-decimal step 0.00000001.
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-validation",
+    };
+    const TemporaryCsvFile csvFile{{rejectedRow}};
     tr::TradeRepublicParser parser;
 
     const auto rejected = parser.parse(csvFile.path());
@@ -11142,6 +11160,392 @@ TEST(TradeRepublicParserTest, RejectsTradePriceBelowHalfStep) {
     EXPECT_EQ(error.mRowIndex, 2U);
     EXPECT_EQ(error.mTransactionId, "synthetic-validation");
     EXPECT_EQ(error.mMessage.find("0.000"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, ImportsTradePriceWithEightDecimals) {
+    // The old four-decimal price would be 10.0001.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.00005",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-5-decimals",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'005'000); // EUR 10.00005 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, ImportsTradePriceWithAllEightDecimals) {
+    // Every one of the eight decimals is kept.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "12.34567891",
+        .mAmount = "-12.35",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-8-decimals",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 1'234'567'891); // EUR 12.34567891 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, RoundsTradePriceHalfUpAtTheNinthDecimal) {
+    // Exactly half of the eight-decimal step: rounded away from zero.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.0000000050",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-half-step",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'000'001); // EUR 10.00000001 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, RoundsTradePriceDownBelowHalfAtTheNinthDecimal) {
+    // Below half of the eight-decimal step: rounded down.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.0000000049",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-below-half",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, AcceptsTradePriceBelowTheOldFourDecimalStep) {
+    // The old four-decimal import rejected this price as zero.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "0.00004",
+        .mAmount = "", // The export may omit the amount; -0.00004 would round to zero.
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-small",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 4'000); // EUR 0.00004 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, AcceptsLargestTradePrice) {
+    // The largest price that fits the eight-decimal storage.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "92233720368.54775807",
+        .mAmount = "-92233720368.5478",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-largest",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice,
+              9'223'372'036'854'775'807); // EUR 92233720368.54775807 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, AcceptsTheSmallestTradePrice) {
+    // Exactly half of the eight-decimal step is the smallest price that rounds to a nonzero value.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "0.000000005",
+        .mAmount = "", // The export may omit the amount; -0.000000005 would round to zero.
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-smallest",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 1); // EUR 0.00000001 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, RoundsTradePriceUpIntoTheNextWholeEuro) {
+    // The half step at the ninth decimal carries through all eight decimals.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.9999999950",
+        .mAmount = "-11.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-carry",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 1'100'000'000); // EUR 11 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, ImportsTradePriceWithMoreThanTenDecimals) {
+    // Extra trailing zeros beyond the ten decimals Trade Republic writes change nothing.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000050000000",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-12-decimals",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'005'000); // EUR 10.00005 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, AcceptsTradePriceThatRoundsDownToTheLargestValue) {
+    // The ninth decimal 4 rounds down, so the price still fits the eight-decimal storage.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "92233720368.547758074",
+        .mAmount = "-92233720368.5478",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-rounds-to-largest",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mUnitPrice,
+              9'223'372'036'854'775'807); // EUR 92233720368.54775807 at eight decimal places.
+    EXPECT_EQ(transaction.mUnits, 100'000'000);
+}
+
+TEST(TradeRepublicParserTest, RejectsTradePriceThatRoundsAboveTheLargestValue) {
+    // The ninth decimal 5 rounds up one step past the largest UnitPrice.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "92233720368.547758075",
+        .mAmount = "-92233720368.5478",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-price-rounds-over",
+    };
+    const TemporaryCsvFile csvFile{{row}};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parse(csvFile.path());
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mBenefitEvents.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
+    EXPECT_EQ(error.mRowIndex, 2U);
+    EXPECT_EQ(error.mTransactionId, "synthetic-price-rounds-over");
+    EXPECT_EQ(error.mMessage.find("92233720368"), std::string::npos);
 }
 
 TEST(TradeRepublicParserTest, RejectsTradeUnitsBelowHalfStep) {
@@ -11176,7 +11580,7 @@ TEST(TradeRepublicParserTest, RejectsTradeUnitsBelowHalfStep) {
     EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
     EXPECT_EQ(transaction.mUnits, 100'000'000);
-    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(transaction.mAmount, 100'000);
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
 
@@ -11236,7 +11640,7 @@ TEST(TradeRepublicParserTest, RejectsTradeAmountBelowHalfStep) {
     EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
     EXPECT_EQ(transaction.mUnits, 100'000'000);
-    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(transaction.mAmount, 100'000);
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
 
@@ -11296,7 +11700,7 @@ TEST(TradeRepublicParserTest, RejectsTradeFeeBelowHalfStep) {
     EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
     EXPECT_EQ(transaction.mUnits, 100'000'000);
-    EXPECT_EQ(transaction.mUnitPrice, 100'000);
+    EXPECT_EQ(transaction.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(transaction.mAmount, 100'000);
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
 
@@ -12851,7 +13255,7 @@ TEST(TradeRepublicParserTest, MissingDatetimeDoesNotCreateAnInstrumentBeforeALat
 
     const auto& trade = instrument.mTransactions.front();
 
-    EXPECT_EQ(trade.mUnitPrice, 100'000);
+    EXPECT_EQ(trade.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(trade.mUnits, 100'000'000);
     EXPECT_EQ(trade.mAmount, 100'000);
     ASSERT_EQ(trade.mMetadata.mSources.size(), 1U);
@@ -13782,8 +14186,8 @@ TEST(TradeRepublicParserTest, RetainsTradeWithMissingName) {
     EXPECT_EQ(instrument.mAssetClass, AssetClass::Stock);
     EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(event.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(event.mUnitPrice, 100'000); // EUR 10 at four decimal places.
-    EXPECT_EQ(event.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(event.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
+    EXPECT_EQ(event.mUnits, 100'000'000);       // 1 unit at eight decimal places.
     EXPECT_EQ(event.mAmount, 100'000);
     EXPECT_EQ(event.mFeePaid, 0);
     EXPECT_EQ(event.mCurrency, Currency::EUR);
@@ -13859,8 +14263,8 @@ TEST(TradeRepublicParserTest, RetainsTradeWithMissingClass) {
     EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(event.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(event.mUnitPrice, 100'000); // EUR 10 at four decimal places.
-    EXPECT_EQ(event.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(event.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
+    EXPECT_EQ(event.mUnits, 100'000'000);       // 1 unit at eight decimal places.
     EXPECT_EQ(event.mAmount, 100'000);
     EXPECT_EQ(event.mFeePaid, 0);
     EXPECT_EQ(event.mCurrency, Currency::EUR);
@@ -13934,8 +14338,8 @@ TEST(TradeRepublicParserTest, RetainsTradeWithUnrecognizedClass) {
     EXPECT_EQ(instrument.mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(event.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(event.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(event.mUnitPrice, 100'000); // EUR 10 at four decimal places.
-    EXPECT_EQ(event.mUnits, 100'000'000); // 1 unit at eight decimal places.
+    EXPECT_EQ(event.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
+    EXPECT_EQ(event.mUnits, 100'000'000);       // 1 unit at eight decimal places.
     EXPECT_EQ(event.mAmount, 100'000);
     EXPECT_EQ(event.mFeePaid, 0);
     EXPECT_EQ(event.mCurrency, Currency::EUR);
@@ -14387,8 +14791,8 @@ TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassLast) {
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "");
     EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(first.mAmount, 100'000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
 
@@ -14403,8 +14807,8 @@ TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassLast) {
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(second.mAmount, 100'000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
 
@@ -14495,8 +14899,8 @@ TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassFirst) 
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(first.mAmount, 100'000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
 
@@ -14511,8 +14915,8 @@ TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassFirst) 
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "");
     EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(second.mAmount, 100'000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
 
@@ -14601,8 +15005,8 @@ TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassLa
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
     EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(first.mAmount, 100'000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
 
@@ -14617,8 +15021,8 @@ TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassLa
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(second.mAmount, 100'000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
 
@@ -14707,8 +15111,8 @@ TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassFi
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(first.mAmount, 100'000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
 
@@ -14723,8 +15127,8 @@ TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassFi
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
     EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(second.mAmount, 100'000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
 
@@ -14839,8 +15243,8 @@ TEST(TradeRepublicParserTest, LaterMatchingClassCannotClearAClassConflict) {
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(first.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(first.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(first.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(first.mAmount, 100'000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
 
@@ -14855,8 +15259,8 @@ TEST(TradeRepublicParserTest, LaterMatchingClassCannotClearAClassConflict) {
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
     EXPECT_EQ(second.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(second.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(second.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(second.mAmount, 100'000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
 
@@ -14871,8 +15275,8 @@ TEST(TradeRepublicParserTest, LaterMatchingClassCannotClearAClassConflict) {
     EXPECT_EQ(third.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(third.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(third.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(third.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(third.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(third.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(third.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(third.mAmount, 100'000);
     EXPECT_EQ(third.mCurrency, Currency::EUR);
 
@@ -14978,8 +15382,8 @@ TEST(TradeRepublicParserTest, RetainsClassConflictWhenActionPrecedesTrade) {
     EXPECT_EQ(trade.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(trade.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(trade.mInstrumentEvidence[0].mName, "Synthetic Test Share");
-    EXPECT_EQ(trade.mUnits, 100'000'000); // Source 1 unit at eight decimal places.
-    EXPECT_EQ(trade.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(trade.mUnits, 100'000'000);       // Source 1 unit at eight decimal places.
+    EXPECT_EQ(trade.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(trade.mAmount, 100'000);
     EXPECT_EQ(trade.mCurrency, Currency::EUR);
 
@@ -17138,8 +17542,8 @@ TEST(TradeRepublicParserTest, StoresNoRateForAForeignTradeWithoutFxRate) {
     EXPECT_FALSE(trade.mExchangeRate.has_value());
     EXPECT_EQ(trade.mCurrency, Currency::USD);
     EXPECT_EQ(trade.mFeeCurrency, Currency::USD);
-    EXPECT_EQ(trade.mUnitPrice, 100'000); // USD 10.00 at four decimals.
-    EXPECT_EQ(trade.mUnits, 200'000'000); // 2 units at eight decimals.
+    EXPECT_EQ(trade.mUnitPrice, 1'000'000'000); // USD 10.00 at eight decimals.
+    EXPECT_EQ(trade.mUnits, 200'000'000);       // 2 units at eight decimals.
     ASSERT_TRUE(trade.mAmount.has_value());
     EXPECT_EQ(*trade.mAmount, 200'000); // USD 20.00, buy sign removed.
     EXPECT_EQ(trade.mFeePaid, 10'000);  // USD 1.00.
@@ -17187,7 +17591,7 @@ TEST(TradeRepublicParserTest, KeepsTheForeignFactsAndBrokerRateOfAForeignBuy) {
     EXPECT_EQ(trade.mFeeCurrency, Currency::EUR);
     ASSERT_TRUE(trade.mAmount.has_value());
     EXPECT_EQ(*trade.mAmount, 1'000'000);       // USD 100.00 from original_amount, not EUR 90.00.
-    EXPECT_EQ(trade.mUnitPrice, 100'000);       // 10.00 at four decimals.
+    EXPECT_EQ(trade.mUnitPrice, 1'000'000'000); // 10.00 at eight decimals.
     EXPECT_EQ(trade.mFeePaid, 10'000);          // EUR 1.00.
     EXPECT_EQ(trade.mExchangeRate, 90'000'000); // 0.9 at eight decimals.
 

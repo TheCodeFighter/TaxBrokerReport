@@ -102,6 +102,37 @@ combineExactFractions(const ExactRational& aLeft, const ExactRational& aRight, b
     });
 }
 
+/// Converts a scaled foreign amount with one exchange rate and rounds once at the amount's own
+/// scale, so Money and UnitPrice share the same arithmetic.
+NumericResult<std::int64_t> convertScaledAmount(std::int64_t aForeignAmount,
+                                                ExchangeRate aRate,
+                                                ExchangeRateDirection aDirection,
+                                                DestinationRange aRange) {
+    if (aRate <= 0)
+    {
+        return NumericError::InvalidExchangeRate;
+    }
+
+    NumericResult<ExactRational> converted = NumericError::InvalidExchangeRate;
+
+    switch (aDirection)
+    {
+    case ExchangeRateDirection::ForeignPerEur:
+        converted = ExactRational::create(WideInteger{aForeignAmount} * EXCHANGE_RATE_SCALE, aRate);
+        break;
+    case ExchangeRateDirection::EurPerForeign:
+        converted = ExactRational::create(WideInteger{aForeignAmount} * aRate, EXCHANGE_RATE_SCALE);
+        break;
+    }
+
+    if (const auto* error = std::get_if<NumericError>(&converted))
+    {
+        return *error;
+    }
+
+    return roundToScaled(std::get<ExactRational>(converted), 1, aRange);
+}
+
 } // namespace
 
 ExactRational::ExactRational(WideInteger aInteger) : mNumerator(std::move(aInteger)) {}
@@ -266,29 +297,14 @@ NumericResult<Money> convertMoney(Money aForeignMoney,
                                   ExchangeRate aRate,
                                   ExchangeRateDirection aDirection,
                                   DestinationRange aRange) {
-    if (aRate <= 0)
-    {
-        return NumericError::InvalidExchangeRate;
-    }
+    return convertScaledAmount(aForeignMoney, aRate, aDirection, aRange);
+}
 
-    NumericResult<ExactRational> converted = NumericError::InvalidExchangeRate;
-
-    switch (aDirection)
-    {
-    case ExchangeRateDirection::ForeignPerEur:
-        converted = ExactRational::create(WideInteger{aForeignMoney} * EXCHANGE_RATE_SCALE, aRate);
-        break;
-    case ExchangeRateDirection::EurPerForeign:
-        converted = ExactRational::create(WideInteger{aForeignMoney} * aRate, EXCHANGE_RATE_SCALE);
-        break;
-    }
-
-    if (const auto* error = std::get_if<NumericError>(&converted))
-    {
-        return *error;
-    }
-
-    return roundToScaled(std::get<ExactRational>(converted), 1, aRange);
+NumericResult<UnitPrice> convertUnitPrice(UnitPrice aForeignUnitPrice,
+                                          ExchangeRate aRate,
+                                          ExchangeRateDirection aDirection,
+                                          DestinationRange aRange) {
+    return convertScaledAmount(aForeignUnitPrice, aRate, aDirection, aRange);
 }
 
 NumericResult<RoundedAllocation>

@@ -73,21 +73,39 @@ TEST(ParseScaledNumberTest, AcceptsSignedInt64Boundaries) {
     EXPECT_EQ(parseMoney("-922337203685477.5808"), std::numeric_limits<std::int64_t>::min());
 }
 
-TEST(MultiplyMoneyUnitsTest, ProducesMoneyWithExplicitRounding) {
-    EXPECT_EQ(multiplyMoneyUnits(2'043'000, 14'760'000), 301'547);
-    EXPECT_EQ(multiplyMoneyUnits(-2'043'000, 14'760'000), -301'547);
-    EXPECT_EQ(multiplyMoneyUnits(1, 50'000'000), 1);
-    EXPECT_EQ(multiplyMoneyUnits(-1, 50'000'000), -1);
+TEST(MultiplyUnitPriceUnitsTest, ProducesMoneyWithExplicitRounding) {
+    // EUR 204.3 * 0.1476 units = 30.15468, rounded to Money 30.1547.
+    EXPECT_EQ(multiplyUnitPriceUnits(20'430'000'000, 14'760'000), 301'547);
+    EXPECT_EQ(multiplyUnitPriceUnits(-20'430'000'000, 14'760'000), -301'547);
+
+    // EUR 0.0001 * 0.5 units = 0.00005, exactly half of one Money step: away from zero.
+    EXPECT_EQ(multiplyUnitPriceUnits(10'000, 50'000'000), 1);
+    EXPECT_EQ(multiplyUnitPriceUnits(-10'000, 50'000'000), -1);
+
+    // EUR 0.00004999 * 1 unit is below half of one Money step.
+    EXPECT_EQ(multiplyUnitPriceUnits(4'999, 100'000'000), 0);
 }
 
-TEST(MultiplyMoneyUnitsTest, HandlesBoundariesAndReportsOverflow) {
+TEST(MultiplyUnitPriceUnitsTest, KeepsTheEightDecimalPriceForLargeQuantities) {
+    // EUR 10.00005 * 1,000,000 units = EUR 10,000,050.0000. At four decimals the price would
+    // be 10.0001, which gives EUR 10,000,100.0000.
+    EXPECT_EQ(multiplyUnitPriceUnits(1'000'005'000, 100'000'000'000'000), 100'000'500'000);
+}
+
+TEST(MultiplyUnitPriceUnitsTest, HandlesBoundariesAndReportsOverflow) {
     constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
     constexpr auto minimum = std::numeric_limits<std::int64_t>::min();
+    // 10,000 units at eight decimals: the product / 10^12 returns the price unchanged as Money.
+    constexpr auto tenThousandUnits = 10'000 * UNITS_SCALE;
 
-    EXPECT_EQ(multiplyMoneyUnits(maximum, UNITS_SCALE), maximum);
-    EXPECT_EQ(multiplyMoneyUnits(minimum, UNITS_SCALE), minimum);
-    EXPECT_FALSE(multiplyMoneyUnits(maximum, UNITS_SCALE + 1).has_value());
-    EXPECT_FALSE(multiplyMoneyUnits(minimum, -UNITS_SCALE).has_value());
+    EXPECT_EQ(multiplyUnitPriceUnits(maximum, tenThousandUnits), maximum);
+    EXPECT_EQ(multiplyUnitPriceUnits(minimum, tenThousandUnits), minimum);
+    EXPECT_FALSE(multiplyUnitPriceUnits(maximum, tenThousandUnits + 1).has_value());
+    EXPECT_FALSE(multiplyUnitPriceUnits(minimum, -tenThousandUnits).has_value());
+
+    // The largest price times 1 unit is EUR 92233720368.54775807, which rounds to Money
+    // 92233720368.5478 (the digits after the fourth decimal, 5807, round up).
+    EXPECT_EQ(multiplyUnitPriceUnits(maximum, UNITS_SCALE), 922'337'203'685'478);
 }
 
 } // namespace

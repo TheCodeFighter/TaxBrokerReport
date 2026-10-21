@@ -107,6 +107,13 @@ enum class ExchangeRateDirection {
                                                 ExchangeRateDirection aDirection,
                                                 DestinationRange aRange = {});
 
+/// Converts a foreign unit price to EUR with the same rules as convertMoney.
+/// Rounds once to UNIT_PRICE_SCALE.
+[[nodiscard]] NumericResult<UnitPrice> convertUnitPrice(UnitPrice aForeignUnitPrice,
+                                                        ExchangeRate aRate,
+                                                        ExchangeRateDirection aDirection,
+                                                        DestinationRange aRange = {});
+
 struct AllocationKey {
     std::size_t mLotOrder{};
     std::size_t mSaleOrder{};
