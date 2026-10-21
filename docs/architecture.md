@@ -85,7 +85,7 @@ date remains unchanged.
 When a valid TR timestamp's original calendar date differs from `date`, report an
 `InconsistentValue` warning on `datetime`. Retain `date` for reporting and set
 `mOrderingTimestamp` to that date at 09:00:00 UTC. The hour is defined by
-`TR_DATE_MISMATCH_DEFAULT_HOUR` in `traderepublic_parser.hpp`. The warning explicitly states
+`kTrDateMismatchDefaultHour` in `traderepublic_parser.hpp`. The warning explicitly states
 that the default hour is assumed and FIFO/corporate-action order may be incorrect. Preserve the
 original `mSourceTimestamp`, so equal fallback times cannot hide conflicting exports.
 Compare before UTC normalization: crossing midnight while normalizing an offset is not itself

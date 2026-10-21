@@ -6,14 +6,15 @@
 #include <string_view>
 #include <utility>
 
-// UTC ordering hour when the original datetime calendar date disagrees with date.
-#define TR_DATE_MISMATCH_DEFAULT_HOUR 9
-
 namespace csv {
 class CSVRow;
 }
 
 namespace taxbroker::tr {
+
+/// UTC ordering hour when the original datetime calendar date disagrees with date.
+inline constexpr int kTrDateMismatchDefaultHour = 9;
+static_assert(kTrDateMismatchDefaultHour >= 0 && kTrDateMismatchDefaultHour < 24);
 
 class TradeRepublicParser final : public CsvParser {
   public:

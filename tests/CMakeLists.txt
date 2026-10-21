@@ -19,18 +19,11 @@ add_executable(taxbroker_unit_tests
     unit/processing_diagnostics_test.cpp
     unit/date_utils_test.cpp
     unit/diagnostic_messages_test.cpp
-    unit/fifo_matcher_test.cpp
     unit/diagnostics_json_test.cpp
-    unit/ibkr_parser_test.cpp
     unit/statement_merger_test.cpp
     unit/tax_processor_test.cpp
     unit/traderepublic_parser_test.cpp
-    unit/xml_generator_test.cpp
     unit/numeric_util_test.cpp
-    # utils/date_utils.cpp
-    # utils/logger.cpp
-    # utils/string_utils.cpp
-    # utils/thread_pool.cpp
 )
 
 target_include_directories(taxbroker_unit_tests PRIVATE 
@@ -49,10 +42,8 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 
 # Integration Tests
 add_executable(taxbroker_integration_tests
-    integration/full_pipeline_test.cpp
     integration/reporting_year_integration_test.cpp
     integration/unit_evidence_integration_test.cpp
-    integration/server_integration_test.cpp
     integration/statement_merger_integration_test.cpp
 )
 

@@ -23,8 +23,6 @@
 #include <vector>
 
 namespace {
-static_assert(TR_DATE_MISMATCH_DEFAULT_HOUR >= 0 && TR_DATE_MISMATCH_DEFAULT_HOUR < 24);
-
 struct TransactionTypeMapping {
     std::string_view mType;
     std::string_view mExpectedCategory;
@@ -415,14 +413,14 @@ EventMetadata TradeRepublicParser::RowContext::metadata(Date aTaxDate) const {
     if (mSourceCalendarDate && *mSourceCalendarDate != aTaxDate)
     {
         orderingTimestamp = SourceTimestamp{aTaxDate.time_since_epoch() +
-                                            std::chrono::hours{TR_DATE_MISMATCH_DEFAULT_HOUR}};
+                                            std::chrono::hours{kTrDateMismatchDefaultHour}};
 
         addDiagnostic(DiagnosticSeverity::Warning,
                       DiagnosticCode::InconsistentValue,
                       makeDiagnosticMessage(
                           MessageKey::InconsistentValueDatetimeDate,
                           {numberParam("defaultHour",
-                                       static_cast<std::uint64_t>(TR_DATE_MISMATCH_DEFAULT_HOUR))}),
+                                       static_cast<std::uint64_t>(kTrDateMismatchDefaultHour))}),
                       "datetime");
     }
 
