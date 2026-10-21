@@ -80,6 +80,7 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::InconsistentSourceIndexNoSource, "inconsistent_source_index.no_source", {}},
         {MessageKey::InconsistentSourceIndexMismatch, "inconsistent_source_index.mismatch", {}},
         {MessageKey::ConflictingDuplicate, "conflicting_duplicate", {}},
+        {MessageKey::DuplicateTransactionInFile, "duplicate_transaction_in_file", {}},
         {MessageKey::InstrumentNameConflict, "instrument_name_conflict", {}},
         {MessageKey::InstrumentAssetClassConflict, "instrument_asset_class_conflict", {}},
         {MessageKey::UnrepresentableValue, "unrepresentable_value", {}},
@@ -149,8 +150,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 34U);
-    ASSERT_EQ(expectedMessages().size(), 34U);
+    ASSERT_EQ(definitions.size(), 35U);
+    ASSERT_EQ(expectedMessages().size(), 35U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -184,8 +185,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 34U);
-    EXPECT_EQ(keys.size(), 34U);
+    EXPECT_EQ(ids.size(), 35U);
+    EXPECT_EQ(keys.size(), 35U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -206,7 +207,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 41U); // 34 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 42U); // 35 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

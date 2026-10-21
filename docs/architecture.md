@@ -252,8 +252,15 @@ contaminate the class of unrelated surviving events.
 For an ISIN-identified instrument, a display-name difference does not make the events conflict;
 the normal instrument-name warning retains each name and its sources. An exact duplicate produces
 one event under its earliest `StableSourceOrder` source and combines every contributing source
-reference. If any candidate in the identity group differs, no candidate enters the merged ledger
-and one `ConflictingDuplicate` error retains all sources and involved event kinds. Missing or empty
+reference. When two or more of the merged copies come from the same file (the same request
+position, not the same filename), the merger also adds one `DuplicateTransactionInFile` warning
+per such file. Copies are counted per event, not per source reference, so one event that already
+carries several rows of its file is not a repeat, and copies with the same rows count as one copy.
+The warning lists the source references of that file's copies, so the user sees every repeated
+row, and it carries no raw rows or values. Copies from different files add no warning, because
+loading the same export twice must count once. If any candidate in the identity group differs, no
+candidate enters the merged ledger and one `ConflictingDuplicate` error retains all sources and
+involved event kinds; the group then gets no `DuplicateTransactionInFile` warning. Missing or empty
 transaction IDs never trigger this classification. Different transaction IDs do not establish
 economic equivalence, including for corporate actions.
 

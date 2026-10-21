@@ -317,6 +317,8 @@ std::string_view toString(MergeDiagnosticCode aDiagnosticCode) {
         return "InstrumentNameConflict";
     case MergeDiagnosticCode::InstrumentAssetClassConflict:
         return "InstrumentAssetClassConflict";
+    case MergeDiagnosticCode::DuplicateTransactionInFile:
+        return "DuplicateTransactionInFile";
     }
 
     return "Unknown";

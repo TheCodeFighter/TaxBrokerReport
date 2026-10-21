@@ -39,6 +39,7 @@ enum class MessageKey {
     InconsistentSourceIndexNoSource,
     InconsistentSourceIndexMismatch,
     ConflictingDuplicate,
+    DuplicateTransactionInFile,
     InstrumentNameConflict,
     InstrumentAssetClassConflict,
     UnrepresentableValue,

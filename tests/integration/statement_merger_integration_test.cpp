@@ -2018,6 +2018,225 @@ TEST(StatementMergerIntegrationTest, MergesTradesWhosePricesDifferOnlyAfterTheEi
     EXPECT_EQ(trade.mMetadata.mSources[1].mInputSequence, (StableInputSequence{1, 0}));
 }
 
+TEST(StatementMergerIntegrationTest, TwoIdenticalRowsInOneFileGiveOneTradeAndAWarning) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000283",
+        .mShares = "1.000000000",
+        .mPrice = "10.00",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-repeated-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000283",
+        .mShares = "1.000000000",
+        .mPrice = "10.00",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-repeated-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("export.csv", {firstRow, secondRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mPresentation.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(trade.mUnitPrice, 1'000'000'000); // EUR 10.00000000 at eight decimal places.
+    EXPECT_EQ(trade.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    ASSERT_EQ(trade.mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mFilename.value(), "export.csv");
+    EXPECT_EQ(trade.mMetadata.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(trade.mMetadata.mSources[1].mFilename.value(), "export.csv");
+    EXPECT_EQ(trade.mMetadata.mSources[1].mSourceRow, 3U);
+    EXPECT_EQ(trade.mMetadata.mSources[1].mInputSequence, (StableInputSequence{0, 1}));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, MergeDiagnosticCode::DuplicateTransactionInFile);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::DuplicateTransactionInFile);
+    EXPECT_TRUE(warning.mMessageParams.empty());
+    EXPECT_EQ(warning.mMessage,
+              "The same transaction appears more than once in one file; it was counted once. "
+              "Check the export for a copy error.");
+    EXPECT_EQ(warning.mSourceIndex, 0U);
+    ASSERT_EQ(warning.mSources.size(), 2U);
+    EXPECT_EQ(warning.mSources[0].mFilename.value(), "export.csv");
+    EXPECT_EQ(warning.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(warning.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(warning.mSources[1].mFilename.value(), "export.csv");
+    EXPECT_EQ(warning.mSources[1].mSourceRow, 3U);
+    EXPECT_EQ(warning.mSources[1].mInputSequence, (StableInputSequence{0, 1}));
+}
+
+TEST(StatementMergerIntegrationTest, TheSameRowInTwoFilesGivesOneTradeAndNoWarning) {
+    const IncomeCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000283",
+        .mShares = "1.000000000",
+        .mPrice = "10.00",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-repeated-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("export.csv", {row});
+    const auto file1 = files.write("export-again.csv", {row});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mPresentation.mTradeInstruments[0].mTransactions[0];
+
+    ASSERT_EQ(trade.mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(trade.mMetadata.mSources[1].mInputSequence, (StableInputSequence{1, 0}));
+}
+
+TEST(StatementMergerIntegrationTest, DifferentRowsWithOneIdInOneFileKeepOnlyTheRejection) {
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000283",
+        .mShares = "1.000000000",
+        .mPrice = "10.00",
+        .mAmount = "-10.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-repeated-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000283",
+        .mShares = "2.000000000",
+        .mPrice = "10.00",
+        .mAmount = "-20.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-repeated-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("export.csv", {firstRow, secondRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = std::get<MergeDiagnostic>(result.mDiagnostics.front());
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    ASSERT_EQ(error.mSources.size(), 2U);
+    EXPECT_EQ(error.mSources[0].mSourceRow, 2U);
+    EXPECT_EQ(error.mSources[1].mSourceRow, 3U);
+}
+
 TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
     const IncomeCsvRow purchaseRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
