@@ -80,7 +80,7 @@ TradeTransaction makeTrade(std::size_t aSourceIndex,
                                   std::nullopt,
                                   aTransactionId),
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 10000,
+        .mUnitPrice = UNIT_PRICE_SCALE,
         .mUnits = UNITS_SCALE,
         .mCurrency = Currency::EUR,
     };
@@ -489,7 +489,7 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
                                       makeTimestamp(2024, 1, 1, 9),
                                       "trade-id"),
             .mTradeSide = TradeSide::Sell,
-            .mUnitPrice = 12000,
+            .mUnitPrice = 120'000'000, // USD 1.20 at eight decimal places.
             .mUnits = 2 * UNITS_SCALE,
             .mAmount = 24000,
             .mFeePaid = 100,
@@ -935,7 +935,7 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdWhenOnlyOneHasA
     const TradeTransaction firstTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000,       // USD 10.00 at four decimal places.
+        .mUnitPrice = 1'000'000'000, // USD 10.00 at eight decimal places.
         .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
         .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
         .mFeePaid = 10'000,          // 1.00 at four decimal places.
@@ -946,12 +946,95 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdWhenOnlyOneHasA
     const TradeTransaction secondTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000,   // USD 10.00 at four decimal places.
-        .mUnits = 1'000'000'000, // 10 units at eight decimal places.
-        .mAmount = 1'000'000,    // USD 100.00 at four decimal places.
-        .mFeePaid = 10'000,      // 1.00 at four decimal places.
+        .mUnitPrice = 1'000'000'000, // USD 10.00 at eight decimal places.
+        .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
+        .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
+        .mFeePaid = 10'000,          // 1.00 at four decimal places.
         .mExchangeRate = std::nullopt,
         .mCurrency = Currency::USD,
+        .mFeeCurrency = Currency::EUR,
+    };
+
+    const StatementMergeInput first{
+        .mSourceIndex = 0,
+        .mParseResult =
+            {
+                .mBroker = Broker::TradeRepublic,
+                .mStatement = {.mTradeInstruments = {{
+                                   .mName = "Synthetic Share",
+                                   .mIsin = "XX9000000001",
+                                   .mAssetClass = AssetClass::Stock,
+                                   .mTransactions = {firstTrade},
+                               }}},
+            },
+    };
+    const StatementMergeInput second{
+        .mSourceIndex = 1,
+        .mParseResult =
+            {
+                .mBroker = Broker::TradeRepublic,
+                .mStatement = {.mTradeInstruments = {{
+                                   .mName = "Synthetic Share",
+                                   .mIsin = "XX9000000001",
+                                   .mAssetClass = AssetClass::Stock,
+                                   .mTransactions = {secondTrade},
+                               }}},
+            },
+    };
+    const std::array inputs{first, second};
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(conflict->mEventKinds, std::vector{StatementEventKind::Trade});
+    EXPECT_EQ(conflict->mSources, (std::vector{firstSource, secondSource}));
+}
+
+TEST(DeterministicStatementMergerTest,
+     RejectsTradesWithTheSameIdThatDifferAfterTheFourthPriceDecimal) {
+    // At four decimals both prices would be 10.0001 and the two trades would merge silently.
+    const SourceReference firstSource{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("source-0.csv"),
+        .mSourceRow = 2,
+        .mTransactionId = "synthetic-shared-id",
+        .mInputSequence = {0, 0},
+    };
+
+    const SourceReference secondSource{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("source-1.csv"),
+        .mSourceRow = 2,
+        .mTransactionId = "synthetic-shared-id",
+        .mInputSequence = {1, 0},
+    };
+
+    const TradeTransaction firstTrade{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
+        .mTradeSide = TradeSide::Buy,
+        .mUnitPrice = 1'000'005'000, // EUR 10.00005 at eight decimal places.
+        .mUnits = 100'000'000,       // 1 unit at eight decimal places.
+        .mAmount = 100'000,          // EUR 10.00 at four decimal places.
+        .mFeePaid = 0,
+        .mExchangeRate = 100'000'000,
+        .mCurrency = Currency::EUR,
+        .mFeeCurrency = Currency::EUR,
+    };
+    const TradeTransaction secondTrade{
+        .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
+        .mTradeSide = TradeSide::Buy,
+        .mUnitPrice = 1'000'006'000, // EUR 10.00006 at eight decimal places.
+        .mUnits = 100'000'000,       // 1 unit at eight decimal places.
+        .mAmount = 100'000,          // EUR 10.00 at four decimal places.
+        .mFeePaid = 0,
+        .mExchangeRate = 100'000'000,
+        .mCurrency = Currency::EUR,
         .mFeeCurrency = Currency::EUR,
     };
 
@@ -1016,7 +1099,7 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdThatDifferOnlyI
     const TradeTransaction firstTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000,       // USD 10.00 at four decimal places.
+        .mUnitPrice = 1'000'000'000, // USD 10.00 at eight decimal places.
         .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
         .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
         .mFeePaid = 10'000,          // 1.00 at four decimal places.
@@ -1027,7 +1110,7 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdThatDifferOnlyI
     const TradeTransaction secondTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000,       // USD 10.00 at four decimal places.
+        .mUnitPrice = 1'000'000'000, // USD 10.00 at eight decimal places.
         .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
         .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
         .mFeePaid = 10'000,          // 1.00 at four decimal places.
@@ -1318,7 +1401,7 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
             for (const auto& trade : instrument.mTransactions)
             {
                 EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
-                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnitPrice, 120'000'000);
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
@@ -2538,7 +2621,7 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
             for (const auto& trade : instrument.mTransactions)
             {
                 EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
-                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnitPrice, 120'000'000);
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
@@ -2669,7 +2752,7 @@ TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependen
             for (const auto& trade : instrument.mTransactions)
             {
                 EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
-                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnitPrice, 120'000'000);
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
@@ -3180,7 +3263,7 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
             for (const auto& trade : instrument.mTransactions)
             {
                 EXPECT_EQ(trade.mTradeSide, TradeSide::Sell);
-                EXPECT_EQ(trade.mUnitPrice, 12'000);
+                EXPECT_EQ(trade.mUnitPrice, 120'000'000);
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
@@ -3622,8 +3705,8 @@ TEST(DeterministicStatementMergerTest, OriginalClassesWithSameIdRemainScopedByBr
     const TradeTransaction trTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {trSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3638,8 +3721,8 @@ TEST(DeterministicStatementMergerTest, OriginalClassesWithSameIdRemainScopedByBr
     const TradeTransaction ibkrTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {ibkrSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3729,8 +3812,8 @@ TEST(DeterministicStatementMergerTest, EvidenceFreeFirstCopyCannotHideConflictin
     const TradeTransaction firstTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3739,8 +3822,8 @@ TEST(DeterministicStatementMergerTest, EvidenceFreeFirstCopyCannotHideConflictin
     const TradeTransaction secondTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3755,8 +3838,8 @@ TEST(DeterministicStatementMergerTest, EvidenceFreeFirstCopyCannotHideConflictin
     const TradeTransaction thirdTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {thirdSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3843,8 +3926,8 @@ TEST(DeterministicStatementMergerTest, ExactCopiesNormalizeEvidenceAndRetainEvid
     const TradeTransaction firstTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3853,8 +3936,8 @@ TEST(DeterministicStatementMergerTest, ExactCopiesNormalizeEvidenceAndRetainEvid
     const TradeTransaction secondTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3907,7 +3990,7 @@ TEST(DeterministicStatementMergerTest, ExactCopiesNormalizeEvidenceAndRetainEvid
     const auto& event = instrument.mTransactions[0];
 
     EXPECT_EQ(event.mUnits, 200'000'000);
-    EXPECT_EQ(event.mUnitPrice, 100'000);
+    EXPECT_EQ(event.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(event.mAmount, 200'000);
     EXPECT_EQ(event.mMetadata.mSources, (std::vector{firstSource, secondSource}));
     EXPECT_EQ(event.mInstrumentEvidence, secondTrade.mInstrumentEvidence);
@@ -3940,8 +4023,8 @@ TEST(DeterministicStatementMergerTest, ClassConflictIncludesSourcesWithoutOrigin
     const TradeTransaction firstTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3950,8 +4033,8 @@ TEST(DeterministicStatementMergerTest, ClassConflictIncludesSourcesWithoutOrigin
     const TradeTransaction secondTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -3969,8 +4052,8 @@ TEST(DeterministicStatementMergerTest, ClassConflictIncludesSourcesWithoutOrigin
     const TradeTransaction thirdTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {fundSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -4067,8 +4150,8 @@ TEST(DeterministicStatementMergerTest, ExactCopiesPreserveOriginalClassEvidenceF
     const TradeTransaction firstTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {firstSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -4083,8 +4166,8 @@ TEST(DeterministicStatementMergerTest, ExactCopiesPreserveOriginalClassEvidenceF
     const TradeTransaction secondTrade{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {secondSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -4137,7 +4220,7 @@ TEST(DeterministicStatementMergerTest, ExactCopiesPreserveOriginalClassEvidenceF
     const auto& event = instrument.mTransactions[0];
 
     EXPECT_EQ(event.mUnits, 200'000'000);
-    EXPECT_EQ(event.mUnitPrice, 100'000);
+    EXPECT_EQ(event.mUnitPrice, 1'000'000'000);
     EXPECT_EQ(event.mAmount, 200'000);
     EXPECT_EQ(event.mMetadata.mSources, (std::vector{firstSource, secondSource}));
     ASSERT_EQ(event.mInstrumentEvidence.size(), 2U);
@@ -4158,8 +4241,8 @@ TEST(DeterministicStatementMergerTest, LeavesTradeNameEmptyWhenOriginalNameIsBla
     const TradeTransaction event{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {source}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,
@@ -4328,8 +4411,8 @@ TEST(DeterministicStatementMergerTest, TradeAndActionKeepDifferentOriginalClasse
     const TradeTransaction purchase{
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {tradeSource}},
         .mTradeSide = TradeSide::Buy,
-        .mUnitPrice = 100'000, // EUR 10 at four decimal places.
-        .mUnits = 200'000'000, // 2 units at eight decimal places.
+        .mUnitPrice = 1'000'000'000, // EUR 10 at eight decimal places.
+        .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
         .mExchangeRate = 100'000'000,

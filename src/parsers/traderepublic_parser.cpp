@@ -792,7 +792,7 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
 
     auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
     auto tradeSide = parseTradeSide(typeValue);
-    auto unitPrice = parseMoney(aCsvRow["price"].get<std::string>());
+    auto unitPrice = parseUnitPrice(aCsvRow["price"].get<std::string>());
     const auto sharesText = aCsvRow["shares"].get<std::string>();
     const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
     const auto* units = std::get_if<ParsedFixedPoint>(&importedUnits);
@@ -1302,6 +1302,17 @@ void TradeRepublicParser::parsePrivateMarketRow(
 
 std::optional<Money> TradeRepublicParser::parseMoney(std::string_view aValue) {
     const auto imported = importFixedPoint(aValue, MONEY_SCALE);
+
+    if (const auto* value = std::get_if<ParsedFixedPoint>(&imported))
+    {
+        return value->mValue;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<UnitPrice> TradeRepublicParser::parseUnitPrice(std::string_view aValue) {
+    const auto imported = importFixedPoint(aValue, UNIT_PRICE_SCALE);
 
     if (const auto* value = std::get_if<ParsedFixedPoint>(&imported))
     {

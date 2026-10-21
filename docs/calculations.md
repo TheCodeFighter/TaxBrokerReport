@@ -17,6 +17,7 @@ Tax calculations must not use binary floating-point numbers.
 | Value | Stored precision | Smallest stored step |
 | --- | --- | --- |
 | `Money` | 4 decimal places | `0.0001` |
+| `UnitPrice` | 8 decimal places | `0.00000001` |
 | `Units` | 8 decimal places | `0.00000001` |
 | `ExchangeRate` | 8 decimal places | `0.00000001` |
 | `CorpRatio` | 8 decimal places when stored | `0.00000001` |
@@ -37,8 +38,8 @@ and its sign/positive-value policy. A failed operation does not mutate its input
 
 The scales in the table describe stored values, not a smaller workspace used for calculations. A
 calculation keeps the complete checked integer product or the exact quotient and remainder until
-the required result scale is known. For example, multiplying four-decimal `Money` by
-eight-decimal `Units` keeps the full product of both integers, which carries 12 effective decimal
+the required result scale is known. For example, multiplying eight-decimal `UnitPrice` by
+eight-decimal `Units` keeps the full product of both integers, which carries 16 effective decimal
 places before it is divided and rounded.
 
 Do not round a calculation to an intermediate number of decimal places as a safety margin. Two
@@ -82,10 +83,11 @@ money amount of `0.00004` must produce an error instead of silently becoming zer
 
 ### Import boundaries
 
-Source money is rounded once to four decimals when it enters `Money`. Source units are rounded
-once to eight decimals when they enter `Units`, but the original text and discarded digits remain
-available for the controlled FIFO reconciliation defined in `fifo.md`. A broker rate is rounded
-once to eight decimals only when its documented source format permits extra precision. A
+Source money is rounded once to four decimals when it enters `Money`. A source unit price is
+rounded once to eight decimals when it enters `UnitPrice` (see "Unit prices" below). Source units
+are rounded once to eight decimals when they enter `Units`, but the original text and discarded
+digits remain available for the controlled FIFO reconciliation defined in `fifo.md`. A broker rate
+is rounded once to eight decimals only when its documented source format permits extra precision. A
 user-entered official rate must have no more than eight decimals and is not rounded for the user.
 
 `importFixedPoint` retains the exact source sign, canonical decimal value and discarded digits.
@@ -114,6 +116,44 @@ accepted, because `0,125` would otherwise be read as 125 instead of 0.125. Such 
 
 Once imported, money and units keep their stored precision until a later operation explicitly
 defines another boundary. Formatting a value for display must not change the stored value.
+
+### Unit prices
+
+A trade unit price is stored as `UnitPrice` with eight decimal places. `Money` keeps four decimal
+places for amounts, fees, tax and income. The reasons:
+
+- The Doh-KDVP schema accepts up to eight decimals for `F4` and `F9` (`typeDecimalPos14_8`, at
+  most 14 integer digits). The official display transform shows at least four decimals and keeps
+  up to eight.
+- Section 11 of the Doh-KDVP instructions defines `F4` as the purchase value per unit that comes
+  from the contract, and `F9` as the sale value per unit that comes from the contract or other
+  evidence:
+  *nabavna vrednost ob pridobitvi (na enoto), pridobljena v posameznem poslu, razvidna v prodajni
+  ali drugi pogodbi*, and
+  *vrednost odsvojenih vrednostnih papirjev na enoto, razvidna iz prodajne ali druge pogodbe
+  oziroma iz drugih dokazil*.
+  The instructions give no rounding rule for these two fields.
+- The import rounding enters the lot basis and so the gain, not only the displayed value. A price
+  of `10.00005` stored at four decimals is `10.0001`. Across 1,000,000 units the basis is then
+  EUR 10,000,100 instead of EUR 10,000,050, which is EUR 50 too high.
+- The legacy application wrote `F4` and `F9` with eight decimals, and eDavki accepted that output.
+- Trade Republic writes prices with up to ten decimals.
+
+Rules:
+
+- A source price is rounded once, halves away from zero, to eight decimals. Later digits are not
+  kept. This changes a unit price by at most EUR 0.000000005, and FURS cannot accept more digits.
+  A positive price that rounds to zero is rejected.
+- A source price is a fact from the contract, so no extra digits are carried. Calculated values
+  (lot basis, partial-sale allocations, adjusted unit values) stay exact until their output
+  boundary.
+- Known limit: a foreign price is rounded to eight decimals at import and again after its
+  conversion to EUR. Compared with converting the exact source price, the result differs by at
+  most one step (EUR 0.00000001) per unit when the rate is at least 0.5 foreign units per EUR,
+  which is EUR 0.01 on 1,000,000 units. A stronger currency can differ by more: at 0.33 KWD per
+  EUR, `1.0000000049` KWD becomes `3.03030303` EUR instead of `3.03030305` EUR, two steps.
+  Whether the conversion should start from the exact source text is decided together with
+  non-EUR FIFO support.
 
 ## Official exchange-rate direction
 
@@ -219,6 +259,8 @@ eurMoney = roundHalfAwayFromZero(
 ```
 
 The multiplication uses a wide integer. Only the final quotient is rounded to `Money` precision.
+A foreign `UnitPrice` converts the same way and its quotient is rounded once to eight decimals, so
+`10.00000000 USD` at `1 EUR = 1.08450000 USD` is `9.22083910 EUR`.
 
 When a verified broker field instead means EUR per one foreign-currency unit, the processor uses
 its documented multiplication direction directly. It must not invert and round the rate before
@@ -256,9 +298,9 @@ still rejected by its domain validation.
 
 ## Exact FIFO lot basis and money totals
 
-Convert an original acquisition unit price on its acquisition date to four-decimal EUR `Money`
+Convert an original acquisition unit price on its acquisition date to eight-decimal EUR `UnitPrice`
 using the conversion rules above. Multiply that price by the original eight-decimal quantity and
-retain the complete wide-integer product as the lot basis, with 12 effective decimal places. This
+retain the complete wide-integer product as the lot basis, with 16 effective decimal places. This
 is an exact product of imported facts, not an extra rounded calculation scale. A split does not
 reconvert that acquisition at its action date and does not replace its basis with a rounded total.
 
@@ -268,7 +310,7 @@ allocation from the remaining basis. The final consumption receives the entire r
 Reduce fractions to avoid needless intermediate growth; checked range failures retain their normal
 diagnostic scope. Do not feed rounded XML unit values or rounded informational totals back into a lot.
 
-The reusable `LotBasisState` stores remaining units and an exact rational number of `10^-12` EUR
+The reusable `LotBasisState` stores remaining units and an exact rational number of `10^-16` EUR
 basis ticks. Its consumer owns purchase date, sources and FIFO order. `consumeLotBasis` returns
 the allocated basis and next state together; `adjustLotUnits` changes only units. Neither helper
 applies an action, selects an exchange rate or performs chronological FIFO matching.
@@ -283,13 +325,13 @@ emitted total; their rounded values do not replace the exact internal allocation
 Buy `0.14760000` units at `255.3750 USD` per unit on a date with `1 EUR = 1.25000000 USD`:
 
 ```text
-converted original unit price       204.3000 EUR
-exact lot basis                     30.154680000000 EUR
+converted original unit price       204.30000000 EUR
+exact lot basis                     30.1546800000000000 EUR
 informational Money total           30.1547 EUR
 2 / 1 split quantity                0.29520000
 adjusted value per unit              102.1500 EUR
-first sale of 0.10000000: basis      10.215000000000 EUR
-remaining 0.19520000: basis          19.939680000000 EUR
+first sale of 0.10000000: basis      10.2150000000000000 EUR
+remaining 0.19520000: basis          19.9396800000000000 EUR
 emitted basis totals                 10.2150 + 19.9397 = 30.1547 EUR
 ```
 
@@ -303,14 +345,14 @@ Multiplying a unit price by units to produce a `Money` total uses:
 
 ```text
 totalMoney = roundHalfAwayFromZero(
-    unitPrice * units / UNITS_SCALE
+    unitPrice * units * MONEY_SCALE / (UNIT_PRICE_SCALE * UNITS_SCALE)
 )
 ```
 
 For example:
 
 ```text
-204.3000 * 0.14760000 = 30.15468000 -> 30.1547
+204.30000000 * 0.14760000 = 30.15468 -> 30.1547
 ```
 
 Adding and subtracting values already stored at the same scale is exact and must use checked
@@ -355,7 +397,7 @@ invalid value.
 | XML value | Output precision | Rule |
 | --- | --- | --- |
 | Doh-KDVP quantities and stock (`F3`, `F7`, `F8`) | 4 to 8 decimals | Write exact `Units`; remove trailing zeros only down to four decimals. |
-| Ordinary Doh-KDVP unit values (`F4`, `F9`) | 4 decimals | Write `Money` without changing its value. |
+| Ordinary Doh-KDVP unit values (`F4`, `F9`) | 4 to 8 decimals | Write `UnitPrice` without changing its value; remove trailing zeros only down to four decimals. |
 | Corporate-action-adjusted Doh-KDVP unit values | 4 to 8 decimals | Round once as defined in `fifo.md`; remove trailing zeros only down to four decimals. |
 | Dividend value and foreign tax | 2 decimals | Round `Money` once at XML output. |
 | Doh-DHO and Doh-Obr income and foreign tax | 2 decimals | Round `Money` once at the documented form-row boundary. |
@@ -371,7 +413,8 @@ For example:
 | --- | --- |
 | quantity `2.00000000` | `2.0000` |
 | quantity `0.12345678` | `0.12345678` |
-| ordinary unit value `12.3456` | `12.3456` |
+| ordinary unit value `12.34565000` | `12.34565` |
+| ordinary unit value `10.00000000` | `10.0000` |
 | adjusted unit value `12.34560000` | `12.3456` |
 | adjusted unit value `12.34567891` | `12.34567891` |
 
@@ -488,9 +531,13 @@ The largest positive `Money` value is `922337203685477.5807`. Parsing
 Converting `922337203685477.5807` with an official rate of `0.50000000` would double the value
 beyond the `Money` range. It produces `arithmetic_overflow`; it is not clamped to the maximum.
 
-A Doh-KDVP `F4` or `F9` value may contain at most 14 integer digits and 8 decimal places. Internal
-`Money` value `100000000000000.0000` therefore produces `xml_value_out_of_range` because it has
-15 integer digits, even though it still fits in `Money`.
+The largest positive `UnitPrice` is `92233720368.54775807`. Parsing `92233720368.54775808` as a
+price produces an overflow error.
+
+A Doh-KDVP `F4` or `F9` value may contain at most 14 integer digits and 8 decimal places. The
+largest `UnitPrice` has 11 integer digits, so an ordinary unit price always fits. An adjusted unit
+value is calculated from the exact lot basis and can be larger: `100000000000000.0000` produces
+`xml_value_out_of_range` because it has 15 integer digits.
 
 ## Required processor and XML tests
 
@@ -498,6 +545,9 @@ Tests based on this document must prove that:
 
 - fixed-point parsing rounds positive and negative half values away from zero;
 - unit inputs round once to eight decimals at the documented import boundary;
+- unit prices round once to eight decimals at import, including the half step at the ninth
+  decimal, and a price below the old four-decimal step is kept;
+- a foreign unit price converts to EUR and rounds once to eight decimals;
 - required positive values that become zero are rejected;
 - EUR uses the identity rate without a prompt;
 - official rates use the foreign-currency-per-EUR direction and division;

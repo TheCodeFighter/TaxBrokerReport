@@ -68,11 +68,14 @@ bool parseInteger(std::string_view aValue, int& aResult) {
     return error == std::errc{} && parsedEnd == end;
 }
 
-std::optional<taxbroker::Money> multiplyMoneyUnits(taxbroker::Money aPrice,
-                                                   taxbroker::Units aUnits) {
+std::optional<taxbroker::Money> multiplyUnitPriceUnits(taxbroker::UnitPrice aPrice,
+                                                       taxbroker::Units aUnits) {
+    // UnitPrice and Units have eight decimals each, so the product has 16. Dividing by 10^12
+    // leaves the four decimals of Money.
+    constexpr std::int64_t productScale =
+        taxbroker::UNITS_SCALE * (taxbroker::UNIT_PRICE_SCALE / taxbroker::MONEY_SCALE);
     const auto exactProduct =
-        taxbroker::ExactRational::create(taxbroker::WideInteger{aPrice} * aUnits,
-                                         taxbroker::UNITS_SCALE);
+        taxbroker::ExactRational::create(taxbroker::WideInteger{aPrice} * aUnits, productScale);
     const auto roundedProductResult =
         taxbroker::roundToScaled(std::get<taxbroker::ExactRational>(exactProduct), 1);
 

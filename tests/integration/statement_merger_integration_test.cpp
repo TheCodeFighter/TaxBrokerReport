@@ -408,7 +408,7 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(trades[3].mMetadata.mSourceTimestamp,
                   parseSourceTimestamp("2023-01-01T08:00:00Z"));
         EXPECT_EQ(trades[1].mUnits, 125000000);
-        EXPECT_EQ(trades[1].mUnitPrice, 100000);
+        EXPECT_EQ(trades[1].mUnitPrice, 1'000'000'000);
         EXPECT_EQ(trades[1].mAmount, 125000);
         EXPECT_EQ(trades[1].mFeePaid, 2500);
         EXPECT_EQ(trades[1].mMetadata.mSources,
@@ -474,7 +474,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(trades[0].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[0].mUnits, 200'000'000);
-        EXPECT_EQ(trades[0].mUnitPrice, 90'000);
+        EXPECT_EQ(trades[0].mUnitPrice, 900'000'000);
         EXPECT_EQ(trades[0].mAmount, 180'000);
         EXPECT_EQ(trades[0].mFeePaid, 0);
         EXPECT_EQ(trades[0].mCurrency, Currency::EUR);
@@ -483,7 +483,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(trades[1].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[1].mUnits, 125'000'000);
-        EXPECT_EQ(trades[1].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[1].mUnitPrice, 1'000'000'000);
         EXPECT_EQ(trades[1].mAmount, 125'000);
         EXPECT_EQ(trades[1].mFeePaid, 2'500);
         EXPECT_EQ(trades[1].mCurrency, Currency::EUR);
@@ -492,7 +492,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(trades[2].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[2].mUnits, 12'500'000);
-        EXPECT_EQ(trades[2].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[2].mUnitPrice, 800'000'000);
         EXPECT_EQ(trades[2].mAmount, 10'000);
         EXPECT_EQ(trades[2].mFeePaid, 0);
         EXPECT_EQ(trades[2].mCurrency, Currency::EUR);
@@ -501,7 +501,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(trades[3].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[3].mUnits, 12'500'000);
-        EXPECT_EQ(trades[3].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[3].mUnitPrice, 800'000'000);
         EXPECT_EQ(trades[3].mAmount, 10'000);
         EXPECT_EQ(trades[3].mFeePaid, 0);
         EXPECT_EQ(trades[3].mCurrency, Currency::EUR);
@@ -510,7 +510,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(trades[4].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[4].mUnits, 12'500'000);
-        EXPECT_EQ(trades[4].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[4].mUnitPrice, 800'000'000);
         EXPECT_EQ(trades[4].mAmount, 10'000);
         EXPECT_EQ(trades[4].mFeePaid, 0);
         EXPECT_EQ(trades[4].mCurrency, Currency::EUR);
@@ -519,7 +519,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(trades[5].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[5].mUnits, 100'000'000);
-        EXPECT_EQ(trades[5].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[5].mUnitPrice, 1'000'000'000);
         EXPECT_EQ(trades[5].mAmount, 100'000);
         EXPECT_EQ(trades[5].mFeePaid, 0);
         EXPECT_EQ(trades[5].mCurrency, Currency::EUR);
@@ -650,7 +650,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(survivingTrades[0].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(survivingTrades[0].mUnits, 200'000'000);
-        EXPECT_EQ(survivingTrades[0].mUnitPrice, 90'000);
+        EXPECT_EQ(survivingTrades[0].mUnitPrice, 900'000'000);
         EXPECT_EQ(survivingTrades[0].mAmount, 180'000);
         EXPECT_EQ(survivingTrades[0].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[0].mCurrency, Currency::EUR);
@@ -659,7 +659,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(survivingTrades[1].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(survivingTrades[1].mUnits, 12'500'000);
-        EXPECT_EQ(survivingTrades[1].mUnitPrice, 80'000);
+        EXPECT_EQ(survivingTrades[1].mUnitPrice, 800'000'000);
         EXPECT_EQ(survivingTrades[1].mAmount, 10'000);
         EXPECT_EQ(survivingTrades[1].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[1].mCurrency, Currency::EUR);
@@ -668,7 +668,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(survivingTrades[2].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(survivingTrades[2].mUnits, 100'000'000);
-        EXPECT_EQ(survivingTrades[2].mUnitPrice, 100'000);
+        EXPECT_EQ(survivingTrades[2].mUnitPrice, 1'000'000'000);
         EXPECT_EQ(survivingTrades[2].mAmount, 100'000);
         EXPECT_EQ(survivingTrades[2].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[2].mCurrency, Currency::EUR);
@@ -677,7 +677,7 @@ TEST(StatementMergerIntegrationTest,
 
         EXPECT_EQ(survivingTrades[3].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(survivingTrades[3].mUnits, 100'000'000);
-        EXPECT_EQ(survivingTrades[3].mUnitPrice, 100'000);
+        EXPECT_EQ(survivingTrades[3].mUnitPrice, 1'000'000'000);
         EXPECT_EQ(survivingTrades[3].mAmount, 100'000);
         EXPECT_EQ(survivingTrades[3].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[3].mCurrency, Currency::EUR);
@@ -875,7 +875,7 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
 
         EXPECT_EQ(trades[0].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[0].mUnits, 200'000'000);
-        EXPECT_EQ(trades[0].mUnitPrice, 90'000);
+        EXPECT_EQ(trades[0].mUnitPrice, 900'000'000);
         EXPECT_EQ(trades[0].mAmount, 180'000);
         EXPECT_EQ(trades[0].mFeePaid, 0);
         EXPECT_EQ(trades[0].mCurrency, Currency::EUR);
@@ -884,7 +884,7 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
 
         EXPECT_EQ(trades[1].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[1].mUnits, 125'000'000);
-        EXPECT_EQ(trades[1].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[1].mUnitPrice, 1'000'000'000);
         EXPECT_EQ(trades[1].mAmount, 125'000);
         EXPECT_EQ(trades[1].mFeePaid, 2'500);
         EXPECT_EQ(trades[1].mCurrency, Currency::EUR);
@@ -893,7 +893,7 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
 
         EXPECT_EQ(trades[2].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[2].mUnits, 12'500'000);
-        EXPECT_EQ(trades[2].mUnitPrice, 80'000);
+        EXPECT_EQ(trades[2].mUnitPrice, 800'000'000);
         EXPECT_EQ(trades[2].mAmount, 10'000);
         EXPECT_EQ(trades[2].mFeePaid, 0);
         EXPECT_EQ(trades[2].mCurrency, Currency::EUR);
@@ -902,7 +902,7 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
 
         EXPECT_EQ(trades[3].mTradeSide, TradeSide::Buy);
         EXPECT_EQ(trades[3].mUnits, 100'000'000);
-        EXPECT_EQ(trades[3].mUnitPrice, 100'000);
+        EXPECT_EQ(trades[3].mUnitPrice, 1'000'000'000);
         EXPECT_EQ(trades[3].mAmount, 100'000);
         EXPECT_EQ(trades[3].mFeePaid, 0);
         EXPECT_EQ(trades[3].mCurrency, Currency::EUR);
@@ -1382,7 +1382,7 @@ TEST(StatementMergerIntegrationTest,
     const auto& trade = instrument.mTransactions.front();
 
     EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(trade.mUnitPrice, 80'000);
+    EXPECT_EQ(trade.mUnitPrice, 800'000'000);
     EXPECT_EQ(trade.mUnits, 125'000'000);
     EXPECT_EQ(trade.mAmount, 100'000);
     EXPECT_EQ(trade.mFeePaid, 2'500);
@@ -1507,7 +1507,7 @@ TEST(StatementMergerIntegrationTest,
     const auto& trade = instrument.mTransactions.front();
 
     EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(trade.mUnitPrice, 80'000);
+    EXPECT_EQ(trade.mUnitPrice, 800'000'000);
     EXPECT_EQ(trade.mUnits, 125'000'000);
     EXPECT_EQ(trade.mAmount, 100'000);
     EXPECT_EQ(trade.mFeePaid, 2'500);
@@ -1936,6 +1936,88 @@ TEST(StatementMergerIntegrationTest, RetainsBondInterestWithoutFxWhileInvalidFxI
     EXPECT_EQ(error.mTransactionId, "synthetic-invalid-bondinterest");
 }
 
+TEST(StatementMergerIntegrationTest, MergesTradesWhosePricesDifferOnlyAfterTheEighthDecimal) {
+    // Both prices round to EUR 10.00000000 at eight decimals. The ninth decimal is below the
+    // precision FURS accepts, so the two rows are the same trade.
+    const IncomeCsvRow firstRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000249",
+        .mShares = "1.000000000",
+        .mPrice = "10.0000000049",
+        .mAmount = "-10.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-shared-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const IncomeCsvRow secondRow{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Evidence Share",
+        .mSymbol = "XX9000000249",
+        .mShares = "1.000000000",
+        .mPrice = "10.0000000040",
+        .mAmount = "-10.0000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "",
+        .mTransactionId = "synthetic-shared-purchase",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    TemporaryIncomeInputs files;
+    tr::TradeRepublicParser parser;
+
+    const auto file0 = files.write("part-0.csv", {firstRow});
+    const auto file1 = files.write("part-1.csv", {secondRow});
+    const std::array inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(inputs);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments[0].mTransactions.size(), 1U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+
+    const auto& trade = result.mStatement.mPresentation.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(trade.mUnitPrice, 1'000'000'000); // EUR 10.00000000 at eight decimal places.
+    EXPECT_EQ(trade.mUnits, 100'000'000);       // 1 unit at eight decimal places.
+    ASSERT_EQ(trade.mMetadata.mSources.size(), 2U);
+    EXPECT_EQ(trade.mMetadata.mSources[0].mFilename.value(), "part-0.csv");
+    EXPECT_EQ(trade.mMetadata.mSources[0].mInputSequence, (StableInputSequence{0, 0}));
+    EXPECT_EQ(trade.mMetadata.mSources[1].mFilename.value(), "part-1.csv");
+    EXPECT_EQ(trade.mMetadata.mSources[1].mInputSequence, (StableInputSequence{1, 0}));
+}
+
 TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
     const IncomeCsvRow purchaseRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",
@@ -2027,8 +2109,9 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -2052,8 +2135,8 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
     EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
     EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
     EXPECT_EQ(other.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(other.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(other.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(other.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(other.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(other.mAmount, 120000);
     EXPECT_EQ(other.mFeePaid, 2000);
     EXPECT_EQ(other.mCurrency, Currency::EUR);
@@ -2179,8 +2262,9 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInTwoFiles) {
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -2204,8 +2288,8 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInTwoFiles) {
     EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
     EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
     EXPECT_EQ(other.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(other.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(other.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(other.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(other.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(other.mAmount, 120000);
     EXPECT_EQ(other.mFeePaid, 2000);
     EXPECT_EQ(other.mCurrency, Currency::EUR);
@@ -2328,8 +2412,9 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInReversedRows) {
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -2353,8 +2438,8 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInReversedRows) {
     EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
     EXPECT_EQ(other.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
     EXPECT_EQ(other.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(other.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(other.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(other.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(other.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(other.mAmount, 120000);
     EXPECT_EQ(other.mFeePaid, 2000);
     EXPECT_EQ(other.mCurrency, Currency::EUR);
@@ -2477,8 +2562,9 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInOneFile) {
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -2625,8 +2711,9 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInTwoFiles) {
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -2770,8 +2857,9 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInReversedRows) {
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -2941,8 +3029,9 @@ TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) 
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -2966,8 +3055,8 @@ TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) 
     EXPECT_EQ(sale.mInstrumentEvidence[0].mAssetClass, AssetClass::Fund);
     EXPECT_EQ(sale.mInstrumentEvidence[0].mAssetClassLabel, "FUND");
     EXPECT_EQ(sale.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(sale.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(sale.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(sale.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(sale.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(sale.mAmount, 120000);
     EXPECT_EQ(sale.mFeePaid, 2000);
     EXPECT_EQ(sale.mCurrency, Currency::EUR);
@@ -2993,7 +3082,8 @@ TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) 
     EXPECT_EQ(laterPurchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(laterPurchase.mTradeSide, TradeSide::Buy);
     EXPECT_EQ(laterPurchase.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
-    EXPECT_EQ(laterPurchase.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(laterPurchase.mUnitPrice,
+              800'000'000); // Source EUR 8.00000000 at eight decimal places.
     EXPECT_EQ(laterPurchase.mAmount, 240000);
     EXPECT_EQ(laterPurchase.mFeePaid, 0);
     EXPECT_EQ(laterPurchase.mCurrency, Currency::EUR);
@@ -3116,8 +3206,8 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockLast) {
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "");
     EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
@@ -3141,8 +3231,8 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockLast) {
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
@@ -3274,8 +3364,8 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockFirst) 
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "");
     EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
@@ -3299,8 +3389,8 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockFirst) 
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
@@ -3432,8 +3522,8 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockLa
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
     EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
@@ -3457,8 +3547,8 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockLa
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
@@ -3590,8 +3680,8 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockFi
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(unknown.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
     EXPECT_EQ(unknown.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(unknown.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(unknown.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unknown.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unknown.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
@@ -3615,8 +3705,8 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockFi
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(known.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(known.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(known.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(known.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(known.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(known.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
@@ -3748,8 +3838,8 @@ TEST(StatementMergerIntegrationTest, RetainsDistinctUnrecognizedClassLabels) {
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "COMMODITY");
     EXPECT_EQ(first.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(first.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(first.mUnits, 200000000);         // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(first.mAmount, 200000);
     EXPECT_EQ(first.mFeePaid, 1000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
@@ -3773,8 +3863,8 @@ TEST(StatementMergerIntegrationTest, RetainsDistinctUnrecognizedClassLabels) {
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Unknown);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "UNLISTED");
     EXPECT_EQ(second.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(second.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(second.mUnits, 100000000); // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(second.mAmount, 120000);
     EXPECT_EQ(second.mFeePaid, 2000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
@@ -3924,7 +4014,7 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInOn
     EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
     EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
-    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 800'000'000); // Source EUR 8.00000000 at eight decimal places.
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
@@ -4079,7 +4169,7 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInTw
     EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
     EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
-    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 800'000'000); // Source EUR 8.00000000 at eight decimal places.
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
@@ -4229,7 +4319,7 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabe
     EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
     EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
-    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 800'000'000); // Source EUR 8.00000000 at eight decimal places.
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
@@ -4384,7 +4474,7 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabe
     EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
     EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
-    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 800'000'000); // Source EUR 8.00000000 at eight decimal places.
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
@@ -4534,7 +4624,7 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionIn
     EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
     EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
-    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 800'000'000); // Source EUR 8.00000000 at eight decimal places.
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
@@ -4690,7 +4780,7 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionIn
     EXPECT_EQ(survivor.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(survivor.mTradeSide, TradeSide::Buy);
     EXPECT_EQ(survivor.mUnits, 300000000); // Source 3.000000000 units at eight decimal places.
-    EXPECT_EQ(survivor.mUnitPrice, 80000); // Source EUR 8.0000 at four decimal places.
+    EXPECT_EQ(survivor.mUnitPrice, 800'000'000); // Source EUR 8.00000000 at eight decimal places.
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
@@ -4819,8 +4909,8 @@ TEST(StatementMergerIntegrationTest, RetainsTwoClassifiedEventsWithoutTransactio
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(first.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(first.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(first.mUnits, 200000000);         // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(first.mAmount, 200000);
     EXPECT_EQ(first.mFeePaid, 1000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
@@ -4844,8 +4934,8 @@ TEST(StatementMergerIntegrationTest, RetainsTwoClassifiedEventsWithoutTransactio
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(second.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(second.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(second.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(second.mAmount, 200000);
     EXPECT_EQ(second.mFeePaid, 1000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
@@ -4942,8 +5032,8 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInOneFileLayout) {
     EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(unnamed.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(unnamed.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(unnamed.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unnamed.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unnamed.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(unnamed.mAmount, 200000);
     EXPECT_EQ(unnamed.mFeePaid, 1000);
     EXPECT_EQ(unnamed.mCurrency, Currency::EUR);
@@ -4967,8 +5057,8 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInOneFileLayout) {
     EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(named.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(named.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(named.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(named.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(named.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(named.mAmount, 120000);
     EXPECT_EQ(named.mFeePaid, 2000);
     EXPECT_EQ(named.mCurrency, Currency::EUR);
@@ -5085,8 +5175,8 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInTwoFileLayout) {
     EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(unnamed.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(unnamed.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(unnamed.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(unnamed.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(unnamed.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(unnamed.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(unnamed.mAmount, 200000);
     EXPECT_EQ(unnamed.mFeePaid, 1000);
     EXPECT_EQ(unnamed.mCurrency, Currency::EUR);
@@ -5110,8 +5200,8 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInTwoFileLayout) {
     EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(named.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(named.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(named.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(named.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(named.mUnits, 100000000);         // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(named.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(named.mAmount, 120000);
     EXPECT_EQ(named.mFeePaid, 2000);
     EXPECT_EQ(named.mCurrency, Currency::EUR);
@@ -6231,8 +6321,8 @@ TEST(StatementMergerIntegrationTest, PreservesEveryNameVariantWithinOneFile) {
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(first.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(first.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(first.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(first.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(first.mUnits, 200000000);         // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(first.mUnitPrice, 1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(first.mAmount, 200000);
     EXPECT_EQ(first.mFeePaid, 1000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
@@ -6256,8 +6346,8 @@ TEST(StatementMergerIntegrationTest, PreservesEveryNameVariantWithinOneFile) {
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(second.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(second.mTradeSide, TradeSide::Sell);
-    EXPECT_EQ(second.mUnits, 100000000);  // Source 1.000000000 units at eight decimal places.
-    EXPECT_EQ(second.mUnitPrice, 120000); // Source EUR 12.0000 at four decimal places.
+    EXPECT_EQ(second.mUnits, 100000000); // Source 1.000000000 units at eight decimal places.
+    EXPECT_EQ(second.mUnitPrice, 1'200'000'000); // Source EUR 12.00000000 at eight decimal places.
     EXPECT_EQ(second.mAmount, 120000);
     EXPECT_EQ(second.mFeePaid, 2000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
@@ -6357,11 +6447,11 @@ TEST(StatementMergerIntegrationTest, OverlappingExportsRetainAllOriginalClassSou
     const auto& purchase = instrument.mTransactions[0];
     const auto& sale = instrument.mTransactions[1];
 
-    EXPECT_EQ(purchase.mUnits, 200'000'000); // Source 2 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100'000); // EUR 10 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200'000'000);       // Source 2 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice, 1'000'000'000); // EUR 10 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200'000);
     EXPECT_EQ(sale.mUnits, 100'000'000);
-    EXPECT_EQ(sale.mUnitPrice, 120'000);
+    EXPECT_EQ(sale.mUnitPrice, 1'200'000'000);
     EXPECT_EQ(sale.mAmount, 120'000);
     ASSERT_EQ(purchase.mMetadata.mSources.size(), 3U);
     ASSERT_EQ(purchase.mInstrumentEvidence.size(), 3U);
@@ -6519,8 +6609,9 @@ TEST(StatementMergerIntegrationTest,
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -6631,8 +6722,9 @@ TEST(StatementMergerIntegrationTest,
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
@@ -6742,8 +6834,9 @@ TEST(StatementMergerIntegrationTest, InvalidNamelessTradeDoesNotContaminateHealt
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(purchase.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
     EXPECT_EQ(purchase.mTradeSide, TradeSide::Buy);
-    EXPECT_EQ(purchase.mUnits, 200000000);  // Source 2.000000000 units at eight decimal places.
-    EXPECT_EQ(purchase.mUnitPrice, 100000); // Source EUR 10.0000 at four decimal places.
+    EXPECT_EQ(purchase.mUnits, 200000000); // Source 2.000000000 units at eight decimal places.
+    EXPECT_EQ(purchase.mUnitPrice,
+              1'000'000'000); // Source EUR 10.00000000 at eight decimal places.
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);

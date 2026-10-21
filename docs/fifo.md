@@ -295,8 +295,8 @@ For every open lot:
 This is the largest-remainder method. It prevents independent rounding from making the adjusted
 lots disagree with the once-rounded combined target.
 
-Each lot keeps its exact total purchase value, including digits beyond `Money` precision as
-defined in `calculations.md`. Its adjusted value per unit is that unchanged total
+Each lot keeps its exact total purchase value, the exact product of its eight-decimal unit price
+and its units, as defined in `calculations.md`. Its adjusted value per unit is that unchanged total
 divided by its adjusted units. The calculation stays exact until output and is then rounded once
 to eight decimal places, with halves rounded away from zero. A rounded value per unit must never
 replace the preserved total purchase value used by later calculations. The shared arithmetic and

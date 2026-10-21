@@ -32,19 +32,22 @@ template <typename T> void expectError(const NumericResult<T>& aResult, NumericE
 }
 
 TEST(FifoBasisTest, PreservesTheForeignPurchaseSplitAndPartialDisposalExample) {
-    const auto eurPrice =
-        requireValue(convertMoney(2'553'750, 125'000'000, ExchangeRateDirection::ForeignPerEur));
+    // USD 255.375 at eight decimals, with 1 EUR = 1.25 USD.
+    const auto eurPrice = requireValue(
+        convertUnitPrice(25'537'500'000, 125'000'000, ExchangeRateDirection::ForeignPerEur));
     const auto acquired = requireValue(createLotBasis(eurPrice, 14'760'000));
     const auto adjusted = requireValue(adjustLotUnits(acquired, 29'520'000));
     const auto first = requireValue(consumeLotBasis(adjusted, 10'000'000));
     const auto final = requireValue(consumeLotBasis(first.mRemaining, 19'520'000));
 
-    EXPECT_EQ(eurPrice, 2'043'000);
-    EXPECT_EQ(acquired.mRemainingBasis.mTicks, fraction(30'154'680'000'000));
+    EXPECT_EQ(eurPrice, 20'430'000'000); // EUR 204.3 at eight decimals.
+    // EUR 204.3 * 0.1476 units = EUR 30.15468 = 301'546'800'000'000'000 ticks of 10^-16 EUR.
+    EXPECT_EQ(acquired.mRemainingBasis.mTicks, fraction(301'546'800'000'000'000));
     EXPECT_EQ(adjusted.mRemainingBasis, acquired.mRemainingBasis);
     EXPECT_EQ(requireValue(exactLotUnitValue(adjusted)), fraction(10'215, 100));
-    EXPECT_EQ(first.mAllocatedBasis.mTicks, fraction(10'215'000'000'000));
-    EXPECT_EQ(first.mRemaining.mRemainingBasis.mTicks, fraction(19'939'680'000'000));
+    EXPECT_EQ(first.mAllocatedBasis.mTicks, fraction(102'150'000'000'000'000)); // EUR 10.215
+    EXPECT_EQ(first.mRemaining.mRemainingBasis.mTicks,
+              fraction(199'396'800'000'000'000)); // EUR 19.93968
     EXPECT_EQ(final.mAllocatedBasis, first.mRemaining.mRemainingBasis);
     EXPECT_EQ(final.mRemaining, LotBasisState{});
 
@@ -56,7 +59,7 @@ TEST(FifoBasisTest, PreservesTheForeignPurchaseSplitAndPartialDisposalExample) {
 
     EXPECT_EQ(emitted.mParts, (std::vector<std::int64_t>{102'150, 199'397}));
     EXPECT_EQ(emitted.mTotal, 301'547);
-    EXPECT_EQ(acquired.mRemainingBasis.mTicks, fraction(30'154'680'000'000));
+    EXPECT_EQ(acquired.mRemainingBasis.mTicks, fraction(301'546'800'000'000'000));
 }
 
 TEST(FifoBasisTest, AllocatesExactNonterminatingCostsAcrossRepeatedSalesAfterOneAdjustment) {
@@ -67,7 +70,7 @@ TEST(FifoBasisTest, AllocatesExactNonterminatingCostsAcrossRepeatedSalesAfterOne
     EXPECT_EQ(adjusted.mRemainingUnits, 7);
     EXPECT_EQ(adjusted.mRemainingBasis.mTicks, fraction(3));
 
-    // Three cost ticks (10^-12 EUR each) across seven quantity ticks give 3/7 cost ticks
+    // Three cost ticks (10^-16 EUR each) across seven quantity ticks give 3/7 cost ticks
     // per quantity tick. These fractions stay exact; no rounding applies between sales.
     const auto first = requireValue(consumeLotBasis(adjusted, 1));
     auto allocated = first.mAllocatedBasis.mTicks;
@@ -144,17 +147,48 @@ TEST(FifoBasisTest, PreservesBasisWithLargestRemainderAdjustedUnits) {
                           UnitAllocationPart{2 * UNITS_SCALE, 1}};
     const auto adjusted = requireValue(allocateAdjustedUnits(lots, 5, 3));
 
-    const auto firstLot = requireValue(
-        adjustLotUnits(requireValue(createLotBasis(100'000, UNITS_SCALE)), adjusted.mParts[0]));
-    const auto secondLot = requireValue(
-        adjustLotUnits(requireValue(createLotBasis(100'000, 2 * UNITS_SCALE)), adjusted.mParts[1]));
+    const auto firstLot =
+        requireValue(adjustLotUnits(requireValue(createLotBasis(1'000'000'000, UNITS_SCALE)),
+                                    adjusted.mParts[0]));
+    const auto secondLot =
+        requireValue(adjustLotUnits(requireValue(createLotBasis(1'000'000'000, 2 * UNITS_SCALE)),
+                                    adjusted.mParts[1]));
 
     EXPECT_EQ(requireValue(roundToScaled(requireValue(exactLotUnitValue(firstLot)), UNITS_SCALE)),
               599'999'999);
     EXPECT_EQ(requireValue(roundToScaled(requireValue(exactLotUnitValue(secondLot)), UNITS_SCALE)),
               600'000'001);
-    EXPECT_EQ(firstLot.mRemainingBasis.mTicks, fraction(10'000'000'000'000));
-    EXPECT_EQ(secondLot.mRemainingBasis.mTicks, fraction(20'000'000'000'000));
+    EXPECT_EQ(firstLot.mRemainingBasis.mTicks,
+              fraction(100'000'000'000'000'000)); // EUR 10 * 1 unit
+    EXPECT_EQ(secondLot.mRemainingBasis.mTicks,
+              fraction(200'000'000'000'000'000)); // EUR 10 * 2 units
+}
+
+TEST(FifoBasisTest, AcceptsTheLargestPriceAndUnitsInTheLotBasis) {
+    constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
+
+    // The product is about 8.5 * 10^37 ticks of 10^-16 EUR: far above int64, inside WideInteger.
+    const auto lot = requireValue(createLotBasis(maximum, maximum));
+
+    EXPECT_EQ(lot.mRemainingUnits, maximum);
+    // EUR 92233720368.54775807 per unit: the largest price, eight decimals.
+    EXPECT_EQ(requireValue(exactLotUnitValue(lot)), fraction(maximum, 100'000'000));
+}
+
+TEST(FifoBasisTest, KeepsAnEightDecimalPriceInTheLotBasis) {
+    // EUR 10.00005 at eight decimals, bought as 1,000,000 units (10^14 at eight decimals).
+    const auto lot = requireValue(createLotBasis(1'000'005'000, 100'000'000'000'000));
+
+    // The old four-decimal price 10.0001 gave EUR 10,000,100, which is EUR 50 more.
+    EXPECT_EQ(requireValue(basisInEur(lot.mRemainingBasis)), fraction(10'000'050));
+}
+
+TEST(FifoBasisTest, ReturnsTheEightDecimalPriceAsTheExactLotUnitValue) {
+    // EUR 10.00005 at eight decimals, bought as 3 units (300'000'000 at eight decimals).
+    const auto lot = requireValue(createLotBasis(1'000'005'000, 300'000'000));
+
+    EXPECT_EQ(lot.mRemainingBasis.mTicks, fraction(300'001'500'000'000'000));   // 10^-16 EUR ticks
+    EXPECT_EQ(requireValue(exactLotUnitValue(lot)), fraction(200'001, 20'000)); // EUR 10.00005
 }
 
 } // namespace
