@@ -573,6 +573,18 @@ TEST(TradeRepublicParserTest, PreservesPrivateMarketEventsAndFundExecution) {
     EXPECT_EQ(transactionId(prepayment.mMetadata), "synthetic-private-prepayment");
 
     EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 1U);
+
+    const auto warning =
+        std::find_if(parseResult.mDiagnostics.begin(),
+                     parseResult.mDiagnostics.end(),
+                     [](const ParseDiagnostic& aDiagnostic) {
+                         return aDiagnostic.mCode == DiagnosticCode::UnsupportedAssetClass;
+                     });
+
+    ASSERT_NE(warning, parseResult.mDiagnostics.end());
+    EXPECT_EQ(warning->mMessageKey, MessageKey::UnsupportedAssetClassTaxUnsupported);
+    EXPECT_EQ(warning->mMessageParams,
+              (std::vector<MessageParam>{textParam("assetClass", "PRIVATE_FUND")}));
 }
 
 TEST(TradeRepublicParserTest, PreservesUnresolvedSplitWithoutCreatingATrade) {
@@ -1366,6 +1378,8 @@ TEST(TradeRepublicParserTest, ReturnsAStructuredErrorWhenTheCsvCannotBeOpened) {
     const auto& diagnostic = parseResult.mDiagnostics.front();
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorUnreadableFile);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_EQ(diagnostic.mSourceFile, "missing.csv");
     EXPECT_FALSE(diagnostic.mRowIndex.has_value());
     EXPECT_FALSE(diagnostic.mTransactionId.has_value());
@@ -1389,6 +1403,8 @@ TEST(TradeRepublicParserTest, RejectsAHeaderOnlyFileSeparatedBySemicolons) {
 
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InvalidHeaderOtherSeparator);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_EQ(diagnostic.mSourceFile,
               "taxbroker_TradeRepublicParserTest_RejectsAHeaderOnlyFileSeparatedBySemicolons.csv");
     EXPECT_FALSE(diagnostic.mRowIndex.has_value());
@@ -1444,8 +1460,12 @@ TEST(TradeRepublicParserTest, RejectsAHeaderOnlyFileWithARenamedColumn) {
     EXPECT_FALSE(diagnostic.mField.has_value());
     EXPECT_FALSE(diagnostic.mTransactionId.has_value());
     EXPECT_EQ(diagnostic.mMessage,
-              "The file is not a Trade Republic transaction export: 1 required column is "
-              "missing (category). No rows were imported.");
+              "The file is not a Trade Republic transaction export. Required columns are "
+              "missing: 1 (category). No rows were imported.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InvalidHeaderMissingColumns);
+    EXPECT_EQ(
+        diagnostic.mMessageParams,
+        (std::vector<MessageParam>{numberParam("count", 1U), textParam("columns", "category")}));
 }
 
 TEST(TradeRepublicParserTest, RejectsAHeaderWithSeveralMissingColumns) {
@@ -1467,8 +1487,13 @@ TEST(TradeRepublicParserTest, RejectsAHeaderWithSeveralMissingColumns) {
     EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::InvalidHeader);
     EXPECT_FALSE(parseResult.mDiagnostics.front().mRowIndex.has_value());
     EXPECT_EQ(parseResult.mDiagnostics.front().mMessage,
-              "The file is not a Trade Republic transaction export: 3 required columns are "
-              "missing (price, amount, fx_rate). No rows were imported.");
+              "The file is not a Trade Republic transaction export. Required columns are "
+              "missing: 3 (price, amount, fx_rate). No rows were imported.");
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageKey,
+              MessageKey::InvalidHeaderMissingColumns);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageParams,
+              (std::vector<MessageParam>{numberParam("count", 3U),
+                                         textParam("columns", "price, amount, fx_rate")}));
 }
 
 TEST(TradeRepublicParserTest, RejectsAHeaderWithARenamedColumnAndARow) {
@@ -1528,10 +1553,18 @@ TEST(TradeRepublicParserTest, RejectsASingleColumnHeaderWithoutASeparator) {
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidHeader);
     EXPECT_EQ(diagnostic.mMessage,
-              "The file is not a Trade Republic transaction export: 17 required columns are "
-              "missing (date, category, type, asset_class, name, symbol, shares, price, amount, "
-              "fee, tax, currency, original_amount, original_currency, fx_rate, description, "
-              "transaction_id). No rows were imported.");
+              "The file is not a Trade Republic transaction export. Required columns are "
+              "missing: 17 (date, category, type, asset_class, name, symbol, shares, price, "
+              "amount, fee, tax, currency, original_amount, original_currency, fx_rate, "
+              "description, transaction_id). No rows were imported.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InvalidHeaderMissingColumns);
+    EXPECT_EQ(diagnostic.mMessageParams,
+              (std::vector<MessageParam>{
+                  numberParam("count", 17U),
+                  textParam("columns",
+                            "date, category, type, asset_class, name, symbol, shares, price, "
+                            "amount, fee, tax, currency, original_amount, original_currency, "
+                            "fx_rate, description, transaction_id")}));
 }
 
 TEST(TradeRepublicParserTest, KeepsParseErrorForAnEmptyFile) {
@@ -1608,6 +1641,9 @@ TEST(TradeRepublicParserTest, ReportsAShortMiddleRowOnItsOwnRow) {
 
     EXPECT_EQ(mismatch.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(mismatch.mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mMessageKey, MessageKey::FieldCountMismatch);
+    EXPECT_EQ(mismatch.mMessageParams,
+              (std::vector<MessageParam>{numberParam("expected", 23U), numberParam("found", 22U)}));
     EXPECT_EQ(mismatch.mRowIndex, std::optional<std::size_t>{3});
     EXPECT_FALSE(mismatch.mTransactionId.has_value());
     EXPECT_FALSE(mismatch.mField.has_value());
@@ -1848,6 +1884,8 @@ TEST(TradeRepublicParserTest, FailsTheFileWhenTheFinalRowIsCutInsideAQuotedField
 
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorUnclosedQuote);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_FALSE(diagnostic.mRowIndex.has_value());
     EXPECT_EQ(diagnostic.mMessage,
               "The CSV file has an unclosed quote; it may be cut off or edited. No rows were "
@@ -1988,6 +2026,8 @@ TEST(TradeRepublicParserTest, FailsTheFileWhenTwoUnclosedQuotesMergeRows) {
 
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorLineBreakInField);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_FALSE(diagnostic.mRowIndex.has_value());
     EXPECT_EQ(diagnostic.mMessage,
               "A row with the wrong number of fields contains a line break inside a field; a "
@@ -2364,6 +2404,10 @@ TEST(TradeRepublicParserTest, ReportsAStandaloneUnknownTransaction) {
     const auto& diagnostic = parseResult.mDiagnostics.front();
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::UnknownRowType);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::UnknownRowType);
+    EXPECT_EQ(diagnostic.mMessageParams,
+              (std::vector<MessageParam>{textParam("type", "SYNTHETIC_UNKNOWN_EVENT"),
+                                         textParam("category", "SYNTHETIC_CATEGORY")}));
     EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(diagnostic.mRowIndex, 2U);
     ASSERT_TRUE(diagnostic.mTransactionId.has_value());
@@ -2419,6 +2463,8 @@ TEST(TradeRepublicParserTest, UsesDefaultHourWhenSourceDateIsEarlierThanReportin
 
     EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
     EXPECT_EQ(warning.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::InconsistentValueDatetimeDate);
+    EXPECT_EQ(warning.mMessageParams, (std::vector<MessageParam>{numberParam("defaultHour", 9U)}));
     EXPECT_EQ(warning.mField, "datetime");
     EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
     EXPECT_EQ(warning.mRowIndex, 2U);
@@ -3233,6 +3279,10 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingPrice) {
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldRequiredField);
+    EXPECT_EQ(error.mMessageParams,
+              (std::vector<MessageParam>{textParam("field", "price"),
+                                         termParam("rowKind", term::kRowKindTrade)}));
     EXPECT_EQ(error.mField, "price");
     EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
@@ -4025,6 +4075,8 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNegativeBuyUnits) {
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InconsistentValueTradeSide);
+    EXPECT_EQ(error.mMessageParams, (std::vector<MessageParam>{textParam("field", "shares")}));
     EXPECT_EQ(error.mField, "shares");
     EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
@@ -9384,6 +9436,8 @@ TEST(TradeRepublicParserTest, DoesNotTreatUnverifiedInstrumentInterestAsBankInte
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(error.mMessageKey, MessageKey::UnsupportedAssetClassInterestMapping);
+    EXPECT_TRUE(error.mMessageParams.empty());
     EXPECT_EQ(error.mField, "asset_class");
     EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
@@ -9666,6 +9720,8 @@ TEST(TradeRepublicParserTest, RejectsBenefitAndReportsErrorWhenDatetimeIsMissing
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldDatetime);
+    EXPECT_TRUE(error.mMessageParams.empty());
     EXPECT_EQ(error.mField, "datetime");
     EXPECT_EQ(error.mRowIndex, 2U);
     EXPECT_EQ(error.mTransactionId, row.mTransactionId);
@@ -10146,6 +10202,9 @@ TEST(TradeRepublicParserTest, RejectsActionWithMissingIdentity) {
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldSymbolAndName);
+    EXPECT_EQ(error.mMessageParams,
+              (std::vector<MessageParam>{termParam("rowKind", term::kRowKindCorporateAction)}));
     EXPECT_FALSE(error.mField.has_value());
     EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(error.mRowIndex, 2U);
@@ -10892,6 +10951,12 @@ TEST(TradeRepublicParserTest, ReportsEveryRecognizedButUnsupportedTransaction) {
         ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
         EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
         EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::UnsupportedRowType);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mMessageKey,
+                  MessageKey::UnsupportedRowTypeRecognized);
+        EXPECT_EQ(parseResult.mDiagnostics.front().mMessageParams,
+                  (std::vector<MessageParam>{
+                      textParam("type", std::string{unsupportedType.mType}),
+                      textParam("category", std::string{unsupportedType.mCategory})}));
         EXPECT_EQ(parseResult.mDiagnostics.front().mRowIndex, 2U);
         EXPECT_NE(parseResult.mDiagnostics.front().mMessage.find(unsupportedType.mType),
                   std::string::npos);
@@ -12259,6 +12324,8 @@ TEST(TradeRepublicParserTest, RetainsDividendWithInvalidNonEmptyDatetime) {
 
     EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
     EXPECT_EQ(warning.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::InvalidValueDatetime);
+    EXPECT_TRUE(warning.mMessageParams.empty());
     EXPECT_EQ(warning.mField, "datetime");
     EXPECT_EQ(warning.mRowIndex, 2U);
     EXPECT_EQ(warning.mTransactionId, row.mTransactionId);
@@ -13729,6 +13796,8 @@ TEST(TradeRepublicParserTest, RetainsTradeWithMissingName) {
 
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::MissingFieldName);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_EQ(diagnostic.mField, "name");
     EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(diagnostic.mRowIndex, 2U);
@@ -14095,6 +14164,8 @@ TEST(TradeRepublicParserTest, RetainsActionWithUnrecognizedClass) {
 
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::UnsupportedAssetClassUnrecognized);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_EQ(diagnostic.mField, "asset_class");
     EXPECT_EQ(diagnostic.mSourceFile, csvFile.path().filename().string());
     EXPECT_EQ(diagnostic.mRowIndex, 2U);
@@ -14340,6 +14411,8 @@ TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassLast) {
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::MissingFieldAssetClass);
+    EXPECT_TRUE(result.mDiagnostics[0].mMessageParams.empty());
     EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
     EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
     EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unknown");
@@ -14805,6 +14878,8 @@ TEST(TradeRepublicParserTest, LaterMatchingClassCannotClearAClassConflict) {
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::InconsistentValueAssetClass);
+    EXPECT_TRUE(result.mDiagnostics[0].mMessageParams.empty());
     EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
     EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-fund");
@@ -16010,6 +16085,8 @@ TEST(TradeRepublicParserTest, WarnsOnceAboutLocalizedNumbersFromThreeRows) {
 
     EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
     EXPECT_EQ(warning.mCode, DiagnosticCode::LocalizedNumberFormat);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::LocalizedNumberFormat);
+    EXPECT_EQ(warning.mMessageParams, (std::vector<MessageParam>{numberParam("rowCount", 3U)}));
     EXPECT_EQ(warning.mSourceFile,
               "taxbroker_TradeRepublicParserTest_WarnsOnceAboutLocalizedNumbersFromThreeRows.csv");
     EXPECT_FALSE(warning.mRowIndex.has_value());
@@ -16500,6 +16577,10 @@ TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfABondInterestRow) {
 
     EXPECT_EQ(dateError.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(dateError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(dateError.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(dateError.mMessageParams,
+              (std::vector<MessageParam>{textParam("field", "date"),
+                                         termParam("rowKind", term::kRowKindBondInterest)}));
     EXPECT_EQ(dateError.mField, "date");
     EXPECT_EQ(dateError.mRowIndex, 2U);
     EXPECT_EQ(dateError.mTransactionId, "synthetic-interest-transaction");
@@ -16510,6 +16591,10 @@ TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfABondInterestRow) {
 
     EXPECT_EQ(symbolError.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(symbolError.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(symbolError.mMessageKey, MessageKey::MissingFieldRequiredField);
+    EXPECT_EQ(symbolError.mMessageParams,
+              (std::vector<MessageParam>{textParam("field", "symbol"),
+                                         termParam("rowKind", term::kRowKindBondInterest)}));
     EXPECT_EQ(symbolError.mField, "symbol");
     EXPECT_EQ(symbolError.mRowIndex, 2U);
     EXPECT_EQ(symbolError.mTransactionId, "synthetic-interest-transaction");
@@ -16520,6 +16605,10 @@ TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfABondInterestRow) {
 
     EXPECT_EQ(amountError.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(amountError.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(amountError.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(amountError.mMessageParams,
+              (std::vector<MessageParam>{textParam("field", "amount"),
+                                         termParam("rowKind", term::kRowKindBondInterest)}));
     EXPECT_EQ(amountError.mField, "amount");
     EXPECT_EQ(amountError.mRowIndex, 2U);
     EXPECT_EQ(amountError.mTransactionId, "synthetic-interest-transaction");
@@ -17415,6 +17504,9 @@ TEST(TradeRepublicParserTest, RejectsAForeignBuyWithAPositiveOriginalAmount) {
     expectNoParsedRecords(result);
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::InconsistentValueTradeSide);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("field", "original_amount")}));
     EXPECT_EQ(result.mDiagnostics[0].mField, "original_amount");
     EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 2U);
 }

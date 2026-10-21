@@ -1,4 +1,5 @@
 #include "taxbroker/processing_diagnostics.hpp"
+#include "taxbroker/diagnostic_messages.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -7,17 +8,17 @@ namespace taxbroker {
 
 ProcessingDiagnostic numericDiagnostic(NumericError aError, ProcessingContext aContext) {
     auto code = ProcessingDiagnosticCode::UnrepresentableValue;
-    std::string message = "The value cannot be represented at the required precision or range.";
+    auto key = MessageKey::UnrepresentableValue;
 
     switch (aError)
     {
     case NumericError::Overflow:
         code = ProcessingDiagnosticCode::ArithmeticOverflow;
-        message = "The calculation exceeds the supported integer range.";
+        key = MessageKey::ArithmeticOverflow;
         break;
     case NumericError::InvalidExchangeRate:
         code = ProcessingDiagnosticCode::InvalidExchangeRate;
-        message = "The exchange rate is invalid.";
+        key = MessageKey::InvalidExchangeRate;
         break;
     case NumericError::InvalidInput:
     case NumericError::InvalidDenominator:
@@ -29,7 +30,7 @@ ProcessingDiagnostic numericDiagnostic(NumericError aError, ProcessingContext aC
     {
         // At this stage any numeric failure means the action cannot safely preserve the position.
         code = ProcessingDiagnosticCode::CorporateActionUnrepresentable;
-        message = "The corporate action cannot preserve the position and exact basis.";
+        key = MessageKey::CorporateActionUnrepresentable;
     }
 
     // Normalize caller-supplied scope so repeated reports/sources and input order do not change it.
@@ -41,7 +42,14 @@ ProcessingDiagnostic numericDiagnostic(NumericError aError, ProcessingContext aC
     aContext.mSources.erase(std::unique(aContext.mSources.begin(), aContext.mSources.end()),
                             aContext.mSources.end());
 
-    return ProcessingDiagnostic{DiagnosticSeverity::Error, code, std::move(aContext), message};
+    auto message = makeDiagnosticMessage(key);
+
+    return ProcessingDiagnostic{DiagnosticSeverity::Error,
+                                code,
+                                std::move(aContext),
+                                std::move(message.mEnglish),
+                                message.mKey,
+                                std::move(message.mParams)};
 }
 
 } // namespace taxbroker

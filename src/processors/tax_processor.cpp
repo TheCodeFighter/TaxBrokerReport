@@ -1,4 +1,5 @@
 #include "processors/tax_processor.hpp"
+#include "taxbroker/diagnostic_messages.hpp"
 
 #include <chrono>
 #include <stdexcept>
@@ -47,6 +48,10 @@ TaxProcessingResult TaxProcessor::prepareReportingYear(TaxProcessingRequest aReq
     if (!aRequest.mReportingYear || *aRequest.mReportingYear < kMinimumReportingYear ||
         *aRequest.mReportingYear > kMaximumReportingYear)
     {
+        auto message = makeDiagnosticMessage(MessageKey::InvalidReportingYear,
+                                             {numberParam("minYear", kMinimumReportingYear),
+                                              numberParam("maxYear", kMaximumReportingYear)});
+
         result.mDiagnostics.push_back({
             .mSeverity = DiagnosticSeverity::Error,
             .mCode = ProcessingDiagnosticCode::InvalidReportingYear,
@@ -59,7 +64,9 @@ TaxProcessingResult TaxProcessor::prepareReportingYear(TaxProcessingRequest aReq
                                          ReportType::OtherInterest},
                     .mField = "reporting_year",
                 },
-            .mMessage = "Select a reporting year from 2000 to 9999.",
+            .mMessage = std::move(message.mEnglish),
+            .mMessageKey = message.mKey,
+            .mMessageParams = std::move(message.mParams),
         });
 
         return result;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
 
 #include <optional>
@@ -48,7 +49,10 @@ struct ProcessingDiagnostic {
     DiagnosticSeverity mSeverity{DiagnosticSeverity::Error};
     ProcessingDiagnosticCode mCode{ProcessingDiagnosticCode::UnrepresentableValue};
     ProcessingContext mContext;
+    /// English sentence for logs, the CLI and developer tools; the frontend uses the key.
     std::string mMessage;
+    std::optional<MessageKey> mMessageKey;
+    std::vector<MessageParam> mMessageParams;
 };
 
 /// Maps a numeric error to a scoped error diagnostic without embedding raw financial values.

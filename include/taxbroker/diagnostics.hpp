@@ -1,8 +1,11 @@
 #pragma once
 
+#include "taxbroker/diagnostic_messages.hpp"
+
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace taxbroker {
 
@@ -34,7 +37,11 @@ struct ParseDiagnostic {
     std::optional<std::size_t> mRowIndex;
     std::optional<std::string> mTransactionId;
     std::optional<std::string> mField;
+    /// English sentence for logs, the CLI and developer tools; the frontend uses the key.
     std::string mMessage;
+    /// Set for every diagnostic the code emits; empty only in tests that build a bare diagnostic.
+    std::optional<MessageKey> mMessageKey;
+    std::vector<MessageParam> mMessageParams;
 };
 
 } // namespace taxbroker

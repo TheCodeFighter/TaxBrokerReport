@@ -1,5 +1,6 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
+#include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/statement_merger.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/logger.hpp"
@@ -19,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -569,6 +571,28 @@ void writePrivateMarketEvents(std::ostream& aOutput, const BrokerStatement& aSta
     }
 }
 
+/// Writes the message key and parameters of a diagnostic, or `<none>` for a bare diagnostic.
+void writeMessageKey(std::ostream& aOutput,
+                     const std::optional<MessageKey>& aKey,
+                     const std::vector<MessageParam>& aParams) {
+    aOutput << "\n  message_key: "
+            << (aKey ? std::string{messageDefinition(*aKey).mId} : std::string{"<none>"})
+            << "\n  message_params: ";
+
+    if (aParams.empty())
+    {
+        aOutput << "<none>";
+    }
+
+    for (std::size_t index = 0; index < aParams.size(); ++index)
+    {
+        const auto writeValue = [&aOutput](const auto& aValue) { aOutput << aValue; };
+
+        aOutput << (index == 0 ? "" : ", ") << aParams[index].mName << '=';
+        std::visit(writeValue, aParams[index].mValue);
+    }
+}
+
 void writeDiagnostics(std::ostream& aOutput, const ParseResult& aParseResult) {
     aOutput << "DIAGNOSTICS: " << aParseResult.mDiagnostics.size() << "\n\n";
 
@@ -587,7 +611,9 @@ void writeDiagnostics(std::ostream& aOutput, const ParseResult& aParseResult) {
         }
         aOutput << "\n  transaction_id: " << diagnostic.mTransactionId.value_or("<none>")
                 << "\n  field: " << diagnostic.mField.value_or("<none>")
-                << "\n  message: " << diagnostic.mMessage << "\n\n";
+                << "\n  message: " << diagnostic.mMessage;
+        writeMessageKey(aOutput, diagnostic.mMessageKey, diagnostic.mMessageParams);
+        aOutput << "\n\n";
     }
 }
 
@@ -664,15 +690,18 @@ void writeMergeDiagnostics(std::ostream& aOutput, const StatementMergeResult& aM
 
             aOutput << "\n  transaction_id: " << diagnostic.mTransactionId.value_or("<none>")
                     << "\n  field: " << diagnostic.mField.value_or("<none>")
-                    << "\n  message: " << diagnostic.mMessage << "\n\n";
+                    << "\n  message: " << diagnostic.mMessage;
+            writeMessageKey(aOutput, diagnostic.mMessageKey, diagnostic.mMessageParams);
+            aOutput << "\n\n";
         }
         else if constexpr (std::is_same_v<Diagnostic, MergeDiagnostic>)
         {
             aOutput << "- stage: Merging\n"
                     << "  severity: " << toString(aDiagnostic.mSeverity)
                     << "\n  code: " << toString(aDiagnostic.mCode)
-                    << "\n  message: " << aDiagnostic.mMessage
-                    << "\n  instrument: " << aDiagnostic.mInstrumentName.value_or("<none>")
+                    << "\n  message: " << aDiagnostic.mMessage;
+            writeMessageKey(aOutput, aDiagnostic.mMessageKey, aDiagnostic.mMessageParams);
+            aOutput << "\n  instrument: " << aDiagnostic.mInstrumentName.value_or("<none>")
                     << "\n  isin: " << aDiagnostic.mIsin.value_or("<none>") << "\n  tax_date: ";
 
             if (aDiagnostic.mTaxDate)

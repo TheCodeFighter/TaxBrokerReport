@@ -69,8 +69,9 @@ ISINs from Doh-Obr or fail that form. Doh-Obr is `needs_input` until the user an
 and unrelated reports remain available. The other-interest exclusion flow is defined below.
 
 The application JSON contract is version 2 because replacing the previously documented single
-`interest` result changes its shape and API values. Parser JSON remains version 1. This is a
-specification for future application implementation, not a change to the existing parser API.
+`interest` result changes its shape and API values. Parser diagnostics JSON is a developer format
+with `schemaVersion` 1 and no compatibility promise before the beta. This is a specification for
+future application implementation.
 
 ### Report result
 
@@ -141,7 +142,9 @@ Every application diagnostic contains:
 - severity: `warning` or `error`;
 - one pipeline stage;
 - a stable machine-readable code;
-- a short user-facing message;
+- a message key with named parameters, from which the frontend builds the user-facing text (see
+  "Message keys and translation");
+- the English message, for logs, the CLI and developer tools;
 - the affected report types, in the fixed report order;
 - whether the diagnostic currently blocks those reports; and
 - source and subject details when they are available.
@@ -449,7 +452,7 @@ The merger uses the first non-empty supplied name for that same ISIN under the d
 ordering. If all names are blank, the name remains empty; no ISIN is substituted into a name field.
 Required missing ISINs and malformed numeric facts keep their existing rejection errors. Original
 names and class labels belong to domain evidence and local debug dumps; this change adds no raw
-row fields, paths or source indices to the version 1 parser JSON contract.
+row fields, paths or source indices to the parser JSON contract.
 
 The later stages use the codes defined by their rule documents. These include:
 
@@ -481,7 +484,59 @@ Additional codes and their default scope are:
 
 `quantity_rounding_reconciled` and `broker_exchange_rate_used` are also warnings. Other previously
 listed codes are errors unless their rule explicitly says otherwise. Adapted parser diagnostics
-always keep their original severity. New application rules do not mutate parser version 1 codes.
+always keep their original severity. New application rules do not change the meaning of existing
+parser codes.
+
+## Message keys and translation
+
+The app is Slovenian by default, with English as a second language. The backend therefore never
+sends a sentence that the frontend has to read. Every diagnostic has:
+
+- `messageKey`: the stable id of one situation, for example `field_count_mismatch`;
+- `messageParams`: the named values the text needs, such as counts, field names, and expected and
+  found values; and
+- `message`: the English sentence, for logs, the CLI and developer tools. The frontend never parses
+  it and never shows it when it has a translation for the key.
+
+The code stays; the key is an addition. One code can cover several situations: `parse_error` is
+used for an unclosed quote, for a line break inside a field and for an unreadable file. A key is
+therefore the code alone when the code has one situation (`field_count_mismatch`), and
+`<code>.<sub_code>` when it has several (`parse_error.unclosed_quote`,
+`parse_error.line_break_in_field`, `parse_error.unreadable_file`). A new situation gets a new key,
+even under an existing code. A key is an API value: it is never renamed, and an old key is never
+reused for another meaning.
+
+A parameter is one of three kinds:
+
+| Kind | Meaning |
+| --- | --- |
+| number | A whole number. The frontend formats it. |
+| text | Shown as it is and never translated, such as one of our column names. |
+| term | A term id such as `row_kind.trade`. The frontend translates it from the same table. |
+
+Terms are the next level below a key. They let one sentence say "in a dividend row" or "in a trade
+row" without a sentence per row kind. Slovenian has cases, so a sentence puts a term where its base
+form fits, for example after a colon. There is no plural syntax: a sentence is worded so that a
+number stands alone, for example `Required columns are missing: 3 (price, amount, fx_rate)`.
+
+The texts live in `resources/i18n/diagnostic_messages.csv`, with the header `key,en,sl`. It has
+one row per message key and per term, and `{name}` marks a parameter in a text. The backend embeds
+the table when it is built and uses the English column; the frontend loads the same file. The list
+of every key with its parameters is in `include/taxbroker/diagnostic_messages.hpp`. Tests fail when:
+
+- a key is missing or used twice;
+- a key or a term has no row, or a row has no key;
+- a text is empty; or
+- the `{name}` placeholders of a text differ from the parameters of its key.
+
+A parameter holds only what the English sentence already showed: counts, our own names and, where
+the user needs it to find the problem, a source label such as a transaction type. It follows the
+privacy rules below and never holds a raw row, a path or an unrelated financial value.
+
+Every new user-facing diagnostic needs a key, parameters, and an English and a Slovenian text in
+the table, in the same change. Decision requests use keys and parameters for their questions in
+the same way, so the frontend builds each question from the request type and its fields, never
+from a sentence.
 
 ## Deterministic ordering
 
@@ -515,22 +570,18 @@ messages are never sorting keys.
 
 ## Parser API compatibility
 
-The existing parser diagnostics API remains version 1. This issue does not change:
-
-- `ParseDiagnostic` or its existing enum values;
-- `serializeDiagnosticsJson`;
-- parser JSON field names;
-- the parser status values `success`, `completed_with_warnings`, and `completed_with_errors`; or
-- how optional parser fields are omitted.
+The parser diagnostics JSON (`serializeDiagnosticsJson`, `schemaVersion` 1) is a developer format
+until the beta, and no compatibility promise covers it. It keeps the existing enum values and
+status values (`success`, `completed_with_warnings`, `completed_with_errors`), omits unavailable
+optional fields, and gained `messageKey` and `messageParams` for each diagnostic.
 
 The application result is a separate, versioned contract. An adapter copies parser diagnostics
 into the application result, adds the `parsing` stage and report scope, and keeps their original
-severity, code, safe message, and source details. The adapter must not mutate the `ParseResult`.
-It adds the run-local source ID from the application request; parser JSON version 1 does not gain a
-new field.
+severity, code, message key, parameters, safe message, and source details. The adapter must not
+mutate the `ParseResult`. It adds the run-local source ID from the application request.
 
-Changing the application result does not silently change parser JSON version 1. A breaking change
-to either contract requires a version change to that contract and compatibility tests.
+From the first released frontend on, a breaking change to either contract requires a version change
+to that contract and compatibility tests.
 
 ## JSON privacy and safety
 
@@ -558,9 +609,9 @@ Generated XML is financial output and may appear only in the successful report p
 its download reference. It is necessary output, not diagnostic context. Logs and error messages
 must not copy it.
 
-Messages are built from controlled templates. An external exception is mapped to a stable code and
-a safe message. Source values are omitted by default and included only when a documented frontend
-decision cannot be made without that exact value.
+Messages are built from the controlled templates in the message table. An external exception is
+mapped to a stable code, a message key and a safe message. Source values are omitted by default and
+included only when a documented frontend decision cannot be made without that exact value.
 
 Before serialization, every filename is passed through `SourceFilename::fromPath`. This rule also
 applies to filenames returned by a future broker parser or application-stage error; trusting that a
@@ -609,7 +660,9 @@ is present; the raw CSV row is not.
       "severity": "error",
       "stage": "historical_validation",
       "code": "incomplete_history",
-      "message": "Cannot process Example Investment because earlier purchase history is missing.",
+      "message": "Earlier purchase history is missing for this instrument; it cannot be processed.",
+      "messageKey": "incomplete_history",
+      "messageParams": {},
       "affectedReports": ["capital_gains"],
       "blocking": true,
       "sources": [
@@ -699,7 +752,9 @@ The frontend must:
 - preserve the selected choice as `failureResolution` in the report result;
 - list every excluded name and ISIN before confirmation and beside the final download;
 - mark developer output as unsafe;
-- use structured request types and fields for user decisions; and
+- use structured request types and fields for user decisions;
+- build the text of every diagnostic from its message key and parameters, in Slovenian by default
+  or in English; and
 - use a clear general message only when a more specific diagnostic is unavailable.
 
 The frontend must not parse logs, diagnostic message wording, or exception text to decide what to
@@ -798,6 +853,9 @@ Application-service, API, and integration tests based on this document must prov
 - diagnostics contain no unnecessary financial values, generated XML, stack traces, or raw
   exception text;
 - optional fields are omitted when unavailable;
-- the overall status follows the stated precedence; and
-- the existing parser diagnostics JSON remains byte-for-byte compatible for the same
-  `ParseResult`.
+- the overall status follows the stated precedence;
+- every diagnostic the code can emit has a message key, and a missing or duplicate key fails a test;
+- each key has an English and a Slovenian text, and the placeholders match its parameters;
+- each diagnostic reports the expected key and parameters, for example a wrong field count gives
+  `field_count_mismatch` with `expected` and `found`; and
+- the parser diagnostics JSON sends the key and parameters.

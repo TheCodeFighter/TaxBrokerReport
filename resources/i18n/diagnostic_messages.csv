@@ -1,0 +1,42 @@
+key,en,sl
+parse_error.unclosed_quote,"The CSV file has an unclosed quote; it may be cut off or edited. No rows were imported.","Datoteka CSV ima nezaprt narekovaj; morda je odrezana ali urejena. Nobena vrstica ni bila uvožena."
+parse_error.unreadable_file,"The CSV file could not be opened or did not match the expected Trade Republic format.","Datoteke CSV ni bilo mogoče odpreti ali ne ustreza pričakovani obliki Trade Republic."
+parse_error.line_break_in_field,"A row with the wrong number of fields contains a line break inside a field; a quote is probably unclosed. No rows were imported.","Vrstica z napačnim številom polj vsebuje prelom vrstice znotraj polja; narekovaj je verjetno nezaprt. Nobena vrstica ni bila uvožena."
+invalid_header.other_separator,"The columns are separated by semicolons or tabs, not commas; the file was probably opened and saved again in a spreadsheet program. Download the export again from Trade Republic and import it unchanged. No rows were imported.","Stolpci so ločeni s podpičji ali tabulatorji, ne z vejicami; datoteka je bila verjetno odprta in ponovno shranjena v programu za preglednice. Izvoz znova prenesite iz Trade Republic in ga uvozite nespremenjenega. Nobena vrstica ni bila uvožena."
+invalid_header.missing_columns,"The file is not a Trade Republic transaction export. Required columns are missing: {count} ({columns}). No rows were imported.","Datoteka ni izvoz transakcij Trade Republic. Manjkajoči obvezni stolpci: {count} ({columns}). Nobena vrstica ni bila uvožena."
+field_count_mismatch,"The row has a different number of fields than the header (expected {expected}, found {found}); the row was skipped.","Vrstica ima drugačno število polj kot glava (pričakovano {expected}, najdeno {found}); vrstica je bila preskočena."
+localized_number_format,"{rowCount} rows have a number with a comma or parentheses, which Trade Republic does not export; the file was probably opened and saved again in a spreadsheet program. Download the export again from Trade Republic and import it unchanged.","Število vrstic s številom z vejico ali oklepaji, ki jih Trade Republic ne izvozi: {rowCount}. Datoteka je bila verjetno odprta in ponovno shranjena v programu za preglednice. Izvoz znova prenesite iz Trade Republic in ga uvozite nespremenjenega."
+missing_field.datetime,"Required field 'datetime' is missing; transaction order cannot be established. The row was skipped; review the source transaction.","Zahtevano polje 'datetime' manjka; vrstnega reda transakcij ni mogoče določiti. Vrstica je bila preskočena; preverite izvorno transakcijo."
+missing_field.required_field,"Required field '{field}' is missing in {rowKind}; the row was skipped.","Zahtevano polje '{field}' manjka (vrsta vrstice: {rowKind}); vrstica je bila preskočena."
+missing_field.symbol_and_name,"Required fields 'symbol' and 'name' are missing in {rowKind}; the row was skipped.","Zahtevani polji 'symbol' in 'name' manjkata (vrsta vrstice: {rowKind}); vrstica je bila preskočena."
+missing_field.name,"Display name is missing; the identified event was retained.","Prikazno ime manjka; prepoznani dogodek je bil ohranjen."
+missing_field.asset_class,"Asset classification is unresolved; the event was retained.","Klasifikacija sredstva ni razrešena; dogodek je bil ohranjen."
+invalid_value.datetime,"Field 'datetime' is invalid; exact transaction order is unknown. The event retains its tax date and uses deterministic source ordering.","Polje 'datetime' je neveljavno; natančen vrstni red transakcij ni znan. Dogodek ohrani davčni datum in uporablja določen vrstni red glede na vir."
+invalid_value.field,"Field '{field}' has an invalid value in {rowKind}; the row was skipped.","Polje '{field}' ima neveljavno vrednost (vrsta vrstice: {rowKind}); vrstica je bila preskočena."
+inconsistent_value.datetime_date,"The calendar date in 'datetime' differs from 'date'; reporting uses 'date' and ordering uses that date at the default hour {defaultHour}:00:00 UTC. The original timestamp is retained. FIFO or corporate-action order may be incorrect; review the transaction order.","Koledarski datum v polju 'datetime' se razlikuje od polja 'date'; poročanje uporablja 'date', vrstni red pa ta datum ob privzeti uri {defaultHour}:00:00 UTC. Izvirni časovni žig je ohranjen. Vrstni red FIFO ali korporativnih dejanj je lahko napačen; preverite vrstni red transakcij."
+inconsistent_value.trade_side,"Field '{field}' is inconsistent with the trade side; the row was skipped.","Polje '{field}' ni skladno z vrsto posla (nakup ali prodaja); vrstica je bila preskočena."
+inconsistent_value.asset_class,"Asset classes differ for the same ISIN; events were retained with unresolved classification.","Razredi sredstev se za isti ISIN razlikujejo; dogodki so bili ohranjeni z nerazrešeno klasifikacijo."
+unsupported_asset_class.unrecognized,"Asset classification is unresolved; the event was retained.","Klasifikacija sredstva ni razrešena; dogodek je bil ohranjen."
+unsupported_asset_class.tax_unsupported,"Asset class '{assetClass}' was preserved, but its tax treatment is not supported yet.","Razred sredstva '{assetClass}' je ohranjen, vendar njegova davčna obravnava še ni podprta."
+unsupported_asset_class.interest_mapping,"The interest row has no verified cash-interest or bond-coupon mapping; the row was skipped.","Vrstica obresti nima preverjene preslikave v obresti na gotovino ali kupon obveznice; vrstica je bila preskočena."
+unsupported_row_type.recognized,"Transaction type '{type}' in category '{category}' is recognized but not supported; the row was skipped.","Vrsta transakcije '{type}' v kategoriji '{category}' je prepoznana, vendar ni podprta; vrstica je bila preskočena."
+unsupported_row_type.interest_type,"This interest transaction type is not supported; the row was skipped.","Ta vrsta obrestne transakcije ni podprta; vrstica je bila preskočena."
+unknown_row_type,"Transaction type '{type}' in category '{category}' is unknown; the row was skipped.","Vrsta transakcije '{type}' v kategoriji '{category}' ni znana; vrstica je bila preskočena."
+duplicate_source_index,"Multiple merge inputs use the same source index; their events were not merged.","Več vhodov za združevanje uporablja isti indeks vira; njihovi dogodki niso bili združeni."
+inconsistent_source_index.no_source,"An event has no source reference and was not merged.","Dogodek nima sklica na vir in ni bil združen."
+inconsistent_source_index.mismatch,"An event source index does not match its merge input and was not merged.","Indeks vira dogodka se ne ujema z vhodom za združevanje in dogodek ni bil združen."
+conflicting_duplicate,"Events with the same broker transaction ID have conflicting tax-relevant data and were not merged.","Dogodki z enakim ID-jem transakcije pri brokerju imajo nasprotujoče si davčno pomembne podatke in niso bili združeni."
+instrument_name_conflict,"Instrument names differ for the same identity; the earliest non-empty name is used for presentation; blank source names remain evidence.","Imena instrumenta se za isto identiteto razlikujejo; za prikaz je uporabljeno najzgodnejše neprazno ime; prazna imena v virih ostanejo kot dokaz."
+instrument_asset_class_conflict,"Asset classes differ for the same ISIN; the merged asset class is unknown.","Razredi sredstev se za isti ISIN razlikujejo; združeni razred sredstva je neznan."
+unrepresentable_value,"The value cannot be represented at the required precision or range.","Vrednosti ni mogoče predstaviti z zahtevano natančnostjo ali v zahtevanem obsegu."
+arithmetic_overflow,"The calculation exceeds the supported integer range.","Izračun presega podprti celoštevilski obseg."
+invalid_exchange_rate,"The exchange rate is invalid.","Menjalni tečaj je neveljaven."
+corporate_action_unrepresentable,"The corporate action cannot preserve the position and exact basis.","Korporativno dejanje ne more ohraniti stanja in natančne nabavne vrednosti."
+invalid_reporting_year,"Select a reporting year from {minYear} to {maxYear}.","Izberite poročevalsko leto od {minYear} do {maxYear}."
+row_kind.trade,trade row,nakup ali prodaja
+row_kind.dividend,dividend row,dividenda
+row_kind.bond_interest,bond-interest row,obresti obveznice
+row_kind.broker_interest,broker-interest row,obresti brokerja
+row_kind.corporate_action,corporate-action row,korporativno dejanje
+row_kind.benefit,benefit row,ugodnost
+row_kind.private_market,private-market row,zasebni trg

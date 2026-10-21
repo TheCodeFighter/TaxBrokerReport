@@ -552,6 +552,10 @@ TEST(TaxProcessorTest, RejectsMissingYearBeforePreparingAnyViews) {
     EXPECT_FALSE(diagnostic.mContext.mIsin.has_value());
     EXPECT_FALSE(diagnostic.mContext.mInstrumentName.has_value());
     EXPECT_EQ(diagnostic.mMessage, "Select a reporting year from 2000 to 9999.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InvalidReportingYear);
+    EXPECT_EQ(
+        diagnostic.mMessageParams,
+        (std::vector<MessageParam>{numberParam("minYear", 2000U), numberParam("maxYear", 9999U)}));
 }
 
 TEST(TaxProcessorTest, RejectsZeroYearBeforePreparingAnyViews) {
