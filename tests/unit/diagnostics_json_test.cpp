@@ -73,6 +73,68 @@ TEST(DiagnosticsJsonTest, SerializesStableFrontendFieldsAndSummary) {
     EXPECT_FALSE(error.at("source").contains("row"));
     EXPECT_FALSE(error.contains("transactionId"));
     EXPECT_FALSE(error.contains("field"));
+    // A diagnostic without a message key sends neither a key nor parameters.
+    EXPECT_FALSE(error.contains("messageKey"));
+    EXPECT_FALSE(error.contains("messageParams"));
+}
+
+TEST(DiagnosticsJsonTest, SerializesTheMessageKeyAndParameters) {
+    ParseResult parseResult{
+        .mBroker = Broker::TradeRepublic,
+    };
+    parseResult.mDiagnostics = {
+        ParseDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = DiagnosticCode::FieldCountMismatch,
+            .mSourceFile = "synthetic.csv",
+            .mRowIndex = 3U,
+            .mMessage = "The row has a different number of fields than the header (expected 23, "
+                        "found 22); the row was skipped.",
+            .mMessageKey = MessageKey::FieldCountMismatch,
+            .mMessageParams = {numberParam("expected", 23U), numberParam("found", 22U)},
+        },
+        ParseDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = DiagnosticCode::ParseError,
+            .mSourceFile = "synthetic.csv",
+            .mMessage = "The CSV file has an unclosed quote; it may be cut off or edited. No "
+                        "rows were imported.",
+            .mMessageKey = MessageKey::ParseErrorUnclosedQuote,
+        },
+        ParseDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = DiagnosticCode::MissingField,
+            .mSourceFile = "synthetic.csv",
+            .mRowIndex = 4U,
+            .mField = "price",
+            .mMessage = "Required field 'price' is missing in trade row; the row was skipped.",
+            .mMessageKey = MessageKey::MissingFieldRequiredField,
+            .mMessageParams = {textParam("field", "price"),
+                               termParam("rowKind", term::kRowKindTrade)},
+        },
+    };
+
+    const auto response = nlohmann::json::parse(api::serializeDiagnosticsJson(parseResult));
+    const auto& diagnostics = response.at("diagnostics");
+
+    ASSERT_EQ(diagnostics.size(), 3U);
+
+    EXPECT_EQ(diagnostics.at(0).at("messageKey"), "field_count_mismatch");
+    EXPECT_EQ(diagnostics.at(0).at("messageParams"),
+              (nlohmann::json{{"expected", 23}, {"found", 22}}));
+    EXPECT_EQ(diagnostics.at(0).at("message"),
+              "The row has a different number of fields than the header (expected 23, found "
+              "22); the row was skipped.");
+
+    EXPECT_EQ(diagnostics.at(1).at("messageKey"), "parse_error.unclosed_quote");
+    EXPECT_EQ(diagnostics.at(1).at("messageParams"), nlohmann::json::object());
+
+    // Numbers stay numbers; text and term ids are strings.
+    EXPECT_EQ(diagnostics.at(2).at("messageKey"), "missing_field.required_field");
+    EXPECT_EQ(diagnostics.at(2).at("messageParams"),
+              (nlohmann::json{{"field", "price"}, {"rowKind", "row_kind.trade"}}));
+    EXPECT_TRUE(diagnostics.at(0).at("messageParams").at("expected").is_number_unsigned());
+    EXPECT_TRUE(diagnostics.at(2).at("messageParams").at("rowKind").is_string());
 }
 
 TEST(DiagnosticsJsonTest, KeepsOnlyFilenamesFromLinuxMacAndWindowsPaths) {

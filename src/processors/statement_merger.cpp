@@ -1,4 +1,5 @@
 #include "taxbroker/statement_merger.hpp"
+#include "taxbroker/diagnostic_messages.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -616,11 +617,14 @@ void addConflictingDuplicateDiagnostic(const std::vector<MergeEvent>& aEvents,
                                        std::vector<MergeDiagnostic>& aDiagnostics) {
     const auto& first = aEvents[aCandidates.front()];
 
+    auto message = makeDiagnosticMessage(MessageKey::ConflictingDuplicate);
+
     MergeDiagnostic diagnostic{
         .mSeverity = DiagnosticSeverity::Error,
         .mCode = MergeDiagnosticCode::ConflictingDuplicate,
-        .mMessage = "Events with the same broker transaction ID have conflicting "
-                    "tax-relevant data and were not merged.",
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
         .mTaxDate = eventMetadata(first).mTaxDate,
         .mInstrumentName = eventName(first),
         .mIsin = eventIsin(first),
@@ -790,13 +794,14 @@ void addNameConflictDiagnostic(const Isin& aIsin,
 
     auto variants = makeNameVariants(aNames);
     auto sources = variantSources(variants);
+    auto message = makeDiagnosticMessage(MessageKey::InstrumentNameConflict);
 
     aDiagnostics.push_back(MergeDiagnostic{
         .mSeverity = DiagnosticSeverity::Warning,
         .mCode = MergeDiagnosticCode::InstrumentNameConflict,
-        .mMessage =
-            "Instrument names differ for the same identity; the earliest non-empty name is used "
-            "for presentation; blank source names remain evidence.",
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
         .mSources = std::move(sources),
         .mInstrumentName = aNames.mCanonicalName,
         .mIsin = aIsin,
@@ -815,11 +820,14 @@ void addAssetClassConflictDiagnostic(const Isin& aIsin,
 
     auto variants = makeAssetClassVariants(aAssetClasses);
     auto sources = variantSources(variants);
+    auto message = makeDiagnosticMessage(MessageKey::InstrumentAssetClassConflict);
 
     aDiagnostics.push_back(MergeDiagnostic{
         .mSeverity = DiagnosticSeverity::Error,
         .mCode = MergeDiagnosticCode::InstrumentAssetClassConflict,
-        .mMessage = "Asset classes differ for the same ISIN; the merged asset class is unknown.",
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
         .mSources = std::move(sources),
         .mInstrumentName = aName,
         .mIsin = aIsin,
@@ -848,13 +856,16 @@ template <typename Event>
         return true;
     }
 
+    auto message = makeDiagnosticMessage(aEvent.mMetadata.mSources.empty()
+                                             ? MessageKey::InconsistentSourceIndexNoSource
+                                             : MessageKey::InconsistentSourceIndexMismatch);
+
     aDiagnostics.push_back(MergeDiagnostic{
         .mSeverity = DiagnosticSeverity::Error,
         .mCode = MergeDiagnosticCode::InconsistentSourceIndex,
-        .mMessage = aEvent.mMetadata.mSources.empty()
-                        ? "An event has no source reference and was not merged."
-                        : "An event source index does not match its merge input and was not "
-                          "merged.",
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
         .mSources = aEvent.mMetadata.mSources,
         .mTaxDate = aEvent.mMetadata.mTaxDate,
         .mInstrumentName = std::move(aInstrumentName),
@@ -963,11 +974,14 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
 
             normalizeSources(sources);
 
+            auto message = makeDiagnosticMessage(MessageKey::DuplicateSourceIndex);
+
             mergeDiagnostics.push_back(MergeDiagnostic{
                 .mSeverity = DiagnosticSeverity::Error,
                 .mCode = MergeDiagnosticCode::DuplicateSourceIndex,
-                .mMessage = "Multiple merge inputs use the same source index; their events were "
-                            "not merged.",
+                .mMessage = std::move(message.mEnglish),
+                .mMessageKey = message.mKey,
+                .mMessageParams = std::move(message.mParams),
                 .mSources = std::move(sources),
                 .mSourceIndex = sourceIndex,
             });

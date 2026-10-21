@@ -42,6 +42,8 @@ TEST(ProcessingDiagnosticsTest, OverflowReturnsAControlledMessageAndSafeProvenan
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::ArithmeticOverflow);
     EXPECT_EQ(diagnostic.mMessage, "The calculation exceeds the supported integer range.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ArithmeticOverflow);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_EQ(diagnostic.mMessage.find("private"), std::string::npos);
     EXPECT_EQ(diagnostic.mMessage.find("synthetic-first"), std::string::npos);
     EXPECT_EQ(diagnostic.mMessage.find("Synthetic Income Instrument"), std::string::npos);
@@ -74,6 +76,8 @@ TEST(ProcessingDiagnosticsTest, UnrepresentableValueReturnsAControlledMessage) {
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::UnrepresentableValue);
     EXPECT_EQ(diagnostic.mMessage,
               "The value cannot be represented at the required precision or range.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::UnrepresentableValue);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_TRUE(diagnostic.mContext.mAffectedReports.empty());
     EXPECT_TRUE(diagnostic.mContext.mSources.empty());
 }
@@ -85,6 +89,7 @@ TEST(ProcessingDiagnosticsTest, InvalidInputReturnsAControlledMessage) {
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::UnrepresentableValue);
     EXPECT_EQ(diagnostic.mMessage,
               "The value cannot be represented at the required precision or range.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::UnrepresentableValue);
 }
 
 TEST(ProcessingDiagnosticsTest, InvalidDenominatorRetainsOnlyTheCallerSuppliedDividendScope) {
@@ -99,6 +104,7 @@ TEST(ProcessingDiagnosticsTest, InvalidDenominatorRetainsOnlyTheCallerSuppliedDi
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::UnrepresentableValue);
     EXPECT_EQ(diagnostic.mMessage,
               "The value cannot be represented at the required precision or range.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::UnrepresentableValue);
     EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::FifoTax);
     EXPECT_EQ(diagnostic.mContext.mAffectedReports, (std::vector{ReportType::Dividends}));
 }
@@ -109,6 +115,8 @@ TEST(ProcessingDiagnosticsTest, InvalidExchangeRateReturnsAControlledMessage) {
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::InvalidExchangeRate);
     EXPECT_EQ(diagnostic.mMessage, "The exchange rate is invalid.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InvalidExchangeRate);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
 }
 
 TEST(ProcessingDiagnosticsTest, CorporateActionContextOverridesTheGenericOverflowCode) {
@@ -123,6 +131,8 @@ TEST(ProcessingDiagnosticsTest, CorporateActionContextOverridesTheGenericOverflo
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionUnrepresentable);
     EXPECT_EQ(diagnostic.mMessage,
               "The corporate action cannot preserve the position and exact basis.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionUnrepresentable);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
     EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::CorporateAction);
     EXPECT_EQ(diagnostic.mContext.mAffectedReports, (std::vector{ReportType::CapitalGains}));
 }

@@ -1,10 +1,12 @@
 #include "taxbroker/api/diagnostics_json.hpp"
+#include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/types.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <string_view>
+#include <variant>
 
 namespace {
 
@@ -64,6 +66,20 @@ std::string_view toString(DiagnosticCode aCode) {
     return "parse_error";
 }
 
+/// The parameters as one JSON object: numbers stay numbers, text and term ids are strings.
+nlohmann::json messageParamsToJson(const std::vector<MessageParam>& aParams) {
+    nlohmann::json params = nlohmann::json::object();
+
+    for (const auto& param : aParams)
+    {
+        const auto toJson = [](const auto& aValue) { return nlohmann::json(aValue); };
+
+        params[param.mName] = std::visit(toJson, param.mValue);
+    }
+
+    return params;
+}
+
 std::string_view statusFor(std::size_t aWarningCount, std::size_t aErrorCount) {
     if (aErrorCount != 0)
     {
@@ -114,6 +130,11 @@ std::string serializeDiagnosticsJson(const ParseResult& aParseResult, int aInden
         if (diagnostic.mField)
         {
             serialized["field"] = *diagnostic.mField;
+        }
+        if (diagnostic.mMessageKey)
+        {
+            serialized["messageKey"] = messageDefinition(*diagnostic.mMessageKey).mId;
+            serialized["messageParams"] = messageParamsToJson(diagnostic.mMessageParams);
         }
 
         diagnostics.emplace_back(std::move(serialized));

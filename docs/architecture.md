@@ -367,7 +367,7 @@ and action evidence are preserved; preparation does not infer support, apply act
 splits, consume inventory, calculate loss eligibility or establish statement coverage. Those operations
 belong to later processors. Boundary preparation success does not assign final report statuses,
 clear upstream errors or mean that XML was generated. Full application status/API integration remains
-later work; the parser JSON contract stays at version 1.
+later work. Parser diagnostics JSON is not changed by it.
 
 Report exclusions preserve source facts and replacement allocations needed by retained losses.
 Unresolved dependencies on excluded data require a loss decision for the dependent sale; they
@@ -379,7 +379,7 @@ price and imported Units. Proportional allocations remain exact rational values 
 specified output boundary. Controlled quantity adjustments retain their original source values,
 apply through a run-local overlay and rebuild affected history. The backend tracks the cumulative
 absolute EUR impact of inventory reconciliation per ISIN/run; details are in `calculations.md`
-and `fifo.md`. This additional processor state does not change parser diagnostic version 1.
+and `fifo.md`. This additional processor state does not change parser diagnostics.
 
 The arithmetic layer returns typed numeric failures without report assumptions. The intermediate
 `ProcessingDiagnostic` carries the stage, affected reports and safe source/instrument context.
@@ -426,7 +426,8 @@ are outside the current TR/IBKR import scope; their special treatment is not par
 
 The complete application diagnostic model, revision-bound decisions, deterministic ordering,
 privacy boundary, and four independent form statuses are defined in [`diagnostics.md`](diagnostics.md).
-Application JSON uses version 2 for this expanded result; existing parser JSON remains version 1.
+Application JSON uses version 2 for this expanded result. Parser diagnostics JSON is a developer
+format until the beta (see "JSON contract" below).
 
 ## Parser diagnostics
 
@@ -434,6 +435,9 @@ Parser diagnostics have three separate responsibilities:
 
 1. `include/taxbroker/diagnostics.hpp` defines the in-memory domain model. A `ParseResult` owns its
    diagnostics, so parsing separate CSV files concurrently does not require shared mutable state.
+   Each diagnostic carries a message key and named parameters for translation, and the English
+   sentence for logs and developer tools (see "Message keys and translation" in
+   [`diagnostics.md`](diagnostics.md)).
 2. `include/taxbroker/api/diagnostics_json.hpp` and its implementation under `src/server/api/`
    convert that model into the versioned frontend contract. The parsing and tax-processing core
    does not depend on a JSON library.
@@ -443,7 +447,7 @@ Parser diagnostics have three separate responsibilities:
 Application logs remain useful for developers and operational troubleshooting, but the frontend
 must never parse log messages.
 
-### JSON contract version 1
+### JSON contract
 
 ```json
 {
@@ -460,6 +464,10 @@ must never parse log messages.
       "severity": "warning",
       "code": "unsupported_asset_class",
       "message": "Asset class 'CRYPTO' was preserved, but its tax treatment is not supported yet.",
+      "messageKey": "unsupported_asset_class.tax_unsupported",
+      "messageParams": {
+        "assetClass": "CRYPTO"
+      },
       "source": {
         "file": "TransactionExport.csv",
         "row": 275
@@ -481,16 +489,21 @@ Warnings describe preserved data that needs attention later. Errors describe rej
 file-level parsing failure. Optional location fields are omitted when unavailable rather than sent
 as `null`.
 
-The strings used by `severity`, `code`, `broker`, and `status` are API values. Existing values must
-not be renamed within a schema version. Add a new code for new behavior, and increment
-`schemaVersion` for a breaking contract change. This versioning protects the current backend and
-future frontend contract; it does not cover the legacy project.
+`message` is the English sentence for logs and developer tools. The frontend builds its text from
+`messageKey` and `messageParams`; it never parses `message`.
+
+The strings used by `severity`, `code`, `messageKey`, `broker`, and `status` are API values for the
+frontend. No JSON contract is frozen before the beta: `schemaVersion` stays 1, and a field may
+still be renamed or removed. From the first released frontend on, these values are not renamed
+within a schema version. Add a new code or key for new behavior, and increment `schemaVersion` for
+a breaking contract change. This versioning protects the current backend and future frontend
+contract; it does not cover the legacy project.
 
 For privacy, the response exposes only the uploaded filename, never an absolute host path. It also
-does not duplicate raw financial field values. The CSV row number, transaction ID, field name, and
-a human-readable message provide enough context for the local UI. The parser version 1 contract is
-unchanged when its diagnostics are adapted into the separate application result defined in
-[`diagnostics.md`](diagnostics.md).
+does not duplicate raw financial field values. The CSV row number, transaction ID, field name,
+message key with its parameters, and an English message provide enough context for the local UI.
+The separate application result defined in [`diagnostics.md`](diagnostics.md) copies the key and
+parameters of parser diagnostics.
 
 ### Local debug artifacts
 

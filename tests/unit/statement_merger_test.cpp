@@ -424,6 +424,8 @@ TEST(DeterministicStatementMergerTest, AssetClassConflictIsErrorAndUsesUnknown) 
         findMergeDiagnostic(result, MergeDiagnosticCode::InstrumentAssetClassConflict);
     ASSERT_NE(conflict, nullptr);
     EXPECT_EQ(conflict->mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(conflict->mMessageKey, MessageKey::InstrumentAssetClassConflict);
+    EXPECT_TRUE(conflict->mMessageParams.empty());
     ASSERT_EQ(conflict->mAssetClassVariants.size(), 2U);
     EXPECT_EQ(conflict->mAssetClassVariants[0].mAssetClass, AssetClass::Stock);
     EXPECT_EQ(conflict->mAssetClassVariants[1].mAssetClass, AssetClass::Fund);
@@ -1379,6 +1381,12 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
                   MergeDiagnosticCode::InstrumentNameConflict);
         EXPECT_EQ(std::get<MergeDiagnostic>(actual.mDiagnostics[1]).mCode,
                   MergeDiagnosticCode::ConflictingDuplicate);
+        EXPECT_EQ(std::get<MergeDiagnostic>(actual.mDiagnostics[0]).mMessageKey,
+                  MessageKey::InstrumentNameConflict);
+        EXPECT_EQ(std::get<MergeDiagnostic>(actual.mDiagnostics[1]).mMessageKey,
+                  MessageKey::ConflictingDuplicate);
+        EXPECT_TRUE(std::get<MergeDiagnostic>(actual.mDiagnostics[0]).mMessageParams.empty());
+        EXPECT_TRUE(std::get<MergeDiagnostic>(actual.mDiagnostics[1]).mMessageParams.empty());
 
         EXPECT_EQ(actual.mStatement.mChronologicalOrder, expected.mStatement.mChronologicalOrder);
         ASSERT_EQ(actual.mStatement.mChronologicalOrder.size(), 5U);
@@ -1934,6 +1942,8 @@ TEST(DeterministicStatementMergerTest, RejectsEveryInputWithDuplicateSourceIndex
     EXPECT_TRUE(result.mStatement.mPresentation.mPrivateMarketEvents.empty());
     const auto* diagnostic = findMergeDiagnostic(result, MergeDiagnosticCode::DuplicateSourceIndex);
     ASSERT_NE(diagnostic, nullptr);
+    EXPECT_EQ(diagnostic->mMessageKey, MessageKey::DuplicateSourceIndex);
+    EXPECT_TRUE(diagnostic->mMessageParams.empty());
     EXPECT_EQ(diagnostic->mSourceIndex, 0U);
     EXPECT_EQ(diagnostic->mSources.size(), 6U);
 }
@@ -1988,6 +1998,24 @@ TEST(DeterministicStatementMergerTest, RejectsOnlyEventsWithMissingOrMismatchedS
                             diagnostics.end(),
                             [](const auto* diagnostic) { return diagnostic->mSources.empty(); }),
               1);
+    // The event without a source reference has its own key; the other four have a wrong index.
+    EXPECT_EQ(std::count_if(diagnostics.begin(),
+                            diagnostics.end(),
+                            [](const auto* diagnostic) {
+                                return diagnostic->mMessageKey ==
+                                       MessageKey::InconsistentSourceIndexNoSource;
+                            }),
+              1);
+    EXPECT_EQ(std::count_if(diagnostics.begin(),
+                            diagnostics.end(),
+                            [](const auto* diagnostic) {
+                                return diagnostic->mMessageKey ==
+                                       MessageKey::InconsistentSourceIndexMismatch;
+                            }),
+              4);
+    EXPECT_TRUE(std::all_of(diagnostics.begin(), diagnostics.end(), [](const auto* diagnostic) {
+        return diagnostic->mMessageParams.empty();
+    }));
 }
 
 TEST(DeterministicStatementMergerTest, PreservesParserDiagnosticsBeforeMergeDiagnostics) {
@@ -2006,6 +2034,9 @@ TEST(DeterministicStatementMergerTest, PreservesParserDiagnosticsBeforeMergeDiag
         .mCode = DiagnosticCode::UnsupportedRowType,
         .mSourceFile = "earlier.csv",
         .mMessage = "Synthetic earlier warning.",
+        .mMessageKey = MessageKey::UnknownRowType,
+        .mMessageParams = {textParam("type", "SYNTHETIC_TYPE"),
+                           textParam("category", "SYNTHETIC_CATEGORY")},
     });
     second.mParseResult.mStatement.mBenefitEvents.push_back(BenefitEvent{
         .mMetadata = EventMetadata{.mTaxDate = makeDate(2024, 1, 1)},
@@ -2020,6 +2051,14 @@ TEST(DeterministicStatementMergerTest, PreservesParserDiagnosticsBeforeMergeDiag
     ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[1]));
     EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mSourceIndex, 0U);
     EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[1]).mSourceIndex, 1U);
+
+    // The parser diagnostic of source 0 keeps its key and parameters.
+    const auto& earlier = std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mDiagnostic;
+
+    EXPECT_EQ(earlier.mMessageKey, MessageKey::UnknownRowType);
+    EXPECT_EQ(earlier.mMessageParams,
+              (std::vector<MessageParam>{textParam("type", "SYNTHETIC_TYPE"),
+                                         textParam("category", "SYNTHETIC_CATEGORY")}));
     EXPECT_TRUE(std::holds_alternative<MergeDiagnostic>(result.mDiagnostics[2]));
 }
 
@@ -2411,8 +2450,10 @@ TEST(DeterministicStatementMergerTest, InstrumentDiagnosticsUseEventSequenceThen
     ASSERT_EQ(diagnostics.size(), 3U);
     EXPECT_EQ(diagnostics[0]->mIsin, "XX0000000002");
     EXPECT_EQ(diagnostics[0]->mCode, MergeDiagnosticCode::InstrumentNameConflict);
+    EXPECT_EQ(diagnostics[0]->mMessageKey, MessageKey::InstrumentNameConflict);
     EXPECT_EQ(diagnostics[1]->mIsin, "XX0000000001");
     EXPECT_EQ(diagnostics[1]->mCode, MergeDiagnosticCode::InstrumentAssetClassConflict);
+    EXPECT_EQ(diagnostics[1]->mMessageKey, MessageKey::InstrumentAssetClassConflict);
     EXPECT_EQ(diagnostics[2]->mCode, MergeDiagnosticCode::InstrumentNameConflict);
 }
 

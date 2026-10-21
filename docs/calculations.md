@@ -92,7 +92,7 @@ user-entered official rate must have no more than eight decimals and is not roun
 Trade and action `UnitSourceEvidence` entries additionally retain the original text and its source
 reference. Trade-side normalization changes stored units, not the signed source evidence. True
 zero remains valid where the field permits it; a nonzero fee, tax or required amount that rounds
-to zero is rejected rather than silently lost. Parser diagnostics retain their version 1 codes.
+to zero is rejected rather than silently lost. Parser diagnostics keep their existing codes.
 
 Unit examples:
 

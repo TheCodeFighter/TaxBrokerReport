@@ -70,7 +70,10 @@ struct InstrumentAssetClassVariant {
 struct MergeDiagnostic {
     DiagnosticSeverity mSeverity{DiagnosticSeverity::Error};
     MergeDiagnosticCode mCode{MergeDiagnosticCode::ConflictingDuplicate};
+    /// English sentence for logs, the CLI and developer tools; the frontend uses the key.
     std::string mMessage;
+    std::optional<MessageKey> mMessageKey;
+    std::vector<MessageParam> mMessageParams;
     std::vector<SourceReference> mSources;
     std::optional<Date> mTaxDate;
     std::optional<std::string> mInstrumentName;
