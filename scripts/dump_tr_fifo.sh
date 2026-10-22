@@ -12,8 +12,10 @@ Usage: dump_tr_fifo.sh [--year YYYY] [--output runtime/path.txt] [csv-path ...]
     Parses and merges Trade Republic CSVs in the supplied request order, prepares
     the selected year and runs FIFO matching. Writes each instrument's status, the
     in-year matches with basis, sale value and gain, and the open lots at
-    31 December. Paths are relative to the repository. The output contains
-    private financial data and stays below ignored runtime/.
+    31 December, then the Doh-KDVP filing rows, the blocked ISINs with their
+    reasons and the units left out because they are past the holding period.
+    Paths are relative to the repository. The output contains private
+    financial data and stays below ignored runtime/.
 
     Default year:   the previous calendar year
     Default input:  tmp/TransactionExport.csv

@@ -1,4 +1,5 @@
 #include "parsers/traderepublic_parser.hpp"
+#include "processors/capital_gains_report_builder.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
@@ -15,6 +16,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <numeric>
 #include <ostream>
 #include <optional>
@@ -980,6 +982,157 @@ void writeFifoIsin(std::ostream& aOutput,
     aOutput << '\n';
 }
 
+std::string_view toString(KdvpBlockReason aReason) {
+    switch (aReason)
+    {
+    case KdvpBlockReason::FifoStopped:
+        return "FifoStopped";
+    case KdvpBlockReason::LossEligibilityUnresolved:
+        return "LossEligibilityUnresolved";
+    }
+
+    return "Unknown";
+}
+
+std::string_view toString(KdvpLossRule aLossRule) {
+    switch (aLossRule)
+    {
+    case KdvpLossRule::NotBlocked:
+        return "NotBlocked";
+    case KdvpLossRule::Blocked:
+        return "Blocked";
+    }
+
+    return "Unknown";
+}
+
+/// Writes one *popisni list* with its rows; each row names its source trade.
+void writeKdvpList(std::ostream& aOutput,
+                   const BrokerStatement& aStatement,
+                   const KdvpInventoryList& aList) {
+    aOutput << "List\n"
+            << "  name: " << aList.mName << "\n  isin: " << aList.mIsin
+            << "\n  is_fund: " << (aList.mIsFund ? "true" : "false")
+            << "\n  rows: " << aList.mRows.size() << '\n';
+
+    for (const auto& row : aList.mRows)
+    {
+        if (const auto* purchase = std::get_if<KdvpPurchaseRow>(&row.mEntry))
+        {
+            aOutput << "    - purchase (F1): ";
+            writeCapitalEvent(aOutput, aStatement, purchase->mPurchase);
+            aOutput << "\n      F3_units: ";
+            writeFixedPoint(aOutput, purchase->mUnits, UNITS_SCALE);
+            aOutput << "\n      F4_unit_price: ";
+            writeFixedPoint(aOutput, purchase->mUnitPrice, UNIT_PRICE_SCALE);
+        }
+        else
+        {
+            const auto& sale = std::get<KdvpSaleRow>(row.mEntry);
+
+            aOutput << "    - sale (F6): ";
+            writeCapitalEvent(aOutput, aStatement, sale.mSale);
+            aOutput << "\n      F7_units: ";
+            writeFixedPoint(aOutput, sale.mUnits, UNITS_SCALE);
+            aOutput << "\n      F9_unit_price: ";
+            writeFixedPoint(aOutput, sale.mUnitPrice, UNIT_PRICE_SCALE);
+            aOutput << "\n      F10: " << toString(sale.mLossRule);
+        }
+
+        aOutput << "\n      F8_stock: ";
+        writeFixedPoint(aOutput, row.mStock, UNITS_SCALE);
+        aOutput << '\n';
+    }
+
+    aOutput << '\n';
+}
+
+/// Writes one blocked ISIN with its reason and the sales of the year it names.
+void writeKdvpBlockedIsin(std::ostream& aOutput,
+                          const BrokerStatement& aStatement,
+                          const KdvpBlockedIsin& aBlocked) {
+    aOutput << "Blocked\n"
+            << "  name: " << aBlocked.mName << "\n  isin: " << aBlocked.mIsin
+            << "\n  reason: " << toString(aBlocked.mReason)
+            << "\n  sales: " << aBlocked.mSales.size() << '\n';
+
+    for (const auto& sale : aBlocked.mSales)
+    {
+        aOutput << "    - ";
+        writeCapitalEvent(aOutput, aStatement, sale);
+        aOutput << '\n';
+    }
+
+    aOutput << '\n';
+}
+
+/// Writes the Doh-KDVP filing rows. The builder gives no report while any ISIN is blocked, so the
+/// lists come from a second build that leaves out every blocked ISIN; that build is a preview for
+/// this tool only, not a choice the user made.
+void writeKdvpReport(std::ostream& aOutput,
+                     const MergedStatement& aStatement,
+                     const ReportingYearLedger& aLedger,
+                     const FifoMatchingResult& aFifo) {
+    const CapitalGainsReportBuilder builder;
+    const auto withoutExclusions = builder.build(aStatement, aLedger, aFifo, {});
+    std::vector<Isin> blockedIsins;
+
+    std::transform(withoutExclusions.mBlocked.begin(),
+                   withoutExclusions.mBlocked.end(),
+                   std::back_inserter(blockedIsins),
+                   [](const KdvpBlockedIsin& aBlocked) { return aBlocked.mIsin; });
+
+    const auto preview = builder.build(aStatement, aLedger, aFifo, blockedIsins);
+    const auto& lists = preview.mReport.value().mLists;
+
+    aOutput << "DOH-KDVP SUMMARY\n"
+            << "  report_without_exclusions: " << (withoutExclusions.mReport ? "present" : "absent")
+            << "\n  lists: " << lists.size()
+            << "\n  blocked_isins: " << withoutExclusions.mBlocked.size()
+            << "\n  long_held_sales: " << withoutExclusions.mLongHeld.size() << '\n';
+
+    for (const auto reason :
+         {KdvpBlockReason::FifoStopped, KdvpBlockReason::LossEligibilityUnresolved})
+    {
+        aOutput << "  blocked_" << toString(reason) << ": "
+                << std::count_if(withoutExclusions.mBlocked.begin(),
+                                 withoutExclusions.mBlocked.end(),
+                                 [reason](const KdvpBlockedIsin& aBlocked) {
+                                     return aBlocked.mReason == reason;
+                                 })
+                << '\n';
+    }
+
+    aOutput << "\nWhen an ISIN is blocked there is no report. The lists below leave out every "
+               "blocked ISIN\nas a preview of this tool; the user has not agreed to that.\n\n";
+
+    aOutput << "DOH-KDVP LISTS: " << lists.size() << "\n\n";
+
+    for (const auto& list : lists)
+    {
+        writeKdvpList(aOutput, aStatement.mPresentation, list);
+    }
+
+    aOutput << "DOH-KDVP BLOCKED: " << withoutExclusions.mBlocked.size() << "\n\n";
+
+    for (const auto& blocked : withoutExclusions.mBlocked)
+    {
+        writeKdvpBlockedIsin(aOutput, aStatement.mPresentation, blocked);
+    }
+
+    aOutput << "DOH-KDVP LONG-HELD (tax free, not listed): " << withoutExclusions.mLongHeld.size()
+            << "\n\n";
+
+    for (const auto& longHeld : withoutExclusions.mLongHeld)
+    {
+        aOutput << "- name: " << longHeld.mName << "\n  isin: " << longHeld.mIsin << "\n  sale: ";
+        writeCapitalEvent(aOutput, aStatement.mPresentation, longHeld.mSale);
+        aOutput << "\n  units_left_out: ";
+        writeFixedPoint(aOutput, longHeld.mUnits, UNITS_SCALE);
+        aOutput << "\n\n";
+    }
+}
+
 void writeProcessingDiagnostics(std::ostream& aOutput,
                                 const std::vector<ProcessingDiagnostic>& aDiagnostics) {
     aOutput << "PROCESSING DIAGNOSTICS: " << aDiagnostics.size() << "\n\n";
@@ -995,7 +1148,8 @@ void writeProcessingDiagnostics(std::ostream& aOutput,
     }
 }
 
-/// Parses, merges and prepares the selected year, then writes the FIFO pools for inspection.
+/// Parses, merges and prepares the selected year, then writes the FIFO pools and the Doh-KDVP
+/// filing rows for inspection.
 int writeFifoResult(std::span<char*> aArguments) {
     const std::string_view yearText{aArguments[0]};
     const std::filesystem::path outputPath{aArguments[1]};
@@ -1079,6 +1233,8 @@ int writeFifoResult(std::span<char*> aArguments) {
     {
         writeFifoIsin(output, statement.mPresentation, isin);
     }
+
+    writeKdvpReport(output, statement, *prepared.mLedger, fifo);
 
     auto diagnostics = prepared.mDiagnostics;
     diagnostics.insert(diagnostics.end(), fifo.mDiagnostics.begin(), fifo.mDiagnostics.end());

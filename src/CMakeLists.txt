@@ -17,6 +17,7 @@ configure_file(utils/diagnostic_messages_table.cpp.in
 add_library(taxbroker_core STATIC
     parsers/ibkr_parser.cpp
     parsers/traderepublic_parser.cpp
+    processors/capital_gains_report_builder.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
     processors/processing_diagnostics.cpp

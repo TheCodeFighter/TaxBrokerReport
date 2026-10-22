@@ -1,4 +1,5 @@
 #include "parsers/traderepublic_parser.hpp"
+#include "processors/capital_gains_report_builder.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "utils/date_utils.hpp"
 
@@ -431,6 +432,145 @@ TEST(FifoMatchingIntegrationTest,
     EXPECT_EQ(diagnostic.mContext.mSources.at(0).mSourceRow, 3U);
     EXPECT_EQ(diagnostic.mContext.mSources.at(1).mFilename.value(), "second.csv");
     EXPECT_EQ(diagnostic.mContext.mSources.at(1).mSourceRow, 2U);
+}
+
+TEST(FifoMatchingIntegrationTest, FilingRowsOfTwoFilesLeaveOutTheStockHeldAfterTheYear) {
+    // Example "stock left after the year" in tax_rules.md, year 2024. The sale of 2025 is in the
+    // second file and is not in the 2024 ledger.
+    constexpr std::string_view firstPurchase =
+        R"(2024-02-01T09:00:00Z,2024-02-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)";
+    constexpr std::string_view firstSale =
+        R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,12,48,,,EUR,,,,,synthetic-sell-1,,,,)";
+    constexpr std::string_view secondPurchase =
+        R"(2024-08-01T09:00:00Z,2024-08-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,11,-55,,,EUR,,,,,synthetic-buy-2,,,,)";
+    constexpr std::string_view secondSale =
+        R"(2024-10-01T09:00:00Z,2024-10-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-8,13,104,,,EUR,,,,,synthetic-sell-2,,,,)";
+    constexpr std::string_view nextYearSale =
+        R"(2025-01-15T09:00:00Z,2025-01-15,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-3,15,45,,,EUR,,,,,synthetic-sell-3,,,,)";
+
+    const TemporaryFifoInputs files;
+    const auto historyPath =
+        files.write("history.csv", {firstPurchase, firstSale, secondPurchase, secondSale});
+    const auto nextYearPath = files.write("next-year.csv", {nextYearSale});
+    tr::TradeRepublicParser parser;
+    const std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)},
+                                                  {1, parser.parse(nextYearPath, 1)}};
+
+    const auto prepared =
+        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+
+    ASSERT_TRUE(prepared.mLedger.has_value());
+    EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
+
+    const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    const auto result =
+        CapitalGainsReportBuilder{}.build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    EXPECT_TRUE(result.mExcluded.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
+
+    const auto& list = result.mReport->mLists.at(0);
+
+    EXPECT_EQ(list.mIsin, "XX0000000001");
+    EXPECT_EQ(list.mName, "Synthetic Share");
+    EXPECT_FALSE(list.mIsFund);
+    ASSERT_EQ(list.mRows.size(), 4U);
+
+    // Row 1: purchase of 10 units (4 + 6 used by two sales), F8 = 10.
+    const auto& firstPurchaseRow = std::get<KdvpPurchaseRow>(list.mRows.at(0).mEntry);
+
+    EXPECT_EQ(firstPurchaseRow.mDate, *parseCalendarDate("2024-02-01"));
+    EXPECT_EQ(firstPurchaseRow.mUnits, 1'000'000'000);     // 10 units
+    EXPECT_EQ(firstPurchaseRow.mUnitPrice, 1'000'000'000); // EUR 10
+    EXPECT_EQ(list.mRows.at(0).mStock, 1'000'000'000);
+
+    // Row 2: sale of 4 units, F8 = 10 - 4 = 6.
+    const auto& firstSaleRow = std::get<KdvpSaleRow>(list.mRows.at(1).mEntry);
+
+    EXPECT_EQ(firstSaleRow.mDate, *parseCalendarDate("2024-05-01"));
+    EXPECT_EQ(firstSaleRow.mUnits, 400'000'000);       // 4 units
+    EXPECT_EQ(firstSaleRow.mUnitPrice, 1'200'000'000); // EUR 12
+    EXPECT_EQ(firstSaleRow.mLossRule, KdvpLossRule::NotBlocked);
+    EXPECT_EQ(list.mRows.at(1).mStock, 600'000'000);
+
+    // Row 3: 2 of the 5 units of the second purchase, F8 = 6 + 2 = 8.
+    const auto& secondPurchaseRow = std::get<KdvpPurchaseRow>(list.mRows.at(2).mEntry);
+
+    EXPECT_EQ(secondPurchaseRow.mDate, *parseCalendarDate("2024-08-01"));
+    EXPECT_EQ(secondPurchaseRow.mUnits, 200'000'000);       // 2 units
+    EXPECT_EQ(secondPurchaseRow.mUnitPrice, 1'100'000'000); // EUR 11
+    EXPECT_EQ(list.mRows.at(2).mStock, 800'000'000);
+
+    // Row 4: sale of 8 units, F8 = 8 - 8 = 0. The 3 units held after 31 December are not listed.
+    const auto& secondSaleRow = std::get<KdvpSaleRow>(list.mRows.at(3).mEntry);
+
+    EXPECT_EQ(secondSaleRow.mDate, *parseCalendarDate("2024-10-01"));
+    EXPECT_EQ(secondSaleRow.mUnits, 800'000'000);       // 8 units
+    EXPECT_EQ(secondSaleRow.mUnitPrice, 1'300'000'000); // EUR 13
+    EXPECT_EQ(secondSaleRow.mLossRule, KdvpLossRule::NotBlocked);
+    EXPECT_EQ(list.mRows.at(3).mStock, 0);
+}
+
+TEST(FifoMatchingIntegrationTest, PurchaseRepeatedInOverlappingFilesIsOneFilingRow) {
+    // A user exports twice with overlapping periods: the 2024-02-01 purchase (same transaction
+    // ID, same facts) is in both files. The merger keeps it once, so the list must have one
+    // purchase row of 10 units. If the copy were counted twice, the 2024-10-01 sale would take 2
+    // units from the copy instead of the 2024-08-01 purchase: two 2024-02-01 rows, wrong F3.
+    //   first.csv:  buy 10 @ 10 (2024-02-01), sell 4 @ 12 (2024-05-01)
+    //   second.csv: buy 10 @ 10 (2024-02-01, the same row again), buy 5 @ 11 (2024-08-01),
+    //               sell 8 @ 13 (2024-10-01)
+    constexpr std::string_view firstPurchase =
+        R"(2024-02-01T09:00:00Z,2024-02-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)";
+    constexpr std::string_view firstSale =
+        R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,12,48,,,EUR,,,,,synthetic-sell-1,,,,)";
+    constexpr std::string_view secondPurchase =
+        R"(2024-08-01T09:00:00Z,2024-08-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,11,-55,,,EUR,,,,,synthetic-buy-2,,,,)";
+    constexpr std::string_view secondSale =
+        R"(2024-10-01T09:00:00Z,2024-10-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-8,13,104,,,EUR,,,,,synthetic-sell-2,,,,)";
+
+    const TemporaryFifoInputs files;
+    const auto firstPath = files.write("first.csv", {firstPurchase, firstSale});
+    const auto secondPath = files.write("second.csv", {firstPurchase, secondPurchase, secondSale});
+    tr::TradeRepublicParser parser;
+    const std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath)},
+                                                  {1, parser.parse(secondPath, 1)}};
+
+    const auto prepared =
+        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+
+    ASSERT_TRUE(prepared.mLedger.has_value());
+    EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
+
+    const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    const auto result =
+        CapitalGainsReportBuilder{}.build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
+
+    const auto& list = result.mReport->mLists.at(0);
+
+    // The purchase of 2024-02-01 is in both files but is one row of 10 units, not two.
+    ASSERT_EQ(list.mRows.size(), 4U);
+
+    const auto& purchaseRow = std::get<KdvpPurchaseRow>(list.mRows.at(0).mEntry);
+
+    EXPECT_EQ(purchaseRow.mDate, *parseCalendarDate("2024-02-01"));
+    EXPECT_EQ(purchaseRow.mUnits, 1'000'000'000); // 10 units
+    EXPECT_EQ(list.mRows.at(0).mStock, 1'000'000'000);
+
+    // Row 3: the 2024-10-01 sale of 8 takes the last 6 units of 2024-02-01 and 2 of 2024-08-01,
+    // F8 = 6 + 2 = 8.
+    const auto& secondPurchaseRow = std::get<KdvpPurchaseRow>(list.mRows.at(2).mEntry);
+
+    EXPECT_EQ(secondPurchaseRow.mDate, *parseCalendarDate("2024-08-01"));
+    EXPECT_EQ(secondPurchaseRow.mUnits, 200'000'000);       // 2 units
+    EXPECT_EQ(secondPurchaseRow.mUnitPrice, 1'100'000'000); // EUR 11
+    EXPECT_EQ(list.mRows.at(2).mStock, 800'000'000);
+
+    EXPECT_EQ(list.mRows.at(3).mStock, 0);
 }
 
 } // namespace

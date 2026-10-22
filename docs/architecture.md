@@ -478,8 +478,71 @@ The matcher reports two kinds of diagnostics, both for the capital report only:
   exclude the ISIN or fail the report is later work.
 
 The corporate-action errors, the non-EUR gate and the loss-making-portion gate are built by later
-work from the other statuses and matches. Filing rows, the 30-day loss rule, split adjustment and
-currency conversion are also later work.
+work from the other statuses and matches. The 30-day loss rule, split adjustment and currency
+conversion are also later work. The Doh-KDVP filing rows are built from the matches as described
+in "Doh-KDVP report model contract".
+
+### Doh-KDVP report model contract
+
+Tax processing produces broker-neutral report models, and the XML writers only format them. The
+models hold no CSV, JSON, HTTP, frontend or XML fields and need no XML library. This section
+covers shared metadata and the Doh-KDVP model (`include/taxbroker/report_models.hpp`); the income
+models (Doh-Div, Doh-DHO, Doh-Obr) follow with the income work.
+
+**Shared metadata.** `ReportMetadata` holds the taxpayer (`TaxpayerMetadata`), the reporting year
+and the filing type (`Original` or `SelfReport`). It exists once for a run, and a form writer
+receives it next to the model of its form; no form model repeats a taxpayer field. Only the tax
+number and the residence are required; name, address, city, post code, post name, birth date,
+email and phone are optional, as in the FURS schema. The model does not check the values. The
+code that reads the user's input does, whether the user typed it or loaded it from a file. The
+taxpayer fields can come from the saved profile (#278), and the user can change any of them
+before each run. The filing type is chosen for each run (`Original` unless the user picks
+`SelfReport`) and is never saved with the profile. The
+writer adds constants that are not data: the taxpayer type `FO`, the period dates (1 January and
+31 December of the year), the list type `PLVP`, row numbers and the workflow codes.
+
+**Doh-KDVP model.** `CapitalGainsReportKDVP` holds one `KdvpInventoryList` (a *popisni list*) for
+each ISIN with a sale in the selected year, in ISIN order. A list has the ISIN, the name, `IsFond` and
+its rows in ledger order. A row is a `KdvpPurchaseRow` (F1 date, F2 method `A`, F3 units, F4 unit
+value) or a `KdvpSaleRow` (F6 date, F7 units, F9 unit value, F10), plus F8, the stock. The rows
+are the filing rows of [`tax_rules.md`](tax_rules.md), "Doh-KDVP filing rows"; the internal FIFO
+matches are not part of the model. A row keeps a `StatementEventReference` to its source trade
+(an index, no file or row), so a later summary can name the sources. `UnitPrice` and `Units` keep
+their eight decimals (#280), and rounding to the XML text is the writer's job.
+
+`KdvpLossRule` has only `NotBlocked` (F10 true) and `Blocked` (F10 false). It has no "unresolved"
+value, so an open loss check can never be written as a decision. Only the loss rule (#220)
+produces `Blocked`; a partly eligible sale will become two sale rows that share the source sale.
+`IsFond` is always false for now: the class check (what belongs in Doh-KDVP) is the job of the
+classification gate, not of the builder.
+
+**Building the rows.** `CapitalGainsReportBuilder::build` takes the merged statement, the
+reporting-year ledger, the FIFO result and the ISINs that the user agreed to leave out. All three
+inputs must come from the same run: the FIFO result has one entry per trade instrument, by the
+same index. For an ISIN with at least one sale in the selected year:
+
+- A purchase row is made for each purchase that the matches of the year use, at its ledger
+  position, with F3 the sum of its matched units. A sale row is made for each sale of the year,
+  with F7 the sum of its matched units. F8 is the running total of the listed purchase units minus
+  the listed sale units.
+- Matches that use units past the holding period ([`tax_rules.md`](tax_rules.md), "Long-held
+  investments") are tax free and are left out of F3 and F7. A sale with only such units has no
+  row, and an ISIN with no listed unit has no list. The units left out are in `mLongHeld` (ISIN,
+  name, sale, units) for every ISIN that is not blocked, so they stay visible beside the report.
+- The ISIN is blocked, with no list, for the first of these reasons that applies:
+  `FifoStopped` (the pool stopped; all its sales of the year are named) or
+  `LossEligibilityUnresolved` (a match within the holding period is loss-making; only those sales
+  are named). A loss on units past the period is left out with them, because it cannot reduce the
+  tax base. A gain of zero is not a loss. A stopped pool without a sale in the year does not
+  block. A loss from an earlier-year sale is not in the matches of the year and never blocks.
+- A blocked ISIN that the user agreed to leave out goes to `mExcluded` and stays visible beside
+  the report; any other blocked ISIN goes to `mBlocked`. The report exists only when `mBlocked` is
+  empty, and then holds a list for every ISIN without a problem. An ISIN without a problem is never
+  left out, even if it is on the user's list.
+
+The builder adds no diagnostics and no message keys. The CLI gates (#270) turn `mBlocked` into
+errors, and the application result (#214) into report statuses. Asking the user which blocked
+ISINs to leave out is #227.
 
 ## Parser diagnostics
 
