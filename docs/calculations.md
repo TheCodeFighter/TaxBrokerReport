@@ -315,6 +315,12 @@ basis ticks. Its consumer owns purchase date, sources and FIFO order. `consumeLo
 the allocated basis and next state together; `adjustLotUnits` changes only units. Neither helper
 applies an action, selects an exchange rate or performs chronological FIFO matching.
 
+A FIFO match (an internal link between one sale and the units it takes from one purchase) keeps
+three exact values in the same `10^-16` EUR ticks: the allocated basis, the sale value (the sale
+`UnitPrice` times the matched `Units`, an exact product) and the gain (sale value minus basis,
+negative for a loss-making portion). Fees are not included. Nothing is rounded to `Money` or XML
+precision at this stage, and rounded values never go back into a lot.
+
 When several exact allocations must be emitted as four-decimal money parts of one known total,
 round the combined total once and allocate its smallest-unit remainder by largest fractional
 remainder, breaking ties by FIFO lot and then sale order. Those emitted parts must add to the
