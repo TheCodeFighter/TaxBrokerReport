@@ -328,4 +328,109 @@ TEST(FifoMatchingIntegrationTest, PurchaseRepeatedInOverlappingFilesCreatesOneLo
               ExactRational{WideInteger{2'400'000'000'000'000'000}}); // 12 * 20 = EUR 240
 }
 
+TEST(FifoMatchingIntegrationTest, ShortSaleIsReportedWithItsSourceWhileIncomeEventsStayInTheYear) {
+    // Example "Incomplete-history example" in fifo.md: 0.6 bought, 0.25 sold in 2023, then
+    // 0.5 sold in 2024 while only 0.35 is open.
+    constexpr std::string_view oldPurchase =
+        R"(2022-03-01T09:00:00Z,2022-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.6,10,-6,,,EUR,,,,,synthetic-buy,,,,)";
+    constexpr std::string_view oldSale =
+        R"(2023-08-01T09:00:00Z,2023-08-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.25,12,3,,,EUR,,,,,synthetic-sell-2023,,,,)";
+    constexpr std::string_view shortSale =
+        R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.5,12,6,,,EUR,,,,,synthetic-sell-2024,,,,)";
+    constexpr std::string_view dividend =
+        R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share,XX0000000001,,,5,,0,EUR,,,,,synthetic-dividend,,,,)";
+    constexpr std::string_view interest =
+        R"(2024-07-01T09:00:00Z,2024-07-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,2,,0,EUR,,,,,synthetic-interest,,,,)";
+
+    const TemporaryFifoInputs files;
+    const auto oldPath = files.write("old.csv", {oldPurchase, oldSale});
+    const auto newPath = files.write("new.csv", {shortSale, dividend, interest});
+    tr::TradeRepublicParser parser;
+    const std::vector<StatementMergeInput> inputs{{0, parser.parse(oldPath)},
+                                                  {1, parser.parse(newPath, 1)}};
+
+    const auto prepared =
+        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+
+    ASSERT_TRUE(prepared.mLedger.has_value());
+    EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
+
+    const auto result = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::InsufficientUnits);
+    EXPECT_EQ(result.mIsins.at(0).mAvailableUnits, 35'000'000); // 0.6 - 0.25 = 0.35 units
+    EXPECT_TRUE(result.mIsins.at(0).mMatches.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::IncompleteHistory);
+    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::HistoricalValidation);
+    EXPECT_EQ(diagnostic.mContext.mAffectedReports,
+              (std::vector<ReportType>{ReportType::CapitalGains}));
+    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
+    EXPECT_EQ(diagnostic.mContext.mInstrumentName, "Synthetic Share");
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, *parseCalendarDate("2024-05-01"));
+
+    ASSERT_EQ(diagnostic.mContext.mSources.size(), 1U);
+
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mFilename.value(), "new.csv");
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mSourceRow, 2U);
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mTransactionId, "synthetic-sell-2024");
+
+    // The dividend and the interest stay in the selected year and have no error.
+    EXPECT_EQ(prepared.mLedger->mSelectedYearEvents,
+              (std::vector<StatementEventReference>{
+                  {StatementEventKind::Trade, 0, 2},
+                  {StatementEventKind::Dividend, 0, 0},
+                  {StatementEventKind::Interest, 0, 0},
+              }));
+}
+
+TEST(FifoMatchingIntegrationTest,
+     ShortSaleRepeatedInOverlappingFilesIsReportedOnceWithBothSources) {
+    constexpr std::string_view shortSale =
+        R"(2024-02-01T09:00:00Z,2024-02-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,12,12,,,EUR,,,,,synthetic-sell,,,,)";
+    constexpr std::string_view otherSale =
+        R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,12,24,,,EUR,,,,,synthetic-sell-other,,,,)";
+
+    const TemporaryFifoInputs files;
+    const auto firstPath = files.write("first.csv", {otherSale, shortSale});
+    const auto secondPath = files.write("second.csv", {shortSale});
+    tr::TradeRepublicParser parser;
+    const std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath)},
+                                                  {1, parser.parse(secondPath, 1)}};
+
+    const auto prepared =
+        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+
+    ASSERT_TRUE(prepared.mLedger.has_value());
+    EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
+
+    const auto result = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::InsufficientUnits);
+
+    // Nothing was bought. The February sale comes first in the ledger, so only it is reported,
+    // once, although two files contain it.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, *parseCalendarDate("2024-02-01"));
+
+    ASSERT_EQ(diagnostic.mContext.mSources.size(), 2U);
+
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mFilename.value(), "first.csv");
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mSourceRow, 3U);
+    EXPECT_EQ(diagnostic.mContext.mSources.at(1).mFilename.value(), "second.csv");
+    EXPECT_EQ(diagnostic.mContext.mSources.at(1).mSourceRow, 2U);
+}
+
 } // namespace

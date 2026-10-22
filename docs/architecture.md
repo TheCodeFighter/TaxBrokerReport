@@ -464,13 +464,21 @@ and the matches made before the stop stay in the result as evidence.
 | `Matched` | Nothing; every trade up to 31 December was applied. |
 | `CorporateAction` | The first corporate action. Splits are applied by the later split work. |
 | `NonEurTrade` | The first trade whose currency is not EUR, also before the selected year. |
-| `InsufficientUnits` | A sale that needs more units than the earlier purchases left open. |
+| `InsufficientUnits` | A sale that needs more units than the earlier purchases left open. The result has one `incomplete_history` error. |
 | `NumericFailure` | An invalid trade value or an overflow. The result has a diagnostic. |
 
-The matcher only reports numeric failures as diagnostics (`unrepresentable_value` and
-`arithmetic_overflow`, stage `FifoTax`, report `CapitalGains`). The `incomplete_history` error,
-the corporate-action errors, the non-EUR gate and the loss-making-portion gate are built by later
-work from these statuses and matches. Filing rows, the 30-day loss rule, split adjustment and
+The matcher reports two kinds of diagnostics, both for the capital report only:
+
+- numeric failures (`unrepresentable_value` and `arithmetic_overflow`, stage `FifoTax`); and
+- one `incomplete_history` error for an `InsufficientUnits` pool (stage `HistoricalValidation`).
+  It names the investment and carries the failing sale's tax date and sources (file, row and
+  transaction ID). It has no message parameters, so no unit count or amount is in the message.
+  Only the first failing sale of an ISIN is reported, because the pool stops there;
+  `mAvailableUnits` keeps the open units. The error blocks the capital report; the choice to
+  exclude the ISIN or fail the report is later work.
+
+The corporate-action errors, the non-EUR gate and the loss-making-portion gate are built by later
+work from the other statuses and matches. Filing rows, the 30-day loss rule, split adjustment and
 currency conversion are also later work.
 
 ## Parser diagnostics

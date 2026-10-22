@@ -869,6 +869,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "CorporateActionUnrepresentable";
     case ProcessingDiagnosticCode::InvalidReportingYear:
         return "InvalidReportingYear";
+    case ProcessingDiagnosticCode::IncompleteHistory:
+        return "IncompleteHistory";
     }
 
     return "Unknown";

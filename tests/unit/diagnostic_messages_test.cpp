@@ -90,6 +90,7 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::InvalidReportingYear,
          "invalid_reporting_year",
          {{"minYear", MessageParamKind::Number}, {"maxYear", MessageParamKind::Number}}},
+        {MessageKey::IncompleteHistory, "incomplete_history", {}},
     };
 
     return messages;
@@ -150,8 +151,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 35U);
-    ASSERT_EQ(expectedMessages().size(), 35U);
+    ASSERT_EQ(definitions.size(), 36U);
+    ASSERT_EQ(expectedMessages().size(), 36U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -185,8 +186,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 35U);
-    EXPECT_EQ(keys.size(), 35U);
+    EXPECT_EQ(ids.size(), 36U);
+    EXPECT_EQ(keys.size(), 36U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -207,7 +208,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 42U); // 35 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 43U); // 36 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

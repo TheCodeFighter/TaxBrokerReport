@@ -664,7 +664,7 @@ is present; the raw CSV row is not.
       "severity": "error",
       "stage": "historical_validation",
       "code": "incomplete_history",
-      "message": "Earlier purchase history is missing for this instrument; it cannot be processed.",
+      "message": "Earlier purchase history is missing: this sale needs more units than the earlier purchases left. Add the older or missing statements.",
       "messageKey": "incomplete_history",
       "messageParams": {},
       "affectedReports": ["capital_gains"],

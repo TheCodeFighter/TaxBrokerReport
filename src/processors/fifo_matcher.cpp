@@ -37,6 +37,37 @@ void failPool(FifoIsinResult& aPool,
                                              }));
 }
 
+/// Stops a pool at a sale that needs more units than the earlier purchases left, and records the
+/// incomplete-history error for the capital report. The units are not part of the message.
+void stopForMissingHistory(FifoIsinResult& aPool,
+                           const StatementEventReference& aEvent,
+                           const TradeTransaction& aTrade,
+                           Units aAvailableUnits,
+                           std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    stopPool(aPool, FifoIsinStatus::InsufficientUnits, aEvent);
+    aPool.mAvailableUnits = aAvailableUnits;
+
+    auto message = makeDiagnosticMessage(MessageKey::IncompleteHistory);
+    ProcessingDiagnostic diagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext =
+            {
+                .mStage = PipelineStage::HistoricalValidation,
+                .mAffectedReports = {ReportType::CapitalGains},
+                .mSources = aTrade.mMetadata.mSources,
+                .mTaxDate = aTrade.mMetadata.mTaxDate,
+                .mInstrumentName = aPool.mName,
+                .mIsin = aPool.mIsin,
+            },
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
+
+    aDiagnostics.push_back(std::move(diagnostic));
+}
+
 /// Adds a lot with the exact basis of a purchase at the end of the FIFO queue.
 void applyPurchase(FifoIsinResult& aPool,
                    const StatementEventReference& aEvent,
@@ -87,8 +118,7 @@ void applySale(FifoIsinResult& aPool,
 
     if (aTrade.mUnits > available)
     {
-        stopPool(aPool, FifoIsinStatus::InsufficientUnits, aEvent);
-        aPool.mAvailableUnits = available;
+        stopForMissingHistory(aPool, aEvent, aTrade, available, aDiagnostics);
 
         return;
     }
