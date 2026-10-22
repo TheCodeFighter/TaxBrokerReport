@@ -1,10 +1,13 @@
 #include "parsers/traderepublic_parser.hpp"
+#include "processors/fifo_matcher.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/statement_merger.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/logger.hpp"
 
+#include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -743,21 +746,27 @@ void writeMergeDiagnostics(std::ostream& aOutput, const StatementMergeResult& aM
     }
 }
 
-int writeMergedResult(std::span<char*> aArguments, bool aDiagnosticsOnly = false) {
-    const std::filesystem::path outputPath{aArguments[0]};
-
+/// Parses each CSV path as one merge input; the source index is the path's position.
+std::vector<StatementMergeInput> parseInputs(std::span<char*> aCsvPaths) {
     std::vector<StatementMergeInput> inputs;
-    inputs.reserve(aArguments.size() - 1);
+    inputs.reserve(aCsvPaths.size());
 
     taxbroker::tr::TradeRepublicParser parser;
 
-    for (std::size_t index = 1; index < aArguments.size(); ++index)
+    for (std::size_t index = 0; index < aCsvPaths.size(); ++index)
     {
         inputs.push_back(StatementMergeInput{
-            .mSourceIndex = index - 1,
-            .mParseResult = parser.parse(aArguments[index], index - 1),
+            .mSourceIndex = index,
+            .mParseResult = parser.parse(aCsvPaths[index], index),
         });
     }
+
+    return inputs;
+}
+
+int writeMergedResult(std::span<char*> aArguments, bool aDiagnosticsOnly = false) {
+    const std::filesystem::path outputPath{aArguments[0]};
+    const auto inputs = parseInputs(aArguments.subspan(1));
 
     const auto mergeResult = DeterministicStatementMerger{}.merge(inputs);
 
@@ -829,9 +838,277 @@ int writeMergedResult(std::span<char*> aArguments, bool aDiagnosticsOnly = false
     return 0;
 }
 
+std::string_view toString(FifoIsinStatus aStatus) {
+    switch (aStatus)
+    {
+    case FifoIsinStatus::Matched:
+        return "Matched";
+    case FifoIsinStatus::CorporateAction:
+        return "CorporateAction";
+    case FifoIsinStatus::NonEurTrade:
+        return "NonEurTrade";
+    case FifoIsinStatus::InsufficientUnits:
+        return "InsufficientUnits";
+    case FifoIsinStatus::NumericFailure:
+        return "NumericFailure";
+    }
+
+    return "Unknown";
+}
+
+std::string_view toString(ProcessingDiagnosticCode aCode) {
+    switch (aCode)
+    {
+    case ProcessingDiagnosticCode::UnrepresentableValue:
+        return "UnrepresentableValue";
+    case ProcessingDiagnosticCode::ArithmeticOverflow:
+        return "ArithmeticOverflow";
+    case ProcessingDiagnosticCode::InvalidExchangeRate:
+        return "InvalidExchangeRate";
+    case ProcessingDiagnosticCode::CorporateActionUnrepresentable:
+        return "CorporateActionUnrepresentable";
+    case ProcessingDiagnosticCode::InvalidReportingYear:
+        return "InvalidReportingYear";
+    }
+
+    return "Unknown";
+}
+
+/// Writes exact basis ticks as EUR rounded to eight decimals for reading; nothing is reported.
+void writeTicksInEur(std::ostream& aOutput, const ExactRational& aTicks) {
+    const auto eur = basisInEur(ExactBasis{aTicks});
+
+    if (const auto* exactEur = std::get_if<ExactRational>(&eur))
+    {
+        const auto scaled = roundToScaled(*exactEur, UNITS_SCALE);
+
+        if (const auto* value = std::get_if<std::int64_t>(&scaled))
+        {
+            writeFixedPoint(aOutput, *value, UNITS_SCALE);
+            return;
+        }
+    }
+
+    aOutput << "<out of display range>";
+}
+
+/// Writes a ledger event's tax date and source rows; FIFO events are trades or corporate actions.
+void writeCapitalEvent(std::ostream& aOutput,
+                       const BrokerStatement& aStatement,
+                       const StatementEventReference& aEvent) {
+    const auto& instrument = aStatement.mTradeInstruments.at(aEvent.mInstrumentIndex.value());
+    const auto& metadata = aEvent.mKind == StatementEventKind::CorporateAction
+                               ? instrument.mCorporateActions.at(aEvent.mEventIndex).mMetadata
+                               : instrument.mTransactions.at(aEvent.mEventIndex).mMetadata;
+
+    writeDate(aOutput, metadata.mTaxDate);
+
+    for (std::size_t index = 0; index < metadata.mSources.size(); ++index)
+    {
+        const auto& source = metadata.mSources[index];
+        aOutput << (index == 0 ? " " : "; ") << source.mFilename.value() << ':'
+                << source.mSourceRow;
+    }
+}
+
+UnitPrice tradeUnitPrice(const BrokerStatement& aStatement, const StatementEventReference& aTrade) {
+    return aStatement.mTradeInstruments.at(aTrade.mInstrumentIndex.value())
+        .mTransactions.at(aTrade.mEventIndex)
+        .mUnitPrice;
+}
+
+void writeFifoIsin(std::ostream& aOutput,
+                   const BrokerStatement& aStatement,
+                   const FifoIsinResult& aIsin) {
+    aOutput << "Instrument\n"
+            << "  name: " << aIsin.mName << "\n  isin: " << aIsin.mIsin
+            << "\n  status: " << toString(aIsin.mStatus);
+
+    if (aIsin.mStoppedAt)
+    {
+        aOutput << "\n  stopped_at: ";
+        writeCapitalEvent(aOutput, aStatement, *aIsin.mStoppedAt);
+    }
+
+    if (aIsin.mAvailableUnits)
+    {
+        aOutput << "\n  available_units: ";
+        writeFixedPoint(aOutput, *aIsin.mAvailableUnits, UNITS_SCALE);
+    }
+
+    aOutput << "\n  matches: " << aIsin.mMatches.size() << '\n';
+
+    for (const auto& match : aIsin.mMatches)
+    {
+        aOutput << "    - sale: ";
+        writeCapitalEvent(aOutput, aStatement, match.mSale);
+        aOutput << "\n      purchase: ";
+        writeCapitalEvent(aOutput, aStatement, match.mPurchase);
+        aOutput << "\n      units: ";
+        writeFixedPoint(aOutput, match.mUnits, UNITS_SCALE);
+        aOutput << "\n      basis_eur: ";
+        writeTicksInEur(aOutput, match.mBasis.mTicks);
+        aOutput << "\n      sale_value_eur: ";
+        writeTicksInEur(aOutput, match.mSaleValueTicks);
+        aOutput << "\n      gain_eur: ";
+        writeTicksInEur(aOutput, match.mGainTicks);
+        aOutput << (match.mGainTicks.numerator() < 0 ? "  (loss-making portion)" : "");
+        // Looked up here from the referenced trades for comparison with F4/F9; FifoMatch has no
+        // unit prices.
+        aOutput << "\n      dump_purchase_unit_price: ";
+        writeFixedPoint(aOutput, tradeUnitPrice(aStatement, match.mPurchase), UNIT_PRICE_SCALE);
+        aOutput << "\n      dump_sale_unit_price: ";
+        writeFixedPoint(aOutput, tradeUnitPrice(aStatement, match.mSale), UNIT_PRICE_SCALE);
+        aOutput << '\n';
+    }
+
+    aOutput << "  open_lots: " << aIsin.mOpenLots.size() << '\n';
+
+    for (const auto& lot : aIsin.mOpenLots)
+    {
+        aOutput << "    - purchase: ";
+        writeCapitalEvent(aOutput, aStatement, lot.mPurchase);
+        aOutput << "\n      units: ";
+        writeFixedPoint(aOutput, lot.mState.mRemainingUnits, UNITS_SCALE);
+        aOutput << "\n      basis_eur: ";
+        writeTicksInEur(aOutput, lot.mState.mRemainingBasis.mTicks);
+        aOutput << '\n';
+    }
+
+    aOutput << '\n';
+}
+
+void writeProcessingDiagnostics(std::ostream& aOutput,
+                                const std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    aOutput << "PROCESSING DIAGNOSTICS: " << aDiagnostics.size() << "\n\n";
+
+    for (const auto& diagnostic : aDiagnostics)
+    {
+        aOutput << "- severity: " << toString(diagnostic.mSeverity)
+                << "\n  code: " << toString(diagnostic.mCode)
+                << "\n  isin: " << diagnostic.mContext.mIsin.value_or("<none>")
+                << "\n  message: " << diagnostic.mMessage;
+        writeMessageKey(aOutput, diagnostic.mMessageKey, diagnostic.mMessageParams);
+        aOutput << "\n\n";
+    }
+}
+
+/// Parses, merges and prepares the selected year, then writes the FIFO pools for inspection.
+int writeFifoResult(std::span<char*> aArguments) {
+    const std::string_view yearText{aArguments[0]};
+    const std::filesystem::path outputPath{aArguments[1]};
+
+    int year{};
+    const auto parsedYear =
+        std::from_chars(yearText.data(), yearText.data() + yearText.size(), year);
+
+    if (parsedYear.ec != std::errc{} || parsedYear.ptr != yearText.data() + yearText.size())
+    {
+        std::cerr << "The reporting year must be a whole number.\n";
+        return 2;
+    }
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear(TaxProcessingRequest{
+        .mReportingYear = year,
+        .mMerged = DeterministicStatementMerger{}.merge(parseInputs(aArguments.subspan(2))),
+    });
+
+    logMergeDiagnostics(prepared.mMerged);
+
+    if (!prepared.mLedger)
+    {
+        writeProcessingDiagnostics(std::cerr, prepared.mDiagnostics);
+        return 1;
+    }
+
+    const auto& statement = prepared.mMerged.mStatement;
+    const auto fifo = FifoMatcher{}.match(statement, *prepared.mLedger);
+
+    std::size_t matchCount{};
+    std::size_t lossMakingCount{};
+
+    for (const auto& isin : fifo.mIsins)
+    {
+        matchCount += isin.mMatches.size();
+        lossMakingCount += static_cast<std::size_t>(
+            std::count_if(isin.mMatches.begin(), isin.mMatches.end(), [](const FifoMatch& aMatch) {
+                return aMatch.mGainTicks.numerator() < 0;
+            }));
+    }
+
+    createParentDirectory(outputPath);
+    std::ofstream output{outputPath};
+
+    if (!output)
+    {
+        std::cerr << "Failed to open output file: " << outputPath << '\n';
+        return 1;
+    }
+
+    output << "FIFO SUMMARY\n"
+           << "  reporting_year: " << year << "\n  input_files: " << aArguments.size() - 2
+           << "\n  instruments: " << fifo.mIsins.size() << '\n';
+
+    for (const auto status : {FifoIsinStatus::Matched,
+                              FifoIsinStatus::CorporateAction,
+                              FifoIsinStatus::NonEurTrade,
+                              FifoIsinStatus::InsufficientUnits,
+                              FifoIsinStatus::NumericFailure})
+    {
+        output << "  status_" << toString(status) << ": "
+               << std::count_if(
+                      fifo.mIsins.begin(),
+                      fifo.mIsins.end(),
+                      [status](const FifoIsinResult& aIsin) { return aIsin.mStatus == status; })
+               << '\n';
+    }
+
+    output << "  in_year_matches: " << matchCount << "\n  loss_making_matches: " << lossMakingCount
+           << "\n  upstream_diagnostics: " << prepared.mMerged.mDiagnostics.size()
+           << "\n  processing_diagnostics: "
+           << prepared.mDiagnostics.size() + fifo.mDiagnostics.size()
+           << "\n\nAmounts are exact values shown rounded to eight decimals. Fees are not "
+              "included.\nFields starting with dump_ are script data: this tool looks them up "
+              "from the source trades. They are not part of the FIFO result.\n\n";
+
+    output << "INSTRUMENTS: " << fifo.mIsins.size() << "\n\n";
+
+    for (const auto& isin : fifo.mIsins)
+    {
+        writeFifoIsin(output, statement.mPresentation, isin);
+    }
+
+    auto diagnostics = prepared.mDiagnostics;
+    diagnostics.insert(diagnostics.end(), fifo.mDiagnostics.begin(), fifo.mDiagnostics.end());
+    writeProcessingDiagnostics(output, diagnostics);
+
+    if (!output)
+    {
+        std::cerr << "Failed to write FIFO output file: " << outputPath << '\n';
+        return 1;
+    }
+
+    std::cout << "Wrote FIFO matching for " << year << " to " << outputPath << '\n';
+
+    return 0;
+}
+
 } // namespace
 
 int main(int aArgumentCount, char** aArguments) {
+    if (aArgumentCount >= 5 && std::string_view{aArguments[1]} == "--fifo")
+    {
+        try
+        {
+            return writeFifoResult(
+                std::span{aArguments + 2, static_cast<std::size_t>(aArgumentCount - 2)});
+        } catch (const std::exception& exception)
+        {
+            std::cerr << "Failed to match FIFO lots: " << exception.what() << '\n';
+            return 1;
+        }
+    }
+
     if (aArgumentCount >= 4 && (std::string_view{aArguments[1]} == "--merge" ||
                                 std::string_view{aArguments[1]} == "--diagnostics"))
     {
@@ -852,7 +1129,8 @@ int main(int aArgumentCount, char** aArguments) {
         std::cerr << "Usage: taxbroker_tr_dump <Trade Republic CSV> <parsed output> "
                      "<diagnostics JSON>\n"
                      "       taxbroker_tr_dump --merge <merged output> <CSV> <CSV> [...]\n"
-                     "       taxbroker_tr_dump --diagnostics <diagnostics text> <CSV> [...]\n";
+                     "       taxbroker_tr_dump --diagnostics <diagnostics text> <CSV> [...]\n"
+                     "       taxbroker_tr_dump --fifo <year> <FIFO output> <CSV> [...]\n";
         return 2;
     }
 

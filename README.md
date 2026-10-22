@@ -216,7 +216,24 @@ scripts/dump_tr_diagnostics.sh runtime/debug/tr_merge_inputs/tr_merge_part_1.csv
 ```
 
 Use `--output runtime/path.txt` before the CSV paths to choose another local output file.
-The text retains structured source locations without dumping event payloads. It may still contain
+
+To inspect FIFO matching for one year, run:
+
+```sh
+scripts/dump_tr_fifo.sh --year 2024
+```
+
+The default year is the previous calendar year, the default input is `tmp/TransactionExport.csv`
+and the default output is `runtime/debug/tr_fifo_<year>.txt`. Several CSVs can be supplied in
+request order, as for the diagnostics dump, and `--output runtime/path.txt` chooses another file.
+The output starts with counts per instrument status and the number of loss-making matches, then
+lists each instrument's status, the event it stopped at, its in-year matches (units, basis, sale
+value, gain) and its open lots at 31 December. Amounts are exact values shown rounded to eight
+decimals, without fees. Fields starting with `dump_` (the purchase and sale unit prices) are
+looked up by the tool from the source trades for comparison with Doh-KDVP `F4`/`F9`; they are not
+part of the FIFO result. The file contains private financial data and must remain local.
+
+The diagnostics text retains structured source locations without dumping event payloads. It may still contain
 private identifiers and must remain local; it is not the application's JSON contract.
 
 ## Initialization model

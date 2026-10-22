@@ -16,6 +16,7 @@ add_executable(taxbroker_unit_tests
     unit/exact_arithmetic_test.cpp
     unit/import_fixed_point_test.cpp
     unit/fifo_basis_test.cpp
+    unit/fifo_matcher_test.cpp
     unit/processing_diagnostics_test.cpp
     unit/date_utils_test.cpp
     unit/diagnostic_messages_test.cpp
@@ -42,6 +43,7 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 
 # Integration Tests
 add_executable(taxbroker_integration_tests
+    integration/fifo_matching_integration_test.cpp
     integration/reporting_year_integration_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/statement_merger_integration_test.cpp

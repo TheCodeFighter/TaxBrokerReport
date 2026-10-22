@@ -436,6 +436,43 @@ privacy boundary, and four independent form statuses are defined in [`diagnostic
 Application JSON uses version 2 for this expanded result. Parser diagnostics JSON is a developer
 format until the beta (see "JSON contract" below).
 
+### FIFO matching contract
+
+`FifoMatcher::match` takes the merged statement and the `ReportingYearLedger` made from it. It
+reads `mCapitalEvents` in order and changes nothing in the statement. The result has one
+`FifoIsinResult` for each trade instrument, in the presentation order (by ISIN), and the numeric
+diagnostics of the run. Each entry holds:
+
+- `mMatches`: the internal FIFO matches of the sales dated in the selected year, in ledger order.
+  A match links one sale to the units it takes from one purchase, with the exact purchase basis,
+  the exact sale value (sale `UnitPrice` times matched `Units`) and the signed gain (sale value
+  minus basis), all in ticks of `10^-16` EUR and never rounded. A negative gain is a loss-making
+  portion. A sale that uses two purchases has two matches. They are not Doh-KDVP filing rows.
+- `mOpenLots`: the lots still open in FIFO order at 31 December, each with its purchase event,
+  date, remaining units and exact remaining basis.
+- `mStatus`, `mStoppedAt` and `mAvailableUnits`: why and where the pool stopped, if it did.
+
+An earlier-year sale only uses up lots and creates no match. One pool exists for each ISIN, across
+files, brokers and accounts; broker, file and row never change the matching.
+
+A pool stops at its first event that it cannot apply and ignores its later events. Other ISINs
+continue. The failing sale is never applied partly: the lots stay as they were just before it,
+and the matches made before the stop stay in the result as evidence.
+
+| Status | Stopped at |
+| --- | --- |
+| `Matched` | Nothing; every trade up to 31 December was applied. |
+| `CorporateAction` | The first corporate action. Splits are applied by the later split work. |
+| `NonEurTrade` | The first trade whose currency is not EUR, also before the selected year. |
+| `InsufficientUnits` | A sale that needs more units than the earlier purchases left open. |
+| `NumericFailure` | An invalid trade value or an overflow. The result has a diagnostic. |
+
+The matcher only reports numeric failures as diagnostics (`unrepresentable_value` and
+`arithmetic_overflow`, stage `FifoTax`, report `CapitalGains`). The `incomplete_history` error,
+the corporate-action errors, the non-EUR gate and the loss-making-portion gate are built by later
+work from these statuses and matches. Filing rows, the 30-day loss rule, split adjustment and
+currency conversion are also later work.
+
 ## Parser diagnostics
 
 Parser diagnostics have three separate responsibilities:
