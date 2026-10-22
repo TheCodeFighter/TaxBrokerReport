@@ -130,14 +130,20 @@ followed by `F8`.
 For selected year `Y`, the app writes a *popisni list* only for an ISIN with at least one sale in
 `Y`. The list contains:
 
-- **One sale row for each sale in `Y`**, with the full sale quantity (`F7`) and unit value
-  (`F9`). A sale that uses several purchases stays one sale row. The only exception is the split
-  of a partially eligible loss described in [The 30-day loss rule](#the-30-day-loss-rule).
+- **One sale row for each sale in `Y`**, with the sale quantity (`F7`) and unit value (`F9`). A
+  sale that uses several purchases stays one sale row. `F7` leaves out units past the holding
+  period ([Long-held investments](#long-held-investments)), and a sale with only such units has no
+  row. The only other exception is the split of a partially eligible loss described in
+  [The 30-day loss rule](#the-30-day-loss-rule).
 - **One purchase row for each purchase that a sale in `Y` uses.** `F1` and `F4` come from that
   purchase. `F3` is the number of its units used by all sales in `Y` together, not the full
-  purchase quantity.
+  purchase quantity, and again without units past the holding period.
 - **No row for a sale before `Y`.** It was reported in its own year. The purchase units it used
-  are left out of the purchase rows.
+  are left out of the purchase rows. Its gain or loss counts only in that year: a capital loss
+  reduces only the gains of the same tax year and is not carried forward (ZDoh-2 Article 97), so
+  an earlier-year loss neither appears in nor blocks the list of `Y`. The one exception in Article
+  97, third paragraph (a loss on shares bought before new shares from a capital increase out of
+  company funds), follows a corporate action that the app does not support and blocks.
 - **No row for unused units.** Units still held at the end of `Y` appear in the list of the year
   in which they are sold.
 - Rows follow the ledger order (tax date, timestamp, input sequence). A purchase row sits at its
@@ -151,13 +157,12 @@ For selected year `Y`, the app writes a *popisni list* only for an ISIN with at 
   leaves `F10` out.
 
 This is simpler for the user than repeating the full history every year. It differs from a literal
-reading of section 11: `F3` is not always the confirmation quantity, and `F8` is the stock of the
-listed units, not the whole holding. The gains do not change: a FIFO over the listed rows uses the
+reading of section 11: `F3` (and `F7` when units are past the holding period) is not always the
+confirmation quantity, and `F8` is the stock of the listed units, not the whole holding. The gains do not change: a FIFO over the listed rows uses the
 same units as the internal matches. This reading must be confirmed with an eDavki draft import
 before release.
 
-The rows for split-adjusted history, long-held units and partially eligible losses are decided
-in #267.
+The rows for split-adjusted history and partially eligible losses are decided in #267.
 
 ### Example: one sale uses two purchases
 
@@ -257,21 +262,47 @@ field. The exact rules and error scopes are in [`calculations.md`](calculations.
 
 ## Long-held investments
 
-Slovenian rules use these holding periods:
+Slovenian rules use these holding periods. The **sale date** decides, not the purchase date:
+ZDoh-2Z (*Uradni list RS*, no. 39/2022, in use from 1 January 2022) changed Article 96 of ZDoh-2
+from 20 to 15 years, and the FURS instructions apply the 20 years to a sale before 1 January 2022
+whenever the units were bought.
 
-| Year of sale | Holding period for the tax exemption |
+| Sale date | Holding period for the tax exemption |
 | --- | --- |
-| 2022 and later | 15 completed calendar years |
-| 2021 and earlier | 20 completed calendar years |
+| 1 January 2022 and later | 15 years from the purchase date |
+| 31 December 2021 and earlier | 20 years from the purchase date |
+
+The period ends on the anniversary of the purchase date. A sale on the anniversary is still inside
+the period, and a sale on the next day is past it. For example, units bought on 2009-03-10 are
+inside the 15 years on 2024-03-10 and past them on 2024-03-11. A purchase on 29 February has its
+anniversary on 28 February in a year without that day. The app only reports the rows; FURS works
+out the tax from the dates. The boundary decides only which units the app leaves out of the rows
+(see below). Check both boundaries with an eDavki draft import (#271).
+
+Example of the sale date rule: units bought on 2004-05-01 and sold on 2021-06-01 are held 17
+years, which is inside the 20 years, so the sale is taxed. The same units sold on 2022-01-03 are
+past the 15 years that apply to a sale from 2022, so the sale is exempt.
 
 Official eDavki guidance says that a Doh-KDVP return is not required for capital sold after the
 applicable holding period. Section 11 of the instructions limits the *popisni list* to securities
 sold "*pred potekom petnajstih let od dneva, ko so bili pridobljeni*" (before 15 years from the day
 they were bought).
 
-How the filing rows show units at or past the holding period is open and is decided in #267. A
-sale may use both older and newer units, so leaving out only the older purchase rows while keeping
-the whole sale row would make `F8` negative.
+So units past the holding period get no row at all. A sale may use both older and newer units
+(FIFO takes the oldest first). The app then leaves the older units out of both the purchase rows
+(`F3`) and the sale row (`F7`), so `F8` stays the running total of the listed units and never goes
+below zero. A sale that uses only older units has no row, and an ISIN whose sales of the year all
+use only older units has no list. The units left out stay visible beside the report, never in the
+XML.
+
+Example (sale in 2025, so 15 years): buy 2 units on 2005-04-01 and 2 units on 2020-04-01, then
+sell 3 units on 2025-06-02. FIFO takes the 2 units from 2005, which are past the 15 years and tax
+free, and 1 unit from 2020. The list has two rows: purchase 2020-04-01, `F3` 1, `F8` 1; sale
+2025-06-02, `F7` 1, `F8` 0.
+
+A loss on units past the period cannot reduce the tax base (ZDoh-2 Article 96, third paragraph),
+so it is left out with them and the loss check covers only the listed units. Lowering `F7` below
+the sold quantity of the broker confirmation must be checked with an eDavki draft import (#271).
 
 The holding period never changes:
 
@@ -626,6 +657,12 @@ Tests based on this document must prove that:
 - a sale that uses several purchases is one sale row, and a purchase used by several in-year sales
   is one purchase row;
 - earlier-year sales and units still held at the end of the year are not listed;
+- units past the holding period are left out of `F3` and `F7`, a sale with only such units has no
+  row, and they stay visible beside the report: 15 years for a sale from 2022 and 20 years
+  before, counted from the purchase date, with the anniversary still inside the period and
+  29 February moving to 28 February;
+- a loss on units past the holding period does not block, and a loss on the listed units does;
+- a loss from an earlier-year sale does not block the selected year and is not listed;
 - a FIFO over the filing rows, independent of the production code, gives the literal gains and
   `F8` values;
 - holding time does not change FIFO use;
@@ -671,6 +708,9 @@ Tests based on this document must prove that:
 - [eDavki Doh-KDVP filing guidance](https://edavki.durs.si/EdavkiPortal/OpenPortal/CommonPages/Opdynp/PageD.aspx?category=vrednostni_papirji_drugi_delezi_investicijski_kuponi)
 - [Doh-KDVP instructions for 2025 and later, section 11](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_kdvp_25.n.sl.pdf)
 - [Doh-KDVP instructions before 2025, section 11](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_kdvp_20.n.sl.pdf)
+- [FURS DOHKAP instructions: 15 years for a sale from 2022, 20 years before, decided by the sale date](https://edavki.durs.si/OpenPortal/Dokumenti/dohkap5.n.sl.pdf)
+- [FURS explanation of ZDoh-2 Article 97, third paragraph: no carry-forward of capital losses except after a capital increase from company funds](https://www.racunovodja.com/clanki.asp?clanek=3090)
+- [ZDoh-2Z, *Uradni list RS* no. 39/2022, which changed ZDoh-2 Article 96 from 20 to 15 years](https://www.racunovodstvo.net/zakonodaja/predpis/13083/zakon-o-spremembah-in-dopolnitvah-zakona-o-dohodnini-zdoh-2z)
 - [eDavki explanation of the 30-day loss rule](https://edavki.durs.si/EdavkiPortal/OpenPortal/Pages/Faq/Faq.aspx?qq=ZDoh)
 - [FURS detailed quantitative loss-rule examples](https://www.fu.gov.si/fileadmin/Internet/Davki_in_druge_dajatve/Podrocja/Dohodnina/Dohodek_iz_kapitala/Opis/Dobicek_iz_kapitala_-_pravilo_navidezne_odsvojitve_kapitala.docx)
 - [FURS capital-income guidance, including Trade Republic and IBKR](https://www.fu.gov.si/fileadmin/Internet/Davki_in_druge_dajatve/Podrocja/Dohodnina/Dohodek_iz_kapitala/Opis/Obresti_dividende_in_dobicek_iz_kapitala.doc)

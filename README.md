@@ -229,9 +229,12 @@ request order, as for the diagnostics dump, and `--output runtime/path.txt` choo
 The output starts with counts per instrument status and the number of loss-making matches, then
 lists each instrument's status, the event it stopped at, its in-year matches (units, basis, sale
 value, gain) and its open lots at 31 December. Amounts are exact values shown rounded to eight
-decimals, without fees. Fields starting with `dump_` (the purchase and sale unit prices) are
-looked up by the tool from the source trades for comparison with Doh-KDVP `F4`/`F9`; they are not
-part of the FIFO result. The file contains private financial data and must remain local.
+decimals, without fees. After the instruments, the file shows the Doh-KDVP filing rows (`F1` to
+`F10`, with `F8` the running stock), each blocked ISIN with its reason and the sales it names, and
+the units left out because they are past the holding period. While any ISIN is blocked there is no
+report, so the listed rows leave out every blocked ISIN as a preview of the tool, not a choice the
+user made. The file contains private financial data and must
+remain local.
 
 The diagnostics text retains structured source locations without dumping event payloads. It may still contain
 private identifiers and must remain local; it is not the application's JSON contract.
