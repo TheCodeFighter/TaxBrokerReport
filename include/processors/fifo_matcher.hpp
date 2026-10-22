@@ -43,7 +43,8 @@ enum class FifoIsinStatus {
     CorporateAction,
     /// Stopped at a trade that is not in EUR; conversion is not applied yet.
     NonEurTrade,
-    /// Stopped at a sale that needs more units than the earlier purchases left open.
+    /// Stopped at a sale that needs more units than the earlier purchases left open. The result
+    /// has one incomplete_history error for that sale.
     InsufficientUnits,
     /// Stopped at a value that is invalid or overflows; a diagnostic describes it.
     NumericFailure,
@@ -79,6 +80,9 @@ class FifoMatcher final {
     /// A pool stops at its first corporate action, non-EUR trade, sale without enough open units
     /// or invalid value, and ignores its later events. The failing sale is never applied
     /// partly: the open lots stay as they were before it. Other ISINs are not affected.
+    /// A sale without enough open units gives one incomplete_history error for the capital report,
+    /// with the sale's sources and tax date. Only the first such sale of an ISIN is reported.
+    ///
     /// aStatement must be the statement that aLedger was prepared from.
     [[nodiscard]] FifoMatchingResult match(const MergedStatement& aStatement,
                                            const ReportingYearLedger& aLedger) const;

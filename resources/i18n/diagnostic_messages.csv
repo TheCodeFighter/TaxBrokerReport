@@ -34,6 +34,7 @@ arithmetic_overflow,"The calculation exceeds the supported integer range.","Izra
 invalid_exchange_rate,"The exchange rate is invalid.","Menjalni tečaj je neveljaven."
 corporate_action_unrepresentable,"The corporate action cannot preserve the position and exact basis.","Korporativno dejanje ne more ohraniti stanja in natančne nabavne vrednosti."
 invalid_reporting_year,"Select a reporting year from {minYear} to {maxYear}.","Izberite poročevalsko leto od {minYear} do {maxYear}."
+incomplete_history,"Earlier purchase history is missing: this sale needs more units than the earlier purchases left. Add the older or missing statements.","Manjka zgodovina prejšnjih nakupov: ta prodaja potrebuje več enot, kot jih je ostalo od prejšnjih nakupov. Dodajte starejše ali manjkajoče izpiske."
 row_kind.trade,trade row,nakup ali prodaja
 row_kind.dividend,dividend row,dividenda
 row_kind.bond_interest,bond-interest row,obresti obveznice

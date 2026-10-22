@@ -572,6 +572,12 @@ TEST(FifoMatcherTest, DifferentIsinsUseSeparatePools) {
     EXPECT_EQ(shareB.mAvailableUnits, 0);
     EXPECT_TRUE(shareB.mMatches.empty());
     EXPECT_TRUE(shareB.mOpenLots.empty());
+
+    // Only B has an error; the purchase of A is never used for B.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mIsin, "XX0000000002");
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2024-02-01"));
 }
 
 TEST(FifoMatcherTest, FractionalUnitsAreMatchedExactlyAndAFullySoldLotIsRemoved) {
@@ -759,42 +765,50 @@ TEST(FifoMatcherTest, SaleAtThePurchasePriceHasAGainOfExactlyZero) {
 TEST(FifoMatcherTest, ShortSaleStopsTheIsinAndLeavesTheLotsAsTheyWereBeforeIt) {
     // Example "Incomplete-history example" in fifo.md.
     StatementMergeResult merged;
-    merged.mStatement.mPresentation.mTradeInstruments = {{
-        .mIsin = "XX0000000001",
-        .mTransactions =
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {
             {
-                {.mMetadata = {.mTaxDate = day("2022-03-01")},
-                 .mTradeSide = TradeSide::Buy,
-                 .mUnitPrice = 1'000'000'000, // EUR 10
-                 .mUnits = 60'000'000,        // 0.6 units
-                 .mCurrency = Currency::EUR},
-                {.mMetadata = {.mTaxDate = day("2023-08-01")},
-                 .mTradeSide = TradeSide::Sell,
-                 .mUnitPrice = 1'200'000'000, // EUR 12
-                 .mUnits = 25'000'000,        // 0.25 units
-                 .mCurrency = Currency::EUR},
-                {.mMetadata = {.mTaxDate = day("2024-05-01")},
-                 .mTradeSide = TradeSide::Sell,
-                 .mUnitPrice = 1'200'000'000, // EUR 12
-                 .mUnits = 50'000'000,        // 0.5 units, but only 0.35 are open
-                 .mCurrency = Currency::EUR},
-                {.mMetadata = {.mTaxDate = day("2024-06-01")},
-                 .mTradeSide = TradeSide::Buy,
-                 .mUnitPrice = 1'000'000'000, // EUR 10
-                 .mUnits = 100'000'000,       // 1 unit, ignored after the stop
-                 .mCurrency = Currency::EUR},
-                {.mMetadata = {.mTaxDate = day("2024-07-01")},
-                 .mTradeSide = TradeSide::Sell,
-                 .mUnitPrice = 1'200'000'000, // EUR 12
-                 .mUnits = 10'000'000,        // 0.1 units, ignored after the stop
-                 .mCurrency = Currency::EUR},
-            },
-    }};
+                .mName = "Synthetic Share",
+                .mIsin = "XX0000000001",
+                .mTransactions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2022-03-01")},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 60'000'000,        // 0.6 units
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2023-08-01")},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 25'000'000,        // 0.25 units
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-05-01"),
+                                       .mSources = {{.mBroker = Broker::TradeRepublic,
+                                                     .mFilename =
+                                                         SourceFilename::fromPath("tr.csv"),
+                                                     .mSourceRow = 4,
+                                                     .mTransactionId = "synthetic-sale-may",
+                                                     .mInputSequence = {0, 2}}}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 50'000'000,        // 0.5 units, but only 0.35 are open
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-06-01")},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 100'000'000,       // 1 unit, ignored after the stop
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-07-01")},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 10'000'000,        // 0.1 units, ignored after the stop
+                         .mCurrency = Currency::EUR},
+                    },
+            }};
 
     const auto result = matchYear(merged, 2024);
 
     ASSERT_EQ(result.mIsins.size(), 1U);
-    EXPECT_TRUE(result.mDiagnostics.empty());
 
     const auto& isin = result.mIsins.at(0);
 
@@ -810,6 +824,31 @@ TEST(FifoMatcherTest, ShortSaleStopsTheIsinAndLeavesTheLotsAsTheyWereBeforeIt) {
     EXPECT_EQ(isin.mOpenLots.at(0).mPurchaseDate, day("2022-03-01"));
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 35'000'000);
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingBasis.mTicks, ticks(35'000'000'000'000'000));
+
+    // One error for the May sale. The June purchase and the July sale give no error of their own.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::IncompleteHistory);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
+    EXPECT_EQ(diagnostic.mMessage,
+              "Earlier purchase history is missing: this sale needs more units than the earlier "
+              "purchases left. Add the older or missing statements.");
+    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::HistoricalValidation);
+    EXPECT_EQ(diagnostic.mContext.mAffectedReports,
+              (std::vector<ReportType>{ReportType::CapitalGains}));
+    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
+    EXPECT_EQ(diagnostic.mContext.mInstrumentName, "Synthetic Share");
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-05-01"));
+
+    ASSERT_EQ(diagnostic.mContext.mSources.size(), 1U);
+
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mFilename.value(), "tr.csv");
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mSourceRow, 4U);
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mTransactionId, "synthetic-sale-may");
 }
 
 TEST(FifoMatcherTest, ShortSaleKeepsTheMatchesOfEarlierSalesInTheYear) {
@@ -855,6 +894,10 @@ TEST(FifoMatcherTest, ShortSaleKeepsTheMatchesOfEarlierSalesInTheYear) {
     ASSERT_EQ(isin.mOpenLots.size(), 1U);
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 200'000'000);
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingBasis.mTicks, ticks(200'000'000'000'000'000));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2024-03-01"));
 }
 
 TEST(FifoMatcherTest, LaterPurchaseOnTheSameDayCannotRepairAnEarlierSale) {
@@ -888,6 +931,353 @@ TEST(FifoMatcherTest, LaterPurchaseOnTheSameDayCannotRepairAnEarlierSale) {
     EXPECT_EQ(isin.mAvailableUnits, 0);
     EXPECT_TRUE(isin.mMatches.empty());
     EXPECT_TRUE(isin.mOpenLots.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2024-05-01"));
+}
+
+TEST(FifoMatcherTest, SaleOneSmallestStepAboveTheOpenUnitsIsReportedAsIncompleteHistory) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 35'000'000,        // 0.35 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-02-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 35'000'001,        // 0.35000001 units, one step more than open
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+
+    const auto& isin = result.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::InsufficientUnits);
+    EXPECT_EQ(isin.mAvailableUnits, 35'000'000);
+    EXPECT_TRUE(isin.mMatches.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2024-02-01"));
+}
+
+TEST(FifoMatcherTest, SaleOfExactlyTheOpenUnitsIsNotIncompleteHistory) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 35'000'000,        // 0.35 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-02-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 35'000'000,        // 0.35 units, exactly the open units
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+
+    const auto& isin = result.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::Matched);
+    ASSERT_EQ(isin.mMatches.size(), 1U);
+    EXPECT_EQ(isin.mMatches.at(0).mUnits, 35'000'000);
+    EXPECT_TRUE(isin.mOpenLots.empty());
+}
+
+TEST(FifoMatcherTest, ShortSaleInAnEarlierYearBlocksTheIsinForTheSelectedYear) {
+    // fifo.md, "Trades before the selected year": an unmatched older sale is still an error.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2022-03-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2023-04-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 200'000'000,       // 2 units, but only 1 is open
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units, ignored after the stop
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-02-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 100'000'000,       // 1 unit, ignored after the stop
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+
+    const auto& isin = result.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::InsufficientUnits);
+    EXPECT_EQ(isin.mStoppedAt, (StatementEventReference{StatementEventKind::Trade, 0, 1}));
+    EXPECT_EQ(isin.mAvailableUnits, 100'000'000);
+    EXPECT_TRUE(isin.mMatches.empty()); // the 2024 sale was not matched
+
+    // The error is for the 2023 sale, not for anything in the selected year.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2023-04-01"));
+}
+
+TEST(FifoMatcherTest, ShortSaleInAnEarlierYearIsReportedWithoutAnyEventInTheSelectedYear) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2022-03-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2023-04-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 200'000'000,       // 2 units, but only 1 is open
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::InsufficientUnits);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2023-04-01"));
+}
+
+TEST(FifoMatcherTest, OnlyTheFirstShortSaleOfAnIsinIsReported) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-02-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 200'000'000,       // 2 units, but only 1 is open: the error
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 300'000'000,       // 3 units, ignored after the stop
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+
+    const auto& isin = result.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::InsufficientUnits);
+    EXPECT_EQ(isin.mStoppedAt, (StatementEventReference{StatementEventKind::Trade, 0, 1}));
+    EXPECT_TRUE(isin.mMatches.empty());
+    ASSERT_EQ(isin.mOpenLots.size(), 1U);
+    EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 100'000'000);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2024-02-01"));
+}
+
+TEST(FifoMatcherTest, ShortSalesOfSeveralIsinsGiveOneErrorEachAndAnotherIsinStillMatches) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            .mName = "Synthetic Share A",
+            .mIsin = "XX0000000001",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 200'000'000,       // 2 units, but only 1 is open
+                     .mCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Share B",
+            .mIsin = "XX0000000002",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-02-15")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 100'000'000,       // 1 unit, complete
+                     .mCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Share C",
+            .mIsin = "XX0000000003",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-02-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 200'000'000,       // 2 units, but only 1 is open
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 3U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::InsufficientUnits);
+    EXPECT_EQ(result.mIsins.at(1).mStatus, FifoIsinStatus::Matched);
+    EXPECT_EQ(result.mIsins.at(1).mMatches.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(2).mStatus, FifoIsinStatus::InsufficientUnits);
+
+    // Ledger order: C (2024-02-01) before A (2024-03-01). B has no error.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mIsin, "XX0000000003");
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mInstrumentName, "Synthetic Share C");
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2024-02-01"));
+    EXPECT_EQ(result.mDiagnostics.at(1).mContext.mIsin, "XX0000000001");
+    EXPECT_EQ(result.mDiagnostics.at(1).mContext.mInstrumentName, "Synthetic Share A");
+    EXPECT_EQ(result.mDiagnostics.at(1).mContext.mTaxDate, day("2024-03-01"));
+}
+
+TEST(FifoMatcherTest, ShortSaleMergedFromTwoFilesKeepsBothSourcesInTheError) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {
+            {
+                .mName = "Synthetic Share",
+                .mIsin = "XX0000000001",
+                .mTransactions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-02-01"),
+                                       .mSources = {{.mBroker = Broker::TradeRepublic,
+                                                     .mFilename = SourceFilename::fromPath("a.csv"),
+                                                     .mSourceRow = 3,
+                                                     .mTransactionId = "synthetic-sale",
+                                                     .mInputSequence = {0, 1}},
+                                                    {.mBroker = Broker::TradeRepublic,
+                                                     .mFilename = SourceFilename::fromPath("b.csv"),
+                                                     .mSourceRow = 2,
+                                                     .mTransactionId = "synthetic-sale",
+                                                     .mInputSequence = {1, 0}}}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 100'000'000,       // 1 unit, but nothing was bought
+                         .mCurrency = Currency::EUR},
+                    },
+            }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::InsufficientUnits);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& sources = result.mDiagnostics.at(0).mContext.mSources;
+
+    ASSERT_EQ(sources.size(), 2U);
+    EXPECT_EQ(sources.at(0).mFilename.value(), "a.csv");
+    EXPECT_EQ(sources.at(0).mSourceRow, 3U);
+    EXPECT_EQ(sources.at(1).mFilename.value(), "b.csv");
+    EXPECT_EQ(sources.at(1).mSourceRow, 2U);
+}
+
+TEST(FifoMatcherTest, SaleAfterASplitIsNotReportedAsIncompleteHistory) {
+    // After a 2-for-1 split, 1 bought unit becomes 2, so selling 2 is not a shortage. The pool
+    // stops at the split, so the sale is never compared with the 1 unit open before the split.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-02")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 200'000'000,     // 2 units, the position after the split
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-06-01")},
+                 .mType = CorporateActionType::Split,
+                 .mRatio = 200'000'000}, // 2 new units for 1 old unit
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+
+    const auto& isin = result.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::CorporateAction);
+    EXPECT_EQ(isin.mStoppedAt,
+              (StatementEventReference{StatementEventKind::CorporateAction, 0, 0}));
+    EXPECT_TRUE(isin.mMatches.empty());
+    ASSERT_EQ(isin.mOpenLots.size(), 1U);
+    EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 100'000'000); // not adjusted
 }
 
 TEST(FifoMatcherTest, OpenUnitsThatOverflowInt64StopTheIsinWithAnOverflowDiagnostic) {

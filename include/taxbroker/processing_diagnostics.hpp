@@ -31,6 +31,7 @@ enum class ProcessingDiagnosticCode {
     InvalidExchangeRate,
     CorporateActionUnrepresentable,
     InvalidReportingYear,
+    IncompleteHistory,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.
