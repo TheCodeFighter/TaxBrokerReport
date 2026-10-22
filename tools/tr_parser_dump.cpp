@@ -915,12 +915,6 @@ void writeCapitalEvent(std::ostream& aOutput,
     }
 }
 
-UnitPrice tradeUnitPrice(const BrokerStatement& aStatement, const StatementEventReference& aTrade) {
-    return aStatement.mTradeInstruments.at(aTrade.mInstrumentIndex.value())
-        .mTransactions.at(aTrade.mEventIndex)
-        .mUnitPrice;
-}
-
 void writeFifoIsin(std::ostream& aOutput,
                    const BrokerStatement& aStatement,
                    const FifoIsinResult& aIsin) {
@@ -957,12 +951,6 @@ void writeFifoIsin(std::ostream& aOutput,
         aOutput << "\n      gain_eur: ";
         writeTicksInEur(aOutput, match.mGainTicks);
         aOutput << (match.mGainTicks.numerator() < 0 ? "  (loss-making portion)" : "");
-        // Looked up here from the referenced trades for comparison with F4/F9; FifoMatch has no
-        // unit prices.
-        aOutput << "\n      dump_purchase_unit_price: ";
-        writeFixedPoint(aOutput, tradeUnitPrice(aStatement, match.mPurchase), UNIT_PRICE_SCALE);
-        aOutput << "\n      dump_sale_unit_price: ";
-        writeFixedPoint(aOutput, tradeUnitPrice(aStatement, match.mSale), UNIT_PRICE_SCALE);
         aOutput << '\n';
     }
 
@@ -1224,8 +1212,7 @@ int writeFifoResult(std::span<char*> aArguments) {
            << "\n  processing_diagnostics: "
            << prepared.mDiagnostics.size() + fifo.mDiagnostics.size()
            << "\n\nAmounts are exact values shown rounded to eight decimals. Fees are not "
-              "included.\nFields starting with dump_ are script data: this tool looks them up "
-              "from the source trades. They are not part of the FIFO result.\n\n";
+              "included.\n\n";
 
     output << "INSTRUMENTS: " << fifo.mIsins.size() << "\n\n";
 
