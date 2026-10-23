@@ -34,7 +34,7 @@ jobs:
         run: docker save taxbrokerreport-dev | zstd -T0 -3 -o "$RUNNER_TEMP/dev-image.tar.zst"
 
       - name: Upload development image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dev-image
           path: ${{ runner.temp }}/dev-image.tar.zst
@@ -63,7 +63,7 @@ jobs:
         run: tar -C "$GITHUB_WORKSPACE" -cf - build/dev | zstd -T0 -3 -o "$RUNNER_TEMP/dev-build.tar.zst"
 
       - name: Upload build tree
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dev-build
           path: ${{ runner.temp }}/dev-build.tar.zst
@@ -213,7 +213,7 @@ jobs:
         run: scripts/coverage.sh
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.target }}
           path: ${{ matrix.target }}/coverage/
@@ -331,7 +331,7 @@ jobs:
 
       - name: Upload HTML coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-coverage-html
           path: current/coverage/
