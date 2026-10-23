@@ -52,6 +52,8 @@ lcov_options="--quiet --rc lcov_branch_coverage=1"
 # so use only lib.sh functions that the base commit already has.
 cmake -E rm -rf "$coverage_build_dir"
 
+# -Wno-missing-field-initializers repeats the flag in CMakeLists.txt for base commits that do not
+# have it yet (before the Alpine 3.24 change). Remove it here once that change is on main.
 cmake \
     -S /workspace \
     -B "$coverage_build_dir" \

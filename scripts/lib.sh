@@ -158,6 +158,8 @@ EOF
 
 compose() {
     ensure_uid_gid_env
+    # Docker would create a missing bind-mount folder as root, which run.sh then cannot write to.
+    mkdir -p "$repo_root/logs"
     docker compose --project-directory "$repo_root/docker" -f "$compose_file" "$@"
 }
 

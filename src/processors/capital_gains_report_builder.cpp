@@ -210,11 +210,10 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
 
 } // namespace
 
-CapitalGainsBuildResult
-CapitalGainsReportBuilder::build(const MergedStatement& aStatement,
-                                 const ReportingYearLedger& aLedger,
-                                 const FifoMatchingResult& aFifo,
-                                 const std::vector<Isin>& aExcludedIsins) const {
+CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& aStatement,
+                                                         const ReportingYearLedger& aLedger,
+                                                         const FifoMatchingResult& aFifo,
+                                                         const std::vector<Isin>& aExcludedIsins) {
     CapitalGainsBuildResult result;
     CapitalGainsReportKDVP report;
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;

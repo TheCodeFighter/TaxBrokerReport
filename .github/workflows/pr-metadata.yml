@@ -18,6 +18,8 @@ jobs:
   issue-reference:
     # Keep this name stable: the main-branch protection rule should require this check.
     name: Required issue reference
+    # Dependabot writes its own PR body without the section. A skipped job passes the required check.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

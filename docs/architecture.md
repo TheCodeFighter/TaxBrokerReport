@@ -57,8 +57,8 @@ field `invalid_value` and skips the row. From 3 such rows in one file, the parse
 file-level `localized_number_format` warning that suggests downloading the export again. A row
 counts once, even if several of its fields have a comma.
 
-An empty line between records: a single empty line is not a record and gets no row number, while
-two or more empty lines in a row become one record with one empty field, rejected on its own row.
+An empty line after the header is never a record and gets no row number, however many follow each
+other. A line with only spaces or commas is a record and goes through the normal row checks.
 Trade Republic exports contain neither.
 
 Different selected files may have the same sanitized filename. The application therefore derives

@@ -89,11 +89,11 @@ struct MessageParam {
 
 struct MessageParamDefinition {
     std::string_view mName;
-    MessageParamKind mKind;
+    MessageParamKind mKind{};
 };
 
 struct MessageDefinition {
-    MessageKey mKey;
+    MessageKey mKey{};
     std::string_view mId; ///< "field_count_mismatch" or "<code>.<sub_code>".
     std::span<const MessageParamDefinition> mParams;
 };

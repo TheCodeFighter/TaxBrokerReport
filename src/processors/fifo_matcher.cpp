@@ -190,7 +190,7 @@ void applySale(FifoIsinResult& aPool,
 } // namespace
 
 FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
-                                      const ReportingYearLedger& aLedger) const {
+                                      const ReportingYearLedger& aLedger) {
     FifoMatchingResult result;
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
 

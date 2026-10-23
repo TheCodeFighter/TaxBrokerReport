@@ -71,8 +71,10 @@ fi
 
 analysis_build_dir="/workspace/build/$analysis_build_name"
 
-# Ignore findings owned by fetched dependencies. Cppcheck 2.12 also needs lightweight models for
+# Ignore findings owned by fetched dependencies. Cppcheck also needs lightweight models for
 # GoogleTest registration macros and Clang's __SIZEOF_INT128__ built-in in this Linux container.
+# Cppcheck does not predefine __cpp_exceptions; without it csv.hpp stops with #error, and the
+# _deps suppression hides that every file including csv.hpp is skipped.
 echo "==> Running Cppcheck..."
 compose run --rm -T dev cppcheck \
     --project="$analysis_build_dir/compile_commands.json" \
@@ -92,6 +94,7 @@ compose run --rm -T dev cppcheck \
     "-DTEST_P(test_suite_name,test_name)=void cppcheck_parameterized_test()" \
     "-DINSTANTIATE_TEST_SUITE_P(...)= " \
     -D__SIZEOF_INT128__=16 \
+    -D__cpp_exceptions=199711L \
     -j 2
 
 echo "==> Checking standalone project headers..."

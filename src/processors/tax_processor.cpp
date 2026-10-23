@@ -42,7 +42,7 @@ const EventMetadata& eventMetadata(const MergedStatement& aStatement,
 
 } // namespace
 
-TaxProcessingResult TaxProcessor::prepareReportingYear(TaxProcessingRequest aRequest) const {
+TaxProcessingResult TaxProcessor::prepareReportingYear(TaxProcessingRequest aRequest) {
     TaxProcessingResult result{.mMerged = std::move(aRequest.mMerged)};
 
     if (!aRequest.mReportingYear || *aRequest.mReportingYear < kMinimumReportingYear ||

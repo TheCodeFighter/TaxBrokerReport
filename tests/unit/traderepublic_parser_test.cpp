@@ -131,7 +131,7 @@ struct RawCsvText {
 
 class TemporaryCsvFile {
   public:
-    explicit TemporaryCsvFile(RawCsvText aRawText)
+    explicit TemporaryCsvFile(const RawCsvText& aRawText)
         : mPath{std::filesystem::temp_directory_path() /
                 ("taxbroker_" + sanitizedTestName() + ".csv")} {
         std::ofstream output{mPath, std::ios::binary | std::ios::trunc};
@@ -708,10 +708,10 @@ TEST(TradeRepublicParserTest, ParsesLocalAndForeignIncomeCurrenciesExactly) {
 
     struct ExpectedForeignDividend {
         std::string_view mTransactionId;
-        Money mGrossAmount;
+        Money mGrossAmount{};
         std::optional<Money> mTaxPaid;
-        ExchangeRate mExchangeRate;
-        Currency mCurrency;
+        ExchangeRate mExchangeRate{};
+        Currency mCurrency{};
     };
     const std::array expectedForeignDividends{
         ExpectedForeignDividend{"synthetic-distribution-usd-001",
@@ -2107,7 +2107,7 @@ TEST(TradeRepublicParserTest, QuotedNewlineKeepsLogicalRowNumbers) {
     EXPECT_EQ(invalidPrice.mField, std::optional<std::string>{"price"});
 }
 
-TEST(TradeRepublicParserTest, ReportsABlankRecordAsAFieldCountError) {
+TEST(TradeRepublicParserTest, IgnoresSeveralBlankLinesBetweenRecords) {
     const SyntheticCsvRow firstBuy{
         .mDatetime = "2024-01-15T10:00:00.000Z",
         .mDate = "2024-01-15",
@@ -2141,9 +2141,64 @@ TEST(TradeRepublicParserTest, ReportsABlankRecordAsAFieldCountError) {
         .mTransactionId = "synthetic-buy-last",
     };
 
-    // Two empty lines: the reader returns one record with a single empty field on row 3.
+    // Two empty lines: neither is a record, so the last buy is on row 3.
     const std::string text =
         std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + "\n\n\n" + csvLine(lastBuy) + '\n';
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 2U);
+
+    const auto* first = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    const auto* last = findTradeTransaction(parseResult.mStatement, "synthetic-buy-last");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(last, nullptr);
+
+    EXPECT_EQ(primarySource(first->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(first->mMetadata).mInputSequence.mEventIndex, 0U);
+    EXPECT_EQ(primarySource(last->mMetadata).mSourceRow, 3U);
+    EXPECT_EQ(primarySource(last->mMetadata).mInputSequence.mEventIndex, 1U);
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, ReportsASpacesOnlyLineAsAFieldCountError) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    const SyntheticCsvRow lastBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-last",
+    };
+
+    // A line with one space is not empty: the reader returns a record with one field on row 3.
+    const std::string text =
+        std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + "\n \n" + csvLine(lastBuy) + '\n';
 
     const ParseResult parseResult = parseRawText(text);
 
@@ -2204,7 +2259,7 @@ TEST(TradeRepublicParserTest, IgnoresASingleBlankLineBetweenRecords) {
         .mTransactionId = "synthetic-buy-last",
     };
 
-    // One empty line is read as part of the line ending, so it is not a record and has no row.
+    // One empty line: it is not a record, so the last buy is on row 3.
     const std::string text =
         std::string{kCsvHeader} + '\n' + csvLine(firstBuy) + "\n\n" + csvLine(lastBuy) + '\n';
 
@@ -2261,6 +2316,61 @@ TEST(TradeRepublicParserTest, AcceptsWindowsLineEndings) {
 
     const std::string text =
         std::string{kCsvHeader} + "\r\n" + csvLine(firstBuy) + "\r\n" + csvLine(lastBuy) + "\r\n";
+
+    const ParseResult parseResult = parseRawText(text);
+
+    EXPECT_EQ(tradeTransactionCount(parseResult.mStatement), 2U);
+
+    const auto* first = findTradeTransaction(parseResult.mStatement, "synthetic-buy-first");
+    const auto* last = findTradeTransaction(parseResult.mStatement, "synthetic-buy-last");
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(last, nullptr);
+
+    EXPECT_EQ(primarySource(first->mMetadata).mSourceRow, 2U);
+    EXPECT_EQ(primarySource(first->mMetadata).mInputSequence.mEventIndex, 0U);
+    EXPECT_EQ(primarySource(last->mMetadata).mSourceRow, 3U);
+    EXPECT_EQ(primarySource(last->mMetadata).mInputSequence.mEventIndex, 1U);
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, IgnoresBlankLinesInAFileWithWindowsLineEndings) {
+    const SyntheticCsvRow firstBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-first",
+    };
+    const SyntheticCsvRow lastBuy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-buy-last",
+    };
+
+    // Two empty CRLF lines: neither is a record, so the last buy is on row 3.
+    const std::string text = std::string{kCsvHeader} + "\r\n" + csvLine(firstBuy) + "\r\n\r\n\r\n" +
+                             csvLine(lastBuy) + "\r\n";
 
     const ParseResult parseResult = parseRawText(text);
 
