@@ -232,13 +232,13 @@ jobs:
 
     steps:
       - name: Download pull-request coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-current
           path: current/coverage
 
       - name: Download base coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-baseline
           path: baseline/coverage
