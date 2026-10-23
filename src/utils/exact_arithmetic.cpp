@@ -107,7 +107,7 @@ combineExactFractions(const ExactRational& aLeft, const ExactRational& aRight, b
 NumericResult<std::int64_t> convertScaledAmount(std::int64_t aForeignAmount,
                                                 ExchangeRate aRate,
                                                 ExchangeRateDirection aDirection,
-                                                DestinationRange aRange) {
+                                                const DestinationRange& aRange) {
     if (aRate <= 0)
     {
         return NumericError::InvalidExchangeRate;
@@ -180,7 +180,8 @@ NumericResult<std::int64_t> checkedMagnitude(std::int64_t aValue) {
     return checkedInt64(absoluteValue(WideInteger{aValue}));
 }
 
-NumericResult<std::int64_t> validateDestination(std::int64_t aValue, DestinationRange aRange) {
+NumericResult<std::int64_t> validateDestination(std::int64_t aValue,
+                                                const DestinationRange& aRange) {
     if (aRange.mMinimum > aRange.mMaximum)
     {
         return NumericError::InvalidInput;
@@ -254,7 +255,7 @@ int compareExact(const ExactRational& aLeft, const ExactRational& aRight) {
 }
 
 NumericResult<std::int64_t>
-roundToScaled(const ExactRational& aValue, std::int64_t aScale, DestinationRange aRange) {
+roundToScaled(const ExactRational& aValue, std::int64_t aScale, const DestinationRange& aRange) {
     if (aScale <= 0)
     {
         return NumericError::InvalidInput;
@@ -296,14 +297,14 @@ roundToScaled(const ExactRational& aValue, std::int64_t aScale, DestinationRange
 NumericResult<Money> convertMoney(Money aForeignMoney,
                                   ExchangeRate aRate,
                                   ExchangeRateDirection aDirection,
-                                  DestinationRange aRange) {
+                                  const DestinationRange& aRange) {
     return convertScaledAmount(aForeignMoney, aRate, aDirection, aRange);
 }
 
 NumericResult<UnitPrice> convertUnitPrice(UnitPrice aForeignUnitPrice,
                                           ExchangeRate aRate,
                                           ExchangeRateDirection aDirection,
-                                          DestinationRange aRange) {
+                                          const DestinationRange& aRange) {
     return convertScaledAmount(aForeignUnitPrice, aRate, aDirection, aRange);
 }
 

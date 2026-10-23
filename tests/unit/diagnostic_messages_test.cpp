@@ -17,11 +17,11 @@ using namespace taxbroker;
 
 struct ExpectedParam {
     std::string_view mName;
-    MessageParamKind mKind;
+    MessageParamKind mKind{};
 };
 
 struct ExpectedMessage {
-    MessageKey mKey;
+    MessageKey mKey{};
     std::string_view mId;
     std::vector<ExpectedParam> mParams;
 };

@@ -84,8 +84,8 @@ class FifoMatcher final {
     /// with the sale's sources and tax date. Only the first such sale of an ISIN is reported.
     ///
     /// aStatement must be the statement that aLedger was prepared from.
-    [[nodiscard]] FifoMatchingResult match(const MergedStatement& aStatement,
-                                           const ReportingYearLedger& aLedger) const;
+    [[nodiscard]] static FifoMatchingResult match(const MergedStatement& aStatement,
+                                                  const ReportingYearLedger& aLedger);
 };
 
 } // namespace taxbroker

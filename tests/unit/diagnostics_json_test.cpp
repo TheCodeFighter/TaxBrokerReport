@@ -172,7 +172,7 @@ TEST(DiagnosticsJsonTest, ReportsWarningOnlyResultsSeparatelyFromErrors) {
 
 TEST(DiagnosticsJsonTest, KeepsEveryDiagnosticCodeStable) {
     struct ExpectedCode {
-        DiagnosticCode mCode;
+        DiagnosticCode mCode{};
         std::string_view mJsonValue;
     };
     constexpr std::array expectedCodes{

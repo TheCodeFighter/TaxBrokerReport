@@ -271,7 +271,7 @@ template <typename Event> void sortEvents(std::vector<Event>& aEvents) {
 
 struct ChronologicalEntry {
     StatementEventReference mReference;
-    const EventMetadata* mMetadata;
+    const EventMetadata* mMetadata{};
 };
 
 template <typename Event>
@@ -757,18 +757,22 @@ void deduplicateEvents(std::vector<MergeEvent>& aEvents,
         auto& canonical = aEvents[candidates.front()];
         // Accumulate evidence so an evidence-free first event cannot hide later conflicts.
         auto combined = canonical;
+        bool allMatch = true;
 
-        const bool allMatch =
-            std::all_of(candidates.begin() + 1, candidates.end(), [&](std::size_t aIndex) {
-                if (!sameEventFacts(combined, aEvents[aIndex]))
-                {
-                    return false;
-                }
+        // A plain loop, not std::all_of: optimized Clang builds cannot apply the unroll hint that
+        // libstdc++ puts on std::all_of here, and warn.
+        for (std::size_t index = 1; index < candidates.size(); ++index)
+        {
+            const auto& candidate = aEvents[candidates[index]];
 
-                mergeExactEvent(combined, aEvents[aIndex]);
+            if (!sameEventFacts(combined, candidate))
+            {
+                allMatch = false;
+                break;
+            }
 
-                return true;
-            });
+            mergeExactEvent(combined, candidate);
+        }
 
         if (!allMatch)
         {

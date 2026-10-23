@@ -26,7 +26,7 @@ namespace {
 struct TransactionTypeMapping {
     std::string_view mType;
     std::string_view mExpectedCategory;
-    taxbroker::RowType mRowType;
+    taxbroker::RowType mRowType{};
 };
 
 constexpr auto kTransactionTypeMappings = std::array{
@@ -232,7 +232,7 @@ namespace taxbroker::tr {
 struct TradeRepublicParser::RowContext {
     ParseResult& mParseResult;
     const SourceFilename& mSourceFile;
-    std::size_t mRowIndex;
+    std::size_t mRowIndex{};
     StableInputSequence mInputSequence;
     std::string_view mTransactionId;
     std::optional<SourceTimestamp> mSourceTimestamp;
@@ -327,11 +327,11 @@ void TradeRepublicParser::RowContext::preserveAssetClass(TradeInstrument& aInstr
 
 struct TradeRepublicParser::ParsedIncome {
     Date mDate;
-    Money mGrossAmount;
+    Money mGrossAmount{};
     std::optional<Money> mTaxPaid;
     std::optional<ExchangeRate> mExchangeRate;
-    Currency mCurrency;
-    Currency mTaxCurrency;
+    Currency mCurrency{};
+    Currency mTaxCurrency{};
 };
 
 void TradeRepublicParser::RowContext::addDiagnostic(DiagnosticSeverity aSeverity,
@@ -664,7 +664,7 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
     return parsedResult;
 }
 
-RowMeta TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) const {
+RowMeta TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) {
     RowType rowType = RowType::Unknown;
 
     auto category = aCsvRow["category"].get<std::string>();
@@ -697,7 +697,7 @@ RowMeta TradeRepublicParser::detectRowType(const csv::CSVRow& aCsvRow) const {
     };
 }
 
-InterestType TradeRepublicParser::detectInterestType(const csv::CSVRow& aCsvRow) const {
+InterestType TradeRepublicParser::detectInterestType(const csv::CSVRow& aCsvRow) {
     const auto assetClass = aCsvRow["asset_class"].get<std::string>();
 
     if (assetClass == "BOND")

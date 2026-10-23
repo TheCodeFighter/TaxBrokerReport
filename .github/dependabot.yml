@@ -1,0 +1,14 @@
+# Weekly update pull requests for the Docker base images and the GitHub Actions versions.
+# FetchContent pins in the CMake files (spdlog, csv-parser, nlohmann_json, googletest) and the
+# lcov archive in docker/Dockerfile are not covered and stay manual.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

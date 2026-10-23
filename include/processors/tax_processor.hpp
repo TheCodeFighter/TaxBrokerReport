@@ -45,7 +45,7 @@ class TaxProcessor final {
   public:
     /// Accepts merger-produced chronology; preserves upstream diagnostics and all source data.
     /// Missing/invalid years return no ledger and an InvalidReportingYear error.
-    [[nodiscard]] TaxProcessingResult prepareReportingYear(TaxProcessingRequest aRequest) const;
+    [[nodiscard]] static TaxProcessingResult prepareReportingYear(TaxProcessingRequest aRequest);
 };
 
 } // namespace taxbroker

@@ -70,7 +70,7 @@ class ExactRational {
 [[nodiscard]] NumericResult<std::int64_t> checkedMagnitude(std::int64_t aValue);
 /// Checks the destination's bounds and sign policy, including rejecting zero for Positive.
 [[nodiscard]] NumericResult<std::int64_t> validateDestination(std::int64_t aValue,
-                                                              DestinationRange aRange = {});
+                                                              const DestinationRange& aRange = {});
 
 /// Adds exact fractions, reducing common factors before products; checked overflow returns
 /// Overflow.
@@ -92,8 +92,9 @@ class ExactRational {
 /// Round directly from an exact value in major units to the destination's scaled integer.
 /// Half values round away from zero; the result must satisfy the destination's bounds and sign
 /// policy.
-[[nodiscard]] NumericResult<std::int64_t>
-roundToScaled(const ExactRational& aValue, std::int64_t aScale, DestinationRange aRange = {});
+[[nodiscard]] NumericResult<std::int64_t> roundToScaled(const ExactRational& aValue,
+                                                        std::int64_t aScale,
+                                                        const DestinationRange& aRange = {});
 
 enum class ExchangeRateDirection {
     ForeignPerEur,
@@ -105,14 +106,14 @@ enum class ExchangeRateDirection {
 [[nodiscard]] NumericResult<Money> convertMoney(Money aForeignMoney,
                                                 ExchangeRate aRate,
                                                 ExchangeRateDirection aDirection,
-                                                DestinationRange aRange = {});
+                                                const DestinationRange& aRange = {});
 
 /// Converts a foreign unit price to EUR with the same rules as convertMoney.
 /// Rounds once to UNIT_PRICE_SCALE.
 [[nodiscard]] NumericResult<UnitPrice> convertUnitPrice(UnitPrice aForeignUnitPrice,
                                                         ExchangeRate aRate,
                                                         ExchangeRateDirection aDirection,
-                                                        DestinationRange aRange = {});
+                                                        const DestinationRange& aRange = {});
 
 struct AllocationKey {
     std::size_t mLotOrder{};

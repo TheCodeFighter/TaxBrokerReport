@@ -58,10 +58,10 @@ struct CapitalGainsBuildResult {
 class CapitalGainsReportBuilder final {
   public:
     /// Builds the Doh-KDVP filing rows from the FIFO result.
-    [[nodiscard]] CapitalGainsBuildResult build(const MergedStatement& aStatement,
-                                                const ReportingYearLedger& aLedger,
-                                                const FifoMatchingResult& aFifo,
-                                                const std::vector<Isin>& aExcludedIsins) const;
+    [[nodiscard]] static CapitalGainsBuildResult build(const MergedStatement& aStatement,
+                                                       const ReportingYearLedger& aLedger,
+                                                       const FifoMatchingResult& aFifo,
+                                                       const std::vector<Isin>& aExcludedIsins);
 };
 
 } // namespace taxbroker

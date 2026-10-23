@@ -641,7 +641,7 @@ std::size_t mergedEventCount(const BrokerStatement& aStatement) {
 
 template <typename Record> struct FieldChange {
     std::string_view mField;
-    void (*mApply)(Record&);
+    void (*mApply)(Record&){};
 };
 
 template <typename Record, std::size_t Count, typename SelectRecord>
@@ -881,7 +881,8 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
          }},
         {"timestamp",
          [](TradeInstrument& aValue) {
-             *aValue.mTransactions.front().mMetadata.mSourceTimestamp += std::chrono::seconds{1};
+             aValue.mTransactions.front().mMetadata.mSourceTimestamp.value() +=
+                 std::chrono::seconds{1};
          }},
         {"missing timestamp",
          [](TradeInstrument& aValue) {
@@ -893,14 +894,14 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mTradeSide = TradeSide::Buy; }},
         {"unit price", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mUnitPrice; }},
         {"units", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mUnits; }},
-        {"amount", [](TradeInstrument& aValue) { ++*aValue.mTransactions.front().mAmount; }},
+        {"amount", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mAmount.value(); }},
         {"missing amount",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mAmount.reset(); }},
         {"fee", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mFeePaid; }},
         {"missing exchange rate",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
-         [](TradeInstrument& aValue) { ++*aValue.mTransactions.front().mExchangeRate; }},
+         [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate.value(); }},
         {"currency",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mCurrency = Currency::GBP; }},
         {"fee currency",
@@ -1170,7 +1171,8 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedCorporateActionFact) {
          }},
         {"units delta",
          [](TradeInstrument& aValue) { ++aValue.mCorporateActions.front().mUnitsDelta; }},
-        {"ratio", [](TradeInstrument& aValue) { ++*aValue.mCorporateActions.front().mRatio; }},
+        {"ratio",
+         [](TradeInstrument& aValue) { ++aValue.mCorporateActions.front().mRatio.value(); }},
         {"missing ratio",
          [](TradeInstrument& aValue) { aValue.mCorporateActions.front().mRatio.reset(); }},
         {"timestamp",
@@ -1190,13 +1192,14 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
     const std::array<FieldChange<DividendInstrument>, 8> changes{{
         {"ISIN", [](DividendInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
         {"gross", [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mGrossAmount; }},
-        {"tax", [](DividendInstrument& aValue) { ++*aValue.mTransactions.front().mTaxPaid; }},
+        {"tax",
+         [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mTaxPaid.value(); }},
         {"missing tax",
          [](DividendInstrument& aValue) { aValue.mTransactions.front().mTaxPaid.reset(); }},
         {"missing exchange rate",
          [](DividendInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
-         [](DividendInstrument& aValue) { ++*aValue.mTransactions.front().mExchangeRate; }},
+         [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate.value(); }},
         {"currency",
          [](DividendInstrument& aValue) {
              aValue.mTransactions.front().mCurrency = Currency::GBP;
@@ -1221,13 +1224,14 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
         {"type",
          [](InterestInstrument& aValue) { aValue.mInterestType = InterestType::OtherInterest; }},
         {"gross", [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mGrossAmount; }},
-        {"tax", [](InterestInstrument& aValue) { ++*aValue.mTransactions.front().mTaxPaid; }},
+        {"tax",
+         [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mTaxPaid.value(); }},
         {"missing tax",
          [](InterestInstrument& aValue) { aValue.mTransactions.front().mTaxPaid.reset(); }},
         {"missing exchange rate",
          [](InterestInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
-         [](InterestInstrument& aValue) { ++*aValue.mTransactions.front().mExchangeRate; }},
+         [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate.value(); }},
         {"currency",
          [](InterestInstrument& aValue) {
              aValue.mTransactions.front().mCurrency = Currency::USD;

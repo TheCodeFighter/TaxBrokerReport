@@ -26,8 +26,8 @@ class TradeRepublicParser final : public CsvParser {
 
     static constexpr char delimiter = ',';
 
-    RowMeta detectRowType(const csv::CSVRow& aCsvRow) const;
-    InterestType detectInterestType(const csv::CSVRow& aCsvRow) const;
+    static RowMeta detectRowType(const csv::CSVRow& aCsvRow);
+    static InterestType detectInterestType(const csv::CSVRow& aCsvRow);
 
     bool parseTradeRow(const csv::CSVRow& aCsvRow,
                        std::vector<TradeInstrument>& aInstruments,
@@ -63,11 +63,12 @@ class TradeRepublicParser final : public CsvParser {
     std::optional<Money> parseMoney(std::string_view aValue);
     std::optional<UnitPrice> parseUnitPrice(std::string_view aValue);
     std::optional<ExchangeRate> parseExchangeRate(std::string_view aValue);
-    Currency parseCurrency(std::string_view aValue);
-    AssetClass parseAssetClass(std::string_view aValue);
-    std::optional<BenefitType> parseBenefitType(std::string_view aValue);
-    std::optional<PrivateMarketEventType> parsePrivateMarketEventType(std::string_view aValue);
-    std::optional<TradeSide> parseTradeSide(std::string_view aValue);
+    static Currency parseCurrency(std::string_view aValue);
+    static AssetClass parseAssetClass(std::string_view aValue);
+    static std::optional<BenefitType> parseBenefitType(std::string_view aValue);
+    static std::optional<PrivateMarketEventType>
+    parsePrivateMarketEventType(std::string_view aValue);
+    static std::optional<TradeSide> parseTradeSide(std::string_view aValue);
 
     // class helpers
     static void isInstrumentValid(std::string_view aContext,
@@ -81,7 +82,7 @@ class TradeRepublicParser final : public CsvParser {
     /// plain EUR row, or none. An invalid supplied rate also gives none; the caller reports it.
     std::optional<ExchangeRate>
     parseBrokerRate(std::string_view aRateText, bool aUsesOriginalCurrency, Currency aRowCurrency);
-    std::pair<std::string_view, std::string> pickAmountField(const csv::CSVRow& aRow);
+    static std::pair<std::string_view, std::string> pickAmountField(const csv::CSVRow& aRow);
     static std::optional<Money> parseTaxPaid(std::string_view aValue);
     static std::optional<Money> parseFeePaid(std::string_view aValue);
 };

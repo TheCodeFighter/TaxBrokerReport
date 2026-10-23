@@ -8,9 +8,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(MSVC)
     add_compile_options(/W4 /WX)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wno-missing-field-initializers)
 else() # GCC
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wno-missing-field-initializers)
 endif()
 
 # Option to build legacy QT GUI
@@ -23,7 +23,7 @@ endif()
 
 include(FetchContent)
 
-find_package(Boost REQUIRED)
+find_package(Boost CONFIG REQUIRED)
 
 FetchContent_Declare(
     spdlog
@@ -35,16 +35,15 @@ FetchContent_MakeAvailable(spdlog)
 
 FetchContent_Declare(
     csv_parser
-    GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser.git
-    GIT_TAG 2.1.3
+    URL https://github.com/vincentlaucsb/csv-parser/releases/download/2.5.2/csv.hpp
+    URL_HASH SHA256=d28b5d474e4d46c0b04348f6b1ba11dd9212de10dd2231161888fd9d38254ed1
+    DOWNLOAD_NO_EXTRACT TRUE
+    SOURCE_SUBDIR no-cmake-project
 )
 
-FetchContent_GetProperties(csv_parser)
-if(NOT csv_parser_POPULATED)
-    FetchContent_Populate(csv_parser)
-endif()
+FetchContent_MakeAvailable(csv_parser)
 
-set(CSV_PARSER_INCLUDE_DIR "${csv_parser_SOURCE_DIR}/single_include")
+set(CSV_PARSER_INCLUDE_DIR "${csv_parser_SOURCE_DIR}")
 
 FetchContent_Declare(
     nlohmann_json

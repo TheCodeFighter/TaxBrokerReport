@@ -2,6 +2,7 @@
     "name": "TaxBrokerReport Dev",
     "dockerComposeFile": "../docker/docker-compose.yml",
     "service": "dev",
+    "initializeCommand": "mkdir -p logs",
     "workspaceFolder": "/workspace",
     "customizations": {
         "vscode": {
