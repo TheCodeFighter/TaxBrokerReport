@@ -585,8 +585,8 @@ not fit the form, one `xml_value_out_of_range` error per field and no XML.
 
 The FURS schemas are in `resources/xml/schemas/`: the official `Doh_KDVP_9.xsd` and
 `EDP-Common-1.xsd` as downloaded, and in `snapshot-2026-05-12/` the older copy that the legacy
-app used. The unit tests check every document they write against both with libxml2. The
-application does not link libxml2 and does not check the schema at run time.
+app used. The unit and integration tests check every document they write against both with
+libxml2. The application does not link libxml2 and does not check the schema at run time.
 
 ## Parser diagnostics
 
