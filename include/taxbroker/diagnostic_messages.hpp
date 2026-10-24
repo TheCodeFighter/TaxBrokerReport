@@ -48,6 +48,7 @@ enum class MessageKey {
     CorporateActionUnrepresentable,
     InvalidReportingYear,
     IncompleteHistory,
+    XmlValueOutOfRange,
 };
 
 enum class MessageParamKind {

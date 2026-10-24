@@ -150,7 +150,8 @@ For selected year `Y`, the app writes a *popisni list* only for an ISIN with at 
   purchase position.
 - `F8` is the running total of the listed purchase units minus the listed sale units. Every sale
   uses only earlier purchases, so `F8` is never negative, and it is 0 after the last sale row.
-- `F2` (way of purchase) is `A` for every stock purchase.
+- `F2` (way of purchase) is `B` (*nakup*, purchase) for every broker purchase. `A`
+  (*vložek kapitala*) is a capital contribution to one's own company and is not used.
 - `F10` exists only on sale rows. It is `true` (*Da*) unless the 30-day loss rule blocks the loss,
   and `false` (*Ne*) for the blocked part. A profitable sale gets `true`. The only exception is the
   developer-mode export of a sale with unknown purchase value ([`fifo.md`](fifo.md)), which
@@ -676,7 +677,7 @@ Tests based on this document must prove that:
 - split-adjusted replacement quantities use comparable units;
 - every sale row serializes explicit `F10` (`true` for a profitable sale), purchase rows have no
   `F10`, and unresolved decisions generate no capital XML;
-- every stock purchase row has `F2` = `A`;
+- every broker purchase row has `F2` = `B`;
 - missing coverage and non-imported activity produce a structured confirmation request;
 - exclusions preserve reliable replacement evidence and allocations for retained losses, including
   declared equivalent instruments with different ISINs;

@@ -32,6 +32,7 @@ enum class ProcessingDiagnosticCode {
     CorporateActionUnrepresentable,
     InvalidReportingYear,
     IncompleteHistory,
+    XmlValueOutOfRange,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

@@ -609,6 +609,10 @@ Tests based on this document must prove that:
 - [ZDoh-2 normalized-cost rules](https://pisrs.si/api/datoteke/integracije/355979996)
 - [Current official Doh-KDVP schema](https://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd)
 - [Current official Doh-KDVP display transform](https://edavki.durs.si/Documents/Transforms/Doh_KDVP_9.23-display-sl.xslt)
-- [Repository Doh-KDVP schema snapshot](../legacy-QT-GUI/resources/xml/edavk/schemas/Doh_KDVP_9.xsd)
+- [Repository Doh-KDVP schema](../resources/xml/schemas/Doh_KDVP_9.xsd): the official file
+  as downloaded on 2026-10-23 (SHA-256 starting `c84c2208e2ad7098`), with
+  [EDP-Common-1.xsd](../resources/xml/schemas/EDP-Common-1.xsd)
+- [Older Doh-KDVP schema snapshot](../resources/xml/schemas/snapshot-2026-05-12/Doh_KDVP_9.xsd):
+  the copy the legacy app used, without F2 codes `J` and `K` and `TaxDecreaseCooperative`
 - [Doh-Div schema](../legacy-QT-GUI/resources/xml/edavk/schemas/Doh_Div_3.xsd)
 - [Doh-DHO schema](../legacy-QT-GUI/resources/xml/edavk/schemas/Doh_DHO_4.xsd)

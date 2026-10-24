@@ -132,7 +132,7 @@ TEST(CapitalGainsReportBuilderTest, SaleUsingTwoPurchasesIsOneSaleRowAndTwoPurch
 
     EXPECT_EQ(firstPurchase.mPurchase, (StatementEventReference{StatementEventKind::Trade, 0, 0}));
     EXPECT_EQ(firstPurchase.mDate, day("2024-01-10"));
-    EXPECT_EQ(firstPurchase.mMethod, KdvpPurchaseMethod::A);
+    EXPECT_EQ(firstPurchase.mMethod, KdvpPurchaseMethod::B);
     EXPECT_EQ(firstPurchase.mUnits, 1'000'000'000);     // 10 units
     EXPECT_EQ(firstPurchase.mUnitPrice, 1'000'000'000); // EUR 10
     EXPECT_EQ(list.mRows.at(0).mStock, 1'000'000'000);  // 10
@@ -142,7 +142,7 @@ TEST(CapitalGainsReportBuilderTest, SaleUsingTwoPurchasesIsOneSaleRowAndTwoPurch
 
     EXPECT_EQ(secondPurchase.mPurchase, (StatementEventReference{StatementEventKind::Trade, 0, 1}));
     EXPECT_EQ(secondPurchase.mDate, day("2024-02-10"));
-    EXPECT_EQ(secondPurchase.mMethod, KdvpPurchaseMethod::A);
+    EXPECT_EQ(secondPurchase.mMethod, KdvpPurchaseMethod::B);
     EXPECT_EQ(secondPurchase.mUnits, 500'000'000);       // 5 units
     EXPECT_EQ(secondPurchase.mUnitPrice, 2'000'000'000); // EUR 20
     EXPECT_EQ(list.mRows.at(1).mStock, 1'500'000'000);   // 15
