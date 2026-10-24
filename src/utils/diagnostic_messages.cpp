@@ -111,6 +111,7 @@ constexpr std::array kDefinitions{
         MessageKey::CorporateActionUnrepresentable, "corporate_action_unrepresentable", {}},
     MessageDefinition{MessageKey::InvalidReportingYear, "invalid_reporting_year", kYearRange},
     MessageDefinition{MessageKey::IncompleteHistory, "incomplete_history", {}},
+    MessageDefinition{MessageKey::XmlValueOutOfRange, "xml_value_out_of_range", kField},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -126,7 +127,7 @@ constexpr bool definitionsFollowKeyOrder() {
 }
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
-static_assert(kDefinitions.size() == static_cast<std::size_t>(MessageKey::IncompleteHistory) + 1,
+static_assert(kDefinitions.size() == static_cast<std::size_t>(MessageKey::XmlValueOutOfRange) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 7> kTermKeys{

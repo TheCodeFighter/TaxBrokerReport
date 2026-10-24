@@ -519,6 +519,7 @@ Additional codes and their default scope are:
 | `corporate_action_quantity_rounded` | Warning for capital gains; bounded split-quantity rounding with its recorded impact. |
 | `source_quantity_corrected` | Warning for reports using the corrected source; retain the original and corrected quantities. |
 | `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
+| `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
 | `loss_eligibility_unresolved` | Error for capital gains, isolated to its complete ISIN where possible. |
 | `tax_classification_unknown` | Error for the potentially affected forms, with a classification request while resolvable. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
