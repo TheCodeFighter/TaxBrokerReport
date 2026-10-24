@@ -70,6 +70,7 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 add_executable(taxbroker_integration_tests
     integration/application_result_integration_test.cpp
     integration/fifo_matching_integration_test.cpp
+    integration/kdvp_xml_integration_test.cpp
     integration/reporting_year_integration_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/statement_merger_integration_test.cpp
@@ -84,8 +85,19 @@ target_link_libraries(taxbroker_integration_tests
     PRIVATE
     taxbroker_core
     taxbroker_api
+    taxbroker_xml
     GTest::gtest_main
     nlohmann_json::nlohmann_json
 )
+
+target_compile_definitions(taxbroker_integration_tests
+    PRIVATE
+    TAXBROKER_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/resources/xml/schemas"
+)
+
+if(LibXml2_FOUND)
+    target_link_libraries(taxbroker_integration_tests PRIVATE LibXml2::LibXml2)
+    target_compile_definitions(taxbroker_integration_tests PRIVATE TAXBROKER_HAS_LIBXML2)
+endif()
 
 gtest_discover_tests(taxbroker_integration_tests PROPERTIES LABELS integration)
