@@ -91,6 +91,9 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "invalid_reporting_year",
          {{"minYear", MessageParamKind::Number}, {"maxYear", MessageParamKind::Number}}},
         {MessageKey::IncompleteHistory, "incomplete_history", {}},
+        {MessageKey::XmlValueOutOfRange,
+         "xml_value_out_of_range",
+         {{"field", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -151,8 +154,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 36U);
-    ASSERT_EQ(expectedMessages().size(), 36U);
+    ASSERT_EQ(definitions.size(), 37U);
+    ASSERT_EQ(expectedMessages().size(), 37U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -186,8 +189,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 36U);
-    EXPECT_EQ(keys.size(), 36U);
+    EXPECT_EQ(ids.size(), 37U);
+    EXPECT_EQ(keys.size(), 37U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -208,7 +211,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 43U); // 36 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 44U); // 37 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

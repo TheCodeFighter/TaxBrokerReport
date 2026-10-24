@@ -43,9 +43,9 @@ struct ReportMetadata {
     bool operator==(const ReportMetadata&) const = default;
 };
 
-/// Doh-KDVP F2, the way of purchase. `A` is the way for every stock purchase.
+/// Doh-KDVP F2, the way of purchase. `B` is the way for every stock purchase.
 enum class KdvpPurchaseMethod {
-    A,
+    B,
 };
 
 /// Doh-KDVP F10 of a sale row. There is no "unresolved" value on purpose: a sale whose loss check
@@ -62,7 +62,7 @@ enum class KdvpLossRule {
 struct KdvpPurchaseRow {
     StatementEventReference mPurchase;
     Date mDate;
-    KdvpPurchaseMethod mMethod{KdvpPurchaseMethod::A};
+    KdvpPurchaseMethod mMethod{KdvpPurchaseMethod::B};
     Units mUnits{};
     /// In EUR.
     UnitPrice mUnitPrice{};

@@ -503,7 +503,7 @@ writer adds constants that are not data: the taxpayer type `FO`, the period date
 
 **Doh-KDVP model.** `CapitalGainsReportKDVP` holds one `KdvpInventoryList` (a *popisni list*) for
 each ISIN with a sale in the selected year, in ISIN order. A list has the ISIN, the name, `IsFond` and
-its rows in ledger order. A row is a `KdvpPurchaseRow` (F1 date, F2 method `A`, F3 units, F4 unit
+its rows in ledger order. A row is a `KdvpPurchaseRow` (F1 date, F2 method `B`, F3 units, F4 unit
 value) or a `KdvpSaleRow` (F6 date, F7 units, F9 unit value, F10), plus F8, the stock. The rows
 are the filing rows of [`tax_rules.md`](tax_rules.md), "Doh-KDVP filing rows"; the internal FIFO
 matches are not part of the model. A row keeps a `StatementEventReference` to its source trade
@@ -543,6 +543,50 @@ same index. For an ISIN with at least one sale in the selected year:
 The builder adds no diagnostics and no message keys. The CLI gates (#270) turn `mBlocked` into
 errors, and the application result (#214) into report statuses. Asking the user which blocked
 ISINs to leave out is #227.
+
+### Doh-KDVP XML writer
+
+`KdvpXmlWriter::write` (`include/xml/kdvp_xml_writer.hpp`) turns `ReportMetadata` and
+`CapitalGainsReportKDVP` into one Doh-KDVP document. It lives in its own `taxbroker_xml` target,
+the only one that links pugixml, so `taxbroker_core` stays free of XML. It only formats and
+checks: it never recalculates FIFO, stock, loss eligibility or holding periods, and never shortens,
+cleans or rounds a value to make it fit. The result holds the XML text or, when any field does
+not fit the form, one `xml_value_out_of_range` error per field and no XML.
+
+- **Constants the writer adds:** taxpayer type `FO`, `PeriodStart` 1 January and `PeriodEnd`
+  31 December of the year, `InventoryListType` `PLVP`, `SecurityCount` the number of lists and the
+  other four counts `0`, F2 `B` (*nakup*) and F5 `0.0000` on every purchase row. F5 is the
+  inheritance or gift tax paid at the purchase, a known zero for a bought security; the FURS
+  instructions fill column 5 on every purchase row, and the legacy output that eDavki accepted
+  wrote `0.0000`. The filing type becomes the workflow code `O` or `S` with the name `Original` or
+  `SelfReport` (`DocumentWorkflowID` and `DocumentWorkflowName`, as in the legacy output), written
+  in `edp:Workflow` and in `KDVP`.
+- **Taxpayer fields:** tax number, name (`name`), address (`address1`), city, post code
+  (`postNumber`), post name, birth date and residence (`resident`) in the header; residence
+  again as `IsResident`, phone as `TelephoneNumber` and email as `Email` in `KDVP`. An absent
+  optional field is left out.
+- **Left out:** `Securities/Code`, `KDVPItem/Name`, `F11`, the foreign-tax and tax-relief
+  fields. A list without a name has no `Securities/Name`.
+- **Numbering and order:** lists and rows in model order. `ItemID` counts from 1, the row `ID`
+  from 0 in each list, as in the legacy files that eDavki accepted.
+- **Numbers:** F3, F4, F7, F8 and F9 are the exact stored values with four to eight decimals
+  ([`calculations.md`](calculations.md), "XML precision"). The largest `int64` at eight decimals
+  has 11 integer digits, so no stored value is too large for the form.
+- **F10:** on every sale row, `true` for `NotBlocked` and `false` for `Blocked`; purchase rows have
+  none. Two sale rows of one source sale stay two rows.
+- **Checks** (each failure is an error for the field): tax number of eight digits and not
+  `00000000`; year 1000 to 9999; dates with a year from 1 to 9999; ISIN of 1 to 12 characters;
+  list name of at most 100 characters and post code of at most 12 (characters, not bytes);
+  every text valid UTF-8 without control characters, U+FFFE or U+FFFF; F3, F4, F7, F9 and F8 not
+  negative. The schema accepts a negative F8 and an empty ISIN, but only the developer export
+  (#188) may write a negative F8.
+- **An empty model** (no lists) gives a valid document without `KDVPItem`; the caller decides that
+  the form has no data and writes no file.
+
+The FURS schemas are in `resources/xml/schemas/`: the official `Doh_KDVP_9.xsd` and
+`EDP-Common-1.xsd` as downloaded, and in `snapshot-2026-05-12/` the older copy that the legacy
+app used. The unit tests check every document they write against both with libxml2. The
+application does not link libxml2 and does not check the schema at run time.
 
 ## Parser diagnostics
 
@@ -630,6 +674,12 @@ Running `scripts/dump_tr_parse.sh` produces:
 The tool shows what the parser retains from a local export, including parsed financial data and
 complete event metadata. Only the source filename is stored, never its path. The `runtime/`
 directory is ignored by Git; its potentially private artifacts must remain local.
+
+Running `scripts/dump_tr_kdvp.sh` writes the Doh-KDVP XML of the selected year to
+`runtime/debug/tr_kdvp_<year>.xml`; with `--synthetic` it reads the synthetic
+`tests/test_data/csv/kdvp_dump_fixture.csv` instead of the real export and writes
+`runtime/debug/tr_kdvp_synthetic_<year>.xml`. Blocked ISINs are left out, so with a blocked ISIN
+the file is not a complete return; the tool says so.
 
 Parser logs may later be shared for support, so they follow a stricter boundary: source index, CSV
 row, and diagnostic reason are allowed; paths, transaction IDs, and raw financial values are not.

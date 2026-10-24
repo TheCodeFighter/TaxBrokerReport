@@ -6,6 +6,7 @@
 #include "taxbroker/statement_merger.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/logger.hpp"
+#include "xml/kdvp_xml_writer.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -873,6 +874,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "InvalidReportingYear";
     case ProcessingDiagnosticCode::IncompleteHistory:
         return "IncompleteHistory";
+    case ProcessingDiagnosticCode::XmlValueOutOfRange:
+        return "XmlValueOutOfRange";
     }
 
     return "Unknown";
@@ -1136,22 +1139,33 @@ void writeProcessingDiagnostics(std::ostream& aOutput,
     }
 }
 
+/// The reporting year argument, or nothing after an error message when it is not a whole number.
+std::optional<int> parseYearArgument(std::string_view aYearText) {
+    int year{};
+    const auto parsedYear =
+        std::from_chars(aYearText.data(), aYearText.data() + aYearText.size(), year);
+
+    if (parsedYear.ec != std::errc{} || parsedYear.ptr != aYearText.data() + aYearText.size())
+    {
+        std::cerr << "The reporting year must be a whole number.\n";
+        return std::nullopt;
+    }
+
+    return year;
+}
+
 /// Parses, merges and prepares the selected year, then writes the FIFO pools and the Doh-KDVP
 /// filing rows for inspection.
 int writeFifoResult(std::span<char*> aArguments) {
-    const std::string_view yearText{aArguments[0]};
     const std::filesystem::path outputPath{aArguments[1]};
+    const auto parsedYear = parseYearArgument(aArguments[0]);
 
-    int year{};
-    const auto parsedYear =
-        std::from_chars(yearText.data(), yearText.data() + yearText.size(), year);
-
-    if (parsedYear.ec != std::errc{} || parsedYear.ptr != yearText.data() + yearText.size())
+    if (!parsedYear)
     {
-        std::cerr << "The reporting year must be a whole number.\n";
         return 2;
     }
 
+    const int year = *parsedYear;
     const auto prepared = TaxProcessor{}.prepareReportingYear(TaxProcessingRequest{
         .mReportingYear = year,
         .mMerged = DeterministicStatementMerger{}.merge(parseInputs(aArguments.subspan(2))),
@@ -1238,9 +1252,107 @@ int writeFifoResult(std::span<char*> aArguments) {
     return 0;
 }
 
+/// Parses, merges and prepares the selected year, matches FIFO and writes the Doh-KDVP XML of the
+/// filing rows for a resident taxpayer. Like writeKdvpReport, it leaves out every blocked ISIN as
+/// a preview for this tool only; with a blocked ISIN the file is not a complete return, and the
+/// tool says so.
+int writeKdvpXml(std::span<char*> aArguments) {
+    const std::filesystem::path outputPath{aArguments[1]};
+    const std::string_view filingTypeText{aArguments[3]};
+    const auto parsedYear = parseYearArgument(aArguments[0]);
+
+    if (!parsedYear)
+    {
+        return 2;
+    }
+
+    if (filingTypeText != "original" && filingTypeText != "self-report")
+    {
+        std::cerr << "The filing type must be original or self-report.\n";
+        return 2;
+    }
+
+    const int year = *parsedYear;
+    const auto prepared = TaxProcessor{}.prepareReportingYear(TaxProcessingRequest{
+        .mReportingYear = year,
+        .mMerged = DeterministicStatementMerger{}.merge(parseInputs(aArguments.subspan(4))),
+    });
+
+    logMergeDiagnostics(prepared.mMerged);
+
+    if (!prepared.mLedger)
+    {
+        writeProcessingDiagnostics(std::cerr, prepared.mDiagnostics);
+        return 1;
+    }
+
+    const auto& statement = prepared.mMerged.mStatement;
+    const auto fifo = FifoMatcher{}.match(statement, *prepared.mLedger);
+    const auto withoutExclusions =
+        CapitalGainsReportBuilder::build(statement, *prepared.mLedger, fifo, {});
+    std::vector<Isin> blockedIsins;
+
+    std::transform(withoutExclusions.mBlocked.begin(),
+                   withoutExclusions.mBlocked.end(),
+                   std::back_inserter(blockedIsins),
+                   [](const KdvpBlockedIsin& aBlocked) { return aBlocked.mIsin; });
+
+    const auto preview =
+        CapitalGainsReportBuilder::build(statement, *prepared.mLedger, fifo, blockedIsins);
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = aArguments[2], .mIsResident = true},
+        .mReportingYear = year,
+        .mFilingType = filingTypeText == "original" ? FilingType::Original : FilingType::SelfReport,
+    };
+    const auto written = KdvpXmlWriter::write(metadata, preview.mReport.value());
+
+    if (!written.mXml)
+    {
+        writeProcessingDiagnostics(std::cerr, written.mDiagnostics);
+        return 1;
+    }
+
+    createParentDirectory(outputPath);
+    std::ofstream output{outputPath, std::ios::binary};
+    output << *written.mXml;
+
+    if (!output)
+    {
+        std::cerr << "Failed to write Doh-KDVP XML file: " << outputPath << '\n';
+        return 1;
+    }
+
+    std::cout << "Wrote Doh-KDVP XML for " << year << " to " << outputPath
+              << "\n  lists: " << preview.mReport->mLists.size()
+              << "\n  blocked ISINs left out: " << withoutExclusions.mBlocked.size()
+              << "\n  sales with units past the holding period (left out of the rows): "
+              << withoutExclusions.mLongHeld.size() << '\n';
+
+    if (!withoutExclusions.mBlocked.empty())
+    {
+        std::cout << "WARNING: blocked ISINs are left out, so this file is not a complete "
+                     "return. dump_tr_fifo.sh shows them with their reasons.\n";
+    }
+
+    return 0;
+}
+
 } // namespace
 
 int main(int aArgumentCount, char** aArguments) {
+    if (aArgumentCount >= 7 && std::string_view{aArguments[1]} == "--kdvp")
+    {
+        try
+        {
+            return writeKdvpXml(
+                std::span{aArguments + 2, static_cast<std::size_t>(aArgumentCount - 2)});
+        } catch (const std::exception& exception)
+        {
+            std::cerr << "Failed to write Doh-KDVP XML: " << exception.what() << '\n';
+            return 1;
+        }
+    }
+
     if (aArgumentCount >= 5 && std::string_view{aArguments[1]} == "--fifo")
     {
         try
@@ -1275,7 +1387,9 @@ int main(int aArgumentCount, char** aArguments) {
                      "<diagnostics JSON>\n"
                      "       taxbroker_tr_dump --merge <merged output> <CSV> <CSV> [...]\n"
                      "       taxbroker_tr_dump --diagnostics <diagnostics text> <CSV> [...]\n"
-                     "       taxbroker_tr_dump --fifo <year> <FIFO output> <CSV> [...]\n";
+                     "       taxbroker_tr_dump --fifo <year> <FIFO output> <CSV> [...]\n"
+                     "       taxbroker_tr_dump --kdvp <year> <XML output> <tax number> "
+                     "<original|self-report> <CSV> [...]\n";
         return 2;
     }
 
