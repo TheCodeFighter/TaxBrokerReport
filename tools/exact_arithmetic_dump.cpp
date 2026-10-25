@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -398,8 +399,12 @@ int main(int aArgumentCount, char** aArguments) {
                         [](const ParseDiagnostic& aDiagnostic) {
                             return aDiagnostic.mSeverity == DiagnosticSeverity::Error;
                         });
-        const std::vector inputs{StatementMergeInput{0, parsed}};
-        const auto merged = DeterministicStatementMerger{}.merge(inputs);
+        // The parser diagnostics are printed below, so the merge input holds a copy of `parsed`.
+        std::vector<StatementMergeInput> inputs;
+        inputs.push_back(StatementMergeInput{0, parsed});
+
+        const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
+
         for (const auto& [row, factor] : factors)
         {
             const auto matchesRow = [row](const TradeInstrument& aInstrument) {

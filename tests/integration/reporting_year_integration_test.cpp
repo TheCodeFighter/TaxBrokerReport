@@ -94,10 +94,10 @@ TEST(ReportingYearIntegrationTest, WholeFileRetainsHistoryAndSeparatesJanuaryEvi
                                    januaryPurchase,
                                    dividend});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
 
-    const auto result =
-        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    const auto result = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(result.mLedger.has_value());
 
@@ -168,13 +168,13 @@ TEST(ReportingYearIntegrationTest,
     tr::TradeRepublicParser parser;
     const StatementMergeInput first{0, parser.parse(firstPath)};
     const StatementMergeInput second{1, parser.parse(secondPath, 1)};
-    const std::vector<StatementMergeInput> requestOrder{first, second};
-    const std::vector<StatementMergeInput> completionOrder{second, first};
+    std::vector<StatementMergeInput> requestOrder{first, second};
+    std::vector<StatementMergeInput> completionOrder{second, first};
 
     const auto normal = TaxProcessor{}.prepareReportingYear(
-        {2024, DeterministicStatementMerger{}.merge(requestOrder)});
+        {2024, DeterministicStatementMerger{}.merge(std::move(requestOrder))});
     const auto reversed = TaxProcessor{}.prepareReportingYear(
-        {2024, DeterministicStatementMerger{}.merge(completionOrder)});
+        {2024, DeterministicStatementMerger{}.merge(std::move(completionOrder))});
 
     ASSERT_TRUE(normal.mLedger.has_value());
     ASSERT_TRUE(reversed.mLedger.has_value());
@@ -261,14 +261,14 @@ TEST(ReportingYearIntegrationTest, DisjointFilesPreserveSelectedYearAndHistorica
     const auto secondPath = files.write("selected.csv", {dividend, selectedSale});
     const auto thirdPath = files.write("future.csv", {januaryAction, januaryPurchase, outsideSale});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{
+    std::vector<StatementMergeInput> inputs{
         {2, parser.parse(thirdPath, 2)},
         {0, parser.parse(firstPath)},
         {1, parser.parse(secondPath, 1)},
     };
 
-    const auto result =
-        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    const auto result = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(result.mLedger.has_value());
 
@@ -307,10 +307,10 @@ TEST(ReportingYearIntegrationTest, RejectedSelectedYearSaleStaysVisibleBesideAnE
     const TemporaryReportingYearInputs files;
     const auto path = files.write("partial.csv", {rejectedSale, futurePurchase});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
 
-    const auto result =
-        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    const auto result = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(result.mLedger.has_value());
 
@@ -338,10 +338,10 @@ TEST(ReportingYearIntegrationTest, HeaderOnlyFilePreparesAnExplicitEmptyYearWith
     const TemporaryReportingYearInputs files;
     const auto path = files.write("empty.csv", {});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
 
-    const auto result =
-        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    const auto result = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(result.mLedger.has_value());
 

@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <optional>
-#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -110,14 +109,14 @@ class StatementMerger {
 
     [[nodiscard("Merged statement data and diagnostics should not be "
                 "ignored")]] virtual StatementMergeResult
-    merge(std::span<const StatementMergeInput> aInputs) const = 0;
+    merge(std::vector<StatementMergeInput>&& aInputs) const = 0;
 };
 
 class DeterministicStatementMerger final : public StatementMerger {
   public:
     [[nodiscard("Merged statement data and diagnostics should not be "
                 "ignored")]] StatementMergeResult
-    merge(std::span<const StatementMergeInput> aInputs) const override;
+    merge(std::vector<StatementMergeInput>&& aInputs) const override;
 };
 
 } // namespace taxbroker

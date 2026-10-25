@@ -990,14 +990,14 @@ template <typename Event>
 namespace taxbroker {
 
 StatementMergeResult
-DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs) const {
+DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) const {
     StatementMergeResult result;
-    std::vector<const StatementMergeInput*> orderedInputs(aInputs.size());
+    std::vector<StatementMergeInput*> orderedInputs(aInputs.size());
 
     std::transform(aInputs.begin(),
                    aInputs.end(),
                    orderedInputs.begin(),
-                   [](const StatementMergeInput& aInput) { return &aInput; });
+                   [](StatementMergeInput& aInput) { return &aInput; });
 
     std::stable_sort(orderedInputs.begin(),
                      orderedInputs.end(),
@@ -1010,14 +1010,14 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                          return aLeft->mParseResult.mBroker < aRight->mParseResult.mBroker;
                      });
 
-    for (const auto* input : orderedInputs)
+    for (auto* input : orderedInputs)
     {
-        for (const auto& diagnostic : input->mParseResult.mDiagnostics)
+        for (auto& diagnostic : input->mParseResult.mDiagnostics)
         {
             result.mDiagnostics.emplace_back(SourcedParseDiagnostic{
                 .mSourceIndex = input->mSourceIndex,
                 .mBroker = input->mParseResult.mBroker,
-                .mDiagnostic = diagnostic,
+                .mDiagnostic = std::move(diagnostic),
             });
         }
     }
@@ -1069,16 +1069,16 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
 
     std::vector<MergeEvent> events;
 
-    for (const auto* input : orderedInputs)
+    for (auto* input : orderedInputs)
     {
         if (duplicateSourceIndices.contains(input->mSourceIndex))
         {
             continue;
         }
 
-        for (const auto& sourceInstrument : input->mParseResult.mStatement.mTradeInstruments)
+        for (auto& sourceInstrument : input->mParseResult.mStatement.mTradeInstruments)
         {
-            for (auto event : sourceInstrument.mTransactions)
+            for (auto& event : sourceInstrument.mTransactions)
             {
                 if (!normalizeAndValidateEvent(event,
                                                input->mSourceIndex,
@@ -1100,7 +1100,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
                 });
             }
 
-            for (auto event : sourceInstrument.mCorporateActions)
+            for (auto& event : sourceInstrument.mCorporateActions)
             {
                 if (!normalizeAndValidateEvent(event,
                                                input->mSourceIndex,
@@ -1123,9 +1123,9 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
             }
         }
 
-        for (const auto& sourceInstrument : input->mParseResult.mStatement.mDividendInstruments)
+        for (auto& sourceInstrument : input->mParseResult.mStatement.mDividendInstruments)
         {
-            for (auto event : sourceInstrument.mTransactions)
+            for (auto& event : sourceInstrument.mTransactions)
             {
                 if (!normalizeAndValidateEvent(event,
                                                input->mSourceIndex,
@@ -1145,9 +1145,9 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
             }
         }
 
-        for (const auto& sourceInstrument : input->mParseResult.mStatement.mInterestInstruments)
+        for (auto& sourceInstrument : input->mParseResult.mStatement.mInterestInstruments)
         {
-            for (auto event : sourceInstrument.mTransactions)
+            for (auto& event : sourceInstrument.mTransactions)
             {
                 if (!normalizeAndValidateEvent(event,
                                                input->mSourceIndex,
@@ -1168,7 +1168,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
             }
         }
 
-        for (auto event : input->mParseResult.mStatement.mBenefitEvents)
+        for (auto& event : input->mParseResult.mStatement.mBenefitEvents)
         {
             if (normalizeAndValidateEvent(event,
                                           input->mSourceIndex,
@@ -1180,7 +1180,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
             }
         }
 
-        for (auto event : input->mParseResult.mStatement.mPrivateMarketEvents)
+        for (auto& event : input->mParseResult.mStatement.mPrivateMarketEvents)
         {
             if (normalizeAndValidateEvent(event,
                                           input->mSourceIndex,

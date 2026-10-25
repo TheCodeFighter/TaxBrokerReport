@@ -802,10 +802,10 @@ TEST(TaxProcessorTest, CrossBrokerReferencesPreserveGlobalChronologyAndAllInstru
         .mBroker = Broker::InteractiveBrokers,
         .mStatement = {.mTradeInstruments = {sale, otherInstrument}},
     };
-    const std::vector<StatementMergeInput> inputs{{0, firstParsed}, {1, secondParsed}};
+    std::vector<StatementMergeInput> inputs{{0, firstParsed}, {1, secondParsed}};
 
-    auto result =
-        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    auto result = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
     auto moved = std::move(result);
 
     ASSERT_TRUE(moved.mLedger.has_value());
