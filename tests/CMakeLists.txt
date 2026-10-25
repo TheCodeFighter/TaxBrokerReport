@@ -12,6 +12,8 @@ include(GoogleTest)
 
 # Unit Tests
 add_executable(taxbroker_unit_tests
+    unit/application_result_json_test.cpp
+    unit/application_result_test.cpp
     unit/capital_gains_report_builder_test.cpp
     unit/event_metadata_test.cpp
     unit/exact_arithmetic_test.cpp
@@ -44,6 +46,7 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 
 # Integration Tests
 add_executable(taxbroker_integration_tests
+    integration/application_result_integration_test.cpp
     integration/fifo_matching_integration_test.cpp
     integration/reporting_year_integration_test.cpp
     integration/unit_evidence_integration_test.cpp
@@ -58,7 +61,9 @@ target_include_directories(taxbroker_integration_tests PRIVATE
 target_link_libraries(taxbroker_integration_tests
     PRIVATE
     taxbroker_core
+    taxbroker_api
     GTest::gtest_main
+    nlohmann_json::nlohmann_json
 )
 
 gtest_discover_tests(taxbroker_integration_tests PROPERTIES LABELS integration)

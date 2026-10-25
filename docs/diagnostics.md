@@ -70,8 +70,15 @@ and unrelated reports remain available. The other-interest exclusion flow is def
 
 The application JSON contract is version 2 because replacing the previously documented single
 `interest` result changes its shape and API values. Parser diagnostics JSON is a developer format
-with `schemaVersion` 1 and no compatibility promise before the beta. This is a specification for
-future application implementation.
+with `schemaVersion` 1 and no compatibility promise before the beta.
+
+The core of this contract is implemented in `ApplicationResultBuilder`
+(`include/taxbroker/application_result.hpp`) and `serializeApplicationResultJson`: diagnostic
+adapters, report scope, deterministic order and IDs, report and overall status, and the JSON. The
+decision lifecycle (run revision, question data, answers), the failure and exclusion choices,
+developer mode, `excludedItems`, the income summaries and XML failure isolation are not part of it
+yet. Until they exist, `excludedInvestments` is an empty list for capital gains and other
+interest, and `unsafe` is `false`.
 
 ### Report result
 
@@ -101,6 +108,13 @@ The status is one of:
 An XML payload is present only for `generated`. It is absent for `no_data`, `needs_input`, and
 `failed`. `needs_input` is not a failure and must identify at least one unanswered request.
 `failed` must identify at least one blocking diagnostic.
+
+When a report has both an open request and a blocking error, the report is `failed` unless every
+blocking error that affects it is linked to an open request of that same report (for example
+`incomplete_history` and its `capital_gains_failure_resolution_required`). A request that cannot
+lead to a valid report is not worth answering. The request stays listed. A request of another
+report does not resolve the error here: an error that affects capital gains and dividends, linked
+only to a capital-gains request, still makes dividends `failed`.
 
 A capital `no_data` result with reason `no_selected_year_disposals` tells the later GUI to explain
 that no Doh-KDVP return is needed for the selected year based on the supplied data. This includes
@@ -207,6 +221,9 @@ filenames. It keeps the label locally and maps it by source ID, so it can show
 processing and is not a substitute for the source ID. Without a label, the file number remains the
 required fallback.
 
+A source name that cannot be reduced to a plain filename (for example `exports/`) is left out of
+the JSON; the source ID and the row remain.
+
 The backend must not send `2022/taxreport.csv`, `2023/taxreport.csv`, an absolute path, or a parent
 folder name to distinguish the files. A browser may not provide a real path, and a directory name
 can itself be private. Request order and source ID work even when parsing fails before any dates or
@@ -265,6 +282,29 @@ The processor determines scope from the data that the failed operation could aff
 | A Doh-Obr error safely isolated to a complete ISIN | Other interest only, with the exclusion/failure choice below. |
 | Another interest calculation error | Its established form; both interest forms when the subtype is unknown. |
 | XML serialization or schema failure | Only the XML file being generated. |
+
+The parser records the kind of the row on each row diagnostic, and the application result takes
+the scope from it:
+
+| Row kind | Reports |
+| --- | --- |
+| trade, corporate action, private market | Capital gains. |
+| dividend | Dividends. |
+| bond interest | Other interest. |
+| Trade Republic broker interest | Bank-deposit interest (doh-dho); also other interest when the selected year is 2023 or earlier, because interest before 6 December 2023 belongs to Doh-Obr and the rejected row has no trusted date. |
+| Interactive Brokers cash interest | Other interest. |
+| interest of unknown subtype | Both interest forms. |
+| benefit | No report. |
+| no kind (file, header, record with the wrong field count, unknown row type) | All four reports. |
+
+A recognized unsupported row type (`unsupported_row_type`) without a row kind affects no report: it
+stays visible as a non-blocking diagnostic. When the row has a kind, the kind decides: an interest
+row with an unsupported subtype still affects both interest forms. A merge conflict takes its scope
+from the kinds of the conflicting events. An instrument name conflict takes the kind of the
+instrument's collection (trades and corporate actions, dividends, or interest). The merger does not
+say whether an interest event is a bond coupon or deposit interest, so a conflicting interest event
+affects both interest forms unless every source is Interactive Brokers. An error without any
+affected report is never `blocking`.
 
 A row positively known to belong to a category for which this application produces no XML is still
 reported, but it does not block an unrelated XML file. An unknown row is broader: because its
@@ -559,7 +599,8 @@ filesystem order, or log timing. Before serialization, sort them by these keys i
 5. affected report order: capital gains, dividends, bank-deposit interest, other interest, then no report;
 6. ISIN, with no ISIN last;
 7. severity, with errors before warnings;
-8. diagnostic code; and
+8. diagnostic code, in the order in which the code list of the stage declares the codes (not
+   alphabetical); and
 9. deterministic stage-local creation sequence.
 
 For a diagnostic with several sources, sort its source references by request index, event index,
@@ -655,6 +696,7 @@ is present; the raw CSV row is not.
       "status": "no_data",
       "diagnosticIds": [],
       "requestIds": [],
+      "excludedInvestments": [],
       "unsafe": false
     }
   },
