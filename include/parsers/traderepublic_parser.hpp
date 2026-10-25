@@ -28,6 +28,7 @@ class TradeRepublicParser final : public CsvParser {
 
     static RowMeta detectRowType(const csv::CSVRow& aCsvRow);
     static InterestType detectInterestType(const csv::CSVRow& aCsvRow);
+    static std::optional<ParsedRowKind> rowKindFor(const csv::CSVRow& aCsvRow, RowType aRowType);
 
     bool parseTradeRow(const csv::CSVRow& aCsvRow,
                        std::vector<TradeInstrument>& aInstruments,

@@ -857,7 +857,10 @@ template <typename Variant>
     return sources;
 }
 
+/// The event kind is the collection of the instrument; it decides which reports the warning is
+/// listed under.
 void addNameConflictDiagnostic(const Isin& aIsin,
+                               StatementEventKind aEventKind,
                                NameVariantSet& aNames,
                                std::vector<MergeDiagnostic>& aDiagnostics) {
     if (aNames.mSourcesByName.size() < 2)
@@ -878,6 +881,7 @@ void addNameConflictDiagnostic(const Isin& aIsin,
         .mSources = std::move(sources),
         .mInstrumentName = aNames.mCanonicalName,
         .mIsin = aIsin,
+        .mEventKinds = {aEventKind},
         .mNameVariants = std::move(variants),
     });
 }
@@ -1283,7 +1287,7 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
             .mCorporateActions = std::move(bucket.mCorporateActions),
         });
 
-        addNameConflictDiagnostic(isin, bucket.mNames, mergeDiagnostics);
+        addNameConflictDiagnostic(isin, StatementEventKind::Trade, bucket.mNames, mergeDiagnostics);
         addAssetClassConflictDiagnostic(isin,
                                         bucket.mNames.mCanonicalName,
                                         bucket.mAssetClasses,
@@ -1300,7 +1304,10 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
             .mTransactions = std::move(bucket.mTransactions),
         });
 
-        addNameConflictDiagnostic(isin, bucket.mNames, mergeDiagnostics);
+        addNameConflictDiagnostic(isin,
+                                  StatementEventKind::Dividend,
+                                  bucket.mNames,
+                                  mergeDiagnostics);
     }
 
     for (auto& [identity, bucket] : interestBuckets)
@@ -1316,7 +1323,10 @@ DeterministicStatementMerger::merge(std::span<const StatementMergeInput> aInputs
 
         if (identity.mIsin)
         {
-            addNameConflictDiagnostic(*identity.mIsin, bucket.mNames, mergeDiagnostics);
+            addNameConflictDiagnostic(*identity.mIsin,
+                                      StatementEventKind::Interest,
+                                      bucket.mNames,
+                                      mergeDiagnostics);
         }
     }
 

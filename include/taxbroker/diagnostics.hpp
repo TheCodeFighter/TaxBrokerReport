@@ -29,6 +29,20 @@ enum class DiagnosticCode {
     ParseError,
 };
 
+/// The kind of row a parser diagnostic is about. The application result uses it to decide which
+/// reports the diagnostic affects. It is not part of parser JSON v1.
+enum class ParsedRowKind {
+    Trade,
+    CorporateAction,
+    Dividend,
+    BondInterest,
+    BrokerInterest,
+    /// An interest row whose subtype could not be established.
+    UnknownInterest,
+    Benefit,
+    PrivateMarket,
+};
+
 struct ParseDiagnostic {
     DiagnosticSeverity mSeverity{DiagnosticSeverity::Error};
     DiagnosticCode mCode{DiagnosticCode::ParseError};
@@ -42,6 +56,9 @@ struct ParseDiagnostic {
     /// Set for every diagnostic the code emits; empty only in tests that build a bare diagnostic.
     std::optional<MessageKey> mMessageKey;
     std::vector<MessageParam> mMessageParams;
+    /// Absent for a diagnostic of a file or a header, of a row of unknown or unsupported type, and
+    /// of a record with the wrong field count.
+    std::optional<ParsedRowKind> mRowKind;
 };
 
 } // namespace taxbroker

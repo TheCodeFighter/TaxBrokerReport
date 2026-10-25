@@ -5297,6 +5297,7 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInOneFileLayout) {
     EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
     EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
     EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(names.mEventKinds, (std::vector{StatementEventKind::Trade}));
     ASSERT_EQ(names.mNameVariants.size(), 2U);
     EXPECT_EQ(names.mNameVariants[0].mName, "");
     EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
@@ -5571,6 +5572,7 @@ TEST(StatementMergerIntegrationTest, CompletesMissingActionNameInOneFileLayout) 
     EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
     EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
     EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(names.mEventKinds, (std::vector{StatementEventKind::Trade}));
     ASSERT_EQ(names.mNameVariants.size(), 2U);
     EXPECT_EQ(names.mNameVariants[0].mName, "");
     EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
@@ -5828,6 +5830,7 @@ TEST(StatementMergerIntegrationTest, CompletesMissingDividendNameInOneFileLayout
     EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
     EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
     EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(names.mEventKinds, (std::vector{StatementEventKind::Dividend}));
     ASSERT_EQ(names.mNameVariants.size(), 2U);
     EXPECT_EQ(names.mNameVariants[0].mName, "");
     EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");
@@ -6078,6 +6081,7 @@ TEST(StatementMergerIntegrationTest, CompletesMissingBondInterestNameInOneFileLa
     EXPECT_EQ(missing.mDiagnostic.mRowIndex, 2U);
     EXPECT_EQ(names.mCode, MergeDiagnosticCode::InstrumentNameConflict);
     EXPECT_EQ(names.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(names.mEventKinds, (std::vector{StatementEventKind::Interest}));
     ASSERT_EQ(names.mNameVariants.size(), 2U);
     EXPECT_EQ(names.mNameVariants[0].mName, "");
     EXPECT_EQ(names.mNameVariants[1].mName, "Supplied Evidence Name");

@@ -240,6 +240,7 @@ struct TradeRepublicParser::RowContext {
     bool mSourceTimestampInvalid{};
     mutable bool mRowRejected{};        ///< The row has an error that keeps it from being stored.
     mutable bool mHasLocalizedNumber{}; ///< A rejected numeric field has a comma or parenthesis.
+    std::optional<ParsedRowKind> mRowKind; ///< Set once the row type is known.
 
     [[nodiscard]] EventMetadata metadata(Date aTaxDate) const;
     [[nodiscard]] std::vector<InstrumentSourceEvidence>
@@ -369,6 +370,7 @@ void TradeRepublicParser::RowContext::addDiagnostic(DiagnosticSeverity aSeverity
         .mMessage = std::move(aMessage.mEnglish),
         .mMessageKey = aMessage.mKey,
         .mMessageParams = std::move(aMessage.mParams),
+        .mRowKind = mRowKind,
     });
 }
 
@@ -549,6 +551,7 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                         ? parseCalendarDate(std::string_view{datetimeValue}.substr(0, 10))
                         : std::nullopt,
                 .mSourceTimestampInvalid = !datetimeValue.empty() && !sourceTimestamp,
+                .mRowKind = rowKindFor(row, rowMeta.mRowType),
             };
 
             const bool isImportedEvent =
@@ -711,6 +714,42 @@ InterestType TradeRepublicParser::detectInterestType(const csv::CSVRow& aCsvRow)
     }
 
     return InterestType::UnknownInterest;
+}
+
+/// The kind of a row that has a form of its own; ignored, unsupported and unknown rows have none.
+std::optional<ParsedRowKind> TradeRepublicParser::rowKindFor(const csv::CSVRow& aCsvRow,
+                                                             RowType aRowType) {
+    switch (aRowType)
+    {
+    case RowType::Trade:
+        return ParsedRowKind::Trade;
+    case RowType::Dividend:
+        return ParsedRowKind::Dividend;
+    case RowType::Interest:
+        switch (detectInterestType(aCsvRow))
+        {
+        case InterestType::BondInterest:
+            return ParsedRowKind::BondInterest;
+        case InterestType::BrokerInterest:
+            return ParsedRowKind::BrokerInterest;
+        case InterestType::OtherInterest:
+        case InterestType::UnknownInterest:
+            return ParsedRowKind::UnknownInterest;
+        }
+        return ParsedRowKind::UnknownInterest;
+    case RowType::CorporateAction:
+        return ParsedRowKind::CorporateAction;
+    case RowType::Benefit:
+        return ParsedRowKind::Benefit;
+    case RowType::PrivateMarket:
+        return ParsedRowKind::PrivateMarket;
+    case RowType::Ignored:
+    case RowType::Unsupported:
+    case RowType::Unknown:
+        return std::nullopt;
+    }
+
+    return std::nullopt;
 }
 
 void TradeRepublicParser::isInstrumentValid(std::string_view aContext,

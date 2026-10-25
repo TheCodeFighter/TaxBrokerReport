@@ -17,6 +17,7 @@ configure_file(utils/diagnostic_messages_table.cpp.in
 add_library(taxbroker_core STATIC
     parsers/ibkr_parser.cpp
     parsers/traderepublic_parser.cpp
+    processors/application_result.cpp
     processors/capital_gains_report_builder.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
@@ -45,7 +46,9 @@ target_link_libraries(taxbroker_core
 # JSON is an API/presentation concern. Keeping it in a separate target prevents the parser and
 # tax-processing core from depending on a wire format.
 add_library(taxbroker_api STATIC
+    server/api/application_result_json.cpp
     server/api/diagnostics_json.cpp
+    server/api/json_strings.cpp
 )
 
 target_include_directories(taxbroker_api

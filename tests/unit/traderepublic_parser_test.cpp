@@ -18139,4 +18139,377 @@ TEST(TradeRepublicParserTest, ReportsAForeignTradeAmountBeforeItsFxRate) {
     EXPECT_EQ(result.mDiagnostics[1].mRowIndex, 2U);
 }
 
+// The row kind tells the application result which reports a rejected row affects.
+
+TEST(TradeRepublicParserTest, ARejectedTradeRowDiagnosticHasTheTradeRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "abc", // not a number
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mField, "price");
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::Trade);
+}
+
+TEST(TradeRepublicParserTest, ARejectedDividendRowDiagnosticHasTheDividendRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "DIVIDEND",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc", // not a number
+        .mFee = "",
+        .mTax = "0",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mField, "amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::Dividend);
+}
+
+TEST(TradeRepublicParserTest, ARejectedBondInterestRowDiagnosticHasTheBondInterestRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Test Bond",
+        .mSymbol = "XX9000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc", // not a number
+        .mFee = "",
+        .mTax = "0",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mField, "amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::BondInterest);
+}
+
+TEST(TradeRepublicParserTest, ARejectedBrokerInterestRowDiagnosticHasTheBrokerInterestRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "", // no asset class, name or symbol: interest of the broker account
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc", // not a number
+        .mFee = "",
+        .mTax = "0",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mField, "amount");
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::BrokerInterest);
+}
+
+TEST(TradeRepublicParserTest, ARejectedCorporateActionRowDiagnosticHasTheCorporateActionRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "SPLIT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "abc", // not a number
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::CorporateAction);
+}
+
+TEST(TradeRepublicParserTest, ARejectedBenefitRowDiagnosticHasTheBenefitRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "BENEFITS_SAVEBACK",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc", // not a number
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::Benefit);
+}
+
+TEST(TradeRepublicParserTest, ARejectedPrivateMarketRowDiagnosticHasThePrivateMarketRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_BUY",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Test Private Fund",
+        .mSymbol = "XX9000000003",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc", // not a number
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::PrivateMarket);
+}
+
+TEST(TradeRepublicParserTest, ARejectedInterestRowOfUnknownSubtypeHasTheUnknownInterestRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc", // not a number; a share pays no interest
+        .mFee = "",
+        .mTax = "0",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::UnknownInterest);
+}
+
+TEST(TradeRepublicParserTest, ARowOfUnknownTypeHasNoRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "SYNTHETIC_UNKNOWN",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "5",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnknownRowType);
+    EXPECT_FALSE(result.mDiagnostics[0].mRowKind.has_value());
+}
+
+TEST(TradeRepublicParserTest, ARecognizedUnsupportedRowHasNoRowKind) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FIXED_INCOME", // recognized, but this app produces no XML for it
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "5",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnsupportedRowType);
+    EXPECT_FALSE(result.mDiagnostics[0].mRowKind.has_value());
+}
+
+TEST(TradeRepublicParserTest, ARecordWithTheWrongFieldCountHasNoRowKind) {
+    // 22 fields: the last field (mcc_code) is missing, so the row type is never read.
+    const std::string shortBuyLine =
+        R"("2024-01-15T10:00:00.000Z","2024-01-15","DEFAULT","TRADING","BUY","STOCK",)"
+        R"("Synthetic Test Share","XX9000000001","1.0000000000","10.000000","-10.000000",)"
+        R"("","","EUR","","","","Synthetic test row","synthetic-test-transaction",)"
+        R"("","","")";
+
+    const ParseResult result = parseRawText(std::string{kCsvHeader} + '\n' + shortBuyLine + '\n');
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::FieldCountMismatch);
+    EXPECT_FALSE(result.mDiagnostics[0].mRowKind.has_value());
+}
+
+TEST(TradeRepublicParserTest, AFileLevelDiagnosticHasNoRowKind) {
+    // 0 bytes: the reader reports the file as unreadable.
+    const ParseResult result = parseRawText("");
+
+    ASSERT_FALSE(result.mDiagnostics.empty());
+
+    EXPECT_FALSE(result.mDiagnostics[0].mRowKind.has_value());
+}
+
 } // namespace
