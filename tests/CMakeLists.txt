@@ -88,6 +88,7 @@ target_link_libraries(taxbroker_integration_tests
     taxbroker_xml
     GTest::gtest_main
     nlohmann_json::nlohmann_json
+    pugixml::static
 )
 
 target_compile_definitions(taxbroker_integration_tests
