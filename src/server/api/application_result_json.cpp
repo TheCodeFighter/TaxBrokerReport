@@ -107,6 +107,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "invalid_reporting_year";
     case ProcessingDiagnosticCode::IncompleteHistory:
         return "incomplete_history";
+    case ProcessingDiagnosticCode::XmlValueOutOfRange:
+        return "xml_value_out_of_range";
     }
 
     return "unrepresentable_value";

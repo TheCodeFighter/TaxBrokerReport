@@ -35,6 +35,7 @@ invalid_exchange_rate,"The exchange rate is invalid.","Menjalni tečaj je nevelj
 corporate_action_unrepresentable,"The corporate action cannot preserve the position and exact basis.","Korporativno dejanje ne more ohraniti stanja in natančne nabavne vrednosti."
 invalid_reporting_year,"Select a reporting year from {minYear} to {maxYear}.","Izberite poročevalsko leto od {minYear} do {maxYear}."
 incomplete_history,"Earlier purchase history is missing: this sale needs more units than the earlier purchases left. Add the older or missing statements.","Manjka zgodovina prejšnjih nakupov: ta prodaja potrebuje več enot, kot jih je ostalo od prejšnjih nakupov. Dodajte starejše ali manjkajoče izpiske."
+xml_value_out_of_range,"The value of the XML field {field} is outside what the FURS form allows: wrong length or format, a negative number, or characters the form does not accept. No XML file was written for this form.","Vrednost polja XML {field} je zunaj tega, kar dovoljuje obrazec FURS: napačna dolžina ali oblika, negativno število ali znaki, ki jih obrazec ne sprejme. Datoteka XML za ta obrazec ni bila ustvarjena."
 row_kind.trade,trade row,nakup ali prodaja
 row_kind.dividend,dividend row,dividenda
 row_kind.bond_interest,bond-interest row,obresti obveznice

@@ -181,7 +181,7 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
             stock += used->second;
             list.mRows.push_back({.mEntry = KdvpPurchaseRow{.mPurchase = event,
                                                             .mDate = trade.mMetadata.mTaxDate,
-                                                            .mMethod = KdvpPurchaseMethod::A,
+                                                            .mMethod = KdvpPurchaseMethod::B,
                                                             .mUnits = used->second,
                                                             .mUnitPrice = trade.mUnitPrice},
                                   .mStock = stock});

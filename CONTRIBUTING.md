@@ -27,6 +27,19 @@ scripts/cppcheck.sh
 
 For broader or higher-risk changes, also run `scripts/valgrind.sh`.
 
+The unit and integration tests check the generated XML against the FURS schemas with libxml2. The
+Docker image has it, so the scripts never skip these checks. A native build without Docker still builds and
+runs every test without libxml2: CMake prints a warning, and the schema checks show as skipped.
+To run them natively, install libxml2 with its headers:
+
+- Alpine: `apk add libxml2-dev`
+- Debian or Ubuntu: `apt install libxml2-dev`
+- Fedora: `dnf install libxml2-devel`
+- macOS: the system SDK has it; otherwise `brew install libxml2`
+- Windows (MSVC): `vcpkg install libxml2`, and configure CMake with the vcpkg toolchain file
+
+The application itself does not use libxml2.
+
 ## Test data and privacy
 
 Do not commit real broker exports, credentials, account numbers, transaction IDs, or personal or

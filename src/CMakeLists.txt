@@ -62,6 +62,24 @@ target_link_libraries(taxbroker_api
     nlohmann_json::nlohmann_json
 )
 
+# Keeping XML in a separate target keeps pugixml out of
+# the parser and tax-processing core.
+add_library(taxbroker_xml STATIC
+    xml/kdvp_xml_writer.cpp
+)
+
+target_include_directories(taxbroker_xml
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(taxbroker_xml
+    PUBLIC
+    taxbroker_core
+    PRIVATE
+    pugixml::static
+)
+
 # Server executable
 add_executable(taxbroker_server
     main.cpp
