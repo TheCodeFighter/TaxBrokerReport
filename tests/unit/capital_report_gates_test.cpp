@@ -420,6 +420,51 @@ TEST(CapitalReportGatesTest, SplitWithoutASaleThisYearGivesNothing) {
     EXPECT_TRUE(diagnostics.empty());
 }
 
+TEST(CapitalReportGatesTest, SplitAfterTheSaleInTheSameYearGivesCorporateActionNotApplied) {
+    // The split is in the selected year, after the sale: still up to 31 December.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-10"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // EUR 20
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit,
+                 .mUnitsDelta = 100'000'000}, // 1 unit
+            },
+    }};
+
+    const auto diagnostics = checkYear(merged, 2024);
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+
+    const auto& diagnostic = diagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionNotApplied);
+    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
+    // The date and source of the split, not of the sale.
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-09-01"));
+    EXPECT_EQ(diagnostic.mContext.mSources,
+              (std::vector<SourceReference>{source(4, "synthetic-split-1")}));
+}
+
 TEST(CapitalReportGatesTest, NonEurPurchaseGivesMissingExchangeRate) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
@@ -525,6 +570,35 @@ TEST(CapitalReportGatesTest, GbpChfAndJpyTradesNameTheirCurrency) {
     EXPECT_EQ(diagnostics.at(2).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
     EXPECT_EQ(diagnostics.at(2).mMessageParams,
               (std::vector<MessageParam>{textParam("currency", "JPY")}));
+}
+
+TEST(CapitalReportGatesTest, TradeWithoutACurrencyNamesTheCurrencyUnknown) {
+    // The parser rejects an unknown currency; a trade built without one keeps the default.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-10"),
+                               .mSources = {source(2, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // 20 in no known currency
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::Unknown},
+            },
+    }};
+
+    const auto diagnostics = checkYear(merged, 2024);
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+
+    const auto& diagnostic = diagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::MissingExchangeRate);
+    EXPECT_EQ(diagnostic.mMessageParams,
+              (std::vector<MessageParam>{textParam("currency", "unknown")}));
 }
 
 TEST(CapitalReportGatesTest, LossMakingSalesGiveOneErrorPerSale) {

@@ -32,6 +32,7 @@ add_executable(taxbroker_unit_tests
     unit/fifo_basis_test.cpp
     unit/fifo_matcher_test.cpp
     unit/processing_diagnostics_test.cpp
+    unit/report_command_test.cpp
     unit/date_utils_test.cpp
     unit/diagnostic_messages_test.cpp
     unit/diagnostics_json_test.cpp

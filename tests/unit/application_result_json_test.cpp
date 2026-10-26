@@ -968,4 +968,22 @@ TEST(ApplicationResultJsonTest, ParserJsonVersionOneHasNoRowKindOrSourceId) {
     EXPECT_EQ(result.mDiagnostics.size(), 1U);
 }
 
+TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAParserCodeIsItsJsonCode) {
+    const ApplicationDiagnosticCode code = DiagnosticCode::InvalidValue;
+
+    EXPECT_EQ(api::diagnosticCodeName(code), "invalid_value");
+}
+
+TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAMergeCodeIsItsJsonCode) {
+    const ApplicationDiagnosticCode code = MergeDiagnosticCode::ConflictingDuplicate;
+
+    EXPECT_EQ(api::diagnosticCodeName(code), "conflicting_duplicate");
+}
+
+TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAProcessingCodeIsItsJsonCode) {
+    const ApplicationDiagnosticCode code = ProcessingDiagnosticCode::LossEligibilityUnresolved;
+
+    EXPECT_EQ(api::diagnosticCodeName(code), "loss_eligibility_unresolved");
+}
+
 } // namespace
