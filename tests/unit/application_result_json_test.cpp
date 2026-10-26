@@ -441,6 +441,12 @@ TEST(ApplicationResultJsonTest, WritesEveryPipelineStageAndProcessingCode) {
     input.mProcessingDiagnostics = {
         ProcessingDiagnostic{
             .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::XmlValueOutOfRange,
+            .mContext = {.mStage = PipelineStage::XmlGeneration, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic processing message.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
             .mCode = ProcessingDiagnosticCode::IncompleteHistory,
             .mContext = {.mStage = PipelineStage::XmlGeneration, .mAffectedReports = {kCapital}},
             .mMessage = "Synthetic processing message.",
@@ -482,7 +488,7 @@ TEST(ApplicationResultJsonTest, WritesEveryPipelineStageAndProcessingCode) {
 
     const auto& diagnostics = json.at("diagnostics");
 
-    ASSERT_EQ(diagnostics.size(), 6U);
+    ASSERT_EQ(diagnostics.size(), 7U);
 
     EXPECT_EQ(diagnostics[0].at("stage"), "parsing");
     EXPECT_EQ(diagnostics[0].at("code"), "unrepresentable_value");
@@ -496,6 +502,8 @@ TEST(ApplicationResultJsonTest, WritesEveryPipelineStageAndProcessingCode) {
     EXPECT_EQ(diagnostics[4].at("code"), "invalid_reporting_year");
     EXPECT_EQ(diagnostics[5].at("stage"), "xml_generation");
     EXPECT_EQ(diagnostics[5].at("code"), "incomplete_history");
+    EXPECT_EQ(diagnostics[6].at("stage"), "xml_generation");
+    EXPECT_EQ(diagnostics[6].at("code"), "xml_value_out_of_range");
 }
 
 TEST(ApplicationResultJsonTest, WritesEveryMergeCode) {
