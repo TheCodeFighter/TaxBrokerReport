@@ -109,6 +109,16 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "incomplete_history";
     case ProcessingDiagnosticCode::XmlValueOutOfRange:
         return "xml_value_out_of_range";
+    case ProcessingDiagnosticCode::UnsupportedTaxTreatment:
+        return "unsupported_tax_treatment";
+    case ProcessingDiagnosticCode::TaxClassificationUnknown:
+        return "tax_classification_unknown";
+    case ProcessingDiagnosticCode::CorporateActionNotApplied:
+        return "corporate_action_not_applied";
+    case ProcessingDiagnosticCode::MissingExchangeRate:
+        return "missing_exchange_rate";
+    case ProcessingDiagnosticCode::LossEligibilityUnresolved:
+        return "loss_eligibility_unresolved";
     }
 
     return "unrepresentable_value";
@@ -371,6 +381,10 @@ Json reportToJson(ReportType aType, const ReportResult& aReport) {
 } // namespace
 
 namespace taxbroker::api {
+
+std::string_view diagnosticCodeName(const ApplicationDiagnosticCode& aCode) {
+    return codeString(aCode);
+}
 
 std::string serializeApplicationResultJson(const ApplicationResult& aResult, int aIndent) {
     Json reports = Json::object();

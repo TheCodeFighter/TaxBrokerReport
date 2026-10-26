@@ -33,6 +33,14 @@ enum class ProcessingDiagnosticCode {
     InvalidReportingYear,
     IncompleteHistory,
     XmlValueOutOfRange,
+    UnsupportedTaxTreatment,
+    TaxClassificationUnknown,
+    /// A corporate action that is not applied yet (walking skeleton, until splits are applied).
+    /// delete comment when the work is complete.
+    CorporateActionNotApplied,
+    MissingExchangeRate,
+    /// A sale with a loss-making FIFO portion while the loss rule is missing.
+    LossEligibilityUnresolved,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

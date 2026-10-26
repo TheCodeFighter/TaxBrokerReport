@@ -94,6 +94,18 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::XmlValueOutOfRange,
          "xml_value_out_of_range",
          {{"field", MessageParamKind::Text}}},
+        {MessageKey::UnsupportedTaxTreatmentCapitalClass,
+         "unsupported_tax_treatment.capital_class",
+         {{"assetClass", MessageParamKind::Text}}},
+        {MessageKey::UnsupportedTaxTreatmentPrivateMarketSkipped,
+         "unsupported_tax_treatment.private_market_skipped",
+         {}},
+        {MessageKey::TaxClassificationUnknownCapital, "tax_classification_unknown.capital", {}},
+        {MessageKey::CorporateActionNotApplied, "corporate_action_not_applied", {}},
+        {MessageKey::MissingExchangeRateTrade,
+         "missing_exchange_rate.trade",
+         {{"currency", MessageParamKind::Text}}},
+        {MessageKey::LossEligibilityUnresolved, "loss_eligibility_unresolved", {}},
     };
 
     return messages;
@@ -154,8 +166,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 37U);
-    ASSERT_EQ(expectedMessages().size(), 37U);
+    ASSERT_EQ(definitions.size(), 43U);
+    ASSERT_EQ(expectedMessages().size(), 43U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -189,8 +201,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 37U);
-    EXPECT_EQ(keys.size(), 37U);
+    EXPECT_EQ(ids.size(), 43U);
+    EXPECT_EQ(keys.size(), 43U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -211,7 +223,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 44U); // 37 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 50U); // 43 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

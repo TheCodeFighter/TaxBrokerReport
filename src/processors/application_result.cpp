@@ -67,8 +67,10 @@ void normalizeReports(ReportList& aReports) {
     {
     case ParsedRowKind::Trade:
     case ParsedRowKind::CorporateAction:
-    case ParsedRowKind::PrivateMarket:
         return {ReportType::CapitalGains};
+    // Private-market events are skipped (no units or price), so a rejected one changes no form.
+    case ParsedRowKind::PrivateMarket:
+        return {};
     case ParsedRowKind::Dividend:
         return {ReportType::Dividends};
     case ParsedRowKind::BondInterest:
@@ -113,8 +115,10 @@ void normalizeReports(ReportList& aReports) {
     {
     case StatementEventKind::Trade:
     case StatementEventKind::CorporateAction:
-    case StatementEventKind::PrivateMarket:
         return {ReportType::CapitalGains};
+    // Private-market events are skipped (no units or price), so a rejected one changes no form.
+    case StatementEventKind::PrivateMarket:
+        return {};
     case StatementEventKind::Dividend:
         return {ReportType::Dividends};
     case StatementEventKind::Interest: {

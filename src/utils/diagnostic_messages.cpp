@@ -46,6 +46,9 @@ constexpr std::array kTypeAndCategory{
     MessageParamDefinition{"type", MessageParamKind::Text},
     MessageParamDefinition{"category", MessageParamKind::Text},
 };
+constexpr std::array kCurrency{
+    MessageParamDefinition{"currency", MessageParamKind::Text},
+};
 constexpr std::array kYearRange{
     MessageParamDefinition{"minYear", MessageParamKind::Number},
     MessageParamDefinition{"maxYear", MessageParamKind::Number},
@@ -112,6 +115,18 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::InvalidReportingYear, "invalid_reporting_year", kYearRange},
     MessageDefinition{MessageKey::IncompleteHistory, "incomplete_history", {}},
     MessageDefinition{MessageKey::XmlValueOutOfRange, "xml_value_out_of_range", kField},
+    MessageDefinition{MessageKey::UnsupportedTaxTreatmentCapitalClass,
+                      "unsupported_tax_treatment.capital_class",
+                      kAssetClass},
+    MessageDefinition{MessageKey::UnsupportedTaxTreatmentPrivateMarketSkipped,
+                      "unsupported_tax_treatment.private_market_skipped",
+                      {}},
+    MessageDefinition{
+        MessageKey::TaxClassificationUnknownCapital, "tax_classification_unknown.capital", {}},
+    MessageDefinition{MessageKey::CorporateActionNotApplied, "corporate_action_not_applied", {}},
+    MessageDefinition{
+        MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", kCurrency},
+    MessageDefinition{MessageKey::LossEligibilityUnresolved, "loss_eligibility_unresolved", {}},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -127,7 +142,8 @@ constexpr bool definitionsFollowKeyOrder() {
 }
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
-static_assert(kDefinitions.size() == static_cast<std::size_t>(MessageKey::XmlValueOutOfRange) + 1,
+static_assert(kDefinitions.size() ==
+                  static_cast<std::size_t>(MessageKey::LossEligibilityUnresolved) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 7> kTermKeys{

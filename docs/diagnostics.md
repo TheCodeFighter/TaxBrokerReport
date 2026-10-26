@@ -288,13 +288,14 @@ the scope from it:
 
 | Row kind | Reports |
 | --- | --- |
-| trade, corporate action, private market | Capital gains. |
+| trade, corporate action | Capital gains. |
 | dividend | Dividends. |
 | bond interest | Other interest. |
 | Trade Republic broker interest | Bank-deposit interest (doh-dho); also other interest when the selected year is 2023 or earlier, because interest before 6 December 2023 belongs to Doh-Obr and the rejected row has no trusted date. |
 | Interactive Brokers cash interest | Other interest. |
 | interest of unknown subtype | Both interest forms. |
 | benefit | No report. |
+| private market | No report: private-market events are skipped (no units or price), so a rejected one changes no form. It gets the capital scope back when private markets are supported. |
 | no kind (file, header, record with the wrong field count, unknown row type) | All four reports. |
 
 A recognized unsupported row type (`unsupported_row_type`) without a row kind affects no report: it
@@ -521,6 +522,7 @@ Additional codes and their default scope are:
 | `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
 | `loss_eligibility_unresolved` | Error for capital gains, isolated to its complete ISIN where possible. |
+| `corporate_action_not_applied` | Error for capital gains: the ISIN has a corporate action up to 31 December that is not applied yet. Walking skeleton only: once splits are applied and corporate-action ratios are confirmed, the `corporate_action_*` codes replace it. |
 | `tax_classification_unknown` | Error for the potentially affected forms, with a classification request while resolvable. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
 | `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion. |
@@ -531,6 +533,14 @@ Additional codes and their default scope are:
 listed codes are errors unless their rule explicitly says otherwise. Adapted parser diagnostics
 always keep their original severity. New application rules do not change the meaning of existing
 parser codes.
+
+The CLI report command already emits `unsupported_tax_treatment`,
+`tax_classification_unknown`, `missing_exchange_rate`, `loss_eligibility_unresolved` and
+`corporate_action_not_applied` for capital gains, without requests (the requests come
+with user decisions, exchange-rate requests, the loss rule and tax classification). `unsupported_tax_treatment` is also a non-blocking warning for
+each skipped private-market event of the selected year; a rejected private-market row or a merger
+error on a private-market event affects no report. The cases and their scope are in
+[`architecture.md`](architecture.md), "CLI report command (walking skeleton)".
 
 ## Message keys and translation
 

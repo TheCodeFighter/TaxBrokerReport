@@ -877,6 +877,16 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "IncompleteHistory";
     case ProcessingDiagnosticCode::XmlValueOutOfRange:
         return "XmlValueOutOfRange";
+    case ProcessingDiagnosticCode::UnsupportedTaxTreatment:
+        return "UnsupportedTaxTreatment";
+    case ProcessingDiagnosticCode::TaxClassificationUnknown:
+        return "TaxClassificationUnknown";
+    case ProcessingDiagnosticCode::CorporateActionNotApplied:
+        return "CorporateActionNotApplied";
+    case ProcessingDiagnosticCode::MissingExchangeRate:
+        return "MissingExchangeRate";
+    case ProcessingDiagnosticCode::LossEligibilityUnresolved:
+        return "LossEligibilityUnresolved";
     }
 
     return "Unknown";

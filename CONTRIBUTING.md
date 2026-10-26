@@ -27,6 +27,10 @@ scripts/cppcheck.sh
 
 For broader or higher-risk changes, also run `scripts/valgrind.sh`.
 
+To try the `taxbroker report` command line on the synthetic fixture, run
+`scripts/report.sh --synthetic`; it writes the Doh-KDVP XML and the summary below `runtime/report/`.
+`scripts/report.sh --help` prints the command's help.
+
 The unit and integration tests check the generated XML against the FURS schemas with libxml2. The
 Docker image has it, so the scripts never skip these checks. A native build without Docker still builds and
 runs every test without libxml2: CMake prints a warning, and the schema checks show as skipped.

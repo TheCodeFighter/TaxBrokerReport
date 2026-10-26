@@ -701,8 +701,9 @@ TEST(ApplicationResultIntegrationTest, ARejectedSplitFailsOnlyCapitalGains) {
     EXPECT_EQ(result.report(ReportType::Dividends).mStatus, ReportStatus::NoData);
 }
 
-TEST(ApplicationResultIntegrationTest, ARejectedPrivateMarketBuyFailsOnlyCapitalGains) {
-    // The amount of a private-market purchase is not a number.
+TEST(ApplicationResultIntegrationTest, ARejectedPrivateMarketBuyBlocksNoReport) {
+    // The amount of a private-market purchase is not a number. Private-market events are skipped,
+    // so the rejected row changes no form.
     constexpr std::string_view privateMarket =
         R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,CASH,PRIVATE_MARKET_BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000004,,,abc,,,EUR,,,,,synthetic-private-market,,,,)";
 
@@ -717,9 +718,10 @@ TEST(ApplicationResultIntegrationTest, ARejectedPrivateMarketBuyFailsOnlyCapital
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
-    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{ReportType::CapitalGains}));
-    EXPECT_TRUE(result.mDiagnostics[0].mBlocking);
-    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_TRUE(result.mDiagnostics[0].mAffectedReports.empty());
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
     EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::NoData);
 }
 

@@ -1,0 +1,12 @@
+{
+  "taxNumber": "12345678",
+  "isResident": true,
+  "name": "Synthetic Taxpayer",
+  "address": "Synthetic Street 1",
+  "city": "Synthetic City",
+  "postCode": "1000",
+  "postName": "Synthetic City",
+  "birthDate": "1990-01-31",
+  "email": "taxpayer@example.com",
+  "phoneNumber": "+38600000000"
+}
