@@ -616,6 +616,11 @@ The FURS schemas are in `resources/xml/schemas/`: the official `Doh_KDVP_9.xsd` 
 app used. The unit and integration tests check every document they write against both with
 libxml2. The application does not link libxml2 and does not check the schema at run time.
 
+The integration tests also read the rows of each document back and run their own FIFO over them
+(`tests/support/kdvp_row_fifo.hpp`, no production code), which must give the gains and `F8`
+values written as literals in each test. A valid schema check is not eDavki acceptance: the schema
+makes every F1 to F11 optional. The eDavki draft imports are recorded separately (#271).
+
 ## Parser diagnostics
 
 Parser diagnostics have three separate responsibilities:
