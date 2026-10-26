@@ -58,7 +58,7 @@ else
     reset_build_dir "$analysis_build_name"
 
     echo "==> Generating the CMake compile database..."
-    compose run --rm -T \
+    retry_configure compose run --rm -T \
         -e CC=clang \
         -e CXX=clang++ \
         dev cmake \

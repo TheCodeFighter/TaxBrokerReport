@@ -188,6 +188,31 @@ reset_build_dir() {
         'rm -rf -- "/workspace/build/$1" && mkdir -p "/workspace/build/$1"' sh "$build_name"
 }
 
+retry_configure() {
+    # Runs a CMake configure command up to three times. FetchContent downloads the dependencies
+    # from GitHub during the configure, and CMake gives up at once on an HTTP error such as a 504.
+    local attempt
+    local wait_seconds
+
+    for attempt in 1 2 3; do
+        if "$@"; then
+            return 0
+        fi
+
+        if [[ "$attempt" -eq 3 ]]; then
+            break
+        fi
+
+        wait_seconds=$((attempt == 1 ? 30 : 90))
+        echo "==> Configure failed (attempt $attempt of 3), maybe a dependency download." \
+            "Retrying in $wait_seconds s..." >&2
+        sleep "$wait_seconds"
+    done
+
+    echo "==> Configure failed 3 times." >&2
+    return 1
+}
+
 prepare_dev_build() {
     # Builds build/dev from scratch, or with "true" uses it as it is and compiles nothing.
     local reuse_build="$1"

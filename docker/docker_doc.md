@@ -46,6 +46,17 @@ production image instead:
 ./scripts/build.sh prod
 ```
 
+The production image is a Clang Release build with `TAXBROKER_STATIC=ON`: `taxbroker` (the CLI)
+and `taxbroker_server` are linked fully static and stripped, so they run on any x86-64 Linux and
+the image needs no runtime libraries. `prod` also copies both binaries to `build/static`. The
+image and the CI artifact ship `LICENSE` and `THIRD_PARTY_NOTICES.txt` (the licences of the
+code linked into the binaries) next to them.
+
+The CMake configure downloads the dependencies from GitHub (FetchContent). CMake gives up at once
+on an HTTP error such as a 504, so `build.sh dev`, `cppcheck.sh`, `coverage.sh` and the Dockerfile
+run the configure up to three times, 30 s and then 90 s apart. A real CMake error therefore takes
+about two minutes to fail.
+
 ### 3. Run Tests
 Execute the entire test suite via CTest inside the container. This builds `build/dev` from
 scratch first:
@@ -82,6 +93,7 @@ machine:
 | `build/debug-tools` | the `dump_*.sh` scripts |
 | `build/coverage` | `coverage.sh` |
 | `build/test-debug` | `debug_tests.sh` (VS Code), incremental on purpose |
+| `build/static` | `build.sh prod` (the static binaries copied out of the production image) |
 
 ---
 
@@ -104,10 +116,18 @@ Production image                   (own Release build inside the Dockerfile)
   must run in the exact image that compiled it, so the image is shared, not rebuilt per job.
 - `Development build` loads the image, runs `build.sh dev`, and uploads `build/dev` as a tar
   archive (it keeps the executable bits; the artifact upload alone does not).
-- Artifacts are kept for one day. A new push to a pull request cancels its older run.
+- Artifacts are kept for one day, except the static binaries (30 days). A new push to a pull
+  request cancels its older run.
 - The coverage jobs measure the pull-request commit and its base commit in parallel, each from a
-  clean GCC build, and `coverage` compares the two reports.
+  clean GCC build, and `coverage` compares the two reports. lcov runs `gcov` on one core, so
+  `coverage.sh` splits the coverage files into one list per core, captures the lists in parallel
+  and merges them; the result is the same as one capture.
 - The `Production image` job is its own Release build and shares nothing; it is the shipped image.
+  It checks the static binaries on the Ubuntu runner (so outside Alpine): both are statically
+  linked, the CLI passes `tests/support/check_cli_report.cmake` (golden XML) and the server exits
+  with 0. On a push to `main` it uploads `taxbroker-linux-x86_64.tar.gz` (both binaries,
+  `LICENSE` and `THIRD_PARTY_NOTICES.txt`) as the artifact
+  `taxbroker-linux-x86_64-<short commit>`, kept for 30 days.
 
 ---
 

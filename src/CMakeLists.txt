@@ -124,3 +124,13 @@ add_executable(taxbroker
 target_link_libraries(taxbroker PRIVATE
     taxbroker_cli
 )
+
+# The production build (docker/Dockerfile) links both executables fully static: the Alpine build
+# uses musl, so a dynamic binary would not run on other Linux systems, and a static one runs on any
+# x86-64 Linux. The development, coverage and test builds stay dynamic.
+option(TAXBROKER_STATIC "Link taxbroker and taxbroker_server fully static" OFF)
+
+if(TAXBROKER_STATIC)
+    target_link_options(taxbroker PRIVATE -static)
+    target_link_options(taxbroker_server PRIVATE -static)
+endif()

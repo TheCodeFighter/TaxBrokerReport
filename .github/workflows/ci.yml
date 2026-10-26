@@ -84,6 +84,48 @@ jobs:
       - name: Build production image
         run: scripts/build.sh prod
 
+      # The runner is Ubuntu (glibc, no musl), so this also proves the binaries run outside Alpine.
+      - name: Check the static binaries
+        run: |
+          set -euo pipefail
+          export TBR_LOG_FILE="$RUNNER_TEMP/taxbroker.log"
+
+          for binary in build/static/taxbroker build/static/taxbroker_server; do
+            file "$binary" | grep -q 'statically linked'
+          done
+
+          cmake \
+            -DCLI=build/static/taxbroker \
+            -DFIXTURE_DIR=tests/test_data/cli \
+            -DOUTPUT_DIR="$RUNNER_TEMP/cli-check" \
+            -P tests/support/check_cli_report.cmake
+
+          build/static/taxbroker_server
+
+      # Only a push to main uploads the binaries; pull requests only build and check them.
+      - name: Package the static binaries
+        if: github.event_name == 'push'
+        id: package
+        run: |
+          set -euo pipefail
+
+          # The tar archive keeps the executable bits; the artifact upload alone does not.
+          # THIRD_PARTY_NOTICES.txt holds the licences of the code linked into the binaries.
+          tar -czf "$RUNNER_TEMP/taxbroker-linux-x86_64.tar.gz" \
+            -C build/static taxbroker taxbroker_server \
+            -C "$GITHUB_WORKSPACE" LICENSE THIRD_PARTY_NOTICES.txt
+          echo "short_sha=${GITHUB_SHA::7}" >>"$GITHUB_OUTPUT"
+
+      - name: Upload the static binaries
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: taxbroker-linux-x86_64-${{ steps.package.outputs.short_sha }}
+          path: ${{ runner.temp }}/taxbroker-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
   tests:
     # Keep this name stable: the main-branch protection rule should require this check.
     name: Required tests
