@@ -197,6 +197,7 @@ Each pipeline stage either passes data on or computes new data, and its signatur
 | `TaxProcessor::prepareReportingYear` | `TaxProcessingRequest` by value | moves the merged statement into the result; the ledger holds only references into it |
 | `FifoMatcher::match` | `const&` statement and ledger | computes matches; both are still needed |
 | `CapitalGainsReportBuilder::build` | `const&` statement, ledger and FIFO result | computes report rows; all are still needed |
+| `KdvpXmlWriter::write` | `const&` metadata and report | computes the XML text; the report is still needed |
 | `ApplicationResultBuilder::build` | `ApplicationResultInput&&` | moves each report's XML into the result; the diagnostics become new application diagnostics |
 
 A copy is made only where a caller still needs the data afterwards, and it is written out at the

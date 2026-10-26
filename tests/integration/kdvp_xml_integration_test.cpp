@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -89,11 +90,11 @@ TEST(KdvpXmlIntegrationTest, TwoFilesWithASaleUsingTwoPurchasesWriteTheWholeDocu
     const auto purchasesPath = files.write("purchases.csv", {firstPurchase, secondPurchase});
     const auto salesPath = files.write("sales.csv", {sale});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(purchasesPath)},
-                                                  {1, parser.parse(salesPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(purchasesPath)},
+                                            {1, parser.parse(salesPath, 1)}};
 
-    const auto prepared =
-        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    const auto prepared = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(prepared.mLedger.has_value());
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
@@ -214,11 +215,11 @@ TEST(KdvpXmlIntegrationTest, BlockedIsinLeftOutByTheUserIsNotInTheXml) {
     const auto historyPath = files.write("history.csv", {purchase, sale});
     const auto otherPath = files.write("other.csv", {saleWithoutPurchase});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)},
-                                                  {1, parser.parse(otherPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)},
+                                            {1, parser.parse(otherPath, 1)}};
 
-    const auto prepared =
-        TaxProcessor{}.prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    const auto prepared = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(prepared.mLedger.has_value());
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
