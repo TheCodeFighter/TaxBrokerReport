@@ -23,6 +23,8 @@ endif()
 
 include(FetchContent)
 
+# The static release executables contain these dependencies: when one is added or its version
+# changes, update THIRD_PARTY_NOTICES.txt.
 find_package(Boost CONFIG REQUIRED)
 
 FetchContent_Declare(
