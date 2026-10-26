@@ -70,6 +70,14 @@ run_valgrind \
 run_valgrind /workspace/build/dev/src/taxbroker_server
 
 run_valgrind \
+    /workspace/build/dev/src/taxbroker \
+    report \
+    --year 2024 \
+    --taxpayer /workspace/tests/test_data/cli/taxpayer.json \
+    --out /tmp/taxbroker-cli-report \
+    /workspace/tests/test_data/cli/report_fixture.csv
+
+run_valgrind \
     /workspace/build/dev/tools/taxbroker_tr_dump \
     /workspace/tests/test_data/csv/traderepublic_parser_supported_fixture.csv \
     /tmp/taxbroker-tr-parsed.txt \

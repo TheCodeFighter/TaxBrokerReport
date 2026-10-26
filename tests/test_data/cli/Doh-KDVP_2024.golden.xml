@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:name>Synthetic Taxpayer</edp:name>
+      <edp:address1>Synthetic Street 1</edp:address1>
+      <edp:city>Synthetic City</edp:city>
+      <edp:postNumber>1000</edp:postNumber>
+      <edp:postName>Synthetic City</edp:postName>
+      <edp:birthDate>1990-01-31</edp:birthDate>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_KDVP>
+      <KDVP>
+        <DocumentWorkflowID>O</DocumentWorkflowID>
+        <DocumentWorkflowName>Original</DocumentWorkflowName>
+        <Year>2024</Year>
+        <PeriodStart>2024-01-01</PeriodStart>
+        <PeriodEnd>2024-12-31</PeriodEnd>
+        <IsResident>true</IsResident>
+        <TelephoneNumber>+38600000000</TelephoneNumber>
+        <SecurityCount>1</SecurityCount>
+        <SecurityShortCount>0</SecurityShortCount>
+        <SecurityWithContractCount>0</SecurityWithContractCount>
+        <SecurityWithContractShortCount>0</SecurityWithContractShortCount>
+        <ShareCount>0</ShareCount>
+        <Email>taxpayer@example.com</Email>
+      </KDVP>
+      <KDVPItem>
+        <ItemID>1</ItemID>
+        <InventoryListType>PLVP</InventoryListType>
+        <Securities>
+          <ISIN>XX0000000001</ISIN>
+          <Name>Synthetic Share</Name>
+          <IsFond>false</IsFond>
+          <Row>
+            <ID>0</ID>
+            <Purchase>
+              <F1>2024-01-10</F1>
+              <F2>B</F2>
+              <F3>10.0000</F3>
+              <F4>10.0000</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>10.0000</F8>
+          </Row>
+          <Row>
+            <ID>1</ID>
+            <Purchase>
+              <F1>2024-02-10</F1>
+              <F2>B</F2>
+              <F3>5.0000</F3>
+              <F4>20.0000</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>15.0000</F8>
+          </Row>
+          <Row>
+            <ID>2</ID>
+            <Sale>
+              <F6>2024-03-10</F6>
+              <F7>15.0000</F7>
+              <F9>30.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>0.0000</F8>
+          </Row>
+        </Securities>
+      </KDVPItem>
+    </Doh_KDVP>
+  </body>
+</Envelope>

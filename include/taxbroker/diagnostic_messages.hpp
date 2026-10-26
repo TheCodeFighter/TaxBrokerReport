@@ -49,6 +49,12 @@ enum class MessageKey {
     InvalidReportingYear,
     IncompleteHistory,
     XmlValueOutOfRange,
+    UnsupportedTaxTreatmentCapitalClass,
+    UnsupportedTaxTreatmentPrivateMarketSkipped,
+    TaxClassificationUnknownCapital,
+    CorporateActionNotApplied,
+    MissingExchangeRateTrade,
+    LossEligibilityUnresolved,
 };
 
 enum class MessageParamKind {

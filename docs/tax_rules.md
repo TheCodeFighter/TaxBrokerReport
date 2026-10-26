@@ -163,7 +163,7 @@ confirmation quantity, and `F8` is the stock of the listed units, not the whole 
 same units as the internal matches. This reading must be confirmed with an eDavki draft import
 before release.
 
-The rows for split-adjusted history and partially eligible losses are decided in #267.
+The rows for split-adjusted history and partially eligible losses are not decided yet.
 
 ### Example: one sale uses two purchases
 
@@ -278,7 +278,7 @@ the period, and a sale on the next day is past it. For example, units bought on 
 inside the 15 years on 2024-03-10 and past them on 2024-03-11. A purchase on 29 February has its
 anniversary on 28 February in a year without that day. The app only reports the rows; FURS works
 out the tax from the dates. The boundary decides only which units the app leaves out of the rows
-(see below). Check both boundaries with an eDavki draft import (#271).
+(see below). Check both boundaries with an eDavki draft import.
 
 Example of the sale date rule: units bought on 2004-05-01 and sold on 2021-06-01 are held 17
 years, which is inside the 20 years, so the sale is taxed. The same units sold on 2022-01-03 are
@@ -303,7 +303,7 @@ free, and 1 unit from 2020. The list has two rows: purchase 2020-04-01, `F3` 1, 
 
 A loss on units past the period cannot reduce the tax base (ZDoh-2 Article 96, third paragraph),
 so it is left out with them and the loss check covers only the listed units. Lowering `F7` below
-the sold quantity of the broker confirmation must be checked with an eDavki draft import (#271).
+the sold quantity of the broker confirmation must be checked with an eDavki draft import.
 
 The holding period never changes:
 
@@ -445,7 +445,7 @@ selected year.
 
 Assume the selected year is 2024 and all rows refer to the same investment. Prices are left out
 because this example is about dates, FIFO shares, and report output. The exact filing rows for
-this history need the split and long-held rules from #267.
+this history need the split and long-held rules, which are not decided yet.
 
 | Date | Event | Ledger result | 2024 report |
 | --- | --- | --- | --- |
@@ -453,7 +453,7 @@ this history need the split and long-held rules from #267.
 | 2023-03-01 | Sell 4 shares. | Use 4 shares from the 2008 buy; 6 remain. | Nothing because the sale was before 2024. |
 | 2023-09-01 | Buy 8 shares. | Hold 6 older and 8 newer shares. | No row of its own; see the 2024 sales. |
 | 2024-02-01 | Trade Republic records a split. Its announcement says 2 new shares for 1 old share. | The user confirms `2 / 1`; hold 12 older and 16 newer adjusted shares. | Nothing. |
-| 2024-06-20 | Sell 20 shares. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | One sale row of 20. Its purchase units come from the 2008 and 2023 buys. The 2008 units are past 15 years; how they are listed is open (#267). |
+| 2024-06-20 | Sell 20 shares. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | One sale row of 20. Its purchase units come from the 2008 and 2023 buys. The 2008 units are past 15 years; how they are listed is still open. |
 | 2024-12-20 | Sell 4 shares at a loss. | Use 4 newer shares; 4 remain at year-end. | Report the loss, but the January replacement buy means it cannot reduce taxable gains. |
 | 2025-01-05 | Buy 4 shares of the same investment. | Check it only for the 30-day loss rule in the 2024 run. | Nothing. |
 | 2025-02-10 | Sell 2 shares. | Ignore it in the 2024 run. | Nothing. |

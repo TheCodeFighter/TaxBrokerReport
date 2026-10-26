@@ -666,7 +666,8 @@ TEST(ApplicationResultScopeTest, AnInterestRowOfUnknownSubtypeAffectsBothInteres
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kBank, kOther}));
 }
 
-TEST(ApplicationResultScopeTest, ARejectedPrivateMarketRowAffectsCapitalGains) {
+TEST(ApplicationResultScopeTest, ARejectedPrivateMarketRowAffectsNoReport) {
+    // Private-market events are skipped, so a rejected one changes no form.
     const SourcedParseDiagnostic diagnostic{
         .mSourceIndex = 0,
         .mBroker = Broker::TradeRepublic,
@@ -686,7 +687,9 @@ TEST(ApplicationResultScopeTest, ARejectedPrivateMarketRowAffectsCapitalGains) {
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
-    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kCapital}));
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_TRUE(result.mDiagnostics[0].mAffectedReports.empty());
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
 }
 
 TEST(ApplicationResultScopeTest, ABenefitRowAffectsNoReport) {
@@ -872,6 +875,24 @@ TEST(ApplicationResultScopeTest, AConflictingBenefitAffectsNoReport) {
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
     EXPECT_TRUE(result.mDiagnostics[0].mAffectedReports.empty());
+}
+
+TEST(ApplicationResultScopeTest, AConflictingPrivateMarketEventAffectsNoReport) {
+    // Private-market events are skipped, so a rejected one changes no form.
+    const MergeDiagnostic diagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = MergeDiagnosticCode::ConflictingDuplicate,
+        .mMessage = "Synthetic merge message.",
+        .mEventKinds = {StatementEventKind::PrivateMarket},
+    };
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = {diagnostic}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_TRUE(result.mDiagnostics[0].mAffectedReports.empty());
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
 }
 
 TEST(ApplicationResultScopeTest, AConflictingAssetClassAffectsCapitalGainsOnly) {

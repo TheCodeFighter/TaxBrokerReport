@@ -505,9 +505,9 @@ The matcher reports two kinds of diagnostics, both for the capital report only:
   `mAvailableUnits` keeps the open units. The error blocks the capital report; the choice to
   exclude the ISIN or fail the report is later work.
 
-The corporate-action errors, the non-EUR gate and the loss-making-portion gate are built by later
-work from the other statuses and matches. The 30-day loss rule, split adjustment and currency
-conversion are also later work. The Doh-KDVP filing rows are built from the matches as described
+The corporate-action, non-EUR and loss-making-portion errors are added by the capital report gates
+(see "CLI report command (walking skeleton)"). The 30-day loss rule, split adjustment and currency
+conversion are later work. The Doh-KDVP filing rows are built from the matches as described
 in "Doh-KDVP report model contract".
 
 ### Doh-KDVP report model contract
@@ -523,8 +523,8 @@ receives it next to the model of its form; no form model repeats a taxpayer fiel
 number and the residence are required; name, address, city, post code, post name, birth date,
 email and phone are optional, as in the FURS schema. The model does not check the values. The
 code that reads the user's input does, whether the user typed it or loaded it from a file. The
-taxpayer fields can come from the saved profile (#278), and the user can change any of them
-before each run. The filing type is chosen for each run (`Original` unless the user picks
+taxpayer fields can come from a saved profile once profiles are kept between runs, and the user
+can change any of them before each run. The filing type is chosen for each run (`Original` unless the user picks
 `SelfReport`) and is never saved with the profile. The
 writer adds constants that are not data: the taxpayer type `FO`, the period dates (1 January and
 31 December of the year), the list type `PLVP`, row numbers and the workflow codes.
@@ -536,10 +536,10 @@ value) or a `KdvpSaleRow` (F6 date, F7 units, F9 unit value, F10), plus F8, the 
 are the filing rows of [`tax_rules.md`](tax_rules.md), "Doh-KDVP filing rows"; the internal FIFO
 matches are not part of the model. A row keeps a `StatementEventReference` to its source trade
 (an index, no file or row), so a later summary can name the sources. `UnitPrice` and `Units` keep
-their eight decimals (#280), and rounding to the XML text is the writer's job.
+their eight decimals, and rounding to the XML text is the writer's job.
 
 `KdvpLossRule` has only `NotBlocked` (F10 true) and `Blocked` (F10 false). It has no "unresolved"
-value, so an open loss check can never be written as a decision. Only the loss rule (#220)
+value, so an open loss check can never be written as a decision. Only the loss rule
 produces `Blocked`; a partly eligible sale will become two sale rows that share the source sale.
 `IsFond` is always false for now: the class check (what belongs in Doh-KDVP) is the job of the
 classification gate, not of the builder.
@@ -568,9 +568,10 @@ same index. For an ISIN with at least one sale in the selected year:
   empty, and then holds a list for every ISIN without a problem. An ISIN without a problem is never
   left out, even if it is on the user's list.
 
-The builder adds no diagnostics and no message keys. The CLI gates (#270) turn `mBlocked` into
-errors, and the application result (#214) into report statuses. Asking the user which blocked
-ISINs to leave out is #227.
+The builder adds no diagnostics and no message keys. The capital report gates turn `mBlocked`
+into errors (see "CLI report command (walking skeleton)"), and the application result
+turns them into report statuses. Asking the user which blocked ISINs to leave out comes with the
+explicit ISIN exclusion.
 
 ### Doh-KDVP XML writer
 
@@ -606,8 +607,8 @@ not fit the form, one `xml_value_out_of_range` error per field and no XML.
   `00000000`; year 1000 to 9999; dates with a year from 1 to 9999; ISIN of 1 to 12 characters;
   list name of at most 100 characters and post code of at most 12 (characters, not bytes);
   every text valid UTF-8 without control characters, U+FFFE or U+FFFF; F3, F4, F7, F9 and F8 not
-  negative. The schema accepts a negative F8 and an empty ISIN, but only the developer export
-  (#188) may write a negative F8.
+  negative. The schema accepts a negative F8 and an empty ISIN, but only the planned
+  incomplete-history developer export may write a negative F8.
 - **An empty model** (no lists) gives a valid document without `KDVPItem`; the caller decides that
   the form has no data and writes no file.
 
@@ -619,7 +620,83 @@ libxml2. The application does not link libxml2 and does not check the schema at 
 The integration tests also read the rows of each document back and run their own FIFO over them
 (`tests/support/kdvp_row_fifo.hpp`, no production code), which must give the gains and `F8`
 values written as literals in each test. A valid schema check is not eDavki acceptance: the schema
-makes every F1 to F11 optional. The eDavki draft imports are recorded separately (#271).
+makes every F1 to F11 optional. The eDavki draft imports are recorded separately.
+
+### CLI report command (walking skeleton)
+
+```text
+taxbroker report --year YYYY --taxpayer taxpayer.json [--self-report] --out DIR CSV [CSV ...]
+```
+
+The `taxbroker` executable (`src/cli/`) produces a real Doh-KDVP file for a bounded set of cases
+and blocks every other case with a structured error; it never guesses. `taxbroker --help` and
+`taxbroker report --help` explain the options, the taxpayer file, the output files, the exit codes
+and what is supported, blocked and skipped. The whole command is in the `taxbroker_cli` library
+(`runCli`), so the tests run it in process; the executable only sets up logging. The
+orchestration moves into the application service once that service connects all processing
+stages.
+
+**Pipeline.** Each CSV is read with the path-based Trade Republic parser, with its position on the
+command line as the source index. Then: merge, reporting-year preparation, FIFO, the report
+builder (no exclusions), the capital report gates, the XML writer, and
+`ApplicationResultBuilder`. The XML is written only when the builder made a report with at least
+one list and no gate gave an error; a report without lists is `no_data` with
+`no_selected_year_disposals`. The capital status of the application result decides the files and
+the exit code, so a blocking parser or merger error (a rejected trade or corporate-action row, a
+file-level error, a `conflicting_duplicate` of a trade or corporate action, an
+`instrument_asset_class_conflict`) also blocks the report, whatever ISIN or year it belongs to.
+An event the merger rejected is not in the ledger, so only this rule blocks it.
+
+**Capital report gates** (`CapitalReportGates::check`, `include/processors/capital_report_gates.hpp`).
+They look only at ISINs with a sale in the selected year, as the builder does. All errors affect
+capital gains only and carry no units, amounts or prices:
+
+| Case | Code (stage) | One diagnostic per |
+| --- | --- | --- |
+| Class crypto, private fund, bond or derivative | `unsupported_tax_treatment` error (`fifo_tax`), parameter `assetClass` | ISIN; sources of its sales of the year, date of the first |
+| Class unknown (missing, unrecognized or conflicting) | `tax_classification_unknown` error (`fifo_tax`) | ISIN; as above |
+| Pool stopped at a corporate action up to 31 December | `corporate_action_not_applied` error (`corporate_action`) | ISIN; date and sources of the action |
+| Pool stopped at a non-EUR trade | `missing_exchange_rate` error (`fifo_tax`), parameter `currency` | ISIN; date and sources of that trade |
+| Sale with a loss-making FIFO portion | `loss_eligibility_unresolved` error (`fifo_tax`) | sale |
+| Private-market event dated in the selected year | `unsupported_tax_treatment` **warning** (`fifo_tax`) | event |
+
+Only `Stock` and `Fund` pass the class check; `IsFond` stays `false` for both. A pool stopped for
+missing history or a numeric failure already has its FIFO diagnostic and gets nothing more. Only
+the first stop of a pool is reported, because FIFO stops there. A crypto purchase without a sale
+in the year keeps only its parser warning. Private-market events (`PRIVATE_MARKET_BUY`,
+`PRIVATE_MARKET_SELL`, `BONUS`) have only a cash amount, without units or a price, so they are
+skipped, a sale included; the warning keeps each one visible (maintainer decision, 2026-10-26).
+For the same reason a rejected private-market row, or a merger error on a private-market event,
+affects no report: it stays an error and is listed in the summary, but it blocks nothing
+(maintainer decision, 2026-10-26). When private markets are supported, these errors get the
+capital scope back.
+Each gate goes away when its rule exists: applied splits and confirmed corporate-action
+ratios, conversion with official exchange rates, the loss rule, and classification requests.
+
+**Taxpayer file.** One JSON object with `taxNumber` (eight digits, not `00000000`) and
+`isResident` (only `true` for now), and the optional strings `name`, `address`, `city`,
+`postCode`, `postName`, `birthDate` (`YYYY-MM-DD`), `email` and `phoneNumber`. Any other key is an
+error, `filingType` included: the filing type is chosen for each run (`--self-report`), never
+read from the file. An error names the key, never the value.
+
+**Output.** In the `--out` folder (created when missing): `Doh-KDVP_<year>.xml` only when the
+capital report is `generated`, and `summary_<year>.txt` for every run that got that far; the same
+summary goes to stdout. A blocked or no-data run deletes an old `Doh-KDVP_<year>.xml` there and
+says so, so a file of an earlier run is never taken for this run's result. The summary has the
+input files (file names and source IDs only), the capital status, each ISIN with a sale in the
+year (listed with its sale rows and units, blocked with its codes and sales, or only units past
+the holding period), the units past the holding period (`mLongHeld`: ISIN, sale date, units), the
+skipped private-market events, and the diagnostics in application order (capital errors, capital
+warnings, then the others with their severity). It has units and dates, no EUR amounts.
+
+Both files are first written as `<name>.tmp` in the output folder and only then renamed over the
+files of an earlier run, or the old XML is deleted. A folder at an output path is refused before
+anything is written. So a run that fails keeps the files of an earlier run as they were.
+
+**Exit codes.** `0`: the capital report is `generated` or `no_data`. `1`: it is blocked (`failed`).
+`2`: the command could not run (an option, a missing or invalid file, the output folder); no
+output file is changed (a missing output folder may already be created) and stderr names the
+problem with file names only, never a folder.
 
 ## Parser diagnostics
 
@@ -713,6 +790,10 @@ Running `scripts/dump_tr_kdvp.sh` writes the Doh-KDVP XML of the selected year t
 `tests/test_data/csv/kdvp_dump_fixture.csv` instead of the real export and writes
 `runtime/debug/tr_kdvp_synthetic_<year>.xml`. Blocked ISINs are left out, so with a blocked ISIN
 the file is not a complete return; the tool says so.
+
+Running `scripts/report.sh` runs `taxbroker report` in Docker and writes to
+`runtime/report/<year>/`; with `--synthetic` it reads `tests/test_data/cli/report_fixture.csv` and
+`tests/test_data/cli/taxpayer.json`. A real taxpayer file stays below `runtime/`.
 
 Parser logs may later be shared for support, so they follow a stricter boundary: source index, CSV
 row, and diagnostic reason are allowed; paths, transaction IDs, and raw financial values are not.

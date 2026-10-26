@@ -506,6 +506,57 @@ TEST(ApplicationResultJsonTest, WritesEveryPipelineStageAndProcessingCode) {
     EXPECT_EQ(diagnostics[6].at("code"), "xml_value_out_of_range");
 }
 
+TEST(ApplicationResultJsonTest, WritesEveryCapitalGateCode) {
+    // The capital report gates, all for capital gains. corporate_action_not_applied is in the
+    // earlier corporate-action stage, so it comes first; the other four share the FIFO and tax
+    // stage, so their code order decides.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::LossEligibilityUnresolved,
+            .mContext = {.mStage = PipelineStage::FifoTax, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic processing message.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+            .mContext = {.mStage = PipelineStage::FifoTax, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic processing message.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::CorporateActionNotApplied,
+            .mContext = {.mStage = PipelineStage::CorporateAction, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic processing message.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::TaxClassificationUnknown,
+            .mContext = {.mStage = PipelineStage::FifoTax, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic processing message.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+            .mContext = {.mStage = PipelineStage::FifoTax, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic processing message.",
+        },
+    };
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+
+    const auto& diagnostics = json.at("diagnostics");
+
+    ASSERT_EQ(diagnostics.size(), 5U);
+
+    EXPECT_EQ(diagnostics[0].at("code"), "corporate_action_not_applied");
+    EXPECT_EQ(diagnostics[1].at("code"), "unsupported_tax_treatment");
+    EXPECT_EQ(diagnostics[2].at("code"), "tax_classification_unknown");
+    EXPECT_EQ(diagnostics[3].at("code"), "missing_exchange_rate");
+    EXPECT_EQ(diagnostics[4].at("code"), "loss_eligibility_unresolved");
+}
+
 TEST(ApplicationResultJsonTest, WritesEveryMergeCode) {
     // All six codes affect capital gains first, so the code order decides.
     ApplicationResultInput input{.mReportingYear = 2024};
@@ -915,6 +966,24 @@ TEST(ApplicationResultJsonTest, ParserJsonVersionOneHasNoRowKindOrSourceId) {
     EXPECT_EQ(after.find("rowKind"), std::string::npos);
     EXPECT_EQ(after.find("sourceId"), std::string::npos);
     EXPECT_EQ(result.mDiagnostics.size(), 1U);
+}
+
+TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAParserCodeIsItsJsonCode) {
+    const ApplicationDiagnosticCode code = DiagnosticCode::InvalidValue;
+
+    EXPECT_EQ(api::diagnosticCodeName(code), "invalid_value");
+}
+
+TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAMergeCodeIsItsJsonCode) {
+    const ApplicationDiagnosticCode code = MergeDiagnosticCode::ConflictingDuplicate;
+
+    EXPECT_EQ(api::diagnosticCodeName(code), "conflicting_duplicate");
+}
+
+TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAProcessingCodeIsItsJsonCode) {
+    const ApplicationDiagnosticCode code = ProcessingDiagnosticCode::LossEligibilityUnresolved;
+
+    EXPECT_EQ(api::diagnosticCodeName(code), "loss_eligibility_unresolved");
 }
 
 } // namespace

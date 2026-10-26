@@ -19,6 +19,7 @@ add_library(taxbroker_core STATIC
     parsers/traderepublic_parser.cpp
     processors/application_result.cpp
     processors/capital_gains_report_builder.cpp
+    processors/capital_report_gates.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
     processors/processing_diagnostics.cpp
@@ -93,4 +94,33 @@ target_include_directories(taxbroker_server PRIVATE
 target_link_libraries(taxbroker_server PRIVATE
     taxbroker_core
     taxbroker_api
+)
+
+# The command line: the report command of the walking skeleton. The library holds the whole
+# command so the tests can run it in process; the executable only sets up logging.
+add_library(taxbroker_cli STATIC
+    cli/report_command.cpp
+    cli/taxpayer_file.cpp
+)
+
+target_include_directories(taxbroker_cli
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(taxbroker_cli
+    PUBLIC
+    taxbroker_core
+    PRIVATE
+    taxbroker_api
+    taxbroker_xml
+    nlohmann_json::nlohmann_json
+)
+
+add_executable(taxbroker
+    cli/main.cpp
+)
+
+target_link_libraries(taxbroker PRIVATE
+    taxbroker_cli
 )
