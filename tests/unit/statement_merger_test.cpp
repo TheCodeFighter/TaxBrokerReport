@@ -324,6 +324,21 @@ TEST(StatementMergeContractTest, InputsCarryRequestOrderIndependentlyOfArrivalOr
     EXPECT_EQ(inputView.back().mParseResult.mBroker, Broker::InteractiveBrokers);
 }
 
+TEST(StatementMergeContractTest, MergeAcceptsInputsOnlyByMove) {
+    // The merger owns its inputs: a caller moves them in or passes an explicit copy.
+    using Merge = decltype(&StatementMerger::merge);
+
+    static_assert(
+        std::is_invocable_v<Merge, const StatementMerger&, std::vector<StatementMergeInput>&&>);
+    static_assert(
+        !std::is_invocable_v<Merge, const StatementMerger&, std::vector<StatementMergeInput>&>);
+    static_assert(!std::is_invocable_v<Merge,
+                                       const StatementMerger&,
+                                       const std::vector<StatementMergeInput>&>);
+    static_assert(
+        !std::is_invocable_v<Merge, const StatementMerger&, std::span<const StatementMergeInput>>);
+}
+
 TEST(DeterministicStatementMergerTest, EmptyInputProducesEmptyResult) {
     const DeterministicStatementMerger merger;
 
@@ -373,9 +388,9 @@ TEST(DeterministicStatementMergerTest, GroupsTradesByIsinAcrossBrokersAndOrdersE
             .mUnitsDelta = UNITS_SCALE,
         }},
     });
-    const std::array inputs{laterInput, earlierInput};
+    std::vector inputs{laterInput, earlierInput};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto& instruments = result.mStatement.mPresentation.mTradeInstruments;
     ASSERT_EQ(instruments.size(), 2U);
@@ -413,9 +428,9 @@ TEST(DeterministicStatementMergerTest, AssetClassConflictIsErrorAndUsesUnknown) 
         .mAssetClass = AssetClass::Fund,
         .mTransactions = {makeTrade(1, 0, makeDate(2024, 1, 2))},
     });
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mAssetClass,
@@ -457,9 +472,9 @@ TEST(DeterministicStatementMergerTest, DeduplicatesExactTradesAndRetainsEverySou
                                     "overlap.csv",
                                     "shared-id")},
     });
-    const std::array inputs{first, second};
+    std::vector inputs{first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     const auto& transactions =
@@ -583,10 +598,10 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
 }
 
 TEST(DeterministicStatementMergerTest, DeduplicatesEverySupportedEventKind) {
-    const std::array inputs{makeDuplicateTestInput(1, "overlap.csv"),
-                            makeDuplicateTestInput(0, "complete.csv")};
+    std::vector inputs{makeDuplicateTestInput(1, "overlap.csv"),
+                       makeDuplicateTestInput(0, "complete.csv")};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     const auto& tradeInstrument = result.mStatement.mPresentation.mTradeInstruments.front();
@@ -677,9 +692,10 @@ void expectFieldConflicts(StatementEventKind aKind,
 
         // Change one fact in the second copy; its transaction ID still matches the first.
         change.mApply(aSelectRecord(second.mParseResult.mStatement));
-        const std::array inputs{second, first};
+        const std::vector inputs{second, first};
 
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         auto expectedStatement = first.mParseResult.mStatement;
         std::vector<std::string> expectedSurvivingIds{"trade-id",
@@ -982,9 +998,9 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdWhenOnlyOneHasA
                                }}},
             },
     };
-    const std::array inputs{first, second};
+    std::vector inputs{first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
@@ -1065,9 +1081,9 @@ TEST(DeterministicStatementMergerTest,
                                }}},
             },
     };
-    const std::array inputs{first, second};
+    std::vector inputs{first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
@@ -1146,9 +1162,9 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdThatDifferOnlyI
                                }}},
             },
     };
-    const std::array inputs{first, second};
+    std::vector inputs{first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
@@ -1256,9 +1272,9 @@ TEST(DeterministicStatementMergerTest, UnknownDividendWithholdingConflictsWithEx
     overlap.mParseResult.mStatement.mDividendInstruments.front()
         .mTransactions.front()
         .mTaxPaid.reset();
-    const std::array inputs{first, overlap};
+    std::vector inputs{first, overlap};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
     const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
 
     ASSERT_NE(conflict, nullptr);
@@ -1295,9 +1311,9 @@ TEST(DeterministicStatementMergerTest, UnknownInterestWithholdingConflictsWithEx
     overlap.mParseResult.mStatement.mInterestInstruments.front()
         .mTransactions.front()
         .mTaxPaid.reset();
-    const std::array inputs{first, overlap};
+    std::vector inputs{first, overlap};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
     const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
 
     ASSERT_NE(conflict, nullptr);
@@ -1364,20 +1380,22 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedPrivateMarketFact) {
 }
 
 TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArrivalOrder) {
-    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
-                      makeDuplicateTestInput(1, "second.csv"),
-                      makeDuplicateTestInput(2, "third.csv")};
+    std::vector inputs{makeDuplicateTestInput(0, "first.csv"),
+                       makeDuplicateTestInput(1, "second.csv"),
+                       makeDuplicateTestInput(2, "third.csv")};
     inputs[1].mParseResult.mStatement.mTradeInstruments.front().mName = "Different display name";
     inputs[2].mParseResult.mStatement.mPrivateMarketEvents.front().mFeePaid += 1;
     const auto originalFirst = inputs.front()
                                    .mParseResult.mStatement.mTradeInstruments.front()
                                    .mTransactions.front()
                                    .mMetadata;
-    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+    const auto expected =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
     do
     {
-        const auto actual = DeterministicStatementMerger{}.merge(inputs);
+        const auto actual =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(actual, expected);
 
@@ -1527,9 +1545,9 @@ TEST(DeterministicStatementMergerTest, KeepsIncomeNameSourcesAfterDeduplicationB
     second.mParseResult.mStatement.mInterestInstruments.front().mIsin = "XX0000000042";
     second.mParseResult.mStatement.mInterestInstruments.front().mName = "Other bond name";
     second.mParseResult.mStatement.mDividendInstruments.front().mName = "Other issuer name";
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto& dividends = result.mStatement.mPresentation.mDividendInstruments;
     const auto& interest = result.mStatement.mPresentation.mInterestInstruments;
@@ -1573,7 +1591,8 @@ TEST(DeterministicStatementMergerTest, NormalizesOverlappingSourceSetsOnExactCop
         .mTransactions = {second, first},
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     const auto& transactions =
         result.mStatement.mPresentation.mTradeInstruments.front().mTransactions;
@@ -1603,7 +1622,8 @@ TEST(DeterministicStatementMergerTest, DeduplicatesWithinOneFileButNotEventsWith
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     const auto& transactions =
         result.mStatement.mPresentation.mTradeInstruments.front().mTransactions;
@@ -1662,7 +1682,8 @@ TEST(DeterministicStatementMergerTest, WarnsWhenOneFileRepeatsAnExactTrade) {
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
@@ -1693,8 +1714,8 @@ TEST(DeterministicStatementMergerTest, WarnsWhenOneFileRepeatsAnExactTrade) {
 
 TEST(DeterministicStatementMergerTest, DoesNotWarnForTheSameTradeInTwoFiles) {
     const auto date = makeDate(2024, 2, 1);
-    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
-                                              StatementMergeInput{.mSourceIndex = 1}};
+    std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                            StatementMergeInput{.mSourceIndex = 1}};
     // Both files have the same name on purpose: the files differ by request position only.
     inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
         .mName = "Security",
@@ -1739,7 +1760,7 @@ TEST(DeterministicStatementMergerTest, DoesNotWarnForTheSameTradeInTwoFiles) {
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
@@ -1788,7 +1809,8 @@ TEST(DeterministicStatementMergerTest, KeepsOnlyTheConflictForDifferentTradesInO
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
@@ -1804,8 +1826,8 @@ TEST(DeterministicStatementMergerTest, KeepsOnlyTheConflictForDifferentTradesInO
 
 TEST(DeterministicStatementMergerTest, WarnsOnlyForTheFileThatRepeatsTheTrade) {
     const auto date = makeDate(2024, 2, 1);
-    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
-                                              StatementMergeInput{.mSourceIndex = 1}};
+    std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                            StatementMergeInput{.mSourceIndex = 1}};
     inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
         .mName = "Security",
         .mIsin = "XX0000000001",
@@ -1862,7 +1884,7 @@ TEST(DeterministicStatementMergerTest, WarnsOnlyForTheFileThatRepeatsTheTrade) {
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
@@ -1935,7 +1957,8 @@ TEST(DeterministicStatementMergerTest, WarnsOnceForThreeCopiesInOneFile) {
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
@@ -1958,8 +1981,8 @@ TEST(DeterministicStatementMergerTest, WarnsOnceForThreeCopiesInOneFile) {
 
 TEST(DeterministicStatementMergerTest, WarnsOncePerFileWhenTwoFilesRepeatTheTrade) {
     const auto date = makeDate(2024, 2, 1);
-    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
-                                              StatementMergeInput{.mSourceIndex = 1}};
+    std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                            StatementMergeInput{.mSourceIndex = 1}};
     inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
         .mName = "Security",
         .mIsin = "XX0000000001",
@@ -2029,7 +2052,7 @@ TEST(DeterministicStatementMergerTest, WarnsOncePerFileWhenTwoFilesRepeatTheTrad
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front()
@@ -2099,7 +2122,8 @@ TEST(DeterministicStatementMergerTest, WarnsWithoutANameWhenTheInstrumentNameIsE
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
@@ -2153,7 +2177,8 @@ TEST(DeterministicStatementMergerTest, DoesNotWarnWhenTheSameRowIsGivenTwice) {
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
@@ -2179,7 +2204,8 @@ TEST(DeterministicStatementMergerTest, DoesNotWarnForOneEventThatCarriesTwoRowsO
                                                                .mAssetClass = AssetClass::Stock,
                                                                .mCorporateActions = {action}});
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
@@ -2212,7 +2238,8 @@ TEST(DeterministicStatementMergerTest, DoesNotWarnWhenTheSameTwoRowEventIsGivenT
          .mAssetClass = AssetClass::Stock,
          .mCorporateActions = {firstAction, secondAction}});
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
@@ -2276,7 +2303,8 @@ TEST(DeterministicStatementMergerTest, WarnsOnceWhenOneRowIsGivenTwiceAndAnother
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
 
@@ -2320,8 +2348,8 @@ TEST(DeterministicStatementMergerTest, DoesNotWarnForTheSameTwoRowEventInTwoFile
         .mType = CorporateActionType::UnresolvedSplit,
         .mUnitsDelta = 100'000'000, // 1 unit at eight decimal places.
     };
-    std::array<StatementMergeInput, 2> inputs{StatementMergeInput{.mSourceIndex = 0},
-                                              StatementMergeInput{.mSourceIndex = 1}};
+    std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                            StatementMergeInput{.mSourceIndex = 1}};
     inputs[0].mParseResult.mStatement.mTradeInstruments.push_back(
         {.mName = "Synthetic Share",
          .mIsin = "XX9000000001",
@@ -2333,7 +2361,7 @@ TEST(DeterministicStatementMergerTest, DoesNotWarnForTheSameTwoRowEventInTwoFile
          .mAssetClass = AssetClass::Stock,
          .mCorporateActions = {actionOfFile1}});
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
@@ -2383,7 +2411,8 @@ TEST(DeterministicStatementMergerTest, WarnsWhenOneFileRepeatsAnExactDividend) {
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
     ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.front().mTransactions.size(),
@@ -2419,7 +2448,8 @@ TEST(DeterministicStatementMergerTest, ScopesTransactionIdsByBroker) {
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 2U);
@@ -2442,7 +2472,8 @@ TEST(DeterministicStatementMergerTest, RejectsEveryCandidateForAConflictingTrans
         .mTransactions = {first, exactCopy, conflicting},
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     const auto* diagnostic = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
@@ -2484,7 +2515,8 @@ TEST(DeterministicStatementMergerTest, RejectsCrossKindTransactionIdConflicts) {
         }},
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mDividendInstruments.empty());
@@ -2516,9 +2548,9 @@ TEST(DeterministicStatementMergerTest, KeepsNameProvenanceWhenExactCopiesUseDiff
         .mTransactions =
             {makeTrade(1, 0, makeDate(2024, 5, 1), Broker::TradeRepublic, "second.csv", "same-id")},
     });
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto& instrument = result.mStatement.mPresentation.mTradeInstruments.front();
     EXPECT_EQ(instrument.mName, "Earlier name");
@@ -2566,7 +2598,8 @@ TEST(DeterministicStatementMergerTest, DoesNotUseTransactionIdsForCorporateActio
             },
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions.size(),
@@ -2593,9 +2626,9 @@ TEST(DeterministicStatementMergerTest, MergesDividendsAndPreservesNameConflictPr
             .mGrossAmount = 20000,
         }},
     });
-    const std::array inputs{later, earlier};
+    std::vector inputs{later, earlier};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto& instruments = result.mStatement.mPresentation.mDividendInstruments;
     ASSERT_EQ(instruments.size(), 1U);
@@ -2662,7 +2695,8 @@ TEST(DeterministicStatementMergerTest, UsesBrokerNeutralInterestIdentitiesAndOrd
         }},
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     const auto& merged = result.mStatement.mPresentation.mInterestInstruments;
     ASSERT_EQ(merged.size(), 7U);
@@ -2694,9 +2728,9 @@ TEST(DeterministicStatementMergerTest, MergesBondInterestByIsinAndWarnsOnNames) 
             .mMetadata = makeMetadata(1, 0, makeDate(2024, 3, 1)),
         }},
     });
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mInterestInstruments.front().mName,
@@ -2732,9 +2766,9 @@ TEST(DeterministicStatementMergerTest, CombinesAndChronologicallyOrdersStandalon
         .mType = PrivateMarketEventType::Buy,
         .mName = "Earlier private event",
     });
-    const std::array inputs{later, earlier};
+    std::vector inputs{later, earlier};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto& benefits = result.mStatement.mPresentation.mBenefitEvents;
     const auto& privateEvents = result.mStatement.mPresentation.mPrivateMarketEvents;
@@ -2763,7 +2797,8 @@ TEST(DeterministicStatementMergerTest, PreservesAndNormalizesExistingSourceRefer
         .mTransactions = {event},
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     const auto& sources = result.mStatement.mPresentation.mTradeInstruments.front()
                               .mTransactions.front()
@@ -2809,9 +2844,9 @@ TEST(DeterministicStatementMergerTest, RejectsEveryInputWithDuplicateSourceIndex
             .mMetadata = makeMetadata(0, 5, makeDate(2024, 1, 6)),
         }},
     });
-    const std::array inputs{first, second};
+    std::vector inputs{first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mPresentation.mBenefitEvents.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mPrivateMarketEvents.empty());
@@ -2856,7 +2891,8 @@ TEST(DeterministicStatementMergerTest, RejectsOnlyEventsWithMissingOrMismatchedS
         }},
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mTransactions.size(), 1U);
@@ -2917,9 +2953,9 @@ TEST(DeterministicStatementMergerTest, PreservesParserDiagnosticsBeforeMergeDiag
         .mMetadata = EventMetadata{.mTaxDate = makeDate(2024, 1, 1)},
         .mName = "Missing source",
     });
-    const std::array inputs{first, second};
+    std::vector inputs{first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mDiagnostics.size(), 3U);
     ASSERT_TRUE(std::holds_alternative<SourcedParseDiagnostic>(result.mDiagnostics[0]));
@@ -2953,7 +2989,8 @@ TEST(DeterministicStatementMergerTest, OmitsEmptyInstrumentContainers) {
         .mInterestType = InterestType::BrokerInterest,
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mDividendInstruments.empty());
@@ -2974,7 +3011,8 @@ TEST(DeterministicStatementMergerTest, TimestampOrderingDoesNotUseCollectionArri
         .mTransactions = {later, earlier},
     });
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     const auto& transactions =
         result.mStatement.mPresentation.mTradeInstruments.front().mTransactions;
@@ -3044,8 +3082,9 @@ TEST(DeterministicStatementMergerTest, BuildsChronologyAcrossEveryCollectionAndI
         .mMetadata = makeMetadata(2, 0, makeDate(2024, 1, 2)),
         .mName = "Reward",
     }};
-    std::array inputs{first, second, third};
-    const auto baseline = DeterministicStatementMerger{}.merge(inputs);
+    std::vector inputs{first, second, third};
+    const auto baseline =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
     const std::vector<StatementEventReference> expected{
         {StatementEventKind::Trade, 0, 0},
         {StatementEventKind::Dividend, 0, 0},
@@ -3059,7 +3098,8 @@ TEST(DeterministicStatementMergerTest, BuildsChronologyAcrossEveryCollectionAndI
 
     do
     {
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, baseline);
 
@@ -3111,9 +3151,10 @@ TEST(DeterministicStatementMergerTest, EqualTimesUseOnlyStableSourceAndEventSequ
                 makeMetadata(1, 0, date, Broker::TradeRepublic, "a.csv", timestamp, "a-id"),
             .mName = "Second source benefit",
         }};
-        const std::array inputs{second, first};
+        const std::vector inputs{second, first};
 
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
         const std::vector<StatementEventReference> expected{
             {StatementEventKind::PrivateMarket, std::nullopt, 0},
             {StatementEventKind::Benefit, std::nullopt, 0},
@@ -3139,8 +3180,9 @@ TEST(DeterministicStatementMergerTest, RequestReorderingChangesOnlyChronological
         .mMetadata = makeMetadata(1, 0, date),
         .mName = "Second tied event",
     }};
-    std::array inputs{first, second};
-    const auto original = DeterministicStatementMerger{}.merge(inputs);
+    std::vector inputs{first, second};
+    const auto original =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
     inputs[0].mSourceIndex = 1;
     inputs[1].mSourceIndex = 0;
@@ -3154,7 +3196,7 @@ TEST(DeterministicStatementMergerTest, RequestReorderingChangesOnlyChronological
         .mParseResult.mStatement.mPrivateMarketEvents.front()
         .mMetadata.mSources.front()
         .mInputSequence.mSourceIndex = 0;
-    const auto reordered = DeterministicStatementMerger{}.merge(inputs);
+    const auto reordered = DeterministicStatementMerger{}.merge(std::move(inputs));
     const std::vector<StatementEventReference> originalOrder{
         {StatementEventKind::Benefit, std::nullopt, 0},
         {StatementEventKind::Benefit, std::nullopt, 1},
@@ -3192,7 +3234,8 @@ TEST(DeterministicStatementMergerTest, MergerDoesNotPrioritizeSameDaySplitsOverT
         }},
     }};
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
     const std::vector<StatementEventReference> expected{
         {StatementEventKind::Trade, 0, 0},
         {StatementEventKind::CorporateAction, 0, 0},
@@ -3217,8 +3260,9 @@ TEST(DeterministicStatementMergerTest, FailedFilesPreserveDiagnosticsAndUnaffect
         .mRowIndex = 20,
         .mMessage = "Synthetic rejected row.",
     }};
-    std::array inputs{partial, failed};
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    std::vector inputs{partial, failed};
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
     ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 6U);
     ASSERT_EQ(result.mDiagnostics.size(), 2U);
@@ -3233,7 +3277,7 @@ TEST(DeterministicStatementMergerTest, FailedFilesPreserveDiagnosticsAndUnaffect
     }
 
     inputs[0].mParseResult.mStatement = {};
-    const auto allFailed = DeterministicStatementMerger{}.merge(inputs);
+    const auto allFailed = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(allFailed.mStatement.mChronologicalOrder.empty());
     EXPECT_EQ(mergedEventCount(allFailed.mStatement.mPresentation), 0U);
@@ -3258,11 +3302,12 @@ TEST(DeterministicStatementMergerTest, DiagnosticsUseSourceOrderAndPreserveParse
         .mCode = DiagnosticCode::ParseError,
         .mMessage = "Later source diagnostic.",
     }};
-    std::array inputs{first, second};
+    std::vector inputs{first, second};
 
     do
     {
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         ASSERT_EQ(result.mDiagnostics.size(), 5U);
         EXPECT_EQ(std::get<SourcedParseDiagnostic>(result.mDiagnostics[0]).mDiagnostic.mMessage,
@@ -3318,8 +3363,8 @@ TEST(DeterministicStatementMergerTest, InstrumentDiagnosticsUseEventSequenceThen
             .mTransactions = {makeTrade(1, 1, makeDate(2025, 1, 1))},
         },
     };
-    const std::array inputs{second, first};
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    std::vector inputs{second, first};
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
     const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
 
     ASSERT_EQ(diagnostics.size(), 3U);
@@ -3339,7 +3384,8 @@ TEST(DeterministicStatementMergerTest, MissingSourceDiagnosticsUseTaxDateThenCre
         BenefitEvent{.mMetadata = {.mTaxDate = makeDate(2024, 1, 1)}, .mName = "Zulu event"},
         BenefitEvent{.mMetadata = {.mTaxDate = makeDate(2024, 1, 1)}, .mName = "Alpha event"},
     };
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
     const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
 
     ASSERT_EQ(diagnostics.size(), 3U);
@@ -3383,10 +3429,11 @@ std::vector<EventMetadata*> eventMetadataInTestOrder(BrokerStatement& aStatement
 }
 
 TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcrossThreeFiles) {
-    std::array inputs{makeDuplicateTestInput(0, "same.csv"),
-                      makeDuplicateTestInput(1, "same.csv"),
-                      makeDuplicateTestInput(2, "same.csv")};
-    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+    std::vector inputs{makeDuplicateTestInput(0, "same.csv"),
+                       makeDuplicateTestInput(1, "same.csv"),
+                       makeDuplicateTestInput(2, "same.csv")};
+    const auto expected =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
     const std::array kinds{StatementEventKind::Trade,
                            StatementEventKind::CorporateAction,
                            StatementEventKind::Dividend,
@@ -3402,7 +3449,8 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
 
     do
     {
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, expected);
 
@@ -3509,8 +3557,8 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
 }
 
 TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependentAcrossFiles) {
-    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
-                      makeDuplicateTestInput(1, "second.csv")};
+    std::vector inputs{makeDuplicateTestInput(0, "first.csv"),
+                       makeDuplicateTestInput(1, "second.csv")};
 
     for (auto& input : inputs)
     {
@@ -3529,11 +3577,13 @@ TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependen
         }
     }
 
-    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+    const auto expected =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
     do
     {
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, expected);
 
@@ -3656,9 +3706,9 @@ TEST(DeterministicStatementMergerTest, EveryKindRejectsChangedTaxDateOrTimestamp
         {
             SCOPED_TRACE(kind);
             SCOPED_TRACE(change);
-            std::array inputs{makeDuplicateTestInput(0, "first.csv"),
-                              makeDuplicateTestInput(1, "second.csv"),
-                              makeDuplicateTestInput(2, "third.csv")};
+            std::vector inputs{makeDuplicateTestInput(0, "first.csv"),
+                               makeDuplicateTestInput(1, "second.csv"),
+                               makeDuplicateTestInput(2, "third.csv")};
 
             for (auto& input : inputs)
             {
@@ -3682,11 +3732,13 @@ TEST(DeterministicStatementMergerTest, EveryKindRejectsChangedTaxDateOrTimestamp
                 changed->mSourceTimestamp.reset();
             }
 
-            const auto expected = DeterministicStatementMerger{}.merge(inputs);
+            const auto expected =
+                DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
             do
             {
-                const auto result = DeterministicStatementMerger{}.merge(inputs);
+                const auto result =
+                    DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
                 test::expectMergeResultsEqual(result, expected);
                 ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 5U);
@@ -3731,9 +3783,9 @@ TEST(DeterministicStatementMergerTest, EveryKindRejectsDifferentOrderingTimestam
     for (std::size_t eventIndex = 0; eventIndex < eventKinds.size(); ++eventIndex)
     {
         SCOPED_TRACE(eventIndex);
-        std::array inputs{makeDuplicateTestInput(0, "first.csv"),
-                          makeDuplicateTestInput(1, "second.csv"),
-                          makeDuplicateTestInput(2, "third.csv")};
+        std::vector inputs{makeDuplicateTestInput(0, "first.csv"),
+                           makeDuplicateTestInput(1, "second.csv"),
+                           makeDuplicateTestInput(2, "third.csv")};
 
         for (auto& input : inputs)
         {
@@ -3745,11 +3797,13 @@ TEST(DeterministicStatementMergerTest, EveryKindRejectsDifferentOrderingTimestam
 
         auto* changed = eventMetadataInTestOrder(inputs[2].mParseResult.mStatement)[eventIndex];
         *changed->mOrderingTimestamp += std::chrono::milliseconds{1};
-        const auto expected = DeterministicStatementMerger{}.merge(inputs);
+        const auto expected =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         do
         {
-            const auto result = DeterministicStatementMerger{}.merge(inputs);
+            const auto result =
+                DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
             test::expectMergeResultsEqual(result, expected);
             ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 5U);
@@ -3806,9 +3860,9 @@ TEST(DeterministicStatementMergerTest, EveryKindRejectsMissingOrderingTimestamp)
     for (std::size_t eventIndex = 0; eventIndex < eventKinds.size(); ++eventIndex)
     {
         SCOPED_TRACE(eventIndex);
-        std::array inputs{makeDuplicateTestInput(0, "first.csv"),
-                          makeDuplicateTestInput(1, "second.csv"),
-                          makeDuplicateTestInput(2, "third.csv")};
+        std::vector inputs{makeDuplicateTestInput(0, "first.csv"),
+                           makeDuplicateTestInput(1, "second.csv"),
+                           makeDuplicateTestInput(2, "third.csv")};
 
         for (auto& input : inputs)
         {
@@ -3820,11 +3874,13 @@ TEST(DeterministicStatementMergerTest, EveryKindRejectsMissingOrderingTimestamp)
 
         auto* changed = eventMetadataInTestOrder(inputs[2].mParseResult.mStatement)[eventIndex];
         changed->mOrderingTimestamp.reset();
-        const auto expected = DeterministicStatementMerger{}.merge(inputs);
+        const auto expected =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         do
         {
-            const auto result = DeterministicStatementMerger{}.merge(inputs);
+            const auto result =
+                DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
             test::expectMergeResultsEqual(result, expected);
             ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 5U);
@@ -3871,9 +3927,9 @@ TEST(DeterministicStatementMergerTest, EveryKindRejectsMissingOrderingTimestamp)
 }
 
 TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResultsAndInputs) {
-    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
-                      makeDuplicateTestInput(1, "second.csv"),
-                      makeDuplicateTestInput(2, "third.csv")};
+    std::vector inputs{makeDuplicateTestInput(0, "first.csv"),
+                       makeDuplicateTestInput(1, "second.csv"),
+                       makeDuplicateTestInput(2, "third.csv")};
     inputs[1].mParseResult.mStatement.mTradeInstruments.front().mName = "Alternative name";
     inputs[2].mParseResult.mStatement.mPrivateMarketEvents.front().mFeePaid += 1;
 
@@ -3953,7 +4009,8 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
                                                            .mMessage = "Synthetic warning."}};
     }
 
-    const auto expected = DeterministicStatementMerger{}.merge(inputs);
+    const auto expected =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
     ASSERT_EQ(expected.mStatement.mChronologicalOrder.size(), 38U);
     ASSERT_EQ(expected.mDiagnostics.size(), 6U);
@@ -3994,7 +4051,8 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
 
     do
     {
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, expected);
 
@@ -4185,9 +4243,9 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
 
 TEST(DeterministicStatementMergerTest,
      CorporateActionsKeepEconomicCandidatesAcrossFilesAndBrokers) {
-    std::array inputs{makeDuplicateTestInput(0, "first.csv"),
-                      makeDuplicateTestInput(1, "overlap.csv"),
-                      makeDuplicateTestInput(2, "other-broker.csv")};
+    std::vector inputs{makeDuplicateTestInput(0, "first.csv"),
+                       makeDuplicateTestInput(1, "overlap.csv"),
+                       makeDuplicateTestInput(2, "other-broker.csv")};
     auto& other = inputs[2].mParseResult;
     other.mBroker = Broker::InteractiveBrokers;
 
@@ -4202,7 +4260,8 @@ TEST(DeterministicStatementMergerTest,
     distinctAction.mMetadata.mSources.front().mSourceRow = 8;
     distinctAction.mMetadata.mSources.front().mTransactionId = "different-action-id";
     instrument.mCorporateActions.push_back(distinctAction);
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
     const auto& actions =
         result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions;
 
@@ -4252,7 +4311,8 @@ TEST(DeterministicStatementMergerTest, PreservesExplicitTwoForOneSplitEvidence) 
                               }},
     }};
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
@@ -4316,7 +4376,8 @@ TEST(DeterministicStatementMergerTest, PreservesExplicitOneForTenReverseSplitEvi
                               }},
     }};
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 2U);
@@ -4379,7 +4440,8 @@ TEST(DeterministicStatementMergerTest, RejectsSameIdentityWithResolvedAndUnresol
                               }},
     }};
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
@@ -4437,7 +4499,8 @@ TEST(DeterministicStatementMergerTest, UnresolvedSplitDuplicatesKeepEachQuantity
          .mAssetClass = AssetClass::Stock,
          .mCorporateActions = {second, first}});
 
-    const auto result = DeterministicStatementMerger{}.merge(std::span{&input, 1U});
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
 
     // Both copies and the shared source come from file 0, so the merger warns once, naming rows
     // 2, 3 and 4.
@@ -4562,9 +4625,9 @@ TEST(DeterministicStatementMergerTest, OriginalClassesWithSameIdRemainScopedByBr
                                }}},
             },
     };
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4692,9 +4755,9 @@ TEST(DeterministicStatementMergerTest, EvidenceFreeFirstCopyCannotHideConflictin
                                }}},
             },
     };
-    const std::array inputs{third, first, second};
+    std::vector inputs{third, first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
@@ -4777,9 +4840,9 @@ TEST(DeterministicStatementMergerTest, ExactCopiesNormalizeEvidenceAndRetainEvid
                                }}},
             },
     };
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4906,9 +4969,9 @@ TEST(DeterministicStatementMergerTest, ClassConflictIncludesSourcesWithoutOrigin
                                }}},
             },
     };
-    const std::array inputs{third, first, second};
+    std::vector inputs{third, first, second};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5007,9 +5070,9 @@ TEST(DeterministicStatementMergerTest, ExactCopiesPreserveOriginalClassEvidenceF
                                }}},
             },
     };
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5069,9 +5132,9 @@ TEST(DeterministicStatementMergerTest, LeavesTradeNameEmptyWhenOriginalNameIsBla
                                }}},
             },
     };
-    const std::array inputs{input};
+    std::vector inputs{input};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5120,9 +5183,9 @@ TEST(DeterministicStatementMergerTest, LeavesDividendNameEmptyWhenOriginalNameIs
                                             .mTransactions = {event},
                                         }}}},
     };
-    const std::array inputs{input};
+    std::vector inputs{input};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
 
@@ -5172,9 +5235,9 @@ TEST(DeterministicStatementMergerTest, LeavesBondInterestNameEmptyWhenOriginalNa
                                             .mTransactions = {event},
                                         }}}},
     };
-    const std::array inputs{input};
+    std::vector inputs{input};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
 
@@ -5264,9 +5327,9 @@ TEST(DeterministicStatementMergerTest, TradeAndActionKeepDifferentOriginalClasse
                                }}},
             },
     };
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5360,9 +5423,9 @@ TEST(DeterministicStatementMergerTest, DeduplicatesUnknownActionsWithMatchingOri
                                }}},
             },
     };
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5451,9 +5514,9 @@ TEST(DeterministicStatementMergerTest, RejectsAllSameIdActionsWithDifferentUnrec
                                }}},
             },
     };
-    const std::array inputs{second, first};
+    std::vector inputs{second, first};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());

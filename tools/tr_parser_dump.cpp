@@ -26,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -769,12 +770,7 @@ std::vector<StatementMergeInput> parseInputs(std::span<char*> aCsvPaths) {
 
 int writeMergedResult(std::span<char*> aArguments, bool aDiagnosticsOnly = false) {
     const std::filesystem::path outputPath{aArguments[0]};
-    const auto inputs = parseInputs(aArguments.subspan(1));
-
-    const auto mergeResult = DeterministicStatementMerger{}.merge(inputs);
-
-    logMergeDiagnostics(mergeResult);
-
+    auto inputs = parseInputs(aArguments.subspan(1));
     const auto parsedEventCount =
         std::accumulate(inputs.begin(),
                         inputs.end(),
@@ -782,6 +778,11 @@ int writeMergedResult(std::span<char*> aArguments, bool aDiagnosticsOnly = false
                         [](std::size_t aCount, const StatementMergeInput& aInput) {
                             return aCount + eventCount(aInput.mParseResult.mStatement);
                         });
+
+    const auto mergeResult = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    logMergeDiagnostics(mergeResult);
+
     const auto mergedEventCount = eventCount(mergeResult.mStatement.mPresentation);
 
     createParentDirectory(outputPath);

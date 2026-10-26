@@ -98,8 +98,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedTradeRowFailsOnlyCapitalGains) {
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {rejectedTrade, purchase, dividend});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ApplicationResultInput input{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics};
     input.mReports[1].mXml = "<dividends/>";
@@ -150,19 +150,19 @@ TEST(ApplicationResultIntegrationTest, TheSameFilesInEitherInputOrderGiveTheSame
     tr::TradeRepublicParser parser;
     const auto first = parser.parse(firstPath, 0);
     const auto second = parser.parse(secondPath, 1);
-    const std::vector<StatementMergeInput> forwardInputs{{0, first}, {1, second}};
-    const std::vector<StatementMergeInput> backwardInputs{{1, second}, {0, first}};
+    std::vector<StatementMergeInput> forwardInputs{{0, first}, {1, second}};
+    std::vector<StatementMergeInput> backwardInputs{{1, second}, {0, first}};
 
     const auto forward =
         api::serializeApplicationResultJson(ApplicationResultBuilder::build(ApplicationResultInput{
             .mReportingYear = 2024,
             .mMergeDiagnostics =
-                DeterministicStatementMerger{}.merge(forwardInputs).mDiagnostics}));
+                DeterministicStatementMerger{}.merge(std::move(forwardInputs)).mDiagnostics}));
     const auto backward =
         api::serializeApplicationResultJson(ApplicationResultBuilder::build(ApplicationResultInput{
             .mReportingYear = 2024,
             .mMergeDiagnostics =
-                DeterministicStatementMerger{}.merge(backwardInputs).mDiagnostics}));
+                DeterministicStatementMerger{}.merge(std::move(backwardInputs)).mDiagnostics}));
 
     EXPECT_EQ(forward, backward);
 
@@ -185,8 +185,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedTradeRepublicInterestRowIsDeposi
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {interest});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -207,8 +207,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedTradeRepublicInterestRowIsAlsoOt
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {interest});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2023, .mMergeDiagnostics = merged.mDiagnostics});
@@ -229,8 +229,8 @@ TEST(ApplicationResultIntegrationTest, ARowOfUnknownTypeFailsAllFourReports) {
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {unknown});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -253,9 +253,9 @@ TEST(ApplicationResultIntegrationTest, AnIncompleteHistoryIsScopedToCapitalGains
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {purchase, sale});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto prepared =
-        TaxProcessor::prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto prepared = TaxProcessor::prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(prepared.mLedger.has_value());
 
@@ -303,9 +303,9 @@ TEST(ApplicationResultIntegrationTest, AConflictingTradeInTwoFilesFailsOnlyCapit
     const auto firstPath = files.write("first.csv", {firstCopy});
     const auto secondPath = files.write("second.csv", {secondCopy});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
-                                                  {1, parser.parse(secondPath, 1)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
+                                            {1, parser.parse(secondPath, 1)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -358,9 +358,9 @@ TEST(ApplicationResultIntegrationTest, AConflictingTradeRepublicInterestFailsBot
     const auto firstPath = files.write("first.csv", {firstCopy});
     const auto secondPath = files.write("second.csv", {secondCopy});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
-                                                  {1, parser.parse(secondPath, 1)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
+                                            {1, parser.parse(secondPath, 1)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -394,9 +394,9 @@ TEST(ApplicationResultIntegrationTest, AConflictBetweenATradeAndADividendFailsBo
     const auto firstPath = files.write("first.csv", {purchase});
     const auto secondPath = files.write("second.csv", {dividend});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
-                                                  {1, parser.parse(secondPath, 1)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
+                                            {1, parser.parse(secondPath, 1)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -427,8 +427,8 @@ TEST(ApplicationResultIntegrationTest, TwoIdenticalRowsInOneFileWarnWithoutBlock
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {purchase, purchase});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ApplicationResultInput input{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics};
     input.mReports[1].mXml = "<dividends/>";
@@ -467,8 +467,8 @@ TEST(ApplicationResultIntegrationTest, ANameConflictOfADividendInstrumentWarnsUn
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {firstDividend, secondDividend});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ApplicationResultInput input{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics};
     input.mReports[1].mXml = "<dividends/>";
@@ -509,9 +509,9 @@ TEST(ApplicationResultIntegrationTest, AnAssetClassConflictFailsCapitalGains) {
     const auto firstPath = files.write("first.csv", {stockPurchase});
     const auto secondPath = files.write("second.csv", {fundPurchase});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
-                                                  {1, parser.parse(secondPath, 1)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
+                                            {1, parser.parse(secondPath, 1)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -543,9 +543,9 @@ TEST(ApplicationResultIntegrationTest, TwoFilesWithOneSourceIndexFailAllFourRepo
     const auto firstPath = files.write("first.csv", {firstPurchase});
     const auto secondPath = files.write("second.csv", {secondPurchase});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
-                                                  {0, parser.parse(secondPath, 0)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath, 0)},
+                                            {0, parser.parse(secondPath, 0)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -578,8 +578,8 @@ TEST(ApplicationResultIntegrationTest, AFileParsedUnderAnotherIndexFailsAllFourR
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {purchase});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path, 1)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path, 1)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -603,8 +603,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedBondCouponFailsOnlyOtherInterest
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {coupon});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -628,8 +628,8 @@ TEST(ApplicationResultIntegrationTest, AnInterestRowOfUnknownMappingFailsBothInt
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {interest});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -654,8 +654,8 @@ TEST(ApplicationResultIntegrationTest, AFixedIncomeRowIsVisibleButBlocksNothing)
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {fixedIncome});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -687,8 +687,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedSplitFailsOnlyCapitalGains) {
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {split});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -709,8 +709,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedPrivateMarketBuyFailsOnlyCapital
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {privateMarket});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -731,8 +731,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedSavebackBlocksNoReport) {
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {saveback});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -754,8 +754,8 @@ TEST(ApplicationResultIntegrationTest, ARecordWithTheWrongFieldCountFailsAllFour
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {shortRecord});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -784,8 +784,8 @@ TEST(ApplicationResultIntegrationTest, AFileWithABrokenHeaderFailsAllFourReports
     const TemporaryApplicationInputs files;
     const auto path = files.writeText("synthetic.csv", text);
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -814,8 +814,8 @@ TEST(ApplicationResultIntegrationTest, ACardTransactionLeavesNoDiagnostic) {
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {cardPayment});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
@@ -838,8 +838,8 @@ TEST(ApplicationResultIntegrationTest,
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {interest});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2023, .mMergeDiagnostics = merged.mDiagnostics});
@@ -859,8 +859,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedInterestRowAffectsBothFormsIn202
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {interest});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     const auto result = ApplicationResultBuilder::build(
         ApplicationResultInput{.mReportingYear = 2022, .mMergeDiagnostics = merged.mDiagnostics});
@@ -881,9 +881,9 @@ TEST(ApplicationResultIntegrationTest, AnInvalidReportingYearFailsAllFourReports
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {purchase});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto prepared =
-        TaxProcessor::prepareReportingYear({1999, DeterministicStatementMerger{}.merge(inputs)});
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto prepared = TaxProcessor::prepareReportingYear(
+        {1999, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     EXPECT_FALSE(prepared.mLedger.has_value());
 
@@ -921,9 +921,9 @@ TEST(ApplicationResultIntegrationTest, AnOpenRequestForTheIncompleteHistoryNeeds
     const TemporaryApplicationInputs files;
     const auto path = files.write("synthetic.csv", {purchase, sale});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto prepared =
-        TaxProcessor::prepareReportingYear({2024, DeterministicStatementMerger{}.merge(inputs)});
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto prepared = TaxProcessor::prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
 
     ASSERT_TRUE(prepared.mLedger.has_value());
 
@@ -996,8 +996,8 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
     const TemporaryApplicationInputs files;
     const auto path = files.write("mixed.csv", {rejectedTrade, purchase, dividend, dividend});
     tr::TradeRepublicParser parser;
-    const std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
-    const auto merged = DeterministicStatementMerger{}.merge(inputs);
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ApplicationResultInput input{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics};
     input.mReports[1].mXml = "<dividends/>";

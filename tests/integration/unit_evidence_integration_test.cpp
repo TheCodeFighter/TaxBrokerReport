@@ -166,15 +166,15 @@ TEST(ExactArithmeticIntegrationTest, RetainsEvidenceAcrossOverlapsAndParserCompl
                                          .mDescription = "Synthetic future buy",
                                          .mTransactionId = "synthetic-future"});
     tr::TradeRepublicParser parser;
-    std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(firstFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(secondFile, 1)},
     };
     const DeterministicStatementMerger merger;
 
-    const auto forward = merger.merge(inputs);
+    const auto forward = merger.merge(std::vector<StatementMergeInput>(inputs));
     std::reverse(inputs.begin(), inputs.end());
-    const auto reversed = merger.merge(inputs);
+    const auto reversed = merger.merge(std::move(inputs));
 
     EXPECT_TRUE(forward.mDiagnostics.empty());
     EXPECT_TRUE(reversed.mDiagnostics.empty());
@@ -233,12 +233,12 @@ TEST(ExactArithmeticIntegrationTest, RejectsDistinctTradeSourceFactsThatRoundToT
                                          .mDescription = "Synthetic future buy",
                                          .mTransactionId = "synthetic-future"});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(firstFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(secondFile, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
@@ -291,12 +291,12 @@ TEST(ExactArithmeticIntegrationTest, RejectsDistinctSplitSourceFactsThatRoundToT
                                          .mDescription = "Synthetic unresolved split",
                                          .mTransactionId = "synthetic-action"});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(firstFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(secondFile, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
@@ -364,7 +364,7 @@ TEST(ExactArithmeticIntegrationTest, KnownTradeSourceConflictSurvivesMissingEvid
                                         .mDescription = "Synthetic future buy",
                                         .mTransactionId = "synthetic-future"});
     tr::TradeRepublicParser parser;
-    std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(firstFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(secondFile, 1)},
         StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(thirdFile, 2)},
@@ -373,7 +373,7 @@ TEST(ExactArithmeticIntegrationTest, KnownTradeSourceConflictSurvivesMissingEvid
     // Simulate a parser that supplies rounded units without the original decimal evidence.
     inputs[0].mParseResult.mStatement.mTradeInstruments[0].mTransactions[0].mUnitEvidence.clear();
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
@@ -418,7 +418,7 @@ TEST(ExactArithmeticIntegrationTest, MissingTradeEvidenceDoesNotFabricateProof) 
                                          .mDescription = "Synthetic future buy",
                                          .mTransactionId = "synthetic-future"});
     tr::TradeRepublicParser parser;
-    std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(firstFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(secondFile, 1)},
     };
@@ -426,7 +426,7 @@ TEST(ExactArithmeticIntegrationTest, MissingTradeEvidenceDoesNotFabricateProof) 
     // Simulate a parser that supplies rounded units without the original decimal evidence.
     inputs[0].mParseResult.mStatement.mTradeInstruments[0].mTransactions[0].mUnitEvidence.clear();
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
@@ -500,12 +500,12 @@ TEST(ExactArithmeticIntegrationTest, CorporateActionEvidenceSurvivesEquivalentOv
                                          .mDescription = "Synthetic unresolved split",
                                          .mTransactionId = "synthetic-action"});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(firstFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(secondFile, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
@@ -585,12 +585,12 @@ TEST(ExactArithmeticIntegrationTest, NegativeSplitEvidenceDeduplicatesWithoutInf
                                          .mDescription = "Synthetic unresolved split",
                                          .mTransactionId = "synthetic-action"});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(firstFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(secondFile, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
@@ -674,12 +674,12 @@ TEST(ExactArithmeticIntegrationTest, RejectsOppositeSignedSplitEvidenceWithTheSa
                                            .mDescription = "Synthetic unresolved split",
                                            .mTransactionId = "synthetic-action"});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(positiveFile, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(negativeFile, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());

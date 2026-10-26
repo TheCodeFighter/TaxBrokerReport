@@ -181,6 +181,28 @@ their order cannot be established, stable input sequence keeps the diagnostics d
 must not be used to guess the result. The processor reports the ambiguity and leaves that ISIN
 unprocessed.
 
+## Ownership of pipeline data
+
+Each pipeline stage either passes data on or computes new data, and its signature shows which:
+
+- A stage that passes the same data on takes it by `&&` or by value and moves it. Nothing is
+  copied on the way.
+- A stage that computes new data from inputs that are still needed later reads them by `const&`
+  and returns a new object.
+
+| Stage | Takes | Why |
+| --- | --- | --- |
+| Parser | returns `ParseResult` by value | the result is new data |
+| `StatementMerger::merge` | `std::vector<StatementMergeInput>&&` | events move into the merged statement |
+| `TaxProcessor::prepareReportingYear` | `TaxProcessingRequest` by value | moves the merged statement into the result; the ledger holds only references into it |
+| `FifoMatcher::match` | `const&` statement and ledger | computes matches; both are still needed |
+| `CapitalGainsReportBuilder::build` | `const&` statement, ledger and FIFO result | computes report rows; all are still needed |
+| `KdvpXmlWriter::write` | `const&` metadata and report | computes the XML text; the report is still needed |
+| `ApplicationResultBuilder::build` | `ApplicationResultInput&&` | moves each report's XML into the result; the diagnostics become new application diagnostics |
+
+A copy is made only where a caller still needs the data afterwards, and it is written out at the
+call site.
+
 ## Statement-merger contract
 
 `StatementMerger` is a transport-independent operation over parsed domain results. Each
@@ -189,6 +211,11 @@ arrival order. Request indices must be unique and must agree with the stable sou
 input's events. The merger may therefore receive parse results in task-completion order while still
 producing the same result. A repeated or inconsistent source index is an input error and must be
 reported; it is never repaired from vector position, filename or broker.
+
+The merger takes the inputs by move (`std::vector<StatementMergeInput>&&`). Their events and parse
+diagnostics are moved into the result, so each event exists once. A caller that still needs a
+`ParseResult` after the merge, such as a debug tool that prints the parser diagnostics, passes an
+explicit copy.
 
 The operation is single-threaded. Its result owns one `BrokerStatement` presentation structure and
 a separate chronological sequence of `StatementEventReference` values into that structure. Event

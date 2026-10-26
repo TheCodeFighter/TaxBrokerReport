@@ -295,7 +295,8 @@ TEST(StatementMergerIntegrationTest,
         .mSourceIndex = 0,
         .mParseResult = tr::TradeRepublicParser{}.parse(fixturePath("history.csv"), 0)};
 
-    const auto expected = DeterministicStatementMerger{}.merge(std::span{&whole, 1U});
+    const auto expected =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{whole});
 
     const std::vector<std::string> ids{"synthetic-older",
                                        "synthetic-dividend",
@@ -322,7 +323,8 @@ TEST(StatementMergerIntegrationTest,
         const auto inputs = parseInOrder(files, order);
         // Combine parsed records into presentation storage, chronological references
         // and diagnostics.
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectStatementsEqual(result.mStatement.mPresentation,
                                     expected.mStatement.mPresentation,
@@ -460,7 +462,8 @@ TEST(StatementMergerIntegrationTest,
     do
     {
         const auto inputs = parseInOrder(files, order);
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, expected);
 
@@ -636,7 +639,8 @@ TEST(StatementMergerIntegrationTest,
     do
     {
         const auto inputs = parseInOrder(files, order);
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, expected);
 
@@ -861,7 +865,8 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
     do
     {
         const auto inputs = parseInOrder(files, order);
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, expected);
 
@@ -1046,11 +1051,12 @@ TEST(StatementMergerIntegrationTest, RequestOrderBreaksEqualTimestampTiesWithout
     const auto olderFile = history.writeRows("older.csv", {1});
     const std::array tradeFirstFiles{tradeFile, benefitFile, olderFile};
     const std::array benefitFirstFiles{benefitFile, tradeFile, olderFile};
-    const auto tradeFirstInputs = parseInOrder(tradeFirstFiles, {2, 1, 0});
-    const auto benefitFirstInputs = parseInOrder(benefitFirstFiles, {1, 2, 0});
+    auto tradeFirstInputs = parseInOrder(tradeFirstFiles, {2, 1, 0});
+    auto benefitFirstInputs = parseInOrder(benefitFirstFiles, {1, 2, 0});
 
-    const auto tradeFirstResult = DeterministicStatementMerger{}.merge(tradeFirstInputs);
-    const auto benefitFirstResult = DeterministicStatementMerger{}.merge(benefitFirstInputs);
+    const auto tradeFirstResult = DeterministicStatementMerger{}.merge(std::move(tradeFirstInputs));
+    const auto benefitFirstResult =
+        DeterministicStatementMerger{}.merge(std::move(benefitFirstInputs));
 
     EXPECT_EQ(ledgerIds(tradeFirstResult),
               (std::vector<std::string>{"synthetic-older", "synthetic-tied", "synthetic-benefit"}));
@@ -1077,11 +1083,12 @@ TEST(StatementMergerIntegrationTest, MissingDatetimesRejectTransactionsRegardles
     const auto olderFile = history.writeRows("older.csv", {1});
     const std::array tradeFirstFiles{tradeFile, benefitFile, olderFile};
     const std::array benefitFirstFiles{benefitFile, tradeFile, olderFile};
-    const auto tradeFirstInputs = parseInOrder(tradeFirstFiles, {2, 1, 0});
-    const auto benefitFirstInputs = parseInOrder(benefitFirstFiles, {1, 2, 0});
+    auto tradeFirstInputs = parseInOrder(tradeFirstFiles, {2, 1, 0});
+    auto benefitFirstInputs = parseInOrder(benefitFirstFiles, {1, 2, 0});
 
-    const auto tradeFirstResult = DeterministicStatementMerger{}.merge(tradeFirstInputs);
-    const auto benefitFirstResult = DeterministicStatementMerger{}.merge(benefitFirstInputs);
+    const auto tradeFirstResult = DeterministicStatementMerger{}.merge(std::move(tradeFirstInputs));
+    const auto benefitFirstResult =
+        DeterministicStatementMerger{}.merge(std::move(benefitFirstInputs));
 
     EXPECT_EQ(ledgerIds(tradeFirstResult), (std::vector<std::string>{"synthetic-older"}));
     EXPECT_EQ(ledgerIds(benefitFirstResult), (std::vector<std::string>{"synthetic-older"}));
@@ -1124,7 +1131,8 @@ TEST(StatementMergerIntegrationTest, InvalidDatetimeWarnsButMissingDatetimeRejec
     do
     {
         const auto inputs = parseInOrder(files, order);
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         test::expectMergeResultsEqual(result, expected);
         EXPECT_EQ(ledgerIds(result),
@@ -1186,7 +1194,8 @@ TEST(StatementMergerIntegrationTest, DateMismatchUsesNineOClockBetweenReliableTi
     {
         const auto inputs = parseInOrder(files, order);
 
-        const auto result = DeterministicStatementMerger{}.merge(inputs);
+        const auto result =
+            DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>(inputs));
 
         EXPECT_EQ(ledgerIds(result),
                   (std::vector<std::string>{"synthetic-interest",
@@ -1237,9 +1246,9 @@ TEST(StatementMergerIntegrationTest, EqualFallbackTimesDoNotHideDifferentSourceT
         history.writeRows("first.csv", {2}, "2024-01-03T08:00:00.000Z"),
         history.writeRows("second.csv", {2}, "2024-01-04T08:00:00.000Z"),
     };
-    const auto inputs = parseInOrder(files, {1, 0});
+    auto inputs = parseInOrder(files, {1, 0});
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
     ASSERT_EQ(result.mDiagnostics.size(), 3U);
@@ -1252,11 +1261,11 @@ TEST(StatementMergerIntegrationTest, EqualFallbackTimesDoNotHideDifferentSourceT
 
 TEST(StatementMergerIntegrationTest, IdenticalBlankIncomeFactsDeduplicateWithoutInventingValues) {
     const std::array files{fixturePath("unknown_income.csv"), fixturePath("unknown_income.csv")};
-    const auto inputs = parseInOrder(files, {1, 0});
-    const auto forwardInputs = parseInOrder(files, {0, 1});
+    auto inputs = parseInOrder(files, {1, 0});
+    auto forwardInputs = parseInOrder(files, {0, 1});
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
-    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+    const auto forward = DeterministicStatementMerger{}.merge(std::move(forwardInputs));
 
     test::expectMergeResultsEqual(result, forward);
     EXPECT_TRUE(result.mDiagnostics.empty());
@@ -1362,11 +1371,11 @@ TEST(StatementMergerIntegrationTest,
     // Blank tax is unknown; an overlapping explicit zero is a different fact.
     const std::array files{fixturePath("unknown_income.csv"),
                            fixturePath("confirmed_tax_income.csv")};
-    const auto inputs = parseInOrder(files, {1, 0});
-    const auto forwardInputs = parseInOrder(files, {0, 1});
+    auto inputs = parseInOrder(files, {1, 0});
+    auto forwardInputs = parseInOrder(files, {0, 1});
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
-    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+    const auto forward = DeterministicStatementMerger{}.merge(std::move(forwardInputs));
 
     test::expectMergeResultsEqual(result, forward);
     EXPECT_EQ(ledgerIds(result),
@@ -1487,11 +1496,11 @@ TEST(StatementMergerIntegrationTest,
     // An absent broker rate cannot be silently filled from an overlapping export.
     const std::array files{fixturePath("unknown_income.csv"),
                            fixturePath("broker_rate_income.csv")};
-    const auto inputs = parseInOrder(files, {1, 0});
-    const auto forwardInputs = parseInOrder(files, {0, 1});
+    auto inputs = parseInOrder(files, {1, 0});
+    auto forwardInputs = parseInOrder(files, {0, 1});
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
-    const auto forward = DeterministicStatementMerger{}.merge(forwardInputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+    const auto forward = DeterministicStatementMerger{}.merge(std::move(forwardInputs));
 
     test::expectMergeResultsEqual(result, forward);
     EXPECT_EQ(ledgerIds(result),
@@ -1657,11 +1666,11 @@ TEST(StatementMergerIntegrationTest, RetainsDividendWithoutFxWhileInvalidFxIsRep
                                       .mFxRate = "",
                                       .mTransactionId = "synthetic-retained-dividend"}});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
 
@@ -1766,11 +1775,11 @@ TEST(StatementMergerIntegrationTest, RetainsDepositInterestWithoutFxWhileInvalid
                                       .mFxRate = "",
                                       .mTransactionId = "synthetic-retained-depositinterest"}});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
 
@@ -1876,11 +1885,11 @@ TEST(StatementMergerIntegrationTest, RetainsBondInterestWithoutFxWhileInvalidFxI
                                       .mFxRate = "",
                                       .mTransactionId = "synthetic-retained-bondinterest"}});
     tr::TradeRepublicParser parser;
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
 
@@ -1994,12 +2003,12 @@ TEST(StatementMergerIntegrationTest, MergesTradesWhosePricesDifferOnlyAfterTheEi
 
     const auto file0 = files.write("part-0.csv", {firstRow});
     const auto file1 = files.write("part-1.csv", {secondRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
@@ -2073,11 +2082,11 @@ TEST(StatementMergerIntegrationTest, TwoIdenticalRowsInOneFileGiveOneTradeAndAWa
     tr::TradeRepublicParser parser;
 
     const auto file0 = files.write("export.csv", {firstRow, secondRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments[0].mTransactions.size(), 1U);
@@ -2146,12 +2155,12 @@ TEST(StatementMergerIntegrationTest, TheSameRowInTwoFilesGivesOneTradeAndNoWarni
 
     const auto file0 = files.write("export.csv", {row});
     const auto file1 = files.write("export-again.csv", {row});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
@@ -2219,11 +2228,11 @@ TEST(StatementMergerIntegrationTest, DifferentRowsWithOneIdInOneFileKeepOnlyTheR
     tr::TradeRepublicParser parser;
 
     const auto file0 = files.write("export.csv", {firstRow, secondRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     EXPECT_TRUE(result.mStatement.mPresentation.mTradeInstruments.empty());
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
@@ -2293,10 +2302,10 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {purchaseRow, otherRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -2444,12 +2453,12 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInTwoFiles) {
 
     const auto file0 = files.write("part-0.csv", {purchaseRow});
     const auto file1 = files.write("part-1.csv", {otherRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -2596,10 +2605,10 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInReversedRows) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {otherRow, purchaseRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -2746,10 +2755,10 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInOneFile) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {purchaseRow, otherRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -2893,12 +2902,12 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInTwoFiles) {
 
     const auto file0 = files.write("part-0.csv", {purchaseRow});
     const auto file1 = files.write("part-1.csv", {otherRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -3041,10 +3050,10 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInReversedRows) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {otherRow, purchaseRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -3212,10 +3221,10 @@ TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) 
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {purchaseRow, saleRow, thirdRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -3391,10 +3400,10 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockLast) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unknownRow, knownRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -3549,10 +3558,10 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockFirst) 
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {knownRow, unknownRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -3707,10 +3716,10 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockLa
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unknownRow, knownRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -3865,10 +3874,10 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockFi
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {knownRow, unknownRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4023,10 +4032,10 @@ TEST(StatementMergerIntegrationTest, RetainsDistinctUnrecognizedClassLabels) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {firstRow, secondRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4198,10 +4207,10 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInOn
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {firstRow, secondRow, healthyRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4350,13 +4359,13 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInTw
     const auto file0 = files.write("part-0.csv", {firstRow});
     const auto file1 = files.write("part-1.csv", {secondRow});
     const auto file2 = files.write("part-2.csv", {healthyRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(file2, 2)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4503,10 +4512,10 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabe
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {firstRow, secondRow, healthyRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4655,13 +4664,13 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabe
     const auto file0 = files.write("part-0.csv", {firstRow});
     const auto file1 = files.write("part-1.csv", {secondRow});
     const auto file2 = files.write("part-2.csv", {healthyRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(file2, 2)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4808,10 +4817,10 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionIn
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {firstRow, secondRow, healthyRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -4961,13 +4970,13 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionIn
     const auto file0 = files.write("part-0.csv", {firstRow});
     const auto file1 = files.write("part-1.csv", {secondRow});
     const auto file2 = files.write("part-2.csv", {healthyRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(file2, 2)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5091,12 +5100,12 @@ TEST(StatementMergerIntegrationTest, RetainsTwoClassifiedEventsWithoutTransactio
 
     const auto file0 = files.write("part-0.csv", {firstRow});
     const auto file1 = files.write("part-1.csv", {secondRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5219,10 +5228,10 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInOneFileLayout) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow, namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5361,12 +5370,12 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInTwoFileLayout) {
 
     const auto file0 = files.write("part-0.csv", {unnamedRow});
     const auto file1 = files.write("part-1.csv", {namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5503,10 +5512,10 @@ TEST(StatementMergerIntegrationTest, CompletesMissingActionNameInOneFileLayout) 
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow, namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5636,12 +5645,12 @@ TEST(StatementMergerIntegrationTest, CompletesMissingActionNameInTwoFileLayout) 
 
     const auto file0 = files.write("part-0.csv", {unnamedRow});
     const auto file1 = files.write("part-1.csv", {namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -5769,10 +5778,10 @@ TEST(StatementMergerIntegrationTest, CompletesMissingDividendNameInOneFileLayout
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow, namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
 
@@ -5894,12 +5903,12 @@ TEST(StatementMergerIntegrationTest, CompletesMissingDividendNameInTwoFileLayout
 
     const auto file0 = files.write("part-0.csv", {unnamedRow});
     const auto file1 = files.write("part-1.csv", {namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
 
@@ -6019,10 +6028,10 @@ TEST(StatementMergerIntegrationTest, CompletesMissingBondInterestNameInOneFileLa
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow, namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
 
@@ -6145,12 +6154,12 @@ TEST(StatementMergerIntegrationTest, CompletesMissingBondInterestNameInTwoFileLa
 
     const auto file0 = files.write("part-0.csv", {unnamedRow});
     const auto file1 = files.write("part-1.csv", {namedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(file1, 1)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(file0, 0)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
 
@@ -6271,10 +6280,10 @@ TEST(StatementMergerIntegrationTest, DoesNotUseAnotherIsinsNameForAnUnnamedTrade
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow, otherIsinRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 2U);
 
@@ -6338,10 +6347,10 @@ TEST(StatementMergerIntegrationTest, LeavesNameEmptyWhenEveryTradeNameIsMissing)
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -6387,10 +6396,10 @@ TEST(StatementMergerIntegrationTest, LeavesNameEmptyWhenEveryDividendNameIsMissi
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mDividendInstruments.size(), 1U);
 
@@ -6436,10 +6445,10 @@ TEST(StatementMergerIntegrationTest, LeavesNameEmptyWhenEveryBondInterestNameIsM
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {unnamedRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
 
@@ -6510,10 +6519,10 @@ TEST(StatementMergerIntegrationTest, PreservesEveryNameVariantWithinOneFile) {
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {firstRow, secondRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -6648,13 +6657,13 @@ TEST(StatementMergerIntegrationTest, OverlappingExportsRetainAllOriginalClassSou
     const auto first = files.write("first.csv", {purchaseRow, saleRow});
     const auto second = files.write("second.csv", {purchaseRow, saleRow});
     const auto third = files.write("third.csv", {purchaseRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 2, .mParseResult = parser.parse(third, 2)},
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(first, 0)},
         StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(second, 1)},
     };
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -6798,10 +6807,10 @@ TEST(StatementMergerIntegrationTest,
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {healthyRow, invalidRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -6911,10 +6920,10 @@ TEST(StatementMergerIntegrationTest,
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {healthyRow, invalidRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
@@ -7023,10 +7032,10 @@ TEST(StatementMergerIntegrationTest, InvalidNamelessTradeDoesNotContaminateHealt
     tr::TradeRepublicParser parser;
 
     const auto history = files.write("history.csv", {healthyRow, invalidRow});
-    const std::array inputs{
+    std::vector inputs{
         StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(history, 0)}};
 
-    const auto result = DeterministicStatementMerger{}.merge(inputs);
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
 
     ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
 
