@@ -2,6 +2,7 @@
 #include "processors/fifo_matcher.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
+#include "taxbroker/decision_session.hpp"
 
 #include <gtest/gtest.h>
 
@@ -940,10 +941,20 @@ TEST(ApplicationResultIntegrationTest, AnOpenRequestForTheIncompleteHistoryNeeds
         .mMergeDiagnostics = prepared.mMerged.mDiagnostics,
         .mProcessingDiagnostics = fifo.mDiagnostics,
         .mRequests = {RequestInput{
-            .mType = RequestType::CapitalGainsFailureResolutionRequired,
-            .mAffectedReports = {ReportType::CapitalGains},
-            .mSources = fifo.mDiagnostics[0].mContext.mSources,
-            .mIsin = fifo.mDiagnostics[0].mContext.mIsin,
+            .mQuestion =
+                {
+                    .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                    .mAffectedReports = {ReportType::CapitalGains},
+                    .mSources = fifo.mDiagnostics[0].mContext.mSources,
+                    .mIsin = fifo.mDiagnostics[0].mContext.mIsin,
+                    .mData =
+                        FailureResolutionQuestion{
+                            .mInvestments = {FailedInvestment{
+                                .mIsin = "XX0000000001",
+                                .mName = "Synthetic Share",
+                                .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                            }}},
+                },
             .mProcessingDiagnostics = {0},
         }},
     };
@@ -981,8 +992,359 @@ TEST(ApplicationResultIntegrationTest, AnOpenRequestForTheIncompleteHistoryNeeds
     EXPECT_NE(text.find(R"("requestId":"request-0001")"), std::string::npos);
     EXPECT_NE(
         text.find(
-            R"("type":"capital_gains_failure_resolution_required","affectedReports":["capital_gains"])"),
+            R"("type":"capital_gains_failure_resolution_required","runRevision":1,"affectedReports":["capital_gains"])"),
         std::string::npos);
+    // The investment names the real FIFO diagnostic of its ISIN.
+    EXPECT_NE(
+        text.find(
+            R"("investments":[{"name":"Synthetic Share","isin":"XX0000000001","reasonCodes":["incomplete_history"],"diagnosticIds":["diagnostic-0001"]}])"),
+        std::string::npos);
+}
+
+TEST(ApplicationResultIntegrationTest, AnAnsweredQuestionIsRecalculatedFromTheFullHistory) {
+    // A sale of 5 units after a purchase of 2 units: the FIFO pool lacks 3 units.
+    constexpr std::string_view purchase =
+        R"(2024-03-02T09:00:00Z,2024-03-02,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-purchase,,,,)";
+    constexpr std::string_view sale =
+        R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,10,50,,,EUR,,,,,synthetic-sale,,,,)";
+
+    const TemporaryApplicationInputs files;
+    const auto path = files.write("synthetic.csv", {purchase, sale});
+    tr::TradeRepublicParser parser;
+    const auto parsed = parser.parse(path);
+    int calculations = 0;
+
+    // Every calculation starts again from the parsed file; no ledger is kept between them.
+    const auto calculation = [&parsed, &calculations](RunDecisions& aDecisions) {
+        ++calculations;
+
+        std::vector<StatementMergeInput> inputs{{0, parsed}};
+        auto prepared = TaxProcessor::prepareReportingYear(
+            {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
+        auto fifo = FifoMatcher::match(prepared.mMerged.mStatement, prepared.mLedger.value());
+
+        // No stage asks the failure choice yet (#227), so the question is written here, on the
+        // sources of the real FIFO diagnostic at position 0.
+        const DecisionQuestion question{
+            .mType = RequestType::CapitalGainsFailureResolutionRequired,
+            .mAffectedReports = {ReportType::CapitalGains},
+            .mSources = fifo.mDiagnostics.at(0).mContext.mSources,
+            .mIsin = "XX0000000001",
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {FailedInvestment{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                    }},
+                },
+        };
+        ApplicationResultInput input{
+            .mReportingYear = 2024,
+            .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
+            .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
+        };
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+
+    const auto& first = session.start(calculation);
+
+    EXPECT_EQ(first.mRunRevision, 1U);
+    EXPECT_EQ(first.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+    ASSERT_EQ(first.mRequests.size(), 1U);
+    ASSERT_EQ(first.mRequests[0].mSources.size(), 1U);
+
+    // Row 3 is the sale.
+    EXPECT_EQ(first.mRequests[0].mSources[0].mRow, 3U);
+
+    ASSERT_EQ(first.mRequests[0].mInvestments.size(), 1U);
+    EXPECT_EQ(first.mRequests[0].mInvestments[0].mDiagnosticIds,
+              (std::vector<std::string>{"diagnostic-0001"}));
+
+    const auto rejections = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = 1,
+        .mValue = FailureResolutionAnswer{FailureResolution::FailReport},
+    }});
+
+    EXPECT_TRUE(rejections.empty());
+
+    // The report fails and keeps its error; no cost basis is invented.
+    const auto& second = session.result();
+
+    EXPECT_EQ(second.mRunRevision, 2U);
+    EXPECT_EQ(calculations, 2);
+    EXPECT_TRUE(second.mRequests.empty());
+    EXPECT_EQ(second.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    EXPECT_FALSE(second.report(ReportType::CapitalGains).mXml.has_value());
+    ASSERT_EQ(second.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = second.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mId, "diagnostic-0001");
+    EXPECT_EQ(diagnostic.mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::IncompleteHistory});
+    EXPECT_TRUE(diagnostic.mBlocking);
+    EXPECT_FALSE(diagnostic.mRequestId.has_value());
+}
+
+TEST(ApplicationResultIntegrationTest, ANewRunOfTheSameFileUsesTheRecordedAnswerVisibly) {
+    // A sale of 5 units after a purchase of 2 units: the FIFO pool lacks 3 units.
+    constexpr std::string_view purchase =
+        R"(2024-03-02T09:00:00Z,2024-03-02,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-purchase,,,,)";
+    constexpr std::string_view sale =
+        R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,10,50,,,EUR,,,,,synthetic-sale,,,,)";
+
+    const TemporaryApplicationInputs files;
+    const auto path = files.write("synthetic.csv", {purchase, sale});
+    tr::TradeRepublicParser parser;
+    const auto parsed = parser.parse(path);
+    int calculations = 0;
+
+    // Every calculation starts again from the parsed file; no ledger is kept between them.
+    const auto calculation = [&parsed, &calculations](RunDecisions& aDecisions) {
+        ++calculations;
+
+        std::vector<StatementMergeInput> inputs{{0, parsed}};
+        auto prepared = TaxProcessor::prepareReportingYear(
+            {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
+        auto fifo = FifoMatcher::match(prepared.mMerged.mStatement, prepared.mLedger.value());
+
+        // No stage asks the failure choice yet (#227), so the question is written here, on the
+        // sources of the real FIFO diagnostic at position 0.
+        const DecisionQuestion question{
+            .mType = RequestType::CapitalGainsFailureResolutionRequired,
+            .mAffectedReports = {ReportType::CapitalGains},
+            .mSources = fifo.mDiagnostics.at(0).mContext.mSources,
+            .mIsin = "XX0000000001",
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {FailedInvestment{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                    }},
+                },
+        };
+        ApplicationResultInput input{
+            .mReportingYear = 2024,
+            .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
+            .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
+        };
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+    ASSERT_TRUE(session
+                    .answer({DecisionAnswer{
+                        .mRequestId = "request-0001",
+                        .mRunRevision = 1,
+                        .mValue = FailureResolutionAnswer{FailureResolution::FailReport},
+                    }})
+                    .empty());
+
+    // A new run of the same file: the recorded fail_report applies again, so nothing is asked.
+    const auto& third = session.start(calculation);
+
+    EXPECT_EQ(third.mRunRevision, 3U);
+    EXPECT_EQ(calculations, 3);
+    EXPECT_TRUE(third.mRequests.empty());
+    EXPECT_EQ(third.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    EXPECT_FALSE(third.report(ReportType::CapitalGains).mXml.has_value());
+    ASSERT_EQ(third.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(third.mDiagnostics[0].mId, "diagnostic-0001");
+    EXPECT_TRUE(third.mDiagnostics[0].mBlocking);
+
+    // The answer is listed, without sources, so it is a visible default, not a silent one.
+    ASSERT_EQ(third.mDecisions.size(), 1U);
+
+    const auto& decision = third.mDecisions[0];
+
+    EXPECT_EQ(decision.mId, "decision-0001");
+    EXPECT_EQ(decision.mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::FailReport}});
+    EXPECT_TRUE(decision.mFromEarlierRun);
+    EXPECT_TRUE(decision.mUsed);
+
+    const auto text = api::serializeApplicationResultJson(third);
+
+    EXPECT_NE(text.find(R"("runRevision":3)"), std::string::npos);
+    EXPECT_NE(
+        text.find(
+            R"("decisions":[{"id":"decision-0001","type":"capital_gains_failure_resolution_required","fromEarlierRun":true,"used":true,"investments":[{"name":"Synthetic Share","isin":"XX0000000001","reasonCodes":["incomplete_history"]}],"answer":"fail_report"}])"),
+        std::string::npos);
+
+    // Replaying the answer of the first run is rejected: its revision is old.
+    const auto replayed = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = 1,
+        .mValue = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments},
+    }});
+
+    ASSERT_EQ(replayed.size(), 1U);
+
+    EXPECT_EQ(replayed[0].mReason, AnswerRejection::StaleRevision);
+    EXPECT_EQ(replayed[0].mMessageKey, MessageKey::AnswerRejectedStaleRevision);
+    EXPECT_EQ(replayed[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001")}));
+
+    // An answer with the current revision names no open request: nothing is asked in this run.
+    const auto unasked = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = 3,
+        .mValue = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments},
+    }});
+
+    ASSERT_EQ(unasked.size(), 1U);
+
+    EXPECT_EQ(unasked[0].mReason, AnswerRejection::UnknownRequest);
+    EXPECT_EQ(unasked[0].mMessageKey, MessageKey::AnswerRejectedUnknownRequest);
+
+    // Neither rejection recalculated or changed the recorded answer.
+    EXPECT_EQ(session.result().mRunRevision, 3U);
+    EXPECT_EQ(calculations, 3);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::FailReport}});
+}
+
+TEST(ApplicationResultIntegrationTest, DeletingTheRecordedAnswerAsksTheQuestionAgain) {
+    // A sale of 5 units after a purchase of 2 units: the FIFO pool lacks 3 units.
+    constexpr std::string_view purchase =
+        R"(2024-03-02T09:00:00Z,2024-03-02,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-purchase,,,,)";
+    constexpr std::string_view sale =
+        R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,10,50,,,EUR,,,,,synthetic-sale,,,,)";
+
+    const TemporaryApplicationInputs files;
+    const auto path = files.write("synthetic.csv", {purchase, sale});
+    tr::TradeRepublicParser parser;
+    const auto parsed = parser.parse(path);
+    int calculations = 0;
+
+    // Every calculation starts again from the parsed file; no ledger is kept between them.
+    const auto calculation = [&parsed, &calculations](RunDecisions& aDecisions) {
+        ++calculations;
+
+        std::vector<StatementMergeInput> inputs{{0, parsed}};
+        auto prepared = TaxProcessor::prepareReportingYear(
+            {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
+        auto fifo = FifoMatcher::match(prepared.mMerged.mStatement, prepared.mLedger.value());
+
+        // No stage asks the failure choice yet (#227), so the question is written here, on the
+        // sources of the real FIFO diagnostic at position 0.
+        const DecisionQuestion question{
+            .mType = RequestType::CapitalGainsFailureResolutionRequired,
+            .mAffectedReports = {ReportType::CapitalGains},
+            .mSources = fifo.mDiagnostics.at(0).mContext.mSources,
+            .mIsin = "XX0000000001",
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {FailedInvestment{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                    }},
+                },
+        };
+        ApplicationResultInput input{
+            .mReportingYear = 2024,
+            .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
+            .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
+        };
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+    ASSERT_TRUE(session
+                    .answer({DecisionAnswer{
+                        .mRequestId = "request-0001",
+                        .mRunRevision = 1,
+                        .mValue = FailureResolutionAnswer{FailureResolution::FailReport},
+                    }})
+                    .empty());
+
+    // Deleting with the revision of the first calculation, a decision that is not listed, or the
+    // same decision twice is rejected and changes nothing.
+    const auto staleAll = session.deleteAllAnswers(1);
+    const auto unknown = session.deleteAnswers({"decision-0002"}, 2);
+    const auto repeated = session.deleteAnswers({"decision-0001", "decision-0001"}, 2);
+
+    ASSERT_EQ(staleAll.size(), 1U);
+
+    EXPECT_EQ(staleAll[0].mReason, AnswerRejection::StaleRevision);
+    EXPECT_EQ(staleAll[0].mMessageKey, MessageKey::AnswerRejectedStaleRevisionDelete);
+    EXPECT_EQ(staleAll[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("decisionId", "all")}));
+
+    ASSERT_EQ(unknown.size(), 1U);
+
+    EXPECT_EQ(unknown[0].mReason, AnswerRejection::UnknownDecision);
+    EXPECT_EQ(unknown[0].mMessageKey, MessageKey::AnswerRejectedUnknownDecision);
+    EXPECT_EQ(unknown[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("decisionId", "decision-0002")}));
+
+    ASSERT_EQ(repeated.size(), 1U);
+
+    EXPECT_EQ(repeated[0].mIndex, 1U);
+    EXPECT_EQ(repeated[0].mReason, AnswerRejection::DuplicateAnswer);
+    EXPECT_EQ(repeated[0].mMessageKey, MessageKey::AnswerRejectedDuplicateDelete);
+
+    EXPECT_EQ(session.result().mRunRevision, 2U);
+    EXPECT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(calculations, 2);
+
+    const auto rejections = session.deleteAnswers({"decision-0001"}, 2);
+
+    EXPECT_TRUE(rejections.empty());
+
+    // The full history is calculated again and the same question is open again.
+    const auto& third = session.result();
+
+    EXPECT_EQ(third.mRunRevision, 3U);
+    EXPECT_EQ(calculations, 3);
+    EXPECT_TRUE(third.mDecisions.empty());
+    EXPECT_EQ(third.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+    EXPECT_FALSE(third.report(ReportType::CapitalGains).mXml.has_value());
+    ASSERT_EQ(third.mRequests.size(), 1U);
+
+    const auto& request = third.mRequests[0];
+
+    EXPECT_EQ(request.mId, "request-0001");
+    EXPECT_EQ(request.mRunRevision, 3U);
+    ASSERT_EQ(request.mSources.size(), 1U);
+
+    // Row 3 is the sale.
+    EXPECT_EQ(request.mSources[0].mRow, 3U);
+
+    ASSERT_EQ(request.mInvestments.size(), 1U);
+    EXPECT_EQ(request.mInvestments[0].mDiagnosticIds,
+              (std::vector<std::string>{"diagnostic-0001"}));
+
+    // The real FIFO error names the open request again.
+    ASSERT_EQ(third.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(third.mDiagnostics[0].mId, "diagnostic-0001");
+    EXPECT_EQ(third.mDiagnostics[0].mRequestId, "request-0001");
 }
 
 TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
@@ -1013,6 +1375,7 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
     EXPECT_EQ(text, R"({
   "schemaVersion": 2,
   "status": "partial_success",
+  "runRevision": 1,
   "reports": {
     "capitalGains": {
       "status": "failed",
@@ -1108,7 +1471,8 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
       }
     }
   ],
-  "requests": []
+  "requests": [],
+  "decisions": []
 })");
 }
 

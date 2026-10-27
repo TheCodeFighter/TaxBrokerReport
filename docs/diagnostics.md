@@ -49,7 +49,8 @@ One application run returns one `ApplicationResult` with:
 - all unresolved user-decision requests; and
 - one result each for capital gains, dividends, bank-deposit interest, and other interest;
 - explicit classification exclusions in `excludedItems`, distinct from per-report ISIN exclusions; and
-- informational income totals, fee totals, and recorded run-local decisions and corrections.
+- informational income totals, fee totals, corrections, and every answer the decision session
+  keeps (`decisions`, see "Structured user-decision contract").
 
 Income results also retain reference-catalogue provenance, confirmed withholding/relief treatment,
 and a list of supporting documents to attach in eDavki. A generated XML is not a filed return or
@@ -75,10 +76,12 @@ with `schemaVersion` 1 and no compatibility promise before the beta.
 The core of this contract is implemented in `ApplicationResultBuilder`
 (`include/taxbroker/application_result.hpp`) and `serializeApplicationResultJson`: diagnostic
 adapters, report scope, deterministic order and IDs, report and overall status, and the JSON. The
-decision lifecycle (run revision, question data, answers), the failure and exclusion choices,
-developer mode, `excludedItems`, the income summaries and XML failure isolation are not part of it
-yet. Until they exist, `excludedInvestments` is an empty list for capital gains and other
-interest, and `unsafe` is `false`.
+decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
+(`include/taxbroker/decision_session.hpp`); of the nine request types only the two
+failure-resolution types have question data and answers so far. Applying the failure and exclusion
+choices, developer mode, `excludedItems`, the income summaries and XML failure isolation are not
+part of it yet. Until they exist, `excludedInvestments` is an empty list for capital gains and
+other interest, and `unsafe` is `false`.
 
 ### Report result
 
@@ -330,8 +333,10 @@ The request offers two explicit choices:
 2. `fail_report`: generate no capital-gains XML for this run.
 
 Neither choice is preselected. The user may instead go back, add or correct files, and run the
-report again. A choice applies only to the exact affected-ISIN list in the current run. Changed
-input or a changed list requires a new answer.
+report again. A choice applies only to the exact affected-ISIN list with its reasons; a changed list
+requires a new answer. While the app is open, a later run with the same list uses the recorded
+choice, shown in `decisions`, and the user can delete it (see "Structured user-decision
+contract").
 
 When the user chooses exclusion, the processor removes every purchase, sale, corporate action,
 and calculated capital match for every listed ISIN from report output. It preserves source evidence
@@ -370,8 +375,9 @@ IDs. The request has two choices, with neither preselected:
 2. `fail_report`: produce no Doh-Obr XML for this run.
 
 Before an answer, `otherInterest` is `needs_input` and has no XML. The user may instead correct
-the input. Cancelling the choice is not exclusion or permission to generate a partial return.
-Changed input or a changed failed-ISIN list invalidates the answer and requires a new choice.
+the input. Cancelling the choice is not exclusion or permission to generate a partial return: the
+question stays open. A changed failed-ISIN list requires a new choice; the same list in a later run
+of the open app uses the recorded choice, as for capital gains.
 
 On exclusion, rebuild Doh-Obr from the remaining valid income, including unaffected broker cash
 interest and bond coupons. Record `failureResolution: exclude_failed_instruments` and a deduplicated
@@ -429,6 +435,58 @@ Every request has a deterministic ID, `type`, `affectedReports`, safe source ref
 that revision and the request ID. Reject stale answers after files, event corrections, action
 sources, referenced catalogue revisions or affected-ISIN lists change; rerunning must not apply an answer to a new question that
 happens to reuse the same sorted request ID. Request IDs use `request-0001` and so on after sorting.
+
+`DecisionSession` (`include/taxbroker/decision_session.hpp`) implements this without any transport.
+It holds the calculation of the current run and the answers, in memory only, and follows these
+rules:
+
+- **Revision.** The first result of a session is revision 1. Every recalculation, after accepted
+  answers, deleted answers or a new run, takes the next number. A number is never used twice while
+  the session lives, so an answer from an earlier calculation or run never matches.
+- **Question identity.** A question is its `type` and its question data: for the two
+  failure-resolution types, the investments with ISIN, name and reason codes, in a normalized
+  order. Sources, rows, source IDs, the tax date and diagnostic IDs only say where to look; they
+  are run-local and not part of it, so another file order asks the same question. Each type puts
+  into its question data exactly the facts its answer depends on, such as a currency and date, or
+  an action with the broker and transaction ID of every source. A different value is a different
+  question.
+- **Answering.** One call takes the answers to any open requests of the current revision. It is
+  rejected as a whole, and nothing changes, when one answer names an older revision
+  (`answer_rejected.stale_revision`), a request that is not open (`answer_rejected.unknown_request`),
+  a request answered twice in the call (`answer_rejected.duplicate_answer`), or an answer that does
+  not fit the type or a request without question data (`answer_rejected.answer_does_not_fit`).
+  Each rejection has a message key with
+  the `requestId` parameter. An accepted answer is bound to the request's question, never to its
+  ID, and the run is recalculated.
+- **Recalculation.** The calculation rebuilds the whole run from its full input and gets only the
+  recorded answers; no ledger or report state is kept between calculations. A stage looks up the
+  answer to its own question. Unrelated reports come out the same because the calculation is
+  deterministic. The session changes only after a calculation succeeds: when a calculation fails
+  with an exception, the answers given or deleted in that call are dropped, every other recorded
+  answer stays, and the result and its revision stay the previous ones.
+- **Recorded answers.** An answer stays recorded until the app closes or the user deletes it, also
+  across runs with new input. It applies wherever a stage asks the same question again. Every
+  result lists all recorded answers in `decisions` (`decision-0001` and so on, valid for that
+  revision), each with its question data, its answer, `fromEarlierRun` and `used` (asked and
+  applied in this calculation), so a recorded answer is a visible default, never a silent one.
+  A decision has no sources, because they are run-local.
+- **Deleting answers.** The user deletes some recorded answers by ID, or all of them, naming the
+  current revision. A call with an older revision (`answer_rejected.stale_revision_delete`), an ID
+  that is not listed (`answer_rejected.unknown_decision`) or the same ID twice
+  (`answer_rejected.duplicate_delete`) is rejected as a whole; these keys have the `decisionId`
+  parameter (`all` when everything was to be deleted). Otherwise the run is recalculated and the
+  questions are asked again.
+- **Cancellation and missing answers.** Cancel is an answer for every type with question data and
+  is recorded on the question; the stage applies the documented rule of its type. For both failure-resolution types
+  the question stays open, the report stays `needs_input` and no XML is written. An unanswered
+  request stays open: the session never answers anything by itself.
+- **Memory only.** Answers are never written to disk or browser storage and are gone when the app
+  closes. Only the taxpayer profile may be saved (#278).
+
+A request type whose processor does not define its question data yet cannot be answered, not even
+cancelled: without question data, all its questions would be the same question, and one answer
+would reach questions the user never saw. The builder rejects question data that does not fit the
+request type, and a failure-resolution question without an investment.
 
 | Type | Required question data and answer |
 | --- | --- |
@@ -682,6 +740,7 @@ is present; the raw CSV row is not.
 {
   "schemaVersion": 2,
   "status": "needs_input",
+  "runRevision": 1,
   "reports": {
     "capitalGains": {
       "status": "needs_input",
@@ -753,7 +812,8 @@ is present; the raw CSV row is not.
         }
       ]
     }
-  ]
+  ],
+  "decisions": []
 }
 ```
 
@@ -889,6 +949,10 @@ Application-service, API, and integration tests based on this document must prov
 - below-threshold bank interest records its reason, total and external-interest reminder;
 - missing known external income details prevent a falsely complete bank-interest XML;
 - every documented request type has structured question data and validates revision-bound answers;
+- stale, replayed, repeated and unfitting answers are rejected as a whole without a recalculation,
+  and a reused request ID never answers a different question;
+- a recorded answer applies again only to the same question, is listed in `decisions` with
+  `fromEarlierRun` and `used`, and can be deleted;
 - classification exclusions remain visible separately from each form's failure exclusions;
 - action-source mismatch warnings show every relevant source without blocking on their own;
 - each XML generator can fail without changing another report result;

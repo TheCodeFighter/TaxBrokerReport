@@ -55,6 +55,13 @@ enum class MessageKey {
     CorporateActionNotApplied,
     MissingExchangeRateTrade,
     LossEligibilityUnresolved,
+    AnswerRejectedStaleRevision,
+    AnswerRejectedUnknownRequest,
+    AnswerRejectedDuplicateAnswer,
+    AnswerRejectedAnswerDoesNotFit,
+    AnswerRejectedUnknownDecision,
+    AnswerRejectedStaleRevisionDelete,
+    AnswerRejectedDuplicateDelete,
 };
 
 enum class MessageParamKind {

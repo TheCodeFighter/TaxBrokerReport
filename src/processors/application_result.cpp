@@ -1,4 +1,5 @@
 #include "taxbroker/application_result.hpp"
+#include "utils/numbered_id.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -373,17 +374,6 @@ struct DraftDiagnostic {
                            aSequence);
 }
 
-[[nodiscard]] std::string numberedId(std::string_view aPrefix, std::size_t aNumber) {
-    auto digits = std::to_string(aNumber);
-
-    if (digits.size() < 4)
-    {
-        digits.insert(0, 4 - digits.size(), '0');
-    }
-
-    return std::string{aPrefix} + "-" + digits;
-}
-
 [[nodiscard]] bool affects(const ReportList& aReports, ReportType aType) {
     return std::find(aReports.begin(), aReports.end(), aType) != aReports.end();
 }
@@ -421,9 +411,93 @@ struct DraftDiagnostic {
     return hasNonBlocking ? OverallStatus::CompletedWithWarnings : OverallStatus::Success;
 }
 
+[[nodiscard]] bool isFailureResolution(RequestType aType) {
+    return aType == RequestType::CapitalGainsFailureResolutionRequired ||
+           aType == RequestType::OtherInterestFailureResolutionRequired;
+}
+
+/// A failure-resolution type needs a list with at least one investment; every other type has no
+/// question data until its processor defines it.
+void checkQuestionData(const DecisionQuestion& aQuestion) {
+    const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
+
+    if ((failure != nullptr) != isFailureResolution(aQuestion.mType))
+    {
+        throw std::invalid_argument("The question data does not fit the request type.");
+    }
+
+    if (failure != nullptr && failure->mInvestments.empty())
+    {
+        throw std::invalid_argument("A failure-resolution question needs an investment.");
+    }
+}
+
+/// The investments of a failure question, each with the IDs of its linked diagnostics.
+[[nodiscard]] std::vector<RequestInvestment>
+investmentsOf(const QuestionData& aData,
+              const std::vector<std::size_t>& aLinkedDiagnostics,
+              const std::vector<ApplicationDiagnostic>& aDiagnostics) {
+    const auto* failure = std::get_if<FailureResolutionQuestion>(&aData);
+    std::vector<RequestInvestment> investments;
+
+    if (failure == nullptr)
+    {
+        return investments;
+    }
+
+    for (const auto& failed : failure->mInvestments)
+    {
+        RequestInvestment investment{
+            .mIsin = failed.mIsin,
+            .mName = failed.mName,
+            .mReasonCodes = failed.mReasonCodes,
+        };
+
+        for (const auto position : aLinkedDiagnostics)
+        {
+            if (aDiagnostics[position].mIsin == failed.mIsin)
+            {
+                investment.mDiagnosticIds.push_back(aDiagnostics[position].mId);
+            }
+        }
+
+        investments.push_back(std::move(investment));
+    }
+
+    return investments;
+}
+
 } // namespace
 
+QuestionData normalizedData(QuestionData aData) {
+    if (auto* failure = std::get_if<FailureResolutionQuestion>(&aData))
+    {
+        auto& investments = failure->mInvestments;
+
+        for (auto& investment : investments)
+        {
+            auto& codes = investment.mReasonCodes;
+            std::sort(codes.begin(), codes.end());
+            codes.erase(std::unique(codes.begin(), codes.end()), codes.end());
+        }
+
+        std::sort(investments.begin(),
+                  investments.end(),
+                  [](const FailedInvestment& aLeft, const FailedInvestment& aRight) {
+                      return std::tie(aLeft.mIsin, aLeft.mName) <
+                             std::tie(aRight.mIsin, aRight.mName);
+                  });
+    }
+
+    return aData;
+}
+
 ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInput) {
+    for (const auto& request : aInput.mRequests)
+    {
+        checkQuestionData(request.mQuestion);
+    }
+
     // Collect the diagnostics of every stage in stage order; the position is the creation order.
     std::vector<DraftDiagnostic> drafts;
 
@@ -465,6 +539,7 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
                      });
 
     ApplicationResult result;
+    result.mRunRevision = aInput.mRunRevision;
     // Every processing diagnostic has a draft, so every entry is set in the loop below.
     std::vector<std::size_t> processingToDiagnostic(aInput.mProcessingDiagnostics.size());
 
@@ -484,16 +559,21 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
     // Requests use the same ordering keys that apply to them.
     std::vector<DecisionRequest> requests;
 
-    for (const auto& input : aInput.mRequests)
+    // Only mProcessingDiagnostics of a request input is read after this loop.
+    for (auto& input : aInput.mRequests)
     {
+        auto& question = input.mQuestion;
+
         DecisionRequest request{
-            .mType = input.mType,
-            .mAffectedReports = input.mAffectedReports,
-            .mTaxDate = input.mTaxDate,
-            .mIsin = input.mIsin,
+            .mType = question.mType,
+            .mRunRevision = aInput.mRunRevision,
+            .mAffectedReports = std::move(question.mAffectedReports),
+            .mSources = sourcesOf(question.mSources),
+            .mTaxDate = question.mTaxDate,
+            .mIsin = std::move(question.mIsin),
+            .mData = normalizedData(std::move(question.mData)),
         };
         normalizeReports(request.mAffectedReports);
-        request.mSources = sourcesOf(input.mSources);
         normalizeSources(request.mSources);
 
         requests.push_back(std::move(request));
@@ -528,6 +608,8 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
         request.mId = numberedId("request", result.mRequests.size() + 1);
 
         // A diagnostic names the first request, in final order, that resolves it.
+        std::vector<std::size_t> linkedDiagnostics;
+
         for (const auto processingIndex : aInput.mRequests[requestIndex].mProcessingDiagnostics)
         {
             const auto position = processingToDiagnostic.at(processingIndex);
@@ -538,7 +620,13 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
             }
 
             linkedRequests[position].push_back(result.mRequests.size());
+            linkedDiagnostics.push_back(position);
         }
+
+        std::sort(linkedDiagnostics.begin(), linkedDiagnostics.end());
+        linkedDiagnostics.erase(std::unique(linkedDiagnostics.begin(), linkedDiagnostics.end()),
+                                linkedDiagnostics.end());
+        request.mInvestments = investmentsOf(request.mData, linkedDiagnostics, result.mDiagnostics);
 
         result.mRequests.push_back(std::move(request));
     }

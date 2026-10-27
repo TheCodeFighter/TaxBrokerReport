@@ -421,7 +421,9 @@ The numeric adapter supplies caller-scoped arithmetic errors; reporting-year pre
 the same envelope for year validation. `ApplicationResultBuilder` combines
 the parser, merger and processing diagnostics into the application result: report scope, blocking
 flag, deterministic order and IDs, the status of each form and the overall status, with version 2
-JSON. Blocking resolution, exclusion requests and the decision lifecycle remain later integration.
+JSON. `DecisionSession` holds the answers and recalculates the run, as defined in
+`diagnostics.md`, "Structured user-decision contract". No stage asks a question yet; blocking
+resolution and the exclusion choices remain later integration (#227, #228).
 
 Foreign-currency processing follows [`calculations.md`](calculations.md). The application result
 contains one structured request for every missing official `(currency, tax date)` rate. A
