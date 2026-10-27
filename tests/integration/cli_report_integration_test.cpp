@@ -268,7 +268,7 @@ Warnings: 0
     EXPECT_EQ(fifoList.mSaleGains, (std::vector<std::string>{"250"}));
 }
 
-TEST(CliReportIntegrationTest, SelfReportWritesWorkflowCodeS) {
+TEST(CliReportIntegrationTest, SelfReportWritesWorkflowCodeI) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -293,10 +293,10 @@ TEST(CliReportIntegrationTest, SelfReportWritesWorkflowCodeS) {
 
     const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
 
-    EXPECT_TRUE(contains(xml, "<edp:DocumentWorkflowID>S</edp:DocumentWorkflowID>"));
-    EXPECT_TRUE(contains(xml, "<edp:DocumentWorkflowName>SelfReport</edp:DocumentWorkflowName>"));
-    EXPECT_TRUE(contains(xml, "<DocumentWorkflowID>S</DocumentWorkflowID>"));
-    EXPECT_TRUE(contains(xml, "<DocumentWorkflowName>SelfReport</DocumentWorkflowName>"));
+    EXPECT_TRUE(contains(xml, "<edp:DocumentWorkflowID>I</edp:DocumentWorkflowID>"));
+    EXPECT_TRUE(contains(xml, "<edp:DocumentWorkflowName>SamoPrijava</edp:DocumentWorkflowName>"));
+    EXPECT_TRUE(contains(xml, "<DocumentWorkflowID>I</DocumentWorkflowID>"));
+    EXPECT_TRUE(contains(xml, "<DocumentWorkflowName>SamoPrijava</DocumentWorkflowName>"));
     EXPECT_FALSE(contains(xml, ">O<"));
 
     expectValidForKdvpSchemas(xml);

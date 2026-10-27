@@ -347,8 +347,8 @@ TEST(KdvpXmlWriterTest, MissingOptionalFieldsAreLeftOut) {
 }
 
 TEST(KdvpXmlWriterTest, SelfReportWritesItsWorkflowCode) {
-    // S and the name SelfReport in the header and in KDVP, as the legacy GUI wrote for
-    // "Self-Report (Samoprijava)".
+    // I and the name SamoPrijava in the header and in KDVP, as eDavki expects for a self-report
+    // (*samoprijava*). The legacy GUI wrote S and SelfReport, which eDavki does not accept.
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2024,
@@ -369,8 +369,8 @@ TEST(KdvpXmlWriterTest, SelfReportWritesItsWorkflowCode) {
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
     <edp:Workflow>
-      <edp:DocumentWorkflowID>S</edp:DocumentWorkflowID>
-      <edp:DocumentWorkflowName>SelfReport</edp:DocumentWorkflowName>
+      <edp:DocumentWorkflowID>I</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>SamoPrijava</edp:DocumentWorkflowName>
     </edp:Workflow>
   </edp:Header>
   <edp:Signatures />
@@ -378,8 +378,8 @@ TEST(KdvpXmlWriterTest, SelfReportWritesItsWorkflowCode) {
     <edp:bodyContent />
     <Doh_KDVP>
       <KDVP>
-        <DocumentWorkflowID>S</DocumentWorkflowID>
-        <DocumentWorkflowName>SelfReport</DocumentWorkflowName>
+        <DocumentWorkflowID>I</DocumentWorkflowID>
+        <DocumentWorkflowName>SamoPrijava</DocumentWorkflowName>
         <Year>2024</Year>
         <PeriodStart>2024-01-01</PeriodStart>
         <PeriodEnd>2024-12-31</PeriodEnd>

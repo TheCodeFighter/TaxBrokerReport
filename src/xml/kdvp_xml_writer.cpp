@@ -27,10 +27,9 @@ constexpr std::string_view kTaxpayerTypeIndividual = "FO";
 constexpr std::string_view kInventoryListTypeSecurities = "PLVP";
 constexpr std::string_view kPurchaseTypeBought = "B";
 constexpr std::string_view kWorkflowCodeOriginal = "O";
-constexpr std::string_view kWorkflowCodeSelfReport = "S";
-// The names of the workflow codes, as the legacy output that eDavki accepted wrote them.
+constexpr std::string_view kWorkflowCodeSelfReport = "I";
 constexpr std::string_view kWorkflowNameOriginal = "Original";
-constexpr std::string_view kWorkflowNameSelfReport = "SelfReport";
+constexpr std::string_view kWorkflowNameSelfReport = "SamoPrijava";
 // F5 is the inheritance or gift tax paid at the purchase: a known zero for a bought security
 // (F2 B). The FURS instructions fill column 5 on every purchase row, and the legacy output that
 // eDavki accepted wrote it the same way.

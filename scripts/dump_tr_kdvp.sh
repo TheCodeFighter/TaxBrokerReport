@@ -23,7 +23,7 @@ Usage: dump_tr_kdvp.sh [--synthetic] [--year YYYY] [--tax-number NNNNNNNN] [--se
                     (trades in 2025) instead of the real export
     --tax-number    the taxpayer's tax number; use your own for an eDavki draft
                     import (default: 12345678, a made-up number)
-    --self-report   write the self-report workflow code S instead of O
+    --self-report   write the self-report workflow code I instead of O
 
     Default year:   the previous calendar year
     Default input:  tmp/TransactionExport.csv
