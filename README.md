@@ -249,10 +249,10 @@ The defaults are those of the FIFO dump; the output is `runtime/debug/tr_kdvp_<y
 `--synthetic` the input is the synthetic `tests/test_data/csv/kdvp_dump_fixture.csv` (trades in
 2025) and the output `runtime/debug/tr_kdvp_synthetic_<year>.xml`. `--tax-number NNNNNNNN` sets
 the taxpayer's tax number (default `12345678`, made up; use your own for an eDavki draft import),
-and `--self-report` writes the self-report workflow code `S`. Blocked ISINs are left out, so with
-a blocked ISIN the file is not a complete return, and the tool prints a warning; the FIFO dump
-shows the reasons. The file from the real export contains private financial data and must remain
-local.
+and `--self-report` writes the self-report workflow code `I` (`SamoPrijava`). Blocked ISINs are
+left out, so with a blocked ISIN the file is not a complete return, and the tool prints a warning;
+the FIFO dump shows the reasons. The file from the real export contains private financial data
+and must remain local.
 
 The diagnostics text retains structured source locations without dumping event payloads. It may still contain
 private identifiers and must remain local; it is not the application's JSON contract.

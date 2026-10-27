@@ -1,0 +1,4 @@
+datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2005-04-01T09:00:00Z,2005-04-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share S2,XX0000000202,2,10,-20,,,EUR,,,,,s2-buy-1,,,,
+2020-04-01T09:00:00Z,2020-04-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share S2,XX0000000202,2,15,-30,,,EUR,,,,,s2-buy-2,,,,
+2025-06-02T09:00:00Z,2025-06-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share S2,XX0000000202,-3,20,60,,,EUR,,,,,s2-sell-1,,,,

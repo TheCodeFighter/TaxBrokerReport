@@ -161,7 +161,8 @@ This is simpler for the user than repeating the full history every year. It diff
 reading of section 11: `F3` (and `F7` when units are past the holding period) is not always the
 confirmation quantity, and `F8` is the stock of the listed units, not the whole holding. The gains do not change: a FIFO over the listed rows uses the
 same units as the internal matches. This reading must be confirmed with an eDavki draft import
-before release.
+before release. eDavki imports such a list as a draft (scenario S1 in
+[`verification.md`](verification.md), 2026-10-27); a draft does not show the calculation.
 
 The rows for split-adjusted history and partially eligible losses are not decided yet.
 
@@ -278,7 +279,9 @@ the period, and a sale on the next day is past it. For example, units bought on 
 inside the 15 years on 2024-03-10 and past them on 2024-03-11. A purchase on 29 February has its
 anniversary on 28 February in a year without that day. The app only reports the rows; FURS works
 out the tax from the dates. The boundary decides only which units the app leaves out of the rows
-(see below). Check both boundaries with an eDavki draft import.
+(see below). eDavki imports the rows on both sides of each boundary as a draft (scenarios S3, S4,
+P1 and P2 in [`verification.md`](verification.md), 2026-10-27), but a draft does not show whether
+a row is taxed, so the boundary itself rests on the FURS wording.
 
 Example of the sale date rule: units bought on 2004-05-01 and sold on 2021-06-01 are held 17
 years, which is inside the 20 years, so the sale is taxed. The same units sold on 2022-01-03 are
@@ -303,7 +306,8 @@ free, and 1 unit from 2020. The list has two rows: purchase 2020-04-01, `F3` 1, 
 
 A loss on units past the period cannot reduce the tax base (ZDoh-2 Article 96, third paragraph),
 so it is left out with them and the loss check covers only the listed units. Lowering `F7` below
-the sold quantity of the broker confirmation must be checked with an eDavki draft import.
+the sold quantity of the broker confirmation imports as a draft in eDavki (scenario S2 in
+[`verification.md`](verification.md), 2026-10-27); a draft does not show the calculation.
 
 The holding period never changes:
 

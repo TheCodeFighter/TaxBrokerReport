@@ -587,9 +587,11 @@ not fit the form, one `xml_value_out_of_range` error per field and no XML.
   other four counts `0`, F2 `B` (*nakup*) and F5 `0.0000` on every purchase row. F5 is the
   inheritance or gift tax paid at the purchase, a known zero for a bought security; the FURS
   instructions fill column 5 on every purchase row, and the legacy output that eDavki accepted
-  wrote `0.0000`. The filing type becomes the workflow code `O` or `S` with the name `Original` or
-  `SelfReport` (`DocumentWorkflowID` and `DocumentWorkflowName`, as in the legacy output), written
-  in `edp:Workflow` and in `KDVP`.
+  wrote `0.0000`. The filing type becomes the workflow code (`DocumentWorkflowID`) and its name
+  (`DocumentWorkflowName`), written in `edp:Workflow` and in `KDVP`: `O` with `Original` (as in the
+  legacy output), or `I` with `SamoPrijava` for a self-report (*samoprijava*). The legacy `S` with
+  `SelfReport` is wrong: eDavki expects `I` and `SamoPrijava` (maintainer's eDavki draft import,
+  2026-10-27, [`verification.md`](verification.md)).
 - **Taxpayer fields:** tax number, name (`name`), address (`address1`), city, post code
   (`postNumber`), post name, birth date and residence (`resident`) in the header; residence
   again as `IsResident`, phone as `TelephoneNumber` and email as `Email` in `KDVP`. An absent
@@ -620,7 +622,8 @@ libxml2. The application does not link libxml2 and does not check the schema at 
 The integration tests also read the rows of each document back and run their own FIFO over them
 (`tests/support/kdvp_row_fifo.hpp`, no production code), which must give the gains and `F8`
 values written as literals in each test. A valid schema check is not eDavki acceptance: the schema
-makes every F1 to F11 optional. The eDavki draft imports are recorded separately.
+makes every F1 to F11 optional. The eDavki draft imports are recorded separately, in
+[`verification.md`](verification.md).
 
 ### CLI report command (walking skeleton)
 

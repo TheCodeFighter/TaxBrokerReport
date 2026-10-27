@@ -1,0 +1,4 @@
+datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2008-02-29T09:00:00Z,2008-02-29,DEFAULT,TRADING,BUY,STOCK,Synthetic Share S4,XX0000000404,2,10,-20,,,EUR,,,,,s4-buy-1,,,,
+2023-02-28T09:00:00Z,2023-02-28,DEFAULT,TRADING,SELL,STOCK,Synthetic Share S4,XX0000000404,-1,20,20,,,EUR,,,,,s4-sell-1,,,,
+2023-03-01T09:00:00Z,2023-03-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share S4,XX0000000404,-1,20,20,,,EUR,,,,,s4-sell-2,,,,

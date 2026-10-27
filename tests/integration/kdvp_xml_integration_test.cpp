@@ -1316,7 +1316,7 @@ TEST(KdvpXmlIntegrationTest, FractionalUnitsAndPricesKeepTheirDecimals2024) {
 }
 
 TEST(KdvpXmlIntegrationTest, SelfReportForAnEarlierYearWritesItsWorkflowCode2023) {
-    // A 2023 sale reported late as a self-report: S and SelfReport in the header and in KDVP,
+    // A 2023 sale reported late as a self-report: I and SamoPrijava in the header and in KDVP,
     // the rows the same as in an original return.
     constexpr std::string_view purchase =
         R"(2023-02-01T09:00:00Z,2023-02-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,3,10,-30,,,EUR,,,,,synthetic-buy-1,,,,)";
@@ -1364,8 +1364,8 @@ TEST(KdvpXmlIntegrationTest, SelfReportForAnEarlierYearWritesItsWorkflowCode2023
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
     <edp:Workflow>
-      <edp:DocumentWorkflowID>S</edp:DocumentWorkflowID>
-      <edp:DocumentWorkflowName>SelfReport</edp:DocumentWorkflowName>
+      <edp:DocumentWorkflowID>I</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>SamoPrijava</edp:DocumentWorkflowName>
     </edp:Workflow>
   </edp:Header>
   <edp:Signatures />
@@ -1373,8 +1373,8 @@ TEST(KdvpXmlIntegrationTest, SelfReportForAnEarlierYearWritesItsWorkflowCode2023
     <edp:bodyContent />
     <Doh_KDVP>
       <KDVP>
-        <DocumentWorkflowID>S</DocumentWorkflowID>
-        <DocumentWorkflowName>SelfReport</DocumentWorkflowName>
+        <DocumentWorkflowID>I</DocumentWorkflowID>
+        <DocumentWorkflowName>SamoPrijava</DocumentWorkflowName>
         <Year>2023</Year>
         <PeriodStart>2023-01-01</PeriodStart>
         <PeriodEnd>2023-12-31</PeriodEnd>

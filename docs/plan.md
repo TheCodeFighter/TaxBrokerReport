@@ -262,7 +262,8 @@ reference. Doh-Obr is new work for broker cash interest and ordinary bond coupon
 schema and interest-type codes from official instructions. Use one result per form, not one per
 broker or income subtype. Copy necessary official schemas into standalone resources so checks do
 not depend on the legacy tree. Track real bond-export and eDavki verification separately from
-synthetic tests when no live example exists.
+synthetic tests when no live example exists; eDavki draft imports are recorded in
+[`verification.md`](verification.md).
 
 Verify each generated report with:
 
