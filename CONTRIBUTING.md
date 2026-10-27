@@ -27,6 +27,9 @@ scripts/cppcheck.sh
 
 For broader or higher-risk changes, also run `scripts/valgrind.sh`.
 
+Every script, the CI jobs, coverage and the debug dumps are described in
+[docs/development.md](docs/development.md).
+
 To try the `taxbroker report` command line on the synthetic fixture, run
 `scripts/report.sh --synthetic`; it writes the Doh-KDVP XML and the summary below `runtime/report/`.
 `scripts/report.sh --help` prints the command's help.
