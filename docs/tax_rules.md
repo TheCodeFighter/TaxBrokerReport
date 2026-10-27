@@ -582,8 +582,9 @@ The result lists the evidence the user must attach when filing a foreign-tax cla
 XML generation does not mean evidence was attached or a return was filed. Missing facts needed
 to establish an amount or claim block that form through `income_details_required`; the separate
 task of attaching already identified evidence does not block a valid XML download. Retain all
-confirmed metadata and treatment decisions for the run and invalidate affected decisions when
-their source facts or reference-data revision change.
+confirmed metadata and treatment decisions as recorded answers while the app is open (see
+`diagnostics.md`, "Structured user-decision contract"); a changed source fact or reference-data
+revision makes a different question that needs a new answer.
 
 ## Interest forms and the annual deposit allowance
 

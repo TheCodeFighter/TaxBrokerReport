@@ -4,8 +4,10 @@
 
 #include <array>
 #include <chrono>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -74,8 +76,18 @@ TEST(ApplicationResultStatusTest, OneOpenRequestNeedsInputAndKeepsOtherXml) {
         .mMessage = "Synthetic processing message.",
     }};
     input.mRequests = {RequestInput{
-        .mType = RequestType::CapitalGainsFailureResolutionRequired,
-        .mAffectedReports = {kCapital},
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Synthetic Share",
+                            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                        }}},
+            },
         .mProcessingDiagnostics = {0},
     }};
     input.mReports[1].mXml = "<dividends/>";
@@ -250,8 +262,18 @@ TEST(ApplicationResultStatusTest, NeedsInputOutranksAFailedReportInTheOverallSta
         },
     };
     input.mRequests = {RequestInput{
-        .mType = RequestType::CapitalGainsFailureResolutionRequired,
-        .mAffectedReports = {kCapital},
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Synthetic Share",
+                            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                        }}},
+            },
         .mProcessingDiagnostics = {0},
     }};
 
@@ -279,8 +301,18 @@ TEST(ApplicationResultStatusTest, ABlockingErrorWithoutARequestFailsTheReportDes
         .mMessage = "Synthetic processing message.",
     }};
     input.mRequests = {RequestInput{
-        .mType = RequestType::CapitalGainsFailureResolutionRequired,
-        .mAffectedReports = {kCapital},
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Synthetic Share",
+                            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                        }}},
+            },
         .mProcessingDiagnostics = {0},
     }};
 
@@ -302,8 +334,18 @@ TEST(ApplicationResultStatusTest, ARequestOfOneReportDoesNotResolveTheErrorForAn
         .mMessage = "Synthetic processing message.",
     }};
     input.mRequests = {RequestInput{
-        .mType = RequestType::CapitalGainsFailureResolutionRequired,
-        .mAffectedReports = {kCapital},
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Synthetic Share",
+                            .mReasonCodes = {ProcessingDiagnosticCode::ArithmeticOverflow},
+                        }}},
+            },
         .mProcessingDiagnostics = {0},
     }};
     input.mReports[1].mXml = "<dividends/>";
@@ -332,8 +374,18 @@ TEST(ApplicationResultStatusTest, ALinkedRequestWithoutReportsResolvesNoError) {
         .mMessage = "Synthetic processing message.",
     }};
     input.mRequests = {RequestInput{
-        .mType = RequestType::CapitalGainsFailureResolutionRequired,
-        .mAffectedReports = {},
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Synthetic Share",
+                            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                        }}},
+            },
         .mProcessingDiagnostics = {0},
     }};
     input.mReports[0].mXml = "<capital/>";
@@ -357,13 +409,33 @@ TEST(ApplicationResultStatusTest, AnErrorLinkedToARequestOfEachReportNeedsInputI
     }};
     input.mRequests = {
         RequestInput{
-            .mType = RequestType::OtherInterestFailureResolutionRequired,
-            .mAffectedReports = {kOther},
+            .mQuestion =
+                {
+                    .mType = RequestType::OtherInterestFailureResolutionRequired,
+                    .mAffectedReports = {kOther},
+                    .mData =
+                        FailureResolutionQuestion{
+                            .mInvestments = {FailedInvestment{
+                                .mIsin = "XX0000000001",
+                                .mName = "Synthetic Share",
+                                .mReasonCodes = {ProcessingDiagnosticCode::ArithmeticOverflow},
+                            }}},
+                },
             .mProcessingDiagnostics = {0},
         },
         RequestInput{
-            .mType = RequestType::CapitalGainsFailureResolutionRequired,
-            .mAffectedReports = {kCapital},
+            .mQuestion =
+                {
+                    .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                    .mAffectedReports = {kCapital},
+                    .mData =
+                        FailureResolutionQuestion{
+                            .mInvestments = {FailedInvestment{
+                                .mIsin = "XX0000000001",
+                                .mName = "Synthetic Share",
+                                .mReasonCodes = {ProcessingDiagnosticCode::ArithmeticOverflow},
+                            }}},
+                },
             .mProcessingDiagnostics = {0},
         },
     };
@@ -1454,12 +1526,22 @@ TEST(ApplicationResultOrderTest, ParserDiagnosticsOfDifferentFilesGiveTheSameIds
 TEST(ApplicationResultOrderTest, RequestsAreOrderedAndNumberedAfterTheSort) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mRequests = {
-        RequestInput{.mType = RequestType::IncomeDetailsRequired,
-                     .mAffectedReports = {kOther, kBank},
-                     .mIsin = "XX0000000002"},
-        RequestInput{.mType = RequestType::TaxClassificationRequired,
-                     .mAffectedReports = {kCapital},
-                     .mIsin = "XX0000000001"},
+        RequestInput{
+            .mQuestion =
+                {
+                    .mType = RequestType::IncomeDetailsRequired,
+                    .mAffectedReports = {kOther, kBank},
+                    .mIsin = "XX0000000002",
+                },
+        },
+        RequestInput{
+            .mQuestion =
+                {
+                    .mType = RequestType::TaxClassificationRequired,
+                    .mAffectedReports = {kCapital},
+                    .mIsin = "XX0000000001",
+                },
+        },
     };
 
     const auto result = ApplicationResultBuilder::build(std::move(input));
@@ -1728,6 +1810,126 @@ TEST(ApplicationResultSourceTest, AParserDiagnosticKeepsItsCodeSeverityKeyAndMes
 
     EXPECT_EQ(adapted.mSources[0].mRow, 12U);
     EXPECT_EQ(adapted.mSources[0].mTransactionId, "synthetic-id");
+}
+
+// Question data of decision requests.
+
+TEST(ApplicationResultRequestTest, AFailureRequestListsItsInvestmentsSorted) {
+    // Two incomplete-history errors; the stage lists the investments out of ISIN order and with a
+    // repeated reason code.
+    ApplicationResultInput input{.mReportingYear = 2024, .mRunRevision = 7};
+    input.mProcessingDiagnostics = {
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mIsin = "XX0000000002"},
+            .mMessage = "Synthetic processing message.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mIsin = "XX0000000001"},
+            .mMessage = "Synthetic processing message.",
+        },
+    };
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments =
+                            {
+                                FailedInvestment{
+                                    .mIsin = "XX0000000002",
+                                    .mName = "Synthetic Fund",
+                                    .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                                },
+                                FailedInvestment{
+                                    .mIsin = "XX0000000001",
+                                    .mName = "Synthetic Share",
+                                    .mReasonCodes =
+                                        {ProcessingDiagnosticCode::LossEligibilityUnresolved,
+                                         ProcessingDiagnosticCode::IncompleteHistory,
+                                         ProcessingDiagnosticCode::IncompleteHistory},
+                                },
+                            },
+                    },
+            },
+        .mProcessingDiagnostics = {0, 1},
+    }};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.mRunRevision, 7U);
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& request = result.mRequests[0];
+
+    EXPECT_EQ(request.mRunRevision, 7U);
+    ASSERT_EQ(request.mInvestments.size(), 2U);
+
+    // The diagnostics sort by ISIN too: diagnostic-0001 is XX0000000001.
+    EXPECT_EQ(request.mInvestments[0].mIsin, "XX0000000001");
+    EXPECT_EQ(request.mInvestments[0].mName, "Synthetic Share");
+    EXPECT_EQ(request.mInvestments[0].mReasonCodes,
+              (std::vector<ApplicationDiagnosticCode>{
+                  ProcessingDiagnosticCode::IncompleteHistory,
+                  ProcessingDiagnosticCode::LossEligibilityUnresolved}));
+    EXPECT_EQ(request.mInvestments[0].mDiagnosticIds,
+              (std::vector<std::string>{"diagnostic-0001"}));
+
+    EXPECT_EQ(request.mInvestments[1].mIsin, "XX0000000002");
+    EXPECT_EQ(request.mInvestments[1].mName, "Synthetic Fund");
+    EXPECT_EQ(request.mInvestments[1].mDiagnosticIds,
+              (std::vector<std::string>{"diagnostic-0002"}));
+}
+
+TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {
+    // A failure choice without its investment list.
+    ApplicationResultInput withoutList{.mReportingYear = 2024};
+    withoutList.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                         .mAffectedReports = {kCapital},
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutList)),
+                 std::invalid_argument);
+
+    // An investment list on a type that has no question data yet.
+    ApplicationResultInput withList{.mReportingYear = 2024};
+    withList.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             FailureResolutionQuestion{
+                                 .mInvestments = {FailedInvestment{
+                                     .mIsin = "XX0000000001",
+                                     .mName = "Synthetic Share",
+                                     .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                                 }}},
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withList)), std::invalid_argument);
+
+    // A failure choice with an empty investment list: an answer would choose for nothing.
+    ApplicationResultInput emptyList{.mReportingYear = 2024};
+    emptyList.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::OtherInterestFailureResolutionRequired,
+                         .mAffectedReports = {kOther},
+                         .mData = FailureResolutionQuestion{.mInvestments = {}},
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(emptyList)),
+                 std::invalid_argument);
 }
 
 } // namespace

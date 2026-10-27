@@ -43,14 +43,25 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
         .mMessageKey = MessageKey::IncompleteHistory,
     }};
     input.mRequests = {RequestInput{
-        .mType = RequestType::CapitalGainsFailureResolutionRequired,
-        .mAffectedReports = {kCapital},
-        .mSources = {SourceReference{
-            .mBroker = Broker::TradeRepublic,
-            .mFilename = SourceFilename::fromPath("TransactionExport.csv"),
-            .mSourceRow = 42,
-            .mInputSequence = {1, 40},
-        }},
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {kCapital},
+                .mSources = {SourceReference{
+                    .mBroker = Broker::TradeRepublic,
+                    .mFilename = SourceFilename::fromPath("TransactionExport.csv"),
+                    .mSourceRow = 42,
+                    .mInputSequence = {1, 40},
+                }},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Example Investment",
+                            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                        }},
+                    },
+            },
         .mProcessingDiagnostics = {0},
     }};
     input.mReports[1].mXml = "<Envelope>dividends</Envelope>";
@@ -62,6 +73,7 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
     const auto expected = nlohmann::ordered_json::parse(R"({
       "schemaVersion": 2,
       "status": "needs_input",
+      "runRevision": 1,
       "reports": {
         "capitalGains": {
           "status": "needs_input",
@@ -121,6 +133,7 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
         {
           "id": "request-0001",
           "type": "capital_gains_failure_resolution_required",
+          "runRevision": 1,
           "affectedReports": ["capital_gains"],
           "sources": [
             {
@@ -129,9 +142,19 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
               "file": "TransactionExport.csv",
               "row": 42
             }
+          ],
+          "options": ["exclude_failed_instruments", "fail_report"],
+          "investments": [
+            {
+              "name": "Example Investment",
+              "isin": "XX0000000001",
+              "reasonCodes": ["incomplete_history"],
+              "diagnosticIds": ["diagnostic-0001"]
+            }
           ]
         }
-      ]
+      ],
+      "decisions": []
     })");
 
     EXPECT_EQ(text, expected.dump());
@@ -774,67 +797,108 @@ TEST(ApplicationResultJsonTest, WritesEveryRequestTypeWithItsDateAndIsin) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mRequests = {
         RequestInput{
-            .mType = RequestType::OtherInterestFailureResolutionRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::OtherInterestFailureResolutionRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                    .mData =
+                        FailureResolutionQuestion{
+                            .mInvestments = {FailedInvestment{
+                                .mIsin = "XX0000000001",
+                                .mName = "Synthetic Bond",
+                                .mReasonCodes = {ProcessingDiagnosticCode::UnrepresentableValue},
+                            }}},
+                },
         },
         RequestInput{
-            .mType = RequestType::CapitalGainsFailureResolutionRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                    .mData =
+                        FailureResolutionQuestion{
+                            .mInvestments = {FailedInvestment{
+                                .mIsin = "XX0000000001",
+                                .mName = "Synthetic Share",
+                                .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                            }}},
+                },
         },
         RequestInput{
-            .mType = RequestType::IncomeDetailsRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::IncomeDetailsRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                },
         },
         RequestInput{
-            .mType = RequestType::TaxClassificationRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::TaxClassificationRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                },
         },
         RequestInput{
-            .mType = RequestType::LossEligibilityConfirmationRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::LossEligibilityConfirmationRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                },
         },
         RequestInput{
-            .mType = RequestType::QuantityCorrectionRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::QuantityCorrectionRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                },
         },
         RequestInput{
-            .mType = RequestType::CorporateActionRatioRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::CorporateActionRatioRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                },
         },
         RequestInput{
-            .mType = RequestType::CorporateActionIdentityRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::CorporateActionIdentityRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                },
         },
         RequestInput{
-            .mType = RequestType::ExchangeRatesRequired,
-            .mAffectedReports = {kCapital},
-            .mTaxDate =
-                Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}.time_since_epoch()},
-            .mIsin = "XX0000000001",
+            .mQuestion =
+                {
+                    .mType = RequestType::ExchangeRatesRequired,
+                    .mAffectedReports = {kCapital},
+                    .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
+                                         .time_since_epoch()},
+                    .mIsin = "XX0000000001",
+                },
         },
     };
 
@@ -984,6 +1048,112 @@ TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAProcessingCodeIsItsJsonCode
     const ApplicationDiagnosticCode code = ProcessingDiagnosticCode::LossEligibilityUnresolved;
 
     EXPECT_EQ(api::diagnosticCodeName(code), "loss_eligibility_unresolved");
+}
+
+TEST(ApplicationResultJsonTest, ARecordedAnswerIsListedWithoutSources) {
+    auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    result.mDecisions = {RecordedDecision{
+        .mId = "decision-0001",
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments = {FailedInvestment{
+                    .mIsin = "XX0000000001",
+                    .mName = "Synthetic Share",
+                    .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                }},
+            },
+        .mAnswer = FailureResolutionAnswer{FailureResolution::FailReport},
+        .mFromEarlierRun = true,
+        .mUsed = true,
+    }};
+
+    const auto json = nlohmann::ordered_json::parse(api::serializeApplicationResultJson(result));
+
+    // The sources of a recorded answer belong to the run in which it was given, so the decision
+    // has only its type, question data and answer.
+    const auto expected = nlohmann::ordered_json::parse(R"([{
+      "id": "decision-0001",
+      "type": "capital_gains_failure_resolution_required",
+      "fromEarlierRun": true,
+      "used": true,
+      "investments": [
+        {"name": "Synthetic Share", "isin": "XX0000000001", "reasonCodes": ["incomplete_history"]}
+      ],
+      "answer": "fail_report"
+    }])");
+
+    EXPECT_EQ(json.at("decisions"), expected);
+}
+
+TEST(ApplicationResultJsonTest, WritesEveryAnswer) {
+    auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    result.mDecisions = {
+        RecordedDecision{
+            .mId = "decision-0001",
+            .mType = RequestType::OtherInterestFailureResolutionRequired,
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {FailedInvestment{
+                        .mIsin = "XX0000000002",
+                        .mName = "Synthetic Bond",
+                        .mReasonCodes = {ProcessingDiagnosticCode::UnrepresentableValue},
+                    }}},
+            .mAnswer = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments},
+        },
+        RecordedDecision{
+            .mId = "decision-0002",
+            .mType = RequestType::CapitalGainsFailureResolutionRequired,
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {FailedInvestment{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                    }}},
+            .mAnswer = CancelAnswer{},
+        },
+        // The session never records an answer to a question without question data; the writer
+        // still writes such a decision without investments.
+        RecordedDecision{
+            .mId = "decision-0003",
+            .mType = RequestType::TaxClassificationRequired,
+            .mAnswer = CancelAnswer{},
+        },
+    };
+
+    const auto json = nlohmann::json::parse(api::serializeApplicationResultJson(result));
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 3U);
+
+    EXPECT_EQ(decisions[0].at("answer"), "exclude_failed_instruments");
+    EXPECT_EQ(decisions[0].at("investments").at(0).at("isin"), "XX0000000002");
+    EXPECT_EQ(decisions[0].at("fromEarlierRun"), false);
+    EXPECT_EQ(decisions[0].at("used"), false);
+
+    EXPECT_EQ(decisions[1].at("answer"), "cancel");
+    EXPECT_EQ(decisions[1].at("investments").at(0).at("isin"), "XX0000000001");
+
+    EXPECT_EQ(decisions[2].at("type"), "tax_classification_required");
+    EXPECT_FALSE(decisions[2].contains("investments"));
+}
+
+TEST(ApplicationResultJsonTest, ARequestWithoutQuestionDataHasNoOptions) {
+    ApplicationResultInput input{.mReportingYear = 2024, .mRunRevision = 3};
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = RequestType::TaxClassificationRequired,
+                                        .mAffectedReports = {kCapital},
+                                    }}};
+
+    const auto json = nlohmann::json::parse(
+        api::serializeApplicationResultJson(ApplicationResultBuilder::build(std::move(input))));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(json.at("runRevision"), 3);
+    EXPECT_EQ(request.at("runRevision"), 3);
+    EXPECT_FALSE(request.contains("options"));
+    EXPECT_FALSE(request.contains("investments"));
 }
 
 } // namespace

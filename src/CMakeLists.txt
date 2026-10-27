@@ -20,6 +20,7 @@ add_library(taxbroker_core STATIC
     processors/application_result.cpp
     processors/capital_gains_report_builder.cpp
     processors/capital_report_gates.cpp
+    processors/decision_session.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
     processors/processing_diagnostics.cpp

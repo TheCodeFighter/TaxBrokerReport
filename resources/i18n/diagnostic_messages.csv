@@ -42,6 +42,13 @@ tax_classification_unknown.capital,"The asset class of this investment is missin
 corporate_action_not_applied,"This investment has a corporate action, such as a split, up to the end of the year. Corporate actions are not applied yet, so its sales cannot be reported. No Doh-KDVP file was written.","Ta naložba ima do konca leta korporacijsko dejanje, na primer razdelitev delnic. Korporacijska dejanja se še ne upoštevajo, zato njenih prodaj ni mogoče prijaviti. Datoteka Doh-KDVP ni bila ustvarjena."
 missing_exchange_rate.trade,"A trade of this investment is in {currency}, not in EUR. Conversion with the official exchange rate is not supported yet, so its sales cannot be reported. No Doh-KDVP file was written.","Posel s to naložbo je v valuti {currency}, ne v EUR. Preračun po uradnem menjalnem tečaju še ni podprt, zato njenih prodaj ni mogoče prijaviti. Datoteka Doh-KDVP ni bila ustvarjena."
 loss_eligibility_unresolved,"Part of this sale was sold at a loss. The rule that decides whether the loss may be used is not implemented yet, so the sale cannot be reported. No Doh-KDVP file was written.","Del te prodaje je bil prodan z izgubo. Pravilo, ki določa, ali se izguba lahko upošteva, še ni izvedeno, zato prodaje ni mogoče prijaviti. Datoteka Doh-KDVP ni bila ustvarjena."
+answer_rejected.stale_revision,"The answer to {requestId} belongs to an earlier calculation. Answer the current question again.","Odgovor na {requestId} se nanaša na prejšnji izračun. Ponovno odgovorite na trenutno vprašanje."
+answer_rejected.unknown_request,"There is no open question {requestId}.","Odprtega vprašanja {requestId} ni."
+answer_rejected.duplicate_answer,"Question {requestId} was answered more than once.","Na vprašanje {requestId} je bilo odgovorjeno večkrat."
+answer_rejected.answer_does_not_fit,"This answer does not fit question {requestId}.","Ta odgovor ne ustreza vprašanju {requestId}."
+answer_rejected.unknown_decision,"There is no saved answer {decisionId}.","Shranjenega odgovora {decisionId} ni."
+answer_rejected.stale_revision_delete,"Deleting {decisionId} refers to an earlier calculation. Choose the answers to delete again.","Brisanje {decisionId} se nanaša na prejšnji izračun. Ponovno izberite odgovore za brisanje."
+answer_rejected.duplicate_delete,"Answer {decisionId} was named more than once.","Odgovor {decisionId} je bil naveden večkrat."
 row_kind.trade,trade row,nakup ali prodaja
 row_kind.dividend,dividend row,dividenda
 row_kind.bond_interest,bond-interest row,obresti obveznice

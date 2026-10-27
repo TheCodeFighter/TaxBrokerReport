@@ -1,6 +1,7 @@
 #include "taxbroker/api/application_result_json.hpp"
 #include "json_strings.hpp"
 #include "taxbroker/application_result.hpp"
+#include "utils/numbered_id.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -9,7 +10,9 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <variant>
+#include <vector>
 
 namespace {
 
@@ -202,18 +205,6 @@ std::string_view codeString(const ApplicationDiagnosticCode& aCode) {
     return std::visit(toCodeString, aCode);
 }
 
-/// Pads a number to four digits: `diagnostic-0001`, `source-0002`.
-std::string numberedId(std::string_view aPrefix, std::size_t aNumber) {
-    auto digits = std::to_string(aNumber);
-
-    if (digits.size() < 4)
-    {
-        digits.insert(0, 4 - digits.size(), '0');
-    }
-
-    return std::string{aPrefix} + "-" + digits;
-}
-
 std::string isoDate(const Date& aDate) {
     const std::chrono::sys_days days{
         std::chrono::duration_cast<std::chrono::days>(aDate.time_since_epoch())};
@@ -331,10 +322,52 @@ Json diagnosticToJson(const ApplicationDiagnostic& aDiagnostic) {
     return serialized;
 }
 
+Json reasonCodesToJson(const std::vector<ApplicationDiagnosticCode>& aCodes) {
+    Json codes = Json::array();
+
+    std::transform(aCodes.begin(), aCodes.end(), std::back_inserter(codes), [](const auto& aCode) {
+        return Json(codeString(aCode));
+    });
+
+    return codes;
+}
+
+std::string_view toString(FailureResolution aResolution) {
+    switch (aResolution)
+    {
+    case FailureResolution::ExcludeFailedInstruments:
+        return "exclude_failed_instruments";
+    case FailureResolution::FailReport:
+        return "fail_report";
+    }
+
+    return "fail_report";
+}
+
+std::string_view answerString(const AnswerValue& aAnswer) {
+    const auto toAnswerString = [](const auto& aValue) -> std::string_view {
+        using Value = std::decay_t<decltype(aValue)>;
+
+        if constexpr (std::is_same_v<Value, FailureResolutionAnswer>)
+        {
+            return toString(aValue.mChoice);
+        }
+        else
+        {
+            static_assert(std::is_same_v<Value, CancelAnswer>);
+            return "cancel";
+        }
+    };
+
+    return std::visit(toAnswerString, aAnswer);
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
+    // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
         {"id", aRequest.mId},
         {"type", toString(aRequest.mType)},
+        {"runRevision", aRequest.mRunRevision},
         {"affectedReports", reportTypesToJson(aRequest.mAffectedReports)},
         {"sources", sourcesToJson(aRequest.mSources)},
     };
@@ -347,6 +380,61 @@ Json requestToJson(const DecisionRequest& aRequest) {
     {
         serialized["isin"] = *aRequest.mIsin;
     }
+
+    // Only the two failure-resolution types have question data so far.
+    if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
+    {
+        Json investments = Json::array();
+
+        std::transform(aRequest.mInvestments.begin(),
+                       aRequest.mInvestments.end(),
+                       std::back_inserter(investments),
+                       [](const RequestInvestment& aInvestment) {
+                           return Json{
+                               {"name", aInvestment.mName},
+                               {"isin", aInvestment.mIsin},
+                               {"reasonCodes", reasonCodesToJson(aInvestment.mReasonCodes)},
+                               {"diagnosticIds", aInvestment.mDiagnosticIds},
+                           };
+                       });
+
+        serialized["options"] = Json::array({toString(FailureResolution::ExcludeFailedInstruments),
+                                             toString(FailureResolution::FailReport)});
+        serialized["investments"] = std::move(investments);
+    }
+
+    return serialized;
+}
+
+/// A recorded answer: its type, question data and answer. It has no sources, because they are
+/// run-local and the answer may come from an earlier run.
+Json decisionToJson(const RecordedDecision& aDecision) {
+    Json serialized{
+        {"id", aDecision.mId},
+        {"type", toString(aDecision.mType)},
+        {"fromEarlierRun", aDecision.mFromEarlierRun},
+        {"used", aDecision.mUsed},
+    };
+
+    if (const auto* failure = std::get_if<FailureResolutionQuestion>(&aDecision.mData))
+    {
+        Json investments = Json::array();
+
+        std::transform(failure->mInvestments.begin(),
+                       failure->mInvestments.end(),
+                       std::back_inserter(investments),
+                       [](const FailedInvestment& aInvestment) {
+                           return Json{
+                               {"name", aInvestment.mName},
+                               {"isin", aInvestment.mIsin},
+                               {"reasonCodes", reasonCodesToJson(aInvestment.mReasonCodes)},
+                           };
+                       });
+
+        serialized["investments"] = std::move(investments);
+    }
+
+    serialized["answer"] = answerString(aDecision.mAnswer);
 
     return serialized;
 }
@@ -410,12 +498,21 @@ std::string serializeApplicationResultJson(const ApplicationResult& aResult, int
                    std::back_inserter(requests),
                    requestToJson);
 
+    Json decisions = Json::array();
+
+    std::transform(aResult.mDecisions.begin(),
+                   aResult.mDecisions.end(),
+                   std::back_inserter(decisions),
+                   decisionToJson);
+
     const Json response{
         {"schemaVersion", kApplicationResultSchemaVersion},
         {"status", toString(aResult.mStatus)},
+        {"runRevision", aResult.mRunRevision},
         {"reports", std::move(reports)},
         {"diagnostics", std::move(diagnostics)},
         {"requests", std::move(requests)},
+        {"decisions", std::move(decisions)},
     };
 
     return response.dump(aIndent, ' ', false, Json::error_handler_t::replace);

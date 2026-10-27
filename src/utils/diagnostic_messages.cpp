@@ -49,6 +49,12 @@ constexpr std::array kTypeAndCategory{
 constexpr std::array kCurrency{
     MessageParamDefinition{"currency", MessageParamKind::Text},
 };
+constexpr std::array kRequestId{
+    MessageParamDefinition{"requestId", MessageParamKind::Text},
+};
+constexpr std::array kDecisionId{
+    MessageParamDefinition{"decisionId", MessageParamKind::Text},
+};
 constexpr std::array kYearRange{
     MessageParamDefinition{"minYear", MessageParamKind::Number},
     MessageParamDefinition{"maxYear", MessageParamKind::Number},
@@ -127,6 +133,22 @@ constexpr std::array kDefinitions{
     MessageDefinition{
         MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", kCurrency},
     MessageDefinition{MessageKey::LossEligibilityUnresolved, "loss_eligibility_unresolved", {}},
+    MessageDefinition{
+        MessageKey::AnswerRejectedStaleRevision, "answer_rejected.stale_revision", kRequestId},
+    MessageDefinition{
+        MessageKey::AnswerRejectedUnknownRequest, "answer_rejected.unknown_request", kRequestId},
+    MessageDefinition{
+        MessageKey::AnswerRejectedDuplicateAnswer, "answer_rejected.duplicate_answer", kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedAnswerDoesNotFit,
+                      "answer_rejected.answer_does_not_fit",
+                      kRequestId},
+    MessageDefinition{
+        MessageKey::AnswerRejectedUnknownDecision, "answer_rejected.unknown_decision", kDecisionId},
+    MessageDefinition{MessageKey::AnswerRejectedStaleRevisionDelete,
+                      "answer_rejected.stale_revision_delete",
+                      kDecisionId},
+    MessageDefinition{
+        MessageKey::AnswerRejectedDuplicateDelete, "answer_rejected.duplicate_delete", kDecisionId},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -143,7 +165,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::LossEligibilityUnresolved) + 1,
+                  static_cast<std::size_t>(MessageKey::AnswerRejectedDuplicateDelete) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 7> kTermKeys{

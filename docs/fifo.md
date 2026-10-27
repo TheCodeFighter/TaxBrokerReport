@@ -210,8 +210,10 @@ request. The affected ISIN waits for an answer, but unrelated ISINs, dividends, 
 not. The frontend must use this request instead of reading a log message. Invalid entries are
 rejected with a clear field error and do not change inventory.
 
-The confirmation applies only to the combined action identity, complete source set, and report run.
-It must not be saved and silently reused for another action. The application result records that the ratio was supplied by
+The confirmation applies only to the combined action identity and complete source set (by broker
+and transaction ID). While the app is open, a later run with the same action and sources uses it as
+a visible, deletable recorded answer (see `diagnostics.md`, "Structured user-decision contract").
+It is never written to disk and never reused for another action. The application result records that the ratio was supplied by
 the user, together with the original action source, but must not claim that the broker supplied it.
 
 If the user cancels or cannot find the ratio, the app reports `corporate_action_ambiguous`. The
