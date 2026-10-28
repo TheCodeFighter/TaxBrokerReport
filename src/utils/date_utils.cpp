@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -147,6 +148,19 @@ std::optional<SourceTimestamp> parseSourceTimestamp(std::string_view aValue) {
     return SourceTimestamp{std::chrono::sys_days{*calendarDate}.time_since_epoch() +
                            std::chrono::hours{hour} + std::chrono::minutes{minute} +
                            std::chrono::seconds{second} + fractional - utcOffset};
+}
+
+std::string formatCalendarDate(Date aDate) {
+    const std::chrono::sys_days days{
+        std::chrono::duration_cast<std::chrono::days>(aDate.time_since_epoch())};
+    const std::chrono::year_month_day date{days};
+    const auto twoDigits = [](unsigned aValue) {
+        return (aValue < 10 ? std::string{"0"} : std::string{}) + std::to_string(aValue);
+    };
+
+    return std::to_string(static_cast<int>(date.year())) + '-' +
+           twoDigits(static_cast<unsigned>(date.month())) + '-' +
+           twoDigits(static_cast<unsigned>(date.day()));
 }
 
 } // namespace taxbroker

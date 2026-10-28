@@ -1312,7 +1312,7 @@ TEST(FifoMatcherTest, SaleAfterASplitIsNotReportedAsIncompleteHistory) {
             {
                 {.mMetadata = {.mTaxDate = day("2023-06-01")},
                  .mType = CorporateActionType::Split,
-                 .mRatio = 200'000'000}, // 2 new units for 1 old unit
+                 .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
             },
     }};
 
@@ -1531,7 +1531,7 @@ TEST(FifoMatcherTest, CorporateActionStopsOnlyItsOwnIsin) {
                 {
                     {.mMetadata = {.mTaxDate = day("2023-06-01")},
                      .mType = CorporateActionType::Split,
-                     .mRatio = 200'000'000},
+                     .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
                 },
         },
         {
@@ -1564,6 +1564,89 @@ TEST(FifoMatcherTest, CorporateActionStopsOnlyItsOwnIsin) {
 
     EXPECT_EQ(result.mIsins.at(1).mStatus, FifoIsinStatus::Matched);
     EXPECT_EQ(result.mIsins.at(1).mOpenLots.size(), 1U);
+}
+
+TEST(FifoMatcherTest, APurchaseOnTheDayOfASplitIsNotApplied) {
+    // fifo.md: an action comes before the trades of its day. The purchase of 1 unit on the split
+    // day is earlier in the ledger, but the pool stops before it; the day before still counts.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-05-31")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit, on the split day
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+
+    const auto& isin = result.mIsins.at(0);
+
+    // The purchase is listed first on that day, but the pool stops at the split.
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::CorporateAction);
+    EXPECT_EQ(isin.mStoppedAt,
+              (StatementEventReference{StatementEventKind::CorporateAction, 0, 0}));
+    ASSERT_EQ(isin.mOpenLots.size(), 1U);
+    EXPECT_EQ(isin.mOpenLots.at(0).mPurchase,
+              (StatementEventReference{StatementEventKind::Trade, 0, 0}));
+    EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 300'000'000); // 3 units
+}
+
+TEST(FifoMatcherTest, ASaleOnTheDayOfASplitIsNotMatched) {
+    // The sale of 1 unit on the split day comes after the split, so it is not matched before it.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 100'000'000,       // 1 unit, on the split day
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+
+    const auto& isin = result.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::CorporateAction);
+    EXPECT_EQ(isin.mStoppedAt,
+              (StatementEventReference{StatementEventKind::CorporateAction, 0, 0}));
+    EXPECT_TRUE(isin.mMatches.empty());
+    ASSERT_EQ(isin.mOpenLots.size(), 1U);
+    EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 300'000'000); // 3 units, none sold
 }
 
 TEST(FifoMatcherTest, ForeignPurchaseStopsTheIsinWithoutCreatingALot) {

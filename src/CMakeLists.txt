@@ -20,6 +20,7 @@ add_library(taxbroker_core STATIC
     processors/application_result.cpp
     processors/capital_gains_report_builder.cpp
     processors/capital_report_gates.cpp
+    processors/corporate_actions.cpp
     processors/decision_session.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
@@ -33,6 +34,7 @@ add_library(taxbroker_core STATIC
     utils/exact_arithmetic.cpp
     utils/logger.cpp
     utils/numeric_util.cpp
+    utils/split_ratio.cpp
 )
 
 target_include_directories(taxbroker_core PUBLIC 

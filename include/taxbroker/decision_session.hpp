@@ -45,6 +45,12 @@ enum class AnswerRejection {
     DuplicateAnswer,
     AnswerDoesNotFit,
     UnknownDecision,
+    RatioNotPositive,
+    RatioUnchanged,
+    RatioOutOfRange,
+    EffectiveDateOutOfRange,
+    /// A ratio answer whose confirmed position differs from the preview of its ratio.
+    PreviewMismatch,
 };
 
 struct RejectedAnswer {
@@ -81,8 +87,10 @@ class DecisionSession final {
 
     /// Records the answers and recalculates; the revision goes up by 1. Every answer must name an
     /// open request of the current revision, once, with an answer that fits its type; a request
-    /// without question data cannot be answered. If one answer does not fit, the whole call is
-    /// rejected and nothing changes. No answers change nothing.
+    /// without question data cannot be answered. A ratio answer needs two positive, different
+    /// numbers, an effective date within the question's range and the position after the action
+    /// that its preview gives; it is recorded reduced (20 / 10 as 2 / 1). If one answer does not
+    /// fit, the whole call is rejected and nothing changes. No answers change nothing.
     [[nodiscard]] std::vector<RejectedAnswer> answer(std::vector<DecisionAnswer> aAnswers);
 
     /// Deletes the named recorded answers (IDs of the current result) and recalculates; the

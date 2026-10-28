@@ -141,6 +141,34 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::AnswerRejectedDuplicateDelete,
          "answer_rejected.duplicate_delete",
          {{"decisionId", MessageParamKind::Text}}},
+        {MessageKey::CorporateActionAmbiguousRatioRequired,
+         "corporate_action_ambiguous.ratio_required",
+         {}},
+        {MessageKey::CorporateActionAmbiguousCancelled, "corporate_action_ambiguous.cancelled", {}},
+        {MessageKey::CorporateActionAmbiguousSameDay, "corporate_action_ambiguous.same_day", {}},
+        {MessageKey::CorporateActionNotAppliedRatioConfirmed,
+         "corporate_action_not_applied.ratio_confirmed",
+         {{"newShares", MessageParamKind::Number}, {"oldShares", MessageParamKind::Number}}},
+        {MessageKey::CorporateActionNotAppliedWaitingForEarlierAction,
+         "corporate_action_not_applied.waiting_for_earlier_action",
+         {{"earlierDate", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedRatioNotPositive,
+         "answer_rejected.ratio_not_positive",
+         {{"requestId", MessageParamKind::Text}, {"field", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedRatioUnchanged,
+         "answer_rejected.ratio_unchanged",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedRatioOutOfRange,
+         "answer_rejected.ratio_out_of_range",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedPreviewMismatch,
+         "answer_rejected.preview_mismatch",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedEffectiveDateOutOfRange,
+         "answer_rejected.effective_date_out_of_range",
+         {{"requestId", MessageParamKind::Text},
+          {"earliestDate", MessageParamKind::Text},
+          {"latestDate", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -201,8 +229,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 54U);
-    ASSERT_EQ(expectedMessages().size(), 54U);
+    ASSERT_EQ(definitions.size(), 64U);
+    ASSERT_EQ(expectedMessages().size(), 64U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -236,8 +264,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 54U);
-    EXPECT_EQ(keys.size(), 54U);
+    EXPECT_EQ(ids.size(), 64U);
+    EXPECT_EQ(keys.size(), 64U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -258,7 +286,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 61U); // 54 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 71U); // 64 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

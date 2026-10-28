@@ -50,6 +50,15 @@ constexpr Units UNITS_SCALE = 100000000;
 using CorpRatio = std::int64_t;
 constexpr CorpRatio CORP_RATIO_SCALE = 100000000;
 
+/// An exact split ratio: new shares per old shares, both positive and reduced, never equal.
+/// Example: 2 / 1 means every old share becomes two shares.
+struct SplitRatio {
+    std::int64_t mNewShares{};
+    std::int64_t mOldShares{};
+
+    bool operator==(const SplitRatio&) const = default;
+};
+
 using Isin = std::string;
 
 enum class TradeSide {
@@ -135,7 +144,8 @@ struct CorporateAction {
     /// Rounded source quantity for UnresolvedSplit, not a verified inventory change.
     /// Its sign does not establish direction; mUnitEvidence retains the exact source decimal.
     Units mUnitsDelta{};
-    std::optional<CorpRatio> mRatio;
+    /// A verified ratio from the source, kept exact. Empty for Trade Republic.
+    std::optional<SplitRatio> mRatio;
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };

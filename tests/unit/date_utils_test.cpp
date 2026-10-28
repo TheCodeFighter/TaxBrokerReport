@@ -37,6 +37,12 @@ TEST(DateUtilsTest, ParsesValidCalendarDatesIncludingLeapDays) {
     EXPECT_EQ(parseCalendarDate("9999-12-31"), makeDate(9999, 12, 31));
 }
 
+TEST(DateUtilsTest, FormatsACalendarDateWithTwoDigitMonthAndDay) {
+    EXPECT_EQ(formatCalendarDate(makeDate(2024, 3, 1)), "2024-03-01");
+    EXPECT_EQ(formatCalendarDate(makeDate(2025, 11, 14)), "2025-11-14");
+    EXPECT_EQ(formatCalendarDate(makeDate(2024, 12, 31)), "2024-12-31");
+}
+
 TEST(DateUtilsTest, RejectsMalformedAndImpossibleCalendarDates) {
     constexpr std::array<std::string_view, 15> invalidDates{
         "",

@@ -26,6 +26,7 @@ add_executable(taxbroker_unit_tests
     unit/application_result_test.cpp
     unit/capital_gains_report_builder_test.cpp
     unit/capital_report_gates_test.cpp
+    unit/corporate_actions_test.cpp
     unit/decision_session_test.cpp
     unit/event_metadata_test.cpp
     unit/exact_arithmetic_test.cpp
@@ -44,6 +45,7 @@ add_executable(taxbroker_unit_tests
     unit/taxpayer_file_test.cpp
     unit/traderepublic_parser_test.cpp
     unit/numeric_util_test.cpp
+    unit/split_ratio_test.cpp
 )
 
 target_include_directories(taxbroker_unit_tests PRIVATE 
@@ -76,6 +78,7 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 add_executable(taxbroker_integration_tests
     integration/application_result_integration_test.cpp
     integration/cli_report_integration_test.cpp
+    integration/corporate_action_integration_test.cpp
     integration/fifo_matching_integration_test.cpp
     integration/kdvp_xml_integration_test.cpp
     integration/loss_eligibility_integration_test.cpp

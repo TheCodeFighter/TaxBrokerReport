@@ -78,7 +78,8 @@ The core of this contract is implemented in `ApplicationResultBuilder`
 adapters, report scope, deterministic order and IDs, report and overall status, and the JSON. The
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
 (`include/taxbroker/decision_session.hpp`); of the nine request types only the two
-failure-resolution types have question data and answers so far. Applying the failure and exclusion
+failure-resolution types, the loss question and the ratio question have question data and answers
+so far. Applying the failure and exclusion
 choices, developer mode, `excludedItems`, the income summaries and XML failure isolation are not
 part of it yet. Until they exist, `excludedInvestments` is an empty list for capital gains and
 other interest, and `unsafe` is `false`.
@@ -446,7 +447,11 @@ rules:
   the session lives, so an answer from an earlier calculation or run never matches.
 - **Question identity.** A question is its `type` and its question data: for the two
   failure-resolution types, the investments with ISIN, name and reason codes, in a normalized
-  order; for the loss question, the ISIN, its name and the facts of each open sale (below). Sources, rows, source IDs, the tax date and diagnostic IDs only say where to look; they
+  order; for the loss question, the ISIN, its name and the facts of each open sale (below); for
+  the ratio question, the ISIN, its name, the effective date, every source record (broker,
+  transaction ID and the broker's own quantity field, sorted by broker and transaction ID) and
+  the open units just before the action, and the range of effective dates that keep them
+  (`fifo.md`, "User confirmation of the ratio"). Sources, rows, source IDs, the tax date and diagnostic IDs only say where to look; they
   are run-local and not part of it, so another file order asks the same question. Each type puts
   into its question data exactly the facts its answer depends on, such as a currency and date, or
   an action with the broker and transaction ID of every source. A different value is a different
@@ -456,7 +461,17 @@ rules:
   (`answer_rejected.stale_revision`), a request that is not open (`answer_rejected.unknown_request`),
   a request answered twice in the call (`answer_rejected.duplicate_answer`), or an answer that does
   not fit the type or a request without question data (`answer_rejected.answer_does_not_fit`).
-  Each rejection has a message key with
+  A ratio answer is also rejected when a number is 0 or less
+  (`answer_rejected.ratio_not_positive`, with the parameter `field`: `newShares` or `oldShares`),
+  when both numbers are equal (`answer_rejected.ratio_unchanged`), when the position after the
+  action does not fit the units (`answer_rejected.ratio_out_of_range`) or when the confirmed
+  position differs from the preview of the ratio (`answer_rejected.preview_mismatch`), and when its
+  effective date is outside the question's range (`answer_rejected.effective_date_out_of_range`,
+  with `earliestDate` and `latestDate`). An accepted
+  ratio is recorded reduced: `20 / 10` as `2 / 1`. The key tells the frontend which input to
+  mark: `ratio_not_positive` the one named by `field` (the only key that can mean either
+  number), `ratio_unchanged` both numbers, `ratio_out_of_range` the ratio, `preview_mismatch`
+  the confirmed position and `effective_date_out_of_range` the date. Each rejection has a message key with
   the `requestId` parameter. An accepted answer is bound to the request's question, never to its
   ID, and the run is recalculated.
 - **Recalculation.** The calculation rebuilds the whole run from its full input and gets only the
@@ -482,7 +497,9 @@ rules:
   the question stays open, the report stays `needs_input` and no XML is written. For the loss
   question, each open sale gets a blocking `loss_eligibility_unresolved` error with the key
   `loss_eligibility_unresolved.cancelled` and no request, so capital gains fails until the
-  exclusion choice exists (latter task). An unanswered
+  exclusion choice exists (latter task). For the ratio question, the action gets a blocking
+  `corporate_action_ambiguous` error with the key `corporate_action_ambiguous.cancelled` and no
+  request, with the same result. An unanswered
   request stays open: the session never answers anything by itself.
 - **Memory only.** Answers are never written to disk or browser storage and are gone when the app
   closes. Only the taxpayer profile may be saved (#278).
@@ -494,6 +511,17 @@ In the JSON, a loss request has `"options":["no_other_activity","other_activity"
 decimal strings with eight decimals (`"4.00000000"`). A recorded loss answer lists the same
 `lossCheck` and `"answer":"no_other_activity"`, `"other_activity"` or `"cancel"`.
 
+A ratio request has no `options` and has `"ratioCheck"` with `name`, `isin`, `effectiveDate`,
+`sources` (each with `broker`, and `transactionId` and `sourceValue` when the record has them;
+`sourceValue` is the broker's quantity field as an exact decimal, shown read-only) and
+`positionBefore` (units, eight decimals), `earliestDate` and `latestDate` (the effective dates
+that keep that position; `effectiveDate` is the broker's row date). It is answered with
+`newShares`, `oldShares` (whole numbers), `effectiveDate` (from the announcement, within the
+range) and `confirmedUnits` (the previewed position, eight decimals). A recorded ratio answer
+lists the same `ratioCheck` and
+`"answer":{"newShares":2,"oldShares":1,"effectiveDate":"2024-06-01","confirmedUnits":"6.00000000"}`
+with the reduced numbers, or `"answer":"cancel"`.
+
 A request type whose processor does not define its question data yet cannot be answered, not even
 cancelled: without question data, all its questions would be the same question, and one answer
 would reach questions the user never saw. The builder rejects question data that does not fit the
@@ -503,7 +531,7 @@ request type, and a failure-resolution question without an investment.
 | --- | --- |
 | `exchange_rates_required` | Missing currency/date pairs, usage and any verified event-specific fallback; answer with official pair rates or explicit fallback acknowledgements. |
 | `corporate_action_identity_required` | Candidate actions with ISIN, dates, types, ratios and all sources; answer with confirmed grouping, effective dates and order where needed. |
-| `corporate_action_ratio_required` | Combined action identity, complete source set, original source value, old position and examples; answer with positive whole-number new/old shares and confirmation of the previewed position. |
+| `corporate_action_ratio_required` | One request per ISIN, for the first action its pool reached: the ISIN, its name, the effective date, every source record of the action (broker, transaction ID, read-only quantity field; rows of different brokers on one date are one action) the open units of all brokers just before it, and the range of effective dates that keep them. Answer with positive, different whole-number new/old shares, the effective date from the announcement within the range and the confirmed previewed position, or cancel. The GUI and the CLI also accept the shares before and after and turn them into the two numbers; they warn about a reduced number above 1000. |
 | `quantity_correction_required` | Source event, original/proposed quantity, evidence, difference, resulting position and EUR impact/budget; answer with confirmed proposed quantity or a validated correction and supporting assertion. |
 | `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | Investment/event identity, current category, safe sources, permitted treatment choices and treatment-specific missing fields; answer with classification, required facts, or explicit exclusion and reason. |
@@ -591,7 +619,8 @@ Additional codes and their default scope are:
 | `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
 | `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that cannot ask yet (the CLI until next task, the debug tools) treats the open units as blocked; no request. |
-| `corporate_action_not_applied` | Error for capital gains: the ISIN has a corporate action up to 31 December that is not applied yet. Walking skeleton only: once splits are applied and corporate-action ratios are confirmed, the `corporate_action_*` codes replace it. |
+| `corporate_action_not_applied` | Error for capital gains: the ISIN has a corporate action up to 31 December that is not applied yet. Key `.ratio_confirmed` (parameters `newShares`, `oldShares`) once the user confirmed its ratio, `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one, and the plain key when no ratio is asked (no units before the action, or a class that never reaches Doh-KDVP). Walking skeleton only: once splits are applied, the other `corporate_action_*` codes replace it. |
+| `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.cancelled` after a cancel (no request), and `.same_day` for two or more rows of one broker for the ISIN on one date (no request until the identity question exists). |
 | `tax_classification_unknown` | Error for the potentially affected forms, with a classification request while resolvable. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
 | `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion. |

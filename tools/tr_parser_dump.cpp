@@ -1,5 +1,6 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/capital_gains_report_builder.hpp"
+#include "processors/corporate_actions.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "processors/loss_eligibility.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
@@ -454,7 +455,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      ratio: ";
             if (action.mRatio)
             {
-                writeFixedPoint(aOutput, *action.mRatio, CORP_RATIO_SCALE);
+                aOutput << action.mRatio->mNewShares << " / " << action.mRatio->mOldShares;
             }
             else
             {
@@ -870,6 +871,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "MissingExchangeRate";
     case ProcessingDiagnosticCode::LossEligibilityUnresolved:
         return "LossEligibilityUnresolved";
+    case ProcessingDiagnosticCode::CorporateActionAmbiguous:
+        return "CorporateActionAmbiguous";
     }
 
     return "Unknown";
@@ -1063,6 +1066,85 @@ void writeLossEligibility(std::ostream& aOutput,
                 aOutput << '\n';
             }
         }
+    }
+
+    aOutput << '\n';
+}
+
+std::string_view toString(CorporateActionState aState) {
+    switch (aState)
+    {
+    case CorporateActionState::RatioConfirmed:
+        return "RatioConfirmed";
+    case CorporateActionState::WaitingForRatio:
+        return "WaitingForRatio";
+    case CorporateActionState::WaitingForEarlierAction:
+        return "WaitingForEarlierAction";
+    case CorporateActionState::Cancelled:
+        return "Cancelled";
+    case CorporateActionState::SameDayAmbiguous:
+        return "SameDayAmbiguous";
+    case CorporateActionState::NoPosition:
+        return "NoPosition";
+    case CorporateActionState::NumericFailure:
+        return "NumericFailure";
+    case CorporateActionState::NotAskedForClass:
+        return "NotAskedForClass";
+    }
+
+    return "Unknown";
+}
+
+/// Writes each corporate action of an ISIN whose pool stopped at one: its rows and its state. The
+/// tool has no answers, so a ratio question stays open.
+void writeCorporateActions(std::ostream& aOutput,
+                           const BrokerStatement& aStatement,
+                           const CorporateActionResult& aActions) {
+    aOutput << "CORPORATE ACTIONS\n  actions: " << aActions.mActions.size()
+            << "\n  open_questions: " << aActions.mRequests.size() << '\n';
+
+    for (const auto state : {CorporateActionState::RatioConfirmed,
+                             CorporateActionState::WaitingForRatio,
+                             CorporateActionState::WaitingForEarlierAction,
+                             CorporateActionState::Cancelled,
+                             CorporateActionState::SameDayAmbiguous,
+                             CorporateActionState::NoPosition,
+                             CorporateActionState::NumericFailure,
+                             CorporateActionState::NotAskedForClass})
+    {
+        aOutput << "  state_" << toString(state) << ": "
+                << std::count_if(aActions.mActions.begin(),
+                                 aActions.mActions.end(),
+                                 [state](const ResolvedCorporateAction& aAction) {
+                                     return aAction.mState == state;
+                                 })
+                << '\n';
+    }
+
+    aOutput << '\n';
+
+    for (const auto& action : aActions.mActions)
+    {
+        aOutput << "- name: " << action.mName << "\n  isin: " << action.mIsin << "\n  date: ";
+        writeDate(aOutput, action.mEffectiveDate);
+        aOutput << "\n  rows: " << action.mEvents.size() << '\n';
+
+        for (const auto& event : action.mEvents)
+        {
+            aOutput << "    - ";
+            writeCapitalEvent(aOutput, aStatement, event);
+            aOutput << '\n';
+        }
+
+        aOutput << "  state: " << toString(action.mState);
+
+        if (action.mRatio)
+        {
+            aOutput << "\n  ratio: " << action.mRatio->mNewShares << " / "
+                    << action.mRatio->mOldShares;
+        }
+
+        aOutput << '\n';
     }
 
     aOutput << '\n';
@@ -1318,19 +1400,24 @@ int writeFifoResult(std::span<char*> aArguments) {
         writeFifoIsin(output, statement.mPresentation, isin);
     }
 
-    // No answers: the open loss units are treated as blocked, like in the CLI.
+    // No answers: a ratio question stays open, and the open loss units are treated as blocked,
+    // like in the CLI.
     RunDecisions decisions;
+    const auto actions =
+        CorporateActionResolver::resolve(statement, *prepared.mLedger, fifo, decisions);
     const auto loss = LossEligibilityChecker::check(statement,
                                                     *prepared.mLedger,
                                                     fifo,
                                                     decisions,
                                                     OpenLossQuestions::AssumeBlocked);
 
+    writeCorporateActions(output, statement.mPresentation, actions);
     writeLossEligibility(output, statement.mPresentation, loss);
     writeKdvpReport(output, statement, *prepared.mLedger, fifo, loss);
 
     auto diagnostics = prepared.mDiagnostics;
     diagnostics.insert(diagnostics.end(), fifo.mDiagnostics.begin(), fifo.mDiagnostics.end());
+    diagnostics.insert(diagnostics.end(), actions.mDiagnostics.begin(), actions.mDiagnostics.end());
     diagnostics.insert(diagnostics.end(), loss.mDiagnostics.begin(), loss.mDiagnostics.end());
     writeProcessingDiagnostics(output, diagnostics);
 

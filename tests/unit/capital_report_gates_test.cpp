@@ -346,7 +346,8 @@ TEST(CapitalReportGatesTest, UnknownClassWithTwoSalesIsOneUnclassifiedErrorNamin
                                             source(4, "synthetic-sell-2")}));
 }
 
-TEST(CapitalReportGatesTest, SplitBeforeTheSaleGivesCorporateActionNotApplied) {
+TEST(CapitalReportGatesTest, SplitBeforeTheSaleGivesNoGateError) {
+    // The corporate-action stage gives the error of this pool (CorporateActionResolverTest).
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Share",
@@ -378,20 +379,7 @@ TEST(CapitalReportGatesTest, SplitBeforeTheSaleGivesCorporateActionNotApplied) {
 
     const auto diagnostics = checkYear(merged, 2024);
 
-    ASSERT_EQ(diagnostics.size(), 1U);
-
-    const auto& diagnostic = diagnostics.at(0);
-
-    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionNotApplied);
-    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionNotApplied);
-    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::CorporateAction);
-    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
-    EXPECT_EQ(diagnostic.mContext.mInstrumentName, "Synthetic Share");
-    // The date and source of the split, not of the sale.
-    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2023-01-15"));
-    EXPECT_EQ(diagnostic.mContext.mSources,
-              (std::vector<SourceReference>{source(3, "synthetic-split-1")}));
+    EXPECT_TRUE(diagnostics.empty());
 }
 
 TEST(CapitalReportGatesTest, SplitWithoutASaleThisYearGivesNothing) {
@@ -423,8 +411,9 @@ TEST(CapitalReportGatesTest, SplitWithoutASaleThisYearGivesNothing) {
     EXPECT_TRUE(diagnostics.empty());
 }
 
-TEST(CapitalReportGatesTest, SplitAfterTheSaleInTheSameYearGivesCorporateActionNotApplied) {
-    // The split is in the selected year, after the sale: still up to 31 December.
+TEST(CapitalReportGatesTest, SplitAfterTheSaleInTheSameYearGivesNoGateError) {
+    // The split is in the selected year, after the sale: still up to 31 December. The
+    // corporate-action stage gives the error of this pool (CorporateActionResolverTest).
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Share",
@@ -456,16 +445,7 @@ TEST(CapitalReportGatesTest, SplitAfterTheSaleInTheSameYearGivesCorporateActionN
 
     const auto diagnostics = checkYear(merged, 2024);
 
-    ASSERT_EQ(diagnostics.size(), 1U);
-
-    const auto& diagnostic = diagnostics.at(0);
-
-    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionNotApplied);
-    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
-    // The date and source of the split, not of the sale.
-    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-09-01"));
-    EXPECT_EQ(diagnostic.mContext.mSources,
-              (std::vector<SourceReference>{source(4, "synthetic-split-1")}));
+    EXPECT_TRUE(diagnostics.empty());
 }
 
 TEST(CapitalReportGatesTest, NonEurPurchaseGivesMissingExchangeRate) {
@@ -840,7 +820,7 @@ TEST(CapitalReportGatesTest, IncompleteHistoryAddsNoSecondError) {
     EXPECT_TRUE(diagnostics.empty());
 }
 
-TEST(CapitalReportGatesTest, CryptoSaleAfterASplitGetsBothErrors) {
+TEST(CapitalReportGatesTest, CryptoSaleAfterASplitGetsTheClassError) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Coin",
@@ -872,10 +852,10 @@ TEST(CapitalReportGatesTest, CryptoSaleAfterASplitGetsBothErrors) {
 
     const auto diagnostics = checkYear(merged, 2024);
 
-    // Both are real problems: the class first, then the stop of the pool.
-    ASSERT_EQ(diagnostics.size(), 2U);
+    // The corporate-action stage gives the error of the stopped pool
+    // (CorporateActionResolverTest); the gates give the class error.
+    ASSERT_EQ(diagnostics.size(), 1U);
     EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::UnsupportedTaxTreatment);
-    EXPECT_EQ(diagnostics.at(1).mCode, ProcessingDiagnosticCode::CorporateActionNotApplied);
 }
 
 TEST(CapitalReportGatesTest, PrivateMarketEventsOfTheYearGetOneWarningEach) {

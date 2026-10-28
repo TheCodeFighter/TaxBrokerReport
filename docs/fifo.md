@@ -187,34 +187,82 @@ meaning has not been verified. The value could be a change in units, a resulting
 another broker-specific value. The app must preserve it as source data but must not use it alone
 to calculate a ratio or decide whether the action is a split or reverse split.
 
-### Trade Republic user confirmation
+### User confirmation of the ratio
 
-When a Trade Republic action has no verified ratio, the frontend asks the user to find the split
-announcement and enter:
+When an action has no verified ratio, the app asks the user to find the split announcement. This
+is the case for every Trade Republic action, and for an action of any other broker that supplies
+no verified ratio: the question never depends on the broker. The user enters the ratio in one of
+two ways, and both end in the same two numbers:
 
-- the number of new shares; and
-- the number of old shares those new shares replace.
+- **The ratio:** the number of new shares and the number of old shares those new shares replace,
+  for example `10 : 1`.
+- **The shares before and after:** as the broker shows them, with up to eight decimals. The app
+  turns them into whole numbers exactly and reduces them: `0.52` before and `5.20` after is
+  `10 / 1`.
 
 The prompt shows the investment name, ISIN, effective date, source file, and source row. It also
-shows the CSV `shares` value as read-only source information and says that the app does not know
-what that value means. It gives simple examples: “2 new for 1 old” and “1 new for 10 old.” It tells
-the user not to continue if the announcement mentions cash, another investment, or a changed ISIN.
+shows each source's own quantity field (the Trade Republic `shares` value) as read-only source
+information and says that the app does not know what that value means. It gives simple examples:
+“2 new for 1 old”, “1 new for 10 old” and a ten-for-one split: “every old share becomes 10 shares;
+if the announcement says *nine additional shares for every share held*, the ratio is still
+10 : 1 (1 kept and 9 added)”. That example matters: a source quantity field may look like the
+added units (9 times the units held, for a ten-for-one split), so a user who reads that value or
+the word “additional” may enter `9 / 1`. It tells the user not to continue if the announcement
+mentions cash, another investment, or a changed ISIN.
 
-Both entered numbers must be positive whole numbers. Their greatest common divisor is removed, so
+Both numbers must be positive whole numbers. Their greatest common divisor is removed, so
 `20 / 10` is stored as `2 / 1`. Equal numbers are rejected because they would not change the
-position. A ratio above one is a split; a ratio below one is a reverse split. The frontend shows
-the resulting total units and asks the user to confirm before processing continues.
+position. A ratio above one is a split; a ratio below one is a reverse split. When a reduced number
+is above 1000 (for example `520000001 / 52000000` from a rounded share count), the frontend and
+the CLI warn that the ratio looks unusual; the backend still accepts it after the preview is
+confirmed. The frontend shows the resulting total units (the open units of all brokers before the
+action times the ratio, rounded once to eight decimals) and asks the user to confirm before
+processing continues. The answer carries both numbers and that confirmed total; it is rejected
+unless the total equals the preview of its ratio. So `9 / 1` with the total of `10 / 1` is
+rejected, and `9 / 1` with its own total of `4.68000000` units for `0.52` units is accepted: only
+the user can compare it with the announcement.
 
 The processing result represents this prompt as a structured `corporate_action_ratio_required`
 request. The affected ISIN waits for an answer, but unrelated ISINs, dividends, and interest do
 not. The frontend must use this request instead of reading a log message. Invalid entries are
-rejected with a clear field error and do not change inventory.
+rejected with a message key that tells which number to correct (see `diagnostics.md`) and do not
+change inventory.
 
-The confirmation applies only to the combined action identity and complete source set (by broker
-and transaction ID). While the app is open, a later run with the same action and sources uses it as
-a visible, deletable recorded answer (see `diagnostics.md`, "Structured user-decision contract").
-It is never written to disk and never reused for another action. The application result records that the ratio was supplied by
-the user, together with the original action source, but must not claim that the broker supplied it.
+The units held just before the action are the units at the start of its day: the action comes
+before the trades of its day for the same ISIN (maintainer decision, 2026-10-28), also when a
+trade has an earlier time. For example, 3 units bought earlier and 1 bought at 09:00 on the day
+of a split at 10:00 give a position of 3 units before the split, so `2 / 1` previews 6 units, not
+8. How the lot step treats those same-day trades after the split is part of the lot step.
+
+The broker's row date may be a later booking date, so the user also enters the effective date
+from the announcement; the prompt fills in the row date. The app
+accepts a date only when it gives the same units before the action as the row date: no trade of
+the ISIN, at any broker, may be dated from the earlier of the two dates to the day before the
+later one. The question lists that range: from the day after the last trade before the row date,
+to the earliest of the first trade on or after it (the action still comes first on that day),
+the day before the next action of the ISIN, and 31 December of the selected year. A date outside
+it would move a trade or another action to the other side of this one; that is not supported
+yet, so the answer is rejected and the ISIN stays blocked until the user closes the question.
+For example, the announcement says 10 November, the row is dated 14 November, and 0.1 units were
+bought on 12 November: only dates from 13 November keep the position, so 10 November is
+rejected. Without that purchase, 10 November is accepted. The row's tax date never changes; the
+lot step orders the action by the confirmed date.
+
+The question is asked only for an ISIN with a sale in the selected year, and not for a bond,
+derivative, crypto or private fund, whose sales are blocked anyway. When an ISIN has several
+actions, only the first unresolved one is asked, because the units before a later action depend
+on the earlier one being applied. A later action of any ratio is listed from the start as waiting
+for the earlier one, and is asked once that one is applied.
+
+The confirmation applies only to the combined action identity, its complete source set (by broker
+and transaction ID) and the units held just before it. A new or changed source record, or another
+position before the action (for example after adding a file with an earlier purchase), makes a new
+question. While the app is open, a later run with the same question uses the answer as a visible,
+deletable recorded answer (see `diagnostics.md`, "Structured user-decision contract"). It is never
+written to disk and never reused for another action. The application result records that the ratio
+was supplied by the user, together with the original action source, but must not claim that the
+broker supplied it. Until the lot step applies the ratio, the ISIN stays blocked with
+`corporate_action_not_applied` (key `.ratio_confirmed`).
 
 If the user cancels or cannot find the ratio, the app reports `corporate_action_ambiguous`. The
 affected ISIN follows the normal exclusion flow. No developer-mode option may bypass the missing
@@ -241,6 +289,12 @@ This applies even when records agree or are exact copies from overlapping export
 dates, source references, types and known ratios for that ISIN/year. The user-facing message asks
 the user to check for a potential mismatch; it does not claim the records are wrong. Acknowledgeable
 warnings remain visible beside the download and do not themselves block processing.
+
+Action rows of one ISIN on one date from different brokers, none with a verified ratio, are one
+action with one ratio question that lists every source (maintainer decision, 2026-10-28). Two rows
+of the same broker on one date with different transaction IDs could be one action reported twice
+or two actions: the app reports `corporate_action_ambiguous` for them until the identity question
+below exists.
 
 The same calendar year is a warning group, never a deduplication key. Two established actions on
 different dates remain two actions. If records could describe the same action but disagree about

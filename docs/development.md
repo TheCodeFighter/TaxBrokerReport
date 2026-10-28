@@ -216,7 +216,10 @@ decimals, without fees. After the instruments, the file shows the Doh-KDVP filin
 `F10`, with `F8` the running stock), each blocked ISIN with its reason and the sales it names, and
 the units left out because they are past the holding period. While any ISIN is blocked there is no
 report, so the listed rows leave out every blocked ISIN as a preview of the tool, not a choice the
-user made. Before the rows, a "LOSS RULE (30 days)" part lists each sale of the year with a loss:
+user made. Before the rows, a "CORPORATE ACTIONS" part lists each corporate action of an ISIN
+whose pool stopped at one: its date, rows and state (for example `WaitingForRatio`, or
+`WaitingForEarlierAction` for a later action). The tool has no answers, so a ratio question stays
+open. Then a "LOSS RULE (30 days)" part lists each sale of the year with a loss:
 its window, loss units, units blocked by known purchases, open units, state and the purchases it
 takes (units and dates only). The tool has no answers, so, like the CLI, it treats the open units
 as blocked (`assumed_blocked_units`, state `Decided`) and gives a warning per ISIN. The file

@@ -43,13 +43,13 @@ TEST(TaxProcessorTest, RetainsOlderPurchasesSalesAndActionsThroughInclusiveYearE
             {
                 {.mMetadata = {.mTaxDate = *parseCalendarDate("2023-06-01")},
                  .mType = CorporateActionType::Split,
-                 .mRatio = 200'000'000},
+                 .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
                 {.mMetadata = {.mTaxDate = *parseCalendarDate("2024-06-01")},
                  .mType = CorporateActionType::UnresolvedSplit,
                  .mUnitsDelta = -100'000'000},
                 {.mMetadata = {.mTaxDate = *parseCalendarDate("2025-01-02")},
                  .mType = CorporateActionType::ReverseSplit,
-                 .mRatio = 10'000'000},
+                 .mRatio = SplitRatio{.mNewShares = 1, .mOldShares = 10}},
             },
     }};
     merged.mStatement.mChronologicalOrder = {
@@ -101,7 +101,8 @@ TEST(TaxProcessorTest, RetainsOlderPurchasesSalesAndActionsThroughInclusiveYearE
     EXPECT_EQ(instrument.mCorporateActions.at(1).mType, CorporateActionType::UnresolvedSplit);
     EXPECT_FALSE(instrument.mCorporateActions.at(1).mRatio.has_value());
     EXPECT_EQ(instrument.mCorporateActions.at(1).mUnitsDelta, -100'000'000);
-    EXPECT_EQ(instrument.mCorporateActions.at(2).mRatio, 10'000'000);
+    EXPECT_EQ(instrument.mCorporateActions.at(2).mRatio,
+              (SplitRatio{.mNewShares = 1, .mOldShares = 10}));
     EXPECT_EQ(merged.mStatement.mPresentation.mTradeInstruments.at(0).mTransactions.at(0).mUnits,
               1'000'000'000);
 }
@@ -131,10 +132,10 @@ TEST(TaxProcessorTest, LossViewIncludesDay30ButExcludesDay31AndRetainsJanuarySal
             {
                 {.mMetadata = {.mTaxDate = *parseCalendarDate("2023-12-02")},
                  .mType = CorporateActionType::Split,
-                 .mRatio = 200'000'000},
+                 .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
                 {.mMetadata = {.mTaxDate = *parseCalendarDate("2025-01-30")},
                  .mType = CorporateActionType::ReverseSplit,
-                 .mRatio = 10'000'000},
+                 .mRatio = SplitRatio{.mNewShares = 1, .mOldShares = 10}},
                 {.mMetadata = {.mTaxDate = *parseCalendarDate("2025-01-31")},
                  .mType = CorporateActionType::UnresolvedSplit},
             },
@@ -317,7 +318,7 @@ TEST(TaxProcessorTest, PurchasesAndActionsOnlyRetainInventoryCandidatesWithoutIn
                            .mTradeSide = TradeSide::Buy}},
         .mCorporateActions = {{.mMetadata = {.mTaxDate = *parseCalendarDate("2024-03-01")},
                                .mType = CorporateActionType::Split,
-                               .mRatio = 200'000'000}},
+                               .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}}},
     }};
     merged.mStatement.mChronologicalOrder = {
         {StatementEventKind::Trade, 0, 0},

@@ -66,6 +66,16 @@ enum class MessageKey {
     AnswerRejectedUnknownDecision,
     AnswerRejectedStaleRevisionDelete,
     AnswerRejectedDuplicateDelete,
+    CorporateActionAmbiguousRatioRequired,
+    CorporateActionAmbiguousCancelled,
+    CorporateActionAmbiguousSameDay,
+    CorporateActionNotAppliedRatioConfirmed,
+    CorporateActionNotAppliedWaitingForEarlierAction,
+    AnswerRejectedRatioNotPositive,
+    AnswerRejectedRatioUnchanged,
+    AnswerRejectedRatioOutOfRange,
+    AnswerRejectedPreviewMismatch,
+    AnswerRejectedEffectiveDateOutOfRange,
 };
 
 enum class MessageParamKind {

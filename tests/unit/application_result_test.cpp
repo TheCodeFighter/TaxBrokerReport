@@ -2024,6 +2024,192 @@ TEST(ApplicationResultRequestTest, ALossQuestionNeedsSalesWithOpenUnits) {
                  std::invalid_argument);
 }
 
+TEST(ApplicationResultRequestTest, ARatioQuestionNeedsASourceAndOpenUnits) {
+    // Ratio question data on another request type.
+    ApplicationResultInput otherType{.mReportingYear = 2024};
+    otherType.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionIdentityRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 1),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "3"}},
+                                 .mPositionBefore = 300'000'000, // 3 units
+                                 .mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(otherType)),
+                 std::invalid_argument);
+
+    // A ratio question without question data.
+    ApplicationResultInput withoutData{.mReportingYear = 2024};
+    withoutData.mRequests = {RequestInput{.mQuestion = {
+                                              .mType = RequestType::CorporateActionRatioRequired,
+                                              .mAffectedReports = {kCapital},
+                                          }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutData)),
+                 std::invalid_argument);
+
+    // A ratio question without a source record.
+    ApplicationResultInput withoutSource{.mReportingYear = 2024};
+    withoutSource.mRequests = {RequestInput{.mQuestion = {
+                                                .mType = RequestType::CorporateActionRatioRequired,
+                                                .mAffectedReports = {kCapital},
+                                                .mData =
+                                                    CorporateActionRatioQuestion{
+                                                        .mIsin = "XX0000000001",
+                                                        .mName = "Synthetic Share",
+                                                        .mEffectiveDate = day(2024, 6, 1),
+                                                        .mPositionBefore = 300'000'000, // 3 units
+                                                        .mEarliestDate = day(2024, 1, 11),
+                                                        .mLatestDate = day(2024, 9, 1),
+                                                    },
+                                            }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutSource)),
+                 std::invalid_argument);
+
+    // No units before the action: nothing to preview.
+    ApplicationResultInput noPosition{.mReportingYear = 2024};
+    noPosition.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 1),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "3"}},
+                                 .mPositionBefore = 0,
+                                 .mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(noPosition)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, ARatioQuestionNeedsADateRangeAroundItsDate) {
+    // The range starts after the row date of 2024-06-01.
+    ApplicationResultInput lateStart{.mReportingYear = 2024};
+    lateStart.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 1),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "3"}},
+                                 .mPositionBefore = 300'000'000, // 3 units
+                                 .mEarliestDate = day(2024, 6, 2),
+                                 .mLatestDate = day(2024, 9, 1),
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(lateStart)),
+                 std::invalid_argument);
+
+    // The range ends before the row date.
+    ApplicationResultInput earlyEnd{.mReportingYear = 2024};
+    earlyEnd.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 1),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "3"}},
+                                 .mPositionBefore = 300'000'000, // 3 units
+                                 .mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 5, 31),
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(earlyEnd)), std::invalid_argument);
+
+    // A range of one day, the row date itself: trades on the day before and on that day.
+    ApplicationResultInput oneDay{.mReportingYear = 2024};
+    oneDay.mRequests = {RequestInput{.mQuestion = {
+                                         .mType = RequestType::CorporateActionRatioRequired,
+                                         .mAffectedReports = {kCapital},
+                                         .mData =
+                                             CorporateActionRatioQuestion{
+                                                 .mIsin = "XX0000000001",
+                                                 .mName = "Synthetic Share",
+                                                 .mEffectiveDate = day(2024, 6, 1),
+                                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                                               .mTransactionId = "synthetic-split",
+                                                               .mSourceValue = "3"}},
+                                                 .mPositionBefore = 300'000'000, // 3 units
+                                                 .mEarliestDate = day(2024, 6, 1),
+                                                 .mLatestDate = day(2024, 6, 1),
+                                             },
+                                     }}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(oneDay));
+
+    EXPECT_EQ(result.mRequests.size(), 1U);
+}
+
+TEST(ApplicationResultRequestTest, TheOrderOfSourcesDoesNotChangeTheRatioQuestion) {
+    // The same action from Trade Republic and Interactive Brokers, listed in two orders.
+    const QuestionData ibkrFirst = CorporateActionRatioQuestion{
+        .mIsin = "XX0000000001",
+        .mName = "Synthetic Share",
+        .mEffectiveDate = day(2024, 6, 1),
+        .mSources = {{.mBroker = Broker::InteractiveBrokers, .mTransactionId = "synthetic-ibkr"},
+                     {.mBroker = Broker::TradeRepublic,
+                      .mTransactionId = "synthetic-tr",
+                      .mSourceValue = "3"}},
+        .mPositionBefore = 300'000'000, // 3 units
+        .mEarliestDate = day(2024, 1, 11),
+        .mLatestDate = day(2024, 9, 1),
+    };
+    const QuestionData trFirst = CorporateActionRatioQuestion{
+        .mIsin = "XX0000000001",
+        .mName = "Synthetic Share",
+        .mEffectiveDate = day(2024, 6, 1),
+        .mSources = {{.mBroker = Broker::TradeRepublic,
+                      .mTransactionId = "synthetic-tr",
+                      .mSourceValue = "3"},
+                     {.mBroker = Broker::InteractiveBrokers, .mTransactionId = "synthetic-ibkr"}},
+        .mPositionBefore = 300'000'000, // 3 units
+        .mEarliestDate = day(2024, 1, 11),
+        .mLatestDate = day(2024, 9, 1),
+    };
+
+    EXPECT_NE(ibkrFirst, trFirst);
+    EXPECT_EQ(normalizedData(ibkrFirst), normalizedData(trFirst));
+
+    // Trade Republic comes first in the Broker enum.
+    const auto normalized = normalizedData(ibkrFirst);
+    const auto& sources = std::get<CorporateActionRatioQuestion>(normalized).mSources;
+
+    ASSERT_EQ(sources.size(), 2U);
+    EXPECT_EQ(sources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(sources[1].mBroker, Broker::InteractiveBrokers);
+}
+
 TEST(ApplicationResultRequestTest, AStageOutputKeepsItsLinksWhenAppended) {
     // The input already holds one diagnostic, so the stage's diagnostics 0 and 1 become 1 and 2.
     ApplicationResultInput input{.mReportingYear = 2024};

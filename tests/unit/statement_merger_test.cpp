@@ -522,7 +522,7 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
                                       "action-id"),
             .mType = CorporateActionType::ReverseSplit,
             .mUnitsDelta = -UNITS_SCALE,
-            .mRatio = 50000000,
+            .mRatio = SplitRatio{.mNewShares = 1, .mOldShares = 2},
         }},
     });
     input.mParseResult.mStatement.mDividendInstruments.push_back(DividendInstrument{
@@ -1188,7 +1188,7 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedCorporateActionFact) {
         {"units delta",
          [](TradeInstrument& aValue) { ++aValue.mCorporateActions.front().mUnitsDelta; }},
         {"ratio",
-         [](TradeInstrument& aValue) { ++aValue.mCorporateActions.front().mRatio.value(); }},
+         [](TradeInstrument& aValue) { ++aValue.mCorporateActions.front().mRatio->mNewShares; }},
         {"missing ratio",
          [](TradeInstrument& aValue) { aValue.mCorporateActions.front().mRatio.reset(); }},
         {"timestamp",
@@ -1436,7 +1436,7 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
             {
                 EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
                 EXPECT_EQ(action.mUnitsDelta, -100'000'000);
-                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mRatio, (SplitRatio{.mNewShares = 1, .mOldShares = 2}));
                 EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
             }
         }
@@ -2581,7 +2581,7 @@ TEST(DeterministicStatementMergerTest, DoesNotUseTransactionIdsForCorporateActio
                                               "first-action"),
                     .mType = CorporateActionType::Split,
                     .mUnitsDelta = UNITS_SCALE,
-                    .mRatio = 200000000,
+                    .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1},
                 },
                 CorporateAction{
                     .mMetadata = makeMetadata(0,
@@ -2593,7 +2593,7 @@ TEST(DeterministicStatementMergerTest, DoesNotUseTransactionIdsForCorporateActio
                                               "second-action"),
                     .mType = CorporateActionType::Split,
                     .mUnitsDelta = UNITS_SCALE,
-                    .mRatio = 200000000,
+                    .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1},
                 },
             },
     });
@@ -3230,7 +3230,7 @@ TEST(DeterministicStatementMergerTest, MergerDoesNotPrioritizeSameDaySplitsOverT
                                       "statement.csv",
                                       makeTimestamp(2024, 1, 1, 12)),
             .mType = CorporateActionType::Split,
-            .mRatio = 2 * CORP_RATIO_SCALE,
+            .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1},
         }},
     }};
 
@@ -3474,7 +3474,7 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
             {
                 EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
                 EXPECT_EQ(action.mUnitsDelta, -100'000'000);
-                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mRatio, (SplitRatio{.mNewShares = 1, .mOldShares = 2}));
                 EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
             }
         }
@@ -3607,7 +3607,7 @@ TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependen
             {
                 EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
                 EXPECT_EQ(action.mUnitsDelta, -100'000'000);
-                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mRatio, (SplitRatio{.mNewShares = 1, .mOldShares = 2}));
                 EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
             }
         }
@@ -4126,7 +4126,7 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
             {
                 EXPECT_EQ(action.mType, CorporateActionType::ReverseSplit);
                 EXPECT_EQ(action.mUnitsDelta, -100'000'000);
-                EXPECT_EQ(action.mRatio, 50'000'000);
+                EXPECT_EQ(action.mRatio, (SplitRatio{.mNewShares = 1, .mOldShares = 2}));
                 EXPECT_EQ(action.mMetadata.mTaxDate, makeDate(2024, 1, 2));
             }
         }
@@ -4297,7 +4297,7 @@ TEST(DeterministicStatementMergerTest, PreservesExplicitTwoForOneSplitEvidence) 
                                                             "verified-action"),
                                   .mType = CorporateActionType::Split,
                                   .mUnitsDelta = 100'000'000,
-                                  .mRatio = 200'000'000,
+                                  .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1},
                               },
                               CorporateAction{
                                   .mMetadata = makeMetadata(0,
@@ -4328,7 +4328,7 @@ TEST(DeterministicStatementMergerTest, PreservesExplicitTwoForOneSplitEvidence) 
     EXPECT_EQ(resolved.mType, CorporateActionType::Split);
     EXPECT_EQ(resolved.mUnitsDelta, 100'000'000);
     ASSERT_TRUE(resolved.mRatio.has_value());
-    EXPECT_EQ(*resolved.mRatio, 200'000'000);
+    EXPECT_EQ(*resolved.mRatio, (SplitRatio{.mNewShares = 2, .mOldShares = 1}));
     EXPECT_EQ(
         resolved.mMetadata.mSources,
         (std::vector{
@@ -4362,7 +4362,7 @@ TEST(DeterministicStatementMergerTest, PreservesExplicitOneForTenReverseSplitEvi
                                                             "verified-action"),
                                   .mType = CorporateActionType::ReverseSplit,
                                   .mUnitsDelta = -900'000'000,
-                                  .mRatio = 10'000'000,
+                                  .mRatio = SplitRatio{.mNewShares = 1, .mOldShares = 10},
                               },
                               CorporateAction{
                                   .mMetadata = makeMetadata(0,
@@ -4393,7 +4393,7 @@ TEST(DeterministicStatementMergerTest, PreservesExplicitOneForTenReverseSplitEvi
     EXPECT_EQ(resolved.mType, CorporateActionType::ReverseSplit);
     EXPECT_EQ(resolved.mUnitsDelta, -900'000'000);
     ASSERT_TRUE(resolved.mRatio.has_value());
-    EXPECT_EQ(*resolved.mRatio, 10'000'000);
+    EXPECT_EQ(*resolved.mRatio, (SplitRatio{.mNewShares = 1, .mOldShares = 10}));
     EXPECT_EQ(
         resolved.mMetadata.mSources,
         (std::vector{
@@ -4436,7 +4436,7 @@ TEST(DeterministicStatementMergerTest, RejectsSameIdentityWithResolvedAndUnresol
                                                             "same-action"),
                                   .mType = CorporateActionType::Split,
                                   .mUnitsDelta = 100'000'000,
-                                  .mRatio = 200'000'000,
+                                  .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1},
                               }},
     }};
 

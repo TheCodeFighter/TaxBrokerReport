@@ -837,7 +837,7 @@ TEST(CapitalGainsReportBuilderTest, StoppedPoolsBlockWithAllSalesOfTheYear) {
                 {
                     {.mMetadata = {.mTaxDate = day("2024-02-01")},
                      .mType = CorporateActionType::Split,
-                     .mRatio = 200'000'000}, // 2 new units for 1 old unit
+                     .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
                 },
         },
         {
@@ -932,7 +932,7 @@ TEST(CapitalGainsReportBuilderTest, StoppedPoolWithoutASaleInTheYearDoesNotBlock
                 {
                     {.mMetadata = {.mTaxDate = day("2023-06-01")},
                      .mType = CorporateActionType::Split,
-                     .mRatio = 200'000'000}, // 2 new units for 1 old unit
+                     .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
                 },
         },
         {
@@ -987,7 +987,7 @@ TEST(CapitalGainsReportBuilderTest, StoppedPoolIsReportedBeforeALossMadeBeforeTh
             {
                 {.mMetadata = {.mTaxDate = day("2024-03-01")},
                  .mType = CorporateActionType::Split,
-                 .mRatio = 200'000'000}, // 2 new units for 1 old unit
+                 .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
             },
     }};
 
@@ -1218,7 +1218,7 @@ TEST(CapitalGainsReportBuilderTest, PartlyAgreedExclusionStillBlocksTheOtherIsin
                 {
                     {.mMetadata = {.mTaxDate = day("2024-02-01")},
                      .mType = CorporateActionType::Split,
-                     .mRatio = 200'000'000}, // 2 new units for 1 old unit
+                     .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
                 },
         },
         {
