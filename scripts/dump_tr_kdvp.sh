@@ -18,6 +18,7 @@ Usage: dump_tr_kdvp.sh [--synthetic] [--year YYYY] [--tax-number NNNNNNNN] [--se
     the file is not a complete return; the tool prints a warning and
     dump_tr_fifo.sh shows the reasons. Paths are relative to the repository. The
     output can contain private financial data and stays below ignored runtime/.
+    Options and CSV paths can come in any order.
 
     --synthetic     use the synthetic CSV $synthetic_csv
                     (trades in 2025) instead of the real export
@@ -32,19 +33,19 @@ Usage: dump_tr_kdvp.sh [--synthetic] [--year YYYY] [--tax-number NNNNNNNN] [--se
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
-fi
-
 year="$(( $(date +%Y) - 1 ))"
 output_path=""
+csv_inputs=()
 tax_number="12345678"
 filing_type="original"
 synthetic=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
         --synthetic)
             synthetic=true
             shift
@@ -80,26 +81,32 @@ while [[ $# -gt 0 ]]; do
             output_path="$2"
             shift 2
             ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
         *)
-            break
+            csv_inputs+=("$1")
+            shift
             ;;
     esac
 done
 
 if [[ "$synthetic" == true ]]; then
-    if [[ $# -gt 0 ]]; then
+    if [[ ${#csv_inputs[@]} -gt 0 ]]; then
         echo "--synthetic takes no CSV paths." >&2
         exit 1
     fi
 
-    set -- "$synthetic_csv"
+    csv_inputs=("$synthetic_csv")
     output_path="${output_path:-runtime/debug/tr_kdvp_synthetic_$year.xml}"
 fi
 
 output_path="${output_path:-runtime/debug/tr_kdvp_$year.xml}"
 
-if [[ $# -eq 0 ]]; then
-    set -- tmp/TransactionExport.csv
+if [[ ${#csv_inputs[@]} -eq 0 ]]; then
+    csv_inputs=(tmp/TransactionExport.csv)
 fi
 
 # Resolve the destination before writing so ../ and symlinks cannot escape runtime/.
@@ -113,7 +120,7 @@ fi
 
 csv_paths=()
 
-for csv_path in "$@"; do
+for csv_path in "${csv_inputs[@]}"; do
     if [[ "$csv_path" == /* || "$csv_path" == -* || ! -f "$repo_root/$csv_path" ]]; then
         echo "CSV input must be an existing repository-relative path: $csv_path" >&2
         exit 1

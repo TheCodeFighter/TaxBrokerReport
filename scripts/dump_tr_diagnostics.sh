@@ -12,31 +12,45 @@ Usage: dump_tr_diagnostics.sh [--output runtime/path.txt] [csv-path ...]
     Parses and merges Trade Republic CSVs in the supplied request order, then
     writes only their structured parser and merger diagnostics as readable text.
     Paths are relative to the repository. Output stays below ignored runtime/.
+    Options and CSV paths can come in any order.
 
     Default input:  tmp/TransactionExport.csv
     Default output: runtime/diagnostics/tr_merge_diagnostics.txt
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
-fi
-
 output_path="runtime/diagnostics/tr_merge_diagnostics.txt"
+csv_inputs=()
 
-if [[ "${1:-}" == "--output" ]]; then
-    if [[ $# -lt 2 ]]; then
-        echo "--output requires a path." >&2
-        exit 1
-    fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --output)
+            if [[ $# -lt 2 ]]; then
+                echo "--output requires a path." >&2
+                exit 1
+            fi
 
-    output_path="$2"
-    shift 2
-fi
+            output_path="$2"
+            shift 2
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+        *)
+            csv_inputs+=("$1")
+            shift
+            ;;
+    esac
+done
 
-if [[ $# -eq 0 ]]; then
-    set -- tmp/TransactionExport.csv
+if [[ ${#csv_inputs[@]} -eq 0 ]]; then
+    csv_inputs=(tmp/TransactionExport.csv)
 fi
 
 # Resolve the destination before writing so ../ and symlinks cannot escape runtime/.
@@ -50,7 +64,7 @@ fi
 
 csv_paths=()
 
-for csv_path in "$@"; do
+for csv_path in "${csv_inputs[@]}"; do
     if [[ "$csv_path" == /* || "$csv_path" == -* || ! -f "$repo_root/$csv_path" ]]; then
         echo "CSV input must be an existing repository-relative path: $csv_path" >&2
         exit 1
@@ -59,7 +73,7 @@ for csv_path in "$@"; do
     csv_paths+=("/workspace/$csv_path")
 done
 
-for csv_path in "$@"; do
+for csv_path in "${csv_inputs[@]}"; do
     if [[ "$output_absolute" == "$(realpath -- "$repo_root/$csv_path")" ]]; then
         echo "Output must not overwrite an input CSV." >&2
         exit 1

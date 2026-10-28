@@ -40,6 +40,14 @@ A script that needs the image stops with a hint when it is missing. `test.sh`, `
 `cppcheck.sh` accept `--reuse-build`, which uses the existing `build/dev` as it is and fails clearly
 when it is missing. CI uses the same flag in the jobs that follow the build job.
 
+Options and paths can come in any order, so `scripts/report.sh runtime/export.csv --self-report`
+works. For Tab completion of the script options, years and paths in bash or zsh, add this line to
+`~/.bashrc` or `~/.zshrc` (in zsh after `compinit`):
+
+```sh
+source /path/to/TaxBrokerReport/scripts/completion.bash
+```
+
 ## Static analysis
 
 Run Cppcheck against all active project-owned C++ source and header files:
@@ -88,9 +96,9 @@ scripts/test.sh --suite integration
 scripts/test.sh --suite integration StatementMergerIntegrationTest
 ```
 
-`scripts/test.sh` builds `build/dev` from scratch first. Add `--reuse-build` as the first argument
-(for example `scripts/test.sh --reuse-build --suite unit`) to run the existing `build/dev` as it is
-without compiling.
+`scripts/test.sh` builds `build/dev` from scratch first. Add `--reuse-build` (for example
+`scripts/test.sh --reuse-build --suite unit`) to run the existing `build/dev` as it is without
+compiling.
 
 Inside the development container, `ctest --test-dir /workspace/build/dev -L unit` and
 `ctest --test-dir /workspace/build/dev -L integration` select the same suites. CI runs them in

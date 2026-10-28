@@ -11,13 +11,14 @@ synthetic_taxpayer="tests/test_data/cli/taxpayer.json"
 usage() {
     cat <<EOF
 Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.json]
-                 [--self-report] [--out runtime/dir] [csv-path ...]
+                 [--self-report] [--no-input] [--out runtime/dir] [--] [csv-path ...]
 
     Runs 'taxbroker report' inside Docker: Trade Republic CSVs in, the Doh-KDVP XML
     and summary_<year>.txt out. Paths are relative to the repository. The output can
     contain private financial data and stays below ignored runtime/. The exit code is
     the command's: 0 written or no data, 1 blocked, 2 failed.
     'taxbroker report --help' (printed with --command-help) explains the command.
+    Options and CSV paths can come in any order; everything after -- is a CSV path.
 
     --reuse-build   run the existing build/dev and compile nothing
     --synthetic     use the synthetic CSV $synthetic_csv
@@ -25,6 +26,8 @@ Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.js
     --taxpayer      the taxpayer JSON; keep a real one below runtime/, for example
                     runtime/taxpayer.json (required without --synthetic)
     --self-report   write a self-report instead of an original return
+    --no-input      ask no questions: an open question blocks the report
+                    (without it, the command asks in this terminal)
     --command-help  print 'taxbroker report --help' and stop
 
     Default year:   the previous calendar year (2024 with --synthetic)
@@ -40,6 +43,7 @@ year=""
 taxpayer=""
 output_dir=""
 cli_options=()
+csv_inputs=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -61,6 +65,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --self-report)
             cli_options+=(--self-report)
+            shift
+            ;;
+        --no-input)
+            cli_options+=(--no-input)
             shift
             ;;
         --year)
@@ -90,13 +98,19 @@ while [[ $# -gt 0 ]]; do
             output_dir="$2"
             shift 2
             ;;
+        --)
+            shift
+            csv_inputs+=("$@")
+            break
+            ;;
         -*)
             echo "Unknown option: $1" >&2
             usage >&2
             exit 2
             ;;
         *)
-            break
+            csv_inputs+=("$1")
+            shift
             ;;
     esac
 done
@@ -110,12 +124,12 @@ if [[ "$command_help" == true ]]; then
 fi
 
 if [[ "$synthetic" == true ]]; then
-    if [[ $# -gt 0 ]]; then
+    if [[ ${#csv_inputs[@]} -gt 0 ]]; then
         echo "--synthetic takes no CSV paths." >&2
         exit 2
     fi
 
-    set -- "$synthetic_csv"
+    csv_inputs=("$synthetic_csv")
     year="${year:-2024}"
     taxpayer="${taxpayer:-$synthetic_taxpayer}"
     output_dir="${output_dir:-runtime/report/synthetic_$year}"
@@ -129,8 +143,8 @@ if [[ -z "$taxpayer" ]]; then
     exit 2
 fi
 
-if [[ $# -eq 0 ]]; then
-    set -- tmp/TransactionExport.csv
+if [[ ${#csv_inputs[@]} -eq 0 ]]; then
+    csv_inputs=(tmp/TransactionExport.csv)
 fi
 
 # Resolve the destination before writing so ../ and symlinks cannot escape runtime/.
@@ -142,7 +156,7 @@ if [[ "$output_dir" != runtime/* || "$output_absolute" != "$runtime_absolute/"* 
     exit 2
 fi
 
-for input_path in "$taxpayer" "$@"; do
+for input_path in "$taxpayer" "${csv_inputs[@]}"; do
     if [[ "$input_path" == /* || "$input_path" == -* || ! -f "$repo_root/$input_path" ]]; then
         echo "Input must be an existing repository-relative path: $input_path" >&2
         exit 2
@@ -151,15 +165,22 @@ done
 
 csv_paths=()
 
-for csv_path in "$@"; do
+for csv_path in "${csv_inputs[@]}"; do
     csv_paths+=("/workspace/$csv_path")
 done
 
 mkdir -p "$repo_root/runtime/logs"
 
+# The command reads its answers from this terminal; piped input needs no TTY in the container.
+tty_options=()
+
+if [[ ! -t 0 ]]; then
+    tty_options+=(-T)
+fi
+
 echo "==> Writing the Doh-KDVP report for $year to $output_dir..."
 set +e
-compose run --rm \
+compose run --rm "${tty_options[@]}" \
     -e TBR_LOG_STDOUT=false \
     -e TBR_LOG_FILE=/workspace/runtime/logs/taxbroker_report.log \
     dev /workspace/build/dev/src/taxbroker report \

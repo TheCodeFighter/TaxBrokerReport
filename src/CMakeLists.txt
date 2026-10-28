@@ -103,6 +103,7 @@ target_link_libraries(taxbroker_server PRIVATE
 # The command line: the report command of the walking skeleton. The library holds the whole
 # command so the tests can run it in process; the executable only sets up logging.
 add_library(taxbroker_cli STATIC
+    cli/decision_prompts.cpp
     cli/report_command.cpp
     cli/taxpayer_file.cpp
 )

@@ -17,6 +17,7 @@ Usage: dump_tr_fifo.sh [--year YYYY] [--output runtime/path.txt] [csv-path ...]
     out because they are past the holding period.
     Paths are relative to the repository. The output contains private
     financial data and stays below ignored runtime/.
+    Options and CSV paths can come in any order.
 
     Default year:   the previous calendar year
     Default input:  tmp/TransactionExport.csv
@@ -24,16 +25,16 @@ Usage: dump_tr_fifo.sh [--year YYYY] [--output runtime/path.txt] [csv-path ...]
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
-fi
-
 year="$(( $(date +%Y) - 1 ))"
 output_path=""
+csv_inputs=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
         --year)
             if [[ $# -lt 2 || ! "$2" =~ ^[0-9]{4}$ ]]; then
                 echo "--year requires a four-digit year." >&2
@@ -52,16 +53,22 @@ while [[ $# -gt 0 ]]; do
             output_path="$2"
             shift 2
             ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
         *)
-            break
+            csv_inputs+=("$1")
+            shift
             ;;
     esac
 done
 
 output_path="${output_path:-runtime/debug/tr_fifo_$year.txt}"
 
-if [[ $# -eq 0 ]]; then
-    set -- tmp/TransactionExport.csv
+if [[ ${#csv_inputs[@]} -eq 0 ]]; then
+    csv_inputs=(tmp/TransactionExport.csv)
 fi
 
 # Resolve the destination before writing so ../ and symlinks cannot escape runtime/.
@@ -75,7 +82,7 @@ fi
 
 csv_paths=()
 
-for csv_path in "$@"; do
+for csv_path in "${csv_inputs[@]}"; do
     if [[ "$csv_path" == /* || "$csv_path" == -* || ! -f "$repo_root/$csv_path" ]]; then
         echo "CSV input must be an existing repository-relative path: $csv_path" >&2
         exit 1
