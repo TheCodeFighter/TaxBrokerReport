@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -97,15 +98,31 @@ class TemporaryCliFolder {
         return std::string{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
     }
 
+    /// The names in a subfolder ("" for the folder itself), sorted.
+    [[nodiscard]] std::vector<std::string> fileNames(std::string_view aSubfolder) const {
+        std::vector<std::string> names;
+
+        for (const auto& entry : std::filesystem::directory_iterator{mDirectory / aSubfolder})
+        {
+            names.push_back(entry.path().filename().string());
+        }
+
+        std::sort(names.begin(), names.end());
+
+        return names;
+    }
+
   private:
     std::filesystem::path mDirectory;
 };
 
-CliRun run(const std::vector<std::string>& aArguments) {
+/// Runs the command with aInput as what the user types; without it the input ends at once.
+CliRun run(const std::vector<std::string>& aArguments, std::string_view aInput = "") {
+    std::istringstream in{std::string{aInput}};
     std::ostringstream out;
     std::ostringstream err;
 
-    const int exitCode = runCli(aArguments, out, err);
+    const int exitCode = runCli(aArguments, in, out, err);
 
     return CliRun{exitCode, out.str(), err.str()};
 }
@@ -758,7 +775,7 @@ TEST(CliReportIntegrationTest, SplitBeforeTheSaleBlocksTheReport) {
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"));
-    // The split needs its ratio, which this command cannot ask for yet.
+    // The split needs its ratio; the input ends at once, so the question stays open.
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000001 Synthetic Share: blocked (corporate_action_ambiguous)\n"
                          "    sale 2025-03-10, history.csv row 4\n"));
@@ -837,7 +854,9 @@ TEST(CliReportIntegrationTest, SaleWithoutEnoughPurchasesBlocksTheReport) {
                          "2025-03-10, history.csv row 3\n"));
 }
 
-TEST(CliReportIntegrationTest, ALossTheFilesCannotDecideIsWrittenAsBlockedWithAWarning) {
+// Questions in the terminal
+
+TEST(CliReportIntegrationTest, ALossQuestionAnsweredNoWritesTheLossAsDeductible) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -854,20 +873,31 @@ TEST(CliReportIntegrationTest, ALossTheFilesCannotDecideIsWrittenAsBlockedWithAW
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
-                             history});
+                             history},
+                            "no\n");
 
-    // 10 x 20 - 10 x 30 = -100: a loss, and no purchase within 30 days blocks it. The loss rule
-    // needs the answer whether the investment was also traded elsewhere; this command cannot ask
-    // yet, so all 10 loss units are assumed blocked (F10 false), with one warning.
+    // 10 x 20 - 10 x 30 = -100: a loss. The window is 30 days before and after the sale
+    // (2025-02-08 to 2025-04-09); the purchase of 2025-01-10 is outside it, so the files cannot
+    // decide and the command asks. The answer no keeps the loss of all 10 units (F10 true).
     EXPECT_EQ(result.mExitCode, kExitSuccess);
-    EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2025 (original return)
+    EXPECT_EQ(result.mOut,
+              R"(Question request-0001: the 30-day loss rule for XX0000000001 Synthetic Share
+  Your files cannot decide the loss of 1 sale:
+    sale 2025-03-10: 10.0000 units, 10.0000 at a loss, 10.0000 open; window 2025-02-08 to 2025-04-09, no purchase in your files counts against it
+  Within 30 days before or after the sale, did you also buy or sell this investment
+  anywhere that is not in your files (another broker, another account, or after the
+  export)? yes: the open loss is not deductible (F10 false). no: it is deductible.
+  cancel: no answer, and the sales cannot be reported.
+Your answer (yes, no or cancel):
+
+TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml
 
 Investments with a sale in 2025: 1
-  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units, 10.0000 units with a loss blocked by the 30-day rule (F10 false), of them 10.0000 assumed without an answer (see the warnings below)
+  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units
 
 Units past the holding period (tax free, not in the XML): 0
 
@@ -875,16 +905,1030 @@ Private-market events skipped (only a cash amount, no units): 0
 
 Errors: 0
 
-Warnings: 1
-  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2025-03-10, history.csv row 3
-    A sale of this investment was made at a loss, and your files alone cannot decide whether the 30-day rule blocks the loss. This command cannot ask you yet, so the whole open loss was treated as not deductible (F10 false). If, within 30 days before or after the sale, you did not buy or sell this investment anywhere that is not in your files, correct it yourself in eDavki.
+Warnings: 0
+
+Answered in this run: 1
+  XX0000000001 Synthetic Share, 30-day loss rule: no, not bought or sold anywhere else (the open loss is deductible)
 )");
-    EXPECT_EQ(folder.readOutput("summary_2025.txt"), result.mOut);
+    EXPECT_TRUE(result.mOut.ends_with(folder.readOutput("summary_2025.txt")));
+    EXPECT_EQ(folder.readOutput("summary_2025.txt").rfind("TaxBrokerReport: Doh-KDVP 2025", 0), 0U);
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F10>true</F10>"));
+    EXPECT_FALSE(contains(xml, "<F10>false</F10>"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(CliReportIntegrationTest, ALossQuestionAnsweredYesWritesTheLossAsBlocked) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "YES\n");
+
+    // The answer yes (in any case) blocks the loss of all 10 open units (F10 false).
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units, 10.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Errors: 0\n"
+                         "\n"
+                         "Warnings: 0\n"
+                         "\n"
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, 30-day loss rule: yes, bought or sold "
+                         "elsewhere (the open loss is not deductible, F10 false)\n"));
 
     const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
 
     EXPECT_TRUE(contains(xml, "<F10>false</F10>"));
     expectValidForKdvpSchemas(xml);
+}
+
+TEST(CliReportIntegrationTest, AnInvalidLossAnswerIsAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "maybe\n\ny\n  no  \n");
+
+    // "maybe", an empty line and "y" are not answers; " no " with spaces around it is.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Your answer (yes, no or cancel):\n"
+                         "Answer yes, no or cancel.\n"
+                         "Your answer (yes, no or cancel):\n"
+                         "Answer yes, no or cancel.\n"
+                         "Your answer (yes, no or cancel):\n"
+                         "Answer yes, no or cancel.\n"
+                         "Your answer (yes, no or cancel):\n"
+                         "\n"
+                         "TaxBrokerReport: Doh-KDVP 2025 (original return)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share, 30-day loss rule: no, not bought or "
+                         "sold anywhere else (the open loss is deductible)\n"));
+}
+
+TEST(CliReportIntegrationTest, ALossQuestionWithNoInputBlocksAndListsTheRequest) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    // The input has an answer, but --no-input never reads it.
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--no-input",
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "no\n");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2025 (original return)
+Input files: 1
+  source-0001 history.csv
+
+Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
+
+Investments with a sale in 2025: 1
+  XX0000000001 Synthetic Share: blocked (loss_eligibility_unresolved)
+    sale 2025-03-10, history.csv row 3
+
+Units past the holding period (tax free, not in the XML): 0
+
+Private-market events skipped (only a cash amount, no units): 0
+
+Errors: 1
+  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2025-03-10, history.csv row 3
+    Part of this sale was sold at a loss. Answer whether, within 30 days before or after the sale, you also bought or sold this investment anywhere that is not in your files: at another broker, in another account, or after the last day of your export. If you did, the whole open loss is treated as not deductible, and you correct it yourself in eDavki. Until you answer, no Doh-KDVP file is written.
+
+Warnings: 0
+
+Open questions: 1
+  request-0001 loss_eligibility_confirmation_required, XX0000000001 Synthetic Share
+  Run the command again in a terminal (without --no-input) to answer them.
+)");
+    EXPECT_EQ(folder.readOutput("summary_2025.txt"), result.mOut);
+}
+
+TEST(CliReportIntegrationTest, ALossQuestionAtTheEndOfTheInputStaysOpen) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    // The input ends before an answer (Ctrl-D in a terminal).
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Your answer (yes, no or cancel):\n"
+                         "Input ended: the open questions are listed in the summary.\n"
+                         "\n"
+                         "TaxBrokerReport: Doh-KDVP 2025 (original return)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Open questions: 1\n"
+                         "  request-0001 loss_eligibility_confirmation_required, XX0000000001 "
+                         "Synthetic Share\n"));
+    EXPECT_FALSE(contains(result.mOut, "Answered in this run"));
+}
+
+TEST(CliReportIntegrationTest, ACancelledLossQuestionBlocksTheReport) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "cancel\n");
+
+    // A cancel closes the question: the sale gets an error without a request.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Errors: 1\n"
+                         "  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic "
+                         "Share, 2025-03-10, history.csv row 3\n"
+                         "    The question about the loss of this sale was closed without an "
+                         "answer, so the sale cannot be reported. No Doh-KDVP file was "
+                         "written.\n"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, 30-day loss rule: cancelled\n"));
+}
+
+TEST(CliReportIntegrationTest, ALossQuestionWithAKnownPurchaseListsIt) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-03-20T09:00:00Z,2025-03-20,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,3,21,-63,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2025-03-25T09:00:00Z,2025-03-25,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,21,-21,,,EUR,,,,,synthetic-buy-3,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "yes\n");
+
+    // The purchases of 3 units on 2025-03-20 and 1 unit on 2025-03-25 lie in the window, so they
+    // block the loss of 3 + 1 = 4 of the 10 units; 10 - 4 = 6 stay open. The answer yes blocks
+    // those 6 too, so all 10 are blocked (F10 false) and the row is written whole.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "    sale 2025-03-10: 10.0000 units, 10.0000 at a loss, 6.0000 open; "
+                         "window 2025-02-08 to 2025-04-09, purchases in your files that count "
+                         "against it: 2025-03-20 3.0000 units, 2025-03-25 1.0000 units\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units, 10.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
+}
+
+TEST(CliReportIntegrationTest, ALossQuestionOfTwoSalesListsBothAndOneAnswerCoversThem) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,20,80,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-06-10T09:00:00Z,2025-06-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-6,25,150,,,EUR,,,,,synthetic-sell-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "no\n");
+
+    // Both sales lose (4 x 20 - 4 x 30 = -40, 6 x 25 - 6 x 30 = -30) and no purchase lies in a
+    // window: 2025-06-10 is 92 days after 2025-03-10. One question, one answer.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Your files cannot decide the loss of 2 sales:\n"
+                         "    sale 2025-03-10: 4.0000 units, 4.0000 at a loss, 4.0000 open; "
+                         "window 2025-02-08 to 2025-04-09, no purchase in your files counts "
+                         "against it\n"
+                         "    sale 2025-06-10: 6.0000 units, 6.0000 at a loss, 6.0000 open; "
+                         "window 2025-05-11 to 2025-07-10, no purchase in your files counts "
+                         "against it\n"));
+    EXPECT_TRUE(
+        contains(result.mOut, "  XX0000000001 Synthetic Share: listed, 2 sales, 10.0000 units\n"));
+}
+
+TEST(CliReportIntegrationTest, ASplitRatioAnsweredClosesTheQuestion) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    // The ratio 2 : 1, an empty line for the broker's date, and yes to the preview.
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nyes\n");
+
+    // 1 unit before the split; 1 x 2 / 1 = 2 after it. The dates that keep 1 unit run from the
+    // day after the purchase (2022-01-11) to the day of the sale (2025-03-10): the action comes
+    // before the trades of its day. The ratio is confirmed, but splits are not applied yet, so
+    // the report stays blocked with corporate_action_not_applied instead of the open question.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_EQ(
+        result.mOut,
+        R"(Question request-0001: a corporate action of XX0000000001 Synthetic Share on 2023-01-15
+  Source: Trade Republic, transaction synthetic-split-1, shares 1 (the broker's own value, not a ratio)
+  You held 1.0000 units just before it.
+  Enter the ratio from the announcement as new : old, for example 10 : 1 (every old share
+  becomes 10 shares; "nine additional shares for every share" is also 10 : 1; a reverse
+  split is 1 : 10), or your shares just before and just after it as before -> after, for
+  example 0,52 -> 5,2 (a decimal comma or point), or cancel.
+Ratio:
+Effective date from the announcement (YYYY-MM-DD, 2022-01-11 to 2025-03-10), or empty for 2023-01-15:
+After it you hold 2.0000 units (2 : 1 from 2023-01-15).
+Is this right? (yes or no):
+
+TaxBrokerReport: Doh-KDVP 2025 (original return)
+Input files: 1
+  source-0001 history.csv
+
+Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
+
+Investments with a sale in 2025: 1
+  XX0000000001 Synthetic Share: blocked (corporate_action_not_applied)
+    sale 2025-03-10, history.csv row 4
+
+Units past the holding period (tax free, not in the XML): 0
+
+Private-market events skipped (only a cash amount, no units): 0
+
+Errors: 1
+  diagnostic-0001 corporate_action_not_applied, XX0000000001 Synthetic Share, 2023-01-15, history.csv row 3
+    You confirmed the ratio 2 new for 1 old shares for this corporate action. Corporate actions are not applied yet, so the sales of this investment cannot be reported. No Doh-KDVP file was written.
+
+Warnings: 0
+
+Answered in this run: 1
+  XX0000000001 Synthetic Share, corporate action on 2023-01-15: 2 : 1 from 2023-01-15, 2.0000 units after it
+)");
+    EXPECT_TRUE(result.mOut.ends_with(folder.readOutput("summary_2025.txt")));
+}
+
+TEST(CliReportIntegrationTest, ASplitRatioFromTheSharesBeforeAndAfterIsTheSameRatio) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "1 -> 2.00\n2023-01-15\nyes\n");
+
+    // 1 share before and 2.00 after: 100000000 and 200000000 ticks of 10^-8, reduced to 2 : 1.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut, "After it you hold 2.0000 units (2 : 1 from 2023-01-15).\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, corporate action on 2023-01-15: 2 : 1 "
+                         "from 2023-01-15, 2.0000 units after it\n"));
+}
+
+TEST(CliReportIntegrationTest, AReverseSplitFromTheSharesBeforeAndAfterGivesItsRatio) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "10 -> 1\n\nyes\n");
+
+    // 10 shares before, 1 after: 1 : 10, so 10 x 1 / 10 = 1 unit after it.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut, "  You held 10.0000 units just before it.\n"));
+    EXPECT_TRUE(
+        contains(result.mOut, "After it you hold 1.0000 units (1 : 10 from 2023-01-15).\n"));
+}
+
+TEST(CliReportIntegrationTest, AnUnchangedRatioIsRejectedAndAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "5 : 5\n2 : 1\n\nyes\n");
+
+    // 5 : 5 has no preview, so it goes to the session as it is, which rejects it
+    // (answer_rejected.ratio_unchanged); the question is asked again, with the same ID.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Ratio:\n"
+                         "The answer to request-0001 has the same number of new and old shares, "
+                         "which would not change the position. Enter the ratio from the "
+                         "announcement.\n"
+                         "\n"
+                         "Question request-0001: a corporate action of XX0000000001 Synthetic "
+                         "Share on 2023-01-15\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share, corporate action on 2023-01-15: 2 : 1 "
+                         "from 2023-01-15, 2.0000 units after it\n"));
+}
+
+TEST(CliReportIntegrationTest, AZeroInARatioIsRejectedAndAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "0 : 1\n1 : 0\n2 : 1\n\nyes\n");
+
+    // answer_rejected.ratio_not_positive names the number to correct.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "The number in newShares of the answer to request-0001 must be a whole "
+                         "number above 0.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "The number in oldShares of the answer to request-0001 must be a whole "
+                         "number above 0.\n"));
+    EXPECT_TRUE(contains(result.mOut, "Answered in this run: 1\n"));
+}
+
+TEST(CliReportIntegrationTest, ARatioWhosePositionDoesNotFitIsRejectedAndAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "1000000000000 : 1\n\n2 : 1\n\nyes\n");
+
+    // 1 unit x 10^12 is more than the largest units value (about 9.2 x 10^10), so there is no
+    // preview and the session rejects it (answer_rejected.ratio_out_of_range).
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "The ratio in the answer to request-0001 gives a position that cannot "
+                         "be represented. Check the numbers.\n"));
+    EXPECT_TRUE(contains(result.mOut, "Answered in this run: 1\n"));
+}
+
+TEST(CliReportIntegrationTest, ARatioNotConfirmedIsAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nok\nno\n3 : 1\n\nyes\n");
+
+    // "ok" is not an answer to the preview; no goes back to the ratio.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "After it you hold 2.0000 units (2 : 1 from 2023-01-15).\n"
+                         "Is this right? (yes or no):\n"
+                         "Answer yes or no.\n"
+                         "Is this right? (yes or no):\n"
+                         "Ratio:\n"));
+    EXPECT_TRUE(contains(result.mOut, "After it you hold 3.0000 units (3 : 1 from 2023-01-15).\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "    You confirmed the ratio 3 new for 1 old shares for this corporate "
+                         "action."));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share, corporate action on 2023-01-15: 3 : 1 "
+                         "from 2023-01-15, 3.0000 units after it\n"));
+}
+
+TEST(CliReportIntegrationTest, AnEffectiveDateOutsideTheRangeIsRejectedAndAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n15.01.2023\n2025-03-11\nyes\n2 : 1\n2025-03-10\nyes\n");
+
+    // 15.01.2023 is not a date in the form YYYY-MM-DD. 2025-03-11 is one day after the range
+    // (the sale of 2025-03-10 would come before the split), so the session rejects it
+    // (answer_rejected.effective_date_out_of_range). 2025-03-10, the last day, is accepted.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Effective date from the announcement (YYYY-MM-DD, 2022-01-11 to "
+                         "2025-03-10), or empty for 2023-01-15:\n"
+                         "Enter the date as YYYY-MM-DD.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "After it you hold 2.0000 units (2 : 1 from 2025-03-11).\n"
+                         "Is this right? (yes or no):\n"
+                         "The effective date in the answer to request-0001 must be from "
+                         "2022-01-11 to 2025-03-10."));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share, corporate action on 2023-01-15: 2 : 1 "
+                         "from 2025-03-10, 2.0000 units after it\n"));
+}
+
+TEST(CliReportIntegrationTest, AnUnreadableRatioIsAskedAgainWithoutAnAnswer) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "ten\n2.5 : 1\n-2 : 1\n+2 : 1\n: 1\n2 : one\none -> 2\n"
+                            "1 -> 2.000000001\n2 : 1\n\nyes\n");
+
+    // None of the first eight lines reaches the session, so the question is shown only once.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Ratio:\n"
+                         "Enter the ratio as new : old, the shares as before -> after, or "
+                         "cancel.\n"
+                         "Ratio:\n"
+                         "Enter whole numbers, for example 10 : 1.\n"
+                         "Ratio:\n"
+                         "Enter whole numbers, for example 10 : 1.\n"
+                         "Ratio:\n"
+                         "Enter whole numbers, for example 10 : 1.\n"
+                         "Ratio:\n"
+                         "Enter whole numbers, for example 10 : 1.\n"
+                         "Ratio:\n"
+                         "Enter whole numbers, for example 10 : 1.\n"
+                         "Ratio:\n"
+                         "Enter the shares as numbers above 0 with up to 8 decimals, for example "
+                         "0,52 -> 5,2.\n"
+                         "Ratio:\n"
+                         "Enter the shares as numbers above 0 with up to 8 decimals, for example "
+                         "0,52 -> 5,2.\n"
+                         "Ratio:\n"
+                         "Effective date"));
+    EXPECT_EQ(result.mOut.find("Question request-0001"),
+              result.mOut.rfind("Question request-0001"));
+    EXPECT_TRUE(contains(result.mOut, "Answered in this run: 1\n"));
+}
+
+TEST(CliReportIntegrationTest, ShareCountsOfZeroOrBelowAreAskedAgainWithoutAnAnswer) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "0 -> 5\n-1 -> 2\n1 -> 0\n1 -> 2\n\nyes\n");
+
+    // The command refuses the first three lines itself, so the session's message about
+    // oldShares or newShares never appears. 1 -> 2 is then 2 : 1.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Ratio:\n"
+                         "Enter the shares as numbers above 0 with up to 8 decimals, for example "
+                         "0,52 -> 5,2.\n"
+                         "Ratio:\n"
+                         "Enter the shares as numbers above 0 with up to 8 decimals, for example "
+                         "0,52 -> 5,2.\n"
+                         "Ratio:\n"
+                         "Enter the shares as numbers above 0 with up to 8 decimals, for example "
+                         "0,52 -> 5,2.\n"
+                         "Ratio:\n"
+                         "Effective date"));
+    EXPECT_FALSE(contains(result.mOut, "must be a whole number above 0"));
+    EXPECT_EQ(result.mOut.find("Question request-0001"),
+              result.mOut.rfind("Question request-0001"));
+    EXPECT_TRUE(contains(result.mOut, "After it you hold 2.0000 units (2 : 1 from 2023-01-15).\n"));
+}
+
+TEST(CliReportIntegrationTest, ShareCountsWithADecimalCommaGiveTheirRatio) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "0,52 -> 5,2\n\nyes\n");
+
+    // 0,52 is 0.52 and 5,2 is 5.2: 52000000 and 520000000 ticks of 10^-8, reduced to 10 : 1.
+    // 1 unit before the split, so 1 x 10 / 1 = 10 units after it.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(
+        contains(result.mOut, "After it you hold 10.0000 units (10 : 1 from 2023-01-15).\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, corporate action on 2023-01-15: 10 : 1 "
+                         "from 2023-01-15, 10.0000 units after it\n"));
+}
+
+TEST(CliReportIntegrationTest, AShareCountWithACommaAndAPointIsAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "1.000,5 -> 2\n2 : 1\n\nyes\n");
+
+    // A comma and a point in one number could be digit grouping, which is never read.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Ratio:\n"
+                         "Enter the shares as numbers above 0 with up to 8 decimals, for example "
+                         "0,52 -> 5,2.\n"
+                         "Ratio:\n"
+                         "Effective date"));
+    EXPECT_TRUE(contains(result.mOut, "After it you hold 2.0000 units (2 : 1 from 2023-01-15).\n"));
+}
+
+TEST(CliReportIntegrationTest, AnUnusualRatioIsWarnedAboutBeforeThePreview) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "1001 : 1\n\nyes\n");
+
+    // 1001 is above the limit of 1000 for a reduced number; the answer is still accepted.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "This ratio looks unusual: check the numbers.\n"
+                         "After it you hold 1001.0000 units (1001 : 1 from 2023-01-15).\n"));
+    EXPECT_TRUE(contains(result.mOut, "Answered in this run: 1\n"));
+}
+
+TEST(CliReportIntegrationTest, ACancelledRatioQuestionBlocksTheReport) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "Cancel\n");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Errors: 1\n"
+                         "  diagnostic-0001 corporate_action_ambiguous, XX0000000001 Synthetic "
+                         "Share, 2023-01-15, history.csv row 3\n"
+                         "    The question about the ratio of this corporate action was closed "
+                         "without an answer, so the sales of this investment cannot be reported. "
+                         "No Doh-KDVP file was written.\n"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, corporate action on 2023-01-15: "
+                         "cancelled\n"));
+}
+
+TEST(CliReportIntegrationTest, ASplitWithNoInputBlocksAndListsTheQuestion) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--no-input",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nyes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(contains(result.mOut, "Question"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Warnings: 0\n"
+                         "\n"
+                         "Open questions: 1\n"
+                         "  request-0001 corporate_action_ratio_required, XX0000000001 Synthetic "
+                         "Share\n"
+                         "  Run the command again in a terminal (without --no-input) to answer "
+                         "them.\n"));
+    EXPECT_EQ(folder.readOutput("summary_2025.txt"), result.mOut);
+}
+
+TEST(CliReportIntegrationTest, AnInputEndingInTheMiddleOfARatioLeavesTheQuestionOpen) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    // Each run ends at another step: after the ratio, after the date, before the preview answer.
+    const auto afterRatio = run({"report",
+                                 "--year",
+                                 "2025",
+                                 "--taxpayer",
+                                 taxpayer,
+                                 "--out",
+                                 folder.outputDirectory(),
+                                 history},
+                                "2 : 1\n");
+    const auto afterDate = run({"report",
+                                "--year",
+                                "2025",
+                                "--taxpayer",
+                                taxpayer,
+                                "--out",
+                                folder.outputDirectory(),
+                                history},
+                               "2 : 1\n\n");
+    const auto beforeAnything = run({"report",
+                                     "--year",
+                                     "2025",
+                                     "--taxpayer",
+                                     taxpayer,
+                                     "--out",
+                                     folder.outputDirectory(),
+                                     history},
+                                    "");
+
+    EXPECT_EQ(afterRatio.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(afterRatio.mOut,
+                         "2023-01-15:\n"
+                         "Input ended: the open questions are listed in the summary.\n"));
+    EXPECT_TRUE(contains(afterRatio.mOut, "Open questions: 1\n"));
+
+    EXPECT_EQ(afterDate.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(afterDate.mOut,
+                         "Is this right? (yes or no):\n"
+                         "Input ended: the open questions are listed in the summary.\n"));
+    EXPECT_TRUE(contains(afterDate.mOut, "Open questions: 1\n"));
+
+    EXPECT_EQ(beforeAnything.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(beforeAnything.mOut,
+                         "Ratio:\n"
+                         "Input ended: the open questions are listed in the summary.\n"));
+    EXPECT_TRUE(contains(beforeAnything.mOut, "Open questions: 1\n"));
+}
+
+TEST(CliReportIntegrationTest, TwoQuestionsAreAskedInRequestOrder) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Fund,XX0000000002,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Fund,XX0000000002,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-03-20T09:00:00Z,2025-03-20,DEFAULT,TRADING,SELL,STOCK,Synthetic Fund,XX0000000002,-2,30,60,,,EUR,,,,,synthetic-sell-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nyes\nno\n");
+
+    // Requests are in source order: the split (row 3) before the loss sale (row 5). After the
+    // first answer the run is calculated again, so the loss question is then request-0001.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: a corporate action of XX0000000002 Synthetic "
+                         "Fund on 2023-01-15\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Is this right? (yes or no):\n"
+                         "\n"
+                         "Question request-0001: the 30-day loss rule for XX0000000001 "
+                         "Synthetic Share\n"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "Investments with a sale in 2025: 2\n"
+                 "  XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units\n"
+                 "  XX0000000002 Synthetic Fund: blocked (corporate_action_not_applied)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 2\n"
+                         "  XX0000000002 Synthetic Fund, corporate action on 2023-01-15: 2 : 1 "
+                         "from 2023-01-15, 2.0000 units after it\n"
+                         "  XX0000000001 Synthetic Share, 30-day loss rule: no, not bought or "
+                         "sold anywhere else (the open loss is deductible)\n"));
+}
+
+TEST(CliReportIntegrationTest, NoAnswerIsSavedAndTheNextRunAsksAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto answered = run({"report",
+                               "--year",
+                               "2025",
+                               "--taxpayer",
+                               taxpayer,
+                               "--out",
+                               folder.outputDirectory(),
+                               history},
+                              "no\n");
+
+    // Only the two output files, and the input folder has only what the test wrote.
+    EXPECT_EQ(answered.mExitCode, kExitSuccess);
+    EXPECT_EQ(folder.fileNames("out"),
+              (std::vector<std::string>{"Doh-KDVP_2025.xml", "summary_2025.txt"}));
+    EXPECT_EQ(folder.fileNames(""),
+              (std::vector<std::string>{"history.csv", "out", "taxpayer.json"}));
+
+    const auto again = run({"report",
+                            "--year",
+                            "2025",
+                            "--taxpayer",
+                            taxpayer,
+                            "--no-input",
+                            "--out",
+                            folder.outputDirectory(),
+                            history});
+
+    // The second run knows nothing of the first answer: the question is open again, the report
+    // is blocked and the XML of the first run is deleted.
+    EXPECT_EQ(again.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(again.mOut,
+                         "Open questions: 1\n"
+                         "  request-0001 loss_eligibility_confirmation_required, XX0000000001 "
+                         "Synthetic Share\n"));
+    EXPECT_FALSE(contains(again.mOut, "Answered in this run"));
+    EXPECT_EQ(folder.fileNames("out"), (std::vector<std::string>{"summary_2025.txt"}));
+}
+
+TEST(CliReportIntegrationTest, ARunWithoutQuestionsAsksNothing) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "no\n");
+
+    // A gain: 10 x 20 - 10 x 10 = +100, so no question, and the output is only the summary.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_EQ(folder.readOutput("summary_2025.txt"), result.mOut);
+    EXPECT_FALSE(contains(result.mOut, "Question"));
+    EXPECT_FALSE(contains(result.mOut, "Answered in this run"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
 }
 
 TEST(CliReportIntegrationTest, ProfitableSaleWithALossMakingPortionBlocksTheReport) {
@@ -905,11 +1949,12 @@ TEST(CliReportIntegrationTest, ProfitableSaleWithALossMakingPortionBlocksTheRepo
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
-                             history});
+                             history},
+                            "yes\n");
 
-    // Portions: 30 - 10 = +20 and 30 - 40 = -10. The sale gains 10 overall, but its loss unit
-    // is assumed blocked (no answer) and its profitable unit is not: such a sale needs split rows,
-    // so it blocks the report.
+    // Portions: 30 - 10 = +20 and 30 - 40 = -10. The sale gains 10 overall. The answer yes blocks
+    // its loss unit and not its profitable unit: such a sale needs split rows, so it blocks the
+    // report.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
     EXPECT_TRUE(contains(result.mOut,
@@ -922,10 +1967,7 @@ TEST(CliReportIntegrationTest, ProfitableSaleWithALossMakingPortionBlocksTheRepo
                          "Errors: 1\n"
                          "  diagnostic-0001 unsupported_tax_treatment, XX0000000001 Synthetic "
                          "Share, 2025-03-10, history.csv row 4\n"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "Warnings: 1\n"
-                         "  diagnostic-0002 loss_eligibility_unresolved, XX0000000001 Synthetic "
-                         "Share, 2025-03-10, history.csv row 4\n"));
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 0\n"));
 }
 
 TEST(CliReportIntegrationTest, ALossBlockedByAJanuaryPurchaseIsWritten) {
@@ -1561,8 +2603,8 @@ TEST(CliReportIntegrationTest, ShareAndFundSalesGiveOneItemEach) {
 TEST(CliReportIntegrationTest, BlockedInvestmentListsEachOfItsSales) {
     // Lots in FIFO order: 2 @ 10, 3 @ 40, 5 @ 10. The sale of 4 @ 20 uses 2 @ 10 (+20) and 2 @ 40
     // (-40); the sale of 6 @ 25 uses 1 @ 40 (-15) and 5 @ 10 (+75). No purchase lies within 30
-    // days of a sale, so the loss units are assumed blocked (no answer) and the profitable ones
-    // are not: both sales need split rows (#267). One warning covers both sales of the ISIN.
+    // days of a sale, so one question covers both sales; the answer yes blocks the loss units and
+    // not the profitable ones: both sales need split rows (#267).
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -1582,12 +2624,14 @@ TEST(CliReportIntegrationTest, BlockedInvestmentListsEachOfItsSales) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
-                             history});
+                             history},
+                            "yes\n");
 
     // The code is listed once; each sale gets its own line and its own error.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
-    EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
+    EXPECT_EQ(folder.readOutput("summary_2024.txt"),
+              R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
 
@@ -1605,13 +2649,15 @@ Private-market events skipped (only a cash amount, no units): 0
 Errors: 2
   diagnostic-0001 unsupported_tax_treatment, XX0000000001 Synthetic Share, 2024-03-10, history.csv row 5
     The 30-day loss rule blocks only part of the loss of this sale. Rows for such a sale are not supported yet, so the sale cannot be reported. No Doh-KDVP file was written.
-  diagnostic-0003 unsupported_tax_treatment, XX0000000001 Synthetic Share, 2024-05-10, history.csv row 6
+  diagnostic-0002 unsupported_tax_treatment, XX0000000001 Synthetic Share, 2024-05-10, history.csv row 6
     The 30-day loss rule blocks only part of the loss of this sale. Rows for such a sale are not supported yet, so the sale cannot be reported. No Doh-KDVP file was written.
 
-Warnings: 1
-  diagnostic-0002 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2024-03-10, history.csv row 5 (+1 more)
-    A sale of this investment was made at a loss, and your files alone cannot decide whether the 30-day rule blocks the loss. This command cannot ask you yet, so the whole open loss was treated as not deductible (F10 false). If, within 30 days before or after the sale, you did not buy or sell this investment anywhere that is not in your files, correct it yourself in eDavki.
+Warnings: 0
+
+Answered in this run: 1
+  XX0000000001 Synthetic Share, 30-day loss rule: yes, bought or sold elsewhere (the open loss is not deductible, F10 false)
 )");
+    EXPECT_TRUE(result.mOut.ends_with(folder.readOutput("summary_2024.txt")));
 }
 
 TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
@@ -1620,14 +2666,25 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_EQ(general.mExitCode, kExitSuccess);
     EXPECT_TRUE(general.mErr.empty());
     EXPECT_TRUE(contains(general.mOut,
-                         "  taxbroker report --year YYYY --taxpayer FILE [--self-report] --out DIR "
-                         "CSV [CSV ...]\n"));
+                         "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
+                         "[--no-input]\n"
+                         "                   --out DIR CSV [CSV ...]\n"));
 
     const auto report = run({"report", "--help"});
 
     EXPECT_EQ(report.mExitCode, kExitSuccess);
     EXPECT_TRUE(report.mErr.empty());
     EXPECT_TRUE(contains(report.mOut, "  --self-report      Write a self-report (samoprijava)"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "  --no-input         Ask no questions: an open question blocks the "
+                         "report (see\n"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "Questions:\n"
+                         "  Some cases need your answer. The command asks in the terminal, one "
+                         "question at a time,\n"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "lists them. The answers are used only in this run and are never saved, "
+                         "so the next run\n  asks again.\n"));
     EXPECT_TRUE(contains(report.mOut, "    \"taxNumber\": \"12345678\",\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "  - Private-market events (Trade Republic types "
@@ -1641,8 +2698,9 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(report.mOut,
                          "  0  The XML was written, or no sale in the year needs a Doh-KDVP "
                          "form.\n"
-                         "  1  The report is blocked: the errors are in the summary. No XML was "
-                         "written.\n"));
+                         "  1  The report is blocked: the errors and the open questions are in "
+                         "the summary. No XML\n"
+                         "     was written.\n"));
 }
 
 TEST(CliReportIntegrationTest, NoArgumentsPrintTheHelpAsAnError) {
@@ -2428,7 +3486,8 @@ TEST(CliReportIntegrationTest, SummaryThatCannotBeWrittenInAGeneratedYearWritesN
 }
 
 TEST(CliReportIntegrationTest, SummaryThatCannotBeWrittenKeepsTheOldXmlOfABlockedYear) {
-    // Buy 10 @ 30, sell 10 @ 20: a loss, so the year is blocked.
+    // Buy 10 @ 30, sell 10 @ 20: a loss whose question --no-input leaves open, so the year is
+    // blocked.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -2447,6 +3506,7 @@ TEST(CliReportIntegrationTest, SummaryThatCannotBeWrittenKeepsTheOldXmlOfABlocke
                              "2025",
                              "--taxpayer",
                              taxpayer,
+                             "--no-input",
                              "--out",
                              folder.outputDirectory(),
                              history});

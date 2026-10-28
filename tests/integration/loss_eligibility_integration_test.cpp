@@ -84,9 +84,11 @@ class TemporaryLossInputs {
 
 /// The capital-gains part of one run, as the CLI runs it, from the parsed files: merge, year,
 /// FIFO, the loss rule with the session's answers, the report builder, the gates and the writer.
-ApplicationResultInput calculateCapitalGains(const std::vector<ParseResult>& aParsed,
-                                             int aYear,
-                                             RunDecisions& aDecisions) {
+ApplicationResultInput
+calculateCapitalGains(const std::vector<ParseResult>& aParsed,
+                      int aYear,
+                      RunDecisions& aDecisions,
+                      OpenLossQuestions aOpenQuestions = OpenLossQuestions::Ask) {
     std::vector<StatementMergeInput> inputs;
 
     for (std::size_t index = 0; index < aParsed.size(); ++index)
@@ -99,7 +101,7 @@ ApplicationResultInput calculateCapitalGains(const std::vector<ParseResult>& aPa
     const auto& ledger = prepared.mLedger.value();
     const auto& statement = prepared.mMerged.mStatement;
     auto fifo = FifoMatcher::match(statement, ledger);
-    auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions);
+    auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions, aOpenQuestions);
     const auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
     auto gates = CapitalReportGates::check(statement, ledger, fifo, loss, built);
     const bool hasGateError =
@@ -246,6 +248,40 @@ TEST(LossEligibilityIntegrationTest, AnsweringYesBlocksTheWholeOpenLoss) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
 
     // The safe side: all 25 units are blocked, and the user corrects it in eDavki.
+    const auto& xml = result.report(kCapital).mXml.value();
+
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2024-01-05</F6>
+              <F7>25.0000</F7>
+              <F9>8.0000</F9>
+              <F10>false</F10>
+            </Sale>
+)xml"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(LossEligibilityIntegrationTest, ACallerThatDoesNotAskTreatsTheOpenLossAsBlocked) {
+    // The debug tools do not ask: they pass AssumeBlocked, so the 25 open loss units of the base
+    // sale are written as blocked (F10 false), with one warning and no request.
+    const TemporaryLossInputs files;
+    tr::TradeRepublicParser parser;
+    const std::vector<ParseResult> parsed{
+        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale}))};
+    RunDecisions decisions;
+
+    const auto result = ApplicationResultBuilder::build(
+        calculateCapitalGains(parsed, 2024, decisions, OpenLossQuestions::AssumeBlocked));
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::LossEligibilityUnresolvedAssumedBlocked);
+    EXPECT_EQ(warning.mIsin, "XX0000000001");
+
     const auto& xml = result.report(kCapital).mXml.value();
 
     EXPECT_TRUE(contains(xml, R"xml(            <Sale>

@@ -999,8 +999,8 @@ std::string_view toString(LossSaleState aState) {
 }
 
 /// Writes the 30-day loss rule result of each sale of the year with a loss: the investment, the
-/// sale's date, file and row, and units and dates. The tool has no answers, so it treats the
-/// open units as blocked, like the CLI.
+/// sale's date, file and row, and units and dates. The tool does not ask, so it treats the open
+/// units as blocked; the CLI asks instead.
 void writeLossEligibility(std::ostream& aOutput,
                           const BrokerStatement& aStatement,
                           const LossEligibilityResult& aLoss) {

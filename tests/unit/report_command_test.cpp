@@ -1,3 +1,4 @@
+#include "cli/decision_prompts.hpp"
 #include "cli/report_command.hpp"
 
 #include <gtest/gtest.h>
@@ -19,6 +20,7 @@ using taxbroker::cli::kExitBlocked;
 using taxbroker::cli::kExitFailure;
 using taxbroker::cli::kExitSuccess;
 using taxbroker::cli::runCli;
+using namespace taxbroker;
 
 struct CliRun {
     int mExitCode{};
@@ -101,11 +103,13 @@ class TemporaryFolder {
     std::filesystem::path mDirectory;
 };
 
-CliRun run(const std::vector<std::string>& aArguments) {
+/// Runs the command with aInput as what the user types; without it the input ends at once.
+CliRun run(const std::vector<std::string>& aArguments, std::string_view aInput = "") {
+    std::istringstream in{std::string{aInput}};
     std::ostringstream out;
     std::ostringstream err;
 
-    const int exitCode = runCli(aArguments, out, err);
+    const int exitCode = runCli(aArguments, in, out, err);
 
     return CliRun{exitCode, out.str(), err.str()};
 }
@@ -120,7 +124,8 @@ constexpr std::string_view kGeneralHelp =
     R"(taxbroker: turns broker CSV exports into Slovenian FURS tax forms (XML for eDavki).
 
 Usage:
-  taxbroker report --year YYYY --taxpayer FILE [--self-report] --out DIR CSV [CSV ...]
+  taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
+                   --out DIR CSV [CSV ...]
   taxbroker report --help
   taxbroker --help
 
@@ -190,7 +195,8 @@ TEST(ReportCommandTest, ReportHelpStartsWithTheUsageAndEndsWithTheExample) {
     EXPECT_TRUE(result.mErr.empty());
     EXPECT_EQ(result.mOut.rfind("Usage:\n"
                                 "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
-                                "--out DIR CSV [CSV ...]\n",
+                                "[--no-input]\n"
+                                "                   --out DIR CSV [CSV ...]\n",
                                 0),
               0U);
     EXPECT_TRUE(contains(result.mOut,
@@ -293,6 +299,31 @@ TEST(ReportCommandTest, SelfReportGivenTwiceFails) {
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr, "taxbroker: --self-report is given twice.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, NoInputGivenTwiceFails) {
+    const auto result = run({"report", "--no-input", "--year", "2024", "--no-input"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr, "taxbroker: --no-input is given twice.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, NoInputMayComeAfterTheCsvPath) {
+    // --no-input is read as an option, not as a CSV path, so the next check names the CSV file.
+    const auto result = run({"report",
+                             "missing.csv",
+                             "--no-input",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The CSV file missing.csv does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
 }
 
 TEST(ReportCommandTest, NoOptionsReportTheMissingYearFirst) {
@@ -811,8 +842,8 @@ TEST(ReportCommandTest, TwoSalesOfOneInvestmentAreCountedTogether) {
 }
 
 TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsBlocked) {
-    // The share is fine. The fund sells 5 @ 40 from 2 @ 30 (+20) and 3 @ 50 (-30): the 3 loss
-    // units are assumed blocked (no answer), the 2 others are not, so the sale blocks the report.
+    // The share is fine. The fund sells 5 @ 40 from 2 @ 30 (+20) and 3 @ 50 (-30): the answer yes
+    // blocks the 3 loss units and not the 2 others, so the sale blocks the report.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -832,7 +863,8 @@ TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsB
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
-                             history});
+                             history},
+                            "yes\n");
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
@@ -1276,6 +1308,73 @@ TEST(ReportCommandTest, FolderAtTheTemporarySummaryPathKeepsTheOldXmlOfAYearWith
     EXPECT_TRUE(result.mOut.empty());
     EXPECT_EQ(result.mErr, "taxbroker: summary_2024.txt cannot be written.\n");
     EXPECT_EQ(folder.readOutput("Doh-KDVP_2024.xml"), "an old file of an earlier run");
+}
+
+// Questions
+
+TEST(ReportCommandTest, OnlyTheLossAndTheRatioQuestionAreAsked) {
+    // No stage asks a failure-resolution question yet, and a question without question data cannot
+    // be answered.
+    const QuestionData noData{std::monostate{}};
+    const QuestionData failure{FailureResolutionQuestion{
+        .mInvestments = {{.mIsin = "XX0000000001", .mName = "Synthetic Share", .mReasonCodes = {}}},
+    }};
+    const QuestionData loss{
+        LossEligibilityQuestion{.mIsin = "XX0000000001", .mName = "Synthetic Share"}};
+    const QuestionData ratio{
+        CorporateActionRatioQuestion{.mIsin = "XX0000000001", .mName = "Synthetic Share"}};
+
+    EXPECT_FALSE(cli::canAsk(noData));
+    EXPECT_FALSE(cli::canAsk(failure));
+    EXPECT_TRUE(cli::canAsk(loss));
+    EXPECT_TRUE(cli::canAsk(ratio));
+}
+
+TEST(ReportCommandTest, AnAnswerToAFailureQuestionCountsTheFailedInvestments) {
+    // No stage asks this question yet; the summary line must still name it.
+    const RecordedDecision exclude{
+        .mId = "decision-0001",
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {
+                        {.mIsin = "XX0000000001", .mName = "Synthetic Share", .mReasonCodes = {}},
+                        {.mIsin = "XX0000000002", .mName = "Synthetic Fund", .mReasonCodes = {}},
+                    }},
+        .mAnswer = FailureResolutionAnswer{.mChoice = FailureResolution::ExcludeFailedInstruments},
+        .mFromEarlierRun = false,
+        .mUsed = true,
+    };
+    const RecordedDecision fail{
+        .mId = "decision-0002",
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {
+                        {.mIsin = "XX0000000001", .mName = "Synthetic Share", .mReasonCodes = {}},
+                    }},
+        .mAnswer = FailureResolutionAnswer{.mChoice = FailureResolution::FailReport},
+        .mFromEarlierRun = false,
+        .mUsed = true,
+    };
+
+    EXPECT_EQ(cli::answerLine(exclude), "2 failed investments: leave the failed investments out");
+    EXPECT_EQ(cli::answerLine(fail), "1 failed investment: block the report");
+}
+
+TEST(ReportCommandTest, AnAnswerToAQuestionWithoutDataNamesTheRequestType) {
+    const RecordedDecision decision{
+        .mId = "decision-0001",
+        .mType = RequestType::ExchangeRatesRequired,
+        .mData = std::monostate{},
+        .mAnswer = CancelAnswer{},
+        .mFromEarlierRun = false,
+        .mUsed = true,
+    };
+
+    EXPECT_EQ(cli::answerLine(decision), "exchange_rates_required: cancelled");
 }
 
 } // namespace
