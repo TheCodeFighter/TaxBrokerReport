@@ -394,10 +394,9 @@ and the CLI show all of them together as one checklist.
 
 While a question is open, capital gains is `needs_input` and has no XML; unrelated reports
 continue. An unanswered question is never written as `true` or `false`, and developer mode cannot
-bypass it. The one exception is a caller that cannot ask yet: the CLI and the debug
-tools treat the open units as if the answer were `other_activity` (`F10` `false`, the safe side)
-and give one `loss_eligibility_unresolved` warning per ISIN, so the user can correct the loss in
-eDavki. The question data (sale dates, transactions, units, windows, known replacements) is
+bypass it. The one exception is a caller that does not ask: the debug tools treat the open
+units as if the answer were `other_activity` (`F10` `false`, the safe side) and give one
+`loss_eligibility_unresolved` warning per ISIN. The CLI asks the question in the terminal. The question data (sale dates, transactions, units, windows, known replacements) is
 defined in [`diagnostics.md`](diagnostics.md); a changed fact, such as a purchase added in a new
 file, is a new question.
 

@@ -221,8 +221,8 @@ whose pool stopped at one: its date, rows and state (for example `WaitingForRati
 `WaitingForEarlierAction` for a later action). The tool has no answers, so a ratio question stays
 open. Then a "LOSS RULE (30 days)" part lists each sale of the year with a loss:
 its window, loss units, units blocked by known purchases, open units, state and the purchases it
-takes (units and dates only). The tool has no answers, so, like the CLI, it treats the open units
-as blocked (`assumed_blocked_units`, state `Decided`) and gives a warning per ISIN. The file
+takes (units and dates only). The tool does not ask, so it treats the open units as blocked
+(`assumed_blocked_units`, state `Decided`) and gives a warning per ISIN; the CLI asks instead. The file
 contains private financial data and must remain local.
 
 To write the Doh-KDVP XML for one year, run:

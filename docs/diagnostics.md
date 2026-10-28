@@ -618,7 +618,7 @@ Additional codes and their default scope are:
 | `source_quantity_corrected` | Warning for reports using the corrected source; retain the original and corrected quantities. |
 | `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
-| `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that cannot ask yet (the CLI until next task, the debug tools) treats the open units as blocked; no request. |
+| `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked; no request. |
 | `corporate_action_not_applied` | Error for capital gains: the ISIN has a corporate action up to 31 December that is not applied yet. Key `.ratio_confirmed` (parameters `newShares`, `oldShares`) once the user confirmed its ratio, `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one, and the plain key when no ratio is asked (no units before the action, or a class that never reaches Doh-KDVP). Walking skeleton only: once splits are applied, the other `corporate_action_*` codes replace it. |
 | `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.cancelled` after a cancel (no request), and `.same_day` for two or more rows of one broker for the ISIN on one date (no request until the identity question exists). |
 | `tax_classification_unknown` | Error for the potentially affected forms, with a classification request while resolvable. |
@@ -635,9 +635,9 @@ parser codes.
 The CLI report command already emits `unsupported_tax_treatment`,
 `tax_classification_unknown`, `missing_exchange_rate` and `corporate_action_not_applied` for
 capital gains, without requests (the requests come with exchange-rate requests and tax
-classification). It also runs the 30-day loss rule. The CLI cannot ask the loss question yet, so it
-treats the open loss units as blocked (`F10` false, the safe side) and gives one
-`loss_eligibility_unresolved` warning per ISIN (key `.assumed_blocked`) instead of the request. `unsupported_tax_treatment` is also a non-blocking warning for
+classification). It also runs the 30-day loss rule and the corporate-action stage in a
+`DecisionSession` and asks their questions in the terminal; with `--no-input`, or when the input
+ends, they stay open and the summary lists them. `unsupported_tax_treatment` is also a non-blocking warning for
 each skipped private-market event of the selected year; a rejected private-market row or a merger
 error on a private-market event affects no report. The cases and their scope are in
 [`architecture.md`](architecture.md), "CLI report command (walking skeleton)".
