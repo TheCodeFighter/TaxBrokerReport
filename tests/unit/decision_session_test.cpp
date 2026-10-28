@@ -22,6 +22,8 @@ constexpr auto kOther = ReportType::OtherInterest;
 const AnswerValue kExclude = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments};
 const AnswerValue kFailReport = FailureResolutionAnswer{FailureResolution::FailReport};
 const AnswerValue kCancel = CancelAnswer{};
+const AnswerValue kNoOtherActivity = NoOtherActivityAnswer{};
+const AnswerValue kOtherActivity = OtherActivityAnswer{};
 
 /// What a stand-in stage got from RunDecisions in each calculation, in calculation order.
 using SeenAnswers = std::vector<std::optional<AnswerValue>>;
@@ -40,6 +42,21 @@ DecisionQuestion otherInterestQuestion(std::vector<FailedInvestment> aInvestment
         .mAffectedReports = {kOther},
         .mData = FailureResolutionQuestion{.mInvestments = std::move(aInvestments)},
     };
+}
+
+DecisionQuestion lossQuestion(std::vector<LossSaleFacts> aSales) {
+    return DecisionQuestion{
+        .mType = RequestType::LossEligibilityConfirmationRequired,
+        .mAffectedReports = {kCapital},
+        .mIsin = "XX0000000001",
+        .mData = LossEligibilityQuestion{.mIsin = "XX0000000001",
+                                         .mName = "Synthetic Share",
+                                         .mSales = std::move(aSales)},
+    };
+}
+
+Date day(int aYear, unsigned aMonth, unsigned aDay) {
+    return Date{std::chrono::sys_days{std::chrono::year{aYear} / aMonth / aDay}.time_since_epoch()};
 }
 
 ProcessingDiagnostic capitalIncompleteHistoryError(const Isin& aIsin, const std::string& aName) {
@@ -1098,6 +1115,273 @@ TEST(DecisionSessionTest, OnlyTypeAndQuestionDataIdentifyARecordedAnswer) {
     EXPECT_FALSE(seen[2].has_value());
     EXPECT_FALSE(seen[3].has_value());
     EXPECT_FALSE(seen[4].has_value());
+}
+
+// The loss question of the 30-day rule.
+
+TEST(DecisionSessionTest, ALossQuestionAcceptsNo) {
+    // The sale of 10 units on 2024-03-10 has 5 open loss units.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownReplacements = {{.mDate = day(2024, 2, 9), .mUnits = 500'000'000}},
+            .mKnownIneligibleUnits = 500'000'000, // 5 units
+            .mOpenUnits = 500'000'000,
+        }});
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001", 1, kNoOtherActivity}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const auto& result = session.result();
+
+    EXPECT_EQ(result.mRunRevision, 2U);
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mDecisions.size(), 1U);
+    EXPECT_EQ(result.mDecisions[0].mType, RequestType::LossEligibilityConfirmationRequired);
+    EXPECT_EQ(result.mDecisions[0].mAnswer, kNoOtherActivity);
+    EXPECT_TRUE(result.mDecisions[0].mUsed);
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_FALSE(seen[0].has_value());
+    EXPECT_EQ(seen[1], kNoOtherActivity);
+}
+
+TEST(DecisionSessionTest, ALossQuestionAcceptsYes) {
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownIneligibleUnits = 0,
+            .mOpenUnits = 1'000'000'000,
+        }});
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001", 1, kOtherActivity}});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_EQ(session.result().mRunRevision, 2U);
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_EQ(seen[1], kOtherActivity);
+}
+
+TEST(DecisionSessionTest, ALossQuestionCanBeCancelled) {
+    // The stage applies its rule for a cancel; here it asks nothing more.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownIneligibleUnits = 0,
+            .mOpenUnits = 1'000'000'000,
+        }});
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001", 1, kCancel}});
+
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, kCancel);
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_EQ(seen[1], kCancel);
+}
+
+TEST(DecisionSessionTest, AFailureChoiceDoesNotFitALossQuestion) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownIneligibleUnits = 0,
+            .mOpenUnits = 1'000'000'000,
+        }});
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001", 1, kFailReport}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionSessionTest, ALossAnswerDoesNotFitAFailureQuestion) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = capitalQuestion({{
+            .mIsin = "XX0000000001",
+            .mName = "Synthetic Share",
+            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+        }});
+        ApplicationResultInput input{.mReportingYear = 2024};
+        input.mProcessingDiagnostics = {
+            capitalIncompleteHistoryError("XX0000000001", "Synthetic Share")};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto no = session.answer({{"request-0001", 1, kNoOtherActivity}});
+    const auto yes = session.answer({{"request-0001", 1, kOtherActivity}});
+
+    ASSERT_EQ(no.size(), 1U);
+    EXPECT_EQ(no[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    ASSERT_EQ(yes.size(), 1U);
+    EXPECT_EQ(yes[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, OnlyTheSaleFactsIdentifyALossAnswer) {
+    // The first run asks about the sale of 2024-03-10 with 5 open units, and the user says no.
+    const auto firstRun = [](RunDecisions& aDecisions) {
+        const auto question = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownReplacements = {{.mDate = day(2024, 2, 9), .mUnits = 500'000'000}},
+            .mKnownIneligibleUnits = 500'000'000, // 5 units
+            .mOpenUnits = 500'000'000,
+        }});
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    // The second run looks up three questions and asks none of them.
+    SeenAnswers seen;
+    const auto secondRun = [&seen](RunDecisions& aDecisions) {
+        // The same sale facts with a tax date: where to look, not what is asked.
+        auto moved = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownReplacements = {{.mDate = day(2024, 2, 9), .mUnits = 500'000'000}},
+            .mKnownIneligibleUnits = 500'000'000, // 5 units
+            .mOpenUnits = 500'000'000,
+        }});
+        moved.mTaxDate = day(2024, 3, 10);
+        // An added purchase of 2024-03-20 blocks 2 more units: 3 open.
+        const auto anotherReplacement = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownReplacements = {{.mDate = day(2024, 2, 9), .mUnits = 500'000'000},
+                                   {.mDate = day(2024, 3, 20), .mUnits = 200'000'000}},
+            .mKnownIneligibleUnits = 700'000'000, // 7 units
+            .mOpenUnits = 300'000'000,
+        }});
+        // The same sale with a transaction ID.
+        const auto withTransaction = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleTransaction = TransactionIdentity{.mBroker = Broker::TradeRepublic,
+                                                    .mTransactionId = "synthetic-sell-1"},
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownReplacements = {{.mDate = day(2024, 2, 9), .mUnits = 500'000'000}},
+            .mKnownIneligibleUnits = 500'000'000, // 5 units
+            .mOpenUnits = 500'000'000,
+        }});
+
+        seen.push_back(copyOf(aDecisions.find(moved)));
+        seen.push_back(copyOf(aDecisions.find(anotherReplacement)));
+        seen.push_back(copyOf(aDecisions.find(withTransaction)));
+
+        return ApplicationResultInput{.mReportingYear = 2024};
+    };
+    DecisionSession session;
+    session.start(firstRun);
+    ASSERT_TRUE(session.answer({{"request-0001", 1, kNoOtherActivity}}).empty());
+
+    session.start(secondRun);
+
+    // In order: moved, anotherReplacement, withTransaction.
+    ASSERT_EQ(seen.size(), 3U);
+    EXPECT_EQ(seen[0], kNoOtherActivity);
+    EXPECT_FALSE(seen[1].has_value());
+    EXPECT_FALSE(seen[2].has_value());
 }
 
 // Deleting answers.

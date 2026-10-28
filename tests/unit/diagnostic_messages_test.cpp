@@ -105,7 +105,21 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::MissingExchangeRateTrade,
          "missing_exchange_rate.trade",
          {{"currency", MessageParamKind::Text}}},
-        {MessageKey::LossEligibilityUnresolved, "loss_eligibility_unresolved", {}},
+        {MessageKey::LossEligibilityUnresolvedConfirmationRequired,
+         "loss_eligibility_unresolved.confirmation_required",
+         {}},
+        {MessageKey::LossEligibilityUnresolvedCancelled,
+         "loss_eligibility_unresolved.cancelled",
+         {}},
+        {MessageKey::LossEligibilityUnresolvedAssumedBlocked,
+         "loss_eligibility_unresolved.assumed_blocked",
+         {}},
+        {MessageKey::UnsupportedTaxTreatmentPartialLossEligibility,
+         "unsupported_tax_treatment.partial_loss_eligibility",
+         {}},
+        {MessageKey::CorporateActionNotAppliedLossWindow,
+         "corporate_action_not_applied.loss_window",
+         {}},
         {MessageKey::AnswerRejectedStaleRevision,
          "answer_rejected.stale_revision",
          {{"requestId", MessageParamKind::Text}}},
@@ -187,8 +201,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 50U);
-    ASSERT_EQ(expectedMessages().size(), 50U);
+    ASSERT_EQ(definitions.size(), 54U);
+    ASSERT_EQ(expectedMessages().size(), 54U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -222,8 +236,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 50U);
-    EXPECT_EQ(keys.size(), 50U);
+    EXPECT_EQ(ids.size(), 54U);
+    EXPECT_EQ(keys.size(), 54U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -244,7 +258,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 57U); // 50 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 61U); // 54 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

@@ -48,17 +48,24 @@ void orderChronologically(MergedStatement& aStatement) {
     });
 }
 
-/// Prepares the real reporting-year ledger, runs the matcher and builds the report from them.
+/// Prepares the real reporting-year ledger, runs the matcher and the loss rule (no answers) and
+/// builds the report from them.
 CapitalGainsBuildResult
 buildYear(StatementMergeResult& aMerged, int aYear, const std::vector<Isin>& aExcludedIsins = {}) {
     orderChronologically(aMerged.mStatement);
 
     const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
     const auto fifo = FifoMatcher{}.match(aMerged.mStatement, prepared.mLedger.value());
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(aMerged.mStatement,
+                                                    prepared.mLedger.value(),
+                                                    fifo,
+                                                    decisions);
 
     return CapitalGainsReportBuilder{}.build(aMerged.mStatement,
                                              prepared.mLedger.value(),
                                              fifo,
+                                             loss,
                                              aExcludedIsins);
 }
 
@@ -709,7 +716,7 @@ TEST(CapitalGainsReportBuilderTest, LossMakingPortionOfAProfitableSaleBlocksTheI
               (KdvpBlockedIsin{
                   .mIsin = "XX0000000001",
                   .mName = "Synthetic Share",
-                  .mReason = KdvpBlockReason::LossEligibilityUnresolved,
+                  .mReason = KdvpBlockReason::LossNotReportable,
                   .mSales = {{StatementEventKind::Trade, 0, 2}},
               }));
 }
@@ -749,7 +756,7 @@ TEST(CapitalGainsReportBuilderTest, OnlySalesWithALossMakingPortionAreListedAsBl
 
     EXPECT_FALSE(result.mReport.has_value());
     ASSERT_EQ(result.mBlocked.size(), 1U);
-    EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossEligibilityUnresolved);
+    EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossNotReportable);
     EXPECT_EQ(result.mBlocked.at(0).mSales,
               (std::vector<StatementEventReference>{{StatementEventKind::Trade, 0, 1},
                                                     {StatementEventKind::Trade, 0, 3}}));
@@ -801,7 +808,7 @@ TEST(CapitalGainsReportBuilderTest, BlockedIsinMeansNoReportEvenWhenAnotherIsinI
     ASSERT_EQ(result.mBlocked.size(), 1U);
     EXPECT_EQ(result.mBlocked.at(0).mIsin, "XX0000000002");
     EXPECT_EQ(result.mBlocked.at(0).mName, "Synthetic Share B");
-    EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossEligibilityUnresolved);
+    EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossNotReportable);
     EXPECT_EQ(result.mBlocked.at(0).mSales,
               (std::vector<StatementEventReference>{{StatementEventKind::Trade, 1, 1}}));
 }
@@ -1104,7 +1111,7 @@ TEST(CapitalGainsReportBuilderTest, AgreedExclusionLeavesOutTheBlockedIsinAndRep
               (KdvpBlockedIsin{
                   .mIsin = "XX0000000002",
                   .mName = "Synthetic Share B",
-                  .mReason = KdvpBlockReason::LossEligibilityUnresolved,
+                  .mReason = KdvpBlockReason::LossNotReportable,
                   .mSales = {{StatementEventKind::Trade, 1, 1}},
               }));
 }
@@ -1242,7 +1249,7 @@ TEST(CapitalGainsReportBuilderTest, PartlyAgreedExclusionStillBlocksTheOtherIsin
     EXPECT_EQ(result.mExcluded.at(0).mReason, KdvpBlockReason::FifoStopped);
     ASSERT_EQ(result.mBlocked.size(), 1U);
     EXPECT_EQ(result.mBlocked.at(0).mIsin, "XX0000000002");
-    EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossEligibilityUnresolved);
+    EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossNotReportable);
 }
 
 TEST(CapitalGainsReportBuilderTest, LossFromAnEarlierYearDoesNotBlockTheSelectedYear2024) {
@@ -1946,7 +1953,165 @@ TEST(CapitalGainsReportBuilderTest, LossOnTheNewUnitsOfAMixedSaleBlocks2025) {
               (KdvpBlockedIsin{
                   .mIsin = "XX0000000001",
                   .mName = "Synthetic Share",
-                  .mReason = KdvpBlockReason::LossEligibilityUnresolved,
+                  .mReason = KdvpBlockReason::LossNotReportable,
+                  .mSales = {{StatementEventKind::Trade, 0, 2}},
+              }));
+}
+
+TEST(CapitalGainsReportBuilderTest, ALossBlockedInFullIsListedWithF10False2024) {
+    // tax_rules.md: buy 100 in September 2023, sell 4 at a loss on 2024-12-20, buy 4 on
+    // 2025-01-05. The January purchase blocks the loss of all 4 units: F10 false, no question.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-09-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 10'000'000'000,    // 100 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-12-20")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 400'000'000,     // 4 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-01-05")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 400'000'000,     // 4 units
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = buildYear(merged, 2024);
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
+
+    const auto& list = result.mReport->mLists.at(0);
+
+    ASSERT_EQ(list.mRows.size(), 2U);
+
+    // Row 1: 4 units of the 2023 purchase, F8 = 4. The January purchase has no row.
+    const auto& purchase = purchaseAt(list, 0);
+
+    EXPECT_EQ(purchase.mDate, day("2023-09-01"));
+    EXPECT_EQ(purchase.mUnits, 400'000'000);         // 4 units
+    EXPECT_EQ(list.mRows.at(0).mStock, 400'000'000); // 4
+
+    // Row 2: the sale of 4 units with F10 false, F8 = 0.
+    const auto& sale = saleAt(list, 1);
+
+    EXPECT_EQ(sale.mDate, day("2024-12-20"));
+    EXPECT_EQ(sale.mUnits, 400'000'000);     // 4 units
+    EXPECT_EQ(sale.mUnitPrice, 800'000'000); // EUR 8
+    EXPECT_EQ(sale.mLossRule, KdvpLossRule::Blocked);
+    EXPECT_EQ(list.mRows.at(1).mStock, 0);
+}
+
+TEST(CapitalGainsReportBuilderTest, ALossOnTheNewUnitsIsListedWithF10False2025) {
+    // The sale of 2025-06-02 uses 2 units of 2005 (past 15 years, tax free, not listed) and 1
+    // unit of 2020 (-EUR 2). The purchase of 2025-06-10 blocks the loss of that listed unit.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2005-04-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 500'000'000, // EUR 5
+                 .mUnits = 200'000'000,     // 2 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2020-04-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-06-02")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 300'000'000,     // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-06-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 100'000'000,     // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = buildYear(merged, 2025);
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
+
+    const auto& list = result.mReport->mLists.at(0);
+
+    ASSERT_EQ(list.mRows.size(), 2U);
+
+    const auto& purchase = purchaseAt(list, 0);
+
+    EXPECT_EQ(purchase.mDate, day("2020-04-01"));
+    EXPECT_EQ(purchase.mUnits, 100'000'000);         // 1 unit
+    EXPECT_EQ(list.mRows.at(0).mStock, 100'000'000); // 1
+
+    const auto& sale = saleAt(list, 1);
+
+    EXPECT_EQ(sale.mUnits, 100'000'000); // 1 unit
+    EXPECT_EQ(sale.mLossRule, KdvpLossRule::Blocked);
+    EXPECT_EQ(list.mRows.at(1).mStock, 0);
+
+    ASSERT_EQ(result.mLongHeld.size(), 1U);
+    EXPECT_EQ(result.mLongHeld.at(0).mUnits, 200'000'000); // 2 units
+}
+
+TEST(CapitalGainsReportBuilderTest, ABlockedLossNextToProfitableUnitsBlocksTheIsin2024) {
+    // The sale of 15 units at EUR 18 uses 10 units bought at EUR 10 (+EUR 80) and 5 bought at
+    // EUR 20 (-EUR 10). The 2024-03-20 purchase blocks the loss of the 5 units, so 5 of the 15
+    // listed units are blocked: one row cannot say that (#267).
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-06-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2023-07-03")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 2'000'000'000, // EUR 20
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-11")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'800'000'000, // EUR 18
+                 .mUnits = 1'500'000'000,     // 15 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-20")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'800'000'000, // EUR 18
+                 .mUnits = 800'000'000,       // 8 units
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = buildYear(merged, 2024);
+
+    EXPECT_FALSE(result.mReport.has_value());
+    ASSERT_EQ(result.mBlocked.size(), 1U);
+    EXPECT_EQ(result.mBlocked.at(0),
+              (KdvpBlockedIsin{
+                  .mIsin = "XX0000000001",
+                  .mName = "Synthetic Share",
+                  .mReason = KdvpBlockReason::LossNotReportable,
                   .mSales = {{StatementEventKind::Trade, 0, 2}},
               }));
 }

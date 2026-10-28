@@ -1932,4 +1932,134 @@ TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {
                  std::invalid_argument);
 }
 
+TEST(ApplicationResultRequestTest, ALossQuestionNeedsSalesWithOpenUnits) {
+    // Loss question data on another request type.
+    ApplicationResultInput otherType{.mReportingYear = 2024};
+    otherType.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             LossEligibilityQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mSales = {LossSaleFacts{.mSaleDate = day(2024, 3, 10),
+                                                          .mSaleUnits = 100'000'000, // 1 unit
+                                                          .mLossUnits = 100'000'000,
+                                                          .mWindowStart = day(2024, 2, 9),
+                                                          .mWindowEnd = day(2024, 4, 9),
+                                                          .mOpenUnits = 100'000'000}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(otherType)),
+                 std::invalid_argument);
+
+    // A loss question without question data.
+    ApplicationResultInput withoutData{.mReportingYear = 2024};
+    withoutData.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::LossEligibilityConfirmationRequired,
+                         .mAffectedReports = {kCapital},
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutData)),
+                 std::invalid_argument);
+
+    // A loss question without a sale.
+    ApplicationResultInput withoutSale{.mReportingYear = 2024};
+    withoutSale.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::LossEligibilityConfirmationRequired,
+            .mAffectedReports = {kCapital},
+            .mData = LossEligibilityQuestion{.mIsin = "XX0000000001", .mName = "Synthetic Share"},
+        }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutSale)),
+                 std::invalid_argument);
+
+    // A sale without open units: nothing to answer.
+    ApplicationResultInput noOpenUnits{.mReportingYear = 2024};
+    noOpenUnits.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::LossEligibilityConfirmationRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             LossEligibilityQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mSales = {LossSaleFacts{.mSaleDate = day(2024, 3, 10),
+                                                          .mSaleUnits = 100'000'000, // 1 unit
+                                                          .mLossUnits = 100'000'000,
+                                                          .mWindowStart = day(2024, 2, 9),
+                                                          .mWindowEnd = day(2024, 4, 9),
+                                                          .mKnownIneligibleUnits = 100'000'000,
+                                                          .mOpenUnits = 0}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(noOpenUnits)),
+                 std::invalid_argument);
+
+    // More open units than loss units.
+    ApplicationResultInput tooManyOpenUnits{.mReportingYear = 2024};
+    tooManyOpenUnits.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::LossEligibilityConfirmationRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             LossEligibilityQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mSales = {LossSaleFacts{.mSaleDate = day(2024, 3, 10),
+                                                          .mSaleUnits = 100'000'000, // 1 unit
+                                                          .mLossUnits = 100'000'000,
+                                                          .mWindowStart = day(2024, 2, 9),
+                                                          .mWindowEnd = day(2024, 4, 9),
+                                                          .mOpenUnits = 200'000'000}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(tooManyOpenUnits)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, AStageOutputKeepsItsLinksWhenAppended) {
+    // The input already holds one diagnostic, so the stage's diagnostics 0 and 1 become 1 and 2.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext = {.mStage = PipelineStage::FifoTax, .mAffectedReports = {kCapital}},
+        .mMessage = "Synthetic first error.",
+    }};
+    std::vector<ProcessingDiagnostic> stageDiagnostics{
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::LossEligibilityUnresolved,
+            .mContext = {.mStage = PipelineStage::FifoTax, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic second error.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::LossEligibilityUnresolved,
+            .mContext = {.mStage = PipelineStage::FifoTax, .mAffectedReports = {kCapital}},
+            .mMessage = "Synthetic third error.",
+        },
+    };
+    std::vector<RequestInput> stageRequests{RequestInput{
+        .mQuestion = {.mType = RequestType::TaxClassificationRequired,
+                      .mAffectedReports = {kCapital}},
+        .mProcessingDiagnostics = {0, 1},
+    }};
+
+    appendStageOutput(input, std::move(stageDiagnostics), std::move(stageRequests));
+
+    ASSERT_EQ(input.mProcessingDiagnostics.size(), 3U);
+    EXPECT_EQ(input.mProcessingDiagnostics[1].mMessage, "Synthetic second error.");
+    EXPECT_EQ(input.mProcessingDiagnostics[2].mMessage, "Synthetic third error.");
+    ASSERT_EQ(input.mRequests.size(), 1U);
+    EXPECT_EQ(input.mRequests[0].mProcessingDiagnostics, (std::vector<std::size_t>{1, 2}));
+}
+
 } // namespace
