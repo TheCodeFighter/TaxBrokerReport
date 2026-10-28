@@ -27,6 +27,7 @@ add_executable(taxbroker_unit_tests
     unit/capital_gains_report_builder_test.cpp
     unit/capital_report_gates_test.cpp
     unit/corporate_actions_test.cpp
+    unit/decision_prompts_test.cpp
     unit/decision_session_test.cpp
     unit/event_metadata_test.cpp
     unit/exact_arithmetic_test.cpp
