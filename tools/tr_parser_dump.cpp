@@ -7,6 +7,7 @@
 #include "taxbroker/statement_merger.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/logger.hpp"
+#include "utils/numeric_util.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <algorithm>
@@ -35,17 +36,8 @@ namespace {
 
 using namespace taxbroker;
 
-std::uint64_t magnitude(std::int64_t aValue) {
-    if (aValue >= 0)
-    {
-        return static_cast<std::uint64_t>(aValue);
-    }
-
-    return static_cast<std::uint64_t>(-(aValue + 1)) + 1;
-}
-
-int decimalPlaces(std::int64_t aScale) {
-    int places = 0;
+std::size_t decimalPlaces(std::int64_t aScale) {
+    std::size_t places = 0;
     while (aScale > 1)
     {
         aScale /= 10;
@@ -55,17 +47,7 @@ int decimalPlaces(std::int64_t aScale) {
 }
 
 void writeFixedPoint(std::ostream& aOutput, std::int64_t aValue, std::int64_t aScale) {
-    const auto unsignedScale = static_cast<std::uint64_t>(aScale);
-    const auto unsignedValue = magnitude(aValue);
-
-    if (aValue < 0)
-    {
-        aOutput << '-';
-    }
-
-    aOutput << unsignedValue / unsignedScale << '.' << std::setfill('0')
-            << std::setw(decimalPlaces(aScale)) << unsignedValue % unsignedScale
-            << std::setfill(' ');
+    aOutput << formatFixedPoint(aValue, aScale, decimalPlaces(aScale));
 }
 
 void writeOptionalFixedPoint(std::ostream& aOutput,
