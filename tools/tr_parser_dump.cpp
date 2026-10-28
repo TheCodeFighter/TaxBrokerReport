@@ -1,6 +1,7 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/fifo_matcher.hpp"
+#include "processors/loss_eligibility.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/statement_merger.hpp"
@@ -989,11 +990,100 @@ std::string_view toString(KdvpBlockReason aReason) {
     {
     case KdvpBlockReason::FifoStopped:
         return "FifoStopped";
-    case KdvpBlockReason::LossEligibilityUnresolved:
-        return "LossEligibilityUnresolved";
+    case KdvpBlockReason::LossNotReportable:
+        return "LossNotReportable";
     }
 
     return "Unknown";
+}
+
+std::string_view toString(LossSaleState aState) {
+    switch (aState)
+    {
+    case LossSaleState::Decided:
+        return "Decided";
+    case LossSaleState::WaitingForAnswer:
+        return "WaitingForAnswer";
+    case LossSaleState::Cancelled:
+        return "Cancelled";
+    case LossSaleState::CorporateActionInWindow:
+        return "CorporateActionInWindow";
+    }
+
+    return "Unknown";
+}
+
+/// Writes the 30-day loss rule result of each sale of the year with a loss: the investment, the
+/// sale's date, file and row, and units and dates. The tool has no answers, so it treats the
+/// open units as blocked, like the CLI.
+void writeLossEligibility(std::ostream& aOutput,
+                          const BrokerStatement& aStatement,
+                          const LossEligibilityResult& aLoss) {
+    const auto saleCount = std::accumulate(aLoss.mIsins.begin(),
+                                           aLoss.mIsins.end(),
+                                           std::size_t{0},
+                                           [](std::size_t aSum, const LossEligibilityIsin& aIsin) {
+                                               return aSum + aIsin.mSales.size();
+                                           });
+
+    aOutput << "LOSS RULE (30 days)\n  loss_sales: " << saleCount
+            << "\n  open_questions: " << aLoss.mRequests.size() << '\n';
+
+    for (const auto state : {LossSaleState::Decided,
+                             LossSaleState::WaitingForAnswer,
+                             LossSaleState::Cancelled,
+                             LossSaleState::CorporateActionInWindow})
+    {
+        std::size_t count{};
+
+        for (const auto& isin : aLoss.mIsins)
+        {
+            count += static_cast<std::size_t>(std::count_if(
+                isin.mSales.begin(),
+                isin.mSales.end(),
+                [state](const LossSaleEligibility& aSale) { return aSale.mState == state; }));
+        }
+
+        aOutput << "  state_" << toString(state) << ": " << count << '\n';
+    }
+
+    aOutput << '\n';
+
+    for (const auto& isin : aLoss.mIsins)
+    {
+        for (const auto& sale : isin.mSales)
+        {
+            aOutput << "- name: " << isin.mName << "\n  isin: " << isin.mIsin << "\n  sale: ";
+            writeCapitalEvent(aOutput, aStatement, sale.mSale);
+            aOutput << "\n  window: ";
+            writeDate(aOutput, sale.mWindowStart);
+            aOutput << " to ";
+            writeDate(aOutput, sale.mWindowEnd);
+            aOutput << "\n  loss_units: ";
+            writeFixedPoint(aOutput, sale.mLossUnits, UNITS_SCALE);
+            aOutput << "\n  known_ineligible_units: ";
+            writeFixedPoint(aOutput, sale.mKnownIneligibleUnits, UNITS_SCALE);
+            aOutput << "\n  open_units: ";
+            writeFixedPoint(aOutput, sale.mLossUnits - sale.mKnownIneligibleUnits, UNITS_SCALE);
+            aOutput << "\n  assumed_blocked_units: ";
+            writeFixedPoint(aOutput,
+                            sale.mAssumedBlocked ? sale.mDeclaredIneligibleUnits : Units{0},
+                            UNITS_SCALE);
+            aOutput << "\n  state: " << toString(sale.mState)
+                    << "\n  replacements: " << sale.mReplacements.size() << '\n';
+
+            for (const auto& replacement : sale.mReplacements)
+            {
+                aOutput << "    - ";
+                writeDate(aOutput, replacement.mDate);
+                aOutput << ": ";
+                writeFixedPoint(aOutput, replacement.mUnits, UNITS_SCALE);
+                aOutput << '\n';
+            }
+        }
+    }
+
+    aOutput << '\n';
 }
 
 std::string_view toString(KdvpLossRule aLossRule) {
@@ -1074,9 +1164,10 @@ void writeKdvpBlockedIsin(std::ostream& aOutput,
 void writeKdvpReport(std::ostream& aOutput,
                      const MergedStatement& aStatement,
                      const ReportingYearLedger& aLedger,
-                     const FifoMatchingResult& aFifo) {
+                     const FifoMatchingResult& aFifo,
+                     const LossEligibilityResult& aLoss) {
     const CapitalGainsReportBuilder builder;
-    const auto withoutExclusions = builder.build(aStatement, aLedger, aFifo, {});
+    const auto withoutExclusions = builder.build(aStatement, aLedger, aFifo, aLoss, {});
     std::vector<Isin> blockedIsins;
 
     std::transform(withoutExclusions.mBlocked.begin(),
@@ -1084,7 +1175,7 @@ void writeKdvpReport(std::ostream& aOutput,
                    std::back_inserter(blockedIsins),
                    [](const KdvpBlockedIsin& aBlocked) { return aBlocked.mIsin; });
 
-    const auto preview = builder.build(aStatement, aLedger, aFifo, blockedIsins);
+    const auto preview = builder.build(aStatement, aLedger, aFifo, aLoss, blockedIsins);
     const auto& lists = preview.mReport.value().mLists;
 
     aOutput << "DOH-KDVP SUMMARY\n"
@@ -1093,8 +1184,7 @@ void writeKdvpReport(std::ostream& aOutput,
             << "\n  blocked_isins: " << withoutExclusions.mBlocked.size()
             << "\n  long_held_sales: " << withoutExclusions.mLongHeld.size() << '\n';
 
-    for (const auto reason :
-         {KdvpBlockReason::FifoStopped, KdvpBlockReason::LossEligibilityUnresolved})
+    for (const auto reason : {KdvpBlockReason::FifoStopped, KdvpBlockReason::LossNotReportable})
     {
         aOutput << "  blocked_" << toString(reason) << ": "
                 << std::count_if(withoutExclusions.mBlocked.begin(),
@@ -1246,10 +1336,20 @@ int writeFifoResult(std::span<char*> aArguments) {
         writeFifoIsin(output, statement.mPresentation, isin);
     }
 
-    writeKdvpReport(output, statement, *prepared.mLedger, fifo);
+    // No answers: the open loss units are treated as blocked, like in the CLI.
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(statement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions,
+                                                    OpenLossQuestions::AssumeBlocked);
+
+    writeLossEligibility(output, statement.mPresentation, loss);
+    writeKdvpReport(output, statement, *prepared.mLedger, fifo, loss);
 
     auto diagnostics = prepared.mDiagnostics;
     diagnostics.insert(diagnostics.end(), fifo.mDiagnostics.begin(), fifo.mDiagnostics.end());
+    diagnostics.insert(diagnostics.end(), loss.mDiagnostics.begin(), loss.mDiagnostics.end());
     writeProcessingDiagnostics(output, diagnostics);
 
     if (!output)
@@ -1299,8 +1399,15 @@ int writeKdvpXml(std::span<char*> aArguments) {
 
     const auto& statement = prepared.mMerged.mStatement;
     const auto fifo = FifoMatcher{}.match(statement, *prepared.mLedger);
+    // No answers: the open loss units are treated as blocked, like in the CLI.
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(statement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions,
+                                                    OpenLossQuestions::AssumeBlocked);
     const auto withoutExclusions =
-        CapitalGainsReportBuilder::build(statement, *prepared.mLedger, fifo, {});
+        CapitalGainsReportBuilder::build(statement, *prepared.mLedger, fifo, loss, {});
     std::vector<Isin> blockedIsins;
 
     std::transform(withoutExclusions.mBlocked.begin(),
@@ -1309,7 +1416,7 @@ int writeKdvpXml(std::span<char*> aArguments) {
                    [](const KdvpBlockedIsin& aBlocked) { return aBlocked.mIsin; });
 
     const auto preview =
-        CapitalGainsReportBuilder::build(statement, *prepared.mLedger, fifo, blockedIsins);
+        CapitalGainsReportBuilder::build(statement, *prepared.mLedger, fifo, loss, blockedIsins);
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = aArguments[2], .mIsResident = true},
         .mReportingYear = year,

@@ -23,6 +23,7 @@ add_library(taxbroker_core STATIC
     processors/decision_session.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
+    processors/loss_eligibility.cpp
     processors/processing_diagnostics.cpp
     processors/statement_merger.cpp
     processors/tax_processor.cpp
