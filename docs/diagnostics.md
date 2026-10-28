@@ -341,8 +341,9 @@ contract").
 When the user chooses exclusion, the processor removes every purchase, sale, corporate action,
 and calculated capital match for every listed ISIN from report output. It preserves source evidence
 and replacement allocations needed by retained losses in the separate loss-analysis view.
-An unresolved dependency produces `loss_eligibility_confirmation_required` for the retained sale;
-exclusion of its source ISIN does not resolve that request. Cancellation may add the dependent ISIN
+Only the same ISIN is a replacement ([`tax_rules.md`](tax_rules.md)), so excluding one ISIN
+never changes the loss of another. An open `loss_eligibility_confirmation_required` request of a
+retained sale stays open; exclusion does not resolve it. Cancellation may add the dependent ISIN
 to the failure list, requiring a new exclusion choice. These rules also apply to classification
 exclusions. Only after remaining dependencies are resolved can capital gains be generated.
 The processor deduplicates `excludedInvestments` by ISIN and lists every excluded investment in
@@ -445,7 +446,7 @@ rules:
   the session lives, so an answer from an earlier calculation or run never matches.
 - **Question identity.** A question is its `type` and its question data: for the two
   failure-resolution types, the investments with ISIN, name and reason codes, in a normalized
-  order. Sources, rows, source IDs, the tax date and diagnostic IDs only say where to look; they
+  order; for the loss question, the ISIN, its name and the facts of each open sale (below). Sources, rows, source IDs, the tax date and diagnostic IDs only say where to look; they
   are run-local and not part of it, so another file order asks the same question. Each type puts
   into its question data exactly the facts its answer depends on, such as a currency and date, or
   an action with the broker and transaction ID of every source. A different value is a different
@@ -478,10 +479,20 @@ rules:
   questions are asked again.
 - **Cancellation and missing answers.** Cancel is an answer for every type with question data and
   is recorded on the question; the stage applies the documented rule of its type. For both failure-resolution types
-  the question stays open, the report stays `needs_input` and no XML is written. An unanswered
+  the question stays open, the report stays `needs_input` and no XML is written. For the loss
+  question, each open sale gets a blocking `loss_eligibility_unresolved` error with the key
+  `loss_eligibility_unresolved.cancelled` and no request, so capital gains fails until the
+  exclusion choice exists (latter task). An unanswered
   request stays open: the session never answers anything by itself.
 - **Memory only.** Answers are never written to disk or browser storage and are gone when the app
   closes. Only the taxpayer profile may be saved (#278).
+
+In the JSON, a loss request has `"options":["no_other_activity","other_activity"]` and
+`"lossCheck"` with `name`, `isin` and `sales`; each sale has `saleDate`, `transaction` (`broker`,
+`transactionId`; left out without an ID), `saleUnits`, `lossUnits`, `windowStart`, `windowEnd`,
+`knownReplacements` (`date`, `units`), `knownIneligibleUnits` and `openUnits`. Units are exact
+decimal strings with eight decimals (`"4.00000000"`). A recorded loss answer lists the same
+`lossCheck` and `"answer":"no_other_activity"`, `"other_activity"` or `"cancel"`.
 
 A request type whose processor does not define its question data yet cannot be answered, not even
 cancelled: without question data, all its questions would be the same question, and one answer
@@ -494,7 +505,7 @@ request type, and a failure-resolution question without an investment.
 | `corporate_action_identity_required` | Candidate actions with ISIN, dates, types, ratios and all sources; answer with confirmed grouping, effective dates and order where needed. |
 | `corporate_action_ratio_required` | Combined action identity, complete source set, original source value, old position and examples; answer with positive whole-number new/old shares and confirmation of the previewed position. |
 | `quantity_correction_required` | Source event, original/proposed quantity, evidence, difference, resulting position and EUR impact/budget; answer with confirmed proposed quantity or a validated correction and supporting assertion. |
-| `loss_eligibility_confirmation_required` | Loss sales, inclusive window dates, coverage gaps, known replacement allocations, dependencies on excluded items and declarations needed; answer with corrected evidence, coverage confirmation where sufficient, or declared disqualifying activity and quantities. |
+| `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | Investment/event identity, current category, safe sources, permitted treatment choices and treatment-specific missing fields; answer with classification, required facts, or explicit exclusion and reason. |
 | `income_details_required` | Income items and missing or conflicting payer/catalogue, country, gross amount, withholding jurisdiction/status, payment evidence or requested treaty-claim facts, including external deposit interest; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
@@ -579,7 +590,7 @@ Additional codes and their default scope are:
 | `source_quantity_corrected` | Warning for reports using the corrected source; retain the original and corrected quantities. |
 | `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
-| `loss_eligibility_unresolved` | Error for capital gains, isolated to its complete ISIN where possible. |
+| `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that cannot ask yet (the CLI until next task, the debug tools) treats the open units as blocked; no request. |
 | `corporate_action_not_applied` | Error for capital gains: the ISIN has a corporate action up to 31 December that is not applied yet. Walking skeleton only: once splits are applied and corporate-action ratios are confirmed, the `corporate_action_*` codes replace it. |
 | `tax_classification_unknown` | Error for the potentially affected forms, with a classification request while resolvable. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
@@ -593,9 +604,11 @@ always keep their original severity. New application rules do not change the mea
 parser codes.
 
 The CLI report command already emits `unsupported_tax_treatment`,
-`tax_classification_unknown`, `missing_exchange_rate`, `loss_eligibility_unresolved` and
-`corporate_action_not_applied` for capital gains, without requests (the requests come
-with user decisions, exchange-rate requests, the loss rule and tax classification). `unsupported_tax_treatment` is also a non-blocking warning for
+`tax_classification_unknown`, `missing_exchange_rate` and `corporate_action_not_applied` for
+capital gains, without requests (the requests come with exchange-rate requests and tax
+classification). It also runs the 30-day loss rule. The CLI cannot ask the loss question yet, so it
+treats the open loss units as blocked (`F10` false, the safe side) and gives one
+`loss_eligibility_unresolved` warning per ISIN (key `.assumed_blocked`) instead of the request. `unsupported_tax_treatment` is also a non-blocking warning for
 each skipped private-market event of the selected year; a rejected private-market row or a merger
 error on a private-market event affects no report. The cases and their scope are in
 [`architecture.md`](architecture.md), "CLI report command (walking skeleton)".

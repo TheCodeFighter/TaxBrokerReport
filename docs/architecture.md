@@ -366,8 +366,8 @@ set. The detailed identity, ordering and conflict rules are in `fifo.md`.
 The processing request also retains a separate analysis view for 30-day loss eligibility, including
 required previous-December and next-January events. It does not mutate the selected-year closing
 FIFO position. Partially eligible losses become separate report rows, without duplicating their
-inventory consumption. User confirmations of missing coverage and external activity are explicit
-run-local inputs, as defined in `tax_rules.md`.
+inventory consumption. The user's answer to the loss question is an explicit input of the
+decision session, as defined in `tax_rules.md` and `diagnostics.md`.
 
 ### Reporting-year preparation contract
 
@@ -422,8 +422,8 @@ the same envelope for year validation. `ApplicationResultBuilder` combines
 the parser, merger and processing diagnostics into the application result: report scope, blocking
 flag, deterministic order and IDs, the status of each form and the overall status, with version 2
 JSON. `DecisionSession` holds the answers and recalculates the run, as defined in
-`diagnostics.md`, "Structured user-decision contract". No stage asks a question yet; blocking
-resolution and the exclusion choices remain later integration (#227, #228).
+`diagnostics.md`, "Structured user-decision contract". The 30-day loss rule is the first stage
+that asks a question ("Loss eligibility contract"); the exclusion choices remain later integration.
 
 Foreign-currency processing follows [`calculations.md`](calculations.md). The application result
 contains one structured request for every missing official `(currency, tax date)` rate. A
@@ -478,12 +478,17 @@ diagnostics of the run. Each entry holds:
   the exact sale value (sale `UnitPrice` times matched `Units`) and the signed gain (sale value
   minus basis), all in ticks of `10^-16` EUR and never rounded. A negative gain is a loss-making
   portion. A sale that uses two purchases has two matches. They are not Doh-KDVP filing rows.
+- `mEarlierMatches`: the matches of the sales before the selected year, in ledger order. Only
+  the 30-day loss rule reads them: an earlier loss takes its replacement units first.
 - `mOpenLots`: the lots still open in FIFO order at 31 December, each with its purchase event,
   date, remaining units and exact remaining basis.
 - `mStatus`, `mStoppedAt` and `mAvailableUnits`: why and where the pool stopped, if it did.
 
-An earlier-year sale only uses up lots and creates no match. One pool exists for each ISIN, across
-files, brokers and accounts; broker, file and row never change the matching.
+An earlier-year sale uses up lots; its matches go to `mEarlierMatches`, never to `mMatches`. One
+pool exists for each ISIN, across files, brokers and accounts; broker, file and row never change
+the matching. `isPastHoldingPeriod(match)` tells whether a match uses units past the holding period
+([`tax_rules.md`](tax_rules.md), "Long-held investments"); the loss rule and the report builder
+share it.
 
 A pool stops at its first event that it cannot apply and ignores its later events. Other ISINs
 continue. The failing sale is never applied partly: the lots stay as they were just before it,
@@ -507,10 +512,45 @@ The matcher reports two kinds of diagnostics, both for the capital report only:
   `mAvailableUnits` keeps the open units. The error blocks the capital report; the choice to
   exclude the ISIN or fail the report is later work.
 
-The corporate-action, non-EUR and loss-making-portion errors are added by the capital report gates
-(see "CLI report command (walking skeleton)"). The 30-day loss rule, split adjustment and currency
-conversion are later work. The Doh-KDVP filing rows are built from the matches as described
-in "Doh-KDVP report model contract".
+The corporate-action and non-EUR errors are added by the capital report gates (see "CLI report
+command (walking skeleton)"). Split adjustment and currency conversion are later work. The 30-day
+loss rule is the next stage ("Loss eligibility contract"). The Doh-KDVP filing rows are built from
+the matches as described in "Doh-KDVP report model contract".
+
+### Loss eligibility contract
+
+`LossEligibilityChecker::check` (`include/processors/loss_eligibility.hpp`) takes the merged
+statement, the reporting-year ledger, the FIFO result of the same run and the session's
+`RunDecisions`. It applies the 30-day loss rule as [`tax_rules.md`](tax_rules.md), "How the app
+applies the rule", describes it, and changes nothing in its inputs. ISINs whose pool stopped are
+skipped: the report builder blocks them anyway. So are bonds, derivatives, crypto and private
+funds: they never reach Doh-KDVP, and the capital report gates block them. An ISIN of unknown
+class is checked, because it may still be classified as a share or a fund.
+
+- **Inputs per ISIN.** The sales up to 31 December with their matches (`mEarlierMatches` and
+  `mMatches`), every purchase in `mCapitalEvents`, and from `mLossAnalysisEvents` the purchases
+  and corporate actions after 31 December. Sales after 31 December are left out. The stock after
+  each sale comes from walking the ISIN's events.
+- **Result.** `LossEligibilityResult` has one `LossEligibilityIsin` per trade instrument, by the
+  same index as the FIFO result, each with its sales of the year that have a loss unit
+  (`LossSaleEligibility`): sale, window, loss units, the replacements taken (purchase, date, units),
+  the known ineligible units, the units blocked by a `yes` answer and a state: `Decided`,
+  `WaitingForAnswer`, `Cancelled` or `CorporateActionInWindow` (with the action).
+- **Question.** The open sales of one ISIN give one `loss_eligibility_confirmation_required`
+  request with `LossEligibilityQuestion` data and one `loss_eligibility_unresolved` error per open
+  sale (key `loss_eligibility_unresolved.confirmation_required`, the sale's sources and date),
+  linked to the request. The checker looks the question up in `RunDecisions`: `no_other_activity`
+  decides the open units as eligible, `other_activity` as blocked, and a cancel gives each open
+  sale the error with key `loss_eligibility_unresolved.cancelled` and no request. The request's
+  diagnostic indices count from the checker's first diagnostic; `appendStageOutput` moves them to
+  the numbering of `ApplicationResultInput`.
+- **Without a way to ask.** A caller that cannot ask yet (the CLI until latter tasks fix this, and the debug
+  tools) passes `OpenLossQuestions::AssumeBlocked`. Without a recorded answer, the open units are
+  then treated as with `other_activity` (`mAssumedBlocked`), with no request and one
+  `loss_eligibility_unresolved` warning per ISIN (key
+  `loss_eligibility_unresolved.assumed_blocked`, the sources of its open sales and the date of the
+  first), so the user can correct the loss in eDavki.
+- No units, amounts or prices are in the messages.
 
 ### Doh-KDVP report model contract
 
@@ -547,9 +587,10 @@ produces `Blocked`; a partly eligible sale will become two sale rows that share 
 classification gate, not of the builder.
 
 **Building the rows.** `CapitalGainsReportBuilder::build` takes the merged statement, the
-reporting-year ledger, the FIFO result and the ISINs that the user agreed to leave out. All three
-inputs must come from the same run: the FIFO result has one entry per trade instrument, by the
-same index. For an ISIN with at least one sale in the selected year:
+reporting-year ledger, the FIFO result, the loss eligibility result and the ISINs that the user
+agreed to leave out. The inputs must come from the same run: the FIFO and loss results have one
+entry per trade instrument, by the same index. For an ISIN with at least one sale in the selected
+year:
 
 - A purchase row is made for each purchase that the matches of the year use, at its ledger
   position, with F3 the sum of its matched units. A sale row is made for each sale of the year,
@@ -559,12 +600,15 @@ same index. For an ISIN with at least one sale in the selected year:
   investments") are tax free and are left out of F3 and F7. A sale with only such units has no
   row, and an ISIN with no listed unit has no list. The units left out are in `mLongHeld` (ISIN,
   name, sale, units) for every ISIN that is not blocked, so they stay visible beside the report.
+- A sale row gets `Blocked` when the loss rule blocks the loss of every listed unit (`F7`), else
+  `NotBlocked`.
 - The ISIN is blocked, with no list, for the first of these reasons that applies:
-  `FifoStopped` (the pool stopped; all its sales of the year are named) or
-  `LossEligibilityUnresolved` (a match within the holding period is loss-making; only those sales
-  are named). A loss on units past the period is left out with them, because it cannot reduce the
-  tax base. A gain of zero is not a loss. A stopped pool without a sale in the year does not
-  block. A loss from an earlier-year sale is not in the matches of the year and never blocks.
+  `FifoStopped` (the pool stopped; all its sales of the year are named) or `LossNotReportable` (a
+  sale whose loss-rule state is not `Decided`, or whose rule blocks more than none and fewer than
+  all of its listed units; only those sales are named). A loss on units past the period is left
+  out with them, because it cannot reduce the tax base. A gain of zero is not a loss. A stopped
+  pool without a sale in the year does not block. A loss from an earlier-year sale is not in the
+  matches of the year and never blocks.
 - A blocked ISIN that the user agreed to leave out goes to `mExcluded` and stays visible beside
   the report; any other blocked ISIN goes to `mBlocked`. The report exists only when `mBlocked` is
   empty, and then holds a list for every ISIN without a problem. An ISIN without a problem is never
@@ -642,9 +686,13 @@ orchestration moves into the application service once that service connects all 
 stages.
 
 **Pipeline.** Each CSV is read with the path-based Trade Republic parser, with its position on the
-command line as the source index. Then: merge, reporting-year preparation, FIFO, the report
-builder (no exclusions), the capital report gates, the XML writer, and
-`ApplicationResultBuilder`. The XML is written only when the builder made a report with at least
+command line as the source index. Then: merge, reporting-year preparation, FIFO, the loss rule
+(without answers, `OpenLossQuestions::AssumeBlocked`: the CLI cannot ask the question until later tasks),
+the report builder (no exclusions), the capital report gates, the XML writer, and
+`ApplicationResultBuilder`. A loss that the files decide in full is written as they decide it;
+the open units of any other loss sale are assumed blocked (`F10` false, the safe side), with a
+warning per ISIN. A sale whose blocked units are only part of its listed units still blocks the
+report. The XML is written only when the builder made a report with at least
 one list and no gate gave an error; a report without lists is `no_data` with
 `no_selected_year_disposals`. The capital status of the application result decides the files and
 the exit code, so a blocking parser or merger error (a rejected trade or corporate-action row, a
@@ -662,7 +710,8 @@ capital gains only and carry no units, amounts or prices:
 | Class unknown (missing, unrecognized or conflicting) | `tax_classification_unknown` error (`fifo_tax`) | ISIN; as above |
 | Pool stopped at a corporate action up to 31 December | `corporate_action_not_applied` error (`corporate_action`) | ISIN; date and sources of the action |
 | Pool stopped at a non-EUR trade | `missing_exchange_rate` error (`fifo_tax`), parameter `currency` | ISIN; date and sources of that trade |
-| Sale with a loss-making FIFO portion | `loss_eligibility_unresolved` error (`fifo_tax`) | sale |
+| Sale whose loss the 30-day rule blocks only in part | `unsupported_tax_treatment` error (`fifo_tax`), key `unsupported_tax_treatment.partial_loss_eligibility` | sale |
+| Corporate action after 31 December inside the window of a December loss | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_window` | one per action, even when several sales share it; date and sources of the action |
 | Private-market event dated in the selected year | `unsupported_tax_treatment` **warning** (`fifo_tax`) | event |
 
 Only `Stock` and `Fund` pass the class check; `IsFond` stays `false` for both. A pool stopped for
@@ -675,8 +724,10 @@ For the same reason a rejected private-market row, or a merger error on a privat
 affects no report: it stays an error and is listed in the summary, but it blocks nothing
 (maintainer decision, 2026-10-26). When private markets are supported, these errors get the
 capital scope back.
-Each gate goes away when its rule exists: applied splits and confirmed corporate-action
-ratios, conversion with official exchange rates, the loss rule, and classification requests.
+An open or cancelled loss question already has its `loss_eligibility_unresolved` error from the
+loss rule, so the gates add nothing for it. Each gate goes away when its rule exists: applied
+splits and confirmed corporate-action ratios, conversion with official exchange rates, the split
+rows of a partly blocked loss, and classification requests.
 
 **Taxpayer file.** One JSON object with `taxNumber` (eight digits, not `00000000`) and
 `isResident` (only `true` for now), and the optional strings `name`, `address`, `city`,
@@ -688,9 +739,10 @@ read from the file. An error names the key, never the value.
 capital report is `generated`, and `summary_<year>.txt` for every run that got that far; the same
 summary goes to stdout. A blocked or no-data run deletes an old `Doh-KDVP_<year>.xml` there and
 says so, so a file of an earlier run is never taken for this run's result. The summary has the
-input files (file names and source IDs only), the capital status, each ISIN with a sale in the
-year (listed with its sale rows and units, blocked with its codes and sales, or only units past
-the holding period), the units past the holding period (`mLongHeld`: ISIN, sale date, units), the
+input files (file names and source IDs only), the capital status, each ISIN with a sale in the year
+(listed with its sale rows and units, the units with `F10` false and how many of them were assumed
+without an answer, blocked with its codes and
+sales, or only units past the holding period), the units past the holding period (`mLongHeld`: ISIN, sale date, units), the
 skipped private-market events, and the diagnostics in application order (capital errors, capital
 warnings, then the others with their severity). It has units and dates, no EUR amounts.
 

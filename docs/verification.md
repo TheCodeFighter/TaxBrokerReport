@@ -73,6 +73,8 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
   1 January to 28 February. A working self-report is expected to mean the original works too, but
   that is an expectation, not a check. Next window: 1 January to 28 February 2027, tax year 2026.
 - **Doh-Div, Doh-DHO and Doh-Obr.** Their writers do not exist yet.
+- **S5, a loss blocked by the 30-day rule (`F10` false)** (`tests/manual/edavki/README.md`, from
+  following tasks): not imported yet.
 - **Doh-KDVP rows for split-adjusted history and partially eligible losses** (#267), and the
   developer export without `F10` (#188). The CLI blocks these cases today.
 - If a result is unclear, the FURS developer contact is `sd.fu@gov.si`.

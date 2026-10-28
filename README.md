@@ -21,12 +21,18 @@ tax year from **Trade Republic** CSV exports:
 
 - shares and funds (ETFs) bought and sold in EUR;
 - units held longer than the holding period are left out as tax free and listed in the summary;
+- the 30-day loss rule (*pravilo navidezne odsvojitve*): a loss that a purchase of the same
+  investment within 30 days before or after the sale blocks in full is written with `F10` false;
 - the XML imports into eDavki as a draft; the checks so far are recorded in
   [docs/verification.md](docs/verification.md).
 
 The tool blocks a report instead of guessing. No XML is written when an investment sold in the
 year is crypto, a private fund, a bond or a derivative, has a split or another corporate action,
-misses earlier purchases, has a sale with any part at a loss, or has a trade that is not in EUR.
+misses earlier purchases, or has a trade that is not in EUR. A sale at a loss that the files alone
+cannot decide needs the answer whether, within 30 days of the sale, the investment was also
+traded anywhere not in your files (another broker or account, or after the export). The command
+cannot ask it yet, so it treats the whole open loss as not deductible (`F10` false, the safe side)
+and warns about it in the summary; if you did not trade elsewhere, correct the loss in eDavki.
 `scripts/report.sh --command-help` lists every case.
 
 Not yet available: Doh-Div (dividends), Doh-DHO and Doh-Obr (interest), Interactive Brokers, the

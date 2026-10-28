@@ -153,9 +153,10 @@ For selected year `Y`, the app writes a *popisni list* only for an ISIN with at 
 - `F2` (way of purchase) is `B` (*nakup*, purchase) for every broker purchase. `A`
   (*vložek kapitala*) is a capital contribution to one's own company and is not used.
 - `F10` exists only on sale rows. It is `true` (*Da*) unless the 30-day loss rule blocks the loss,
-  and `false` (*Ne*) for the blocked part. A profitable sale gets `true`. The only exception is the
-  developer-mode export of a sale with unknown purchase value ([`fifo.md`](fifo.md)), which
-  leaves `F10` out.
+  and `false` (*Ne*) for the blocked part ([The 30-day loss rule](#the-30-day-loss-rule)). A
+  profitable sale gets `true`. Until decides the split rows, a sale whose loss the rule blocks
+  only in part is not written. The only exception is the developer-mode export of a sale with
+  unknown purchase value ([`fifo.md`](fifo.md)), which leaves `F10` out.
 
 This is simpler for the user than repeating the full history every year. It differs from a literal
 reading of section 11: `F3` (and `F7` when units are past the holding period) is not always the
@@ -321,96 +322,154 @@ wash-sale rule. It decides whether a reported loss may reduce taxable gains. It 
 sale or return sold shares to the ledger.
 
 For a sale at a loss on date `D`, check the full period from 30 days before the sale through 30
-days after the sale. Both end dates and the sale date are included.
+days after the sale. Both end dates and the sale date are included: 61 days.
 
 The loss cannot reduce taxable gains to the extent that the taxpayer acquires the same or
 substantially identical replacement investment during that period. The same applies when the
 taxpayer obtains a right or an obligation to buy it. Replacement quantities matter: a replacement
 of 4 units does not automatically disallow a loss on all 10 units sold.
 
-Match disposals to acquisitions by FIFO first, then determine eligibility for the loss-making
-matched quantities using the quantitative, chronological allocation in the FURS detailed loss-rule
-guidance. Do not apply the rule to profitable matched quantities. Do not treat the acquisition
-consumed by the same disposal as an additional replacement simply because it falls in the window.
-FURS examples distinguish a complete liquidation with no replacement from a sale followed by a
-replacement purchase. Process competing loss disposals chronologically and use each replacement
-quantity at most once. Supported splits normalize compared quantities to the same share units.
+### How the app applies the rule
 
-The report model retains eligible and ineligible quantities separately. Split a partially eligible
-disposal into sale rows with the same source sale date and unit value; the quantities must add
-back to the original sale and must not consume FIFO inventory twice. Doh-KDVP `F10` is
-written on every sale row: `true` when the loss may reduce gains or there is no loss, and `false`
-when the 30-day loss rule blocks the loss. The writer does not perform the eligibility
-calculation.
+The source is the FURS guidance *Dobiček iz kapitala – pravilo navidezne odsvojitve kapitala*
+(January 2015, see "Official sources") and its 23 examples. The app reads it as follows; this
+reading gives the FURS result in all 23 examples (maintainer decision, 2026-10-27):
 
-The check must cover all supplied brokers and accounts. Checking only the last buy before the sale
-is not enough.
+1. **FIFO first.** The FIFO matches decide the purchase value of each sale and which units are
+   sold. Only the units of loss-making matches within the holding period are loss units. A
+   profitable match is not checked, and a loss on units past the holding period cannot reduce the
+   tax base ([Long-held investments](#long-held-investments)), so it is not checked either. A gain
+   of zero is not a loss.
+2. **The sale's own purchase is no replacement.** A sale's original date is the purchase date of
+   its first FIFO lot. A purchase counts as a replacement only when it is dated after that date
+   (FURS examples 7, 17 and 23: a quick sale of part of a new purchase keeps its loss), or when
+   it comes after the sale: a rebuy later on the day of the sale counts even when the sale's
+   first lot was bought that day (maintainer decision; the FURS examples have no
+   times of day). A purchase
+   after the original date counts with its full quantity, even when the same sale sells some of
+   its units: in FURS example 2 the second sale of 50 uses 25 old and 25 new units, and the whole
+   new purchase of 50 blocks its loss, because the holding is 25 before that purchase and 25 after
+   the sale.
+3. **A sale that empties the holding keeps its loss against earlier purchases.** When no unit is
+   left right after the sale, only purchases after it count (FURS examples 14 and 18; example 9
+   shows a purchase after such a sale).
+4. **Earliest loss first, each unit once.** Loss sales are taken in ledger order. Each takes the
+   unused units of its replacements, earliest purchase first, up to its loss units (FURS examples
+   11, 16, 17 and 19). A unit used once is never used again.
+5. **Across years.** Every report rebuilds the whole history, so the loss sales of earlier years
+   take their replacements first, and nothing is remembered between runs. A sale after 31
+   December never takes a replacement before a sale of the selected year. Purchases in the
+   following January (up to 30 January) are replacement candidates only: they never enter the
+   selected year's FIFO ledger, closing stock or report rows.
+6. **Only the same ISIN.** Substantially identical capital under another ISIN, rights and
+   obligations to buy, and purchases by related persons (a family member or a company in which
+   the taxpayer has the required interest; ZDoh-2 has a separate rule for them, not limited to the
+   window) are not checked and not asked (in practice only the
+   same ISIN matters). Names and symbols never identify a replacement.
+7. **Units only.** A replacement is counted by its units; its currency and price are not needed.
+   A corporate action after 31 December inside the window of a December loss blocks that ISIN
+   (`corporate_action_not_applied`) until splits are applied, because the units before and after
+   it cannot be compared yet. An action up to 31 December already stops the FIFO pool.
 
-A replacement buy can happen in January after a December sale. In that case, the January buy:
+The check covers all supplied brokers and accounts. Checking only the last buy before the sale is
+not enough; the legacy app's shortcut of checking only the last earlier buy must not be copied.
 
-- may change whether the December loss can reduce taxable gains;
-- must not change the earlier year's closing FIFO position; and
-- must not appear in the earlier year's report.
+### The question to the user
 
-The law also has a separate rule for purchases by a family member or by a company in which the
-taxpayer has the required ownership or voting interest. This separate rule is not limited to the
-taxpayer's 30-day purchase window.
+The app sees only the supplied files. An export's first or last trade does not prove that it is
+complete. When the known replacements do not block all loss units of a sale, the open units need
+the user's answer. The question is as simple as possible: one
+`loss_eligibility_confirmation_required` request per ISIN with every sale of the year whose loss
+the files cannot decide: "Within 30 days before or after the sale, did you also buy or sell this
+investment anywhere that is not in your files: at another broker, in another account, or after the
+last day of your export?" A rebuy after the export date, or after a run made less than 30 days
+after a December sale, is not in the files either. The frontend
+and the CLI show all of them together as one checklist.
 
-The app can check only events present in the supplied data. It must not invent missing purchases,
-rights, obligations, family-member activity, or company activity. An export's first or last trade
-does not prove its coverage. For a loss not fully disallowed by known replacement activity, request
-confirmation of complete history for its window and of relevant activity not represented in the
-files. Same ISIN is an automatic identity match; substantially identical capital with another ISIN
-requires an explicit user declaration rather than a guess from its name.
+- `no_other_activity`: the open units keep their loss.
+- `other_activity`: every open unit is treated as blocked (`F10` `false`). This is the safe side,
+  more tax and never less; the user corrects the deemed disposal in eDavki.
+- Cancel: each open sale gets a blocking `loss_eligibility_unresolved` error. The ISIN exclusion
+  or report-failure choice for it comes with other task; until then the capital report fails.
 
-Return a `loss_eligibility_confirmation_required` request containing the affected sales, inclusive
-window dates, known replacement quantities, unresolved questions, and source references. The user
-can add statements, confirm complete coverage with no additional disqualifying activity, or declare
-additional activity and its affected quantities. A declaration must identify the affected sale and
-cannot allocate more than its remaining loss quantity. Rights, obligations, and related-party
-activity must be declared explicitly; they are not inferred from trades. Do not serialize an
-unanswered eligibility question as `true` or `false`. While it is unresolved, capital gains is
-`needs_input`; unrelated reports continue. Cancellation produces `loss_eligibility_unresolved` and
-uses the normal ISIN exclusion or report-failure choice. Developer mode cannot bypass this question.
+While a question is open, capital gains is `needs_input` and has no XML; unrelated reports
+continue. An unanswered question is never written as `true` or `false`, and developer mode cannot
+bypass it. The one exception is a caller that cannot ask yet: the CLI and the debug
+tools treat the open units as if the answer were `other_activity` (`F10` `false`, the safe side)
+and give one `loss_eligibility_unresolved` warning per ISIN, so the user can correct the loss in
+eDavki. The question data (sale dates, transactions, units, windows, known replacements) is
+defined in [`diagnostics.md`](diagnostics.md); a changed fact, such as a purchase added in a new
+file, is a new question.
+
+### Doh-KDVP rows
+
+`F10` is written on every sale row: `true` when no loss unit of the sale is blocked (a profitable
+sale included), `false` when the rule blocks the loss of every listed unit (`F7`). The writer does
+not perform the eligibility calculation.
+
+A sale whose rule blocks only part of its listed units (for example `NE-10 DA-30`, or a blocked
+loss next to profitable units of the same sale) needs to be split into sale rows with the same
+source sale date and unit value, whose quantities add back to the original sale without consuming
+FIFO twice. How is decided in following tasks; until then such a sale blocks its ISIN with an
+`unsupported_tax_treatment` error.
 
 ### Evidence retained after exclusions
 
-Excluding an ISIN or classified item removes its report rows, not its source evidence from the
-loss-analysis view. Keep reliable acquisitions, disposals, action facts, and confirmed declarations
-when they affect a retained sale, including declared substantially identical capital with another
-ISIN. Exclusion neither restores replacement quantities already allocated to an earlier loss nor
-makes unreliable facts usable. Recalculate dependent loss decisions after a correction or exclusion.
+Excluding an ISIN or classified item removes its report rows, not its trades from the loss
+analysis. Because only the same ISIN is a replacement, excluding another ISIN never changes a loss.
+Exclusion neither restores replacement quantities already allocated to an earlier loss nor makes
+unreliable facts usable; the capital exclusion flow (#227) keeps these rules.
 
-If excluded data leaves replacement identity, quantity, timing or allocation unresolved, return
-`loss_eligibility_confirmation_required` for each affected retained sale. Explain the dependency
-and request corrected evidence or an explicit declaration of its effect. Confirmation of complete
-coverage cannot override a known unresolved conflict. Keep capital gains `needs_input` until it is
-resolved; cancellation uses `loss_eligibility_unresolved` for the dependent ISIN and the normal
-exclusion/failure flow. A changed affected-ISIN list invalidates the earlier exclusion choice.
+### FURS examples
 
-Example: a retained loss of 10 units in A has a confirmed equivalent replacement of 4 units in B.
-Excluding B for an unrelated historical shortage still leaves 4 units of A's loss ineligible.
-If B's replacement quantity is disputed instead, A's eligibility needs input; exclusion of B
-cannot make all 10 units eligible. This applies to both `excludedInvestments` and `excludedItems`.
+Every purchase is followed by its quantity, every sale (O) by its quantity and the FURS result:
+`NE` units whose loss is blocked, `DA` units whose loss may reduce gains (with no other
+activity). The synthetic processor tests reproduce each one (`tests/unit/loss_eligibility_test.cpp`).
+
+| Example | History (2007 and 2008) | FURS result |
+| --- | --- | --- |
+| 1 | 12.12. 50; O 5.1. 50; 7.7. 50; O 14.7. 50 | DA-50; DA-50 |
+| 2 | 12.12. 50; O 5.1. 25; 7.7. 50; O 14.7. 50 | DA-25; NE-50 |
+| 3 | 12.12. 50; O 5.1. 25; 31.1. 20; 7.7. 50; O 14.7. 50 | NE-20 DA-5; NE-50 |
+| 4 | 12.12. 50; 5.1. 50; 5.2. 50; 5.3. 50; O 15.4. 100; 5.5. 20 | NE-20 DA-80 |
+| 5 | 1.1. 100; 1.4. 100; O 15.4. 100 | NE-100 |
+| 6 | 12.12. 50; O 5.1. 50 | DA-50 |
+| 7 | 12.12. 50; O 5.1. 25 | DA-25 |
+| 8 | 12.12. 50; O 5.1. 25; 31.1. 50 | NE-25 |
+| 9 | 12.12. 50; O 5.1. 50; 31.1. 50 | NE-50 |
+| 10 | 1.2.2007 50; 12.12. 10; O 5.1. 40 | NE-10 DA-30 |
+| 11 | 1.1. 200; O 10.3. 100; O 15.3. 100; 20.3. 100 | NE-100; DA-100 |
+| 12 | 1.1. 200; O 10.3. 200; 15.3. 100 | NE-100 DA-100 |
+| 13 | 1.1. 50; 31.3. 50; 2.4. 50; O 10.4. 50 | NE-50 |
+| 14 | 1.9.2007 100; 17.9.2007 100; 18.9.2007 100; 4.2. 100; 5.2. 100; O 5.2. 500 | DA-500 |
+| 15 | 24.9.2007 100; 18.12. 50; 26.12. 25; O 6.1. 100 | NE-75 DA-25 |
+| 16 | 24.9.2008 600, 350, 50, 500; O 15.11. 600; O 19.11. 350; O 19.11. 50; O 21.11. 500; 5.12. 550; O 12.12. 550 | NE-550 DA-50; DA-350; DA-50; DA-500; DA-550 |
+| 17 | 29.5. 10, 4, 10; O 18.6. 22; O 10.7. 2; 16.7. 3; 19.7. 5; O 6.8. 8; 8.8. 10; O 18.9. 10 | NE-3 DA-19; NE-2; NE-8; DA-10 |
+| 18 | 25.7. 120; 26.7. 20; 2.8. 400; 2.8. 400; 8.8. 600; O 17.8. 1540 | DA-1540 |
+| 19 | 1.2. 500; O 10.3. 100; O 15.3. 100; 20.3. 100 | NE-100; DA-100 |
+| 20 | 24.9.2007 100; O 3.2. 100; 10.2., 11.2., 12.2., 13.2. 50 each | NE-100 |
+| 21 | 24.9.2007 100; O 3.2. 100; 10.2., 11.2., 12.2., 13.2. 10 each | NE-40 DA-60 |
+| 22 | 1.2. 100; O 3.2. 100; 10.4. 10 | DA-100 |
+| 23 | 1.2. 100; O 3.2. 30; 10.4. 10 | DA-30 |
+
+Dates are day and month; December dates are in 2007 and the others in 2008 unless a year is
+given. FURS example 13 prints a stock of 10 after its second purchase; it is 100.
 
 ### Quantitative and year-boundary examples
 
-All examples assume a loss, the same investment, and no undeclared disqualifying activity:
+All examples assume a loss, the same investment, and the answer `no_other_activity` where a
+question is asked:
 
 | History | Result |
 | --- | --- |
 | Buy 50 on 12 December 2023; sell all 50 on 5 January 2024; no replacement. | All 50 units remain eligible despite the recent acquisition; FURS example 1 covers complete liquidation. |
-| Buy 100 in September 2023; sell 4 on 20 December 2024 at a loss; buy 4 on 5 January 2025. | All 4 replacement units are ineligible and the sale's 2024 closing FIFO position remains unchanged by the January buy. |
-| Buy 50 earlier and 10 on 12 December 2023; sell 40 on 5 January 2024 leaving 20. | Apply FURS example 10: 10 units are ineligible and 30 eligible. |
+| Buy 100 in September 2023; sell 4 on 20 December 2024 at a loss; buy 4 on 5 January 2025. | All 4 replacement units are ineligible, without a question, and the sale's 2024 closing FIFO position remains unchanged by the January buy. |
+| Buy 50 earlier and 10 on 12 December 2023; sell 40 on 5 January 2024 leaving 20. | Apply FURS example 10: 10 units are ineligible and 30 eligible (rows decided in latter task). |
 | Buy 200 earlier; sell 100 on 10 March and 100 on 15 March; buy 100 on 20 March. | The first loss uses the 100 replacement units; the second cannot reuse them (FURS example 11). |
-
-The complete FURS examples, including examples 14 and 17, are required reference scenarios for
-complete liquidation and competing loss windows. Preserve their chronological event tables and
-expected eligible quantities in synthetic processor fixtures.
+| Sell 10 at a loss on 20 December 2023; buy 10 on 5 January 2024; sell 10 at a loss on 10 January 2024. | The December loss takes the January purchase, in the 2023 report and again when the 2024 report rebuilds the history; the January loss has no known replacement. |
 
 The legacy app is used only to confirm the meaning of the Doh-KDVP field: `true` means that the
-loss may reduce taxable gains. Its shortcut of checking only the last earlier buy must not be
-copied.
+loss may reduce taxable gains.
 
 ## Empty selected years
 
@@ -672,7 +731,12 @@ Tests based on this document must prove that:
 - a FIFO over the filing rows, independent of the production code, gives the literal gains and
   `F8` values;
 - holding time does not change FIFO use;
-- replacement buys exactly 30 days before or after a loss are included in the loss check;
+- replacement buys exactly 30 days before or after a loss are included in the loss check, and
+  31 days are not;
+- the 23 FURS loss-rule examples give their FURS results;
+- a sale's own purchase is no replacement, a rebuy later on the same day is one, and a sale that
+  empties the holding keeps its loss
+  against the purchases before it;
 - a December acquisition can affect a January loss in the next reporting year;
 - a later-year replacement buy can change loss eligibility without changing the earlier ledger;
 - partial replacements split eligible and ineligible quantities without duplicating a disposal;
@@ -683,9 +747,10 @@ Tests based on this document must prove that:
 - every sale row serializes explicit `F10` (`true` for a profitable sale), purchase rows have no
   `F10`, and unresolved decisions generate no capital XML;
 - every broker purchase row has `F2` = `B`;
-- missing coverage and non-imported activity produce a structured confirmation request;
-- exclusions preserve reliable replacement evidence and allocations for retained losses, including
-  declared equivalent instruments with different ISINs;
+- a loss the files cannot decide produces one yes/no question per ISIN, and `yes` blocks every
+  open unit;
+- only the same ISIN is a replacement;
+- exclusions preserve reliable replacement evidence and allocations for retained losses;
 - unresolved evidence from an excluded item keeps dependent losses awaiting input and updates the
   exclusion choice when the affected ISIN list changes;
 - supported income categories route to their documented forms and exclusions remain visible;
