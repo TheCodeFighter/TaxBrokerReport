@@ -11,3 +11,12 @@
   `KdvpXmlWriterTest.AllOptionalTaxpayerFieldsAreWrittenInSchemaOrder`.
 
 `scripts/report.sh --synthetic` and the `CliReport.Binary` CTest use these files.
+
+For trying the questions of `taxbroker report` by hand (no test reads them):
+
+- `loss_question.csv`: 10 @ 30 bought and 10 @ 20 sold in 2025 with no purchase within 30 days,
+  so the command asks the 30-day loss question. no writes the loss with F10 true, yes with F10
+  false; cancel blocks the report.
+- `split_question.csv`: 1 @ 10 bought in 2022, a split on 2023-01-15 and 2 @ 30 sold in 2025, so
+  the command asks for the ratio. Splits are not applied yet, so even a confirmed ratio blocks the
+  report with `corporate_action_not_applied`.

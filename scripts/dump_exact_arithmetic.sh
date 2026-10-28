@@ -16,24 +16,19 @@ Shows data guesses and an imaginary 1 new / 2 old comparison as separate preview
 Supply a verified split factor for each action row to preview adjusted open lots.
 For example: --split-row 17 2 1 means 2 new shares for 1 old share at CSV row 17.
 Rows are one-based, including the header. Trades rebuild the position internally, but are not printed.
+Options and the CSV path can come in any order.
 HELP
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
-fi
-
-csv_path="tmp/TransactionExport.csv"
+csv_path=""
 output_path="runtime/debug/exact_arithmetic.txt"
-if [[ $# -gt 0 && "$1" != --* ]]; then
-    csv_path="$1"
-    shift
-fi
-
 split_arguments=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
         --output)
             [[ $# -ge 2 ]] || { usage >&2; exit 2; }
             output_path="$2"
@@ -44,12 +39,18 @@ while [[ $# -gt 0 ]]; do
             split_arguments+=("$1" "$2" "$3" "$4")
             shift 4
             ;;
-        *)
+        -*)
             usage >&2
             exit 2
             ;;
+        *)
+            [[ -z "$csv_path" ]] || { usage >&2; exit 2; }
+            csv_path="$1"
+            shift
+            ;;
     esac
 done
+csv_path="${csv_path:-tmp/TransactionExport.csv}"
 
 if [[ "$csv_path" == /* || "$output_path" == /* ]]; then
     echo "Paths must be relative to the repository." >&2

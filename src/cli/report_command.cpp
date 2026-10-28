@@ -1,6 +1,8 @@
 #include "cli/report_command.hpp"
 
+#include "cli/decision_prompts.hpp"
 #include "cli/taxpayer_file.hpp"
+#include "cli_text.hpp"
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
@@ -10,7 +12,7 @@
 #include "processors/tax_processor.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
-#include "utils/numeric_util.hpp"
+#include "taxbroker/decision_session.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <algorithm>
@@ -20,6 +22,7 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <istream>
 #include <iterator>
 #include <map>
 #include <optional>
@@ -27,6 +30,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -38,7 +42,8 @@ constexpr std::string_view kGeneralHelp =
     R"(taxbroker: turns broker CSV exports into Slovenian FURS tax forms (XML for eDavki).
 
 Usage:
-  taxbroker report --year YYYY --taxpayer FILE [--self-report] --out DIR CSV [CSV ...]
+  taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
+                   --out DIR CSV [CSV ...]
   taxbroker report --help
   taxbroker --help
 
@@ -50,7 +55,8 @@ Run 'taxbroker report --help' for the details.
 
 constexpr std::string_view kReportHelp =
     R"(Usage:
-  taxbroker report --year YYYY --taxpayer FILE [--self-report] --out DIR CSV [CSV ...]
+  taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
+                   --out DIR CSV [CSV ...]
 
 Writes the Doh-KDVP form (capital gains from selling shares and funds) for one year from
 Trade Republic CSV exports, and a readable summary. The XML can be imported into eDavki
@@ -60,6 +66,8 @@ Options:
   --year YYYY        The tax year, 2000 to 9999.
   --taxpayer FILE    Your details as JSON (see "Taxpayer file" below).
   --self-report      Write a self-report (samoprijava) instead of an original return.
+  --no-input         Ask no questions: an open question blocks the report (see
+                     "Questions" below).
   --out DIR          The folder for the output files. It is created if it is missing.
   -h, --help         Show this help.
   CSV                One or more Trade Republic exports. Give your whole history, not
@@ -86,8 +94,8 @@ Taxpayer file (JSON):
 Output files in DIR:
   Doh-KDVP_YYYY.xml  The form. Written only when it could be made in full.
   summary_YYYY.txt   Each investment sold in the year, the units past the holding period,
-                     the skipped private-market events, the warnings and the errors.
-                     The same summary is printed here.
+                     the skipped private-market events, the warnings, the errors, the
+                     open questions and your answers. The same summary is printed here.
   A blocked run, or a year without a sale to report, deletes an old Doh-KDVP_YYYY.xml
   in DIR, so a file from an earlier run is never mistaken for this run's result.
 
@@ -96,22 +104,35 @@ Supported for now:
   - Units held longer than the holding period (15 years for a sale from 2022, 20 years
     before) are tax free: they are left out of the XML and listed in the summary.
   - The 30-day loss rule: a sale at a loss whose loss a purchase of the same investment
-    within 30 days before or after it blocks in full is written with F10 false.
-  - A sale at a loss that the files alone cannot decide needs your answer whether, within
-    30 days of the sale, you also bought or sold the investment anywhere not in your files
-    (another broker, another account, or after the export). This command cannot ask the
-    question yet, so it treats the whole open loss as blocked (F10 false, the safe side)
-    and gives a warning in the summary: if you did not, correct the loss in eDavki.
+    within 30 days before or after it blocks in full is written with F10 false. A loss
+    that the files alone cannot decide is written as you answer (see "Questions").
+
+Questions:
+  Some cases need your answer. The command asks in the terminal, one question at a time,
+  and calculates again after each answer:
+  - A sale at a loss that the files alone cannot decide: whether, within 30 days before or
+    after the sale, you also bought or sold the investment anywhere that is not in your
+    files (another broker, another account, or after the export). yes: the open loss is
+    not deductible (F10 false); no: it is deductible.
+  - A corporate action, for example a split: the ratio from the announcement (new shares
+    for old shares, or your shares just before and just after it) and its effective date.
+    You then confirm the position after it.
+  An answer that does not fit is explained and the question is asked again. cancel closes
+  a question without an answer, and the report is blocked. With --no-input, or when the
+  input ends (Ctrl-D), the open questions stay open: the report is blocked and the summary
+  lists them. The answers are used only in this run and are never saved, so the next run
+  asks again.
 
 The report is blocked (no XML) when an investment sold in the year:
   - is crypto, a private fund, a bond or a derivative, or has an unknown asset class;
-  - has a corporate action, for example a split, up to 31 December. A split needs the
-    ratio and the effective date from the announcement (new shares for old shares); this
-    command cannot ask for them yet, so the question stays open and the report is blocked;
+  - has a corporate action, for example a split, up to 31 December. You can answer its
+    ratio and effective date (see "Questions"), but corporate actions are not applied yet,
+    so the report stays blocked;
   - misses earlier purchase history;
   - has a sale whose loss the 30-day rule blocks only in part, or a corporate action within
     30 days after a sale at a loss in December;
-  - has a trade that is not in EUR.
+  - has a trade that is not in EUR;
+  - has a question that is open or was cancelled.
 It is also blocked when a file cannot be read, when a trade or corporate-action row of
 any file is rejected, when two files disagree about the same trade or about the asset
 class of an investment, or when a value does not fit the form (for example a postCode
@@ -127,7 +148,8 @@ Skipped:
 
 Exit codes:
   0  The XML was written, or no sale in the year needs a Doh-KDVP form.
-  1  The report is blocked: the errors are in the summary. No XML was written.
+  1  The report is blocked: the errors and the open questions are in the summary. No XML
+     was written.
   2  The command could not run: a wrong option, a missing file, an invalid taxpayer
      file or an output file that cannot be written. No output file was changed.
 
@@ -142,6 +164,8 @@ struct ReportOptions {
     int mYear{};
     std::filesystem::path mTaxpayerPath;
     FilingType mFilingType{FilingType::Original};
+    /// False with --no-input: the open questions stay open.
+    bool mAskQuestions{true};
     std::filesystem::path mOutputDirectory;
     std::vector<std::filesystem::path> mCsvPaths;
 };
@@ -181,6 +205,7 @@ parseReportArguments(std::span<const std::string> aArguments) {
     std::optional<std::string> taxpayerText;
     std::optional<std::string> outputText;
     bool selfReport = false;
+    bool noInput = false;
     bool onlyPaths = false;
 
     for (std::size_t index = 0; index < aArguments.size(); ++index)
@@ -212,6 +237,17 @@ parseReportArguments(std::span<const std::string> aArguments) {
             }
 
             selfReport = true;
+            continue;
+        }
+
+        if (argument == "--no-input")
+        {
+            if (noInput)
+            {
+                return UsageError{"--no-input is given twice."};
+            }
+
+            noInput = true;
             continue;
         }
 
@@ -283,6 +319,7 @@ parseReportArguments(std::span<const std::string> aArguments) {
     options.mTaxpayerPath = *taxpayerText;
     options.mOutputDirectory = *outputText;
     options.mFilingType = selfReport ? FilingType::SelfReport : FilingType::Original;
+    options.mAskQuestions = !noInput;
 
     return options;
 }
@@ -329,27 +366,6 @@ std::string isoDate(const Date& aDate) {
                   static_cast<unsigned>(day.day()));
 
     return text;
-}
-
-/// Units with four to eight decimals, as in the XML: 1.5 units is `1.5000`.
-std::string unitsText(Units aUnits) {
-    constexpr std::size_t kMinimumDecimals = 4;
-
-    return formatFixedPoint(aUnits, UNITS_SCALE, kMinimumDecimals);
-}
-
-std::string countText(std::size_t aCount, std::string_view aOne, std::string_view aMany) {
-    return std::to_string(aCount) + " " + std::string{aCount == 1 ? aOne : aMany};
-}
-
-/// The ISIN and the name, each only when it is known: `XX0000000001 Synthetic Share`.
-std::string investmentText(const Isin& aIsin, const std::string& aName) {
-    if (aIsin.empty() || aName.empty())
-    {
-        return aIsin + aName;
-    }
-
-    return aIsin + " " + aName;
 }
 
 std::string sourceText(const SourceReference& aSource) {
@@ -460,7 +476,6 @@ struct InvestmentLine {
     std::size_t mSaleRows{};
     Units mListedUnits{};
     Units mBlockedLossUnits{};
-    Units mAssumedBlockedUnits{};
     bool mListed{};
     /// The sales the summary names under a blocked ISIN, in ledger order.
     std::vector<StatementEventReference> mSales;
@@ -471,7 +486,6 @@ struct RunOutcome {
     const ReportOptions& mOptions;
     const MergedStatement& mStatement;
     const CapitalGainsBuildResult& mBuilt;
-    const LossEligibilityResult& mLoss;
     /// The filing rows of the ISINs without a problem, also when the report is blocked.
     const CapitalGainsReportKDVP& mPreview;
     const ApplicationResult& mResult;
@@ -507,22 +521,6 @@ std::map<Isin, InvestmentLine> investmentLines(const RunOutcome& aOutcome) {
                     sale->mLossRule == KdvpLossRule::Blocked ? sale->mUnits : Units{0};
                 line.mSales.push_back(sale->mSale);
             }
-        }
-    }
-
-    for (const auto& isin : aOutcome.mLoss.mIsins)
-    {
-        const auto line = lines.find(isin.mIsin);
-
-        if (line == lines.end())
-        {
-            continue;
-        }
-
-        for (const auto& sale : isin.mSales)
-        {
-            line->second.mAssumedBlockedUnits +=
-                sale.mAssumedBlocked ? sale.mDeclaredIneligibleUnits : Units{0};
         }
     }
 
@@ -649,12 +647,6 @@ void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
                  << " units with a loss blocked by the 30-day rule (F10 false)";
         }
 
-        if (line.mAssumedBlockedUnits > 0)
-        {
-            aOut << ", of them " << unitsText(line.mAssumedBlockedUnits)
-                 << " assumed without an answer (see the warnings below)";
-        }
-
         aOut << '\n';
     }
 }
@@ -693,6 +685,65 @@ void writePrivateMarketEvents(std::ostream& aOut, const RunOutcome& aOutcome) {
                                diagnostic->mInstrumentName.value_or(""))
              << ": " << isoDate(diagnostic->mTaxDate.value()) << ", "
              << sourceText(diagnostic->mSources.front()) << '\n';
+    }
+}
+
+/// The open requests, only when there is one.
+void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
+    if (aResult.mRequests.empty())
+    {
+        return;
+    }
+
+    aOut << "\nOpen questions: " << aResult.mRequests.size() << '\n';
+
+    const auto nameOf = [](const auto& aQuestion) -> std::string {
+        using Question = std::decay_t<decltype(aQuestion)>;
+
+        if constexpr (std::is_same_v<Question, std::monostate>)
+        {
+            return {};
+        }
+        else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
+        {
+            // It lists several investments, not one.
+            return {};
+        }
+        else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
+        {
+            return aQuestion.mName;
+        }
+        else
+        {
+            static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
+            return aQuestion.mName;
+        }
+    };
+
+    for (const auto& request : aResult.mRequests)
+    {
+        const auto name = std::visit(nameOf, request.mData);
+
+        aOut << "  " << request.mId << ' ' << api::requestTypeName(request.mType) << ", "
+             << investmentText(request.mIsin.value_or(""), name) << '\n';
+    }
+
+    aOut << "  Run the command again in a terminal (without --no-input) to answer them.\n";
+}
+
+/// The answers given in this run, only when there is one. They are never saved, so this run is
+/// the only one that has them.
+void writeAnswers(std::ostream& aOut, const ApplicationResult& aResult) {
+    if (aResult.mDecisions.empty())
+    {
+        return;
+    }
+
+    aOut << "\nAnswered in this run: " << aResult.mDecisions.size() << '\n';
+
+    for (const auto& decision : aResult.mDecisions)
+    {
+        aOut << "  " << answerLine(decision) << '\n';
     }
 }
 
@@ -742,6 +793,8 @@ std::string summaryText(const RunOutcome& aOutcome) {
     writeDiagnostics(out, "Errors", errors, false);
     out << '\n';
     writeDiagnostics(out, "Warnings", warnings, false);
+    writeOpenQuestions(out, aOutcome.mResult);
+    writeAnswers(out, aOutcome.mResult);
 
     if (!others.empty())
     {
@@ -806,39 +859,28 @@ std::vector<Isin> blockedIsins(const CapitalGainsBuildResult& aBuilt) {
     return isins;
 }
 
-/// Parses, merges, matches and checks the files, writes the output files and the summary, and
-/// returns the exit code.
-int runReport(const ReportOptions& aOptions,
-              const TaxpayerMetadata& aTaxpayer,
-              std::ostream& aOut,
-              std::ostream& aErr) {
-    tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs;
+/// The stage results of a calculation that the summary needs beside the application result.
+struct CalculatedRun {
+    CapitalGainsBuildResult mBuilt;
+    /// The rows of the ISINs without a problem, when the builder made no report.
+    std::optional<CapitalGainsReportKDVP> mPreviewWithoutBlocked;
+};
 
-    for (std::size_t index = 0; index < aOptions.mCsvPaths.size(); ++index)
-    {
-        inputs.push_back({index, parser.parse(aOptions.mCsvPaths[index], index)});
-    }
-
-    auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
-        .mReportingYear = aOptions.mYear,
-        .mMerged = DeterministicStatementMerger{}.merge(std::move(inputs)),
-    });
-
+/// One calculation from the merged files and the answers: FIFO, the corporate-action stage, the
+/// loss rule, the builder, the gates and the XML. It reads nothing from aCalculated, so it keeps
+/// no state between calls; aCalculated only receives what the summary needs.
+ApplicationResultInput calculateReport(const ReportOptions& aOptions,
+                                       const TaxpayerMetadata& aTaxpayer,
+                                       const TaxProcessingResult& aPrepared,
+                                       RunDecisions& aDecisions,
+                                       std::optional<CalculatedRun>& aCalculated) {
     // The year was checked with the options, so the ledger is always there.
-    const auto& ledger = prepared.mLedger.value();
-    const auto& statement = prepared.mMerged.mStatement;
+    const auto& ledger = aPrepared.mLedger.value();
+    const auto& statement = aPrepared.mMerged.mStatement;
     auto fifo = FifoMatcher::match(statement, ledger);
-    // This command cannot ask a question yet: it has no answers, so a ratio question stays
-    // open, and it treats the open loss units as blocked, with a warning.
-    RunDecisions decisions;
-    auto actions = CorporateActionResolver::resolve(statement, ledger, fifo, decisions);
-    auto loss = LossEligibilityChecker::check(statement,
-                                              ledger,
-                                              fifo,
-                                              decisions,
-                                              OpenLossQuestions::AssumeBlocked);
-    const auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
+    auto actions = CorporateActionResolver::resolve(statement, ledger, fifo, aDecisions);
+    auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions);
+    auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
     auto gateDiagnostics = CapitalReportGates::check(statement, ledger, fifo, loss, built);
     std::optional<CapitalGainsReportKDVP> previewWithoutBlocked;
 
@@ -849,7 +891,6 @@ int runReport(const ReportOptions& aOptions,
                 .mReport;
     }
 
-    const auto& preview = built.mReport ? *built.mReport : previewWithoutBlocked.value();
     const bool hasGateError =
         std::any_of(gateDiagnostics.begin(),
                     gateDiagnostics.end(),
@@ -857,10 +898,11 @@ int runReport(const ReportOptions& aOptions,
                         return aDiagnostic.mSeverity == DiagnosticSeverity::Error;
                     });
 
+    // Copied, not moved: every calculation of the run starts from the same diagnostics.
     ApplicationResultInput input{
         .mReportingYear = aOptions.mYear,
-        .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
-        .mProcessingDiagnostics = std::move(prepared.mDiagnostics),
+        .mMergeDiagnostics = aPrepared.mMerged.mDiagnostics,
+        .mProcessingDiagnostics = aPrepared.mDiagnostics,
     };
     auto& processing = input.mProcessingDiagnostics;
 
@@ -895,7 +937,54 @@ int runReport(const ReportOptions& aOptions,
         }
     }
 
-    const auto result = ApplicationResultBuilder::build(std::move(input));
+    aCalculated = CalculatedRun{
+        .mBuilt = std::move(built),
+        .mPreviewWithoutBlocked = std::move(previewWithoutBlocked),
+    };
+
+    return input;
+}
+
+/// Parses and merges the files, calculates the report in a decision session, asks the open
+/// questions, writes the output files and the summary, and returns the exit code.
+int runReport(const ReportOptions& aOptions,
+              const TaxpayerMetadata& aTaxpayer,
+              std::istream& aIn,
+              std::ostream& aOut,
+              std::ostream& aErr) {
+    tr::TradeRepublicParser parser;
+    std::vector<StatementMergeInput> inputs;
+
+    for (std::size_t index = 0; index < aOptions.mCsvPaths.size(); ++index)
+    {
+        inputs.push_back({index, parser.parse(aOptions.mCsvPaths[index], index)});
+    }
+
+    // Parsing, merging and the year do not depend on an answer, so they run once.
+    const auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
+        .mReportingYear = aOptions.mYear,
+        .mMerged = DeterministicStatementMerger{}.merge(std::move(inputs)),
+    });
+    const auto& statement = prepared.mMerged.mStatement;
+    std::optional<CalculatedRun> calculated;
+    // The answers live only in this session, in memory, and end with this run.
+    DecisionSession session;
+
+    session.start([&](RunDecisions& aDecisions) {
+        return calculateReport(aOptions, aTaxpayer, prepared, aDecisions, calculated);
+    });
+
+    if (aOptions.mAskQuestions)
+    {
+        askOpenQuestions(session, aIn, aOut);
+    }
+
+    // The session keeps the result of the last calculation that succeeded, and that calculation
+    // filled calculated: a rejected answer calculates nothing.
+    const auto& result = session.result();
+    const auto& built = calculated.value().mBuilt;
+    const auto& preview =
+        built.mReport ? *built.mReport : calculated.value().mPreviewWithoutBlocked.value();
     const auto& capitalResult = result.report(ReportType::CapitalGains);
 
     std::error_code error;
@@ -936,7 +1025,6 @@ int runReport(const ReportOptions& aOptions,
         .mOptions = aOptions,
         .mStatement = statement,
         .mBuilt = built,
-        .mLoss = loss,
         .mPreview = preview,
         .mResult = result,
         .mDeletedOldXml = deletesOldXml,
@@ -998,6 +1086,7 @@ int runReport(const ReportOptions& aOptions,
 }
 
 int runReportCommand(std::span<const std::string> aArguments,
+                     std::istream& aIn,
                      std::ostream& aOut,
                      std::ostream& aErr) {
     const auto parsed = parseReportArguments(aArguments);
@@ -1032,12 +1121,15 @@ int runReportCommand(std::span<const std::string> aArguments,
         return kExitFailure;
     }
 
-    return runReport(options, std::get<TaxpayerMetadata>(taxpayer), aOut, aErr);
+    return runReport(options, std::get<TaxpayerMetadata>(taxpayer), aIn, aOut, aErr);
 }
 
 } // namespace
 
-int runCli(std::span<const std::string> aArguments, std::ostream& aOut, std::ostream& aErr) {
+int runCli(std::span<const std::string> aArguments,
+           std::istream& aIn,
+           std::ostream& aOut,
+           std::ostream& aErr) {
     if (aArguments.empty())
     {
         aErr << kGeneralHelp;
@@ -1062,7 +1154,7 @@ int runCli(std::span<const std::string> aArguments, std::ostream& aOut, std::ost
 
     try
     {
-        return runReportCommand(aArguments.subspan(1), aOut, aErr);
+        return runReportCommand(aArguments.subspan(1), aIn, aOut, aErr);
     } catch (const std::exception& exception)
     {
         aErr << "taxbroker: the report failed unexpectedly: " << exception.what() << '\n';

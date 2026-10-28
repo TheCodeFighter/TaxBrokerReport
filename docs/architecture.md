@@ -590,8 +590,8 @@ class is checked, because it may still be classified as a share or a fund.
   sale the error with key `loss_eligibility_unresolved.cancelled` and no request. The request's
   diagnostic indices count from the checker's first diagnostic; `appendStageOutput` moves them to
   the numbering of `ApplicationResultInput`.
-- **Without a way to ask.** A caller that cannot ask yet (the CLI until latter tasks fix this, and the debug
-  tools) passes `OpenLossQuestions::AssumeBlocked`. Without a recorded answer, the open units are
+- **Without a way to ask.** A caller that does not ask (the debug tools) passes
+  `OpenLossQuestions::AssumeBlocked`. Without a recorded answer, the open units are
   then treated as with `other_activity` (`mAssumedBlocked`), with no request and one
   `loss_eligibility_unresolved` warning per ISIN (key
   `loss_eligibility_unresolved.assumed_blocked`, the sources of its open sales and the date of the
@@ -732,15 +732,45 @@ orchestration moves into the application service once that service connects all 
 stages.
 
 **Pipeline.** Each CSV is read with the path-based Trade Republic parser, with its position on the
-command line as the source index. Then: merge, reporting-year preparation, FIFO, the
-corporate-action stage (without answers, so a ratio question stays open and the report is
-blocked), the loss rule
-(without answers, `OpenLossQuestions::AssumeBlocked`: the CLI cannot ask the question until later tasks),
-the report builder (no exclusions), the capital report gates, the XML writer, and
-`ApplicationResultBuilder`. A loss that the files decide in full is written as they decide it;
-the open units of any other loss sale are assumed blocked (`F10` false, the safe side), with a
-warning per ISIN. A sale whose blocked units are only part of its listed units still blocks the
-report. The XML is written only when the builder made a report with at least
+command line as the source index. Then merge and reporting-year preparation, once. The rest runs
+as the calculation of a `DecisionSession`, once per revision: FIFO, the corporate-action
+stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
+report gates and the XML writer; the session builds the application result. A loss that the files
+decide in full is written as they decide it. A sale whose blocked units are only part of its
+listed units still blocks the report.
+
+**Questions** (`include/cli/decision_prompts.hpp`). After the first calculation the command asks
+the open loss and ratio questions in the terminal, one at a time in request order, and reads each
+answer from standard input. It only shows the request and passes the answer on: the session
+checks it, records it and calculates again, and the next question is the first open one of the
+new result (new revision, new request IDs). A rejected answer prints the session's message and
+the question is asked again; a line the command cannot read (another word, a number that is not
+whole, a share count of 0 or below, a date not in the form `YYYY-MM-DD`) is asked again without a
+session call.
+
+- Loss question: `yes` (`other_activity`), `no` (`no_other_activity`) or `cancel`, in any case.
+- Ratio question: `new : old` (whole numbers) or `before -> after` (share counts above 0 with up
+  to 8 decimals, turned into the ratio after / before as `splitRatioFromShareCounts` does), or
+  `cancel`; then the effective date (an empty line takes the broker's row date); then the
+  preview (`previewSplitUnits`, with the warning of `isUnusualSplitRatio`) and `yes` or `no` (no
+  asks for the ratio again). A ratio without a preview (a 0 in `new : old`, equal numbers, a
+  position that does not fit) is passed on as it is, so the session's rejection names the problem.
+- A share count takes a decimal comma (the Slovenian standard) or a point: `0,52 -> 5,2` and
+  `0.52 -> 5.2` are the same. One number never has both, and there is no digit grouping, so
+  `1,234` is 1.234 and `1.000,5` is refused; the confirmed preview catches a mistake. This is
+  only for typed answers: broker CSV import stays strict ([`calculations.md`](calculations.md)).
+  The CLI output keeps the point new logic is implemented.
+- A failure-resolution question is not asked yet (no stage emits one), and a request without
+  question data cannot be answered; both stay open.
+- With `--no-input`, nothing is read and the questions stay open. When the input ends, the
+  current and every later question stay open. An open question keeps capital gains
+  `needs_input`, a cancelled one makes it `failed`; either way no XML is written (exit 1).
+- The summary lists the open requests ("Open questions", with ID, type and investment) and the
+  answers of this run ("Answered in this run"). The answers live only in the session's memory:
+  nothing else is written, and the next run asks again.
+
+Until next tasks apply splits, a confirmed ratio still blocks the report with
+`corporate_action_not_applied` (key `.ratio_confirmed`). The XML is written only when the builder made a report with at least
 one list and no gate gave an error; a report without lists is `no_data` with
 `no_selected_year_disposals`. The capital status of the application result decides the files and
 the exit code, so a blocking parser or merger error (a rejected trade or corporate-action row, a

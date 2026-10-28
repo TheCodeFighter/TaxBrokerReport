@@ -61,7 +61,7 @@ struct LossEligibilityIsin {
 
 enum class OpenLossQuestions {
     Ask,
-    /// For a caller that cannot ask yet (the CLI, and the debug tools).
+    /// For a caller that does not ask.
     AssumeBlocked,
 };
 

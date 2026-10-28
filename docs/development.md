@@ -40,6 +40,14 @@ A script that needs the image stops with a hint when it is missing. `test.sh`, `
 `cppcheck.sh` accept `--reuse-build`, which uses the existing `build/dev` as it is and fails clearly
 when it is missing. CI uses the same flag in the jobs that follow the build job.
 
+Options and paths can come in any order, so `scripts/report.sh runtime/export.csv --self-report`
+works. For Tab completion of the script options, years and paths in bash or zsh, add this line to
+`~/.bashrc` or `~/.zshrc` (in zsh after `compinit`):
+
+```sh
+source /path/to/TaxBrokerReport/scripts/completion.bash
+```
+
 ## Static analysis
 
 Run Cppcheck against all active project-owned C++ source and header files:
@@ -88,9 +96,9 @@ scripts/test.sh --suite integration
 scripts/test.sh --suite integration StatementMergerIntegrationTest
 ```
 
-`scripts/test.sh` builds `build/dev` from scratch first. Add `--reuse-build` as the first argument
-(for example `scripts/test.sh --reuse-build --suite unit`) to run the existing `build/dev` as it is
-without compiling.
+`scripts/test.sh` builds `build/dev` from scratch first. Add `--reuse-build` (for example
+`scripts/test.sh --reuse-build --suite unit`) to run the existing `build/dev` as it is without
+compiling.
 
 Inside the development container, `ctest --test-dir /workspace/build/dev -L unit` and
 `ctest --test-dir /workspace/build/dev -L integration` select the same suites. CI runs them in
@@ -221,8 +229,8 @@ whose pool stopped at one: its date, rows and state (for example `WaitingForRati
 `WaitingForEarlierAction` for a later action). The tool has no answers, so a ratio question stays
 open. Then a "LOSS RULE (30 days)" part lists each sale of the year with a loss:
 its window, loss units, units blocked by known purchases, open units, state and the purchases it
-takes (units and dates only). The tool has no answers, so, like the CLI, it treats the open units
-as blocked (`assumed_blocked_units`, state `Decided`) and gives a warning per ISIN. The file
+takes (units and dates only). The tool does not ask, so it treats the open units as blocked
+(`assumed_blocked_units`, state `Decided`) and gives a warning per ISIN; the CLI asks instead. The file
 contains private financial data and must remain local.
 
 To write the Doh-KDVP XML for one year, run:

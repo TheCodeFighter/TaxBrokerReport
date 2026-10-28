@@ -13,7 +13,7 @@ int main(int aArgc, char** aArgv) {
     // Called just one time!
     taxbroker::InitializeLogger();
 
-    const int exitCode = taxbroker::cli::runCli(arguments, std::cout, std::cerr);
+    const int exitCode = taxbroker::cli::runCli(arguments, std::cin, std::cout, std::cerr);
 
     // Called just one time!
     spdlog::shutdown();

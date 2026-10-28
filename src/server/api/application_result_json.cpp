@@ -596,6 +596,10 @@ std::string_view diagnosticCodeName(const ApplicationDiagnosticCode& aCode) {
     return codeString(aCode);
 }
 
+std::string_view requestTypeName(RequestType aType) {
+    return toString(aType);
+}
+
 std::string serializeApplicationResultJson(const ApplicationResult& aResult, int aIndent) {
     Json reports = Json::object();
 

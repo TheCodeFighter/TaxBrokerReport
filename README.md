@@ -23,18 +23,18 @@ tax year from **Trade Republic** CSV exports:
 - units held longer than the holding period are left out as tax free and listed in the summary;
 - the 30-day loss rule (*pravilo navidezne odsvojitve*): a loss that a purchase of the same
   investment within 30 days before or after the sale blocks in full is written with `F10` false;
+- questions in the terminal: when the files alone cannot decide a loss, the command asks whether,
+  within 30 days of the sale, you also traded the investment anywhere not in your files (another
+  broker or account, or after the export), and for a split it asks the ratio and the effective
+  date from its announcement. The answers are used only in that run and are never saved;
 - the XML imports into eDavki as a draft; the checks so far are recorded in
   [docs/verification.md](docs/verification.md).
 
 The tool blocks a report instead of guessing. No XML is written when an investment sold in the
 year is crypto, a private fund, a bond or a derivative, has a split or another corporate action
-(a split needs the ratio from its announcement, which the command cannot ask for yet), misses
-earlier purchases, or has a trade that is not in EUR. A sale at a loss that the files alone
-cannot decide needs the answer whether, within 30 days of the sale, the investment was also
-traded anywhere not in your files (another broker or account, or after the export). The command
-cannot ask it yet, so it treats the whole open loss as not deductible (`F10` false, the safe side)
-and warns about it in the summary; if you did not trade elsewhere, correct the loss in eDavki.
-`scripts/report.sh --command-help` lists every case.
+(the command asks for the ratio, but does not apply splits yet), misses earlier purchases, has a
+trade that is not in EUR, or has a question without an answer (with `--no-input`, or when you end
+the input). `scripts/report.sh --command-help` lists every case.
 
 Not yet available: Doh-Div (dividends), Doh-DHO and Doh-Obr (interest), Interactive Brokers, the
 browser app, Windows and macOS builds, and downloadable releases.
@@ -64,7 +64,8 @@ scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json runtime/export.cs
 ```
 
 Give your whole history, not only the tax year. The XML and a readable summary are written to
-`runtime/report/2025/`. Use `--self-report` for a self-report (*samoprijava*).
+`runtime/report/2025/`. Use `--self-report` for a self-report (*samoprijava*). The command asks
+its questions in the terminal; `--no-input` asks nothing and lists the open questions instead.
 
 More detail: [docker/docker_doc.md](docker/docker_doc.md) (the Docker setup),
 [docs/development.md](docs/development.md) (builds, tests, checks and debug dumps) and
