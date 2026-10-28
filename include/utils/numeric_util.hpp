@@ -3,6 +3,7 @@
 #include "taxbroker/types.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -58,6 +59,13 @@ importFixedPoint(std::string_view aValue,
                  ValuePolicy aPolicy = ValuePolicy::Signed,
                  bool aRejectNonzeroRoundedToZero = true,
                  bool aAllowExtraPrecision = true);
+
+/// The exact text of a value stored at `aScale` (a power of ten). Trailing zeros are removed only
+/// down to `aMinimumDecimals`, and nothing is rounded. At UNITS_SCALE, `150'000'000` is
+/// `1.50000000` with 8 and `1.5000` with 4. Throws `std::invalid_argument` when `aScale` is not a
+/// power of ten or `aMinimumDecimals` is more than the decimals it stores.
+[[nodiscard]] std::string
+formatFixedPoint(std::int64_t aValue, std::int64_t aScale, std::size_t aMinimumDecimals);
 
 /// Requires a positive rate; extra precision needs explicit rounding permission.
 [[nodiscard]] NumericResult<ExchangeRate> importExchangeRate(std::string_view aValue,

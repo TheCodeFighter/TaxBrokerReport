@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -194,6 +195,46 @@ std::optional<std::int64_t> parseScaledInt64(std::string_view aValue, std::int64
 } // namespace numeric_detail
 
 namespace taxbroker {
+
+std::string
+formatFixedPoint(std::int64_t aValue, std::int64_t aScale, std::size_t aMinimumDecimals) {
+    std::int64_t power = 1;
+    std::size_t storedDecimals{};
+
+    while (power < aScale && power <= std::numeric_limits<std::int64_t>::max() / 10)
+    {
+        power *= 10;
+        ++storedDecimals;
+    }
+
+    if (aScale <= 0 || power != aScale || aMinimumDecimals > storedDecimals)
+    {
+        throw std::invalid_argument("Invalid fixed-point scale or decimals");
+    }
+
+    // The magnitude as unsigned, so the smallest int64 has no positive overflow.
+    const bool negative = aValue < 0;
+    const auto magnitude =
+        negative ? 0U - static_cast<std::uint64_t>(aValue) : static_cast<std::uint64_t>(aValue);
+    const auto scale = static_cast<std::uint64_t>(aScale);
+    std::string text = (negative ? "-" : "") + std::to_string(magnitude / scale);
+
+    if (storedDecimals == 0)
+    {
+        return text;
+    }
+
+    auto fraction = std::to_string(magnitude % scale);
+
+    fraction.insert(0, storedDecimals - fraction.size(), '0');
+
+    while (fraction.size() > aMinimumDecimals && fraction.back() == '0')
+    {
+        fraction.pop_back();
+    }
+
+    return fraction.empty() ? text : text + '.' + fraction;
+}
 
 NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
                                                  std::int64_t aScale,

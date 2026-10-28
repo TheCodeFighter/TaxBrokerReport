@@ -1,6 +1,7 @@
 #pragma once
 
 #include "processors/fifo_matcher.hpp"
+#include "processors/loss_eligibility.hpp"
 #include "taxbroker/report_models.hpp"
 
 #include <optional>
@@ -13,8 +14,8 @@ enum class KdvpBlockReason {
     /// The FIFO pool of the ISIN stopped (corporate action, non-EUR trade, missing history or an
     /// invalid value), so its sales have no reliable matches.
     FifoStopped,
-    /// A sale has a loss-making FIFO portion and the loss rule does not exist yet.
-    LossEligibilityUnresolved,
+    /// The 30-day loss rule result of a sale cannot be written yet
+    LossNotReportable,
 };
 
 /// An ISIN with a sale in the selected year that cannot get a *popisni list*.
@@ -23,7 +24,7 @@ struct KdvpBlockedIsin {
     std::string mName;
     KdvpBlockReason mReason{KdvpBlockReason::FifoStopped};
     /// The sales of the year that cannot be listed, in ledger order: every sale of the year for
-    /// FifoStopped, only the sales with a loss-making portion for LossEligibilityUnresolved.
+    /// FifoStopped, only the sales whose loss-rule result cannot be written for LossNotReportable.
     std::vector<StatementEventReference> mSales;
 
     bool operator==(const KdvpBlockedIsin&) const = default;
@@ -61,6 +62,7 @@ class CapitalGainsReportBuilder final {
     [[nodiscard]] static CapitalGainsBuildResult build(const MergedStatement& aStatement,
                                                        const ReportingYearLedger& aLedger,
                                                        const FifoMatchingResult& aFifo,
+                                                       const LossEligibilityResult& aLoss,
                                                        const std::vector<Isin>& aExcludedIsins);
 };
 
