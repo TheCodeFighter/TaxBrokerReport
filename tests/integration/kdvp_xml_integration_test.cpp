@@ -3,6 +3,7 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/fifo_matcher.hpp"
+#include "processors/loss_eligibility.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <gtest/gtest.h>
@@ -102,11 +103,19 @@ TEST(KdvpXmlIntegrationTest, TwoFilesWithASaleUsingTwoPurchasesWriteTheWholeDocu
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -241,14 +250,22 @@ TEST(KdvpXmlIntegrationTest, BlockedIsinLeftOutByTheUserIsNotInTheXml) {
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     ASSERT_EQ(fifo.mDiagnostics.size(), 1U);
     EXPECT_EQ(fifo.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
     EXPECT_EQ(fifo.mDiagnostics.at(0).mContext.mIsin, "XX0000000002");
 
     // Without the user's agreement there is no report.
-    const auto withoutExclusions =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto withoutExclusions = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                                    *prepared.mLedger,
+                                                                    fifo,
+                                                                    loss,
+                                                                    {});
 
     EXPECT_FALSE(withoutExclusions.mReport.has_value());
     EXPECT_TRUE(withoutExclusions.mExcluded.empty());
@@ -263,6 +280,7 @@ TEST(KdvpXmlIntegrationTest, BlockedIsinLeftOutByTheUserIsNotInTheXml) {
     const auto withExclusion = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
                                                                 *prepared.mLedger,
                                                                 fifo,
+                                                                loss,
                                                                 {"XX0000000002"});
 
     EXPECT_TRUE(withExclusion.mBlocked.empty());
@@ -370,11 +388,19 @@ TEST(KdvpXmlIntegrationTest, PurchasePartlySoldInAnEarlierYearListsTheEarlierSal
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -495,11 +521,19 @@ TEST(KdvpXmlIntegrationTest, PurchasePartlySoldInAnEarlierYearListsOnlyThisYears
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -626,11 +660,19 @@ TEST(KdvpXmlIntegrationTest, StockLeftAfterTheYearIsNotListed2024) {
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -778,11 +820,19 @@ TEST(KdvpXmlIntegrationTest, StockLeftAfterTheYearIsListedInTheNextYear2025) {
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -905,11 +955,19 @@ TEST(KdvpXmlIntegrationTest, SaleOfOldAndNewUnitsListsOnlyTheNewUnit2025) {
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -1040,11 +1098,19 @@ TEST(KdvpXmlIntegrationTest, TwoInstrumentsAreTwoListsInIsinOrder) {
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -1205,11 +1271,19 @@ TEST(KdvpXmlIntegrationTest, FractionalUnitsAndPricesKeepTheirDecimals2024) {
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -1340,11 +1414,19 @@ TEST(KdvpXmlIntegrationTest, SelfReportForAnEarlierYearWritesItsWorkflowCode2023
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_TRUE(built.mBlocked.empty());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -1437,9 +1519,9 @@ TEST(KdvpXmlIntegrationTest, SelfReportForAnEarlierYearWritesItsWorkflowCode2023
     EXPECT_EQ(fifoList.mSaleGains, (std::vector<std::string>{"18"}));
 }
 
-TEST(KdvpXmlIntegrationTest, LossMakingSaleGivesNoReportAndNoXml) {
-    // 5 x (15 - 20) = EUR -25 is a loss. Until the 30-day loss rule exists, its eligibility is
-    // unresolved, so there is no report and nothing to write.
+TEST(KdvpXmlIntegrationTest, LossMakingSaleWithoutAnAnswerGivesNoReportAndNoXml) {
+    // 5 x (15 - 20) = EUR -25 is a loss, and no purchase within 30 days decides it. Until the user
+    // answers the loss question, there is no report and nothing to write.
     constexpr std::string_view purchase =
         R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,20,-100,,,EUR,,,,,synthetic-buy-1,,,,)";
     constexpr std::string_view sale =
@@ -1457,11 +1539,20 @@ TEST(KdvpXmlIntegrationTest, LossMakingSaleGivesNoReportAndNoXml) {
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
 
     EXPECT_TRUE(fifo.mDiagnostics.empty());
+    EXPECT_EQ(loss.mRequests.size(), 1U);
 
-    const auto built =
-        CapitalGainsReportBuilder::build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
 
     EXPECT_FALSE(built.mReport.has_value());
     EXPECT_TRUE(built.mExcluded.empty());
@@ -1471,9 +1562,139 @@ TEST(KdvpXmlIntegrationTest, LossMakingSaleGivesNoReportAndNoXml) {
               (KdvpBlockedIsin{
                   .mIsin = "XX0000000001",
                   .mName = "Synthetic Share",
-                  .mReason = KdvpBlockReason::LossEligibilityUnresolved,
+                  .mReason = KdvpBlockReason::LossNotReportable,
                   .mSales = {{StatementEventKind::Trade, 0, 1}},
               }));
+}
+
+TEST(KdvpXmlIntegrationTest, AJanuaryReplacementWritesF10False) {
+    // tax_rules.md: buy 100 in September 2023, sell 4 at a loss on 2024-12-20, buy 4 on
+    // 2025-01-05. The January purchase blocks the loss of all 4 units: F10 false. It is not in
+    // the 2024 ledger, so it has no row and the stock is unchanged.
+    constexpr std::string_view purchase =
+        R"(2023-09-01T09:00:00Z,2023-09-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,100,10,-1000,,,EUR,,,,,synthetic-buy-1,,,,)";
+    constexpr std::string_view sale =
+        R"(2024-12-20T09:00:00Z,2024-12-20,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)";
+    constexpr std::string_view januaryPurchase =
+        R"(2025-01-05T09:00:00Z,2025-01-05,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,4,8,-32,,,EUR,,,,,synthetic-buy-2,,,,)";
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+
+    const TemporaryKdvpInputs files;
+    const auto historyPath = files.write("history.csv", {purchase, sale, januaryPurchase});
+    tr::TradeRepublicParser parser;
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
+
+    ASSERT_TRUE(prepared.mLedger.has_value());
+
+    const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
+
+    EXPECT_TRUE(loss.mRequests.empty());
+    EXPECT_TRUE(loss.mDiagnostics.empty());
+
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
+
+    EXPECT_TRUE(built.mBlocked.empty());
+    ASSERT_TRUE(built.mReport.has_value());
+
+    const auto result = KdvpXmlWriter::write(metadata, *built.mReport);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_EQ(*result.mXml, R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_KDVP>
+      <KDVP>
+        <DocumentWorkflowID>O</DocumentWorkflowID>
+        <DocumentWorkflowName>Original</DocumentWorkflowName>
+        <Year>2024</Year>
+        <PeriodStart>2024-01-01</PeriodStart>
+        <PeriodEnd>2024-12-31</PeriodEnd>
+        <IsResident>true</IsResident>
+        <SecurityCount>1</SecurityCount>
+        <SecurityShortCount>0</SecurityShortCount>
+        <SecurityWithContractCount>0</SecurityWithContractCount>
+        <SecurityWithContractShortCount>0</SecurityWithContractShortCount>
+        <ShareCount>0</ShareCount>
+      </KDVP>
+      <KDVPItem>
+        <ItemID>1</ItemID>
+        <InventoryListType>PLVP</InventoryListType>
+        <Securities>
+          <ISIN>XX0000000001</ISIN>
+          <Name>Synthetic Share</Name>
+          <IsFond>false</IsFond>
+          <Row>
+            <ID>0</ID>
+            <Purchase>
+              <F1>2023-09-01</F1>
+              <F2>B</F2>
+              <F3>4.0000</F3>
+              <F4>10.0000</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>4.0000</F8>
+          </Row>
+          <Row>
+            <ID>1</ID>
+            <Sale>
+              <F6>2024-12-20</F6>
+              <F7>4.0000</F7>
+              <F9>8.0000</F9>
+              <F10>false</F10>
+            </Sale>
+            <F8>0.0000</F8>
+          </Row>
+        </Securities>
+      </KDVPItem>
+    </Doh_KDVP>
+  </body>
+</Envelope>
+)xml");
+
+    expectValidForKdvpSchemas(*result.mXml);
+
+    const auto fifoLists = fifoOverKdvpRows(*result.mXml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+
+    const auto& fifoList = fifoLists.at(0);
+
+    EXPECT_TRUE(fifoList.mProblems.empty());
+    // F8: 4, then 4 - 4 = 0.
+    EXPECT_EQ(fifoList.mWrittenF8, (std::vector<std::string>{"4", "0"}));
+    EXPECT_EQ(fifoList.mCountedF8, (std::vector<std::string>{"4", "0"}));
+    // 4 x (8 - 10) = -8: a loss that F10 false keeps from reducing the gains.
+    EXPECT_EQ(fifoList.mSaleGains, (std::vector<std::string>{"-8"}));
 }
 
 } // namespace
