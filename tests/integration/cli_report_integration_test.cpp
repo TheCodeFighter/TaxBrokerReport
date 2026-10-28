@@ -758,13 +758,14 @@ TEST(CliReportIntegrationTest, SplitBeforeTheSaleBlocksTheReport) {
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"));
+    // The split needs its ratio, which this command cannot ask for yet.
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000001 Synthetic Share: blocked (corporate_action_not_applied)\n"
+                         "  XX0000000001 Synthetic Share: blocked (corporate_action_ambiguous)\n"
                          "    sale 2025-03-10, history.csv row 4\n"));
     // The error points at the split, not at the sale.
     EXPECT_TRUE(contains(result.mOut,
                          "Errors: 1\n"
-                         "  diagnostic-0001 corporate_action_not_applied, XX0000000001 Synthetic "
+                         "  diagnostic-0001 corporate_action_ambiguous, XX0000000001 Synthetic "
                          "Share, 2023-01-15, history.csv row 3\n"));
 }
 
@@ -795,10 +796,10 @@ TEST(CliReportIntegrationTest, SplitAfterTheSaleInTheSameYearBlocksTheReport) {
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000001 Synthetic Share: blocked (corporate_action_not_applied)\n"
+                         "  XX0000000001 Synthetic Share: blocked (corporate_action_ambiguous)\n"
                          "    sale 2025-03-10, history.csv row 3\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "  diagnostic-0001 corporate_action_not_applied, XX0000000001 Synthetic "
+                         "  diagnostic-0001 corporate_action_ambiguous, XX0000000001 Synthetic "
                          "Share, 2025-09-01, history.csv row 4\n"));
 }
 

@@ -55,6 +55,33 @@ DecisionQuestion lossQuestion(std::vector<LossSaleFacts> aSales) {
     };
 }
 
+/// The ratio question of a split of XX0000000001 on 2024-06-01 with one Trade Republic row. The
+/// last trade before it is on 2024-01-10 and the next one on 2024-09-01, so any effective date
+/// from 2024-01-11 to 2024-09-01 keeps the position.
+DecisionQuestion ratioQuestion(Units aPositionBefore) {
+    return DecisionQuestion{
+        .mType = RequestType::CorporateActionRatioRequired,
+        .mAffectedReports = {kCapital},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionRatioQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mEffectiveDate =
+                    Date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 1}.time_since_epoch()},
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-split",
+                              .mSourceValue = "3"}},
+                .mPositionBefore = aPositionBefore,
+                .mEarliestDate =
+                    Date{
+                        std::chrono::sys_days{std::chrono::year{2024} / 1 / 11}.time_since_epoch()},
+                .mLatestDate =
+                    Date{std::chrono::sys_days{std::chrono::year{2024} / 9 / 1}.time_since_epoch()},
+            },
+    };
+}
+
 Date day(int aYear, unsigned aMonth, unsigned aDay) {
     return Date{std::chrono::sys_days{std::chrono::year{aYear} / aMonth / aDay}.time_since_epoch()};
 }
@@ -1381,6 +1408,568 @@ TEST(DecisionSessionTest, OnlyTheSaleFactsIdentifyALossAnswer) {
     ASSERT_EQ(seen.size(), 3U);
     EXPECT_EQ(seen[0], kNoOtherActivity);
     EXPECT_FALSE(seen[1].has_value());
+    EXPECT_FALSE(seen[2].has_value());
+}
+
+// Ratio questions.
+
+TEST(DecisionSessionTest, ARatioIsRecordedReduced) {
+    // 3 units before the split; 20 new for 10 old is 2 / 1, so 6 units after it.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 20,
+                                                              .mOldShares = 10,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 600'000'000}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const auto& result = session.result();
+    const AnswerValue reduced = SplitRatioAnswer{.mNewShares = 2,
+                                                 .mOldShares = 1,
+                                                 .mEffectiveDate = day(2024, 6, 1),
+                                                 .mConfirmedUnits = 600'000'000};
+
+    EXPECT_EQ(result.mRunRevision, 2U);
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mDecisions.size(), 1U);
+    EXPECT_EQ(result.mDecisions[0].mType, RequestType::CorporateActionRatioRequired);
+    EXPECT_EQ(result.mDecisions[0].mAnswer, reduced);
+    EXPECT_TRUE(result.mDecisions[0].mUsed);
+
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_FALSE(seen[0].has_value());
+    EXPECT_EQ(seen[1], reduced);
+}
+
+TEST(DecisionSessionTest, ARatioNeedsTheConfirmedPreview) {
+    // 3 units with 2 / 1 are 6 units after the split, not 3.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 300'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mIndex, 0U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::PreviewMismatch);
+    EXPECT_EQ(rejections[0].mMessageKey, MessageKey::AnswerRejectedPreviewMismatch);
+    EXPECT_EQ(rejections[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001")}));
+
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionSessionTest, NineAddedSharesForOneIsStillTenForOne) {
+    // A ten-for-one split: "nine additional shares for every share held". 0.52 units before it
+    // are 5.20 units after it. 9 / 1 would give 4.68 units, so 9 / 1 with the preview of
+    // 10 / 1 does not fit.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(52'000'000); // 0.52 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto nine = session.answer({{"request-0001",
+                                       1,
+                                       SplitRatioAnswer{.mNewShares = 9,
+                                                        .mOldShares = 1,
+                                                        .mEffectiveDate = day(2024, 6, 1),
+                                                        .mConfirmedUnits = 520'000'000}}});
+
+    ASSERT_EQ(nine.size(), 1U);
+    EXPECT_EQ(nine[0].mReason, AnswerRejection::PreviewMismatch);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+
+    const auto ten = session.answer({{"request-0001",
+                                      1,
+                                      SplitRatioAnswer{.mNewShares = 10,
+                                                       .mOldShares = 1,
+                                                       .mEffectiveDate = day(2024, 6, 1),
+                                                       .mConfirmedUnits = 520'000'000}}});
+
+    EXPECT_TRUE(ten.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{SplitRatioAnswer{.mNewShares = 10,
+                                            .mOldShares = 1,
+                                            .mEffectiveDate = day(2024, 6, 1),
+                                            .mConfirmedUnits = 520'000'000}}));
+}
+
+TEST(DecisionSessionTest, ARatioWithEqualNumbersIsRejected) {
+    // 5 new for 5 old would not change the position.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 5,
+                                                              .mOldShares = 5,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 300'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::RatioUnchanged);
+    EXPECT_EQ(rejections[0].mMessageKey, MessageKey::AnswerRejectedRatioUnchanged);
+    EXPECT_EQ(rejections[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001")}));
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionSessionTest, ARatioNumberMustBeAboveZero) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto zeroNew = session.answer({{"request-0001",
+                                          1,
+                                          SplitRatioAnswer{.mNewShares = 0,
+                                                           .mOldShares = 1,
+                                                           .mEffectiveDate = day(2024, 6, 1),
+                                                           .mConfirmedUnits = 300'000'000}}});
+    const auto zeroOld = session.answer({{"request-0001",
+                                          1,
+                                          SplitRatioAnswer{.mNewShares = 1,
+                                                           .mOldShares = 0,
+                                                           .mEffectiveDate = day(2024, 6, 1),
+                                                           .mConfirmedUnits = 300'000'000}}});
+    const auto negativeNew = session.answer({{"request-0001",
+                                              1,
+                                              SplitRatioAnswer{.mNewShares = -2,
+                                                               .mOldShares = 1,
+                                                               .mEffectiveDate = day(2024, 6, 1),
+                                                               .mConfirmedUnits = 300'000'000}}});
+
+    ASSERT_EQ(zeroNew.size(), 1U);
+    EXPECT_EQ(zeroNew[0].mReason, AnswerRejection::RatioNotPositive);
+    EXPECT_EQ(zeroNew[0].mMessageKey, MessageKey::AnswerRejectedRatioNotPositive);
+    EXPECT_EQ(zeroNew[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("field", "newShares")}));
+
+    ASSERT_EQ(zeroOld.size(), 1U);
+    EXPECT_EQ(zeroOld[0].mReason, AnswerRejection::RatioNotPositive);
+    EXPECT_EQ(zeroOld[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("field", "oldShares")}));
+
+    ASSERT_EQ(negativeNew.size(), 1U);
+    EXPECT_EQ(negativeNew[0].mReason, AnswerRejection::RatioNotPositive);
+    EXPECT_EQ(negativeNew[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("field", "newShares")}));
+
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionSessionTest, ARatioThatDoesNotFitUnitsIsRejected) {
+    // The largest position, 92233720368.54775807 units, doubled does not fit.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(9'223'372'036'854'775'807);
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 100'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::RatioOutOfRange);
+    EXPECT_EQ(rejections[0].mMessageKey, MessageKey::AnswerRejectedRatioOutOfRange);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, OneBadRatioRejectsTheWholeCall) {
+    // Two splits of two ISINs; the second answer has the preview of the wrong ratio.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        auto first = ratioQuestion(300'000'000);  // 3 units
+        auto second = ratioQuestion(100'000'000); // 1 unit
+        second.mIsin = "XX0000000002";
+        std::get<CorporateActionRatioQuestion>(second.mData).mIsin = "XX0000000002";
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        for (const auto& question : {first, second})
+        {
+            if (aDecisions.find(question) == nullptr)
+            {
+                input.mRequests.push_back(RequestInput{.mQuestion = question});
+            }
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    ASSERT_EQ(session.result().mRequests.size(), 2U);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 600'000'000}},
+                                            {"request-0002",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 100'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mIndex, 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::PreviewMismatch);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    EXPECT_EQ(session.result().mRequests.size(), 2U);
+}
+
+TEST(DecisionSessionTest, ARatioQuestionCanBeCancelled) {
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001", 1, kCancel}});
+
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, kCancel);
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_EQ(seen[1], kCancel);
+}
+
+TEST(DecisionSessionTest, AnEffectiveDateAtEitherEndOfTheRangeIsAccepted) {
+    // The range is 2024-01-11 to 2024-09-01 (ratioQuestion); both ends keep the position.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+
+    DecisionSession earliest;
+    earliest.start(calculation);
+
+    const auto first = earliest.answer({{"request-0001",
+                                         1,
+                                         SplitRatioAnswer{.mNewShares = 2,
+                                                          .mOldShares = 1,
+                                                          .mEffectiveDate = day(2024, 1, 11),
+                                                          .mConfirmedUnits = 600'000'000}}});
+
+    EXPECT_TRUE(first.empty());
+    ASSERT_EQ(earliest.result().mDecisions.size(), 1U);
+    EXPECT_EQ(earliest.result().mDecisions[0].mAnswer,
+              (AnswerValue{SplitRatioAnswer{.mNewShares = 2,
+                                            .mOldShares = 1,
+                                            .mEffectiveDate = day(2024, 1, 11),
+                                            .mConfirmedUnits = 600'000'000}}));
+
+    DecisionSession latest;
+    latest.start(calculation);
+
+    const auto last = latest.answer({{"request-0001",
+                                      1,
+                                      SplitRatioAnswer{.mNewShares = 2,
+                                                       .mOldShares = 1,
+                                                       .mEffectiveDate = day(2024, 9, 1),
+                                                       .mConfirmedUnits = 600'000'000}}});
+
+    EXPECT_TRUE(last.empty());
+    EXPECT_EQ(latest.result().mDecisions.size(), 1U);
+}
+
+TEST(DecisionSessionTest, AnEffectiveDateOutsideTheRangeIsRejected) {
+    // 2024-01-10 has a trade before the split dated after it; 2024-09-02 one after it dated
+    // before it. Either would change the 3 units before the split.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto tooEarly = session.answer({{"request-0001",
+                                           1,
+                                           SplitRatioAnswer{.mNewShares = 2,
+                                                            .mOldShares = 1,
+                                                            .mEffectiveDate = day(2024, 1, 10),
+                                                            .mConfirmedUnits = 600'000'000}}});
+    const auto tooLate = session.answer({{"request-0001",
+                                          1,
+                                          SplitRatioAnswer{.mNewShares = 2,
+                                                           .mOldShares = 1,
+                                                           .mEffectiveDate = day(2024, 9, 2),
+                                                           .mConfirmedUnits = 600'000'000}}});
+
+    ASSERT_EQ(tooEarly.size(), 1U);
+    EXPECT_EQ(tooEarly[0].mReason, AnswerRejection::EffectiveDateOutOfRange);
+    EXPECT_EQ(tooEarly[0].mMessageKey, MessageKey::AnswerRejectedEffectiveDateOutOfRange);
+    EXPECT_EQ(tooEarly[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("earliestDate", "2024-01-11"),
+                                         textParam("latestDate", "2024-09-01")}));
+    EXPECT_EQ(tooEarly[0].mMessage,
+              "The effective date in the answer to request-0001 must be from 2024-01-11 to "
+              "2024-09-01. Another date would move a trade or another corporate action to the "
+              "other side of this one, which is not supported yet. Check the announcement, or "
+              "close the question.");
+
+    ASSERT_EQ(tooLate.size(), 1U);
+    EXPECT_EQ(tooLate[0].mReason, AnswerRejection::EffectiveDateOutOfRange);
+
+    // Nothing is recorded and the question is still open.
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionSessionTest, ARatioAnswerToAnEarlierRunIsRejected) {
+    // The ratio question was shown in revision 1; the files were loaded again (revision 2)
+    // before the answer arrived.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 600'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::StaleRevision);
+    EXPECT_EQ(rejections[0].mMessageKey, MessageKey::AnswerRejectedStaleRevision);
+
+    // Nothing is recorded, and the question of revision 2 is still open.
+    EXPECT_EQ(session.result().mRunRevision, 2U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionSessionTest, ALossAnswerDoesNotFitARatioQuestion) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto no = session.answer({{"request-0001", 1, kNoOtherActivity}});
+    const auto choice = session.answer({{"request-0001", 1, kExclude}});
+
+    ASSERT_EQ(no.size(), 1U);
+    EXPECT_EQ(no[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    ASSERT_EQ(choice.size(), 1U);
+    EXPECT_EQ(choice[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ARatioDoesNotFitALossQuestion) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = lossQuestion({{
+            .mSaleDate = day(2024, 3, 10),
+            .mSaleUnits = 1'000'000'000, // 10 units
+            .mLossUnits = 1'000'000'000,
+            .mWindowStart = day(2024, 2, 9),
+            .mWindowEnd = day(2024, 4, 9),
+            .mKnownIneligibleUnits = 0,
+            .mOpenUnits = 1'000'000'000,
+        }});
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 600'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, AnotherPositionIsAnotherRatioQuestion) {
+    // The answer for 3 units before the split does not answer the question for 4 units, for
+    // example after a new file with one more purchase.
+    Units position = 300'000'000; // 3 units
+    SeenAnswers seen;
+    const auto calculation = [&position, &seen](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(position);
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 600'000'000}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    position = 400'000'000; // 4 units
+    session.start(calculation);
+
+    const auto& result = session.result();
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(std::get<CorporateActionRatioQuestion>(result.mRequests[0].mData).mPositionBefore,
+              400'000'000);
+    ASSERT_EQ(result.mDecisions.size(), 1U);
+    EXPECT_TRUE(result.mDecisions[0].mFromEarlierRun);
+    EXPECT_FALSE(result.mDecisions[0].mUsed);
+
+    ASSERT_EQ(seen.size(), 3U);
     EXPECT_FALSE(seen[2].has_value());
 }
 
