@@ -27,8 +27,9 @@ tax year from **Trade Republic** CSV exports:
   [docs/verification.md](docs/verification.md).
 
 The tool blocks a report instead of guessing. No XML is written when an investment sold in the
-year is crypto, a private fund, a bond or a derivative, has a split or another corporate action,
-misses earlier purchases, or has a trade that is not in EUR. A sale at a loss that the files alone
+year is crypto, a private fund, a bond or a derivative, has a split or another corporate action
+(a split needs the ratio from its announcement, which the command cannot ask for yet), misses
+earlier purchases, or has a trade that is not in EUR. A sale at a loss that the files alone
 cannot decide needs the answer whether, within 30 days of the sale, the investment was also
 traded anywhere not in your files (another broker or account, or after the export). The command
 cannot ask it yet, so it treats the whole open loss as not deductible (`F10` false, the safe side)
