@@ -41,6 +41,9 @@ enum class ProcessingDiagnosticCode {
     MissingExchangeRate,
     /// A sale with a loss-making FIFO portion while the loss rule is missing.
     LossEligibilityUnresolved,
+    /// A corporate action without a known ratio, or several on one day whose identity and order
+    /// are unknown.
+    CorporateActionAmbiguous,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

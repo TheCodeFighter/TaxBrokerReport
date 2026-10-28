@@ -124,6 +124,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "missing_exchange_rate";
     case ProcessingDiagnosticCode::LossEligibilityUnresolved:
         return "loss_eligibility_unresolved";
+    case ProcessingDiagnosticCode::CorporateActionAmbiguous:
+        return "corporate_action_ambiguous";
     }
 
     return "unrepresentable_value";
@@ -346,8 +348,17 @@ std::string_view toString(FailureResolution aResolution) {
     return "fail_report";
 }
 
-std::string_view answerString(const AnswerValue& aAnswer) {
-    const auto toAnswerString = [](const auto& aValue) -> std::string_view {
+/// Units as an exact decimal string with eight decimals: 4 units is `4.00000000`.
+std::string unitsString(Units aUnits) {
+    constexpr std::size_t kDecimals = 8;
+
+    return formatFixedPoint(aUnits, UNITS_SCALE, kDecimals);
+}
+
+/// A choice is a string; a ratio is an object with its reduced numbers, its effective date and
+/// the confirmed position after the action.
+Json answerToJson(const AnswerValue& aAnswer) {
+    const auto toAnswerJson = [](const auto& aValue) -> Json {
         using Value = std::decay_t<decltype(aValue)>;
 
         if constexpr (std::is_same_v<Value, FailureResolutionAnswer>)
@@ -362,21 +373,23 @@ std::string_view answerString(const AnswerValue& aAnswer) {
         {
             return "no_other_activity";
         }
+        else if constexpr (std::is_same_v<Value, OtherActivityAnswer>)
+        {
+            return "other_activity";
+        }
         else
         {
-            static_assert(std::is_same_v<Value, OtherActivityAnswer>);
-            return "other_activity";
+            static_assert(std::is_same_v<Value, SplitRatioAnswer>);
+            return Json{
+                {"newShares", aValue.mNewShares},
+                {"oldShares", aValue.mOldShares},
+                {"effectiveDate", isoDate(aValue.mEffectiveDate)},
+                {"confirmedUnits", unitsString(aValue.mConfirmedUnits)},
+            };
         }
     };
 
-    return std::visit(toAnswerString, aAnswer);
-}
-
-/// Units as an exact decimal string with eight decimals: 4 units is `4.00000000`.
-std::string unitsString(Units aUnits) {
-    constexpr std::size_t kDecimals = 8;
-
-    return formatFixedPoint(aUnits, UNITS_SCALE, kDecimals);
+    return std::visit(toAnswerJson, aAnswer);
 }
 
 /// The question data of a loss question: the ISIN and the facts of each open sale.
@@ -418,6 +431,39 @@ Json lossCheckToJson(const LossEligibilityQuestion& aQuestion) {
     return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"sales", std::move(sales)}};
 }
 
+/// The question data of a ratio question: the action, every source record, the position before
+/// it and the dates an answer may give. A source value is shown read-only; its meaning is not
+/// verified.
+Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
+    Json sources = Json::array();
+
+    for (const auto& source : aQuestion.mSources)
+    {
+        Json serialized{{"broker", toString(source.mBroker)}};
+
+        if (source.mTransactionId)
+        {
+            serialized["transactionId"] = *source.mTransactionId;
+        }
+        if (source.mSourceValue)
+        {
+            serialized["sourceValue"] = *source.mSourceValue;
+        }
+
+        sources.push_back(std::move(serialized));
+    }
+
+    return Json{
+        {"name", aQuestion.mName},
+        {"isin", aQuestion.mIsin},
+        {"effectiveDate", isoDate(aQuestion.mEffectiveDate)},
+        {"sources", std::move(sources)},
+        {"positionBefore", unitsString(aQuestion.mPositionBefore)},
+        {"earliestDate", isoDate(aQuestion.mEarliestDate)},
+        {"latestDate", isoDate(aQuestion.mLatestDate)},
+    };
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
     // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
@@ -441,6 +487,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
     {
         serialized["options"] = Json::array({"no_other_activity", "other_activity"});
         serialized["lossCheck"] = lossCheckToJson(*loss);
+    }
+
+    if (const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aRequest.mData))
+    {
+        serialized["ratioCheck"] = ratioCheckToJson(*ratio);
     }
 
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
@@ -500,7 +551,12 @@ Json decisionToJson(const RecordedDecision& aDecision) {
         serialized["lossCheck"] = lossCheckToJson(*loss);
     }
 
-    serialized["answer"] = answerString(aDecision.mAnswer);
+    if (const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aDecision.mData))
+    {
+        serialized["ratioCheck"] = ratioCheckToJson(*ratio);
+    }
+
+    serialized["answer"] = answerToJson(aDecision.mAnswer);
 
     return serialized;
 }

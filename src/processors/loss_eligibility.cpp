@@ -488,11 +488,15 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
                                    tradeOf(aInstruments, sale.mSale),
                                    aIsin));
             }
-            else
+            else if constexpr (std::is_same_v<Answer, FailureResolutionAnswer>)
             {
-                static_assert(std::is_same_v<Answer, FailureResolutionAnswer>);
                 // The session accepts only a loss answer or a cancel for a loss question.
                 throw std::logic_error("A failure choice cannot answer a loss question.");
+            }
+            else
+            {
+                static_assert(std::is_same_v<Answer, SplitRatioAnswer>);
+                throw std::logic_error("A split ratio cannot answer a loss question.");
             }
         }
     };

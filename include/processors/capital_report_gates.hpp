@@ -9,7 +9,8 @@ namespace taxbroker {
 class CapitalReportGates final {
   public:
     /// Turns every capital case that the walking skeleton does not support into an error
-    /// for the capital report, so the report is never guessed.
+    /// for the capital report, so the report is never guessed. A pool stopped at a corporate
+    /// action gets its diagnostics from CorporateActionResolver instead.
     /// All inputs must come from the same run.
     [[nodiscard]] static std::vector<ProcessingDiagnostic>
     check(const MergedStatement& aStatement,

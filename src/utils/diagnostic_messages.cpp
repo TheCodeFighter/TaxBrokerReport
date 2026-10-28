@@ -55,6 +55,22 @@ constexpr std::array kRequestId{
 constexpr std::array kDecisionId{
     MessageParamDefinition{"decisionId", MessageParamKind::Text},
 };
+constexpr std::array kRequestIdAndField{
+    MessageParamDefinition{"requestId", MessageParamKind::Text},
+    MessageParamDefinition{"field", MessageParamKind::Text},
+};
+constexpr std::array kNewAndOldShares{
+    MessageParamDefinition{"newShares", MessageParamKind::Number},
+    MessageParamDefinition{"oldShares", MessageParamKind::Number},
+};
+constexpr std::array kRequestIdAndDateRange{
+    MessageParamDefinition{"requestId", MessageParamKind::Text},
+    MessageParamDefinition{"earliestDate", MessageParamKind::Text},
+    MessageParamDefinition{"latestDate", MessageParamKind::Text},
+};
+constexpr std::array kEarlierDate{
+    MessageParamDefinition{"earlierDate", MessageParamKind::Text},
+};
 constexpr std::array kYearRange{
     MessageParamDefinition{"minYear", MessageParamKind::Number},
     MessageParamDefinition{"maxYear", MessageParamKind::Number},
@@ -163,6 +179,32 @@ constexpr std::array kDefinitions{
                       kDecisionId},
     MessageDefinition{
         MessageKey::AnswerRejectedDuplicateDelete, "answer_rejected.duplicate_delete", kDecisionId},
+    MessageDefinition{MessageKey::CorporateActionAmbiguousRatioRequired,
+                      "corporate_action_ambiguous.ratio_required",
+                      {}},
+    MessageDefinition{
+        MessageKey::CorporateActionAmbiguousCancelled, "corporate_action_ambiguous.cancelled", {}},
+    MessageDefinition{
+        MessageKey::CorporateActionAmbiguousSameDay, "corporate_action_ambiguous.same_day", {}},
+    MessageDefinition{MessageKey::CorporateActionNotAppliedRatioConfirmed,
+                      "corporate_action_not_applied.ratio_confirmed",
+                      kNewAndOldShares},
+    MessageDefinition{MessageKey::CorporateActionNotAppliedWaitingForEarlierAction,
+                      "corporate_action_not_applied.waiting_for_earlier_action",
+                      kEarlierDate},
+    MessageDefinition{MessageKey::AnswerRejectedRatioNotPositive,
+                      "answer_rejected.ratio_not_positive",
+                      kRequestIdAndField},
+    MessageDefinition{
+        MessageKey::AnswerRejectedRatioUnchanged, "answer_rejected.ratio_unchanged", kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedRatioOutOfRange,
+                      "answer_rejected.ratio_out_of_range",
+                      kRequestId},
+    MessageDefinition{
+        MessageKey::AnswerRejectedPreviewMismatch, "answer_rejected.preview_mismatch", kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedEffectiveDateOutOfRange,
+                      "answer_rejected.effective_date_out_of_range",
+                      kRequestIdAndDateRange},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -179,7 +221,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::AnswerRejectedDuplicateDelete) + 1,
+                  static_cast<std::size_t>(MessageKey::AnswerRejectedEffectiveDateOutOfRange) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 7> kTermKeys{

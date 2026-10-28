@@ -147,10 +147,45 @@ struct LossEligibilityQuestion {
     bool operator==(const LossEligibilityQuestion&) const = default;
 };
 
+/// One source record of a corporate action. Any broker; the question never depends on which.
+struct CorporateActionSourceFacts {
+    Broker mBroker{Broker::Unknown};
+    std::optional<std::string> mTransactionId;
+    /// The broker's own quantity field as an exact decimal, when the record has one (Trade
+    /// Republic `shares`). Its meaning is not verified, so it is shown read-only and is never a
+    /// ratio.
+    std::optional<std::string> mSourceValue;
+
+    bool operator==(const CorporateActionSourceFacts&) const = default;
+};
+
+/// The question data: one corporate action without a verified ratio, with every source record of
+/// it, the position just before it and the dates that keep that position. A new source, another
+/// position or a moved trade is another question.
+struct CorporateActionRatioQuestion {
+    Isin mIsin;
+    std::string mName;
+    /// The date of the broker's row, shown pre-filled; the announcement may give another one.
+    Date mEffectiveDate;
+    std::vector<CorporateActionSourceFacts> mSources;
+    /// Open units across all brokers at the start of mEffectiveDate.
+    Units mPositionBefore{};
+    /// The day after the last trade of the ISIN before mEffectiveDate.
+    Date mEarliestDate;
+    /// The first trade of the ISIN on or after mEffectiveDate, the day before its next corporate
+    /// action, or 31 December of the selected year, whichever is first. Every date from
+    /// mEarliestDate to here gives the same position.
+    Date mLatestDate;
+
+    bool operator==(const CorporateActionRatioQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
-using QuestionData =
-    std::variant<std::monostate, FailureResolutionQuestion, LossEligibilityQuestion>;
+using QuestionData = std::variant<std::monostate,
+                                  FailureResolutionQuestion,
+                                  LossEligibilityQuestion,
+                                  CorporateActionRatioQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -163,8 +198,9 @@ struct DecisionQuestion {
 };
 
 /// Sorts the investments by ISIN and name and their reason codes in code order without repeats,
-/// the loss sales by date and transaction with their replacements by date and units, so the
-/// order in which a stage lists them never changes the question.
+/// the loss sales by date and transaction with their replacements by date and units, and the
+/// sources of a corporate action by broker and transaction ID, so the order in which a stage
+/// lists them never changes the question.
 [[nodiscard]] QuestionData normalizedData(QuestionData aData);
 
 struct FailureResolutionAnswer {
@@ -191,8 +227,24 @@ struct OtherActivityAnswer {
     bool operator==(const OtherActivityAnswer&) const = default;
 };
 
-using AnswerValue =
-    std::variant<FailureResolutionAnswer, CancelAnswer, NoOtherActivityAnswer, OtherActivityAnswer>;
+/// The ratio from the announcement, new shares per old shares, its effective date, and the
+/// position after the action that the user saw in the preview and confirmed. The session keeps the
+/// reduced numbers.
+struct SplitRatioAnswer {
+    std::int64_t mNewShares{};
+    std::int64_t mOldShares{};
+    /// From the announcement; it must be within the question's mEarliestDate and mLatestDate.
+    Date mEffectiveDate;
+    Units mConfirmedUnits{};
+
+    bool operator==(const SplitRatioAnswer&) const = default;
+};
+
+using AnswerValue = std::variant<FailureResolutionAnswer,
+                                 CancelAnswer,
+                                 NoOtherActivityAnswer,
+                                 OtherActivityAnswer,
+                                 SplitRatioAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {
@@ -295,8 +347,9 @@ class ApplicationResultBuilder final {
     /// severity, key, parameters and message. A report is Failed when a blocking diagnostic
     /// affects it that no open request of that report resolves. XML is kept only for
     /// Generated. Throws std::invalid_argument when a question has the question data of another
-    /// type, a failure-resolution question has no investment, or a loss question has no sale or
-    /// a sale without open units.
+    /// type, a failure-resolution question has no investment, a loss question has no sale or
+    /// a sale without open units, or a ratio question has no source, no open units or a date
+    /// range that does not contain its effective date.
     [[nodiscard]] static ApplicationResult build(ApplicationResultInput&& aInput);
 };
 

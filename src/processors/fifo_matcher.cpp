@@ -5,8 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace taxbroker {
 namespace {
@@ -187,6 +189,25 @@ void applySale(FifoIsinResult& aPool,
                 std::make_move_iterator(matches.end()));
 }
 
+/// The first corporate action of each instrument in the ledger, by instrument index.
+std::vector<std::optional<StatementEventReference>>
+firstCorporateActions(const std::vector<TradeInstrument>& aInstruments,
+                      const ReportingYearLedger& aLedger) {
+    std::vector<std::optional<StatementEventReference>> firstActions(aInstruments.size());
+
+    for (const auto& event : aLedger.mCapitalEvents)
+    {
+        auto& firstAction = firstActions.at(event.mInstrumentIndex.value());
+
+        if (event.mKind == StatementEventKind::CorporateAction && !firstAction)
+        {
+            firstAction = event;
+        }
+    }
+
+    return firstActions;
+}
+
 } // namespace
 
 bool isPastHoldingPeriod(const FifoMatch& aMatch) {
@@ -223,6 +244,8 @@ FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
         result.mIsins.push_back({.mIsin = instrument.mIsin, .mName = instrument.mName});
     }
 
+    const auto firstActions = firstCorporateActions(instruments, aLedger);
+
     // The ledger holds only trades and corporate actions, in merger order, up to 31 December.
     for (const auto& event : aLedger.mCapitalEvents)
     {
@@ -242,6 +265,18 @@ FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
         }
 
         const auto& trade = instruments.at(instrumentIndex).mTransactions.at(event.mEventIndex);
+        const auto& firstAction = firstActions.at(instrumentIndex);
+
+        // An action comes before the trades of its day, so a trade on that day is not applied.
+        if (firstAction &&
+            trade.mMetadata.mTaxDate == instruments.at(instrumentIndex)
+                                            .mCorporateActions.at(firstAction->mEventIndex)
+                                            .mMetadata.mTaxDate)
+        {
+            stopPool(pool, FifoIsinStatus::CorporateAction, *firstAction);
+
+            continue;
+        }
 
         if (trade.mCurrency != Currency::EUR)
         {

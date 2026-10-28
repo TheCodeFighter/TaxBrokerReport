@@ -39,7 +39,7 @@ struct FifoMatch {
 enum class FifoIsinStatus {
     /// Every trade up to 31 December was applied.
     Matched,
-    /// Stopped at a corporate action; splits are not applied yet.
+    /// Stopped at a corporate action, before the trades of its day; splits are not applied yet.
     CorporateAction,
     /// Stopped at a trade that is not in EUR; conversion is not applied yet.
     NonEurTrade,
@@ -54,7 +54,8 @@ struct FifoIsinResult {
     Isin mIsin;
     std::string mName;
     FifoIsinStatus mStatus{FifoIsinStatus::Matched};
-    /// The event the pool stopped at; absent when the status is Matched.
+    /// The event the pool stopped at; absent when the status is Matched. For CorporateAction it is
+    /// the action, also when a trade of the same day comes first in the ledger.
     std::optional<StatementEventReference> mStoppedAt;
     /// Open units just before the failing sale; set only for InsufficientUnits.
     std::optional<Units> mAvailableUnits;
@@ -65,6 +66,7 @@ struct FifoIsinResult {
     /// reads them: an earlier loss takes its replacement units first.
     std::vector<FifoMatch> mEarlierMatches;
     /// Open lots in FIFO order at 31 December, or just before the event a stopped pool stopped at.
+    /// For CorporateAction: at the start of the action's day, without the trades of that day.
     std::vector<FifoLot> mOpenLots;
 };
 

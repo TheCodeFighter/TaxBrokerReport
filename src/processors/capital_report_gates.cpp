@@ -161,8 +161,9 @@ void checkClassification(const TradeInstrument& aInstrument,
                           aInstrument.mIsin));
 }
 
-/// The error for a blocked ISIN whose pool stopped at a corporate action or a non-EUR trade. A
-/// pool stopped for missing history or a numeric failure already has its FIFO diagnostic.
+/// The error for a blocked ISIN whose pool stopped at a non-EUR trade. A pool stopped for missing
+/// history or a numeric failure already has its FIFO diagnostic, and one stopped at a corporate
+/// action has its diagnostics from the corporate-action stage.
 void checkStoppedPool(const FifoIsinResult& aPool,
                       const std::vector<TradeInstrument>& aInstruments,
                       std::vector<ProcessingDiagnostic>& aDiagnostics) {
@@ -171,24 +172,8 @@ void checkStoppedPool(const FifoIsinResult& aPool,
     case FifoIsinStatus::Matched:
     case FifoIsinStatus::InsufficientUnits:
     case FifoIsinStatus::NumericFailure:
+    case FifoIsinStatus::CorporateAction:
         return;
-    case FifoIsinStatus::CorporateAction: {
-        const auto& event = aPool.mStoppedAt.value();
-        const auto& action =
-            aInstruments.at(event.mInstrumentIndex.value()).mCorporateActions.at(event.mEventIndex);
-
-        aDiagnostics.push_back(
-            capitalDiagnostic(DiagnosticSeverity::Error,
-                              ProcessingDiagnosticCode::CorporateActionNotApplied,
-                              PipelineStage::CorporateAction,
-                              makeDiagnosticMessage(MessageKey::CorporateActionNotApplied),
-                              action.mMetadata.mSources,
-                              action.mMetadata.mTaxDate,
-                              aPool.mName,
-                              aPool.mIsin));
-
-        return;
-    }
     case FifoIsinStatus::NonEurTrade: {
         const auto& trade = tradeOf(aInstruments, aPool.mStoppedAt.value());
 

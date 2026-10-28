@@ -416,16 +416,19 @@ struct DraftDiagnostic {
            aType == RequestType::OtherInterestFailureResolutionRequired;
 }
 
-/// A failure-resolution type needs a list with at least one investment, and a loss question at
-/// least one sale, each with open units; every other type has no question data until its
-/// processor defines it.
+/// A failure-resolution type needs a list with at least one investment, a loss question at
+/// least one sale, each with open units, and a ratio question a source, open units and a date
+/// range around its effective date; every other type has no question data until its processor
+/// defines it.
 void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
     const auto* loss = std::get_if<LossEligibilityQuestion>(&aQuestion.mData);
+    const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
+    const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
-        (loss != nullptr) != isLossType)
+        (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType)
     {
         throw std::invalid_argument("The question data does not fit the request type.");
     }
@@ -433,6 +436,17 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     if (failure != nullptr && failure->mInvestments.empty())
     {
         throw std::invalid_argument("A failure-resolution question needs an investment.");
+    }
+
+    if (ratio != nullptr && (ratio->mSources.empty() || ratio->mPositionBefore <= 0))
+    {
+        throw std::invalid_argument("A ratio question needs a source and open units.");
+    }
+
+    if (ratio != nullptr && (ratio->mEarliestDate > ratio->mEffectiveDate ||
+                             ratio->mEffectiveDate > ratio->mLatestDate))
+    {
+        throw std::invalid_argument("A ratio question needs a date range around its date.");
     }
 
     if (loss == nullptr)
@@ -538,6 +552,17 @@ QuestionData normalizedData(QuestionData aData) {
                   [](const LossSaleFacts& aLeft, const LossSaleFacts& aRight) {
                       return lossSaleKey(aLeft) < lossSaleKey(aRight);
                   });
+    }
+
+    if (auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aData))
+    {
+        std::sort(
+            ratio->mSources.begin(),
+            ratio->mSources.end(),
+            [](const CorporateActionSourceFacts& aLeft, const CorporateActionSourceFacts& aRight) {
+                return std::tie(aLeft.mBroker, aLeft.mTransactionId, aLeft.mSourceValue) <
+                       std::tie(aRight.mBroker, aRight.mTransactionId, aRight.mSourceValue);
+            });
     }
 
     return aData;

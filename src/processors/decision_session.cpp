@@ -1,8 +1,11 @@
 #include "taxbroker/decision_session.hpp"
+#include "taxbroker/split_ratio.hpp"
+#include "utils/date_utils.hpp"
 #include "utils/numbered_id.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -12,9 +15,9 @@ namespace taxbroker {
 
 namespace {
 
-/// A failure question takes a failure choice or a cancel, a loss question `no`, `yes` or a cancel.
-/// A question without question data takes no answer until its processor defines one, because all
-/// questions of its type would be the same question.
+/// A failure question takes a failure choice or a cancel, a loss question `no`, `yes` or a cancel,
+/// and a ratio question a ratio or a cancel. A question without question data takes no answer
+/// until its processor defines one, because all questions of its type would be the same question.
 [[nodiscard]] bool fitsQuestion(const QuestionData& aData, const AnswerValue& aAnswer) {
     const auto fits = [&aAnswer](const auto& aData) {
         using Data = std::decay_t<decltype(aData)>;
@@ -28,11 +31,16 @@ namespace {
             return std::holds_alternative<FailureResolutionAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
-        else
+        else if constexpr (std::is_same_v<Data, LossEligibilityQuestion>)
         {
-            static_assert(std::is_same_v<Data, LossEligibilityQuestion>);
             return std::holds_alternative<NoOtherActivityAnswer>(aAnswer) ||
                    std::holds_alternative<OtherActivityAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
+        else
+        {
+            static_assert(std::is_same_v<Data, CorporateActionRatioQuestion>);
+            return std::holds_alternative<SplitRatioAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
     };
@@ -61,6 +69,97 @@ namespace {
                                             MessageKey aKey,
                                             const std::string& aRequestId) {
     return rejected(aIndex, aReason, aKey, "requestId", aRequestId);
+}
+
+/// The rejection of a ratio answer that names the field to correct.
+[[nodiscard]] RejectedAnswer
+rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::string aField) {
+    auto message = makeDiagnosticMessage(
+        MessageKey::AnswerRejectedRatioNotPositive,
+        {textParam("requestId", aRequestId), textParam("field", std::move(aField))});
+
+    return RejectedAnswer{
+        .mIndex = aIndex,
+        .mReason = AnswerRejection::RatioNotPositive,
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
+}
+
+/// The rejection of a ratio answer whose effective date is outside the question's range.
+[[nodiscard]] RejectedAnswer rejectedEffectiveDate(std::size_t aIndex,
+                                                   const std::string& aRequestId,
+                                                   const CorporateActionRatioQuestion& aQuestion) {
+    auto message = makeDiagnosticMessage(
+        MessageKey::AnswerRejectedEffectiveDateOutOfRange,
+        {textParam("requestId", aRequestId),
+         textParam("earliestDate", formatCalendarDate(aQuestion.mEarliestDate)),
+         textParam("latestDate", formatCalendarDate(aQuestion.mLatestDate))});
+
+    return RejectedAnswer{
+        .mIndex = aIndex,
+        .mReason = AnswerRejection::EffectiveDateOutOfRange,
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
+}
+
+/// Checks a ratio answer: both numbers positive and not equal, the effective date within the
+/// question's range, and the confirmed position equal to the preview of the ratio for the
+/// question's position before the action.
+[[nodiscard]] std::optional<RejectedAnswer> checkRatioAnswer(std::size_t aIndex,
+                                                             const DecisionRequest& aRequest,
+                                                             const SplitRatioAnswer& aAnswer) {
+    const auto& question = std::get<CorporateActionRatioQuestion>(aRequest.mData);
+
+    if (aAnswer.mNewShares <= 0)
+    {
+        return rejectedRatioField(aIndex, aRequest.mId, "newShares");
+    }
+
+    if (aAnswer.mOldShares <= 0)
+    {
+        return rejectedRatioField(aIndex, aRequest.mId, "oldShares");
+    }
+
+    if (aAnswer.mNewShares == aAnswer.mOldShares)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::RatioUnchanged,
+                              MessageKey::AnswerRejectedRatioUnchanged,
+                              aRequest.mId);
+    }
+
+    // Within the range the position before the action is the same, so the preview still holds.
+    if (aAnswer.mEffectiveDate < question.mEarliestDate ||
+        aAnswer.mEffectiveDate > question.mLatestDate)
+    {
+        return rejectedEffectiveDate(aIndex, aRequest.mId, question);
+    }
+
+    // Both numbers are positive and different, so the ratio exists.
+    const auto ratio = makeSplitRatio(aAnswer.mNewShares, aAnswer.mOldShares).value();
+    const auto preview = previewSplitUnits(question.mPositionBefore, ratio);
+
+    if (!preview)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::RatioOutOfRange,
+                              MessageKey::AnswerRejectedRatioOutOfRange,
+                              aRequest.mId);
+    }
+
+    if (*preview != aAnswer.mConfirmedUnits)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::PreviewMismatch,
+                              MessageKey::AnswerRejectedPreviewMismatch,
+                              aRequest.mId);
+    }
+
+    return std::nullopt;
 }
 
 [[nodiscard]] RejectedAnswer rejectedDelete(std::size_t aIndex,
@@ -157,6 +256,15 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
                                                 AnswerRejection::AnswerDoesNotFit,
                                                 MessageKey::AnswerRejectedAnswerDoesNotFit,
                                                 given.mRequestId));
+            continue;
+        }
+
+        if (const auto* ratio = std::get_if<SplitRatioAnswer>(&given.mValue))
+        {
+            if (auto rejection = checkRatioAnswer(index, *request, *ratio))
+            {
+                rejections.push_back(std::move(*rejection));
+            }
         }
     }
 
@@ -174,6 +282,16 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
         // The request data is already normalized.
         const auto& request = *answered[index];
         auto& value = aAnswers[index].mValue;
+
+        // A checked ratio answer is kept reduced: 20 / 10 as 2 / 1.
+        if (auto* ratio = std::get_if<SplitRatioAnswer>(&value))
+        {
+            const auto reduced = makeSplitRatio(ratio->mNewShares, ratio->mOldShares).value();
+
+            ratio->mNewShares = reduced.mNewShares;
+            ratio->mOldShares = reduced.mOldShares;
+        }
+
         const auto recorded =
             std::find_if(entries.begin(), entries.end(), [&request](const auto& aEntry) {
                 return aEntry.mType == request.mType && aEntry.mData == request.mData;

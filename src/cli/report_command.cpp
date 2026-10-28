@@ -4,6 +4,7 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
+#include "processors/corporate_actions.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "processors/loss_eligibility.hpp"
 #include "processors/tax_processor.hpp"
@@ -104,7 +105,9 @@ Supported for now:
 
 The report is blocked (no XML) when an investment sold in the year:
   - is crypto, a private fund, a bond or a derivative, or has an unknown asset class;
-  - has a corporate action, for example a split, up to 31 December;
+  - has a corporate action, for example a split, up to 31 December. A split needs the
+    ratio and the effective date from the announcement (new shares for old shares); this
+    command cannot ask for them yet, so the question stays open and the report is blocked;
   - misses earlier purchase history;
   - has a sale whose loss the 30-day rule blocks only in part, or a corporate action within
     30 days after a sale at a loss in December;
@@ -826,9 +829,10 @@ int runReport(const ReportOptions& aOptions,
     const auto& ledger = prepared.mLedger.value();
     const auto& statement = prepared.mMerged.mStatement;
     auto fifo = FifoMatcher::match(statement, ledger);
-    // This command cannot ask a question yet: it has no answers and treats the open loss
-    // units as blocked, with a warning.
+    // This command cannot ask a question yet: it has no answers, so a ratio question stays
+    // open, and it treats the open loss units as blocked, with a warning.
     RunDecisions decisions;
+    auto actions = CorporateActionResolver::resolve(statement, ledger, fifo, decisions);
     auto loss = LossEligibilityChecker::check(statement,
                                               ledger,
                                               fifo,
@@ -861,11 +865,12 @@ int runReport(const ReportOptions& aOptions,
     auto& processing = input.mProcessingDiagnostics;
 
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
+    appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
     appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));
     std::move(gateDiagnostics.begin(), gateDiagnostics.end(), std::back_inserter(processing));
 
-    // A blocked ISIN always has an error (FIFO or gate), so without a report the capital form is
-    // failed, never empty.
+    // A blocked ISIN always has an error (FIFO, corporate action or gate), so without a report
+    // the capital form is failed or needs input, never empty.
     if (built.mReport && !hasGateError)
     {
         auto& capital = input.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
