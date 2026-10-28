@@ -1,6 +1,7 @@
 #include "processors/fifo_matcher.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -86,8 +87,8 @@ void applyPurchase(FifoIsinResult& aPool,
 }
 
 /// Matches a sale to the oldest open lots. Nothing changes unless the whole sale is matched, so a
-/// failing sale leaves the lots exactly as they were. Matches are kept only for a selected-year
-/// sale; an earlier sale only uses up lots.
+/// failing sale leaves the lots exactly as they were. The matches of an earlier sale are kept
+/// apart from those of the selected year.
 void applySale(FifoIsinResult& aPool,
                const StatementEventReference& aEvent,
                const TradeTransaction& aTrade,
@@ -179,15 +180,36 @@ void applySale(FifoIsinResult& aPool,
     lots.erase(lots.begin(), lots.begin() + static_cast<std::ptrdiff_t>(firstOpen));
     aPool.mOpenLots = std::move(lots);
 
-    if (aInSelectedYear)
-    {
-        aPool.mMatches.insert(aPool.mMatches.end(),
-                              std::make_move_iterator(matches.begin()),
-                              std::make_move_iterator(matches.end()));
-    }
+    auto& kept = aInSelectedYear ? aPool.mMatches : aPool.mEarlierMatches;
+
+    kept.insert(kept.end(),
+                std::make_move_iterator(matches.begin()),
+                std::make_move_iterator(matches.end()));
 }
 
 } // namespace
+
+bool isPastHoldingPeriod(const FifoMatch& aMatch) {
+    constexpr int kFirstYearOfShortPeriod = 2022;
+    constexpr int kShortPeriodYears = 15;
+    constexpr int kLongPeriodYears = 20;
+
+    const std::chrono::year_month_day purchase{std::chrono::sys_days{aMatch.mPurchaseDate}};
+    const std::chrono::year_month_day sale{std::chrono::sys_days{aMatch.mSaleDate}};
+    const int periodYears = static_cast<int>(sale.year()) >= kFirstYearOfShortPeriod
+                                ? kShortPeriodYears
+                                : kLongPeriodYears;
+
+    const auto anniversaryYear = purchase.year() + std::chrono::years{periodYears};
+    auto anniversary = anniversaryYear / purchase.month() / purchase.day();
+
+    if (!anniversary.ok())
+    {
+        anniversary = anniversary.year() / anniversary.month() / std::chrono::day{28};
+    }
+
+    return std::chrono::sys_days{aMatch.mSaleDate} > std::chrono::sys_days{anniversary};
+}
 
 FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
                                       const ReportingYearLedger& aLedger) {

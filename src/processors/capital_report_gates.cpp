@@ -209,23 +209,72 @@ void checkStoppedPool(const FifoIsinResult& aPool,
     }
 }
 
-/// One error for each sale of a blocked ISIN that has a loss-making portion.
+/// Errors for loss sales that cannot be written yet: one per corporate action in a loss window,
+/// and one per partly blocked sale. Open and cancelled questions already have theirs.
 void checkLossSales(const KdvpBlockedIsin& aBlocked,
+                    const LossEligibilityIsin& aLoss,
                     const std::vector<TradeInstrument>& aInstruments,
                     std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    std::vector<StatementEventReference> reportedActions;
+
     for (const auto& sale : aBlocked.mSales)
     {
-        const auto& trade = tradeOf(aInstruments, sale);
+        // The builder blocks a sale for the loss rule only when the rule has a result for it.
+        const auto loss = std::find_if(
+            aLoss.mSales.begin(),
+            aLoss.mSales.end(),
+            [&sale](const LossSaleEligibility& aEntry) { return aEntry.mSale == sale; });
 
-        aDiagnostics.push_back(
-            capitalDiagnostic(DiagnosticSeverity::Error,
-                              ProcessingDiagnosticCode::LossEligibilityUnresolved,
-                              PipelineStage::FifoTax,
-                              makeDiagnosticMessage(MessageKey::LossEligibilityUnresolved),
-                              trade.mMetadata.mSources,
-                              trade.mMetadata.mTaxDate,
-                              aBlocked.mName,
-                              aBlocked.mIsin));
+        if (loss == aLoss.mSales.end())
+        {
+            continue;
+        }
+
+        switch (loss->mState)
+        {
+        case LossSaleState::WaitingForAnswer:
+        case LossSaleState::Cancelled:
+            break;
+        case LossSaleState::CorporateActionInWindow: {
+            const auto& event = loss->mCorporateAction.value();
+
+            if (std::find(reportedActions.begin(), reportedActions.end(), event) !=
+                reportedActions.end())
+            {
+                break;
+            }
+
+            reportedActions.push_back(event);
+
+            const auto& action = aInstruments.at(event.mInstrumentIndex.value())
+                                     .mCorporateActions.at(event.mEventIndex);
+
+            aDiagnostics.push_back(capitalDiagnostic(
+                DiagnosticSeverity::Error,
+                ProcessingDiagnosticCode::CorporateActionNotApplied,
+                PipelineStage::CorporateAction,
+                makeDiagnosticMessage(MessageKey::CorporateActionNotAppliedLossWindow),
+                action.mMetadata.mSources,
+                action.mMetadata.mTaxDate,
+                aBlocked.mName,
+                aBlocked.mIsin));
+            break;
+        }
+        case LossSaleState::Decided: {
+            const auto& trade = tradeOf(aInstruments, sale);
+
+            aDiagnostics.push_back(capitalDiagnostic(
+                DiagnosticSeverity::Error,
+                ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                PipelineStage::FifoTax,
+                makeDiagnosticMessage(MessageKey::UnsupportedTaxTreatmentPartialLossEligibility),
+                trade.mMetadata.mSources,
+                trade.mMetadata.mTaxDate,
+                aBlocked.mName,
+                aBlocked.mIsin));
+            break;
+        }
+        }
     }
 }
 
@@ -266,6 +315,7 @@ void warnAboutPrivateMarketEvents(const MergedStatement& aStatement,
 std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatement& aStatement,
                                                             const ReportingYearLedger& aLedger,
                                                             const FifoMatchingResult& aFifo,
+                                                            const LossEligibilityResult& aLoss,
                                                             const CapitalGainsBuildResult& aBuilt) {
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
     const auto yearSales = selectedYearSales(instruments, aLedger);
@@ -300,9 +350,21 @@ std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatemen
 
             break;
         }
-        case KdvpBlockReason::LossEligibilityUnresolved:
-            checkLossSales(blocked, instruments, diagnostics);
+        case KdvpBlockReason::LossNotReportable: {
+            // The builder blocks only ISINs of the loss result, so the entry is always there.
+            const auto loss = std::find_if(aLoss.mIsins.begin(),
+                                           aLoss.mIsins.end(),
+                                           [&blocked](const LossEligibilityIsin& aIsin) {
+                                               return aIsin.mIsin == blocked.mIsin;
+                                           });
+
+            if (loss != aLoss.mIsins.end())
+            {
+                checkLossSales(blocked, *loss, instruments, diagnostics);
+            }
+
             break;
+        }
         }
     }
 

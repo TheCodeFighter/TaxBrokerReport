@@ -1,7 +1,6 @@
 #include "processors/capital_gains_report_builder.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <map>
 #include <numeric>
@@ -38,35 +37,41 @@ collectSelectedYearSales(const std::vector<TradeInstrument>& aInstruments,
     return sales;
 }
 
-bool isPastHoldingPeriod(const Date& aPurchase, const Date& aSale) {
-    constexpr int kFirstYearOfShortPeriod = 2022;
-    constexpr int kShortPeriodYears = 15;
-    constexpr int kLongPeriodYears = 20;
-
-    const std::chrono::year_month_day purchase{std::chrono::sys_days{aPurchase}};
-    const std::chrono::year_month_day sale{std::chrono::sys_days{aSale}};
-    const int periodYears = static_cast<int>(sale.year()) >= kFirstYearOfShortPeriod
-                                ? kShortPeriodYears
-                                : kLongPeriodYears;
-
-    const auto anniversaryYear = purchase.year() + std::chrono::years{periodYears};
-    auto anniversary = anniversaryYear / purchase.month() / purchase.day();
-
-    if (!anniversary.ok())
-    {
-        anniversary = anniversary.year() / anniversary.month() / std::chrono::day{28};
-    }
-
-    return std::chrono::sys_days{aSale} > std::chrono::sys_days{anniversary};
+/// The units of the sale within the holding period.
+Units listedUnitsOf(const FifoIsinResult& aPool, const StatementEventReference& aSale) {
+    return std::accumulate(aPool.mMatches.begin(),
+                           aPool.mMatches.end(),
+                           Units{0},
+                           [&aSale](Units aSum, const FifoMatch& aMatch) {
+                               return aMatch.mSale == aSale && !isPastHoldingPeriod(aMatch)
+                                          ? aSum + aMatch.mUnits
+                                          : aSum;
+                           });
 }
 
-/// Tells whether the match uses units past the holding period. Such units are tax free.
-bool isLongHeld(const FifoMatch& aMatch) {
-    return isPastHoldingPeriod(aMatch.mPurchaseDate, aMatch.mSaleDate);
+/// The loss-rule result of a sale, or nullptr for a sale without a loss unit.
+const LossSaleEligibility* lossOf(const LossEligibilityIsin& aLoss,
+                                  const StatementEventReference& aSale) {
+    const auto found =
+        std::find_if(aLoss.mSales.begin(),
+                     aLoss.mSales.end(),
+                     [&aSale](const LossSaleEligibility& aEntry) { return aEntry.mSale == aSale; });
+
+    return found == aLoss.mSales.end() ? nullptr : &*found;
+}
+
+/// A decided sale can be written when the rule blocks none or all of its listed units. A partly
+/// blocked sale needs split rows.
+bool isReportable(const LossSaleEligibility& aLoss, Units aListedUnits) {
+    const Units ineligible = aLoss.ineligibleUnits();
+
+    return aLoss.mState == LossSaleState::Decided &&
+           (ineligible == 0 || ineligible == aListedUnits);
 }
 
 /// Why the ISIN gets no list.
 std::optional<KdvpBlockedIsin> findBlock(const FifoIsinResult& aPool,
+                                         const LossEligibilityIsin& aLoss,
                                          const std::vector<StatementEventReference>& aYearSales) {
     if (aPool.mStatus != FifoIsinStatus::Matched)
     {
@@ -80,15 +85,9 @@ std::optional<KdvpBlockedIsin> findBlock(const FifoIsinResult& aPool,
 
     for (const auto& sale : aYearSales)
     {
-        const bool hasLossPortion = std::any_of(aPool.mMatches.begin(),
-                                                aPool.mMatches.end(),
-                                                [&sale](const FifoMatch& aMatch) {
-                                                    return aMatch.mSale == sale &&
-                                                           !isLongHeld(aMatch) &&
-                                                           aMatch.mGainTicks.numerator() < 0;
-                                                });
+        const auto* loss = lossOf(aLoss, sale);
 
-        if (hasLossPortion)
+        if (loss != nullptr && !isReportable(*loss, listedUnitsOf(aPool, sale)))
         {
             lossSales.push_back(sale);
         }
@@ -101,7 +100,7 @@ std::optional<KdvpBlockedIsin> findBlock(const FifoIsinResult& aPool,
 
     return KdvpBlockedIsin{.mIsin = aPool.mIsin,
                            .mName = aPool.mName,
-                           .mReason = KdvpBlockReason::LossEligibilityUnresolved,
+                           .mReason = KdvpBlockReason::LossNotReportable,
                            .mSales = std::move(lossSales)};
 }
 
@@ -113,14 +112,15 @@ collectLongHeldUnits(const FifoIsinResult& aPool,
 
     for (const auto& sale : aYearSales)
     {
-        const Units units = std::accumulate(aPool.mMatches.begin(),
-                                            aPool.mMatches.end(),
-                                            Units{0},
-                                            [&sale](Units aSum, const FifoMatch& aMatch) {
-                                                return aMatch.mSale == sale && isLongHeld(aMatch)
-                                                           ? aSum + aMatch.mUnits
-                                                           : aSum;
-                                            });
+        const Units units =
+            std::accumulate(aPool.mMatches.begin(),
+                            aPool.mMatches.end(),
+                            Units{0},
+                            [&sale](Units aSum, const FifoMatch& aMatch) {
+                                return aMatch.mSale == sale && isPastHoldingPeriod(aMatch)
+                                           ? aSum + aMatch.mUnits
+                                           : aSum;
+                            });
 
         if (units > 0)
         {
@@ -137,7 +137,8 @@ collectLongHeldUnits(const FifoIsinResult& aPool,
 KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
                             std::size_t aInstrumentIndex,
                             const ReportingYearLedger& aLedger,
-                            const FifoIsinResult& aPool) {
+                            const FifoIsinResult& aPool,
+                            const LossEligibilityIsin& aLoss) {
     // The units within the holding period that the sales of the year use, by purchase and by
     // sale event index. A purchase used only by earlier sales has no match and gets no row.
     std::map<std::size_t, Units> usedUnits;
@@ -145,7 +146,7 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
 
     for (const auto& match : aPool.mMatches)
     {
-        if (isLongHeld(match))
+        if (isPastHoldingPeriod(match))
         {
             continue;
         }
@@ -195,13 +196,19 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
                 continue;
             }
 
+            // findBlock let through only sales whose rule blocks none or all listed units.
+            const auto* loss = lossOf(aLoss, event);
+            const bool blocked = loss != nullptr && loss->ineligibleUnits() > 0;
+
             stock -= listed->second;
-            list.mRows.push_back({.mEntry = KdvpSaleRow{.mSale = event,
-                                                        .mDate = trade.mMetadata.mTaxDate,
-                                                        .mUnits = listed->second,
-                                                        .mUnitPrice = trade.mUnitPrice,
-                                                        .mLossRule = KdvpLossRule::NotBlocked},
-                                  .mStock = stock});
+            list.mRows.push_back(
+                {.mEntry = KdvpSaleRow{.mSale = event,
+                                       .mDate = trade.mMetadata.mTaxDate,
+                                       .mUnits = listed->second,
+                                       .mUnitPrice = trade.mUnitPrice,
+                                       .mLossRule = blocked ? KdvpLossRule::Blocked
+                                                            : KdvpLossRule::NotBlocked},
+                 .mStock = stock});
         }
     }
 
@@ -213,13 +220,14 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
 CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& aStatement,
                                                          const ReportingYearLedger& aLedger,
                                                          const FifoMatchingResult& aFifo,
+                                                         const LossEligibilityResult& aLoss,
                                                          const std::vector<Isin>& aExcludedIsins) {
     CapitalGainsBuildResult result;
     CapitalGainsReportKDVP report;
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
     const auto yearSales = collectSelectedYearSales(instruments, aLedger);
 
-    // aFifo.mIsins follows the instruments, so an index is both.
+    // aFifo.mIsins and aLoss.mIsins follow the instruments, so an index is all three.
     for (std::size_t index = 0; index < instruments.size(); ++index)
     {
         if (yearSales.at(index).empty())
@@ -228,11 +236,12 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
         }
 
         const auto& pool = aFifo.mIsins.at(index);
-        auto blocked = findBlock(pool, yearSales.at(index));
+        const auto& loss = aLoss.mIsins.at(index);
+        auto blocked = findBlock(pool, loss, yearSales.at(index));
 
         if (!blocked)
         {
-            auto list = buildList(instruments, index, aLedger, pool);
+            auto list = buildList(instruments, index, aLedger, pool, loss);
             const auto longHeld = collectLongHeldUnits(pool, yearSales.at(index));
 
             if (!list.mRows.empty())

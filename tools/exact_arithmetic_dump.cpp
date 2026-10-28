@@ -1,6 +1,7 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/fifo_basis.hpp"
 #include "taxbroker/statement_merger.hpp"
+#include "utils/numeric_util.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -66,13 +67,10 @@ void writeScaled(std::ostream& aOutput,
                  std::string_view aLabel,
                  std::int64_t aValue,
                  std::int64_t aScale) {
-    // Widen before negating to handle INT64_MIN. Scales here are powers of ten.
-    const WideInteger magnitude = aValue < 0 ? -WideInteger{aValue} : WideInteger{aValue};
-    const auto width = std::to_string(aScale).size() - 1;
-    const auto digits = (magnitude % aScale).convert_to<std::string>();
+    // Scales here are powers of ten, so every stored decimal is written.
+    const auto decimals = std::to_string(aScale).size() - 1;
 
-    aOutput << aLabel << ": " << (aValue < 0 ? "-" : "") << magnitude / aScale << '.'
-            << std::string(width - digits.size(), '0') << digits << '\n';
+    aOutput << aLabel << ": " << formatFixedPoint(aValue, aScale, decimals) << '\n';
 }
 
 void writeExact(std::ostream& aOutput, std::string_view aLabel, const ExactRational& aValue) {

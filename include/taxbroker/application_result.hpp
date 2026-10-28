@@ -112,9 +112,45 @@ struct FailureResolutionQuestion {
     bool operator==(const FailureResolutionQuestion&) const = default;
 };
 
+/// A purchase that the 30-day loss rule counts against a sale, with the units used for it.
+struct KnownReplacement {
+    Date mDate;
+    Units mUnits{};
+
+    bool operator==(const KnownReplacement&) const = default;
+};
+
+/// One sale of the year whose loss units the known replacements do not block in full.
+struct LossSaleFacts {
+    Date mSaleDate;
+    /// Broker and transaction ID of the sale.
+    std::optional<TransactionIdentity> mSaleTransaction;
+    Units mSaleUnits{};
+    Units mLossUnits{};
+    Date mWindowStart;
+    Date mWindowEnd;
+    std::vector<KnownReplacement> mKnownReplacements;
+    Units mKnownIneligibleUnits{};
+    /// mLossUnits - mKnownIneligibleUnits, always more than 0.
+    Units mOpenUnits{};
+
+    bool operator==(const LossSaleFacts&) const = default;
+};
+
+/// The question data: one ISIN and every sale of the
+/// year whose loss the files cannot decide. One answer covers all of them.
+struct LossEligibilityQuestion {
+    Isin mIsin;
+    std::string mName;
+    std::vector<LossSaleFacts> mSales;
+
+    bool operator==(const LossEligibilityQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
-using QuestionData = std::variant<std::monostate, FailureResolutionQuestion>;
+using QuestionData =
+    std::variant<std::monostate, FailureResolutionQuestion, LossEligibilityQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -127,7 +163,8 @@ struct DecisionQuestion {
 };
 
 /// Sorts the investments by ISIN and name and their reason codes in code order without repeats,
-/// so the order in which a stage lists them never changes the question.
+/// the loss sales by date and transaction with their replacements by date and units, so the
+/// order in which a stage lists them never changes the question.
 [[nodiscard]] QuestionData normalizedData(QuestionData aData);
 
 struct FailureResolutionAnswer {
@@ -141,7 +178,21 @@ struct CancelAnswer {
     bool operator==(const CancelAnswer&) const = default;
 };
 
-using AnswerValue = std::variant<FailureResolutionAnswer, CancelAnswer>;
+/// `no` to a loss question: within the window, the investment was not bought or sold anywhere
+/// outside the files; open units keep
+/// their loss.
+struct NoOtherActivityAnswer {
+    bool operator==(const NoOtherActivityAnswer&) const = default;
+};
+
+/// `yes` to a loss question: it was, so every open unit is treated as blocked by the 30-day rule
+/// (the safe side).
+struct OtherActivityAnswer {
+    bool operator==(const OtherActivityAnswer&) const = default;
+};
+
+using AnswerValue =
+    std::variant<FailureResolutionAnswer, CancelAnswer, NoOtherActivityAnswer, OtherActivityAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {
@@ -244,8 +295,15 @@ class ApplicationResultBuilder final {
     /// severity, key, parameters and message. A report is Failed when a blocking diagnostic
     /// affects it that no open request of that report resolves. XML is kept only for
     /// Generated. Throws std::invalid_argument when a question has the question data of another
-    /// type, or a failure-resolution question has no investment.
+    /// type, a failure-resolution question has no investment, or a loss question has no sale or
+    /// a sale without open units.
     [[nodiscard]] static ApplicationResult build(ApplicationResultInput&& aInput);
 };
+
+/// Appends the diagnostics and requests of one stage. The requests' diagnostic indices count from
+/// the stage's first diagnostic and are shifted to the numbering of aInput.
+void appendStageOutput(ApplicationResultInput& aInput,
+                       std::vector<ProcessingDiagnostic>&& aDiagnostics,
+                       std::vector<RequestInput>&& aRequests);
 
 } // namespace taxbroker

@@ -416,12 +416,16 @@ struct DraftDiagnostic {
            aType == RequestType::OtherInterestFailureResolutionRequired;
 }
 
-/// A failure-resolution type needs a list with at least one investment; every other type has no
-/// question data until its processor defines it.
+/// A failure-resolution type needs a list with at least one investment, and a loss question at
+/// least one sale, each with open units; every other type has no question data until its
+/// processor defines it.
 void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
+    const auto* loss = std::get_if<LossEligibilityQuestion>(&aQuestion.mData);
+    const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
 
-    if ((failure != nullptr) != isFailureResolution(aQuestion.mType))
+    if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
+        (loss != nullptr) != isLossType)
     {
         throw std::invalid_argument("The question data does not fit the request type.");
     }
@@ -430,6 +434,34 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A failure-resolution question needs an investment.");
     }
+
+    if (loss == nullptr)
+    {
+        return;
+    }
+
+    const bool hasOpenUnits =
+        std::all_of(loss->mSales.begin(), loss->mSales.end(), [](const LossSaleFacts& aSale) {
+            return aSale.mOpenUnits > 0 && aSale.mOpenUnits <= aSale.mLossUnits;
+        });
+
+    if (loss->mSales.empty() || !hasOpenUnits)
+    {
+        throw std::invalid_argument("A loss question needs sales with open units.");
+    }
+}
+
+/// Orders loss sales by date, then by transaction, then by units; a sale without a transaction
+/// ID comes first on its date.
+[[nodiscard]] auto lossSaleKey(const LossSaleFacts& aSale) {
+    const auto& transaction = aSale.mSaleTransaction;
+
+    return std::make_tuple(aSale.mSaleDate,
+                           transaction.has_value(),
+                           transaction ? transaction->mBroker : Broker::Unknown,
+                           transaction ? transaction->mTransactionId : std::string{},
+                           aSale.mSaleUnits,
+                           aSale.mLossUnits);
 }
 
 /// The investments of a failure question, each with the IDs of its linked diagnostics.
@@ -489,7 +521,47 @@ QuestionData normalizedData(QuestionData aData) {
                   });
     }
 
+    if (auto* loss = std::get_if<LossEligibilityQuestion>(&aData))
+    {
+        for (auto& sale : loss->mSales)
+        {
+            std::sort(sale.mKnownReplacements.begin(),
+                      sale.mKnownReplacements.end(),
+                      [](const KnownReplacement& aLeft, const KnownReplacement& aRight) {
+                          return std::tie(aLeft.mDate, aLeft.mUnits) <
+                                 std::tie(aRight.mDate, aRight.mUnits);
+                      });
+        }
+
+        std::sort(loss->mSales.begin(),
+                  loss->mSales.end(),
+                  [](const LossSaleFacts& aLeft, const LossSaleFacts& aRight) {
+                      return lossSaleKey(aLeft) < lossSaleKey(aRight);
+                  });
+    }
+
     return aData;
+}
+
+void appendStageOutput(ApplicationResultInput& aInput,
+                       std::vector<ProcessingDiagnostic>&& aDiagnostics,
+                       std::vector<RequestInput>&& aRequests) {
+    const auto offset = aInput.mProcessingDiagnostics.size();
+
+    std::move(aDiagnostics.begin(),
+              aDiagnostics.end(),
+              std::back_inserter(aInput.mProcessingDiagnostics));
+
+    for (auto& request : aRequests)
+    {
+        auto& indices = request.mProcessingDiagnostics;
+
+        std::transform(indices.begin(),
+                       indices.end(),
+                       indices.begin(),
+                       [offset](std::size_t aIndex) { return aIndex + offset; });
+        aInput.mRequests.push_back(std::move(request));
+    }
 }
 
 ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInput) {

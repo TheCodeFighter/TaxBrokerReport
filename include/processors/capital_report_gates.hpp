@@ -15,6 +15,7 @@ class CapitalReportGates final {
     check(const MergedStatement& aStatement,
           const ReportingYearLedger& aLedger,
           const FifoMatchingResult& aFifo,
+          const LossEligibilityResult& aLoss,
           const CapitalGainsBuildResult& aBuilt);
 };
 

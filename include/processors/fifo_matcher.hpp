@@ -61,6 +61,9 @@ struct FifoIsinResult {
     /// Matches of the selected year's sales in ledger order. A stopped pool keeps the matches
     /// made before the stop.
     std::vector<FifoMatch> mMatches;
+    /// Matches of the sales before the selected year, in ledger order. Only the 30-day loss rule
+    /// reads them: an earlier loss takes its replacement units first.
+    std::vector<FifoMatch> mEarlierMatches;
     /// Open lots in FIFO order at 31 December, or just before the event a stopped pool stopped at.
     std::vector<FifoLot> mOpenLots;
 };
@@ -71,11 +74,15 @@ struct FifoMatchingResult {
     std::vector<ProcessingDiagnostic> mDiagnostics;
 };
 
+/// Tells whether the match uses units past the holding period, which are tax free.
+[[nodiscard]] bool isPastHoldingPeriod(const FifoMatch& aMatch);
+
 class FifoMatcher final {
   public:
     /// Builds one FIFO pool per ISIN from every trade up to 31 December, across all brokers and
     /// files, and matches each sale to the oldest open purchase units. Only sales dated in the
-    /// selected year produce matches; earlier sales only use up lots.
+    /// selected year produce matches in mMatches; the matches of earlier sales go to
+    /// mEarlierMatches.
     ///
     /// A pool stops at its first corporate action, non-EUR trade, sale without enough open units
     /// or invalid value, and ignores its later events. The failing sale is never applied

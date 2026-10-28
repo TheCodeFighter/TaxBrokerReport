@@ -1,4 +1,5 @@
 #include "xml/kdvp_xml_writer.hpp"
+#include "utils/numeric_util.hpp"
 
 #include <pugixml.hpp>
 
@@ -55,7 +56,6 @@ constexpr std::size_t kMaximumPostNumberLength = 12;
 // Units and unit prices share the scale, so one formatter writes F3, F4, F7, F8 and F9.
 static_assert(UNITS_SCALE == UNIT_PRICE_SCALE);
 constexpr std::int64_t kFixedPointScale = UNITS_SCALE;
-constexpr std::size_t kStoredDecimals = 8;
 constexpr std::size_t kMinimumDecimals = 4;
 
 // Limits of the characters that XML accepts.
@@ -191,15 +191,7 @@ std::optional<std::string> dateText(const Date& aDate) {
 /// four decimals, and nothing is rounded. `200'000'000` is `2.0000`, `12'345'678` is
 /// `0.12345678`. Only for values that are not negative.
 std::string decimalText(std::int64_t aValue) {
-    auto fraction = std::to_string(aValue % kFixedPointScale);
-    fraction.insert(0, kStoredDecimals - fraction.size(), '0');
-
-    while (fraction.size() > kMinimumDecimals && fraction.back() == '0')
-    {
-        fraction.pop_back();
-    }
-
-    return std::to_string(aValue / kFixedPointScale) + '.' + fraction;
+    return formatFixedPoint(aValue, kFixedPointScale, kMinimumDecimals);
 }
 
 std::string_view workflowCode(FilingType aFilingType) {

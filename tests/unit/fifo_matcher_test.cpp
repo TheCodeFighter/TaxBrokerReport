@@ -730,6 +730,57 @@ TEST(FifoMatcherTest, ProfitableSaleKeepsItsLossMakingPortionAsANegativeGain) {
     EXPECT_EQ(isin.mMatches.at(1).mGainTicks, ticks(-500'000'000'000'000'000));       // -EUR 50
 }
 
+TEST(FifoMatcherTest, EarlierSalesKeepTheirMatchesApart) {
+    // The 2023 sale only uses up lots for the 2024 report, but its match is kept apart for the
+    // 30-day loss rule: an earlier loss takes its replacement units first.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-03-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2023-05-10")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 400'000'000,     // 4 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-20")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+
+    const auto& isin = result.mIsins.at(0);
+
+    ASSERT_EQ(isin.mEarlierMatches.size(), 1U);
+
+    const auto& earlier = isin.mEarlierMatches.at(0);
+
+    EXPECT_EQ(earlier.mSale, (StatementEventReference{StatementEventKind::Trade, 0, 1}));
+    EXPECT_EQ(earlier.mPurchase, (StatementEventReference{StatementEventKind::Trade, 0, 0}));
+    EXPECT_EQ(earlier.mSaleDate, day("2023-05-10"));
+    EXPECT_EQ(earlier.mUnits, 400'000'000);
+    EXPECT_EQ(earlier.mGainTicks, ticks(-80'000'000'000'000'000)); // 4 * (8 - 10) = -EUR 8
+
+    ASSERT_EQ(isin.mMatches.size(), 1U);
+
+    const auto& selected = isin.mMatches.at(0);
+
+    EXPECT_EQ(selected.mSale, (StatementEventReference{StatementEventKind::Trade, 0, 2}));
+    EXPECT_EQ(selected.mUnits, 200'000'000);
+    EXPECT_EQ(selected.mGainTicks, ticks(40'000'000'000'000'000)); // 2 * (12 - 10) = +EUR 4
+}
+
 TEST(FifoMatcherTest, SaleAtThePurchasePriceHasAGainOfExactlyZero) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{

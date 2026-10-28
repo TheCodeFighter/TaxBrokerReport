@@ -1,6 +1,7 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/fifo_matcher.hpp"
+#include "processors/loss_eligibility.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>
@@ -463,8 +464,16 @@ TEST(FifoMatchingIntegrationTest, FilingRowsOfTwoFilesLeaveOutTheStockHeldAfterT
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
-    const auto result =
-        CapitalGainsReportBuilder{}.build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
+    const auto result = CapitalGainsReportBuilder{}.build(prepared.mMerged.mStatement,
+                                                          *prepared.mLedger,
+                                                          fifo,
+                                                          loss,
+                                                          {});
 
     EXPECT_TRUE(result.mBlocked.empty());
     EXPECT_TRUE(result.mExcluded.empty());
@@ -544,8 +553,16 @@ TEST(FifoMatchingIntegrationTest, PurchaseRepeatedInOverlappingFilesIsOneFilingR
     EXPECT_TRUE(prepared.mMerged.mDiagnostics.empty());
 
     const auto fifo = FifoMatcher{}.match(prepared.mMerged.mStatement, *prepared.mLedger);
-    const auto result =
-        CapitalGainsReportBuilder{}.build(prepared.mMerged.mStatement, *prepared.mLedger, fifo, {});
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
+    const auto result = CapitalGainsReportBuilder{}.build(prepared.mMerged.mStatement,
+                                                          *prepared.mLedger,
+                                                          fifo,
+                                                          loss,
+                                                          {});
 
     ASSERT_TRUE(result.mReport.has_value());
     ASSERT_EQ(result.mReport->mLists.size(), 1U);

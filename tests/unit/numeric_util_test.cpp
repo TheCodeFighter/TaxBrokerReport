@@ -6,10 +6,12 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string_view>
 
 namespace {
 
+using taxbroker::formatFixedPoint;
 using taxbroker::Money;
 using taxbroker::MONEY_SCALE;
 using taxbroker::Units;
@@ -106,6 +108,40 @@ TEST(MultiplyUnitPriceUnitsTest, HandlesBoundariesAndReportsOverflow) {
     // The largest price times 1 unit is EUR 92233720368.54775807, which rounds to Money
     // 92233720368.5478 (the digits after the fourth decimal, 5807, round up).
     EXPECT_EQ(multiplyUnitPriceUnits(maximum, UNITS_SCALE), 922'337'203'685'478);
+}
+
+TEST(FormatFixedPointTest, KeepsEveryStoredDecimalDownToTheMinimum) {
+    // 1.5 units, 0.12345678 units, 2 units and 0 units at eight decimals.
+    EXPECT_EQ(formatFixedPoint(150'000'000, UNITS_SCALE, 8), "1.50000000");
+    EXPECT_EQ(formatFixedPoint(150'000'000, UNITS_SCALE, 4), "1.5000");
+    EXPECT_EQ(formatFixedPoint(150'000'000, UNITS_SCALE, 0), "1.5");
+    EXPECT_EQ(formatFixedPoint(12'345'678, UNITS_SCALE, 4), "0.12345678");
+    EXPECT_EQ(formatFixedPoint(200'000'000, UNITS_SCALE, 4), "2.0000");
+    EXPECT_EQ(formatFixedPoint(200'000'000, UNITS_SCALE, 0), "2");
+    EXPECT_EQ(formatFixedPoint(0, UNITS_SCALE, 8), "0.00000000");
+
+    // EUR 30.1547 at four decimals.
+    EXPECT_EQ(formatFixedPoint(301'547, MONEY_SCALE, 2), "30.1547");
+    EXPECT_EQ(formatFixedPoint(301'500, MONEY_SCALE, 2), "30.15");
+
+    // Scale 1 stores no decimals.
+    EXPECT_EQ(formatFixedPoint(42, 1, 0), "42");
+}
+
+TEST(FormatFixedPointTest, WritesNegativeValuesAndInt64Boundaries) {
+    EXPECT_EQ(formatFixedPoint(-150'000'000, UNITS_SCALE, 4), "-1.5000");
+    EXPECT_EQ(formatFixedPoint(-12'345'678, UNITS_SCALE, 4), "-0.12345678");
+    EXPECT_EQ(formatFixedPoint(std::numeric_limits<std::int64_t>::max(), UNITS_SCALE, 8),
+              "92233720368.54775807");
+    EXPECT_EQ(formatFixedPoint(std::numeric_limits<std::int64_t>::min(), UNITS_SCALE, 8),
+              "-92233720368.54775808");
+}
+
+TEST(FormatFixedPointTest, RejectsAScaleThatIsNotAPowerOfTenAndTooManyDecimals) {
+    EXPECT_THROW(static_cast<void>(formatFixedPoint(1, 0, 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(formatFixedPoint(1, -10, 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(formatFixedPoint(1, 50, 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(formatFixedPoint(1, UNITS_SCALE, 9)), std::invalid_argument);
 }
 
 } // namespace

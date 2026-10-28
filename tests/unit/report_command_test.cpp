@@ -721,14 +721,16 @@ TEST(ReportCommandTest, YearWithoutDataDeletesAnOldXml) {
 }
 
 TEST(ReportCommandTest, BlockedYearWithoutAnOldXmlDeletesNothing) {
-    // Buy 10 @ 30, sell 10 @ 20: a loss, so the year is blocked.
+    // Buy 1 @ 10 and 1 @ 40, sell 2 @ 30: +20 and -10. The loss unit is assumed blocked (no
+    // answer), the profitable one is not, so the sale needs split rows (#267) and blocks the year.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
-            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-02-10T09:00:00Z,2024-02-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,40,-40,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-04-10T09:00:00Z,2024-04-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
 
     const auto result = run({"report",
@@ -809,14 +811,16 @@ TEST(ReportCommandTest, TwoSalesOfOneInvestmentAreCountedTogether) {
 }
 
 TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsBlocked) {
-    // The share is fine; the loss of the fund (5 @ 50 bought, 5 @ 40 sold) blocks the report.
+    // The share is fine. The fund sells 5 @ 40 from 2 @ 30 (+20) and 3 @ 50 (-30): the 3 loss
+    // units are assumed blocked (no answer), the 2 others are not, so the sale blocks the report.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
         "history.csv",
         {
             R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
-            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,FUND,Synthetic Fund,XX0000000003,5,50,-250,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,FUND,Synthetic Fund,XX0000000003,2,30,-60,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-01-12T09:00:00Z,2024-01-12,DEFAULT,TRADING,BUY,FUND,Synthetic Fund,XX0000000003,3,50,-150,,,EUR,,,,,synthetic-buy-3,,,,)",
             R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
             R"(2024-04-10T09:00:00Z,2024-04-10,DEFAULT,TRADING,SELL,FUND,Synthetic Fund,XX0000000003,-5,40,200,,,EUR,,,,,synthetic-sell-2,,,,)",
         });
@@ -834,8 +838,8 @@ TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsB
     EXPECT_TRUE(contains(result.mOut,
                          "Investments with a sale in 2024: 2\n"
                          "  XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units\n"
-                         "  XX0000000003 Synthetic Fund: blocked (loss_eligibility_unresolved)\n"
-                         "    sale 2024-04-10, history.csv row 5\n"));
+                         "  XX0000000003 Synthetic Fund: blocked (unsupported_tax_treatment)\n"
+                         "    sale 2024-04-10, history.csv row 6\n"));
 }
 
 TEST(ReportCommandTest, LongHeldUnitsAreListedApart) {

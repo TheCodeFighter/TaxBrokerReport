@@ -464,8 +464,9 @@ authorizes an exclusion from the other form. Both retain original source evidenc
 The app must exclude every purchase, sale, and calculated match for that ISIN from capital report
 output. It must not exclude only the unmatched sale because the remaining rows would show an
 unreliable history. Preserve source evidence and existing replacement allocations needed by retained
-losses in the separate analysis view, as defined in `tax_rules.md`. An exclusion does not resolve
-uncertain evidence for another ISIN: request its dependent loss decision before generating XML.
+losses in the separate analysis view, as defined in `tax_rules.md`. Only the same ISIN is a
+replacement for a loss, so an exclusion never changes the loss of another ISIN, and it never
+answers an open loss question.
 
 The frontend presents one list containing every unsafe investment's name, ISIN, error reason, and
 source location when available. The list is sorted by ISIN and then name. The user chooses one of

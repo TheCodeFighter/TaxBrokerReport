@@ -836,7 +836,7 @@ TEST(CliReportIntegrationTest, SaleWithoutEnoughPurchasesBlocksTheReport) {
                          "2025-03-10, history.csv row 3\n"));
 }
 
-TEST(CliReportIntegrationTest, LossMakingSaleBlocksTheReport) {
+TEST(CliReportIntegrationTest, ALossTheFilesCannotDecideIsWrittenAsBlockedWithAWarning) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -855,30 +855,35 @@ TEST(CliReportIntegrationTest, LossMakingSaleBlocksTheReport) {
                              folder.outputDirectory(),
                              history});
 
-    // 10 x 20 - 10 x 30 = -100: a loss.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    // 10 x 20 - 10 x 30 = -100: a loss, and no purchase within 30 days blocks it. The loss rule
+    // needs the answer whether the investment was also traded elsewhere; this command cannot ask
+    // yet, so all 10 loss units are assumed blocked (F10 false), with one warning.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
 
-Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
+Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml
 
 Investments with a sale in 2025: 1
-  XX0000000001 Synthetic Share: blocked (loss_eligibility_unresolved)
-    sale 2025-03-10, history.csv row 3
+  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units, 10.0000 units with a loss blocked by the 30-day rule (F10 false), of them 10.0000 assumed without an answer (see the warnings below)
 
 Units past the holding period (tax free, not in the XML): 0
 
 Private-market events skipped (only a cash amount, no units): 0
 
-Errors: 1
-  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2025-03-10, history.csv row 3
-    Part of this sale was sold at a loss. The rule that decides whether the loss may be used is not implemented yet, so the sale cannot be reported. No Doh-KDVP file was written.
+Errors: 0
 
-Warnings: 0
+Warnings: 1
+  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2025-03-10, history.csv row 3
+    A sale of this investment was made at a loss, and your files alone cannot decide whether the 30-day rule blocks the loss. This command cannot ask you yet, so the whole open loss was treated as not deductible (F10 false). If, within 30 days before or after the sale, you did not buy or sell this investment anywhere that is not in your files, correct it yourself in eDavki.
 )");
     EXPECT_EQ(folder.readOutput("summary_2025.txt"), result.mOut);
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F10>false</F10>"));
+    expectValidForKdvpSchemas(xml);
 }
 
 TEST(CliReportIntegrationTest, ProfitableSaleWithALossMakingPortionBlocksTheReport) {
@@ -901,19 +906,60 @@ TEST(CliReportIntegrationTest, ProfitableSaleWithALossMakingPortionBlocksTheRepo
                              folder.outputDirectory(),
                              history});
 
-    // Portions: 30 - 10 = +20 and 30 - 40 = -10. The sale gains 10 overall but is still blocked.
+    // Portions: 30 - 10 = +20 and 30 - 40 = -10. The sale gains 10 overall, but its loss unit
+    // is assumed blocked (no answer) and its profitable unit is not: such a sale needs split rows,
+    // so it blocks the report.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000001 Synthetic Share: blocked (loss_eligibility_unresolved)\n"
+                         "  XX0000000001 Synthetic Share: blocked (unsupported_tax_treatment)\n"
                          "    sale 2025-03-10, history.csv row 4\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "Errors: 1\n"
-                         "  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic "
+                         "  diagnostic-0001 unsupported_tax_treatment, XX0000000001 Synthetic "
                          "Share, 2025-03-10, history.csv row 4\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Warnings: 1\n"
+                         "  diagnostic-0002 loss_eligibility_unresolved, XX0000000001 Synthetic "
+                         "Share, 2025-03-10, history.csv row 4\n"));
+}
+
+TEST(CliReportIntegrationTest, ALossBlockedByAJanuaryPurchaseIsWritten) {
+    // tax_rules.md: buy 100 in September 2023, sell 4 at a loss on 2024-12-20, buy 4 on
+    // 2025-01-05. The January purchase blocks the whole loss, so the command needs no answer.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-09-01T09:00:00Z,2023-09-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,100,10,-1000,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-12-20T09:00:00Z,2024-12-20,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-01-05T09:00:00Z,2025-01-05,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,4,8,-32,,,EUR,,,,,synthetic-buy-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 4.0000 units, 4.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
+    EXPECT_TRUE(contains(result.mOut, "Errors: 0\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml, "<F10>false</F10>"));
+    EXPECT_FALSE(contains(xml, "<F1>2025-01-05</F1>"));
+    expectValidForKdvpSchemas(xml);
 }
 
 TEST(CliReportIntegrationTest, NonEurTradeBlocksTheReport) {
@@ -1112,12 +1158,13 @@ TEST(CliReportIntegrationTest, TaxpayerValueTheFormDoesNotAcceptBlocksTheReport)
 }
 
 TEST(CliReportIntegrationTest, BlockedRunDeletesAnOldXmlOfTheSameYear) {
+    // The purchase is in USD, so the FIFO pool stops and the report is blocked.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
             R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
     std::filesystem::create_directory(folder.outputDirectory());
@@ -1511,13 +1558,18 @@ TEST(CliReportIntegrationTest, ShareAndFundSalesGiveOneItemEach) {
 }
 
 TEST(CliReportIntegrationTest, BlockedInvestmentListsEachOfItsSales) {
-    // Both sales are below the purchase price of 30: 4 @ 20 and 6 @ 25.
+    // Lots in FIFO order: 2 @ 10, 3 @ 40, 5 @ 10. The sale of 4 @ 20 uses 2 @ 10 (+20) and 2 @ 40
+    // (-40); the sale of 6 @ 25 uses 1 @ 40 (-15) and 5 @ 10 (+75). No purchase lies within 30
+    // days of a sale, so the loss units are assumed blocked (no answer) and the profitable ones
+    // are not: both sales need split rows (#267). One warning covers both sales of the ISIN.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,3,40,-120,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-01-12T09:00:00Z,2024-01-12,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,10,-50,,,EUR,,,,,synthetic-buy-3,,,,)",
             R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,20,80,,,EUR,,,,,synthetic-sell-1,,,,)",
             R"(2024-05-10T09:00:00Z,2024-05-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-6,25,150,,,EUR,,,,,synthetic-sell-2,,,,)",
         });
@@ -1541,21 +1593,23 @@ Input files: 1
 Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
 
 Investments with a sale in 2024: 1
-  XX0000000001 Synthetic Share: blocked (loss_eligibility_unresolved)
-    sale 2024-03-10, history.csv row 3
-    sale 2024-05-10, history.csv row 4
+  XX0000000001 Synthetic Share: blocked (unsupported_tax_treatment)
+    sale 2024-03-10, history.csv row 5
+    sale 2024-05-10, history.csv row 6
 
 Units past the holding period (tax free, not in the XML): 0
 
 Private-market events skipped (only a cash amount, no units): 0
 
 Errors: 2
-  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2024-03-10, history.csv row 3
-    Part of this sale was sold at a loss. The rule that decides whether the loss may be used is not implemented yet, so the sale cannot be reported. No Doh-KDVP file was written.
-  diagnostic-0002 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2024-05-10, history.csv row 4
-    Part of this sale was sold at a loss. The rule that decides whether the loss may be used is not implemented yet, so the sale cannot be reported. No Doh-KDVP file was written.
+  diagnostic-0001 unsupported_tax_treatment, XX0000000001 Synthetic Share, 2024-03-10, history.csv row 5
+    The 30-day loss rule blocks only part of the loss of this sale. Rows for such a sale are not supported yet, so the sale cannot be reported. No Doh-KDVP file was written.
+  diagnostic-0003 unsupported_tax_treatment, XX0000000001 Synthetic Share, 2024-05-10, history.csv row 6
+    The 30-day loss rule blocks only part of the loss of this sale. Rows for such a sale are not supported yet, so the sale cannot be reported. No Doh-KDVP file was written.
 
-Warnings: 0
+Warnings: 1
+  diagnostic-0002 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2024-03-10, history.csv row 5 (+1 more)
+    A sale of this investment was made at a loss, and your files alone cannot decide whether the 30-day rule blocks the loss. This command cannot ask you yet, so the whole open loss was treated as not deductible (F10 false). If, within 30 days before or after the sale, you did not buy or sell this investment anywhere that is not in your files, correct it yourself in eDavki.
 )");
 }
 

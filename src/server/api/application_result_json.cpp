@@ -2,11 +2,13 @@
 #include "json_strings.hpp"
 #include "taxbroker/application_result.hpp"
 #include "utils/numbered_id.hpp"
+#include "utils/numeric_util.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <iterator>
 #include <string>
 #include <string_view>
@@ -352,14 +354,68 @@ std::string_view answerString(const AnswerValue& aAnswer) {
         {
             return toString(aValue.mChoice);
         }
+        else if constexpr (std::is_same_v<Value, CancelAnswer>)
+        {
+            return "cancel";
+        }
+        else if constexpr (std::is_same_v<Value, NoOtherActivityAnswer>)
+        {
+            return "no_other_activity";
+        }
         else
         {
-            static_assert(std::is_same_v<Value, CancelAnswer>);
-            return "cancel";
+            static_assert(std::is_same_v<Value, OtherActivityAnswer>);
+            return "other_activity";
         }
     };
 
     return std::visit(toAnswerString, aAnswer);
+}
+
+/// Units as an exact decimal string with eight decimals: 4 units is `4.00000000`.
+std::string unitsString(Units aUnits) {
+    constexpr std::size_t kDecimals = 8;
+
+    return formatFixedPoint(aUnits, UNITS_SCALE, kDecimals);
+}
+
+/// The question data of a loss question: the ISIN and the facts of each open sale.
+Json lossCheckToJson(const LossEligibilityQuestion& aQuestion) {
+    Json sales = Json::array();
+
+    for (const auto& sale : aQuestion.mSales)
+    {
+        Json replacements = Json::array();
+
+        std::transform(sale.mKnownReplacements.begin(),
+                       sale.mKnownReplacements.end(),
+                       std::back_inserter(replacements),
+                       [](const KnownReplacement& aReplacement) {
+                           return Json{{"date", isoDate(aReplacement.mDate)},
+                                       {"units", unitsString(aReplacement.mUnits)}};
+                       });
+
+        Json serialized{{"saleDate", isoDate(sale.mSaleDate)}};
+
+        if (sale.mSaleTransaction)
+        {
+            serialized["transaction"] = Json{
+                {"broker", toString(sale.mSaleTransaction->mBroker)},
+                {"transactionId", sale.mSaleTransaction->mTransactionId},
+            };
+        }
+
+        serialized["saleUnits"] = unitsString(sale.mSaleUnits);
+        serialized["lossUnits"] = unitsString(sale.mLossUnits);
+        serialized["windowStart"] = isoDate(sale.mWindowStart);
+        serialized["windowEnd"] = isoDate(sale.mWindowEnd);
+        serialized["knownReplacements"] = std::move(replacements);
+        serialized["knownIneligibleUnits"] = unitsString(sale.mKnownIneligibleUnits);
+        serialized["openUnits"] = unitsString(sale.mOpenUnits);
+        sales.push_back(std::move(serialized));
+    }
+
+    return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"sales", std::move(sales)}};
 }
 
 Json requestToJson(const DecisionRequest& aRequest) {
@@ -381,7 +437,12 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["isin"] = *aRequest.mIsin;
     }
 
-    // Only the two failure-resolution types have question data so far.
+    if (const auto* loss = std::get_if<LossEligibilityQuestion>(&aRequest.mData))
+    {
+        serialized["options"] = Json::array({"no_other_activity", "other_activity"});
+        serialized["lossCheck"] = lossCheckToJson(*loss);
+    }
+
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
     {
         Json investments = Json::array();
@@ -432,6 +493,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
                        });
 
         serialized["investments"] = std::move(investments);
+    }
+
+    if (const auto* loss = std::get_if<LossEligibilityQuestion>(&aDecision.mData))
+    {
+        serialized["lossCheck"] = lossCheckToJson(*loss);
     }
 
     serialized["answer"] = answerString(aDecision.mAnswer);

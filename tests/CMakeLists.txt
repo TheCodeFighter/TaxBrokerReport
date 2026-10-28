@@ -32,6 +32,7 @@ add_executable(taxbroker_unit_tests
     unit/import_fixed_point_test.cpp
     unit/fifo_basis_test.cpp
     unit/fifo_matcher_test.cpp
+    unit/loss_eligibility_test.cpp
     unit/processing_diagnostics_test.cpp
     unit/report_command_test.cpp
     unit/date_utils_test.cpp
@@ -77,6 +78,7 @@ add_executable(taxbroker_integration_tests
     integration/cli_report_integration_test.cpp
     integration/fifo_matching_integration_test.cpp
     integration/kdvp_xml_integration_test.cpp
+    integration/loss_eligibility_integration_test.cpp
     integration/reporting_year_integration_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/statement_merger_integration_test.cpp

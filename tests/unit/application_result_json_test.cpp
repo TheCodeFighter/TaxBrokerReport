@@ -1,11 +1,13 @@
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
 #include "taxbroker/application_result.hpp"
+#include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -14,6 +16,10 @@ namespace {
 using namespace taxbroker;
 
 constexpr auto kCapital = ReportType::CapitalGains;
+
+Date day(std::string_view aDate) {
+    return *parseCalendarDate(aDate);
+}
 
 nlohmann::json serialize(const ApplicationResult& aResult) {
     return nlohmann::json::parse(api::serializeApplicationResultJson(aResult));
@@ -858,6 +864,21 @@ TEST(ApplicationResultJsonTest, WritesEveryRequestTypeWithItsDateAndIsin) {
                     .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
                                          .time_since_epoch()},
                     .mIsin = "XX0000000001",
+                    .mData =
+                        LossEligibilityQuestion{
+                            .mIsin = "XX0000000001",
+                            .mName = "Synthetic Share",
+                            .mSales =
+                                {
+                                    LossSaleFacts{
+                                        .mSaleDate = day("2024-11-30"),
+                                        .mSaleUnits = 100'000'000, // 1 unit
+                                        .mLossUnits = 100'000'000,
+                                        .mWindowStart = day("2024-10-31"),
+                                        .mWindowEnd = day("2024-12-30"),
+                                        .mOpenUnits = 100'000'000,
+                                    }},
+                        },
                 },
         },
         RequestInput{
@@ -1120,12 +1141,48 @@ TEST(ApplicationResultJsonTest, WritesEveryAnswer) {
             .mType = RequestType::TaxClassificationRequired,
             .mAnswer = CancelAnswer{},
         },
+        RecordedDecision{
+            .mId = "decision-0004",
+            .mType = RequestType::LossEligibilityConfirmationRequired,
+            .mData =
+                LossEligibilityQuestion{
+                    .mIsin = "XX0000000001",
+                    .mName = "Synthetic Share",
+                    .mSales = {LossSaleFacts{
+                        .mSaleDate = day("2024-03-10"),
+                        .mSaleUnits = 1'000'000'000, // 10 units
+                        .mLossUnits = 1'000'000'000,
+                        .mWindowStart = day("2024-02-09"),
+                        .mWindowEnd = day("2024-04-09"),
+                        .mOpenUnits = 1'000'000'000,
+                    }},
+                },
+            .mAnswer = NoOtherActivityAnswer{},
+        },
+        RecordedDecision{
+            .mId = "decision-0005",
+            .mType = RequestType::LossEligibilityConfirmationRequired,
+            .mData =
+                LossEligibilityQuestion{
+                    .mIsin = "XX0000000003",
+                    .mName = "Synthetic Fund",
+                    .mSales = {LossSaleFacts{
+                        .mSaleDate = day("2024-05-10"),
+                        .mSaleUnits = 200'000'000, // 2 units
+                        .mLossUnits = 200'000'000,
+                        .mWindowStart = day("2024-04-10"),
+                        .mWindowEnd = day("2024-06-09"),
+                        .mOpenUnits = 200'000'000,
+                    }},
+                },
+            .mAnswer = OtherActivityAnswer{},
+        },
     };
 
     const auto json = nlohmann::json::parse(api::serializeApplicationResultJson(result));
     const auto& decisions = json.at("decisions");
 
-    ASSERT_EQ(decisions.size(), 3U);
+    ASSERT_EQ(decisions.size(), 5U);
 
     EXPECT_EQ(decisions[0].at("answer"), "exclude_failed_instruments");
     EXPECT_EQ(decisions[0].at("investments").at(0).at("isin"), "XX0000000002");
@@ -1137,6 +1194,159 @@ TEST(ApplicationResultJsonTest, WritesEveryAnswer) {
 
     EXPECT_EQ(decisions[2].at("type"), "tax_classification_required");
     EXPECT_FALSE(decisions[2].contains("investments"));
+    EXPECT_FALSE(decisions[2].contains("lossCheck"));
+
+    EXPECT_EQ(decisions[3].at("answer"), "no_other_activity");
+    EXPECT_EQ(decisions[3].at("lossCheck").at("isin"), "XX0000000001");
+    EXPECT_FALSE(decisions[3].contains("investments"));
+
+    EXPECT_EQ(decisions[4].at("answer"), "other_activity");
+    EXPECT_EQ(decisions[4].at("lossCheck").at("isin"), "XX0000000003");
+}
+
+TEST(ApplicationResultJsonTest, ALossRequestHasItsOptionsAndItsSales) {
+    // Two sales of one ISIN whose loss the files cannot decide. The first has a transaction ID
+    // and two replacements (2 + 3 = 5 of its 10 loss units); the second has neither.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::LossEligibilityConfirmationRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-03-10"),
+                .mIsin = "XX0000000001",
+                .mData =
+                    LossEligibilityQuestion{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mSales =
+                            {
+                                LossSaleFacts{
+                                    .mSaleDate = day("2024-05-10"),
+                                    .mSaleUnits = 150'000'000, // 1.5 units
+                                    .mLossUnits = 150'000'000,
+                                    .mWindowStart = day("2024-04-10"),
+                                    .mWindowEnd = day("2024-06-09"),
+                                    .mOpenUnits = 150'000'000,
+                                },
+                                LossSaleFacts{
+                                    .mSaleDate = day("2024-03-10"),
+                                    .mSaleTransaction =
+                                        TransactionIdentity{
+                                            .mBroker = Broker::TradeRepublic,
+                                            .mTransactionId = "synthetic-sell-1",
+                                        },
+                                    .mSaleUnits = 1'000'000'000, // 10 units
+                                    .mLossUnits = 1'000'000'000,
+                                    .mWindowStart = day("2024-02-09"),
+                                    .mWindowEnd = day("2024-04-09"),
+                                    // Listed out of date order; the result sorts them.
+                                    .mKnownReplacements =
+                                        {
+                                            {.mDate = day("2024-04-09"),
+                                             .mUnits = 300'000'000}, // 3 units
+                                            {.mDate = day("2024-02-09"),
+                                             .mUnits = 200'000'000}, // 2 units
+                                        },
+                                    .mKnownIneligibleUnits = 500'000'000, // 5 units
+                                    .mOpenUnits = 500'000'000,
+                                },
+                            },
+                    },
+            },
+    }};
+
+    const auto json = nlohmann::ordered_json::parse(
+        api::serializeApplicationResultJson(ApplicationResultBuilder::build(std::move(input))));
+    const auto& request = json.at("requests").at(0);
+
+    // The sales in date order, units with eight decimals.
+    const auto expected = nlohmann::ordered_json::parse(R"({
+      "name": "Synthetic Share",
+      "isin": "XX0000000001",
+      "sales": [
+        {
+          "saleDate": "2024-03-10",
+          "transaction": {"broker": "trade_republic", "transactionId": "synthetic-sell-1"},
+          "saleUnits": "10.00000000",
+          "lossUnits": "10.00000000",
+          "windowStart": "2024-02-09",
+          "windowEnd": "2024-04-09",
+          "knownReplacements": [
+            {"date": "2024-02-09", "units": "2.00000000"},
+            {"date": "2024-04-09", "units": "3.00000000"}
+          ],
+          "knownIneligibleUnits": "5.00000000",
+          "openUnits": "5.00000000"
+        },
+        {
+          "saleDate": "2024-05-10",
+          "saleUnits": "1.50000000",
+          "lossUnits": "1.50000000",
+          "windowStart": "2024-04-10",
+          "windowEnd": "2024-06-09",
+          "knownReplacements": [],
+          "knownIneligibleUnits": "0.00000000",
+          "openUnits": "1.50000000"
+        }
+      ]
+    })");
+
+    EXPECT_EQ(request.at("type"), "loss_eligibility_confirmation_required");
+    EXPECT_EQ(request.at("options"),
+              (nlohmann::ordered_json{"no_other_activity", "other_activity"}));
+    EXPECT_EQ(request.at("lossCheck"), expected);
+    EXPECT_FALSE(request.contains("investments"));
+}
+
+TEST(ApplicationResultJsonTest, ARecordedLossAnswerIsListedWithItsQuestion) {
+    auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    result.mDecisions = {RecordedDecision{
+        .mId = "decision-0001",
+        .mType = RequestType::LossEligibilityConfirmationRequired,
+        .mData =
+            LossEligibilityQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mSales = {LossSaleFacts{
+                    .mSaleDate = day("2024-01-05"),
+                    .mSaleUnits = 2'500'000'000, // 25 units
+                    .mLossUnits = 2'500'000'000,
+                    .mWindowStart = day("2023-12-06"),
+                    .mWindowEnd = day("2024-02-04"),
+                    .mOpenUnits = 2'500'000'000,
+                }},
+            },
+        .mAnswer = OtherActivityAnswer{},
+        .mFromEarlierRun = false,
+        .mUsed = true,
+    }};
+
+    const auto json = nlohmann::ordered_json::parse(api::serializeApplicationResultJson(result));
+
+    const auto expected = nlohmann::ordered_json::parse(R"([{
+      "id": "decision-0001",
+      "type": "loss_eligibility_confirmation_required",
+      "fromEarlierRun": false,
+      "used": true,
+      "lossCheck": {
+        "name": "Synthetic Share",
+        "isin": "XX0000000001",
+        "sales": [{
+          "saleDate": "2024-01-05",
+          "saleUnits": "25.00000000",
+          "lossUnits": "25.00000000",
+          "windowStart": "2023-12-06",
+          "windowEnd": "2024-02-04",
+          "knownReplacements": [],
+          "knownIneligibleUnits": "0.00000000",
+          "openUnits": "25.00000000"
+        }]
+      },
+      "answer": "other_activity"
+    }])");
+
+    EXPECT_EQ(json.at("decisions"), expected);
 }
 
 TEST(ApplicationResultJsonTest, ARequestWithoutQuestionDataHasNoOptions) {

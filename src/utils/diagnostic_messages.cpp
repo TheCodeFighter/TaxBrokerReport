@@ -132,7 +132,21 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::CorporateActionNotApplied, "corporate_action_not_applied", {}},
     MessageDefinition{
         MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", kCurrency},
-    MessageDefinition{MessageKey::LossEligibilityUnresolved, "loss_eligibility_unresolved", {}},
+    MessageDefinition{MessageKey::LossEligibilityUnresolvedConfirmationRequired,
+                      "loss_eligibility_unresolved.confirmation_required",
+                      {}},
+    MessageDefinition{MessageKey::LossEligibilityUnresolvedCancelled,
+                      "loss_eligibility_unresolved.cancelled",
+                      {}},
+    MessageDefinition{MessageKey::LossEligibilityUnresolvedAssumedBlocked,
+                      "loss_eligibility_unresolved.assumed_blocked",
+                      {}},
+    MessageDefinition{MessageKey::UnsupportedTaxTreatmentPartialLossEligibility,
+                      "unsupported_tax_treatment.partial_loss_eligibility",
+                      {}},
+    MessageDefinition{MessageKey::CorporateActionNotAppliedLossWindow,
+                      "corporate_action_not_applied.loss_window",
+                      {}},
     MessageDefinition{
         MessageKey::AnswerRejectedStaleRevision, "answer_rejected.stale_revision", kRequestId},
     MessageDefinition{

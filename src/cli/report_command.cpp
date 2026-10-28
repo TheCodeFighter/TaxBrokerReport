@@ -5,9 +5,11 @@
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
 #include "processors/fifo_matcher.hpp"
+#include "processors/loss_eligibility.hpp"
 #include "processors/tax_processor.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
+#include "utils/numeric_util.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <algorithm>
@@ -92,12 +94,20 @@ Supported for now:
   - Shares and funds (ETFs) bought and sold in EUR.
   - Units held longer than the holding period (15 years for a sale from 2022, 20 years
     before) are tax free: they are left out of the XML and listed in the summary.
+  - The 30-day loss rule: a sale at a loss whose loss a purchase of the same investment
+    within 30 days before or after it blocks in full is written with F10 false.
+  - A sale at a loss that the files alone cannot decide needs your answer whether, within
+    30 days of the sale, you also bought or sold the investment anywhere not in your files
+    (another broker, another account, or after the export). This command cannot ask the
+    question yet, so it treats the whole open loss as blocked (F10 false, the safe side)
+    and gives a warning in the summary: if you did not, correct the loss in eDavki.
 
 The report is blocked (no XML) when an investment sold in the year:
   - is crypto, a private fund, a bond or a derivative, or has an unknown asset class;
   - has a corporate action, for example a split, up to 31 December;
   - misses earlier purchase history;
-  - has a sale with any part sold at a loss (the loss rule is not implemented yet);
+  - has a sale whose loss the 30-day rule blocks only in part, or a corporate action within
+    30 days after a sale at a loss in December;
   - has a trade that is not in EUR.
 It is also blocked when a file cannot be read, when a trade or corporate-action row of
 any file is rejected, when two files disagree about the same trade or about the asset
@@ -320,18 +330,9 @@ std::string isoDate(const Date& aDate) {
 
 /// Units with four to eight decimals, as in the XML: 1.5 units is `1.5000`.
 std::string unitsText(Units aUnits) {
-    constexpr std::size_t kStoredDecimals = 8;
     constexpr std::size_t kMinimumDecimals = 4;
-    std::string fraction = std::to_string(aUnits % UNITS_SCALE);
 
-    fraction.insert(0, kStoredDecimals - fraction.size(), '0');
-
-    while (fraction.size() > kMinimumDecimals && fraction.back() == '0')
-    {
-        fraction.pop_back();
-    }
-
-    return std::to_string(aUnits / UNITS_SCALE) + "." + fraction;
+    return formatFixedPoint(aUnits, UNITS_SCALE, kMinimumDecimals);
 }
 
 std::string countText(std::size_t aCount, std::string_view aOne, std::string_view aMany) {
@@ -455,6 +456,8 @@ struct InvestmentLine {
     /// Sale rows and their units, when the ISIN has a list in the filing rows.
     std::size_t mSaleRows{};
     Units mListedUnits{};
+    Units mBlockedLossUnits{};
+    Units mAssumedBlockedUnits{};
     bool mListed{};
     /// The sales the summary names under a blocked ISIN, in ledger order.
     std::vector<StatementEventReference> mSales;
@@ -465,6 +468,7 @@ struct RunOutcome {
     const ReportOptions& mOptions;
     const MergedStatement& mStatement;
     const CapitalGainsBuildResult& mBuilt;
+    const LossEligibilityResult& mLoss;
     /// The filing rows of the ISINs without a problem, also when the report is blocked.
     const CapitalGainsReportKDVP& mPreview;
     const ApplicationResult& mResult;
@@ -496,8 +500,26 @@ std::map<Isin, InvestmentLine> investmentLines(const RunOutcome& aOutcome) {
             {
                 ++line.mSaleRows;
                 line.mListedUnits += sale->mUnits;
+                line.mBlockedLossUnits +=
+                    sale->mLossRule == KdvpLossRule::Blocked ? sale->mUnits : Units{0};
                 line.mSales.push_back(sale->mSale);
             }
+        }
+    }
+
+    for (const auto& isin : aOutcome.mLoss.mIsins)
+    {
+        const auto line = lines.find(isin.mIsin);
+
+        if (line == lines.end())
+        {
+            continue;
+        }
+
+        for (const auto& sale : isin.mSales)
+        {
+            line->second.mAssumedBlockedUnits +=
+                sale.mAssumedBlocked ? sale.mDeclaredIneligibleUnits : Units{0};
         }
     }
 
@@ -616,7 +638,21 @@ void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
 
         aOut << (generated ? "listed, " : "no problem, ")
              << countText(line.mSaleRows, "sale", "sales") << ", " << unitsText(line.mListedUnits)
-             << " units\n";
+             << " units";
+
+        if (line.mBlockedLossUnits > 0)
+        {
+            aOut << ", " << unitsText(line.mBlockedLossUnits)
+                 << " units with a loss blocked by the 30-day rule (F10 false)";
+        }
+
+        if (line.mAssumedBlockedUnits > 0)
+        {
+            aOut << ", of them " << unitsText(line.mAssumedBlockedUnits)
+                 << " assumed without an answer (see the warnings below)";
+        }
+
+        aOut << '\n';
     }
 }
 
@@ -790,14 +826,23 @@ int runReport(const ReportOptions& aOptions,
     const auto& ledger = prepared.mLedger.value();
     const auto& statement = prepared.mMerged.mStatement;
     auto fifo = FifoMatcher::match(statement, ledger);
-    const auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, {});
-    auto gateDiagnostics = CapitalReportGates::check(statement, ledger, fifo, built);
+    // This command cannot ask a question yet: it has no answers and treats the open loss
+    // units as blocked, with a warning.
+    RunDecisions decisions;
+    auto loss = LossEligibilityChecker::check(statement,
+                                              ledger,
+                                              fifo,
+                                              decisions,
+                                              OpenLossQuestions::AssumeBlocked);
+    const auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
+    auto gateDiagnostics = CapitalReportGates::check(statement, ledger, fifo, loss, built);
     std::optional<CapitalGainsReportKDVP> previewWithoutBlocked;
 
     if (!built.mReport)
     {
         previewWithoutBlocked =
-            CapitalGainsReportBuilder::build(statement, ledger, fifo, blockedIsins(built)).mReport;
+            CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, blockedIsins(built))
+                .mReport;
     }
 
     const auto& preview = built.mReport ? *built.mReport : previewWithoutBlocked.value();
@@ -815,12 +860,12 @@ int runReport(const ReportOptions& aOptions,
     };
     auto& processing = input.mProcessingDiagnostics;
 
-    // The builder and the gates are done with the FIFO result, so its diagnostics can move.
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
+    appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));
     std::move(gateDiagnostics.begin(), gateDiagnostics.end(), std::back_inserter(processing));
 
-    // A blocked ISIN always has an error (FIFO or gate), so without a report the capital form
-    // is failed, never empty.
+    // A blocked ISIN always has an error (FIFO or gate), so without a report the capital form is
+    // failed, never empty.
     if (built.mReport && !hasGateError)
     {
         auto& capital = input.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
@@ -886,6 +931,7 @@ int runReport(const ReportOptions& aOptions,
         .mOptions = aOptions,
         .mStatement = statement,
         .mBuilt = built,
+        .mLoss = loss,
         .mPreview = preview,
         .mResult = result,
         .mDeletedOldXml = deletesOldXml,

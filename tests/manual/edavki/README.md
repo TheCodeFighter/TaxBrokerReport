@@ -5,7 +5,8 @@ Synthetic Trade Republic CSVs for checking that eDavki imports the Doh-KDVP file
 are covered automatically by the unit and integration tests. The results go in
 [`docs/verification.md`](../../../docs/verification.md).
 
-All trades are in EUR, without fees, and every listed sale is a gain, so no CLI gate blocks them.
+All trades are in EUR, without fees. Every listed sale of S1 to S4 is a gain; the loss of S5 is
+blocked in full by a purchase within 30 days, so no CLI gate blocks any of them.
 The ISINs (`XX…`) and names are made up. Purchase value is F3 × F4, sale value F7 × F9.
 
 ## How to run a check
@@ -209,3 +210,27 @@ Purchase value 20, sale value 40, gain 20 if eDavki taxes both sales. Look for: 
 the 2023-03-01 sale as past the 15 years and the 2023-02-28 sale as taxed?
 
 Both probe row sets, put into the synthetic S3 and S4 files, pass the `Doh_KDVP_9.xsd` check.
+
+## S5: a loss blocked by the 30-day rule (`F10` false)
+
+File `kdvp_2024_s5_loss_blocked.csv`, tax year **2024**, ISIN `XX0000000505`.
+
+| Date | Type | Units | Price |
+| --- | --- | --- | --- |
+| 2023-09-01 | BUY | 100 | 10 |
+| 2024-12-20 | SELL | 4 | 8 |
+| 2025-01-05 | BUY | 4 | 8 |
+
+The sale is a loss of 4 × (8 − 10) = −8. The 2025-01-05 purchase, 16 days after it, blocks the
+loss of all 4 units (*pravilo navidezne odsvojitve*), so the sale row has `F10` false and the app
+asks nothing. The 2025 purchase is not in the 2024 ledger and gets no row.
+
+| Row | F1 / F6 | F3 / F7 | F4 / F9 | F8 | F10 |
+| --- | --- | --- | --- | --- | --- |
+| Purchase | 2023-09-01 | 4 | 10 | 4 | |
+| Sale | 2024-12-20 | 4 | 8 | 0 | false |
+
+Purchase value 40, sale value 32, loss **−8**, not deductible.
+
+Checks: eDavki imports `F10` false, and, if it shows anything, does not let the loss reduce the
+gains.
