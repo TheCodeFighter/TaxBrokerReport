@@ -10,7 +10,12 @@
 
 namespace taxbroker {
 
+/// Split rows of one ISIN from different brokers at most this many days apart may be one split
+/// booked on different dates, so they block until the identity question exists.
+inline constexpr int kDifferentDatesWindowDays = kBrokerDateMarginDays;
+
 enum class CorporateActionState {
+    Applied,
     RatioConfirmed,
     WaitingForRatio,
     WaitingForEarlierAction,
@@ -18,6 +23,11 @@ enum class CorporateActionState {
     /// The same broker has more than one action row of the ISIN on that day: one action or
     /// several, and in which order, is unknown.
     SameDayAmbiguous,
+    /// Another broker has a split row of the ISIN on another date at most
+    /// kDifferentDatesWindowDays away: one split or two is unknown.
+    DifferentDatesAmbiguous,
+    /// A merger, which the app does not support.
+    Unsupported,
     /// No open units just before the action, so there is nothing to ask about.
     NoPosition,
     /// The open units just before the action do not fit Units, so no question can be asked.
@@ -30,10 +40,11 @@ enum class CorporateActionState {
 struct ResolvedCorporateAction {
     Isin mIsin;
     std::string mName;
+    /// The date of the broker's rows.
     Date mEffectiveDate;
     std::vector<StatementEventReference> mEvents;
     CorporateActionState mState{CorporateActionState::WaitingForRatio};
-    /// Set only for RatioConfirmed. Supplied by the user, never by the broker.
+    /// Set only for Applied and RatioConfirmed. Supplied by the user, never by the broker.
     std::optional<SplitRatio> mRatio;
     std::optional<Date> mConfirmedDate;
 
@@ -49,15 +60,35 @@ struct CorporateActionResult {
 class CorporateActionResolver final {
   public:
     /// Finds every corporate action up to 31 December of each ISIN with a sale in the selected
-    /// year whose FIFO pool stopped at one, and asks for the ratio and effective date of the
-    /// first, with the open units just before it and the dates that keep them. The later actions
-    /// wait for it, whatever their ratio. Action rows of one ISIN and date from different brokers
-    /// are one action with one question; two rows of the same broker on one date are ambiguous, on
-    /// the first date or a later one. The stage never depends on the broker otherwise.
-    [[nodiscard]] static CorporateActionResult resolve(const MergedStatement& aStatement,
-                                                       const ReportingYearLedger& aLedger,
-                                                       const FifoMatchingResult& aFifo,
-                                                       RunDecisions& aDecisions);
+    /// year. An action in aConfirmedActions that the pool applied gets a warning that the user
+    /// supplied its ratio. The first action the pool stopped at is asked: its ratio and effective
+    /// date, with the open units just before it for every date it may have. A recorded answer
+    /// makes it RatioConfirmed. The later actions wait for it, whatever their ratio.
+    ///
+    /// Action rows of one ISIN and date from different brokers are one action with one question;
+    /// two rows of the same broker on one date, or split rows of different brokers on different
+    /// dates at most kDifferentDatesWindowDays apart, are ambiguous; a merger is unsupported.
+    /// The stage never depends on the broker otherwise.
+    [[nodiscard]] static CorporateActionResult
+    resolve(const MergedStatement& aStatement,
+            const ReportingYearLedger& aLedger,
+            const FifoMatchingResult& aFifo,
+            const std::vector<ConfirmedCorporateAction>& aConfirmedActions,
+            RunDecisions& aDecisions);
 };
+
+/// The FIFO pools with their corporate actions applied, and the corporate-action stage result.
+struct CapitalPools {
+    FifoMatchingResult mFifo;
+    CorporateActionResult mActions;
+};
+
+/// Matches the FIFO pools and resolves their corporate actions until no new answer is found: each
+/// confirmed action is applied, the pool continues, and the next action of the ISIN is asked with
+/// the position after the earlier one. The CLI and the debug tools use this: one FifoMatcher and
+/// one CorporateActionResolver call would leave a confirmed action unapplied.
+[[nodiscard]] CapitalPools matchCapitalPools(const MergedStatement& aStatement,
+                                             const ReportingYearLedger& aLedger,
+                                             RunDecisions& aDecisions);
 
 } // namespace taxbroker

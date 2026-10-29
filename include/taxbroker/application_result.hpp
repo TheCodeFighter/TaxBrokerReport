@@ -159,8 +159,27 @@ struct CorporateActionSourceFacts {
     bool operator==(const CorporateActionSourceFacts&) const = default;
 };
 
+/// Effective dates that give the same open units just before the action. An action comes before
+/// the trades of its day, so the units on a day are those of the trades dated before it, in the
+/// units before the action.
+struct EffectiveDateRange {
+    Date mEarliestDate;
+    Date mLatestDate;
+    /// Open units across all brokers at the start of every date of the range, always above 0.
+    Units mPositionBefore{};
+    /// The lowest running total of the trades after the action (signed units, in ledger order),
+    /// up to 31 December, or up to 11 days before the next action's row (a trade later than that
+    /// may come after the next action, whose question checks it).
+    /// A trade date later than that is a range of its own with the trades of that day only: they
+    /// are always before the next action.
+    /// The units after the action plus this must not be below 0, or a later sale lacks units.
+    Units mLowestChangeAfter{};
+
+    bool operator==(const EffectiveDateRange&) const = default;
+};
+
 /// The question data: one corporate action without a verified ratio, with every source record of
-/// it, the position just before it and the dates that keep that position. A new source, another
+/// it and the units just before it for every date the user may give. A new source, another
 /// position or a moved trade is another question.
 struct CorporateActionRatioQuestion {
     Isin mIsin;
@@ -168,17 +187,26 @@ struct CorporateActionRatioQuestion {
     /// The date of the broker's row, shown pre-filled; the announcement may give another one.
     Date mEffectiveDate;
     std::vector<CorporateActionSourceFacts> mSources;
-    /// Open units across all brokers at the start of mEffectiveDate.
-    Units mPositionBefore{};
-    /// The day after the last trade of the ISIN before mEffectiveDate.
-    Date mEarliestDate;
-    /// The first trade of the ISIN on or after mEffectiveDate, the day before its next corporate
-    /// action, or 31 December of the selected year, whichever is first. Every date from
-    /// mEarliestDate to here gives the same position.
-    Date mLatestDate;
+    /// Open units across all brokers at the start of mEffectiveDate. Absent when a sale before
+    /// that date needs more units than were held (mEarlierSaleDate): the action must then take
+    /// effect on or before that sale.
+    std::optional<Units> mPositionBefore;
+    /// The sale before mEffectiveDate that needs more units than were held, when the row may be
+    /// a later booking of an action that took effect before it.
+    std::optional<Date> mEarlierSaleDate;
+    /// Every date the action may have, in date order; one of them holds mEffectiveDate unless
+    /// mEarlierSaleDate is set, when the last one ends on or before that sale's date. They are
+    /// after the previous action of the ISIN, before its next one and up to 31 December of the
+    /// selected year. A date with no units before the action, or after a sale of more units than
+    /// were held, is in no range.
+    std::vector<EffectiveDateRange> mDateRanges;
 
     bool operator==(const CorporateActionRatioQuestion&) const = default;
 };
+
+/// The range that holds aDate, or nullptr.
+[[nodiscard]] const EffectiveDateRange*
+findEffectiveDateRange(const CorporateActionRatioQuestion& aQuestion, Date aDate);
 
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
@@ -233,7 +261,7 @@ struct OtherActivityAnswer {
 struct SplitRatioAnswer {
     std::int64_t mNewShares{};
     std::int64_t mOldShares{};
-    /// From the announcement; it must be within the question's mEarliestDate and mLatestDate.
+    /// From the announcement; it must be in one of the question's mDateRanges.
     Date mEffectiveDate;
     Units mConfirmedUnits{};
 

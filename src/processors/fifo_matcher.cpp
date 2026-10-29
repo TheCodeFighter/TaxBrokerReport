@@ -90,11 +90,13 @@ void applyPurchase(FifoIsinResult& aPool,
 
 /// Matches a sale to the oldest open lots. Nothing changes unless the whole sale is matched, so a
 /// failing sale leaves the lots exactly as they were. The matches of an earlier sale are kept
-/// apart from those of the selected year.
+/// apart from those of the selected year. A sale with too few units stops the pool at
+/// aActionAfter when there is one and some units are open, else for missing history.
 void applySale(FifoIsinResult& aPool,
                const StatementEventReference& aEvent,
                const TradeTransaction& aTrade,
                bool aInSelectedYear,
+               const std::optional<StatementEventReference>& aActionAfter,
                std::vector<ProcessingDiagnostic>& aDiagnostics) {
     if (aTrade.mUnits <= 0 || aTrade.mUnitPrice <= 0)
     {
@@ -117,6 +119,16 @@ void applySale(FifoIsinResult& aPool,
         }
 
         available = std::get<std::int64_t>(total);
+    }
+
+    // The action may have taken effect before the sale and be booked later; its question
+    // decides.
+    if (aTrade.mUnits > available && aActionAfter && available > 0)
+    {
+        stopPool(aPool, FifoIsinStatus::CorporateAction, *aActionAfter);
+        aPool.mShortSale = aEvent;
+
+        return;
     }
 
     if (aTrade.mUnits > available)
@@ -168,6 +180,7 @@ void applySale(FifoIsinResult& aPool,
             .mBasis = consumed.mAllocatedBasis,
             .mSaleValueTicks = saleValue,
             .mGainTicks = std::get<ExactRational>(gain),
+            .mLotChangedByAction = lot.mChangedByAction,
         });
 
         lot.mState = consumed.mRemaining;
@@ -189,23 +202,290 @@ void applySale(FifoIsinResult& aPool,
                 std::make_move_iterator(matches.end()));
 }
 
-/// The first corporate action of each instrument in the ledger, by instrument index.
+/// The confirmed action that has this action row, or nullptr.
+const ConfirmedCorporateAction*
+confirmedActionOf(const StatementEventReference& aEvent,
+                  const std::vector<ConfirmedCorporateAction>& aConfirmedActions) {
+    const auto action =
+        std::find_if(aConfirmedActions.begin(),
+                     aConfirmedActions.end(),
+                     [&aEvent](const ConfirmedCorporateAction& aAction) {
+                         return std::find(aAction.mEvents.begin(), aAction.mEvents.end(), aEvent) !=
+                                aAction.mEvents.end();
+                     });
+
+    return action == aConfirmedActions.end() ? nullptr : &*action;
+}
+
+/// The first corporate action without a confirmed ratio of each instrument in the ledger, by
+/// instrument index.
 std::vector<std::optional<StatementEventReference>>
-firstCorporateActions(const std::vector<TradeInstrument>& aInstruments,
-                      const ReportingYearLedger& aLedger) {
+firstUnconfirmedActions(const std::vector<TradeInstrument>& aInstruments,
+                        const ReportingYearLedger& aLedger,
+                        const std::vector<ConfirmedCorporateAction>& aConfirmedActions) {
     std::vector<std::optional<StatementEventReference>> firstActions(aInstruments.size());
 
     for (const auto& event : aLedger.mCapitalEvents)
     {
         auto& firstAction = firstActions.at(event.mInstrumentIndex.value());
 
-        if (event.mKind == StatementEventKind::CorporateAction && !firstAction)
+        if (event.mKind == StatementEventKind::CorporateAction && !firstAction &&
+            confirmedActionOf(event, aConfirmedActions) == nullptr)
         {
             firstAction = event;
         }
     }
 
     return firstActions;
+}
+
+/// Tells whether the instrument has a sale in the selected year: only then does its pool block the
+/// capital report.
+bool hasSaleInYear(const TradeInstrument& aInstrument, const ReportingYearLedger& aLedger) {
+    return std::any_of(aInstrument.mTransactions.begin(),
+                       aInstrument.mTransactions.end(),
+                       [&aLedger](const TradeTransaction& aTrade) {
+                           const auto date = aTrade.mMetadata.mTaxDate;
+
+                           return aTrade.mTradeSide == TradeSide::Sell &&
+                                  date >= aLedger.mYearStart && date <= aLedger.mYearEnd;
+                       });
+}
+
+/// The first unconfirmed action of the ISIN when it is a split row at most kBrokerDateMarginDays
+/// after the sale: the split may have taken effect before the sale and been booked later.
+std::optional<StatementEventReference>
+splitShortlyAfter(const TradeTransaction& aSale,
+                  const std::optional<StatementEventReference>& aFirstAction,
+                  const TradeInstrument& aInstrument) {
+    if (!aFirstAction)
+    {
+        return std::nullopt;
+    }
+
+    const auto& action = aInstrument.mCorporateActions.at(aFirstAction->mEventIndex);
+    const auto daysAfter = action.mMetadata.mTaxDate - aSale.mMetadata.mTaxDate;
+
+    if (action.mType == CorporateActionType::Merger ||
+        daysAfter > DayDuration{kBrokerDateMarginDays})
+    {
+        return std::nullopt;
+    }
+
+    return aFirstAction;
+}
+
+/// The confirmed actions of one pool that are not applied yet, in date order, and the EUR value
+/// that the rounding of its applied actions changed.
+struct PendingActions {
+    std::vector<const ConfirmedCorporateAction*> mActions;
+    std::size_t mNext{};
+    ExactRational mRoundingImpact;
+};
+
+std::vector<PendingActions>
+pendingActionsByInstrument(std::size_t aInstrumentCount,
+                           const std::vector<ConfirmedCorporateAction>& aConfirmedActions) {
+    std::vector<PendingActions> pending(aInstrumentCount);
+
+    for (const auto& action : aConfirmedActions)
+    {
+        pending.at(action.mEvents.front().mInstrumentIndex.value()).mActions.push_back(&action);
+    }
+
+    for (auto& pool : pending)
+    {
+        std::stable_sort(
+            pool.mActions.begin(),
+            pool.mActions.end(),
+            [](const ConfirmedCorporateAction* aLeft, const ConfirmedCorporateAction* aRight) {
+                return aLeft->mEffectiveDate < aRight->mEffectiveDate;
+            });
+    }
+
+    return pending;
+}
+
+/// The context of a capital-gains diagnostic of the action: the sources of all its rows and the
+/// date of its first row.
+ProcessingContext actionContext(const FifoIsinResult& aPool,
+                                const ConfirmedCorporateAction& aAction,
+                                const std::vector<TradeInstrument>& aInstruments) {
+    ProcessingContext context{
+        .mStage = PipelineStage::CorporateAction,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mInstrumentName = aPool.mName,
+        .mIsin = aPool.mIsin,
+    };
+
+    for (const auto& event : aAction.mEvents)
+    {
+        const auto& metadata = aInstruments.at(event.mInstrumentIndex.value())
+                                   .mCorporateActions.at(event.mEventIndex)
+                                   .mMetadata;
+
+        context.mSources.insert(context.mSources.end(),
+                                metadata.mSources.begin(),
+                                metadata.mSources.end());
+
+        if (!context.mTaxDate)
+        {
+            context.mTaxDate = metadata.mTaxDate;
+        }
+    }
+
+    return context;
+}
+
+/// A capital-gains diagnostic of the action without units or amounts in the message.
+ProcessingDiagnostic actionDiagnostic(DiagnosticSeverity aSeverity,
+                                      ProcessingDiagnosticCode aCode,
+                                      MessageKey aKey,
+                                      ProcessingContext aContext) {
+    auto message = makeDiagnosticMessage(aKey);
+
+    return ProcessingDiagnostic{
+        .mSeverity = aSeverity,
+        .mCode = aCode,
+        .mContext = std::move(aContext),
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
+}
+
+/// The EUR value of the rounding: the rounded-away units times the highest value per unit of the
+/// adjusted lots, as a positive amount.
+NumericResult<ExactRational> roundingImpact(const ExactRational& aResidualUnits,
+                                            const std::vector<FifoLot>& aLots) {
+    ExactRational highestValue;
+
+    for (const auto& lot : aLots)
+    {
+        const auto value = exactLotUnitValue(lot.mState);
+
+        if (const auto* error = std::get_if<NumericError>(&value))
+        {
+            return *error;
+        }
+
+        if (compareExact(std::get<ExactRational>(value), highestValue) > 0)
+        {
+            highestValue = std::get<ExactRational>(value);
+        }
+    }
+
+    // The rounded total may be above or below the exact one; the impact counts either way.
+    const auto residual = aResidualUnits.numerator() < 0
+                              ? subtractExact(ExactRational{}, aResidualUnits)
+                              : NumericResult<ExactRational>{aResidualUnits};
+
+    if (const auto* error = std::get_if<NumericError>(&residual))
+    {
+        return *error;
+    }
+
+    return multiplyExact(std::get<ExactRational>(residual), highestValue);
+}
+
+/// Applies a confirmed action to every open lot of the pool. Nothing changes unless the whole
+/// action can be applied; otherwise the pool stops at the action with an error.
+void applyAction(FifoIsinResult& aPool,
+                 const ConfirmedCorporateAction& aAction,
+                 PendingActions& aPending,
+                 const std::vector<TradeInstrument>& aInstruments,
+                 std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    const auto fail = [&aPool, &aAction, &aDiagnostics](ProcessingDiagnostic aDiagnostic) {
+        stopPool(aPool, FifoIsinStatus::NumericFailure, aAction.mEvents.front());
+        aDiagnostics.push_back(std::move(aDiagnostic));
+    };
+
+    std::vector<UnitAllocationPart> parts;
+
+    for (std::size_t index = 0; index < aPool.mOpenLots.size(); ++index)
+    {
+        parts.push_back(
+            {.mUnits = aPool.mOpenLots[index].mState.mRemainingUnits, .mLotOrder = index});
+    }
+
+    const auto allocation =
+        allocateAdjustedUnits(parts, aAction.mRatio.mNewShares, aAction.mRatio.mOldShares);
+
+    if (const auto* error = std::get_if<NumericError>(&allocation))
+    {
+        fail(numericDiagnostic(*error, actionContext(aPool, aAction, aInstruments)));
+
+        return;
+    }
+
+    const auto& allocated = std::get<RoundedAllocation>(allocation);
+    auto lots = aPool.mOpenLots;
+
+    // Each allocated part is above 0, so every open lot keeps its basis with its new units.
+    for (std::size_t index = 0; index < lots.size(); ++index)
+    {
+        lots[index].mState =
+            std::get<LotBasisState>(adjustLotUnits(lots[index].mState, allocated.mParts[index]));
+        lots[index].mChangedByAction = true;
+    }
+
+    if (allocated.mResidual.numerator() != 0)
+    {
+        const auto impact = roundingImpact(allocated.mResidual, lots);
+        const auto total = std::holds_alternative<ExactRational>(impact)
+                               ? addExact(aPending.mRoundingImpact, std::get<ExactRational>(impact))
+                               : impact;
+
+        if (const auto* error = std::get_if<NumericError>(&total))
+        {
+            fail(numericDiagnostic(*error, actionContext(aPool, aAction, aInstruments)));
+
+            return;
+        }
+
+        // EUR 0.01 or more in total is not a rounding difference any more.
+        constexpr std::int64_t kCentsPerEuro = 100;
+
+        if (compareExact(std::get<ExactRational>(total),
+                         std::get<ExactRational>(ExactRational::create(1, kCentsPerEuro))) >= 0)
+        {
+            fail(actionDiagnostic(DiagnosticSeverity::Error,
+                                  ProcessingDiagnosticCode::CorporateActionUnrepresentable,
+                                  MessageKey::CorporateActionUnrepresentableRoundingBudget,
+                                  actionContext(aPool, aAction, aInstruments)));
+
+            return;
+        }
+
+        aPending.mRoundingImpact = std::get<ExactRational>(total);
+        aDiagnostics.push_back(
+            actionDiagnostic(DiagnosticSeverity::Warning,
+                             ProcessingDiagnosticCode::CorporateActionQuantityRounded,
+                             MessageKey::CorporateActionQuantityRounded,
+                             actionContext(aPool, aAction, aInstruments)));
+    }
+
+    aPool.mOpenLots = std::move(lots);
+    aPool.mAppliedActions.push_back(
+        {.mAction = aAction.mEvents.front(), .mEffectiveDate = aAction.mEffectiveDate});
+}
+
+/// Applies the pool's confirmed actions dated on or before aDate, in date order, until one fails.
+void applyActionsUpTo(FifoIsinResult& aPool,
+                      PendingActions& aPending,
+                      Date aDate,
+                      const std::vector<TradeInstrument>& aInstruments,
+                      std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    while (aPool.mStatus == FifoIsinStatus::Matched && aPending.mNext < aPending.mActions.size() &&
+           aPending.mActions[aPending.mNext]->mEffectiveDate <= aDate)
+    {
+        applyAction(aPool,
+                    *aPending.mActions[aPending.mNext],
+                    aPending,
+                    aInstruments,
+                    aDiagnostics);
+        ++aPending.mNext;
+    }
 }
 
 } // namespace
@@ -232,8 +512,10 @@ bool isPastHoldingPeriod(const FifoMatch& aMatch) {
     return std::chrono::sys_days{aMatch.mSaleDate} > std::chrono::sys_days{anniversary};
 }
 
-FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
-                                      const ReportingYearLedger& aLedger) {
+FifoMatchingResult
+FifoMatcher::match(const MergedStatement& aStatement,
+                   const ReportingYearLedger& aLedger,
+                   const std::vector<ConfirmedCorporateAction>& aConfirmedActions) {
     FifoMatchingResult result;
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
 
@@ -244,9 +526,19 @@ FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
         result.mIsins.push_back({.mIsin = instrument.mIsin, .mName = instrument.mName});
     }
 
-    const auto firstActions = firstCorporateActions(instruments, aLedger);
+    const auto firstActions = firstUnconfirmedActions(instruments, aLedger, aConfirmedActions);
+    auto pending = pendingActionsByInstrument(instruments.size(), aConfirmedActions);
+    std::vector<bool> saleInYear;
 
-    // The ledger holds only trades and corporate actions, in merger order, up to 31 December.
+    std::transform(instruments.begin(),
+                   instruments.end(),
+                   std::back_inserter(saleInYear),
+                   [&aLedger](const TradeInstrument& aInstrument) {
+                       return hasSaleInYear(aInstrument, aLedger);
+                   });
+
+    // The ledger holds only trades and corporate actions, in merger order, up to 31 December. A
+    // confirmed action is applied by its effective date, not at its row.
     for (const auto& event : aLedger.mCapitalEvents)
     {
         const auto instrumentIndex = event.mInstrumentIndex.value();
@@ -259,13 +551,44 @@ FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
 
         if (event.mKind == StatementEventKind::CorporateAction)
         {
-            stopPool(pool, FifoIsinStatus::CorporateAction, event);
+            if (confirmedActionOf(event, aConfirmedActions) != nullptr)
+            {
+                continue;
+            }
+
+            // The position before an unconfirmed action includes the confirmed ones before it.
+            const auto date = instruments.at(instrumentIndex)
+                                  .mCorporateActions.at(event.mEventIndex)
+                                  .mMetadata.mTaxDate;
+
+            applyActionsUpTo(pool,
+                             pending.at(instrumentIndex),
+                             date,
+                             instruments,
+                             result.mDiagnostics);
+
+            if (pool.mStatus == FifoIsinStatus::Matched)
+            {
+                stopPool(pool, FifoIsinStatus::CorporateAction, event);
+            }
 
             continue;
         }
 
         const auto& trade = instruments.at(instrumentIndex).mTransactions.at(event.mEventIndex);
         const auto& firstAction = firstActions.at(instrumentIndex);
+
+        // A confirmed action comes before the trades of its effective date.
+        applyActionsUpTo(pool,
+                         pending.at(instrumentIndex),
+                         trade.mMetadata.mTaxDate,
+                         instruments,
+                         result.mDiagnostics);
+
+        if (pool.mStatus != FifoIsinStatus::Matched)
+        {
+            continue;
+        }
 
         // An action comes before the trades of its day, so a trade on that day is not applied.
         if (firstAction &&
@@ -290,14 +613,32 @@ FifoMatchingResult FifoMatcher::match(const MergedStatement& aStatement,
         case TradeSide::Buy:
             applyPurchase(pool, event, trade, result.mDiagnostics);
             break;
-        case TradeSide::Sell:
+        case TradeSide::Sell: {
+            // Only an ISIN with a sale in the year gets the question.
+            const auto actionAfter =
+                saleInYear[instrumentIndex]
+                    ? splitShortlyAfter(trade, firstAction, instruments.at(instrumentIndex))
+                    : std::nullopt;
+
             applySale(pool,
                       event,
                       trade,
                       trade.mMetadata.mTaxDate >= aLedger.mYearStart,
+                      actionAfter,
                       result.mDiagnostics);
             break;
         }
+        }
+    }
+
+    // Confirmed actions after the last trade still change the lots at 31 December.
+    for (std::size_t index = 0; index < result.mIsins.size(); ++index)
+    {
+        applyActionsUpTo(result.mIsins[index],
+                         pending[index],
+                         aLedger.mYearEnd,
+                         instruments,
+                         result.mDiagnostics);
     }
 
     return result;

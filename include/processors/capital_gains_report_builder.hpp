@@ -16,6 +16,9 @@ enum class KdvpBlockReason {
     FifoStopped,
     /// The 30-day loss rule result of a sale cannot be written yet
     LossNotReportable,
+    /// A sale lists units of a lot that a corporate action changed; the rows for such units are
+    /// not decided yet.
+    SplitAdjustedRows,
 };
 
 /// An ISIN with a sale in the selected year that cannot get a *popisni list*.
@@ -24,7 +27,8 @@ struct KdvpBlockedIsin {
     std::string mName;
     KdvpBlockReason mReason{KdvpBlockReason::FifoStopped};
     /// The sales of the year that cannot be listed, in ledger order: every sale of the year for
-    /// FifoStopped, only the sales whose loss-rule result cannot be written for LossNotReportable.
+    /// FifoStopped, only the sales whose loss-rule result cannot be written for LossNotReportable,
+    /// and only the sales that list units of a changed lot for SplitAdjustedRows.
     std::vector<StatementEventReference> mSales;
 
     bool operator==(const KdvpBlockedIsin&) const = default;

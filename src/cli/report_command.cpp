@@ -116,7 +116,9 @@ Questions:
     not deductible (F10 false); no: it is deductible.
   - A corporate action, for example a split: the ratio from the announcement (new shares
     for old shares, or your shares just before and just after it) and its effective date.
-    You then confirm the position after it.
+    You then confirm the position after it. A sale with too few units and a split row at
+    most 10 days after it ask the same question, because the broker may have booked the
+    split after it took effect.
   An answer that does not fit is explained and the question is asked again. cancel closes
   a question without an answer, and the report is blocked. With --no-input, or when the
   input ends (Ctrl-D), the open questions stay open: the report is blocked and the summary
@@ -125,9 +127,10 @@ Questions:
 
 The report is blocked (no XML) when an investment sold in the year:
   - is crypto, a private fund, a bond or a derivative, or has an unknown asset class;
-  - has a corporate action, for example a split, up to 31 December. You can answer its
-    ratio and effective date (see "Questions"), but corporate actions are not applied yet,
-    so the report stays blocked;
+  - has a split or reverse split up to 31 December whose ratio is not answered, a merger,
+    or split rows of two brokers at most 10 days apart. An answered split is applied, but a
+    sale of units that the split changed, or a sale at a loss with a split before it or up to
+    30 days after it, still blocks the report;
   - misses earlier purchase history;
   - has a sale whose loss the 30-day rule blocks only in part, or a corporate action within
     30 days after a sale at a loss in December;
@@ -877,8 +880,9 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     // The year was checked with the options, so the ledger is always there.
     const auto& ledger = aPrepared.mLedger.value();
     const auto& statement = aPrepared.mMerged.mStatement;
-    auto fifo = FifoMatcher::match(statement, ledger);
-    auto actions = CorporateActionResolver::resolve(statement, ledger, fifo, aDecisions);
+    auto pools = matchCapitalPools(statement, ledger, aDecisions);
+    auto& fifo = pools.mFifo;
+    auto& actions = pools.mActions;
     auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions);
     auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
     auto gateDiagnostics = CapitalReportGates::check(statement, ledger, fifo, loss, built);

@@ -81,6 +81,33 @@ std::optional<KdvpBlockedIsin> findBlock(const FifoIsinResult& aPool,
                                .mSales = aYearSales};
     }
 
+    std::vector<StatementEventReference> adjustedSales;
+
+    // Units past the holding period get no row, so only listed units of a changed lot matter.
+    for (const auto& sale : aYearSales)
+    {
+        const bool listsChangedLot = std::any_of(aPool.mMatches.begin(),
+                                                 aPool.mMatches.end(),
+                                                 [&sale](const FifoMatch& aMatch) {
+                                                     return aMatch.mSale == sale &&
+                                                            aMatch.mLotChangedByAction &&
+                                                            !isPastHoldingPeriod(aMatch);
+                                                 });
+
+        if (listsChangedLot)
+        {
+            adjustedSales.push_back(sale);
+        }
+    }
+
+    if (!adjustedSales.empty())
+    {
+        return KdvpBlockedIsin{.mIsin = aPool.mIsin,
+                               .mName = aPool.mName,
+                               .mReason = KdvpBlockReason::SplitAdjustedRows,
+                               .mSales = std::move(adjustedSales)};
+    }
+
     std::vector<StatementEventReference> lossSales;
 
     for (const auto& sale : aYearSales)

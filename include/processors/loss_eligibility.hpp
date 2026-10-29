@@ -16,8 +16,11 @@ enum class LossSaleState {
     /// The user closed the ISIN's question without an answer.
     Cancelled,
     /// A corporate action after 31 December lies inside the window. Its units cannot be compared
-    /// with the sale's units until splits are applied.
+    /// with the sale's units yet.
     CorporateActionInWindow,
+    /// A corporate action that the pool applied is dated on or before the window end, so the
+    /// trade units before and after it cannot be compared yet.
+    AppliedCorporateActionBefore,
 };
 
 /// The units of one purchase that the 30-day loss rule counts against one sale.

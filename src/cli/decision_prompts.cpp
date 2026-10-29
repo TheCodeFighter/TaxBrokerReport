@@ -178,8 +178,20 @@ void writeRatioQuestion(std::ostream& aOut,
         aOut << '\n';
     }
 
-    aOut << "  You held " << unitsText(aQuestion.mPositionBefore) << " units just before it.\n"
-         << kRatioHelp;
+    if (aQuestion.mPositionBefore)
+    {
+        aOut << "  You held " << unitsText(*aQuestion.mPositionBefore)
+             << " units just before it.\n";
+    }
+    else
+    {
+        aOut << "  The sale on " << formatCalendarDate(aQuestion.mEarlierSaleDate.value())
+             << " needs more units than you held. If the action took effect on\n"
+                "  or before that sale, enter it; if not, cancel: earlier purchases are then "
+                "missing.\n";
+    }
+
+    aOut << kRatioHelp;
 }
 
 /// Two whole numbers from the user: a ratio, or two share counts in ticks of 10^-8 units.
@@ -272,15 +284,41 @@ RatioInput parseRatioInput(const std::string& aLine) {
     return std::string{"Enter the ratio as new : old, the shares as before -> after, or cancel."};
 }
 
-/// The effective date from the announcement; an empty line takes the date of the broker's row.
-/// Empty when the input has ended.
+/// The dates the action may have: `2022-01-11 to 2025-03-10`, or with several ranges each with
+/// its units, `2024-01-11 to 2024-11-12 with 1.0000 units, or 2024-11-13 to 2024-12-31 with
+/// 1.1000 units`.
+std::string dateRangesText(const CorporateActionRatioQuestion& aQuestion) {
+    std::string text;
+
+    for (const auto& range : aQuestion.mDateRanges)
+    {
+        if (!text.empty())
+        {
+            text += ", or ";
+        }
+
+        text += formatCalendarDate(range.mEarliestDate) + " to " +
+                formatCalendarDate(range.mLatestDate);
+
+        if (aQuestion.mDateRanges.size() > 1)
+        {
+            text += " with " + unitsText(range.mPositionBefore) + " units";
+        }
+    }
+
+    return text;
+}
+
+/// The effective date from the announcement; an empty line takes the date of the broker's row
+/// when that date is in a range. Empty when the input has ended.
 std::optional<Date> readEffectiveDate(const CorporateActionRatioQuestion& aQuestion,
                                       std::istream& aIn,
                                       std::ostream& aOut) {
-    const auto prompt = "Effective date from the announcement (YYYY-MM-DD, " +
-                        formatCalendarDate(aQuestion.mEarliestDate) + " to " +
-                        formatCalendarDate(aQuestion.mLatestDate) + "), or empty for " +
-                        formatCalendarDate(aQuestion.mEffectiveDate) + ":";
+    const bool rowDateAllowed = findEffectiveDateRange(aQuestion, aQuestion.mEffectiveDate);
+    const auto prompt =
+        "Effective date from the announcement (YYYY-MM-DD, " + dateRangesText(aQuestion) + ")" +
+        (rowDateAllowed ? ", or empty for " + formatCalendarDate(aQuestion.mEffectiveDate) : "") +
+        ":";
 
     while (true)
     {
@@ -291,7 +329,7 @@ std::optional<Date> readEffectiveDate(const CorporateActionRatioQuestion& aQuest
             return std::nullopt;
         }
 
-        if (line->empty())
+        if (line->empty() && rowDateAllowed)
         {
             return aQuestion.mEffectiveDate;
         }
@@ -328,8 +366,8 @@ std::optional<bool> readConfirmation(std::istream& aIn, std::ostream& aOut) {
 }
 
 /// Reads the ratio, the effective date and the confirmation of the preview. A ratio without a
-/// preview (a number 0, equal numbers, a position that does not fit) is passed on as it is, so the
-/// session's rejection says what is wrong.
+/// preview (a number 0, equal numbers, a position that does not fit, a date in no range) is passed
+/// on as it is, so the session's rejection says what is wrong.
 std::optional<AnswerValue> readRatioAnswer(const CorporateActionRatioQuestion& aQuestion,
                                            std::istream& aIn,
                                            std::ostream& aOut) {
@@ -374,7 +412,10 @@ std::optional<AnswerValue> readRatioAnswer(const CorporateActionRatioQuestion& a
             return std::nullopt;
         }
 
-        const auto preview = previewSplitUnits(aQuestion.mPositionBefore, *ratio);
+        // A date in no range has no preview; the session then rejects the date.
+        const auto* range = findEffectiveDateRange(aQuestion, *date);
+        const auto preview =
+            range != nullptr ? previewSplitUnits(range->mPositionBefore, *ratio) : std::nullopt;
 
         if (!preview)
         {

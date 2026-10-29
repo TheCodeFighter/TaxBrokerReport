@@ -35,8 +35,8 @@ enum class ProcessingDiagnosticCode {
     XmlValueOutOfRange,
     UnsupportedTaxTreatment,
     TaxClassificationUnknown,
-    /// A corporate action that is not applied yet (walking skeleton, until splits are applied).
-    /// delete comment when the work is complete.
+    /// A corporate action that is applied but whose result cannot be reported yet, or that is not
+    /// applied because its investment cannot reach Doh-KDVP.
     CorporateActionNotApplied,
     MissingExchangeRate,
     /// A sale with a loss-making FIFO portion while the loss rule is missing.
@@ -44,6 +44,10 @@ enum class ProcessingDiagnosticCode {
     /// A corporate action without a known ratio, or several on one day whose identity and order
     /// are unknown.
     CorporateActionAmbiguous,
+    CorporateActionMissingPosition,
+    CorporateActionQuantityRounded,
+    CorporateActionApplied,
+    UnsupportedCorporateAction,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.
