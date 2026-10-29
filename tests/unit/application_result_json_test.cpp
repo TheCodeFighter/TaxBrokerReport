@@ -910,8 +910,9 @@ TEST(ApplicationResultJsonTest, WritesEveryRequestTypeWithItsDateAndIsin) {
                                 .mSourceValue = "3",
                             }},
                             .mPositionBefore = 300'000'000, // 3 units
-                            .mEarliestDate = day("2024-01-11"),
-                            .mLatestDate = day("2024-12-31"),
+                            .mDateRanges = {{.mEarliestDate = day("2024-01-11"),
+                                              .mLatestDate = day("2024-12-31"),
+                                              .mPositionBefore = 300'000'000}},
                         },
                 },
         },
@@ -1083,6 +1084,21 @@ TEST(ApplicationResultJsonTest, DiagnosticCodeNameOfAProcessingCodeIsItsJsonCode
     const ApplicationDiagnosticCode code = ProcessingDiagnosticCode::LossEligibilityUnresolved;
 
     EXPECT_EQ(api::diagnosticCodeName(code), "loss_eligibility_unresolved");
+}
+
+TEST(ApplicationResultJsonTest, TheCodesOfAppliedCorporateActionsHaveTheirDocumentedNames) {
+    const ApplicationDiagnosticCode missing =
+        ProcessingDiagnosticCode::CorporateActionMissingPosition;
+    const ApplicationDiagnosticCode rounded =
+        ProcessingDiagnosticCode::CorporateActionQuantityRounded;
+    const ApplicationDiagnosticCode applied = ProcessingDiagnosticCode::CorporateActionApplied;
+    const ApplicationDiagnosticCode unsupported =
+        ProcessingDiagnosticCode::UnsupportedCorporateAction;
+
+    EXPECT_EQ(api::diagnosticCodeName(missing), "corporate_action_missing_position");
+    EXPECT_EQ(api::diagnosticCodeName(rounded), "corporate_action_quantity_rounded");
+    EXPECT_EQ(api::diagnosticCodeName(applied), "corporate_action_applied");
+    EXPECT_EQ(api::diagnosticCodeName(unsupported), "unsupported_corporate_action");
 }
 
 TEST(ApplicationResultJsonTest, ARecordedAnswerIsListedWithoutSources) {
@@ -1384,8 +1400,17 @@ TEST(ApplicationResultJsonTest, ARatioRequestListsTheActionItsSourcesAndThePosit
                                       .mTransactionId = "synthetic-tr-split",
                                       .mSourceValue = "3"}},
                         .mPositionBefore = 300'000'000, // 3 units
-                        .mEarliestDate = day("2024-01-11"),
-                        .mLatestDate = day("2024-09-01"),
+                        // A purchase of 1 unit on 2024-06-01: from the next day 4 units. A
+                        // sale of 0.5 units on 2024-09-01, the day before the next action, comes
+                        // after every date: +1 - 0.5 never goes below 0 after the first range,
+                        // -0.5 after the second.
+                        .mDateRanges = {{.mEarliestDate = day("2024-01-11"),
+                                         .mLatestDate = day("2024-06-01"),
+                                         .mPositionBefore = 300'000'000},
+                                        {.mEarliestDate = day("2024-06-02"),
+                                         .mLatestDate = day("2024-09-01"),
+                                         .mPositionBefore = 400'000'000,
+                                         .mLowestChangeAfter = -50'000'000}},
                     },
             },
     }};
@@ -1394,7 +1419,7 @@ TEST(ApplicationResultJsonTest, ARatioRequestListsTheActionItsSourcesAndThePosit
         api::serializeApplicationResultJson(ApplicationResultBuilder::build(std::move(input))));
     const auto& request = json.at("requests").at(0);
 
-    // Sources by broker; the position with eight decimals.
+    // Sources by broker; the positions with eight decimals; the ranges in date order.
     const auto expected = nlohmann::ordered_json::parse(R"({
       "name": "Synthetic Share",
       "isin": "XX0000000001",
@@ -1404,8 +1429,12 @@ TEST(ApplicationResultJsonTest, ARatioRequestListsTheActionItsSourcesAndThePosit
         {"broker": "interactive_brokers", "transactionId": "synthetic-ibkr-split"}
       ],
       "positionBefore": "3.00000000",
-      "earliestDate": "2024-01-11",
-      "latestDate": "2024-09-01"
+      "dateRanges": [
+        {"earliestDate": "2024-01-11", "latestDate": "2024-06-01", "positionBefore": "3.00000000",
+         "lowestChangeAfter": "0.00000000"},
+        {"earliestDate": "2024-06-02", "latestDate": "2024-09-01", "positionBefore": "4.00000000",
+         "lowestChangeAfter": "-0.50000000"}
+      ]
     })");
 
     EXPECT_EQ(request.at("type"), "corporate_action_ratio_required");
@@ -1413,6 +1442,53 @@ TEST(ApplicationResultJsonTest, ARatioRequestListsTheActionItsSourcesAndThePosit
     EXPECT_FALSE(request.contains("options"));
     EXPECT_FALSE(request.contains("lossCheck"));
     EXPECT_FALSE(request.contains("investments"));
+}
+
+TEST(ApplicationResultJsonTest, ARatioRequestBeforeASaleHasTheSaleDateInsteadOfThePosition) {
+    // The sale of 20 units on 2024-06-01 needs the split before it; the row is dated 2024-06-03.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CorporateActionRatioRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-06-03"),
+                .mIsin = "XX0000000001",
+                .mData =
+                    CorporateActionRatioQuestion{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mEffectiveDate = day("2024-06-03"),
+                        .mSources = {{.mBroker = Broker::TradeRepublic,
+                                      .mTransactionId = "synthetic-tr-split",
+                                      .mSourceValue = "10"}},
+                        .mEarlierSaleDate = day("2024-06-01"),
+                        .mDateRanges = {{.mEarliestDate = day("2024-01-11"),
+                                         .mLatestDate = day("2024-06-01"),
+                                         .mPositionBefore = 1'000'000'000,       // 10 units
+                                         .mLowestChangeAfter = -2'000'000'000}}, // the sale of 20
+                    },
+            },
+    }};
+
+    const auto json = nlohmann::ordered_json::parse(
+        api::serializeApplicationResultJson(ApplicationResultBuilder::build(std::move(input))));
+
+    const auto expected = nlohmann::ordered_json::parse(R"({
+      "name": "Synthetic Share",
+      "isin": "XX0000000001",
+      "effectiveDate": "2024-06-03",
+      "sources": [
+        {"broker": "trade_republic", "transactionId": "synthetic-tr-split", "sourceValue": "10"}
+      ],
+      "earlierSaleDate": "2024-06-01",
+      "dateRanges": [
+        {"earliestDate": "2024-01-11", "latestDate": "2024-06-01", "positionBefore": "10.00000000",
+         "lowestChangeAfter": "-20.00000000"}
+      ]
+    })");
+
+    EXPECT_EQ(json.at("requests").at(0).at("ratioCheck"), expected);
 }
 
 TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
@@ -1428,8 +1504,9 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
                     .mEffectiveDate = day("2024-06-01"),
                     .mSources = {{.mBroker = Broker::TradeRepublic}},
                     .mPositionBefore = 52'000'000, // 0.52 units
-                    .mEarliestDate = day("2024-03-02"),
-                    .mLatestDate = day("2024-06-10"),
+                    .mDateRanges = {{.mEarliestDate = day("2024-03-02"),
+                                     .mLatestDate = day("2024-06-10"),
+                                     .mPositionBefore = 52'000'000}},
                 },
             // The announcement gives an earlier date than the broker's row.
             .mAnswer = SplitRatioAnswer{.mNewShares = 10,
@@ -1451,8 +1528,9 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
                                   .mTransactionId = "synthetic-split-2",
                                   .mSourceValue = "-1.5"}},
                     .mPositionBefore = 300'000'000, // 3 units
-                    .mEarliestDate = day("2024-02-01"),
-                    .mLatestDate = day("2024-12-31"),
+                    .mDateRanges = {{.mEarliestDate = day("2024-02-01"),
+                                     .mLatestDate = day("2024-12-31"),
+                                     .mPositionBefore = 300'000'000}},
                 },
             .mAnswer = CancelAnswer{},
             .mFromEarlierRun = false,
@@ -1474,8 +1552,10 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
         "effectiveDate": "2024-06-01",
         "sources": [{"broker": "trade_republic"}],
         "positionBefore": "0.52000000",
-        "earliestDate": "2024-03-02",
-        "latestDate": "2024-06-10"
+        "dateRanges": [
+          {"earliestDate": "2024-03-02", "latestDate": "2024-06-10", "positionBefore": "0.52000000",
+           "lowestChangeAfter": "0.00000000"}
+        ]
       },
       "answer": {
         "newShares": 10,
@@ -1496,8 +1576,10 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
           {"broker": "trade_republic", "transactionId": "synthetic-split-2", "sourceValue": "-1.5"}
         ],
         "positionBefore": "3.00000000",
-        "earliestDate": "2024-02-01",
-        "latestDate": "2024-12-31"
+        "dateRanges": [
+          {"earliestDate": "2024-02-01", "latestDate": "2024-12-31", "positionBefore": "3.00000000",
+           "lowestChangeAfter": "0.00000000"}
+        ]
       },
       "answer": "cancel"
     }])");

@@ -2040,8 +2040,9 @@ TEST(ApplicationResultRequestTest, ARatioQuestionNeedsASourceAndOpenUnits) {
                                                .mTransactionId = "synthetic-split",
                                                .mSourceValue = "3"}},
                                  .mPositionBefore = 300'000'000, // 3 units
-                                 .mEarliestDate = day(2024, 1, 11),
-                                 .mLatestDate = day(2024, 9, 1),
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 9, 1),
+                                                  .mPositionBefore = 300'000'000}},
                              },
                      }}};
 
@@ -2060,19 +2061,21 @@ TEST(ApplicationResultRequestTest, ARatioQuestionNeedsASourceAndOpenUnits) {
 
     // A ratio question without a source record.
     ApplicationResultInput withoutSource{.mReportingYear = 2024};
-    withoutSource.mRequests = {RequestInput{.mQuestion = {
-                                                .mType = RequestType::CorporateActionRatioRequired,
-                                                .mAffectedReports = {kCapital},
-                                                .mData =
-                                                    CorporateActionRatioQuestion{
-                                                        .mIsin = "XX0000000001",
-                                                        .mName = "Synthetic Share",
-                                                        .mEffectiveDate = day(2024, 6, 1),
-                                                        .mPositionBefore = 300'000'000, // 3 units
-                                                        .mEarliestDate = day(2024, 1, 11),
-                                                        .mLatestDate = day(2024, 9, 1),
-                                                    },
-                                            }}};
+    withoutSource.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 1),
+                                 .mPositionBefore = 300'000'000, // 3 units
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 9, 1),
+                                                  .mPositionBefore = 300'000'000}},
+                             },
+                     }}};
 
     EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutSource)),
                  std::invalid_argument);
@@ -2092,8 +2095,9 @@ TEST(ApplicationResultRequestTest, ARatioQuestionNeedsASourceAndOpenUnits) {
                                                .mTransactionId = "synthetic-split",
                                                .mSourceValue = "3"}},
                                  .mPositionBefore = 0,
-                                 .mEarliestDate = day(2024, 1, 11),
-                                 .mLatestDate = day(2024, 9, 1),
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 9, 1),
+                                                  .mPositionBefore = 0}},
                              },
                      }}};
 
@@ -2117,8 +2121,9 @@ TEST(ApplicationResultRequestTest, ARatioQuestionNeedsADateRangeAroundItsDate) {
                                                .mTransactionId = "synthetic-split",
                                                .mSourceValue = "3"}},
                                  .mPositionBefore = 300'000'000, // 3 units
-                                 .mEarliestDate = day(2024, 6, 2),
-                                 .mLatestDate = day(2024, 9, 1),
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 6, 2),
+                                                  .mLatestDate = day(2024, 9, 1),
+                                                  .mPositionBefore = 300'000'000}},
                              },
                      }}};
 
@@ -2140,12 +2145,37 @@ TEST(ApplicationResultRequestTest, ARatioQuestionNeedsADateRangeAroundItsDate) {
                                                .mTransactionId = "synthetic-split",
                                                .mSourceValue = "3"}},
                                  .mPositionBefore = 300'000'000, // 3 units
-                                 .mEarliestDate = day(2024, 1, 11),
-                                 .mLatestDate = day(2024, 5, 31),
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 5, 31),
+                                                  .mPositionBefore = 300'000'000}},
                              },
                      }}};
 
     EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(earlyEnd)), std::invalid_argument);
+
+    // The range of the row date has 4 units, the question says 3 units just before the row date.
+    ApplicationResultInput otherUnits{.mReportingYear = 2024};
+    otherUnits.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 1),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "3"}},
+                                 .mPositionBefore = 300'000'000, // 3 units
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 9, 1),
+                                                  .mPositionBefore = 400'000'000}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(otherUnits)),
+                 std::invalid_argument);
 
     // A range of one day, the row date itself: trades on the day before and on that day.
     ApplicationResultInput oneDay{.mReportingYear = 2024};
@@ -2161,14 +2191,130 @@ TEST(ApplicationResultRequestTest, ARatioQuestionNeedsADateRangeAroundItsDate) {
                                                                .mTransactionId = "synthetic-split",
                                                                .mSourceValue = "3"}},
                                                  .mPositionBefore = 300'000'000, // 3 units
-                                                 .mEarliestDate = day(2024, 6, 1),
-                                                 .mLatestDate = day(2024, 6, 1),
+                                                 .mDateRanges = {{.mEarliestDate = day(2024, 6, 1),
+                                                                  .mLatestDate = day(2024, 6, 1),
+                                                                  .mPositionBefore = 300'000'000}},
                                              },
                                      }}};
 
     const auto result = ApplicationResultBuilder::build(std::move(oneDay));
 
     EXPECT_EQ(result.mRequests.size(), 1U);
+}
+
+TEST(ApplicationResultRequestTest, ARatioQuestionBeforeASaleNeedsTheSaleDateInsteadOfTheUnits) {
+    // The sale of 2024-06-01 needs the split before it; the row is dated 2024-06-03. Valid: no
+    // units at the row date, the sale date, and a range up to the sale.
+    ApplicationResultInput beforeTheSale{.mReportingYear = 2024};
+    beforeTheSale.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 3),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "10"}},
+                                 .mPositionBefore = std::nullopt,
+                                 .mEarlierSaleDate = day(2024, 6, 1),
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 6, 1),
+                                                  .mPositionBefore = 1'000'000'000}},
+                             },
+                     }}};
+
+    EXPECT_EQ(ApplicationResultBuilder::build(std::move(beforeTheSale)).mRequests.size(), 1U);
+
+    // Both the units at the row date and a sale date.
+    ApplicationResultInput both{.mReportingYear = 2024};
+    both.mRequests = {RequestInput{.mQuestion = {
+                                       .mType = RequestType::CorporateActionRatioRequired,
+                                       .mAffectedReports = {kCapital},
+                                       .mData =
+                                           CorporateActionRatioQuestion{
+                                               .mIsin = "XX0000000001",
+                                               .mName = "Synthetic Share",
+                                               .mEffectiveDate = day(2024, 6, 1),
+                                               .mSources = {{.mBroker = Broker::TradeRepublic,
+                                                             .mTransactionId = "synthetic-split",
+                                                             .mSourceValue = "10"}},
+                                               .mPositionBefore = 1'000'000'000, // 10 units
+                                               .mEarlierSaleDate = day(2024, 5, 30),
+                                               .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                                .mLatestDate = day(2024, 6, 1),
+                                                                .mPositionBefore = 1'000'000'000}},
+                                           },
+                                   }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(both)), std::invalid_argument);
+
+    // Neither of them.
+    ApplicationResultInput neither{.mReportingYear = 2024};
+    neither.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 3),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "10"}},
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 6, 1),
+                                                  .mPositionBefore = 1'000'000'000}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(neither)), std::invalid_argument);
+
+    // A range that goes past the sale.
+    ApplicationResultInput pastTheSale{.mReportingYear = 2024};
+    pastTheSale.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionRatioRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionRatioQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mEffectiveDate = day(2024, 6, 3),
+                                 .mSources = {{.mBroker = Broker::TradeRepublic,
+                                               .mTransactionId = "synthetic-split",
+                                               .mSourceValue = "10"}},
+                                 .mEarlierSaleDate = day(2024, 6, 1),
+                                 .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                                  .mLatestDate = day(2024, 6, 2),
+                                                  .mPositionBefore = 1'000'000'000}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(pastTheSale)),
+                 std::invalid_argument);
+
+    // No range at all.
+    ApplicationResultInput noRange{.mReportingYear = 2024};
+    noRange.mRequests = {RequestInput{.mQuestion = {
+                                          .mType = RequestType::CorporateActionRatioRequired,
+                                          .mAffectedReports = {kCapital},
+                                          .mData =
+                                              CorporateActionRatioQuestion{
+                                                  .mIsin = "XX0000000001",
+                                                  .mName = "Synthetic Share",
+                                                  .mEffectiveDate = day(2024, 6, 3),
+                                                  .mSources = {{.mBroker = Broker::TradeRepublic,
+                                                                .mTransactionId = "synthetic-split",
+                                                                .mSourceValue = "10"}},
+                                                  .mEarlierSaleDate = day(2024, 6, 1),
+                                              },
+                                      }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(noRange)), std::invalid_argument);
 }
 
 TEST(ApplicationResultRequestTest, TheOrderOfSourcesDoesNotChangeTheRatioQuestion) {
@@ -2182,8 +2328,9 @@ TEST(ApplicationResultRequestTest, TheOrderOfSourcesDoesNotChangeTheRatioQuestio
                       .mTransactionId = "synthetic-tr",
                       .mSourceValue = "3"}},
         .mPositionBefore = 300'000'000, // 3 units
-        .mEarliestDate = day(2024, 1, 11),
-        .mLatestDate = day(2024, 9, 1),
+        .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                         .mLatestDate = day(2024, 9, 1),
+                         .mPositionBefore = 300'000'000}},
     };
     const QuestionData trFirst = CorporateActionRatioQuestion{
         .mIsin = "XX0000000001",
@@ -2194,8 +2341,9 @@ TEST(ApplicationResultRequestTest, TheOrderOfSourcesDoesNotChangeTheRatioQuestio
                       .mSourceValue = "3"},
                      {.mBroker = Broker::InteractiveBrokers, .mTransactionId = "synthetic-ibkr"}},
         .mPositionBefore = 300'000'000, // 3 units
-        .mEarliestDate = day(2024, 1, 11),
-        .mLatestDate = day(2024, 9, 1),
+        .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                         .mLatestDate = day(2024, 9, 1),
+                         .mPositionBefore = 300'000'000}},
     };
 
     EXPECT_NE(ibkrFirst, trFirst);

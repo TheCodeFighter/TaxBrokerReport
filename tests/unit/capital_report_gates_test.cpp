@@ -85,6 +85,23 @@ std::vector<ProcessingDiagnostic> checkYear(StatementMergeResult& aMerged, int a
     return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
 }
 
+/// Like checkYear, with confirmed corporate actions that the matcher applies.
+std::vector<ProcessingDiagnostic>
+checkYearWithActions(StatementMergeResult& aMerged,
+                     int aYear,
+                     const std::vector<ConfirmedCorporateAction>& aActions) {
+    orderChronologically(aMerged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
+    const auto& ledger = prepared.mLedger.value();
+    const auto fifo = FifoMatcher::match(aMerged.mStatement, ledger, aActions);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(aMerged.mStatement, ledger, fifo, decisions);
+    const auto built = CapitalGainsReportBuilder::build(aMerged.mStatement, ledger, fifo, loss, {});
+
+    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
+}
+
 TEST(CapitalReportGatesTest, StockAndFundSalesPassTheClassificationGate) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {
@@ -924,6 +941,108 @@ TEST(CapitalReportGatesTest, PrivateMarketEventsOfTheYearGetOneWarningEach) {
     EXPECT_EQ(sale.mContext.mTaxDate, day("2024-12-31"));
     EXPECT_EQ(sale.mContext.mSources,
               (std::vector<SourceReference>{source(4, "synthetic-private-sell-1")}));
+}
+
+TEST(CapitalReportGatesTest, ASaleOfUnitsChangedByASplitGivesTheFilingRowsError) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2022-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-10"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 3'000'000'000, // EUR 30
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-15"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto diagnostics =
+        checkYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2023-01-15")}});
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+
+    const auto& diagnostic = diagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionNotApplied);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionNotAppliedFilingRows);
+    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::FifoTax);
+    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
+    // The date and source of the first sale that uses changed units.
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-03-10"));
+    EXPECT_EQ(diagnostic.mContext.mSources,
+              (std::vector<SourceReference>{source(4, "synthetic-sell-1")}));
+}
+
+TEST(CapitalReportGatesTest, AnAppliedSplitInALossWindowGivesTheLossRuleSplitError) {
+    // 3 of 4 units sold at a loss on 2024-11-20, split 2 / 1 applied on 2024-12-01, inside the
+    // window up to 2024-12-20.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 400'000'000,       // 4 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-11-20"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 300'000'000,     // 3 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-12-01"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto diagnostics =
+        checkYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2024-12-01")}});
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+
+    const auto& diagnostic = diagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionNotApplied);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionNotAppliedLossRuleSplit);
+    // The date and source of the split, not of the sale.
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-12-01"));
+    EXPECT_EQ(diagnostic.mContext.mSources,
+              (std::vector<SourceReference>{source(4, "synthetic-split-1")}));
 }
 
 } // namespace

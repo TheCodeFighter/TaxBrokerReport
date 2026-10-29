@@ -873,6 +873,14 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "LossEligibilityUnresolved";
     case ProcessingDiagnosticCode::CorporateActionAmbiguous:
         return "CorporateActionAmbiguous";
+    case ProcessingDiagnosticCode::CorporateActionMissingPosition:
+        return "CorporateActionMissingPosition";
+    case ProcessingDiagnosticCode::CorporateActionQuantityRounded:
+        return "CorporateActionQuantityRounded";
+    case ProcessingDiagnosticCode::CorporateActionApplied:
+        return "CorporateActionApplied";
+    case ProcessingDiagnosticCode::UnsupportedCorporateAction:
+        return "UnsupportedCorporateAction";
     }
 
     return "Unknown";
@@ -977,6 +985,8 @@ std::string_view toString(KdvpBlockReason aReason) {
         return "FifoStopped";
     case KdvpBlockReason::LossNotReportable:
         return "LossNotReportable";
+    case KdvpBlockReason::SplitAdjustedRows:
+        return "SplitAdjustedRows";
     }
 
     return "Unknown";
@@ -993,6 +1003,8 @@ std::string_view toString(LossSaleState aState) {
         return "Cancelled";
     case LossSaleState::CorporateActionInWindow:
         return "CorporateActionInWindow";
+    case LossSaleState::AppliedCorporateActionBefore:
+        return "AppliedCorporateActionBefore";
     }
 
     return "Unknown";
@@ -1017,7 +1029,8 @@ void writeLossEligibility(std::ostream& aOutput,
     for (const auto state : {LossSaleState::Decided,
                              LossSaleState::WaitingForAnswer,
                              LossSaleState::Cancelled,
-                             LossSaleState::CorporateActionInWindow})
+                             LossSaleState::CorporateActionInWindow,
+                             LossSaleState::AppliedCorporateActionBefore})
     {
         std::size_t count{};
 
@@ -1074,6 +1087,12 @@ void writeLossEligibility(std::ostream& aOutput,
 std::string_view toString(CorporateActionState aState) {
     switch (aState)
     {
+    case CorporateActionState::Applied:
+        return "Applied";
+    case CorporateActionState::DifferentDatesAmbiguous:
+        return "DifferentDatesAmbiguous";
+    case CorporateActionState::Unsupported:
+        return "Unsupported";
     case CorporateActionState::RatioConfirmed:
         return "RatioConfirmed";
     case CorporateActionState::WaitingForRatio:
@@ -1103,11 +1122,14 @@ void writeCorporateActions(std::ostream& aOutput,
     aOutput << "CORPORATE ACTIONS\n  actions: " << aActions.mActions.size()
             << "\n  open_questions: " << aActions.mRequests.size() << '\n';
 
-    for (const auto state : {CorporateActionState::RatioConfirmed,
+    for (const auto state : {CorporateActionState::Applied,
+                             CorporateActionState::RatioConfirmed,
                              CorporateActionState::WaitingForRatio,
                              CorporateActionState::WaitingForEarlierAction,
                              CorporateActionState::Cancelled,
                              CorporateActionState::SameDayAmbiguous,
+                             CorporateActionState::DifferentDatesAmbiguous,
+                             CorporateActionState::Unsupported,
                              CorporateActionState::NoPosition,
                              CorporateActionState::NumericFailure,
                              CorporateActionState::NotAskedForClass})
@@ -1248,7 +1270,9 @@ void writeKdvpReport(std::ostream& aOutput,
             << "\n  blocked_isins: " << withoutExclusions.mBlocked.size()
             << "\n  long_held_sales: " << withoutExclusions.mLongHeld.size() << '\n';
 
-    for (const auto reason : {KdvpBlockReason::FifoStopped, KdvpBlockReason::LossNotReportable})
+    for (const auto reason : {KdvpBlockReason::FifoStopped,
+                              KdvpBlockReason::LossNotReportable,
+                              KdvpBlockReason::SplitAdjustedRows})
     {
         aOutput << "  blocked_" << toString(reason) << ": "
                 << std::count_if(withoutExclusions.mBlocked.begin(),
@@ -1345,7 +1369,11 @@ int writeFifoResult(std::span<char*> aArguments) {
     }
 
     const auto& statement = prepared.mMerged.mStatement;
-    const auto fifo = FifoMatcher{}.match(statement, *prepared.mLedger);
+    // No answers: a ratio question stays open, and the open loss units are treated as blocked,
+    // like in the CLI without input.
+    RunDecisions decisions;
+    const auto pools = matchCapitalPools(statement, *prepared.mLedger, decisions);
+    const auto& fifo = pools.mFifo;
 
     std::size_t matchCount{};
     std::size_t lossMakingCount{};
@@ -1400,11 +1428,7 @@ int writeFifoResult(std::span<char*> aArguments) {
         writeFifoIsin(output, statement.mPresentation, isin);
     }
 
-    // No answers: a ratio question stays open, and the open loss units are treated as blocked,
-    // like in the CLI.
-    RunDecisions decisions;
-    const auto actions =
-        CorporateActionResolver::resolve(statement, *prepared.mLedger, fifo, decisions);
+    const auto& actions = pools.mActions;
     const auto loss = LossEligibilityChecker::check(statement,
                                                     *prepared.mLedger,
                                                     fifo,
@@ -1467,9 +1491,9 @@ int writeKdvpXml(std::span<char*> aArguments) {
     }
 
     const auto& statement = prepared.mMerged.mStatement;
-    const auto fifo = FifoMatcher{}.match(statement, *prepared.mLedger);
-    // No answers: the open loss units are treated as blocked, like in the CLI.
+    // No answers: the open loss units are treated as blocked, like in the CLI without input.
     RunDecisions decisions;
+    const auto fifo = matchCapitalPools(statement, *prepared.mLedger, decisions).mFifo;
     const auto loss = LossEligibilityChecker::check(statement,
                                                     *prepared.mLedger,
                                                     fifo,

@@ -146,9 +146,6 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          {}},
         {MessageKey::CorporateActionAmbiguousCancelled, "corporate_action_ambiguous.cancelled", {}},
         {MessageKey::CorporateActionAmbiguousSameDay, "corporate_action_ambiguous.same_day", {}},
-        {MessageKey::CorporateActionNotAppliedRatioConfirmed,
-         "corporate_action_not_applied.ratio_confirmed",
-         {{"newShares", MessageParamKind::Number}, {"oldShares", MessageParamKind::Number}}},
         {MessageKey::CorporateActionNotAppliedWaitingForEarlierAction,
          "corporate_action_not_applied.waiting_for_earlier_action",
          {{"earlierDate", MessageParamKind::Text}}},
@@ -169,6 +166,35 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          {{"requestId", MessageParamKind::Text},
           {"earliestDate", MessageParamKind::Text},
           {"latestDate", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedEffectiveDateWithoutUnits,
+         "answer_rejected.effective_date_without_units",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::CorporateActionAppliedUserRatio,
+         "corporate_action_applied.user_ratio",
+         {{"newShares", MessageParamKind::Number},
+          {"oldShares", MessageParamKind::Number},
+          {"effectiveDate", MessageParamKind::Text}}},
+        {MessageKey::CorporateActionQuantityRounded, "corporate_action_quantity_rounded", {}},
+        {MessageKey::CorporateActionUnrepresentableRoundingBudget,
+         "corporate_action_unrepresentable.rounding_budget",
+         {}},
+        {MessageKey::CorporateActionMissingPosition, "corporate_action_missing_position", {}},
+        {MessageKey::CorporateActionAmbiguousDifferentDates,
+         "corporate_action_ambiguous.different_dates",
+         {{"days", MessageParamKind::Number}}},
+        {MessageKey::UnsupportedCorporateActionMerger, "unsupported_corporate_action.merger", {}},
+        {MessageKey::CorporateActionNotAppliedLossRuleSplit,
+         "corporate_action_not_applied.loss_rule_split",
+         {}},
+        {MessageKey::CorporateActionNotAppliedFilingRows,
+         "corporate_action_not_applied.filing_rows",
+         {}},
+        {MessageKey::CorporateActionAmbiguousRatioRequiredBeforeSale,
+         "corporate_action_ambiguous.ratio_required_before_sale",
+         {{"saleDate", MessageParamKind::Text}, {"days", MessageParamKind::Number}}},
+        {MessageKey::AnswerRejectedLaterSaleTooLarge,
+         "answer_rejected.later_sale_too_large",
+         {{"requestId", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -229,8 +255,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 64U);
-    ASSERT_EQ(expectedMessages().size(), 64U);
+    ASSERT_EQ(definitions.size(), 74U);
+    ASSERT_EQ(expectedMessages().size(), 74U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -264,8 +290,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 64U);
-    EXPECT_EQ(keys.size(), 64U);
+    EXPECT_EQ(ids.size(), 74U);
+    EXPECT_EQ(keys.size(), 74U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -286,7 +312,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 71U); // 64 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 81U); // 74 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

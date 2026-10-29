@@ -73,11 +73,13 @@ DecisionQuestion ratioQuestion(Units aPositionBefore) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "3"}},
                 .mPositionBefore = aPositionBefore,
-                .mEarliestDate =
-                    Date{
-                        std::chrono::sys_days{std::chrono::year{2024} / 1 / 11}.time_since_epoch()},
-                .mLatestDate =
-                    Date{std::chrono::sys_days{std::chrono::year{2024} / 9 / 1}.time_since_epoch()},
+                .mDateRanges = {{.mEarliestDate =
+                                     Date{std::chrono::sys_days{std::chrono::year{2024} / 1 / 11}
+                                              .time_since_epoch()},
+                                 .mLatestDate =
+                                     Date{std::chrono::sys_days{std::chrono::year{2024} / 9 / 1}
+                                              .time_since_epoch()},
+                                 .mPositionBefore = aPositionBefore}},
             },
     };
 }
@@ -1817,9 +1819,9 @@ TEST(DecisionSessionTest, AnEffectiveDateOutsideTheRangeIsRejected) {
                                          textParam("latestDate", "2024-09-01")}));
     EXPECT_EQ(tooEarly[0].mMessage,
               "The effective date in the answer to request-0001 must be from 2024-01-11 to "
-              "2024-09-01. Another date would move a trade or another corporate action to the "
-              "other side of this one, which is not supported yet. Check the announcement, or "
-              "close the question.");
+              "2024-09-01. Another date would put this action on the other side of another "
+              "corporate action or of 31 December, or after a sale of more units than were held. "
+              "Check the announcement, or close the question.");
 
     ASSERT_EQ(tooLate.size(), 1U);
     EXPECT_EQ(tooLate[0].mReason, AnswerRejection::EffectiveDateOutOfRange);
