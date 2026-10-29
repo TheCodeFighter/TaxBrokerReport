@@ -450,8 +450,9 @@ rules:
   order; for the loss question, the ISIN, its name and the facts of each open sale (below); for
   the ratio question, the ISIN, its name, the effective date, every source record (broker,
   transaction ID and the broker's own quantity field, sorted by broker and transaction ID) and
-  the open units just before the action, and the range of effective dates that keep them
-  (`fifo.md`, "User confirmation of the ratio"). Sources, rows, source IDs, the tax date and diagnostic IDs only say where to look; they
+  the open units just before the action on its row date, and every range of effective dates it
+  may have with the open units just before it on them (`fifo.md`, "User confirmation of the
+  ratio"). Sources, rows, source IDs, the tax date and diagnostic IDs only say where to look; they
   are run-local and not part of it, so another file order asks the same question. Each type puts
   into its question data exactly the facts its answer depends on, such as a currency and date, or
   an action with the broker and transaction ID of every source. A different value is a different
@@ -466,12 +467,19 @@ rules:
   when both numbers are equal (`answer_rejected.ratio_unchanged`), when the position after the
   action does not fit the units (`answer_rejected.ratio_out_of_range`) or when the confirmed
   position differs from the preview of the ratio (`answer_rejected.preview_mismatch`), and when its
-  effective date is outside the question's range (`answer_rejected.effective_date_out_of_range`,
-  with `earliestDate` and `latestDate`). An accepted
+  effective date is before the question's first range or after its last one
+  (`answer_rejected.effective_date_out_of_range`, with `earliestDate` and `latestDate`) or lies
+  between two ranges, where no unit is held just before the action
+  (`answer_rejected.effective_date_without_units`), and when the units after the action do not
+  cover a later sale of its range (`answer_rejected.later_sale_too_large`: the preview plus the
+  range's lowest change after the action is below 0). The preview is the one of the units on the
+  answer's effective date. An accepted
   ratio is recorded reduced: `20 / 10` as `2 / 1`. The key tells the frontend which input to
   mark: `ratio_not_positive` the one named by `field` (the only key that can mean either
   number), `ratio_unchanged` both numbers, `ratio_out_of_range` the ratio, `preview_mismatch`
-  the confirmed position and `effective_date_out_of_range` the date. Each rejection has a message key with
+  the confirmed position, `effective_date_out_of_range` and `effective_date_without_units` the
+  date, and `later_sale_too_large` both the ratio and the date. Each rejection has a message key
+  with
   the `requestId` parameter. An accepted answer is bound to the request's question, never to its
   ID, and the run is recalculated.
 - **Recalculation.** The calculation rebuilds the whole run from its full input and gets only the
@@ -514,11 +522,17 @@ decimal strings with eight decimals (`"4.00000000"`). A recorded loss answer lis
 A ratio request has no `options` and has `"ratioCheck"` with `name`, `isin`, `effectiveDate`,
 `sources` (each with `broker`, and `transactionId` and `sourceValue` when the record has them;
 `sourceValue` is the broker's quantity field as an exact decimal, shown read-only) and
-`positionBefore` (units, eight decimals), `earliestDate` and `latestDate` (the effective dates
-that keep that position; `effectiveDate` is the broker's row date). It is answered with
-`newShares`, `oldShares` (whole numbers), `effectiveDate` (from the announcement, within the
-range) and `confirmedUnits` (the previewed position, eight decimals). A recorded ratio answer
-lists the same `ratioCheck` and
+`positionBefore` (units, eight decimals, just before the action on the broker's row date
+`effectiveDate`), or instead `earlierSaleDate` when a sale before the row needs more units than
+were held and the action must come on or before it, and `dateRanges`: in date order, each with
+`earliestDate`, `latestDate`, `positionBefore`, the units just before the action on every date
+of the range, and `lowestChangeAfter`, the lowest running total of the trades after the action
+up to 31 December, or up to 11 days before the next action's row; a later trade date is a range
+of its own with the trades of that day only (eight decimals, 0 or below).
+It is answered with `newShares`, `oldShares` (whole numbers), `effectiveDate` (from the
+announcement, within a range) and `confirmedUnits` (the previewed position for that date's units,
+eight decimals). A
+recorded ratio answer lists the same `ratioCheck` and
 `"answer":{"newShares":2,"oldShares":1,"effectiveDate":"2024-06-01","confirmedUnits":"6.00000000"}`
 with the reduced numbers, or `"answer":"cancel"`.
 
@@ -614,13 +628,17 @@ Additional codes and their default scope are:
 | Code | Severity and scope |
 | --- | --- |
 | `corporate_action_sources_mismatch_possible` | Warning for capital gains; one per ISIN/year with action records from multiple sources used by the ledger or loss analysis, including relevant following-January actions. |
-| `corporate_action_quantity_rounded` | Warning for capital gains; bounded split-quantity rounding with its recorded impact. |
+| `corporate_action_quantity_rounded` | Warning for capital gains on one applied action: its units were rounded to eight decimals, and the rounding of the ISIN stays below EUR 0.01. No units or amounts in the message. |
 | `source_quantity_corrected` | Warning for reports using the corrected source; retain the original and corrected quantities. |
 | `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
 | `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked; no request. |
-| `corporate_action_not_applied` | Error for capital gains: the ISIN has a corporate action up to 31 December that is not applied yet. Key `.ratio_confirmed` (parameters `newShares`, `oldShares`) once the user confirmed its ratio, `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one, and the plain key when no ratio is asked (no units before the action, or a class that never reaches Doh-KDVP). Walking skeleton only: once splits are applied, the other `corporate_action_*` codes replace it. |
-| `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.cancelled` after a cancel (no request), and `.same_day` for two or more rows of one broker for the ISIN on one date (no request until the identity question exists). |
+| `corporate_action_not_applied` | Error for capital gains: a corporate action whose result cannot be reported yet. Key `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one; `.filing_rows` (stage `fifo_tax`, on the first such sale) when a sale of the year lists units of a lot that an applied split changed, whose Doh-KDVP rows are not decided yet; `.loss_rule_split` when a loss sale has an applied split up to its window end; `.loss_window` for an action after 31 December inside a December loss window; and the plain key for a class that never reaches Doh-KDVP, whose action is not asked. |
+| `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.ratio_required_before_sale` (parameters `saleDate` and `days`, 10) for the same question when a sale before the row needs more units than were held and the row may be a late booking, `.cancelled` after a cancel (no request), `.same_day` for two or more rows of one broker for the ISIN on one date, and `.different_dates` (parameter `days`, 10) for split rows of different brokers on dates at most that far apart (no request for either until the identity question exists). |
+| `corporate_action_applied` | Warning for capital gains on one applied action, key `.user_ratio` (parameters `newShares`, `oldShares` and `effectiveDate`): the user, not the broker, supplied the ratio and the effective date. |
+| `corporate_action_missing_position` | Error for capital gains on one action: the files show no units just before it on its row date. No question is asked. |
+| `corporate_action_unrepresentable` | Error for capital gains on one action that cannot be applied: an overflow, a lot that would become 0 units, or, with key `.rounding_budget`, rounding that reaches EUR 0.01 for the ISIN. The pool stops at the action. |
+| `unsupported_corporate_action` | Error for capital gains on one action that needs tax rules the app does not have; key `.merger` for a merger row. No question is asked. |
 | `tax_classification_unknown` | Error for the potentially affected forms, with a classification request while resolvable. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
 | `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion. |

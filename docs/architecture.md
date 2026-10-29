@@ -176,10 +176,12 @@ timestamped event.
 
 Tax processing has one event-kind priority: a supported split or reverse split is applied before
 every purchase or sale for the same ISIN on its effective tax date. Trades on that date use the
-adjusted position. Several actions for the same ISIN and date use reliable source timestamps. If
-their order cannot be established, stable input sequence keeps the diagnostics deterministic but
-must not be used to guess the result. The processor reports the ambiguity and leaves that ISIN
-unprocessed.
+adjusted position. The effective date is the one the user confirmed with the ratio; the action's
+row keeps its tax date in the ledger, and the FIFO matcher applies the action by the confirmed
+date instead of at the row. Several actions for the same ISIN and date use reliable source
+timestamps. If their order cannot be established, stable input sequence keeps the diagnostics
+deterministic but must not be used to guess the result. The processor reports the ambiguity and
+leaves that ISIN unprocessed.
 
 ## Ownership of pipeline data
 
@@ -471,8 +473,10 @@ format until the beta (see "JSON contract" below).
 
 ### FIFO matching contract
 
-`FifoMatcher::match` takes the merged statement and the `ReportingYearLedger` made from it. It
-reads `mCapitalEvents` in order and changes nothing in the statement. The result has one
+`FifoMatcher::match` takes the merged statement, the `ReportingYearLedger` made from it and the
+corporate actions whose ratio and effective date the user confirmed (`ConfirmedCorporateAction`:
+the action rows, the reduced ratio and the date). It reads `mCapitalEvents` in order and changes
+nothing in the statement. The result has one
 `FifoIsinResult` for each trade instrument, in the presentation order (by ISIN), and the numeric
 diagnostics of the run. Each entry holds:
 
@@ -484,9 +488,24 @@ diagnostics of the run. Each entry holds:
 - `mEarlierMatches`: the matches of the sales before the selected year, in ledger order. Only
   the 30-day loss rule reads them: an earlier loss takes its replacement units first.
 - `mOpenLots`: the lots still open in FIFO order at 31 December, each with its purchase event,
-  date, remaining units and exact remaining basis.
+  date, remaining units, exact remaining basis and whether a corporate action changed its units
+  (`mChangedByAction`; a match from such a lot has `mLotChangedByAction`).
+- `mAppliedActions`: the confirmed actions the pool applied, with their effective dates.
 - `mStatus`, `mStoppedAt` and `mAvailableUnits`: why and where the pool stopped, if it did.
   A pool stopped at a corporate action keeps the lots at the start of the action's day.
+- `mShortSale`: for a pool stopped at a corporate action because of a sale before it that needs
+  more units than were held (see `CorporateAction` below); the lots are then those just before
+  that sale.
+
+A confirmed action is applied at the start of its effective date, before the trades of that day,
+not at its row: the units of every open lot of the ISIN change by the exact ratio, the total is
+rounded once to eight decimals and spread by the largest remainder ([`fifo.md`](fifo.md), "Exact
+lot adjustment"), and each lot keeps its purchase date, FIFO place and exact basis. Confirmed
+actions after the last trade still change the lots at 31 December. A rounding gives a
+`corporate_action_quantity_rounded` warning; the rounding of all actions of one ISIN must stay
+below EUR 0.01 (`corporate_action_unrepresentable`, key `.rounding_budget`), and a lot that would
+become 0 units or an overflow gives `corporate_action_unrepresentable`. Either error stops the pool
+at the action with its lots unchanged.
 
 An earlier-year sale uses up lots; its matches go to `mEarlierMatches`, never to `mMatches`. One
 pool exists for each ISIN, across files, brokers and accounts; broker, file and row never change
@@ -501,10 +520,10 @@ and the matches made before the stop stay in the result as evidence.
 | Status | Stopped at |
 | --- | --- |
 | `Matched` | Nothing; every trade up to 31 December was applied. |
-| `CorporateAction` | The first corporate action, before the trades of its day: a trade of the ISIN on that date is not applied, even when it comes first in the ledger, and `mStoppedAt` is the action. Splits are applied by the later split work. |
+| `CorporateAction` | The first corporate action without a confirmed ratio, before the trades of its day: a trade of the ISIN on that date is not applied, even when it comes first in the ledger, and `mStoppedAt` is the action. The confirmed actions before it are applied. Also a sale with too few units (but some open) whose ISIN has a sale in the selected year, when that action is a split row at most `kBrokerDateMarginDays` (10) days after the sale: the broker may have booked the split late, so the pool stops at the action with `mShortSale` set and no `incomplete_history` error. |
 | `NonEurTrade` | The first trade whose currency is not EUR, also before the selected year. |
 | `InsufficientUnits` | A sale that needs more units than the earlier purchases left open. The result has one `incomplete_history` error. |
-| `NumericFailure` | An invalid trade value or an overflow. The result has a diagnostic. |
+| `NumericFailure` | An invalid trade value, an overflow, or a confirmed action that cannot be applied (`mStoppedAt` is its first row). The result has a diagnostic. |
 
 The matcher reports two kinds of diagnostics, both for the capital report only:
 
@@ -516,51 +535,79 @@ The matcher reports two kinds of diagnostics, both for the capital report only:
   `mAvailableUnits` keeps the open units. The error blocks the capital report; the choice to
   exclude the ISIN or fail the report is later work.
 
-The corporate-action errors come from the corporate-action stage ("Corporate-action contract"),
-the non-EUR errors from the capital report gates (see "CLI report command (walking skeleton)").
-Split adjustment and currency conversion are later work. The 30-day loss rule follows the
+The ratio questions and the other corporate-action errors come from the corporate-action stage
+("Corporate-action contract"), the non-EUR errors from the capital report gates (see "CLI report
+command (walking skeleton)"). Currency conversion is later work. The 30-day loss rule follows the
 corporate-action stage ("Loss eligibility contract"). The Doh-KDVP filing rows are built from
 the matches as described in "Doh-KDVP report model contract".
 
 ### Corporate-action contract
 
 `CorporateActionResolver::resolve` (`include/processors/corporate_actions.hpp`) takes the merged
-statement, the reporting-year ledger, the FIFO result of the same run and the session's
-`RunDecisions`, and changes nothing in its inputs. It asks for the ratio of a corporate action
-without a verified ratio, as [`fifo.md`](fifo.md), "Finding the split ratio", describes it. It
-never depends on the broker, except to tell whether two rows of one day come from one broker.
+statement, the reporting-year ledger, the FIFO result of the same run, the confirmed actions that
+FIFO applied and the session's `RunDecisions`, and changes nothing in its inputs.
+`matchCapitalPools` runs the two in turns: match, resolve, and when the resolver found a new
+answer, match again with that action confirmed. So a confirmed action is applied and the next
+action of the ISIN is asked in the same calculation, with the position after the earlier one.
+The CLI, the debug tools and the tests call `matchCapitalPools`. It asks for the ratio of a
+corporate action without a verified ratio, as [`fifo.md`](fifo.md), "Finding the split ratio",
+describes it. It never depends on the broker, except to tell whether two rows of one day come
+from one broker.
 
-- **Which ISINs.** Only a pool stopped at a corporate action (`FifoIsinStatus::CorporateAction`)
-  of an ISIN with a sale in the selected year: only that pool blocks the report. Every corporate
-  action of the ISIN up to 31 December is listed, grouped by date. A later action is never asked
-  before the earlier one is applied, because the position before it depends on that.
+- **Which ISINs.** Every ISIN with a sale in the selected year and a corporate action up to 31
+  December. Its actions are listed, grouped by date, as far as the pool reached: the applied
+  ones, the one the pool stopped at, and the later ones. A pool stopped for another reason before
+  an action (missing history, a non-EUR trade, an action that could not be applied) lists no
+  further action; its own error blocks it. A later action is never asked before the earlier one
+  is applied, because the position before it depends on that.
 - **Result.** `CorporateActionResult` has one `ResolvedCorporateAction` per date (by ISIN, then by
   date): its events, effective date, state and, for `RatioConfirmed`, the reduced ratio and the
   effective date (`mConfirmedDate`) that the user supplied (never the broker); `mEffectiveDate`
-  stays the broker's row date. States: `RatioConfirmed`, `WaitingForRatio`,
-  `WaitingForEarlierAction`, `Cancelled`, `SameDayAmbiguous`, `NoPosition`, `NumericFailure`
+  stays the broker's row date. States: `Applied`, `RatioConfirmed` (only between two rounds of
+  `matchCapitalPools`), `WaitingForRatio`, `WaitingForEarlierAction`, `Cancelled`,
+  `SameDayAmbiguous`, `DifferentDatesAmbiguous`, `Unsupported`, `NoPosition`, `NumericFailure`
   and `NotAskedForClass`.
+- **Applied action.** `Applied` with the confirmed ratio and date, and one
+  `corporate_action_applied` warning (key `.user_ratio`, parameters `newShares`, `oldShares` and
+  `effectiveDate`) that says the user supplied the ratio.
 - **First action of the pool.** A bond, derivative, crypto or private fund is not asked
-  (`NotAskedForClass`, `corporate_action_not_applied`): the gates block its sales anyway. Two rows
-  of the same broker on that date are `SameDayAmbiguous` (`corporate_action_ambiguous`, key
-  `.same_day`, no request); rows of different brokers on that date are one action. No open units
-  just before it is `NoPosition` (`corporate_action_not_applied`). Open units whose checked sum
+  (`NotAskedForClass`, `corporate_action_not_applied`): the gates block its sales anyway. A merger
+  row is `Unsupported` (`unsupported_corporate_action`, key `.merger`, no request). Two rows of the
+  same broker on that date are `SameDayAmbiguous` (`corporate_action_ambiguous`, key `.same_day`,
+  no request); rows of different brokers on that date are one action. A split row of another
+  broker on another date at most `kDifferentDatesWindowDays` (10) days away makes both actions
+  `DifferentDatesAmbiguous` (`corporate_action_ambiguous`, key `.different_dates`, parameter
+  `days`, no request), until the identity question exists; a merger row never pairs with a split.
+  No open units just before it is `NoPosition` (`corporate_action_missing_position`); so is a
+  pool with `mShortSale` without a unit at the start of the sale's day or any date before it with
+  units. Open units whose checked sum
   does not fit `Units` are `NumericFailure` (`corporate_action_unrepresentable`, no request).
   Otherwise the stage asks one
   `corporate_action_ratio_required` question with `CorporateActionRatioQuestion` data (every
-  source record, the open units of all brokers just before the action and the effective dates that
-  keep them, `mEarliestDate` to `mLatestDate`) and one
-  `corporate_action_ambiguous` error (key `.ratio_required`) linked to it. A recorded ratio gives
-  `RatioConfirmed` and `corporate_action_not_applied` (key `.ratio_confirmed`, parameters
-  `newShares` and `oldShares`) until the lot step applies it; a cancel gives `Cancelled` and
-  `corporate_action_ambiguous` (key `.cancelled`, no request).
-- **Later actions.** Two rows of the same broker on a later date are `SameDayAmbiguous`
-  (`.same_day`, not linked to the open question, because answering it does not resolve them).
+  source record, the open units of all brokers just before the row date, and `mDateRanges`: every
+  effective date the action may have, as ranges with the units just before the action on them)
+  and one `corporate_action_ambiguous` error (key `.ratio_required`) linked to it. The ranges run
+  from the day after the previous applied action's effective date (or the first trade) to the day
+  before the next action's row date or 31 December; a trade counts in the units before the action
+  when it is dated before the date. Dates with no units, and every date after a sale of more units
+  than were held, are in no range. Each range also has `mLowestChangeAfter`, the lowest running
+  total of the trades after the action up to the last date (without the trades at most 10 days
+  before the next action's row, which that action's question checks, except those on the date
+  itself: each such trade date is a range of its own), which the answer check uses. For a pool
+  with `mShortSale` the ranges start from the sale's day and end on it at the latest, the question
+  has `mEarlierSaleDate` instead of the units on the row date, and the error has key
+  `.ratio_required_before_sale` (parameters `saleDate` and `days`). A recorded ratio gives
+  `RatioConfirmed`, and the next round applies it; a cancel gives `Cancelled` and
+  `corporate_action_ambiguous` (key `.cancelled`, no request). `matchCapitalPools` adds each
+  confirmed action once, so its loop always ends.
+- **Later actions.** A merger, two rows of the same broker on a later date, or split rows of
+  different brokers close together get the same errors as above (not linked to the open
+  question, because answering it does not resolve them).
   Each other later action gets `WaitingForEarlierAction` and `corporate_action_not_applied` (key
   `.waiting_for_earlier_action`, parameter `earlierDate`), linked to the open ratio question of
   the first action when there is one, so capital gains needs input rather than failing.
 - Every diagnostic has the stage `corporate_action`, affects capital gains only and carries the
-  action's date and the sources of all its rows. No units, amounts or ratios as text are in the
+  action's row date and the sources of all its rows. No units, amounts or ratios as text are in the
   messages.
 
 ### Loss eligibility contract
@@ -581,7 +628,10 @@ class is checked, because it may still be classified as a share or a fund.
   same index as the FIFO result, each with its sales of the year that have a loss unit
   (`LossSaleEligibility`): sale, window, loss units, the replacements taken (purchase, date, units),
   the known ineligible units, the units blocked by a `yes` answer and a state: `Decided`,
-  `WaitingForAnswer`, `Cancelled` or `CorporateActionInWindow` (with the action).
+  `WaitingForAnswer`, `Cancelled`, `CorporateActionInWindow` (an action after 31 December inside
+  the window) or `AppliedCorporateActionBefore` (an applied action dated on or before the window
+  end, whose units the rule cannot compare yet), each of the last two with the action. Neither
+  is asked.
 - **Question.** The open sales of one ISIN give one `loss_eligibility_confirmation_required`
   request with `LossEligibilityQuestion` data and one `loss_eligibility_unresolved` error per open
   sale (key `loss_eligibility_unresolved.confirmation_required`, the sale's sources and date),
@@ -649,7 +699,9 @@ year:
 - A sale row gets `Blocked` when the loss rule blocks the loss of every listed unit (`F7`), else
   `NotBlocked`.
 - The ISIN is blocked, with no list, for the first of these reasons that applies:
-  `FifoStopped` (the pool stopped; all its sales of the year are named) or `LossNotReportable` (a
+  `FifoStopped` (the pool stopped; all its sales of the year are named), `SplitAdjustedRows` (a
+  sale lists units, within the holding period, of a lot that a corporate action changed; the rows
+  for such units are not decided yet, so only those sales are named) or `LossNotReportable` (a
   sale whose loss-rule state is not `Decided`, or whose rule blocks more than none and fewer than
   all of its listed units; only those sales are named). A loss on units past the period is left
   out with them, because it cannot reduce the tax base. A gain of zero is not a loss. A stopped
@@ -769,13 +821,16 @@ session call.
   answers of this run ("Answered in this run"). The answers live only in the session's memory:
   nothing else is written, and the next run asks again.
 
-Until next tasks apply splits, a confirmed ratio still blocks the report with
-`corporate_action_not_applied` (key `.ratio_confirmed`). The XML is written only when the builder made a report with at least
-one list and no gate gave an error; a report without lists is `no_data` with
-`no_selected_year_disposals`. The capital status of the application result decides the files and
-the exit code, so a blocking parser or merger error (a rejected trade or corporate-action row, a
-file-level error, a `conflicting_duplicate` of a trade or corporate action, an
-`instrument_asset_class_conflict`) also blocks the report, whatever ISIN or year it belongs to.
+A confirmed split is applied. A sale that lists units of a lot the split changed still blocks
+with `corporate_action_not_applied` (key `.filing_rows`) until those rows are decided, and a loss
+sale with an applied split up to its window end with key `.loss_rule_split`.
+
+The XML is written only when the builder made a report with at least one list and no gate gave
+an error; a report without lists is `no_data` with `no_selected_year_disposals`. The capital
+status of the application result decides the files and the exit code, so a blocking parser or
+merger error (a rejected trade or corporate-action row, a file-level error, a
+`conflicting_duplicate` of a trade or corporate action, an `instrument_asset_class_conflict`) also
+blocks the report, whatever ISIN or year it belongs to.
 An event the merger rejected is not in the ledger, so only this rule blocks it.
 
 **Capital report gates** (`CapitalReportGates::check`, `include/processors/capital_report_gates.hpp`).
@@ -789,6 +844,8 @@ capital gains only and carry no units, amounts or prices:
 | Pool stopped at a non-EUR trade | `missing_exchange_rate` error (`fifo_tax`), parameter `currency` | ISIN; date and sources of that trade |
 | Sale whose loss the 30-day rule blocks only in part | `unsupported_tax_treatment` error (`fifo_tax`), key `unsupported_tax_treatment.partial_loss_eligibility` | sale |
 | Corporate action after 31 December inside the window of a December loss | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_window` | one per action, even when several sales share it; date and sources of the action |
+| Applied corporate action dated on or before the window end of a loss sale | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_rule_split` | one per action, as above |
+| Sale that lists units of a lot a corporate action changed | `corporate_action_not_applied` error (`fifo_tax`), key `corporate_action_not_applied.filing_rows` | ISIN; date and sources of its first such sale |
 | Private-market event dated in the selected year | `unsupported_tax_treatment` **warning** (`fifo_tax`) | event |
 
 Only `Stock` and `Fund` pass the class check; `IsFond` stays `false` for both. A pool stopped for

@@ -165,7 +165,9 @@ same units as the internal matches. This reading must be confirmed with an eDavk
 before release. eDavki imports such a list as a draft (scenario S1 in
 [`verification.md`](verification.md), 2026-10-27); a draft does not show the calculation.
 
-The rows for split-adjusted history and partially eligible losses are not decided yet.
+The rows for split-adjusted history and partially eligible losses are not decided yet. A sale
+that lists units of a lot a split changed blocks its ISIN (`corporate_action_not_applied`, key
+`.filing_rows`); a sale before the split is listed as usual.
 
 ### Example: one sale uses two purchases
 
@@ -368,8 +370,10 @@ reading gives the FURS result in all 23 examples (maintainer decision, 2026-10-2
    same ISIN matters). Names and symbols never identify a replacement.
 7. **Units only.** A replacement is counted by its units; its currency and price are not needed.
    A corporate action after 31 December inside the window of a December loss blocks that ISIN
-   (`corporate_action_not_applied`) until splits are applied, because the units before and after
-   it cannot be compared yet. An action up to 31 December already stops the FIFO pool.
+   (`corporate_action_not_applied`, key `.loss_window`), because the units before and after it
+   cannot be compared yet. So does a split up to 31 December that is applied on or before the
+   end of a loss sale's window (key `.loss_rule_split`): the rule counts trade units, and a split
+   changes them. Comparing units across a split is later work.
 
 The check covers all supplied brokers and accounts. Checking only the last buy before the sale is
 not enough; the legacy app's shortcut of checking only the last earlier buy must not be copied.
