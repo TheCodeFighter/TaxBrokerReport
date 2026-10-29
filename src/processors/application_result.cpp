@@ -438,15 +438,29 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         throw std::invalid_argument("A failure-resolution question needs an investment.");
     }
 
-    if (ratio != nullptr && (ratio->mSources.empty() || ratio->mPositionBefore <= 0))
+    // Either the units at the row date, or the earlier sale that the action must come before.
+    if (ratio != nullptr &&
+        (ratio->mSources.empty() || ratio->mDateRanges.empty() ||
+         ratio->mPositionBefore.has_value() == ratio->mEarlierSaleDate.has_value() ||
+         ratio->mPositionBefore.value_or(1) <= 0))
     {
         throw std::invalid_argument("A ratio question needs a source and open units.");
     }
 
-    if (ratio != nullptr && (ratio->mEarliestDate > ratio->mEffectiveDate ||
-                             ratio->mEffectiveDate > ratio->mLatestDate))
+    if (ratio != nullptr && ratio->mPositionBefore)
     {
-        throw std::invalid_argument("A ratio question needs a date range around its date.");
+        const auto* rowRange = findEffectiveDateRange(*ratio, ratio->mEffectiveDate);
+
+        if (rowRange == nullptr || rowRange->mPositionBefore != *ratio->mPositionBefore)
+        {
+            throw std::invalid_argument("A ratio question needs a date range around its date.");
+        }
+    }
+
+    if (ratio != nullptr && ratio->mEarlierSaleDate &&
+        ratio->mDateRanges.back().mLatestDate > *ratio->mEarlierSaleDate)
+    {
+        throw std::invalid_argument("A ratio question before a sale needs dates up to that sale.");
     }
 
     if (loss == nullptr)
@@ -514,6 +528,18 @@ investmentsOf(const QuestionData& aData,
 }
 
 } // namespace
+
+const EffectiveDateRange* findEffectiveDateRange(const CorporateActionRatioQuestion& aQuestion,
+                                                 Date aDate) {
+    const auto range =
+        std::find_if(aQuestion.mDateRanges.begin(),
+                     aQuestion.mDateRanges.end(),
+                     [aDate](const EffectiveDateRange& aRange) {
+                         return aRange.mEarliestDate <= aDate && aDate <= aRange.mLatestDate;
+                     });
+
+    return range == aQuestion.mDateRanges.end() ? nullptr : &*range;
+}
 
 QuestionData normalizedData(QuestionData aData) {
     if (auto* failure = std::get_if<FailureResolutionQuestion>(&aData))

@@ -87,14 +87,13 @@ CorporateActionResult resolveYear(StatementMergeResult& aMerged, int aYear) {
     orderChronologically(aMerged.mStatement);
 
     const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
-    const auto& ledger = prepared.mLedger.value();
-    const auto fifo = FifoMatcher::match(aMerged.mStatement, ledger);
     RunDecisions decisions;
 
-    return CorporateActionResolver::resolve(aMerged.mStatement, ledger, fifo, decisions);
+    return matchCapitalPools(aMerged.mStatement, prepared.mLedger.value(), decisions).mActions;
 }
 
-/// A session calculation that resolves the corporate actions with the session's answers.
+/// A session calculation that matches the pools and resolves the corporate actions with the
+/// session's answers, so a confirmed action is applied and the next one is asked.
 /// aLatest keeps the stage result of the latest calculation, so a test can check it after an
 /// answer.
 RunCalculation
@@ -103,10 +102,9 @@ resolvingCalculation(StatementMergeResult& aMerged, int aYear, CorporateActionRe
 
     return [&aMerged, aYear, &aLatest](RunDecisions& aDecisions) {
         const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
-        const auto& ledger = prepared.mLedger.value();
-        const auto fifo = FifoMatcher::match(aMerged.mStatement, ledger);
 
-        aLatest = CorporateActionResolver::resolve(aMerged.mStatement, ledger, fifo, aDecisions);
+        aLatest =
+            matchCapitalPools(aMerged.mStatement, prepared.mLedger.value(), aDecisions).mActions;
 
         ApplicationResultInput input{.mReportingYear = aYear};
         auto diagnostics = aLatest.mDiagnostics;
@@ -204,9 +202,14 @@ TEST(CorporateActionResolverTest, SplitBeforeTheSaleAsksForTheRatio) {
                                                         .mSourceValue = "1"}}));
     EXPECT_EQ(data.mPositionBefore, 100'000'000); // 1 unit bought before the split
     // The day after the purchase of 2022-01-10, up to the sale on 2024-03-10: any date between
-    // keeps the 1 unit before the split.
-    EXPECT_EQ(data.mEarliestDate, day("2022-01-11"));
-    EXPECT_EQ(data.mLatestDate, day("2024-03-10"));
+    // has the 1 unit before the split. From 2024-03-11 the sale of 1 unit would come first and
+    // leave 0 units, so no later date is in a range. The sale of 1 unit comes after the split
+    // on every date of the range.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2022-01-11"),
+                                                .mLatestDate = day("2024-03-10"),
+                                                .mPositionBefore = 100'000'000,
+                                                .mLowestChangeAfter = -100'000'000}}));
 }
 
 TEST(CorporateActionResolverTest, SplitAfterTheSaleInTheSameYearAsksForTheRatio) {
@@ -492,8 +495,9 @@ TEST(CorporateActionResolverTest, ACryptoSplitIsNotAsked) {
     EXPECT_TRUE(result.mRequests.empty());
 }
 
-TEST(CorporateActionResolverTest, NoUnitsBeforeTheSplitIsNotAsked) {
-    // 2 units bought and 2 sold before the split: there is nothing to split.
+TEST(CorporateActionResolverTest, NoUnitsBeforeTheSplitIsAMissingPosition) {
+    // 2 units bought and 2 sold before the split: the files show nothing to split, so a split row
+    // points to missing history. No question is asked.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments =
         {
@@ -544,8 +548,11 @@ TEST(CorporateActionResolverTest, NoUnitsBeforeTheSplitIsNotAsked) {
     EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::NoPosition);
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::CorporateActionNotApplied);
-    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionNotApplied);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::CorporateActionMissingPosition);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionMissingPosition);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mTaxDate, day("2023-06-01"));
 
     EXPECT_TRUE(result.mRequests.empty());
 }
@@ -853,12 +860,18 @@ TEST(CorporateActionResolverTest, ALaterSplitWaitsForTheEarlierOne) {
 
     EXPECT_EQ(data.mEffectiveDate, day("2024-03-01"));
     EXPECT_EQ(data.mPositionBefore, 300'000'000); // 3 units before March
-    // The purchase of 2024-06-01 comes before the next split, so it limits the range.
-    EXPECT_EQ(data.mEarliestDate, day("2024-01-11"));
-    EXPECT_EQ(data.mLatestDate, day("2024-06-01"));
+    // Up to the purchase of 2024-06-01 the split comes after 3 units; from the next day after
+    // 3 + 1 = 4. The day before the September split ends the last range.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-06-01"),
+                                                .mPositionBefore = 300'000'000},
+                                               {.mEarliestDate = day("2024-06-02"),
+                                                .mLatestDate = day("2024-08-31"),
+                                                .mPositionBefore = 400'000'000}}));
 }
 
-TEST(CorporateActionResolverTest, AConfirmedRatioIsKeptForTheLotStep) {
+TEST(CorporateActionResolverTest, AConfirmedRatioIsAppliedWithAWarning) {
     // 3 units before the split; the user confirms 2 / 1 and the preview of 6 units.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
@@ -906,7 +919,7 @@ TEST(CorporateActionResolverTest, AConfirmedRatioIsKeptForTheLotStep) {
 
     const auto& action = latest.mActions.at(0);
 
-    EXPECT_EQ(action.mState, CorporateActionState::RatioConfirmed);
+    EXPECT_EQ(action.mState, CorporateActionState::Applied);
     EXPECT_EQ(action.mRatio, (SplitRatio{.mNewShares = 2, .mOldShares = 1}));
     EXPECT_EQ(action.mConfirmedDate, day("2024-06-01"));
     EXPECT_EQ(action.mEvents,
@@ -914,8 +927,20 @@ TEST(CorporateActionResolverTest, AConfirmedRatioIsKeptForTheLotStep) {
 
     EXPECT_TRUE(latest.mRequests.empty());
     ASSERT_EQ(latest.mDiagnostics.size(), 1U);
-    EXPECT_EQ(latest.mDiagnostics.at(0).mMessageKey,
-              MessageKey::CorporateActionNotAppliedRatioConfirmed);
+
+    // A warning, never an error: the ratio comes from the user, not from the broker.
+    const auto& diagnostic = latest.mDiagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionApplied);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionAppliedUserRatio);
+    EXPECT_EQ(diagnostic.mMessageParams,
+              (std::vector<MessageParam>{numberParam("newShares", 2),
+                                         numberParam("oldShares", 1),
+                                         textParam("effectiveDate", "2024-06-01")}));
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-06-01"));
+    EXPECT_EQ(diagnostic.mContext.mSources,
+              (std::vector<SourceReference>{source(3, "synthetic-split-1")}));
 }
 
 TEST(CorporateActionResolverTest, AnEnteredRatioIsKeptReduced) {
@@ -963,11 +988,12 @@ TEST(CorporateActionResolverTest, AnEnteredRatioIsKeptReduced) {
     EXPECT_TRUE(rejections.empty());
 
     ASSERT_EQ(latest.mActions.size(), 1U);
-    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::RatioConfirmed);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
     EXPECT_EQ(latest.mActions.at(0).mRatio, (SplitRatio{.mNewShares = 2, .mOldShares = 1}));
-    EXPECT_EQ(
-        latest.mDiagnostics.at(0).mMessageParams,
-        (std::vector<MessageParam>{numberParam("newShares", 2), numberParam("oldShares", 1)}));
+    EXPECT_EQ(latest.mDiagnostics.at(0).mMessageParams,
+              (std::vector<MessageParam>{numberParam("newShares", 2),
+                                         numberParam("oldShares", 1),
+                                         textParam("effectiveDate", "2024-06-01")}));
 }
 
 TEST(CorporateActionResolverTest, ACancelledRatioQuestionIsKeptAsCancelled) {
@@ -1080,7 +1106,7 @@ TEST(CorporateActionResolverTest, OneActionAtTwoBrokersGetsOneRatio) {
 
     const auto& action = latest.mActions.at(0);
 
-    EXPECT_EQ(action.mState, CorporateActionState::RatioConfirmed);
+    EXPECT_EQ(action.mState, CorporateActionState::Applied);
     EXPECT_EQ(action.mRatio, (SplitRatio{.mNewShares = 2, .mOldShares = 1}));
     EXPECT_EQ(action.mEvents,
               (std::vector<StatementEventReference>{{StatementEventKind::CorporateAction, 0, 0},
@@ -1093,8 +1119,8 @@ TEST(CorporateActionResolverTest, OneActionAtTwoBrokersGetsOneRatio) {
                                             ibkrSource(3, "synthetic-ibkr-split-1")}));
 }
 
-TEST(CorporateActionResolverTest, ALaterSplitStillWaitsAfterTheFirstIsConfirmed) {
-    // March is confirmed. September is not asked yet: its position needs March applied first.
+TEST(CorporateActionResolverTest, TheNextSplitIsAskedWithThePositionAfterTheEarlierOne) {
+    // March is confirmed and applied: 3 units become 6. September is asked with those 6 units.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments =
         {
@@ -1145,16 +1171,35 @@ TEST(CorporateActionResolverTest, ALaterSplitStillWaitsAfterTheFirstIsConfirmed)
     EXPECT_TRUE(rejections.empty());
 
     ASSERT_EQ(latest.mActions.size(), 2U);
-    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::RatioConfirmed);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
     EXPECT_EQ(latest.mActions.at(0).mRatio, (SplitRatio{.mNewShares = 2, .mOldShares = 1}));
-    EXPECT_EQ(latest.mActions.at(1).mState, CorporateActionState::WaitingForEarlierAction);
+    EXPECT_EQ(latest.mActions.at(1).mState, CorporateActionState::WaitingForRatio);
     EXPECT_FALSE(latest.mActions.at(1).mRatio.has_value());
 
-    // No open question is left, so the waiting error is not linked to one.
-    EXPECT_TRUE(latest.mRequests.empty());
     ASSERT_EQ(latest.mDiagnostics.size(), 2U);
+    EXPECT_EQ(latest.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionAppliedUserRatio);
     EXPECT_EQ(latest.mDiagnostics.at(1).mMessageKey,
-              MessageKey::CorporateActionNotAppliedWaitingForEarlierAction);
+              MessageKey::CorporateActionAmbiguousRatioRequired);
+    EXPECT_EQ(latest.mDiagnostics.at(1).mContext.mTaxDate, day("2024-09-01"));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(data.mEffectiveDate, day("2024-09-01"));
+    EXPECT_EQ(data.mPositionBefore, 600'000'000); // 3 units x 2 / 1 = 6 units
+    // From the day after the March split up to the sale of 1 unit on 2024-10-01: 6 units, and
+    // the sale of 1 unit after the split; from the next day 6 - 1 = 5 units, up to 31 December,
+    // with no trade after it.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-03-02"),
+                                                .mLatestDate = day("2024-10-01"),
+                                                .mPositionBefore = 600'000'000,
+                                                .mLowestChangeAfter = -100'000'000},
+                                               {.mEarliestDate = day("2024-10-02"),
+                                                .mLatestDate = day("2024-12-31"),
+                                                .mPositionBefore = 500'000'000}}));
 }
 
 TEST(CorporateActionResolverTest, TwoRowsOfOneBrokerOnALaterDayAreAmbiguous) {
@@ -1460,9 +1505,16 @@ TEST(CorporateActionResolverTest, ASplitOn31DecemberIsAsked) {
         std::get<CorporateActionRatioQuestion>(result.mRequests.at(0).mQuestion.mData);
 
     EXPECT_EQ(data.mPositionBefore, 100'000'000); // 2 bought, 1 sold before the split
-    // The day after the sale, up to 31 December itself.
-    EXPECT_EQ(data.mEarliestDate, day("2024-03-11"));
-    EXPECT_EQ(data.mLatestDate, day("2024-12-31"));
+    // Up to the sale 2 units, with the sale of 1 unit after the split; then 2 - 1 = 1 unit up
+    // to 31 December itself.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-03-10"),
+                                                .mPositionBefore = 200'000'000,
+                                                .mLowestChangeAfter = -100'000'000},
+                                               {.mEarliestDate = day("2024-03-11"),
+                                                .mLatestDate = day("2024-12-31"),
+                                                .mPositionBefore = 100'000'000}}));
 }
 
 TEST(CorporateActionResolverTest, TheNextSplitLimitsTheEffectiveDate) {
@@ -1513,8 +1565,11 @@ TEST(CorporateActionResolverTest, TheNextSplitLimitsTheEffectiveDate) {
         std::get<CorporateActionRatioQuestion>(result.mRequests.at(0).mQuestion.mData);
 
     EXPECT_EQ(data.mEffectiveDate, day("2024-03-01"));
-    EXPECT_EQ(data.mEarliestDate, day("2024-01-11"));
-    EXPECT_EQ(data.mLatestDate, day("2024-08-31")); // the day before the September split
+    // The day before the September split ends the range.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-08-31"),
+                                                .mPositionBefore = 300'000'000}}));
 }
 
 TEST(CorporateActionResolverTest, TheYearEndLimitsTheEffectiveDate) {
@@ -1556,8 +1611,16 @@ TEST(CorporateActionResolverTest, TheYearEndLimitsTheEffectiveDate) {
     const auto& data =
         std::get<CorporateActionRatioQuestion>(result.mRequests.at(0).mQuestion.mData);
 
-    EXPECT_EQ(data.mEarliestDate, day("2024-03-11")); // the day after the sale
-    EXPECT_EQ(data.mLatestDate, day("2024-12-31"));
+    // 2 units up to the sale (the sale of 1 unit then comes after the split), then 1 unit up to
+    // 31 December, not later.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-03-10"),
+                                                .mPositionBefore = 200'000'000,
+                                                .mLowestChangeAfter = -100'000'000},
+                                               {.mEarliestDate = day("2024-03-11"),
+                                                .mLatestDate = day("2024-12-31"),
+                                                .mPositionBefore = 100'000'000}}));
 }
 
 TEST(CorporateActionResolverTest, TheAnnouncementDateIsKeptBesideTheRowDate) {
@@ -1606,9 +1669,1304 @@ TEST(CorporateActionResolverTest, TheAnnouncementDateIsKeptBesideTheRowDate) {
     EXPECT_TRUE(rejections.empty());
 
     ASSERT_EQ(latest.mActions.size(), 1U);
-    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::RatioConfirmed);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
     EXPECT_EQ(latest.mActions.at(0).mEffectiveDate, day("2024-06-01")); // the broker's row
     EXPECT_EQ(latest.mActions.at(0).mConfirmedDate, day("2024-05-20")); // the announcement
+}
+
+TEST(CorporateActionResolverTest, SplitRowsOfTwoBrokersTenDaysApartAreAmbiguous) {
+    // Trade Republic books the split on 2024-06-01, Interactive Brokers on 2024-06-11: one split
+    // booked twice, or two splits? Until the identity question exists, the investment blocks and
+    // no ratio is asked. 10 days is still inside the window.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-06-11"),
+                               .mSources = {ibkrSource(3, "synthetic-ibkr-split-1")}},
+                 .mType = CorporateActionType::Split,
+                 .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mActions.size(), 2U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::DifferentDatesAmbiguous);
+    EXPECT_EQ(result.mActions.at(1).mState, CorporateActionState::DifferentDatesAmbiguous);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& first = result.mDiagnostics.at(0);
+
+    EXPECT_EQ(first.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(first.mCode, ProcessingDiagnosticCode::CorporateActionAmbiguous);
+    EXPECT_EQ(first.mMessageKey, MessageKey::CorporateActionAmbiguousDifferentDates);
+    EXPECT_EQ(first.mMessageParams, (std::vector<MessageParam>{numberParam("days", 10)}));
+    EXPECT_EQ(first.mContext.mTaxDate, day("2024-06-01"));
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey,
+              MessageKey::CorporateActionAmbiguousDifferentDates);
+    EXPECT_EQ(result.mDiagnostics.at(1).mContext.mTaxDate, day("2024-06-11"));
+}
+
+TEST(CorporateActionResolverTest, SplitRowsOfTwoBrokersElevenDaysApartAreTwoActions) {
+    // 2024-06-01 and 2024-06-12 are 11 days apart, outside the window: two actions, the first
+    // is asked and the second waits.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-06-12"),
+                               .mSources = {ibkrSource(3, "synthetic-ibkr-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    ASSERT_EQ(result.mActions.size(), 2U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+    EXPECT_EQ(result.mActions.at(1).mState, CorporateActionState::WaitingForEarlierAction);
+    ASSERT_EQ(result.mRequests.size(), 1U);
+}
+
+TEST(CorporateActionResolverTest, SplitRowsOfOneBrokerOnNearbyDatesAreTwoActions) {
+    // Two split rows of Trade Republic five days apart: one broker does not book one split on two
+    // dates, so they are two actions; the first is asked.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(5, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-06-06"),
+                               .mSources = {source(4, "synthetic-split-2")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    ASSERT_EQ(result.mActions.size(), 2U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+    EXPECT_EQ(result.mActions.at(1).mState, CorporateActionState::WaitingForEarlierAction);
+}
+
+TEST(CorporateActionResolverTest, AMergerIsUnsupportedAndNotAsked) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {ibkrSource(3, "synthetic-ibkr-merger-1")}},
+                 .mType = CorporateActionType::Merger},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mActions.size(), 1U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::Unsupported);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::UnsupportedCorporateAction);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::UnsupportedCorporateActionMerger);
+    EXPECT_EQ(result.mDiagnostics.at(0).mContext.mSources,
+              (std::vector<SourceReference>{ibkrSource(3, "synthetic-ibkr-merger-1")}));
+}
+
+TEST(CorporateActionResolverTest, AMergerAfterASplitIsUnsupportedNotWaiting) {
+    // The March split is asked. The September merger is not a split, so it does not wait for
+    // March: it is unsupported whatever the answer.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-10-01"),
+                               .mSources = {source(5, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {ibkrSource(4, "synthetic-ibkr-merger-1")}},
+                 .mType = CorporateActionType::Merger},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    ASSERT_EQ(result.mActions.size(), 2U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+    EXPECT_EQ(result.mActions.at(1).mState, CorporateActionState::Unsupported);
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey, MessageKey::UnsupportedCorporateActionMerger);
+}
+
+TEST(CorporateActionResolverTest, AMergerOfAnotherBrokerNearASplitIsNotTheSameSplit) {
+    // A merger row of Interactive Brokers 5 days after the Trade Republic split row: a merger is
+    // never one split booked twice, so the split is still asked; the merger blocks on its own.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-06-06"),
+                               .mSources = {ibkrSource(3, "synthetic-ibkr-merger-1")}},
+                 .mType = CorporateActionType::Merger},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    ASSERT_EQ(result.mActions.size(), 2U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+    EXPECT_EQ(result.mActions.at(1).mState, CorporateActionState::Unsupported);
+    EXPECT_EQ(result.mRequests.size(), 1U);
+}
+
+TEST(CorporateActionResolverTest, DatesOutsideTheRangesOrWithoutUnitsAreRejected) {
+    // 1 unit bought 2024-01-10 and sold 2024-03-01, 1 bought 2024-05-01, split row 2024-06-01,
+    // 1 sold 2024-07-01, another split 2024-10-01. With units before the split: 2024-01-11 to
+    // 2024-03-01 (1 unit) and 2024-05-02 to 2024-07-01 (1 unit). From 2024-03-02 to 2024-05-01
+    // no unit is held, and from 2024-07-02 none either.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {
+            {
+                .mName = "Synthetic Share",
+                .mIsin = "XX0000000001",
+                .mAssetClass = AssetClass::Stock,
+                .mTransactions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                                       .mSources = {source(2, "synthetic-buy-1")}},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 100'000'000,       // 1 unit
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                                       .mSources = {source(3, "synthetic-sell-1")}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 100'000'000,       // 1 unit
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-05-01"),
+                                       .mSources = {source(4, "synthetic-buy-2")}},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 100'000'000,       // 1 unit
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-07-01"),
+                                       .mSources = {source(6, "synthetic-sell-2")}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 600'000'000, // EUR 6
+                         .mUnits = 200'000'000,     // 2 units, after the split
+                         .mCurrency = Currency::EUR},
+                    },
+                .mCorporateActions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                                       .mSources = {source(5, "synthetic-split-1")}},
+                         .mType = CorporateActionType::UnresolvedSplit},
+                        {.mMetadata = {.mTaxDate = day("2024-10-01"),
+                                       .mSources = {source(7, "synthetic-split-2")}},
+                         .mType = CorporateActionType::UnresolvedSplit},
+                    },
+            }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    // The sale of 2 units on 2024-07-01 leaves 1 - 2 = -1 old units, so no later date is offered.
+    // After a date of the first range come -1, +1 and -2 units (lowest -1 + 1 - 2 = -2), after
+    // one of the second range the sale of 2 units.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-03-01"),
+                                                .mPositionBefore = 100'000'000,
+                                                .mLowestChangeAfter = -200'000'000},
+                                               {.mEarliestDate = day("2024-05-02"),
+                                                .mLatestDate = day("2024-07-01"),
+                                                .mPositionBefore = 100'000'000,
+                                                .mLowestChangeAfter = -200'000'000}}));
+
+    // 1 unit with 2 / 1 is 2 units on every allowed date.
+    const auto answerOn = [&session](std::string_view aDate) {
+        return session.answer({{"request-0001",
+                                1,
+                                SplitRatioAnswer{.mNewShares = 2,
+                                                 .mOldShares = 1,
+                                                 .mEffectiveDate = day(aDate),
+                                                 .mConfirmedUnits = 200'000'000}}});
+    };
+
+    const auto beforeTheFirstPurchase = answerOn("2024-01-10");
+    const auto withoutUnits = answerOn("2024-04-01");
+    const auto onTheNextSplit = answerOn("2024-10-01");
+    const auto afterTheYear = answerOn("2025-01-01");
+
+    ASSERT_EQ(beforeTheFirstPurchase.size(), 1U);
+    EXPECT_EQ(beforeTheFirstPurchase.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
+    EXPECT_EQ(beforeTheFirstPurchase.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("earliestDate", "2024-01-11"),
+                                         textParam("latestDate", "2024-07-01")}));
+
+    ASSERT_EQ(withoutUnits.size(), 1U);
+    EXPECT_EQ(withoutUnits.at(0).mReason, AnswerRejection::EffectiveDateWithoutUnits);
+    EXPECT_EQ(withoutUnits.at(0).mMessageKey, MessageKey::AnswerRejectedEffectiveDateWithoutUnits);
+    EXPECT_EQ(withoutUnits.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001")}));
+
+    ASSERT_EQ(onTheNextSplit.size(), 1U);
+    EXPECT_EQ(onTheNextSplit.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
+    ASSERT_EQ(afterTheYear.size(), 1U);
+    EXPECT_EQ(afterTheYear.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
+
+    // An earlier date with units is accepted: the split comes before the March sale, and its 2
+    // units cover the later sales (2 - 2 = 0).
+    EXPECT_TRUE(answerOn("2024-02-01").empty());
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+    EXPECT_EQ(latest.mActions.at(0).mConfirmedDate, day("2024-02-01"));
+}
+
+TEST(CorporateActionResolverTest, TradesOfOneDayCountTogetherInTheDateRanges) {
+    // 3 units bought 2024-01-10; on 2024-02-01 1 bought and 1 sold, together 0, so the units
+    // before the split stay 3 and the two ranges around that day join into one. The sale of
+    // 2024-12-31 counts only from the next day, which is after 31 December, so the range ends
+    // there with 3 units.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {
+            {
+                .mName = "Synthetic Share",
+                .mIsin = "XX0000000001",
+                .mAssetClass = AssetClass::Stock,
+                .mTransactions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                                       .mSources = {source(2, "synthetic-buy-1")}},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 300'000'000,       // 3 units
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-02-01"),
+                                       .mSources = {source(3, "synthetic-buy-2")}},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 100'000'000,       // 1 unit
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-02-01"),
+                                       .mSources = {source(4, "synthetic-sell-1")}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 100'000'000,       // 1 unit
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-12-31"),
+                                       .mSources = {source(6, "synthetic-sell-2")}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 100'000'000,       // 1 unit
+                         .mCurrency = Currency::EUR},
+                    },
+                .mCorporateActions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                                       .mSources = {source(5, "synthetic-split-1")}},
+                         .mType = CorporateActionType::UnresolvedSplit},
+                    },
+            }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(result.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(data.mPositionBefore, 300'000'000); // 3 + 1 - 1 units
+    // The sale of 1 unit on 2024-12-31 comes after the split on every date of the range.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-12-31"),
+                                                .mPositionBefore = 300'000'000,
+                                                .mLowestChangeAfter = -100'000'000}}));
+}
+
+TEST(CorporateActionResolverTest, TheNextSplitCannotBeDatedOnOrBeforeTheEarlierOne) {
+    // March is applied with 2024-03-01. The September question starts the day after, 2024-03-02.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-10-01"),
+                               .mSources = {source(5, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(4, "synthetic-split-2")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    EXPECT_TRUE(session
+                    .answer({{"request-0001",
+                              1,
+                              SplitRatioAnswer{.mNewShares = 2,
+                                               .mOldShares = 1,
+                                               .mEffectiveDate = day("2024-03-01"),
+                                               .mConfirmedUnits = 600'000'000}}})
+                    .empty());
+
+    // 6 units with 2 / 1 are 12 units; on 2024-03-01 itself the order of the two is unknown.
+    const auto sameDay = session.answer({{"request-0001",
+                                          2,
+                                          SplitRatioAnswer{.mNewShares = 2,
+                                                           .mOldShares = 1,
+                                                           .mEffectiveDate = day("2024-03-01"),
+                                                           .mConfirmedUnits = 1'200'000'000}}});
+
+    ASSERT_EQ(sameDay.size(), 1U);
+    EXPECT_EQ(sameDay.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
+    EXPECT_EQ(sameDay.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("earliestDate", "2024-03-02"),
+                                         textParam("latestDate", "2024-12-31")}));
+}
+
+TEST(CorporateActionResolverTest, ASplitThatCannotBeAppliedEndsTheQuestions) {
+    // Lots of 0.00000001 and 1 unit, 1 / 10 confirmed: the total 1.00000001 previews as
+    // 0.10000000 units, but the small lot would become 0, so the FIFO stage stops the pool with
+    // corporate_action_unrepresentable. The stage lists neither action and asks nothing more.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {
+            {
+                .mName = "Synthetic Share",
+                .mIsin = "XX0000000001",
+                .mAssetClass = AssetClass::Stock,
+                .mTransactions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                                       .mSources = {source(2, "synthetic-buy-1")}},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 1,                 // 0.00000001 units
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-01-11"),
+                                       .mSources = {source(3, "synthetic-buy-2")}},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 100'000'000,       // 1 unit
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-10-01"),
+                                       .mSources = {source(6, "synthetic-sell-1")}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 1'000'000,         // 0.01 units
+                         .mCurrency = Currency::EUR},
+                    },
+                .mCorporateActions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                                       .mSources = {source(4, "synthetic-split-1")}},
+                         .mType = CorporateActionType::UnresolvedSplit},
+                        {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                                       .mSources = {source(5, "synthetic-split-2")}},
+                         .mType = CorporateActionType::UnresolvedSplit},
+                    },
+            }};
+    orderChronologically(merged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    CapitalPools pools;
+    DecisionSession session;
+    session.start([&merged, &prepared, &pools](RunDecisions& aDecisions) {
+        pools = matchCapitalPools(merged.mStatement, prepared.mLedger.value(), aDecisions);
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+        auto diagnostics = pools.mActions.mDiagnostics;
+        auto requests = pools.mActions.mRequests;
+
+        appendStageOutput(input, std::move(diagnostics), std::move(requests));
+
+        return input;
+    });
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 1,
+                                                              .mOldShares = 10,
+                                                              .mEffectiveDate = day("2024-03-01"),
+                                                              .mConfirmedUnits = 10'000'000}}});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(pools.mActions.mActions.empty());
+    EXPECT_TRUE(pools.mActions.mDiagnostics.empty());
+    EXPECT_TRUE(pools.mActions.mRequests.empty());
+
+    const auto& isin = pools.mFifo.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::NumericFailure);
+    EXPECT_EQ(isin.mStoppedAt,
+              (StatementEventReference{StatementEventKind::CorporateAction, 0, 0}));
+    ASSERT_EQ(pools.mFifo.mDiagnostics.size(), 1U);
+    EXPECT_EQ(pools.mFifo.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::CorporateActionUnrepresentable);
+}
+
+TEST(CorporateActionResolverTest, ADateThatLeavesTooFewUnitsForALaterSaleIsRejected) {
+    // 10 units bought 2024-01-10, 5 sold 2024-05-01, split row 2024-06-01. On 2024-03-01 the
+    // action comes before the sale of 5 units: 1 / 10 would leave 10 x 1 / 10 = 1 unit, and the
+    // sale needs 5, so the answer is rejected. 1 / 2 leaves 5 units, which is enough.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-05-01"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 500'000'000,       // 5 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    // Up to the sale 10 units, with the sale of 5 after the action; then 5 units, nothing after.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-05-01"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = -500'000'000},
+                                               {.mEarliestDate = day("2024-05-02"),
+                                                .mLatestDate = day("2024-12-31"),
+                                                .mPositionBefore = 500'000'000}}));
+
+    const auto tooFew = session.answer({{"request-0001",
+                                         1,
+                                         SplitRatioAnswer{.mNewShares = 1,
+                                                          .mOldShares = 10,
+                                                          .mEffectiveDate = day("2024-03-01"),
+                                                          .mConfirmedUnits = 100'000'000}}});
+
+    // 1 unit after the action, 1 - 5 = -4 units after the sale.
+    ASSERT_EQ(tooFew.size(), 1U);
+    EXPECT_EQ(tooFew.at(0).mReason, AnswerRejection::LaterSaleTooLarge);
+    EXPECT_EQ(tooFew.at(0).mMessageKey, MessageKey::AnswerRejectedLaterSaleTooLarge);
+    EXPECT_EQ(tooFew.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001")}));
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+
+    const auto enough = session.answer({{"request-0001",
+                                         1,
+                                         SplitRatioAnswer{.mNewShares = 1,
+                                                          .mOldShares = 2,
+                                                          .mEffectiveDate = day("2024-03-01"),
+                                                          .mConfirmedUnits = 500'000'000}}});
+
+    // 5 units after the action, 5 - 5 = 0 after the sale.
+    EXPECT_TRUE(enough.empty());
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+    EXPECT_EQ(latest.mActions.at(0).mConfirmedDate, day("2024-03-01"));
+}
+
+TEST(CorporateActionResolverTest, ASaleWithTooFewUnitsBeforeASplitRowAsksForADateBeforeTheSale) {
+    // 10 units bought 2024-01-10, 20 sold 2024-06-01, split row 2024-06-03. The split may have
+    // taken effect before the sale and been booked two days later, so its ratio is asked, with
+    // dates up to the sale only. The row date has no units before the action (10 - 20).
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 2'000'000'000,   // 20 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit,
+                 .mUnitEvidence = sharesEvidence(source(4, "synthetic-split-1"), "10")},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mActions.size(), 1U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+
+    ASSERT_EQ(latest.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = latest.mDiagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionAmbiguous);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionAmbiguousRatioRequiredBeforeSale);
+    EXPECT_EQ(
+        diagnostic.mMessageParams,
+        (std::vector<MessageParam>{textParam("saleDate", "2024-06-01"), numberParam("days", 10)}));
+    // The date and source of the split row, as for every ratio question.
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-06-03"));
+    EXPECT_EQ(diagnostic.mContext.mSources,
+              (std::vector<SourceReference>{source(4, "synthetic-split-1")}));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(data.mEffectiveDate, day("2024-06-03"));
+    EXPECT_FALSE(data.mPositionBefore.has_value());
+    EXPECT_EQ(data.mEarlierSaleDate, day("2024-06-01"));
+    // 10 units from the day after the purchase up to the sale, which comes after the action.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-06-01"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = -2'000'000'000}}));
+
+    // The row date is after the sale, so it is in no range.
+    const auto onTheRowDate =
+        session.answer({{"request-0001",
+                         1,
+                         SplitRatioAnswer{.mNewShares = 2,
+                                          .mOldShares = 1,
+                                          .mEffectiveDate = day("2024-06-03"),
+                                          .mConfirmedUnits = 2'000'000'000}}});
+    // 3 / 2 gives 15 units, 5 fewer than the sale needs.
+    const auto tooFew = session.answer({{"request-0001",
+                                         1,
+                                         SplitRatioAnswer{.mNewShares = 3,
+                                                          .mOldShares = 2,
+                                                          .mEffectiveDate = day("2024-05-30"),
+                                                          .mConfirmedUnits = 1'500'000'000}}});
+
+    ASSERT_EQ(onTheRowDate.size(), 1U);
+    EXPECT_EQ(onTheRowDate.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
+    ASSERT_EQ(tooFew.size(), 1U);
+    EXPECT_EQ(tooFew.at(0).mReason, AnswerRejection::LaterSaleTooLarge);
+
+    // 2 / 1 on 2024-05-30 gives 20 units, and the sale takes all of them.
+    const auto accepted = session.answer({{"request-0001",
+                                           1,
+                                           SplitRatioAnswer{.mNewShares = 2,
+                                                            .mOldShares = 1,
+                                                            .mEffectiveDate = day("2024-05-30"),
+                                                            .mConfirmedUnits = 2'000'000'000}}});
+
+    EXPECT_TRUE(accepted.empty());
+    EXPECT_TRUE(latest.mRequests.empty());
+    ASSERT_EQ(latest.mActions.size(), 1U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+    ASSERT_EQ(latest.mDiagnostics.size(), 1U);
+    EXPECT_EQ(latest.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionAppliedUserRatio);
+}
+
+TEST(CorporateActionResolverTest,
+     NoUnitsAtTheStartOfTheDayOfASaleWithTooFewUnitsIsAMissingPosition) {
+    // 1 unit bought and 2 sold on the same day 2024-06-01, split row 2024-06-03. At the start of
+    // that day no unit is held, and no earlier date has one, so there is no date to ask for.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 200'000'000,     // 2 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    ASSERT_EQ(result.mActions.size(), 1U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::NoPosition);
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::CorporateActionMissingPosition);
+}
+
+TEST(CorporateActionResolverTest, APurchaseAfterASaleWithTooFewUnitsStillEndsTheDatesAtTheSale) {
+    // 10 units bought 2024-01-10; on 2024-06-01 20 sold, then 20 bought back; split row
+    // 2024-06-03. The day adds up to 0, but the sale alone needs 20 of 10 units, so no date after
+    // the sale is offered: the dates end on 2024-06-01, as without the purchase.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 2'000'000'000,   // 20 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {source(4, "synthetic-buy-2")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 2'000'000'000,   // 20 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                               .mSources = {source(5, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_FALSE(data.mPositionBefore.has_value());
+    EXPECT_EQ(data.mEarlierSaleDate, day("2024-06-01"));
+    // The lowest total after the action is the sale alone: -20 units, before the purchase.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-06-01"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = -2'000'000'000}}));
+
+    // 2 / 1 on 2024-05-30 gives 20 units; the sale takes all of them, and the purchase adds 20.
+    const auto accepted = session.answer({{"request-0001",
+                                           1,
+                                           SplitRatioAnswer{.mNewShares = 2,
+                                                            .mOldShares = 1,
+                                                            .mEffectiveDate = day("2024-05-30"),
+                                                            .mConfirmedUnits = 2'000'000'000}}});
+
+    EXPECT_TRUE(accepted.empty());
+    EXPECT_TRUE(latest.mRequests.empty());
+    ASSERT_EQ(latest.mActions.size(), 1U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+}
+
+TEST(CorporateActionResolverTest, ADayThatSellsMoreThanWasHeldEndsTheDatesAlsoWhenItBuysBack) {
+    // 10 units bought 2024-01-10, split row 2024-03-01; on 2024-05-01 15 sold, then 15 bought
+    // back. In new units after a 2 / 1 split the sale fits (20 units). A split dated after
+    // 2024-05-01 would put the sale of 15 before it, with only 10 units, so the dates end there,
+    // although the day adds up to 0.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-05-01"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 1'500'000'000,   // 15 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-05-01"),
+                               .mSources = {source(5, "synthetic-buy-2")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 1'500'000'000,   // 15 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(data.mPositionBefore, 1'000'000'000); // 10 units on the row date
+    // 10 units up to the sale; the lowest total after the action is the sale alone, -15 units.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-05-01"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = -1'500'000'000}}));
+
+    const auto afterTheSale =
+        session.answer({{"request-0001",
+                         1,
+                         SplitRatioAnswer{.mNewShares = 2,
+                                          .mOldShares = 1,
+                                          .mEffectiveDate = day("2024-06-01"),
+                                          .mConfirmedUnits = 2'000'000'000}}});
+
+    ASSERT_EQ(afterTheSale.size(), 1U);
+    EXPECT_EQ(afterTheSale.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
+    EXPECT_EQ(afterTheSale.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("earliestDate", "2024-01-11"),
+                                         textParam("latestDate", "2024-05-01")}));
+
+    // 2 / 1 on the row date gives 20 units; the sale leaves 5, and the purchase adds 15.
+    const auto onTheRowDate =
+        session.answer({{"request-0001",
+                         1,
+                         SplitRatioAnswer{.mNewShares = 2,
+                                          .mOldShares = 1,
+                                          .mEffectiveDate = day("2024-03-01"),
+                                          .mConfirmedUnits = 2'000'000'000}}});
+
+    EXPECT_TRUE(onTheRowDate.empty());
+    ASSERT_EQ(latest.mActions.size(), 1U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+}
+
+TEST(CorporateActionResolverTest, ASaleBoughtBackOnItsDayCountsOnlyForTheDatesUpToIt) {
+    // 10 units bought 2024-01-10; on 2024-05-01 10 sold, then 10 bought back; split row
+    // 2024-09-01. The units before the action are 10 on every date, but the sale of 10 comes
+    // after the action only on the dates up to 2024-05-01. So a 1 / 10 reverse split there leaves
+    // 1 unit for the sale of 10, and after 2024-05-01 no sale follows it.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-05-01"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 1'000'000'000,   // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-05-01"),
+                               .mSources = {source(4, "synthetic-buy-2")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 600'000'000, // EUR 6
+                 .mUnits = 1'000'000'000,   // 10 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(5, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(data.mPositionBefore, 1'000'000'000); // 10 - 10 + 10 units on the row date
+    // Two ranges with 10 units: up to the sale the lowest total after the action is the sale
+    // alone, -10 units; after it no trade follows.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-05-01"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = -1'000'000'000},
+                                               {.mEarliestDate = day("2024-05-02"),
+                                                .mLatestDate = day("2024-12-31"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = 0}}));
+
+    // 1 / 10 from 2024-03-01 gives 1 unit, and the sale of 10 follows it: 1 - 10 < 0.
+    const auto beforeTheSale =
+        session.answer({{"request-0001",
+                         1,
+                         SplitRatioAnswer{.mNewShares = 1,
+                                          .mOldShares = 10,
+                                          .mEffectiveDate = day("2024-03-01"),
+                                          .mConfirmedUnits = 100'000'000}}});
+
+    ASSERT_EQ(beforeTheSale.size(), 1U);
+    EXPECT_EQ(beforeTheSale.at(0).mReason, AnswerRejection::LaterSaleTooLarge);
+
+    // 1 / 10 on the row date gives 1 unit, and no sale follows it.
+    const auto onTheRowDate = session.answer({{"request-0001",
+                                               1,
+                                               SplitRatioAnswer{.mNewShares = 1,
+                                                                .mOldShares = 10,
+                                                                .mEffectiveDate = day("2024-09-01"),
+                                                                .mConfirmedUnits = 100'000'000}}});
+
+    EXPECT_TRUE(onTheRowDate.empty());
+    ASSERT_EQ(latest.mActions.size(), 1U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+}
+
+TEST(CorporateActionResolverTest, ASaleUpToTenDaysBeforeTheNextSplitRowIsLeftToThatSplit) {
+    // 10 units bought 2024-01-10, split rows 2024-03-01 and 2024-06-05, 40 sold 2024-06-03. The
+    // second split may have taken effect before the sale (2 : 1 from 2024-06-01: 10 -> 20 -> 40)
+    // and been booked two days later, so the first split's check leaves the sale to it.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 300'000'000, // EUR 3
+                 .mUnits = 4'000'000'000,   // 40 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-06-05"),
+                               .mSources = {source(5, "synthetic-split-2")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& first =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(first.mEffectiveDate, day("2024-03-01"));
+    // 10 units up to the sale, which needs more units than were held before any split. The sale
+    // on 2024-06-03 is 2 days before the next row, so up to 2024-06-02 the lowest change after
+    // the action is 0. On 2024-06-03 itself the sale is after this split and before the next
+    // one, so it counts: -40.
+    EXPECT_EQ(first.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-06-02"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = 0},
+                                               {.mEarliestDate = day("2024-06-03"),
+                                                .mLatestDate = day("2024-06-03"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = -4'000'000'000}}));
+
+    // 2 / 1 from 2024-03-01 gives 20 units.
+    const auto firstAnswer = session.answer({{"request-0001",
+                                              1,
+                                              SplitRatioAnswer{.mNewShares = 2,
+                                                               .mOldShares = 1,
+                                                               .mEffectiveDate = day("2024-03-01"),
+                                                               .mConfirmedUnits = 2'000'000'000}}});
+
+    EXPECT_TRUE(firstAnswer.empty());
+    ASSERT_EQ(latest.mActions.size(), 2U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+    EXPECT_EQ(latest.mActions.at(1).mState, CorporateActionState::WaitingForRatio);
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& second =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(second.mEffectiveDate, day("2024-06-05"));
+    EXPECT_FALSE(second.mPositionBefore.has_value());
+    EXPECT_EQ(second.mEarlierSaleDate, day("2024-06-03"));
+    // From the day after the first split up to the sale: 10 x 2 / 1 = 20 units, and the sale of
+    // 40 after the action.
+    EXPECT_EQ(second.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-03-02"),
+                                                .mLatestDate = day("2024-06-03"),
+                                                .mPositionBefore = 2'000'000'000,
+                                                .mLowestChangeAfter = -4'000'000'000}}));
+
+    // 2 / 1 from 2024-06-01 gives 40 units, and the sale takes all of them: 40 - 40 = 0.
+    const auto secondAnswer =
+        session.answer({{"request-0001",
+                         2,
+                         SplitRatioAnswer{.mNewShares = 2,
+                                          .mOldShares = 1,
+                                          .mEffectiveDate = day("2024-06-01"),
+                                          .mConfirmedUnits = 4'000'000'000}}});
+
+    EXPECT_TRUE(secondAnswer.empty());
+    EXPECT_TRUE(latest.mRequests.empty());
+    ASSERT_EQ(latest.mActions.size(), 2U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+    EXPECT_EQ(latest.mActions.at(1).mState, CorporateActionState::Applied);
+}
+
+TEST(CorporateActionResolverTest, ASaleOnTheFirstSplitsOwnDateCountsForTheFirstSplit) {
+    // 10 units bought 2024-01-10, split rows 2024-03-01 and 2024-06-05, 40 sold 2024-06-03. A
+    // first split dated 2024-06-03 comes before the sale of that day, and the second split comes
+    // after the first, so it can never be before the sale: the first split must cover it.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 300'000'000, // EUR 3
+                 .mUnits = 4'000'000'000,   // 40 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-06-05"),
+                               .mSources = {source(5, "synthetic-split-2")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    // 2 / 1 from 2024-06-03 gives 20 units, and the sale of 40 that day needs 20 more.
+    const auto rejected = session.answer({{"request-0001",
+                                           1,
+                                           SplitRatioAnswer{.mNewShares = 2,
+                                                            .mOldShares = 1,
+                                                            .mEffectiveDate = day("2024-06-03"),
+                                                            .mConfirmedUnits = 2'000'000'000}}});
+
+    ASSERT_EQ(rejected.size(), 1U);
+    EXPECT_EQ(rejected.at(0).mReason, AnswerRejection::LaterSaleTooLarge);
+    EXPECT_EQ(rejected.at(0).mMessageKey, MessageKey::AnswerRejectedLaterSaleTooLarge);
+    EXPECT_EQ(rejected.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001")}));
+    ASSERT_EQ(latest.mActions.size(), 2U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+    EXPECT_EQ(latest.mActions.at(1).mState, CorporateActionState::WaitingForEarlierAction);
+
+    // 2 / 1 from 2024-06-02, the day before the sale, leaves the sale to the second split.
+    const auto accepted = session.answer({{"request-0001",
+                                           1,
+                                           SplitRatioAnswer{.mNewShares = 2,
+                                                            .mOldShares = 1,
+                                                            .mEffectiveDate = day("2024-06-02"),
+                                                            .mConfirmedUnits = 2'000'000'000}}});
+
+    EXPECT_TRUE(accepted.empty());
+    ASSERT_EQ(latest.mActions.size(), 2U);
+    EXPECT_EQ(latest.mActions.at(0).mState, CorporateActionState::Applied);
+    EXPECT_EQ(latest.mActions.at(1).mState, CorporateActionState::WaitingForRatio);
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& second =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    // The second split must come on 2024-06-03 before the sale: 10 x 2 / 1 = 20 units.
+    EXPECT_EQ(second.mEarlierSaleDate, day("2024-06-03"));
+    EXPECT_EQ(second.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-06-03"),
+                                                .mLatestDate = day("2024-06-03"),
+                                                .mPositionBefore = 2'000'000'000,
+                                                .mLowestChangeAfter = -4'000'000'000}}));
+}
+
+TEST(CorporateActionResolverTest, ASaleElevenDaysBeforeTheNextSplitRowCountsForTheFirstSplit) {
+    // 10 units bought 2024-01-10, split rows 2024-03-01 and 2024-06-05, 40 sold 2024-05-25. The
+    // sale is 11 days before the next row, so the matcher never leaves it to that split, and the
+    // first split must cover it.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-05-25"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 300'000'000, // EUR 3
+                 .mUnits = 4'000'000'000,   // 40 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+                {.mMetadata = {.mTaxDate = day("2024-06-05"),
+                               .mSources = {source(5, "synthetic-split-2")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+
+    const auto& data =
+        std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData);
+
+    // 10 units up to the sale, and the sale of 40 after the action.
+    EXPECT_EQ(data.mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-05-25"),
+                                                .mPositionBefore = 1'000'000'000,
+                                                .mLowestChangeAfter = -4'000'000'000}}));
+
+    // 2 / 1 gives 20 units, 20 fewer than the sale needs.
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day("2024-03-01"),
+                                                              .mConfirmedUnits = 2'000'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections.at(0).mReason, AnswerRejection::LaterSaleTooLarge);
 }
 
 } // namespace

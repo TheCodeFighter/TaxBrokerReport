@@ -126,6 +126,14 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "loss_eligibility_unresolved";
     case ProcessingDiagnosticCode::CorporateActionAmbiguous:
         return "corporate_action_ambiguous";
+    case ProcessingDiagnosticCode::CorporateActionMissingPosition:
+        return "corporate_action_missing_position";
+    case ProcessingDiagnosticCode::CorporateActionQuantityRounded:
+        return "corporate_action_quantity_rounded";
+    case ProcessingDiagnosticCode::CorporateActionApplied:
+        return "corporate_action_applied";
+    case ProcessingDiagnosticCode::UnsupportedCorporateAction:
+        return "unsupported_corporate_action";
     }
 
     return "unrepresentable_value";
@@ -432,8 +440,9 @@ Json lossCheckToJson(const LossEligibilityQuestion& aQuestion) {
 }
 
 /// The question data of a ratio question: the action, every source record, the position before
-/// it and the dates an answer may give. A source value is shown read-only; its meaning is not
-/// verified.
+/// it on its row date (or the earlier sale it must come before) and the date ranges an answer may
+/// give, each with its position before and the lowest change after. A source value is shown
+/// read-only; its meaning is not verified.
 Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
     Json sources = Json::array();
 
@@ -453,15 +462,40 @@ Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
         sources.push_back(std::move(serialized));
     }
 
-    return Json{
+    Json dateRanges = Json::array();
+
+    std::transform(aQuestion.mDateRanges.begin(),
+                   aQuestion.mDateRanges.end(),
+                   std::back_inserter(dateRanges),
+                   [](const EffectiveDateRange& aRange) {
+                       return Json{
+                           {"earliestDate", isoDate(aRange.mEarliestDate)},
+                           {"latestDate", isoDate(aRange.mLatestDate)},
+                           {"positionBefore", unitsString(aRange.mPositionBefore)},
+                           {"lowestChangeAfter", unitsString(aRange.mLowestChangeAfter)},
+                       };
+                   });
+
+    Json check{
         {"name", aQuestion.mName},
         {"isin", aQuestion.mIsin},
         {"effectiveDate", isoDate(aQuestion.mEffectiveDate)},
         {"sources", std::move(sources)},
-        {"positionBefore", unitsString(aQuestion.mPositionBefore)},
-        {"earliestDate", isoDate(aQuestion.mEarliestDate)},
-        {"latestDate", isoDate(aQuestion.mLatestDate)},
     };
+
+    // A question before a sale with too few units has no position on the row date.
+    if (aQuestion.mPositionBefore)
+    {
+        check["positionBefore"] = unitsString(*aQuestion.mPositionBefore);
+    }
+    else
+    {
+        check["earlierSaleDate"] = isoDate(aQuestion.mEarlierSaleDate.value());
+    }
+
+    check["dateRanges"] = std::move(dateRanges);
+
+    return check;
 }
 
 Json requestToJson(const DecisionRequest& aRequest) {

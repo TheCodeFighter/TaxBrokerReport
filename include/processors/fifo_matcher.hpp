@@ -9,11 +9,17 @@
 
 namespace taxbroker {
 
+// TODO: Adjust this constant to optimal margin days value.
+/// A broker may book a corporate action up to this many days after it took effect, or another
+/// broker may book the same action this many days apart.
+inline constexpr int kBrokerDateMarginDays = 10;
+
 /// One open purchase lot with its exact remaining units and basis.
 struct FifoLot {
     StatementEventReference mPurchase;
     Date mPurchaseDate;
     LotBasisState mState;
+    bool mChangedByAction{};
 
     bool operator==(const FifoLot&) const = default;
 };
@@ -32,6 +38,7 @@ struct FifoMatch {
     ExactRational mSaleValueTicks;
     /// Sale value minus basis, in ticks of 10^-16 EUR. Negative means a loss-making portion.
     ExactRational mGainTicks;
+    bool mLotChangedByAction{};
 
     bool operator==(const FifoMatch&) const = default;
 };
@@ -39,15 +46,32 @@ struct FifoMatch {
 enum class FifoIsinStatus {
     /// Every trade up to 31 December was applied.
     Matched,
-    /// Stopped at a corporate action, before the trades of its day; splits are not applied yet.
+    /// Stopped at a corporate action without a confirmed ratio, before the trades of its day.
     CorporateAction,
     /// Stopped at a trade that is not in EUR; conversion is not applied yet.
     NonEurTrade,
     /// Stopped at a sale that needs more units than the earlier purchases left open. The result
     /// has one incomplete_history error for that sale.
     InsufficientUnits,
-    /// Stopped at a value that is invalid or overflows; a diagnostic describes it.
+    /// Stopped at a value that is invalid or overflows, or at a confirmed corporate action that
+    /// cannot be applied; a diagnostic describes it.
     NumericFailure,
+};
+
+struct ConfirmedCorporateAction {
+    /// Every action row of the action, one per broker, all of one ISIN.
+    std::vector<StatementEventReference> mEvents;
+    SplitRatio mRatio;
+    Date mEffectiveDate;
+
+    bool operator==(const ConfirmedCorporateAction&) const = default;
+};
+
+struct AppliedCorporateAction {
+    StatementEventReference mAction;
+    Date mEffectiveDate;
+
+    bool operator==(const AppliedCorporateAction&) const = default;
 };
 
 struct FifoIsinResult {
@@ -55,10 +79,16 @@ struct FifoIsinResult {
     std::string mName;
     FifoIsinStatus mStatus{FifoIsinStatus::Matched};
     /// The event the pool stopped at; absent when the status is Matched. For CorporateAction it is
-    /// the action, also when a trade of the same day comes first in the ledger.
+    /// the action, also when a trade of the same day comes first in the ledger. For a confirmed
+    /// action that cannot be applied it is the first action row.
     std::optional<StatementEventReference> mStoppedAt;
     /// Open units just before the failing sale; set only for InsufficientUnits.
     std::optional<Units> mAvailableUnits;
+    /// For CorporateAction only: a sale before the action that needs more units than were held,
+    /// when the action's row is at most kBrokerDateMarginDays after it. The action may have taken
+    /// effect before the sale, so the pool stops at the action with the lots just before the
+    /// sale, and no incomplete_history error is given.
+    std::optional<StatementEventReference> mShortSale;
     /// Matches of the selected year's sales in ledger order. A stopped pool keeps the matches
     /// made before the stop.
     std::vector<FifoMatch> mMatches;
@@ -68,6 +98,7 @@ struct FifoIsinResult {
     /// Open lots in FIFO order at 31 December, or just before the event a stopped pool stopped at.
     /// For CorporateAction: at the start of the action's day, without the trades of that day.
     std::vector<FifoLot> mOpenLots;
+    std::vector<AppliedCorporateAction> mAppliedActions;
 };
 
 struct FifoMatchingResult {
@@ -86,15 +117,26 @@ class FifoMatcher final {
     /// selected year produce matches in mMatches; the matches of earlier sales go to
     /// mEarlierMatches.
     ///
-    /// A pool stops at its first corporate action, non-EUR trade, sale without enough open units
-    /// or invalid value, and ignores its later events. The failing sale is never applied
-    /// partly: the open lots stay as they were before it. Other ISINs are not affected.
+    /// A confirmed corporate action changes every open lot of its ISIN once, at the start of its
+    /// effective date, before the trades of that day: the units by the exact ratio; each lot keeps
+    /// its purchase date, FIFO place and exact basis. The rounding of the actions of one ISIN must
+    /// change its value by less than EUR 0.01 in total; each rounding gives a warning.
+    ///
+    /// A pool stops at its first corporate action without a confirmed ratio, non-EUR trade, sale
+    /// without enough open units, invalid value or confirmed action that cannot be applied, and
+    /// ignores its later events. The failing sale is never applied partly: the open lots stay as
+    /// they were before it.
     /// A sale without enough open units gives one incomplete_history error for the capital report,
-    /// with the sale's sources and tax date. Only the first such sale of an ISIN is reported.
+    /// with the sale's sources and tax date. Only the first such sale of an ISIN is reported. When
+    /// some units are open, the ISIN has a sale in the selected year and its first unconfirmed
+    /// action is a split row at most kBrokerDateMarginDays after the sale, the pool stops at that
+    /// action instead (mShortSale), because the split may have taken effect before the sale.
     ///
     /// aStatement must be the statement that aLedger was prepared from.
-    [[nodiscard]] static FifoMatchingResult match(const MergedStatement& aStatement,
-                                                  const ReportingYearLedger& aLedger);
+    [[nodiscard]] static FifoMatchingResult
+    match(const MergedStatement& aStatement,
+          const ReportingYearLedger& aLedger,
+          const std::vector<ConfirmedCorporateAction>& aConfirmedActions = {});
 };
 
 } // namespace taxbroker

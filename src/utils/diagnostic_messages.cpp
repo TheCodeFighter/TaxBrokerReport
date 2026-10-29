@@ -59,9 +59,17 @@ constexpr std::array kRequestIdAndField{
     MessageParamDefinition{"requestId", MessageParamKind::Text},
     MessageParamDefinition{"field", MessageParamKind::Text},
 };
-constexpr std::array kNewAndOldShares{
+constexpr std::array kNewAndOldSharesAndDate{
     MessageParamDefinition{"newShares", MessageParamKind::Number},
     MessageParamDefinition{"oldShares", MessageParamKind::Number},
+    MessageParamDefinition{"effectiveDate", MessageParamKind::Text},
+};
+constexpr std::array kDays{
+    MessageParamDefinition{"days", MessageParamKind::Number},
+};
+constexpr std::array kSaleDateAndDays{
+    MessageParamDefinition{"saleDate", MessageParamKind::Text},
+    MessageParamDefinition{"days", MessageParamKind::Number},
 };
 constexpr std::array kRequestIdAndDateRange{
     MessageParamDefinition{"requestId", MessageParamKind::Text},
@@ -186,9 +194,6 @@ constexpr std::array kDefinitions{
         MessageKey::CorporateActionAmbiguousCancelled, "corporate_action_ambiguous.cancelled", {}},
     MessageDefinition{
         MessageKey::CorporateActionAmbiguousSameDay, "corporate_action_ambiguous.same_day", {}},
-    MessageDefinition{MessageKey::CorporateActionNotAppliedRatioConfirmed,
-                      "corporate_action_not_applied.ratio_confirmed",
-                      kNewAndOldShares},
     MessageDefinition{MessageKey::CorporateActionNotAppliedWaitingForEarlierAction,
                       "corporate_action_not_applied.waiting_for_earlier_action",
                       kEarlierDate},
@@ -205,6 +210,36 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::AnswerRejectedEffectiveDateOutOfRange,
                       "answer_rejected.effective_date_out_of_range",
                       kRequestIdAndDateRange},
+    MessageDefinition{MessageKey::AnswerRejectedEffectiveDateWithoutUnits,
+                      "answer_rejected.effective_date_without_units",
+                      kRequestId},
+    MessageDefinition{MessageKey::CorporateActionAppliedUserRatio,
+                      "corporate_action_applied.user_ratio",
+                      kNewAndOldSharesAndDate},
+    MessageDefinition{
+        MessageKey::CorporateActionQuantityRounded, "corporate_action_quantity_rounded", {}},
+    MessageDefinition{MessageKey::CorporateActionUnrepresentableRoundingBudget,
+                      "corporate_action_unrepresentable.rounding_budget",
+                      {}},
+    MessageDefinition{
+        MessageKey::CorporateActionMissingPosition, "corporate_action_missing_position", {}},
+    MessageDefinition{MessageKey::CorporateActionAmbiguousDifferentDates,
+                      "corporate_action_ambiguous.different_dates",
+                      kDays},
+    MessageDefinition{
+        MessageKey::UnsupportedCorporateActionMerger, "unsupported_corporate_action.merger", {}},
+    MessageDefinition{MessageKey::CorporateActionNotAppliedLossRuleSplit,
+                      "corporate_action_not_applied.loss_rule_split",
+                      {}},
+    MessageDefinition{MessageKey::CorporateActionNotAppliedFilingRows,
+                      "corporate_action_not_applied.filing_rows",
+                      {}},
+    MessageDefinition{MessageKey::CorporateActionAmbiguousRatioRequiredBeforeSale,
+                      "corporate_action_ambiguous.ratio_required_before_sale",
+                      kSaleDateAndDays},
+    MessageDefinition{MessageKey::AnswerRejectedLaterSaleTooLarge,
+                      "answer_rejected.later_sale_too_large",
+                      kRequestId},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -221,7 +256,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::AnswerRejectedEffectiveDateOutOfRange) + 1,
+                  static_cast<std::size_t>(MessageKey::AnswerRejectedLaterSaleTooLarge) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 7> kTermKeys{

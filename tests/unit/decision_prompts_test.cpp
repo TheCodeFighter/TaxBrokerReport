@@ -252,8 +252,9 @@ TEST(DecisionPromptsTest, ARatioQuestionNamesEachSourceAndTakesAConfirmedRatio) 
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = std::nullopt}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -286,6 +287,107 @@ Is this right? (yes or no):
     EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
 }
 
+TEST(DecisionPromptsTest, SeveralDateRangesAreListedAndThePreviewTakesTheUnitsOfTheDate) {
+    // 1 unit just before the row date 2024-06-01; 0.5 more units were bought on 2024-07-01, so
+    // a date from 2024-07-02 has 1.5 units before the split. The announcement date 2024-08-01
+    // gives 1.5 x 2 / 1 = 3 units.
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CorporateActionRatioRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionRatioQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mEffectiveDate = day(2024, 6, 1),
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-split",
+                              .mSourceValue = "1"}},
+                .mPositionBefore = 100'000'000, // 1 unit
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 7, 1),
+                                 .mPositionBefore = 100'000'000},
+                                {.mEarliestDate = day(2024, 7, 2),
+                                 .mLatestDate = day(2024, 12, 31),
+                                 .mPositionBefore = 150'000'000}},
+            },
+    }}));
+
+    const auto output = ask(session, "2 : 1\n2024-08-01\nyes\n");
+
+    EXPECT_EQ(textFrom(output, "Effective date"),
+              "Effective date from the announcement (YYYY-MM-DD, 2024-01-11 to 2024-07-01 with "
+              "1.0000 units, or 2024-07-02 to 2024-12-31 with 1.5000 units), or empty for "
+              "2024-06-01:\n"
+              "After it you hold 3.0000 units (2 : 1 from 2024-08-01).\n"
+              "Is this right? (yes or no):\n\n");
+
+    const AnswerValue expected = SplitRatioAnswer{.mNewShares = 2,
+                                                  .mOldShares = 1,
+                                                  .mEffectiveDate = day(2024, 8, 1),
+                                                  .mConfirmedUnits = 300'000'000};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+}
+
+TEST(DecisionPromptsTest, AQuestionBeforeASaleNamesTheSaleAndHasNoDefaultDate) {
+    // The sale of 2024-06-01 needs more units than were held, and the split row is dated
+    // 2024-06-03: the row date is in no range, so an empty line is no answer. 10 units x 2 / 1 =
+    // 20 units on 2024-05-30.
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CorporateActionRatioRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionRatioQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mEffectiveDate = day(2024, 6, 3),
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-split",
+                              .mSourceValue = "10"}},
+                .mPositionBefore = std::nullopt,
+                .mEarlierSaleDate = day(2024, 6, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 6, 1),
+                                 .mPositionBefore = 1'000'000'000,       // 10 units
+                                 .mLowestChangeAfter = -2'000'000'000}}, // the sale of 20
+            },
+    }}));
+
+    const auto output = ask(session, "2 : 1\n\n2024-05-30\nyes\n");
+
+    EXPECT_EQ(
+        output,
+        R"(Question request-0001: a corporate action of XX0000000001 Synthetic Share on 2024-06-03
+  Source: Trade Republic, transaction synthetic-split, shares 10 (the broker's own value, not a ratio)
+  The sale on 2024-06-01 needs more units than you held. If the action took effect on
+  or before that sale, enter it; if not, cancel: earlier purchases are then missing.
+  Enter the ratio from the announcement as new : old, for example 10 : 1 (every old share
+  becomes 10 shares; "nine additional shares for every share" is also 10 : 1; a reverse
+  split is 1 : 10), or your shares just before and just after it as before -> after, for
+  example 0,52 -> 5,2 (a decimal comma or point), or cancel.
+Ratio:
+Effective date from the announcement (YYYY-MM-DD, 2024-01-11 to 2024-06-01):
+Enter the date as YYYY-MM-DD.
+Effective date from the announcement (YYYY-MM-DD, 2024-01-11 to 2024-06-01):
+After it you hold 20.0000 units (2 : 1 from 2024-05-30).
+Is this right? (yes or no):
+
+)");
+
+    const AnswerValue expected = SplitRatioAnswer{.mNewShares = 2,
+                                                  .mOldShares = 1,
+                                                  .mEffectiveDate = day(2024, 5, 30),
+                                                  .mConfirmedUnits = 2'000'000'000};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+}
+
 TEST(DecisionPromptsTest, ShareCountsWithAPointAndACommaGiveTheirRatio) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{
@@ -301,8 +403,9 @@ TEST(DecisionPromptsTest, ShareCountsWithAPointAndACommaGiveTheirRatio) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 50'000'000, // 0.5 units
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 50'000'000}},
             },
     }}));
 
@@ -340,8 +443,9 @@ TEST(DecisionPromptsTest, AnUnreadableRatioIsAskedAgainWithoutAnAnswer) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -396,8 +500,9 @@ TEST(DecisionPromptsTest, ARatioWithAZeroIsPassedOnAndTheSessionRejectsIt) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -432,8 +537,9 @@ TEST(DecisionPromptsTest, ARatioWhosePositionDoesNotFitIsPassedOnAndTheSessionRe
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 1, // 0.00000001 units
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 1}},
             },
     }}));
 
@@ -467,8 +573,9 @@ TEST(DecisionPromptsTest, AnUnreadableEffectiveDateIsAskedAgain) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -509,8 +616,9 @@ TEST(DecisionPromptsTest, ARatioNotConfirmedIsAskedAgain) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -555,8 +663,9 @@ TEST(DecisionPromptsTest, AnUnusualRatioIsWarnedAboutBeforeThePreview) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -590,8 +699,9 @@ TEST(DecisionPromptsTest, AnInputEndingAtTheRatioLeavesTheQuestionOpen) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -620,8 +730,9 @@ TEST(DecisionPromptsTest, AnInputEndingAtTheEffectiveDateLeavesTheQuestionOpen) 
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -652,8 +763,9 @@ TEST(DecisionPromptsTest, AnInputEndingAtTheConfirmationLeavesTheQuestionOpen) {
                               .mTransactionId = "synthetic-split",
                               .mSourceValue = "1"}},
                 .mPositionBefore = 100'000'000, // 1 unit
-                .mEarliestDate = day(2024, 1, 11),
-                .mLatestDate = day(2024, 9, 1),
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
             },
     }}));
 
@@ -709,8 +821,9 @@ TEST(DecisionPromptsTest, TwoQuestionsAreAskedInRequestOrderWithABlankLineBetwee
                                   .mTransactionId = "synthetic-split",
                                   .mSourceValue = "1"}},
                     .mPositionBefore = 100'000'000, // 1 unit
-                    .mEarliestDate = day(2024, 1, 11),
-                    .mLatestDate = day(2024, 9, 1),
+                    .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                     .mLatestDate = day(2024, 9, 1),
+                                     .mPositionBefore = 100'000'000}},
                 },
         },
     }));

@@ -194,8 +194,9 @@ void checkStoppedPool(const FifoIsinResult& aPool,
     }
 }
 
-/// Errors for loss sales that cannot be written yet: one per corporate action in a loss window,
-/// and one per partly blocked sale. Open and cancelled questions already have theirs.
+/// Errors for loss sales that cannot be written yet: one per corporate action in a loss window or
+/// applied before a window end, and one per partly blocked sale. Open and cancelled questions
+/// already have theirs.
 void checkLossSales(const KdvpBlockedIsin& aBlocked,
                     const LossEligibilityIsin& aLoss,
                     const std::vector<TradeInstrument>& aInstruments,
@@ -220,7 +221,8 @@ void checkLossSales(const KdvpBlockedIsin& aBlocked,
         case LossSaleState::WaitingForAnswer:
         case LossSaleState::Cancelled:
             break;
-        case LossSaleState::CorporateActionInWindow: {
+        case LossSaleState::CorporateActionInWindow:
+        case LossSaleState::AppliedCorporateActionBefore: {
             const auto& event = loss->mCorporateAction.value();
 
             if (std::find(reportedActions.begin(), reportedActions.end(), event) !=
@@ -238,7 +240,9 @@ void checkLossSales(const KdvpBlockedIsin& aBlocked,
                 DiagnosticSeverity::Error,
                 ProcessingDiagnosticCode::CorporateActionNotApplied,
                 PipelineStage::CorporateAction,
-                makeDiagnosticMessage(MessageKey::CorporateActionNotAppliedLossWindow),
+                makeDiagnosticMessage(loss->mState == LossSaleState::CorporateActionInWindow
+                                          ? MessageKey::CorporateActionNotAppliedLossWindow
+                                          : MessageKey::CorporateActionNotAppliedLossRuleSplit),
                 action.mMetadata.mSources,
                 action.mMetadata.mTaxDate,
                 aBlocked.mName,
@@ -348,6 +352,21 @@ std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatemen
                 checkLossSales(blocked, *loss, instruments, diagnostics);
             }
 
+            break;
+        }
+        case KdvpBlockReason::SplitAdjustedRows: {
+            // The error points at the first sale that lists units of a changed lot.
+            const auto& sale = tradeOf(instruments, blocked.mSales.front());
+
+            diagnostics.push_back(capitalDiagnostic(
+                DiagnosticSeverity::Error,
+                ProcessingDiagnosticCode::CorporateActionNotApplied,
+                PipelineStage::FifoTax,
+                makeDiagnosticMessage(MessageKey::CorporateActionNotAppliedFilingRows),
+                sale.mMetadata.mSources,
+                sale.mMetadata.mTaxDate,
+                blocked.mName,
+                blocked.mIsin));
             break;
         }
         }

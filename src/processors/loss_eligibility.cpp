@@ -265,12 +265,24 @@ std::vector<LossSaleEligibility> checkIsin(const IsinHistory& aHistory,
 
         sale.mReplacements = std::move(replacements);
 
+        const auto applied = std::find_if(aPool.mAppliedActions.begin(),
+                                          aPool.mAppliedActions.end(),
+                                          [&sale](const AppliedCorporateAction& aAction) {
+                                              return aAction.mEffectiveDate <= sale.mWindowEnd;
+                                          });
         const auto action = std::find_if(
             aHistory.mLaterActions.begin(),
             aHistory.mLaterActions.end(),
             [&sale](const IsinEvent& aAction) { return aAction.mDate <= sale.mWindowEnd; });
 
-        if (action != aHistory.mLaterActions.end())
+        // The stock and the replacement units above count raw trade units, which an applied
+        // action changes, so they are not used for this sale.
+        if (applied != aPool.mAppliedActions.end())
+        {
+            sale.mState = LossSaleState::AppliedCorporateActionBefore;
+            sale.mCorporateAction = applied->mAction;
+        }
+        else if (action != aHistory.mLaterActions.end())
         {
             sale.mState = LossSaleState::CorporateActionInWindow;
             sale.mCorporateAction = action->mReference;

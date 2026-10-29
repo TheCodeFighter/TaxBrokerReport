@@ -81,6 +81,20 @@ LossEligibilityResult checkYear(StatementMergeResult& aMerged,
                                          aOpenQuestions);
 }
 
+/// Like checkYear, with confirmed corporate actions that the matcher applies.
+LossEligibilityResult checkYearWithActions(StatementMergeResult& aMerged,
+                                           int aYear,
+                                           const std::vector<ConfirmedCorporateAction>& aActions) {
+    orderChronologically(aMerged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
+    const auto& ledger = prepared.mLedger.value();
+    const auto fifo = FifoMatcher::match(aMerged.mStatement, ledger, aActions);
+    RunDecisions decisions;
+
+    return LossEligibilityChecker::check(aMerged.mStatement, ledger, fifo, decisions);
+}
+
 // The FURS examples (*Dobiček iz kapitala – pravilo navidezne odsvojitve kapitala*, FURS, January
 // 2015): every purchase at EUR 10 and every sale at EUR 8, so every sale is a loss, as FURS
 // assumes. "DA-n" units keep their loss, "NE-n" units do not. The files decide the NE units; the
@@ -3148,6 +3162,151 @@ TEST(LossEligibilityTest, AssumeBlockedLeavesALossTheFilesDecideAlone) {
 
     EXPECT_TRUE(result.mRequests.empty());
     EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(LossEligibilityTest, AnAppliedSplitInsideTheWindowStopsTheCheck) {
+    // 4 units bought, 3 sold at a loss on 2024-11-20 (window up to 2024-12-20), split 2 / 1
+    // applied on 2024-12-01: the trade units before and after it cannot be compared yet.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 400'000'000,       // 4 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-11-20")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 300'000'000,     // 3 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-12-01")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        checkYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2024-12-01")}});
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    ASSERT_EQ(result.mIsins.at(0).mSales.size(), 1U);
+
+    const auto& sale = result.mIsins.at(0).mSales.at(0);
+
+    EXPECT_EQ(sale.mWindowEnd, day("2024-12-20"));
+    EXPECT_EQ(sale.mLossUnits, 300'000'000); // 3 units
+    EXPECT_EQ(sale.mState, LossSaleState::AppliedCorporateActionBefore);
+    EXPECT_EQ(sale.mCorporateAction,
+              (StatementEventReference{StatementEventKind::CorporateAction, 0, 0}));
+    // No question: the answer could not be used yet.
+    EXPECT_TRUE(result.mRequests.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(LossEligibilityTest, AnAppliedSplitBeforeTheWindowStopsTheCheck) {
+    // 1 unit bought in 2023, split 2 / 1 on 2023-06-01, the 2 units sold on 2023-09-01; 3 bought
+    // and sold at a loss in January 2024. The split is long before the window, but the stock the
+    // rule counts in trade units (1 - 2 + 3 - 3 = -1) mixes units before and after it.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2023-09-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-01-20")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 300'000'000,     // 3 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-06-01")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        checkYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2023-06-01")}});
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    ASSERT_EQ(result.mIsins.at(0).mSales.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mSales.at(0).mState, LossSaleState::AppliedCorporateActionBefore);
+    EXPECT_TRUE(result.mRequests.empty());
+}
+
+TEST(LossEligibilityTest, AnAppliedSplitAfterTheWindowDoesNotStopTheCheck) {
+    // The loss sale of 2024-03-01 has its window up to 2024-03-31; the split of 2024-06-01 is
+    // after it, so the rule counts as before: no replacement, 5 open units, a question.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 500'000'000,     // 5 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        checkYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2024-06-01")}});
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    ASSERT_EQ(result.mIsins.at(0).mSales.size(), 1U);
+
+    const auto& sale = result.mIsins.at(0).mSales.at(0);
+
+    EXPECT_EQ(sale.mWindowEnd, day("2024-03-31"));
+    EXPECT_EQ(sale.mState, LossSaleState::WaitingForAnswer);
+    EXPECT_FALSE(sale.mCorporateAction.has_value());
+    EXPECT_EQ(result.mRequests.size(), 1U);
 }
 
 } // namespace

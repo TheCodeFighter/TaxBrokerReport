@@ -87,15 +87,16 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
     };
 }
 
-/// The rejection of a ratio answer whose effective date is outside the question's range.
+/// The rejection of a ratio answer whose effective date is before the first range of the question
+/// or after its last one.
 [[nodiscard]] RejectedAnswer rejectedEffectiveDate(std::size_t aIndex,
                                                    const std::string& aRequestId,
                                                    const CorporateActionRatioQuestion& aQuestion) {
     auto message = makeDiagnosticMessage(
         MessageKey::AnswerRejectedEffectiveDateOutOfRange,
         {textParam("requestId", aRequestId),
-         textParam("earliestDate", formatCalendarDate(aQuestion.mEarliestDate)),
-         textParam("latestDate", formatCalendarDate(aQuestion.mLatestDate))});
+         textParam("earliestDate", formatCalendarDate(aQuestion.mDateRanges.front().mEarliestDate)),
+         textParam("latestDate", formatCalendarDate(aQuestion.mDateRanges.back().mLatestDate))});
 
     return RejectedAnswer{
         .mIndex = aIndex,
@@ -106,9 +107,9 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
     };
 }
 
-/// Checks a ratio answer: both numbers positive and not equal, the effective date within the
-/// question's range, and the confirmed position equal to the preview of the ratio for the
-/// question's position before the action.
+/// Checks a ratio answer: both numbers positive and not equal, the effective date within one of
+/// the question's ranges, the confirmed position equal to the preview of the ratio for the
+/// position before the action on that date, and enough units after it for the later sales.
 [[nodiscard]] std::optional<RejectedAnswer> checkRatioAnswer(std::size_t aIndex,
                                                              const DecisionRequest& aRequest,
                                                              const SplitRatioAnswer& aAnswer) {
@@ -132,16 +133,27 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
                               aRequest.mId);
     }
 
-    // Within the range the position before the action is the same, so the preview still holds.
-    if (aAnswer.mEffectiveDate < question.mEarliestDate ||
-        aAnswer.mEffectiveDate > question.mLatestDate)
+    const auto* range = findEffectiveDateRange(question, aAnswer.mEffectiveDate);
+
+    // A question always has a range: the one of its own date.
+    if (aAnswer.mEffectiveDate < question.mDateRanges.front().mEarliestDate ||
+        aAnswer.mEffectiveDate > question.mDateRanges.back().mLatestDate)
     {
         return rejectedEffectiveDate(aIndex, aRequest.mId, question);
     }
 
+    // Between two ranges no units are held just before the action.
+    if (range == nullptr)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::EffectiveDateWithoutUnits,
+                              MessageKey::AnswerRejectedEffectiveDateWithoutUnits,
+                              aRequest.mId);
+    }
+
     // Both numbers are positive and different, so the ratio exists.
     const auto ratio = makeSplitRatio(aAnswer.mNewShares, aAnswer.mOldShares).value();
-    const auto preview = previewSplitUnits(question.mPositionBefore, ratio);
+    const auto preview = previewSplitUnits(range->mPositionBefore, ratio);
 
     if (!preview)
     {
@@ -156,6 +168,16 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
         return rejectedAnswer(aIndex,
                               AnswerRejection::PreviewMismatch,
                               MessageKey::AnswerRejectedPreviewMismatch,
+                              aRequest.mId);
+    }
+
+    // The units after the action must cover every later sale up to the next action. The preview
+    // is above 0 and the lowest change at most 0, so the sum cannot overflow.
+    if (*preview + range->mLowestChangeAfter < 0)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::LaterSaleTooLarge,
+                              MessageKey::AnswerRejectedLaterSaleTooLarge,
                               aRequest.mId);
     }
 

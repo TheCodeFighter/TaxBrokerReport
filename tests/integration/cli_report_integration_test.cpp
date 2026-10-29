@@ -806,7 +806,7 @@ TEST(CliReportIntegrationTest, SplitAfterTheSaleInTheSameYearBlocksTheReport) {
                              folder.outputDirectory(),
                              history});
 
-    // Any corporate action up to 31 December blocks, also one after the sale.
+    // Without an answer the split blocks, also one after the sale: the input ends at once.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
     EXPECT_TRUE(contains(result.mOut,
@@ -818,6 +818,207 @@ TEST(CliReportIntegrationTest, SplitAfterTheSaleInTheSameYearBlocksTheReport) {
     EXPECT_TRUE(contains(result.mOut,
                          "  diagnostic-0001 corporate_action_ambiguous, XX0000000001 Synthetic "
                          "Share, 2025-09-01, history.csv row 4\n"));
+}
+
+TEST(CliReportIntegrationTest, ASplitAnsweredAfterTheSaleOfTheYearGivesTheReport) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-09-01T09:00:00Z,2025-09-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+
+    // The ratio 2 : 1, an empty line for the broker's date, and yes to the preview.
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nyes\n");
+
+    // Up to the sale the split would come after 2 units, from the day after it after 1 unit.
+    // With the row date 1 unit becomes 2. The March sale used a lot the split had not changed,
+    // so its rows are written: 1 unit bought at EUR 10, 1 sold at EUR 30.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Effective date from the announcement (YYYY-MM-DD, 2025-01-11 to "
+                         "2025-03-10 with 2.0000 units, or 2025-03-11 to 2025-12-31 with 1.0000 "
+                         "units), or empty for 2025-09-01:\n"
+                         "After it you hold 2.0000 units (2 : 1 from 2025-09-01).\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Errors: 0\n\nWarnings: 1\n"
+                         "  diagnostic-0001 corporate_action_applied, XX0000000001 Synthetic "
+                         "Share, 2025-09-01, history.csv row 4\n"
+                         "    The corporate action was applied with the ratio 2 new for 1 old "
+                         "shares from 2025-09-01, as you entered it. The broker did not supply "
+                         "this ratio.\n"));
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2025.xml"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml,
+                         "<Purchase>\n"
+                         "              <F1>2025-01-10</F1>\n"
+                         "              <F2>B</F2>\n"
+                         "              <F3>1.0000</F3>\n"
+                         "              <F4>10.0000</F4>\n"));
+    EXPECT_TRUE(contains(xml,
+                         "<Sale>\n"
+                         "              <F6>2025-03-10</F6>\n"
+                         "              <F7>1.0000</F7>\n"
+                         "              <F9>30.0000</F9>\n"));
+}
+
+TEST(CliReportIntegrationTest, ADateWithoutUnitsIsRejectedAndAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,12,12,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n2024-04-01\ncancel\n");
+
+    // From 2024-03-02 to 2024-05-01 no unit is held (sold in March, bought again in May). Such a
+    // date has no preview; the session rejects the date, and the question is asked again.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Effective date from the announcement (YYYY-MM-DD, 2024-01-11 to "
+                         "2024-03-01 with 1.0000 units, or 2024-05-02 to 2025-03-10 with 1.0000 "
+                         "units), or empty for 2024-06-01:\n"
+                         "On the effective date in the answer to request-0001, no units are held "
+                         "just before the action. Check the announcement, or close the "
+                         "question.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: blocked (corporate_action_ambiguous)\n"));
+}
+
+TEST(CliReportIntegrationTest, ARatioThatLeavesTooFewUnitsForALaterSaleIsAskedAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,12,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "1 : 10\n2024-03-01\nyes\ncancel\n");
+
+    // On 2024-03-01 the action comes before the sale of 5 units on 2024-05-01: 10 x 1 / 10 = 1
+    // unit is too few, so the answer is rejected and the question is asked again.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "After it you hold 1.0000 units (1 : 10 from 2024-03-01).\n"
+                         "Is this right? (yes or no):\n"
+                         "With the ratio and the effective date in the answer to request-0001, a "
+                         "later sale needs more units than are held after the action. Check the "
+                         "ratio and the date in the announcement.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: blocked (corporate_action_ambiguous)\n"));
+}
+
+TEST(CliReportIntegrationTest, ASaleWithTooFewUnitsBeforeASplitRowAsksForTheSplitDate) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-20,6,120,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,10,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n2024-05-30\nyes\n");
+
+    // The sale of 20 units needs more than the 10 bought, and the split row follows 2 days
+    // later: the split may have taken effect before the sale. 2 : 1 from 2024-05-30 makes the
+    // 10 units 20, so the sale fits. The sale uses the changed lot, whose Doh-KDVP rows are not
+    // decided yet, so the report stays blocked, but not for missing history.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  The sale on 2024-06-01 needs more units than you held. If the action "
+                         "took effect on\n"
+                         "  or before that sale, enter it; if not, cancel: earlier purchases are "
+                         "then missing.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Effective date from the announcement (YYYY-MM-DD, 2024-01-11 to "
+                         "2024-06-01):\n"
+                         "After it you hold 20.0000 units (2 : 1 from 2024-05-30).\n"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "  XX0000000001 Synthetic Share: blocked (corporate_action_not_applied)\n"));
+    EXPECT_FALSE(contains(result.mOut, "incomplete_history"));
+}
+
+TEST(CliReportIntegrationTest, ASaleWithTooFewUnitsBeforeASplitRowBlocksWithoutInput) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-20,6,120,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,10,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--no-input",
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    // The question stays open; its error names the sale and the 10 days.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: blocked (corporate_action_ambiguous)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "    A sale of this investment on 2024-06-01 needs more units than the "
+                         "earlier purchases left, and a corporate action, such as a split, follows "
+                         "it within 10 days."));
+    EXPECT_FALSE(contains(result.mOut, "incomplete_history"));
 }
 
 TEST(CliReportIntegrationTest, SaleWithoutEnoughPurchasesBlocksTheReport) {
@@ -1212,10 +1413,11 @@ TEST(CliReportIntegrationTest, ASplitRatioAnsweredClosesTheQuestion) {
                              history},
                             "2 : 1\n\nyes\n");
 
-    // 1 unit before the split; 1 x 2 / 1 = 2 after it. The dates that keep 1 unit run from the
-    // day after the purchase (2022-01-11) to the day of the sale (2025-03-10): the action comes
-    // before the trades of its day. The ratio is confirmed, but splits are not applied yet, so
-    // the report stays blocked with corporate_action_not_applied instead of the open question.
+    // 1 unit before the split; 1 x 2 / 1 = 2 after it. The dates with 1 unit run from the day
+    // after the purchase (2022-01-11) to the day of the sale (2025-03-10): the action comes
+    // before the trades of its day, and a later date would put the sale of 2 units before the
+    // split. The split is applied (a warning: the user gave the ratio), but the sale uses the
+    // changed lot, whose Doh-KDVP rows are not decided yet, so the report stays blocked.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
     EXPECT_EQ(
@@ -1247,10 +1449,12 @@ Units past the holding period (tax free, not in the XML): 0
 Private-market events skipped (only a cash amount, no units): 0
 
 Errors: 1
-  diagnostic-0001 corporate_action_not_applied, XX0000000001 Synthetic Share, 2023-01-15, history.csv row 3
-    You confirmed the ratio 2 new for 1 old shares for this corporate action. Corporate actions are not applied yet, so the sales of this investment cannot be reported. No Doh-KDVP file was written.
+  diagnostic-0002 corporate_action_not_applied, XX0000000001 Synthetic Share, 2025-03-10, history.csv row 4
+    A sale of this investment uses units changed by a split or reverse split. The Doh-KDVP rows for such units are not decided yet, so the sales of this investment cannot be reported. No Doh-KDVP file was written.
 
-Warnings: 0
+Warnings: 1
+  diagnostic-0001 corporate_action_applied, XX0000000001 Synthetic Share, 2023-01-15, history.csv row 3
+    The corporate action was applied with the ratio 2 new for 1 old shares from 2023-01-15, as you entered it. The broker did not supply this ratio.
 
 Answered in this run: 1
   XX0000000001 Synthetic Share, corporate action on 2023-01-15: 2 : 1 from 2023-01-15, 2.0000 units after it
@@ -1446,8 +1650,8 @@ TEST(CliReportIntegrationTest, ARatioNotConfirmedIsAskedAgain) {
                          "Ratio:\n"));
     EXPECT_TRUE(contains(result.mOut, "After it you hold 3.0000 units (3 : 1 from 2023-01-15).\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "    You confirmed the ratio 3 new for 1 old shares for this corporate "
-                         "action."));
+                         "    The corporate action was applied with the ratio 3 new for 1 old "
+                         "shares from 2023-01-15, as you entered it."));
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000001 Synthetic Share, corporate action on 2023-01-15: 3 : 1 "
                          "from 2023-01-15, 3.0000 units after it\n"));
@@ -1472,19 +1676,20 @@ TEST(CliReportIntegrationTest, AnEffectiveDateOutsideTheRangeIsRejectedAndAskedA
                              "--out",
                              folder.outputDirectory(),
                              history},
-                            "2 : 1\n15.01.2023\n2025-03-11\nyes\n2 : 1\n2025-03-10\nyes\n");
+                            "2 : 1\n15.01.2023\n2025-03-11\n2 : 1\n2025-03-10\nyes\n");
 
     // 15.01.2023 is not a date in the form YYYY-MM-DD. 2025-03-11 is one day after the range
-    // (the sale of 2025-03-10 would come before the split), so the session rejects it
-    // (answer_rejected.effective_date_out_of_range). 2025-03-10, the last day, is accepted.
+    // (the sale of 2025-03-10 would come before the split), so it has no preview and the session
+    // rejects it (answer_rejected.effective_date_out_of_range). 2025-03-10, the last day, is
+    // accepted.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
                          "Effective date from the announcement (YYYY-MM-DD, 2022-01-11 to "
                          "2025-03-10), or empty for 2023-01-15:\n"
                          "Enter the date as YYYY-MM-DD.\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "After it you hold 2.0000 units (2 : 1 from 2025-03-11).\n"
-                         "Is this right? (yes or no):\n"
+                         "Effective date from the announcement (YYYY-MM-DD, 2022-01-11 to "
+                         "2025-03-10), or empty for 2023-01-15:\n"
                          "The effective date in the answer to request-0001 must be from "
                          "2022-01-11 to 2025-03-10."));
     EXPECT_TRUE(contains(result.mOut,

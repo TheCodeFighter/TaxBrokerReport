@@ -215,12 +215,13 @@ Both numbers must be positive whole numbers. Their greatest common divisor is re
 position. A ratio above one is a split; a ratio below one is a reverse split. When a reduced number
 is above 1000 (for example `520000001 / 52000000` from a rounded share count), the frontend and
 the CLI warn that the ratio looks unusual; the backend still accepts it after the preview is
-confirmed. The frontend shows the resulting total units (the open units of all brokers before the
-action times the ratio, rounded once to eight decimals) and asks the user to confirm before
-processing continues. The answer carries both numbers and that confirmed total; it is rejected
-unless the total equals the preview of its ratio. So `9 / 1` with the total of `10 / 1` is
-rejected, and `9 / 1` with its own total of `4.68000000` units for `0.52` units is accepted: only
-the user can compare it with the announcement.
+confirmed. The frontend shows the resulting total units (the open units of all brokers just before
+the action on the effective date the user entered, times the ratio, rounded once to eight
+decimals) and asks the user to confirm before processing continues. The answer carries both
+numbers and that confirmed total; it is rejected unless the total equals the preview of its
+ratio. So `9 / 1` with the total of `10 / 1` is rejected, and `9 / 1` with its own total of
+`4.68000000` units for `0.52` units is accepted: only the user can compare it with the
+announcement.
 
 The processing result represents this prompt as a structured `corporate_action_ratio_required`
 request. The affected ISIN waits for an answer, but unrelated ISINs, dividends, and interest do
@@ -232,27 +233,64 @@ The units held just before the action are the units at the start of its day: the
 before the trades of its day for the same ISIN (maintainer decision, 2026-10-28), also when a
 trade has an earlier time. For example, 3 units bought earlier and 1 bought at 09:00 on the day
 of a split at 10:00 give a position of 3 units before the split, so `2 / 1` previews 6 units, not
-8. How the lot step treats those same-day trades after the split is part of the lot step.
+8. The 1 unit bought that day is already in new units: the split makes 6 + 1 = 7 units (see
+"Corporate actions on the same date as trades").
 
 The broker's row date may be a later booking date, so the user also enters the effective date
-from the announcement; the prompt fills in the row date. The app
-accepts a date only when it gives the same units before the action as the row date: no trade of
-the ISIN, at any broker, may be dated from the earlier of the two dates to the day before the
-later one. The question lists that range: from the day after the last trade before the row date,
-to the earliest of the first trade on or after it (the action still comes first on that day),
-the day before the next action of the ISIN, and 31 December of the selected year. A date outside
-it would move a trade or another action to the other side of this one; that is not supported
-yet, so the answer is rejected and the ISIN stays blocked until the user closes the question.
+from the announcement; the prompt fills in the row date. The date the user enters is the one the
+app uses: trades dated before it count in the units before the
+action, trades on or after it in the units after it. The user is responsible for the date. The
+question lists every date the action may have, as ranges with the units held just before the
+action on them, so the preview fits any date. The ranges run from the day after the effective
+date of the ISIN's previous applied action (or from its first trade) to the day before the next
+action's row date or 31 December of the selected year. A date is rejected when:
+
+- it is before the first range or after the last one: it would put the action on the other side
+  of another action or of 31 December, or after a sale of more units than were held before the
+  action (the ranges stop there, also when a purchase later that day makes up for the sale);
+- no unit is held just before the action on that date (before the first purchase, or after
+  everything was sold), with `answer_rejected.effective_date_without_units`;
+- the units after the action on that date do not cover a later sale up to the next action or
+  31 December, with `answer_rejected.later_sale_too_large`. Each range carries the lowest running
+  total of the trades after the action (`mLowestChangeAfter`), and the preview plus that total
+  must not be below 0. For example, 10 units, a sale of 5 on 1 May and a row on 1 June: `1 / 10`
+  from 1 March leaves 1 unit for the sale of 5 and is rejected; `1 / 2` from 1 March leaves 5 and
+  is accepted. A trade at most 10 days before the next action's row is not counted: the next
+  action may have taken effect before it and been booked later (see below), and its own question
+  checks that trade in the units after it. For example, 10 units, split rows on 1 March and
+  5 June, and a sale of 40 on 3 June: `2 / 1` from 1 March is accepted (20 units), and the second
+  split is then asked with dates up to 3 June; `2 / 1` from 1 June makes 40 units for the sale.
+  The trades on the action's own date always count, because the next action comes after it: in
+  the same example `2 / 1` from 3 June is rejected (20 units for the sale of 40 that day).
+
 For example, the announcement says 10 November, the row is dated 14 November, and 0.1 units were
-bought on 12 November: only dates from 13 November keep the position, so 10 November is
-rejected. Without that purchase, 10 November is accepted. The row's tax date never changes; the
-lot step orders the action by the confirmed date.
+bought on 12 November, after 0.52 units in March. Up to 12 November the split comes after 0.52
+units, from 13 November after 0.62 units. With 10 November and `10 / 1`, 0.52 units become 5.2
+and the 0.1 units stay 0.1; with 14 November, 0.62 units become 6.2. The row's tax date never
+changes; the lot step orders the action by the confirmed date.
 
 The question is asked only for an ISIN with a sale in the selected year, and not for a bond,
 derivative, crypto or private fund, whose sales are blocked anyway. When an ISIN has several
 actions, only the first unresolved one is asked, because the units before a later action depend
 on the earlier one being applied. A later action of any ratio is listed from the start as waiting
-for the earlier one, and is asked once that one is applied.
+for the earlier one, and is asked in the same run once that one is applied, with the units after
+it.
+
+When the files show no units just before the action on its row date, the app reports
+`corporate_action_missing_position` and asks nothing: a broker row for a split while the files
+show no units points to missing history.
+
+The broker may book a split some days after it took effect. A sale in new units between the two
+dates then needs more units than the files show before it. When such a sale (with some units open
+before it) has a split row of the ISIN at most 10 days after it, as the first action not yet
+answered, and the ISIN has a sale in the selected year, the app does not report
+`incomplete_history`: the FIFO pool stops at that split with the lots just before the sale, and
+the ratio question is asked with dates up to the sale only (`mEarlierSaleDate`, no units on the
+row date, key `corporate_action_ambiguous.ratio_required_before_sale`, maintainer decision,
+2026-10-28). The rule above makes sure the ratio covers the sale. A merger row, a row 11 or more
+days later, or no unit before the sale's day keeps the error for missing history (or
+`corporate_action_missing_position`). For example, 10 units, a sale of 20 on 1 June and a split
+row on 3 June: `2 / 1` from 30 May makes 20 units, and the sale fits.
 
 The confirmation applies only to the combined action identity, its complete source set (by broker
 and transaction ID) and the units held just before it. A new or changed source record, or another
@@ -261,8 +299,17 @@ question. While the app is open, a later run with the same question uses the ans
 deletable recorded answer (see `diagnostics.md`, "Structured user-decision contract"). It is never
 written to disk and never reused for another action. The application result records that the ratio
 was supplied by the user, together with the original action source, but must not claim that the
-broker supplied it. Until the lot step applies the ratio, the ISIN stays blocked with
-`corporate_action_not_applied` (key `.ratio_confirmed`).
+broker supplied it: an applied action gets a `corporate_action_applied` warning (key `.user_ratio`)
+with the ratio and the effective date, shown beside the download.
+
+Two parts of a split-adjusted history are not reported yet, so they still block the ISIN:
+
+- a sale of the year that lists units (within the holding period) of a lot the split changed:
+  the Doh-KDVP rows for such units are not decided yet (`corporate_action_not_applied`, key
+  `.filing_rows`). A sale before the split is reported as usual.
+- a sale at a loss with an applied split dated on or before the end of its 30-day window: the loss
+  rule cannot compare the units before and after the split yet (`corporate_action_not_applied`,
+  key `.loss_rule_split`).
 
 If the user cancels or cannot find the ratio, the app reports `corporate_action_ambiguous`. The
 affected ISIN follows the normal exclusion flow. No developer-mode option may bypass the missing
@@ -295,6 +342,15 @@ action with one ratio question that lists every source (maintainer decision, 202
 of the same broker on one date with different transaction IDs could be one action reported twice
 or two actions: the app reports `corporate_action_ambiguous` for them until the identity question
 below exists.
+
+Split rows of one ISIN from different brokers on different dates at most 10 days apart could be
+one split that each broker booked on its own date (for example 10 and 14 November). Applying both
+would apply the split twice (0.52 units → 52 instead of 5.20), so until the identity question
+exists the app reports `corporate_action_ambiguous` (key `.different_dates`) for both and asks
+nothing (maintainer decision, 2026-10-28). Rows are never combined automatically by a date
+window. A split, a reverse split and a split of unknown direction are one kind of row here,
+because two brokers may name one event differently; a merger row never pairs with a split. Rows
+more than 10 days apart, or rows of one broker, are separate actions.
 
 The same calendar year is a warning group, never a deduplication key. Two established actions on
 different dates remain two actions. If records could describe the same action but disagree about
@@ -334,9 +390,11 @@ inventoryAfter = inventoryBefore * newShares / oldShares
 Keep the exact rational target, then round the combined target once to eight decimals with halves
 away from zero. A sub-step rounding residual is permitted when the action is documented as
 unit-only, the EUR impact budget is satisfied, and no source indicates cash or cancellation of
-fractions. Record `corporate_action_quantity_rounded` with the exact target, rounded target,
-difference and impact. Do not infer cash in lieu from that residual. Unknown cash treatment or an
-unresolved budget/impact produces an action error or a request for the missing facts.
+fractions. Record `corporate_action_quantity_rounded`, a warning beside the download. Its message
+has no units or amounts (`diagnostics.md`, "Privacy"); the exact target, rounded target,
+difference and impact are for the frontend's structured data later. Do not infer cash in lieu
+from that residual. Unknown cash treatment or an unresolved budget/impact produces an action
+error or a request for the missing facts.
 
 For every open lot:
 
@@ -364,7 +422,9 @@ a cash or fractional-share rule. The action is then unrepresentable and must not
 ## Corporate actions on the same date as trades
 
 A supported split or reverse split is applied before every purchase or sale for the same ISIN on
-its effective tax date. The day's trades therefore use the adjusted units and values.
+its effective tax date, the date the user confirmed. The day's trades therefore use the adjusted
+units and values: a purchase on that day is already in new units and is not adjusted (maintainer
+decision, 2026-10-28). If a broker shows such a trade in old units, the date is one day too early.
 
 Different ISINs do not affect each other. Dividends and interest do not change FIFO inventory, so
 their order relative to the action does not change its result.
@@ -424,11 +484,11 @@ Corporate-action errors use these diagnostic codes:
 
 | Code | When it is used |
 | --- | --- |
-| `corporate_action_missing_position` | No positive covered position exists immediately before the action. |
+| `corporate_action_missing_position` | No positive covered position exists immediately before the action on its row date. |
 | `corporate_action_inconsistent` | Reliable source ratios conflict with each other, or a confirmed ratio conflicts with an unambiguous source value. |
 | `corporate_action_ambiguous` | A reliable ratio is unavailable, the user does not confirm one, or the order of several same-day actions cannot be established. |
-| `corporate_action_unrepresentable` | Arithmetic overflows or the action cannot preserve lots and their purchase values at the required precision. |
-| `unsupported_corporate_action` | The action needs tax rules that are not documented here. |
+| `corporate_action_unrepresentable` | Arithmetic overflows or the action cannot preserve lots and their purchase values at the required precision: a lot would become 0 units, or the rounding of the ISIN's actions reaches EUR 0.01 (key `.rounding_budget`). |
+| `unsupported_corporate_action` | The action needs tax rules that are not documented here, for example a merger (key `.merger`). |
 
 Every error includes the investment name, ISIN, action source, and a clear reason. The affected
 ISIN is unsafe and follows the normal exclusion flow in this document. Other ISINs, dividends, and

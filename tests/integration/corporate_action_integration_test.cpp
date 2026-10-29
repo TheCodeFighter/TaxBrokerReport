@@ -82,12 +82,20 @@ class TemporaryActionInputs {
     std::filesystem::path mDirectory;
 };
 
+/// What one calculation built before the result, for a test that checks the lots or the rows.
+struct CapitalStages {
+    FifoMatchingResult mFifo;
+    CapitalGainsBuildResult mBuilt;
+};
+
 /// The capital-gains part of one run, as the CLI runs it, from the parsed files: merge, year,
-/// FIFO, the corporate actions and the loss rule with the session's answers, the report builder
-/// and the gates.
+/// FIFO with the confirmed corporate actions applied, the corporate actions and the loss rule with
+/// the session's answers, the report builder and the gates. aStages, when given, gets the FIFO
+/// and builder results of this calculation.
 ApplicationResultInput calculateCapitalGains(const std::vector<ParseResult>& aParsed,
                                              int aYear,
-                                             RunDecisions& aDecisions) {
+                                             RunDecisions& aDecisions,
+                                             CapitalStages* aStages = nullptr) {
     std::vector<StatementMergeInput> inputs;
 
     for (std::size_t index = 0; index < aParsed.size(); ++index)
@@ -99,11 +107,17 @@ ApplicationResultInput calculateCapitalGains(const std::vector<ParseResult>& aPa
         {aYear, DeterministicStatementMerger{}.merge(std::move(inputs))});
     const auto& ledger = prepared.mLedger.value();
     const auto& statement = prepared.mMerged.mStatement;
-    auto fifo = FifoMatcher::match(statement, ledger);
-    auto actions = CorporateActionResolver::resolve(statement, ledger, fifo, aDecisions);
+    auto pools = matchCapitalPools(statement, ledger, aDecisions);
+    auto& fifo = pools.mFifo;
+    auto& actions = pools.mActions;
     auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions);
     const auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
     auto gates = CapitalReportGates::check(statement, ledger, fifo, loss, built);
+
+    if (aStages != nullptr)
+    {
+        *aStages = CapitalStages{.mFifo = fifo, .mBuilt = built};
+    }
 
     ApplicationResultInput input{
         .mReportingYear = aYear,
@@ -211,9 +225,20 @@ TEST(CorporateActionIntegrationTest, APurchaseOnTheSplitDayIsNotInThePositionBef
 
     ASSERT_EQ(result.mRequests.size(), 1U);
     EXPECT_EQ(ratioCheckAt(result, 0).mPositionBefore, 300'000'000); // 3 units
-    // A later date would put the same-day purchase before the split.
-    EXPECT_EQ(ratioCheckAt(result, 0).mEarliestDate, day("2024-01-11"));
-    EXPECT_EQ(ratioCheckAt(result, 0).mLatestDate, day("2024-06-01"));
+    // From 2024-06-02 the same-day purchase comes before the split: 3 + 1 = 4 units, and from the
+    // day after the sale of 2024-09-01, 4 - 1 = 3 units. After a date of the first range come +1
+    // and -1 (never below 0), after one of the second range the sale of 1 unit.
+    EXPECT_EQ(ratioCheckAt(result, 0).mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2024-01-11"),
+                                                .mLatestDate = day("2024-06-01"),
+                                                .mPositionBefore = 300'000'000},
+                                               {.mEarliestDate = day("2024-06-02"),
+                                                .mLatestDate = day("2024-09-01"),
+                                                .mPositionBefore = 400'000'000,
+                                                .mLowestChangeAfter = -100'000'000},
+                                               {.mEarliestDate = day("2024-09-02"),
+                                                .mLatestDate = day("2024-12-31"),
+                                                .mPositionBefore = 300'000'000}}));
 
     // The preview of 8 units would include the same-day purchase.
     const auto wrong = session.answer({{"request-0001",
@@ -232,7 +257,9 @@ TEST(CorporateActionIntegrationTest, APurchaseOnTheSplitDayIsNotInThePositionBef
     EXPECT_EQ(result.mDiagnostics.at(0).mSources.at(0).mRow, 4U); // the header is row 1
 }
 
-TEST(CorporateActionIntegrationTest, AConfirmedRatioIsRecordedButNotAppliedYet) {
+TEST(CorporateActionIntegrationTest, AConfirmedRatioIsAppliedAndASaleOfChangedUnitsBlocks) {
+    // The split is applied: 3 units become 6. The sale of 1 unit uses the changed lot, whose
+    // Doh-KDVP rows are not decided yet, so the report fails with filing_rows.
     const TemporaryActionInputs files;
     const auto history = files.write(
         "history.csv",
@@ -259,21 +286,32 @@ TEST(CorporateActionIntegrationTest, AConfirmedRatioIsRecordedButNotAppliedYet) 
 
     const auto& result = session.result();
 
-    // Applying the ratio to the lots comes with the next step, so the report still fails.
     EXPECT_TRUE(result.mRequests.empty());
     EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
 
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    // The corporate-action stage comes before the FIFO stage in the diagnostic order.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
 
-    const auto& diagnostic = result.mDiagnostics.at(0);
+    const auto& rows = result.mDiagnostics.at(1);
 
-    EXPECT_EQ(diagnostic.mCode,
+    EXPECT_EQ(rows.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(rows.mCode,
               ApplicationDiagnosticCode{ProcessingDiagnosticCode::CorporateActionNotApplied});
-    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionNotAppliedRatioConfirmed);
-    EXPECT_EQ(
-        diagnostic.mMessageParams,
-        (std::vector<MessageParam>{numberParam("newShares", 2), numberParam("oldShares", 1)}));
-    EXPECT_FALSE(diagnostic.mRequestId.has_value());
+    EXPECT_EQ(rows.mMessageKey, MessageKey::CorporateActionNotAppliedFilingRows);
+    ASSERT_EQ(rows.mSources.size(), 1U);
+    EXPECT_EQ(rows.mSources.at(0).mRow, 4U); // the sale; the header is row 1
+
+    const auto& applied = result.mDiagnostics.at(0);
+
+    EXPECT_EQ(applied.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(applied.mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::CorporateActionApplied});
+    EXPECT_EQ(applied.mMessageKey, MessageKey::CorporateActionAppliedUserRatio);
+    EXPECT_EQ(applied.mMessageParams,
+              (std::vector<MessageParam>{numberParam("newShares", 2),
+                                         numberParam("oldShares", 1),
+                                         textParam("effectiveDate", "2024-06-01")}));
+    EXPECT_FALSE(applied.mRequestId.has_value());
 
     ASSERT_EQ(result.mDecisions.size(), 1U);
     EXPECT_EQ(result.mDecisions.at(0).mAnswer,
@@ -454,9 +492,10 @@ TEST(CorporateActionIntegrationTest, TheSameRowInTwoFilesIsOneQuestion) {
 
     EXPECT_TRUE(rejections.empty());
     EXPECT_TRUE(session.result().mRequests.empty());
-    // One confirmed action, one error for it.
+    // One action applied once (one warning); the sale of changed units waits for its rows.
     EXPECT_EQ(codesOf(session.result()),
               (std::vector<ApplicationDiagnosticCode>{
+                  ProcessingDiagnosticCode::CorporateActionApplied,
                   ProcessingDiagnosticCode::CorporateActionNotApplied}));
 }
 
@@ -506,17 +545,43 @@ TEST(CorporateActionIntegrationTest, TwoSplitsAreAskedOneAtATime) {
 
     EXPECT_TRUE(rejections.empty());
 
-    // March is confirmed; September still waits until March is applied to the lots.
+    // March is applied: 3 units x 2 / 1 = 6, and the purchase of 1 unit on 2024-06-01 comes
+    // after it, so September is asked with 7 units in the same run.
     const auto& answered = session.result();
 
-    EXPECT_TRUE(answered.mRequests.empty());
-    EXPECT_EQ(answered.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(answered.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+    ASSERT_EQ(answered.mRequests.size(), 1U);
+    EXPECT_EQ(ratioCheckAt(answered, 0).mEffectiveDate, day("2024-09-01"));
+    EXPECT_EQ(ratioCheckAt(answered, 0).mPositionBefore, 700'000'000); // 6 + 1 units
+
+    // The March row comes first in the file, so its warning comes first.
     ASSERT_EQ(answered.mDiagnostics.size(), 2U);
-    EXPECT_EQ(answered.mDiagnostics.at(0).mMessageKey,
-              MessageKey::CorporateActionNotAppliedRatioConfirmed);
+    EXPECT_EQ(answered.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionAppliedUserRatio);
     EXPECT_EQ(answered.mDiagnostics.at(1).mMessageKey,
-              MessageKey::CorporateActionNotAppliedWaitingForEarlierAction);
-    EXPECT_FALSE(answered.mDiagnostics.at(1).mRequestId.has_value());
+              MessageKey::CorporateActionAmbiguousRatioRequired);
+    EXPECT_EQ(answered.mDiagnostics.at(1).mRequestId, "request-0001");
+
+    // 7 units with 3 / 1 are 21 units.
+    const auto second = session.answer({{"request-0001",
+                                         2,
+                                         SplitRatioAnswer{.mNewShares = 3,
+                                                          .mOldShares = 1,
+                                                          .mEffectiveDate = day("2024-09-01"),
+                                                          .mConfirmedUnits = 2'100'000'000}}});
+
+    EXPECT_TRUE(second.empty());
+
+    // Both are applied; the sale of 2024-10-01 uses a changed lot, so its rows wait.
+    const auto& applied = session.result();
+
+    EXPECT_TRUE(applied.mRequests.empty());
+    EXPECT_EQ(applied.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(applied.mDecisions.size(), 2U);
+    EXPECT_EQ(codesOf(applied),
+              (std::vector<ApplicationDiagnosticCode>{
+                  ProcessingDiagnosticCode::CorporateActionApplied,
+                  ProcessingDiagnosticCode::CorporateActionApplied,
+                  ProcessingDiagnosticCode::CorporateActionNotApplied}));
 }
 
 TEST(CorporateActionIntegrationTest, TwoSplitRowsOnOneDayAreAmbiguous) {
@@ -589,7 +654,7 @@ TEST(CorporateActionIntegrationTest, AnAddedPurchaseAsksANewQuestion) {
     EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
 }
 
-TEST(CorporateActionIntegrationTest, NoUnitsBeforeTheSplitIsNotAsked) {
+TEST(CorporateActionIntegrationTest, NoUnitsBeforeTheSplitIsAMissingPosition) {
     const TemporaryActionInputs files;
     const auto history = files.write(
         "history.csv",
@@ -610,14 +675,16 @@ TEST(CorporateActionIntegrationTest, NoUnitsBeforeTheSplitIsNotAsked) {
     EXPECT_TRUE(result.mRequests.empty());
     EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionNotApplied);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::CorporateActionMissingPosition});
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionMissingPosition);
 }
 
-TEST(CorporateActionIntegrationTest, AnAnnouncementDateBeforeAPurchaseIsRejected) {
+TEST(CorporateActionIntegrationTest, AnAnnouncementDateBeforeAPurchaseTakesTheUnitsOfThatDate) {
     // The announcement says the split took effect on 2025-11-10; the broker books the row on
     // 2025-11-14. The 0.1 units bought on 2025-11-12 lie between: with the row date they count
-    // before the split. Only dates from 2025-11-13 keep the position of 0.62 units, so
-    // 2025-11-10 is rejected and the investment stays blocked until the user closes the question.
+    // before the split (0.62 units), with 2025-11-10 after it (0.52 units). The user's date is
+    // the one used, so its preview is 0.52 x 10 = 5.2 units.
     const TemporaryActionInputs files;
     const auto history = files.write(
         "history.csv",
@@ -635,25 +702,51 @@ TEST(CorporateActionIntegrationTest, AnAnnouncementDateBeforeAPurchaseIsRejected
 
     ASSERT_EQ(session.result().mRequests.size(), 1U);
     EXPECT_EQ(ratioCheckAt(session.result(), 0).mPositionBefore, 62'000'000); // 0.52 + 0.1
-    EXPECT_EQ(ratioCheckAt(session.result(), 0).mEarliestDate, day("2025-11-13"));
-    EXPECT_EQ(ratioCheckAt(session.result(), 0).mLatestDate, day("2025-12-01"));
+    // 0.52 units up to the purchase, 0.62 up to the sale of 0.1 units, then 0.52 again. Only the
+    // second range has a later trade that goes below 0: the sale of 0.1 units.
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mDateRanges,
+              (std::vector<EffectiveDateRange>{{.mEarliestDate = day("2025-03-02"),
+                                                .mLatestDate = day("2025-11-12"),
+                                                .mPositionBefore = 52'000'000},
+                                               {.mEarliestDate = day("2025-11-13"),
+                                                .mLatestDate = day("2025-12-01"),
+                                                .mPositionBefore = 62'000'000,
+                                                .mLowestChangeAfter = -10'000'000},
+                                               {.mEarliestDate = day("2025-12-02"),
+                                                .mLatestDate = day("2025-12-31"),
+                                                .mPositionBefore = 52'000'000}}));
 
-    // 0.62 units with 10 / 1 are 6.2 units.
+    // The row date's preview, 0.62 x 10 = 6.2 units, does not fit 2025-11-10.
+    const auto wrong = session.answer({{"request-0001",
+                                        1,
+                                        SplitRatioAnswer{.mNewShares = 10,
+                                                         .mOldShares = 1,
+                                                         .mEffectiveDate = day("2025-11-10"),
+                                                         .mConfirmedUnits = 620'000'000}}});
+
+    ASSERT_EQ(wrong.size(), 1U);
+    EXPECT_EQ(wrong.at(0).mReason, AnswerRejection::PreviewMismatch);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+
     const auto rejections = session.answer({{"request-0001",
                                              1,
                                              SplitRatioAnswer{.mNewShares = 10,
                                                               .mOldShares = 1,
                                                               .mEffectiveDate = day("2025-11-10"),
-                                                              .mConfirmedUnits = 620'000'000}}});
+                                                              .mConfirmedUnits = 520'000'000}}});
 
-    ASSERT_EQ(rejections.size(), 1U);
-    EXPECT_EQ(rejections.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
-    EXPECT_EQ(rejections.at(0).mMessageParams,
-              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
-                                         textParam("earliestDate", "2025-11-13"),
-                                         textParam("latestDate", "2025-12-01")}));
-    EXPECT_TRUE(session.result().mDecisions.empty());
-    EXPECT_EQ(session.result().report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    // The sale of 0.1 units on 2025-12-01 takes them from the changed lot of 2025-03-01 (5.2
+    // units), so its rows wait.
+    EXPECT_EQ(codesOf(session.result()),
+              (std::vector<ApplicationDiagnosticCode>{
+                  ProcessingDiagnosticCode::CorporateActionApplied,
+                  ProcessingDiagnosticCode::CorporateActionNotApplied}));
+    EXPECT_EQ(session.result().mDiagnostics.at(0).mMessageParams,
+              (std::vector<MessageParam>{numberParam("newShares", 10),
+                                         numberParam("oldShares", 1),
+                                         textParam("effectiveDate", "2025-11-10")}));
 }
 
 TEST(CorporateActionIntegrationTest, AnAnnouncementDateWithoutTradesBetweenIsAccepted) {
@@ -674,7 +767,8 @@ TEST(CorporateActionIntegrationTest, AnAnnouncementDateWithoutTradesBetweenIsAcc
     });
 
     ASSERT_EQ(session.result().mRequests.size(), 1U);
-    EXPECT_EQ(ratioCheckAt(session.result(), 0).mEarliestDate, day("2025-03-02"));
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mDateRanges.front().mEarliestDate,
+              day("2025-03-02"));
 
     // 0.52 units with 10 / 1 are 5.2 units.
     const auto rejections = session.answer({{"request-0001",
@@ -691,6 +785,108 @@ TEST(CorporateActionIntegrationTest, AnAnnouncementDateWithoutTradesBetweenIsAcc
                                             .mOldShares = 1,
                                             .mEffectiveDate = day("2025-11-10"),
                                             .mConfirmedUnits = 520'000'000}}));
+}
+
+TEST(CorporateActionIntegrationTest, ASplitAfterTheSaleKeepsTheSaleRowsAndDoublesTheClosingLots) {
+    // 10 units bought at EUR 10, 4 sold at EUR 12 in June, a split row in November. With 2 / 1
+    // the June sale is listed as it is, and the 6 units left become 12 at 31 December.
+    const TemporaryActionInputs files;
+    const auto history = files.write(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,12,48,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-11-15T09:00:00Z,2024-11-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,6,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    CapitalStages stages;
+    DecisionSession session;
+
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    // 6 units before the split, 6 x 2 / 1 = 12 after it.
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day("2024-11-15"),
+                                                              .mConfirmedUnits = 1'200'000'000}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    // Only the warning that the user gave the ratio; no error blocks the report.
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_EQ(
+        codesOf(session.result()),
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::CorporateActionApplied}));
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+
+    const auto& rows = stages.mBuilt.mReport->mLists.at(0).mRows;
+
+    // One purchase row with the 4 units the sale uses, and the sale row, both in units before
+    // the split.
+    ASSERT_EQ(rows.size(), 2U);
+
+    const auto& purchase = std::get<KdvpPurchaseRow>(rows.at(0).mEntry);
+    const auto& sale = std::get<KdvpSaleRow>(rows.at(1).mEntry);
+
+    EXPECT_EQ(purchase.mDate, day("2024-01-10"));
+    EXPECT_EQ(purchase.mUnits, 400'000'000);       // 4 units
+    EXPECT_EQ(purchase.mUnitPrice, 1'000'000'000); // EUR 10
+    EXPECT_EQ(rows.at(0).mStock, 400'000'000);
+    EXPECT_EQ(sale.mDate, day("2024-06-03"));
+    EXPECT_EQ(sale.mUnits, 400'000'000);       // 4 units
+    EXPECT_EQ(sale.mUnitPrice, 1'200'000'000); // EUR 12
+    EXPECT_EQ(rows.at(1).mStock, 0);
+
+    // The lot at 31 December: 10 - 4 = 6 units, doubled to 12, with the EUR 60 purchase value
+    // of the 6 units unchanged.
+    ASSERT_EQ(stages.mFifo.mIsins.size(), 1U);
+
+    const auto& isin = stages.mFifo.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::Matched);
+    ASSERT_EQ(isin.mOpenLots.size(), 1U);
+    EXPECT_EQ(isin.mOpenLots.at(0).mPurchaseDate, day("2024-01-10"));
+    EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 1'200'000'000); // 12 units
+    EXPECT_EQ(basisInEur(isin.mOpenLots.at(0).mState.mRemainingBasis),
+              ExactRational::create(60, 1)); // EUR 60
+    EXPECT_TRUE(isin.mOpenLots.at(0).mChangedByAction);
+}
+
+TEST(CorporateActionIntegrationTest, AnEarlyDateWithTooFewUnitsForALaterSaleIsRejected) {
+    // 10 units bought, 5 sold on 2024-05-01, a split row on 2024-06-01. 1 / 10 from 2024-03-01
+    // would leave 1 unit for the sale of 5, so the answer is rejected and the question stays open.
+    const TemporaryActionInputs files;
+    const auto history = files.write(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,12,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    DecisionSession session;
+
+    session.start([&parsed](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions);
+    });
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 1,
+                                                              .mOldShares = 10,
+                                                              .mEffectiveDate = day("2024-03-01"),
+                                                              .mConfirmedUnits = 100'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections.at(0).mReason, AnswerRejection::LaterSaleTooLarge);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    EXPECT_EQ(session.result().report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
 }
 
 } // namespace

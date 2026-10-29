@@ -69,6 +69,28 @@ buildYear(StatementMergeResult& aMerged, int aYear, const std::vector<Isin>& aEx
                                              aExcludedIsins);
 }
 
+/// Like buildYear, with confirmed corporate actions that the matcher applies.
+CapitalGainsBuildResult
+buildYearWithActions(StatementMergeResult& aMerged,
+                     int aYear,
+                     const std::vector<ConfirmedCorporateAction>& aActions) {
+    orderChronologically(aMerged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
+    const auto fifo = FifoMatcher::match(aMerged.mStatement, prepared.mLedger.value(), aActions);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(aMerged.mStatement,
+                                                    prepared.mLedger.value(),
+                                                    fifo,
+                                                    decisions);
+
+    return CapitalGainsReportBuilder{}.build(aMerged.mStatement,
+                                             prepared.mLedger.value(),
+                                             fifo,
+                                             loss,
+                                             {});
+}
+
 const KdvpPurchaseRow& purchaseAt(const KdvpInventoryList& aList, std::size_t aRow) {
     return std::get<KdvpPurchaseRow>(aList.mRows.at(aRow).mEntry);
 }
@@ -2173,6 +2195,182 @@ TEST(CapitalGainsReportBuilderTest, ExclusionOfALongHeldIsinChangesNothing) {
                   .mSale = {StatementEventKind::Trade, 0, 1},
                   .mUnits = 200'000'000, // 2 units
               }));
+}
+
+TEST(CapitalGainsReportBuilderTest, ASaleOfUnitsChangedByASplitBlocksTheIsin) {
+    // 1 unit bought in 2022, split 2 / 1 in 2023, 2 units sold in 2024. The rows for units that
+    // a split changed are not decided yet (#267), so the ISIN is blocked with that sale.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2022-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 3'000'000'000, // EUR 30
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-15")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        buildYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2023-01-15")}});
+
+    EXPECT_FALSE(result.mReport.has_value());
+    ASSERT_EQ(result.mBlocked.size(), 1U);
+    EXPECT_EQ(result.mBlocked.at(0),
+              (KdvpBlockedIsin{
+                  .mIsin = "XX0000000001",
+                  .mName = "Synthetic Share",
+                  .mReason = KdvpBlockReason::SplitAdjustedRows,
+                  .mSales = {{StatementEventKind::Trade, 0, 1}},
+              }));
+}
+
+TEST(CapitalGainsReportBuilderTest, ASaleBeforeASplitLaterInTheYearIsListed) {
+    // 2 units bought, 1 sold on 2024-03-10, split 2 / 1 on 2024-09-01. The sale uses a lot the
+    // split had not changed yet, so its rows are the usual ones: 1 unit at EUR 10, then 1 sold.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 3'000'000'000, // EUR 30
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-09-01")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        buildYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2024-09-01")}});
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
+
+    const auto& list = result.mReport->mLists.at(0);
+
+    ASSERT_EQ(list.mRows.size(), 2U);
+    EXPECT_EQ(purchaseAt(list, 0).mUnits, 100'000'000);       // 1 of the 2 units, F3
+    EXPECT_EQ(purchaseAt(list, 0).mUnitPrice, 1'000'000'000); // EUR 10, F4
+    EXPECT_EQ(list.mRows.at(0).mStock, 100'000'000);          // F8 = 1
+    EXPECT_EQ(saleAt(list, 1).mUnits, 100'000'000);           // F7
+    EXPECT_EQ(saleAt(list, 1).mUnitPrice, 3'000'000'000);     // EUR 30, F9
+    EXPECT_EQ(list.mRows.at(1).mStock, 0);                    // F8 = 1 - 1
+}
+
+TEST(CapitalGainsReportBuilderTest, ChangedUnitsPastFifteenYearsDoNotBlock2024) {
+    // 10 units bought 2009-03-10, split 2 / 1 in 2015, all 20 sold on 2024-03-11, past the 15
+    // years: they get no row, so the changed lot does not block. The 20 units stay listed as
+    // tax free.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2009-03-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-11")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 3'000'000'000, // EUR 30
+                 .mUnits = 2'000'000'000,     // 20 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2015-01-15")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        buildYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2015-01-15")}});
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    EXPECT_TRUE(result.mReport->mLists.empty());
+    ASSERT_EQ(result.mLongHeld.size(), 1U);
+    EXPECT_EQ(result.mLongHeld.at(0).mUnits, 2'000'000'000); // 20 units
+}
+
+TEST(CapitalGainsReportBuilderTest, ALossSaleBeforeAnAppliedSplitInItsWindowBlocksForTheLossRule) {
+    // 4 units bought, 3 sold at a loss on 2024-11-20, split 2 / 1 on 2024-12-01 inside the
+    // window. The sale uses an unchanged lot, so the rows are not the problem; the loss rule is.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 400'000'000,       // 4 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-11-20")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 300'000'000,     // 3 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-12-01")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        buildYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                               .mEffectiveDate = day("2024-12-01")}});
+
+    ASSERT_EQ(result.mBlocked.size(), 1U);
+    EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossNotReportable);
+    EXPECT_EQ(result.mBlocked.at(0).mSales,
+              (std::vector<StatementEventReference>{{StatementEventKind::Trade, 0, 1}}));
 }
 
 } // namespace
