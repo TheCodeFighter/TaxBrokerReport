@@ -1,0 +1,4 @@
+datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share S6,XX0000000606,10,100,-1000,,,EUR,,,,,s6-buy-1,,,,
+2024-06-03T09:00:00Z,2024-06-03,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share S6,XX0000000606,10,,,,,,,,,,s6-split-1,,,,
+2025-09-02T09:00:00Z,2025-09-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share S6,XX0000000606,-20,60,1200,,,EUR,,,,,s6-sell-1,,,,

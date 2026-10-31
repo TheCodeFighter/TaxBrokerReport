@@ -971,9 +971,9 @@ TEST(CliReportIntegrationTest, ASaleWithTooFewUnitsBeforeASplitRowAsksForTheSpli
 
     // The sale of 20 units needs more than the 10 bought, and the split row follows 2 days
     // later: the split may have taken effect before the sale. 2 : 1 from 2024-05-30 makes the
-    // 10 units 20, so the sale fits. The sale uses the changed lot, whose Doh-KDVP rows are not
-    // decided yet, so the report stays blocked, but not for missing history.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    // 10 units 20, so the sale fits and the report is written: the purchase row lists the 20
+    // units at EUR 10 / 2 = EUR 5.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "  The sale on 2024-06-01 needs more units than you held. If the action "
                          "took effect on\n"
@@ -984,8 +984,7 @@ TEST(CliReportIntegrationTest, ASaleWithTooFewUnitsBeforeASplitRowAsksForTheSpli
                          "2024-06-01):\n"
                          "After it you hold 20.0000 units (2 : 1 from 2024-05-30).\n"));
     EXPECT_TRUE(
-        contains(result.mOut,
-                 "  XX0000000001 Synthetic Share: blocked (corporate_action_not_applied)\n"));
+        contains(result.mOut, "  XX0000000001 Synthetic Share: listed, 1 sale, 20.0000 units\n"));
     EXPECT_FALSE(contains(result.mOut, "incomplete_history"));
 }
 
@@ -1385,10 +1384,11 @@ TEST(CliReportIntegrationTest, TwoJanuarySplitsInADecemberLossWindowAreAskedInDa
     expectValidForKdvpSchemas(xml);
 }
 
-TEST(CliReportIntegrationTest, AJanuarySplitWithAnOpenLossAnsweredNoBlocksAsPartlyBlocked) {
+TEST(CliReportIntegrationTest, AJanuarySplitWithAnOpenLossAnsweredNoGivesTwoSaleRows) {
     // 10 bought, 4 sold at a loss on 2024-12-10, split row on 2025-01-05 answered 2 : 1, 4 bought
     // on 2025-01-08. No keeps the 2 open units deductible, but the other 2 are blocked by the
-    // January purchase: a partly blocked sale, whose rows are not decided yet.
+    // January purchase (4 new units are 2 units of the sale): a partly blocked sale, written as
+    // two sale rows of 2 units, the blocked units first.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -1410,11 +1410,43 @@ TEST(CliReportIntegrationTest, AJanuarySplitWithAnOpenLossAnsweredNoBlocksAsPart
                              history},
                             "2 : 1\n\nyes\nno\n");
 
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000001 Synthetic Share: blocked (unsupported_tax_treatment)\n"
-                         "    sale 2024-12-10, history.csv row 3\n"));
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 4.0000 units, 2.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2024-12-10</F6>
+              <F7>2.0000</F7>
+              <F9>8.0000</F9>
+              <F10>false</F10>
+            </Sale>
+            <F8>2.0000</F8>
+)xml"));
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2024-12-10</F6>
+              <F7>2.0000</F7>
+              <F9>8.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>0.0000</F8>
+)xml"));
+    expectValidForKdvpSchemas(xml);
+
+    const auto fifoLists = fifoOverKdvpRows(xml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+
+    const auto& fifoList = fifoLists.at(0);
+
+    EXPECT_TRUE(fifoList.mProblems.empty());
+    // F8: the 4 units the sale uses, 4 - 2 = 2, 2 - 2 = 0.
+    EXPECT_EQ(fifoList.mWrittenF8, (std::vector<std::string>{"4", "2", "0"}));
+    EXPECT_EQ(fifoList.mCountedF8, (std::vector<std::string>{"4", "2", "0"}));
+    // 2 x (8 - 10) = -4 for each of the two sale rows.
+    EXPECT_EQ(fifoList.mSaleGains, (std::vector<std::string>{"-4", "-4"}));
 }
 
 TEST(CliReportIntegrationTest, AnInvalidLossAnswerIsAskedAgain) {
@@ -1673,10 +1705,10 @@ TEST(CliReportIntegrationTest, ASplitRatioAnsweredClosesTheQuestion) {
     // 1 unit before the split; 1 x 2 / 1 = 2 after it. The dates with 1 unit run from the day
     // after the purchase (2022-01-11) to the day of the sale (2025-03-10): the action comes
     // before the trades of its day, and a later date would put the sale of 2 units before the
-    // split. The split is applied (a warning: the user gave the ratio), but the sale uses the
-    // changed lot, whose Doh-KDVP rows are not decided yet, so the report stays blocked.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    // split. The split is applied (a warning: the user gave the ratio) and the sale uses the
+    // changed lot: the purchase row lists the 2 units after the split at EUR 10 / 2 = EUR 5.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2025.xml"));
     EXPECT_EQ(
         result.mOut,
         R"(Question request-0001: a corporate action of XX0000000001 Synthetic Share on 2023-01-15
@@ -1695,19 +1727,16 @@ TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
 
-Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
+Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml
 
 Investments with a sale in 2025: 1
-  XX0000000001 Synthetic Share: blocked (corporate_action_not_applied)
-    sale 2025-03-10, history.csv row 4
+  XX0000000001 Synthetic Share: listed, 1 sale, 2.0000 units
 
 Units past the holding period (tax free, not in the XML): 0
 
 Private-market events skipped (only a cash amount, no units): 0
 
-Errors: 1
-  diagnostic-0002 corporate_action_not_applied, XX0000000001 Synthetic Share, 2025-03-10, history.csv row 4
-    A sale of this investment uses units changed by a split or reverse split. The Doh-KDVP rows for such units are not decided yet, so the sales of this investment cannot be reported. No Doh-KDVP file was written.
+Errors: 0
 
 Warnings: 1
   diagnostic-0001 corporate_action_applied, XX0000000001 Synthetic Share, 2023-01-15, history.csv row 3
@@ -1717,6 +1746,42 @@ Answered in this run: 1
   XX0000000001 Synthetic Share, corporate action on 2023-01-15: 2 : 1 from 2023-01-15, 2.0000 units after it
 )");
     EXPECT_TRUE(result.mOut.ends_with(folder.readOutput("summary_2025.txt")));
+
+    // The purchase row of the 1 unit bought in 2022: 2 units after the split, EUR 5 each, F8 = 2;
+    // the sale of 2 units at EUR 30, F8 = 0.
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, R"xml(            <Purchase>
+              <F1>2022-01-10</F1>
+              <F2>B</F2>
+              <F3>2.0000</F3>
+              <F4>5.0000</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>2.0000</F8>
+)xml"));
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2025-03-10</F6>
+              <F7>2.0000</F7>
+              <F9>30.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>0.0000</F8>
+)xml"));
+    expectValidForKdvpSchemas(xml);
+
+    const auto fifoLists = fifoOverKdvpRows(xml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+
+    const auto& fifoList = fifoLists.at(0);
+
+    EXPECT_TRUE(fifoList.mProblems.empty());
+    // F8: 2, then 2 - 2 = 0.
+    EXPECT_EQ(fifoList.mWrittenF8, (std::vector<std::string>{"2", "0"}));
+    EXPECT_EQ(fifoList.mCountedF8, (std::vector<std::string>{"2", "0"}));
+    // 2 x 30 - 2 x 5 = 50.
+    EXPECT_EQ(fifoList.mSaleGains, (std::vector<std::string>{"50"}));
 }
 
 TEST(CliReportIntegrationTest, ASplitRatioFromTheSharesBeforeAndAfterIsTheSameRatio) {
@@ -1741,7 +1806,7 @@ TEST(CliReportIntegrationTest, ASplitRatioFromTheSharesBeforeAndAfterIsTheSameRa
                             "1 -> 2.00\n2023-01-15\nyes\n");
 
     // 1 share before and 2.00 after: 100000000 and 200000000 ticks of 10^-8, reduced to 2 : 1.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut, "After it you hold 2.0000 units (2 : 1 from 2023-01-15).\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "Answered in this run: 1\n"
@@ -1800,7 +1865,7 @@ TEST(CliReportIntegrationTest, AnUnchangedRatioIsRejectedAndAskedAgain) {
 
     // 5 : 5 has no preview, so it goes to the session as it is, which rejects it
     // (answer_rejected.ratio_unchanged); the question is asked again, with the same ID.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "Ratio:\n"
                          "The answer to request-0001 has the same number of new and old shares, "
@@ -1836,7 +1901,7 @@ TEST(CliReportIntegrationTest, AZeroInARatioIsRejectedAndAskedAgain) {
                             "0 : 1\n1 : 0\n2 : 1\n\nyes\n");
 
     // answer_rejected.ratio_not_positive names the number to correct.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "The number in newShares of the answer to request-0001 must be a whole "
                          "number above 0.\n"));
@@ -1869,7 +1934,7 @@ TEST(CliReportIntegrationTest, ARatioWhosePositionDoesNotFitIsRejectedAndAskedAg
 
     // 1 unit x 10^12 is more than the largest units value (about 9.2 x 10^10), so there is no
     // preview and the session rejects it (answer_rejected.ratio_out_of_range).
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "The ratio in the answer to request-0001 gives a position that cannot "
                          "be represented. Check the numbers.\n"));
@@ -1898,7 +1963,7 @@ TEST(CliReportIntegrationTest, ARatioNotConfirmedIsAskedAgain) {
                             "2 : 1\n\nok\nno\n3 : 1\n\nyes\n");
 
     // "ok" is not an answer to the preview; no goes back to the ratio.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "After it you hold 2.0000 units (2 : 1 from 2023-01-15).\n"
                          "Is this right? (yes or no):\n"
@@ -1939,7 +2004,7 @@ TEST(CliReportIntegrationTest, AnEffectiveDateOutsideTheRangeIsRejectedAndAskedA
     // (the sale of 2025-03-10 would come before the split), so it has no preview and the session
     // rejects it (answer_rejected.effective_date_out_of_range). 2025-03-10, the last day, is
     // accepted.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "Effective date from the announcement (YYYY-MM-DD, 2022-01-11 to "
                          "2025-03-10), or empty for 2023-01-15:\n"
@@ -1977,7 +2042,7 @@ TEST(CliReportIntegrationTest, AnUnreadableRatioIsAskedAgainWithoutAnAnswer) {
                             "1 -> 2.000000001\n2 : 1\n\nyes\n");
 
     // None of the first eight lines reaches the session, so the question is shown only once.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "Ratio:\n"
                          "Enter the ratio as new : old, the shares as before -> after, or "
@@ -2028,7 +2093,7 @@ TEST(CliReportIntegrationTest, ShareCountsOfZeroOrBelowAreAskedAgainWithoutAnAns
 
     // The command refuses the first three lines itself, so the session's message about
     // oldShares or newShares never appears. 1 -> 2 is then 2 : 1.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "Ratio:\n"
                          "Enter the shares as numbers above 0 with up to 8 decimals, for example "
@@ -2070,7 +2135,7 @@ TEST(CliReportIntegrationTest, ShareCountsWithADecimalCommaGiveTheirRatio) {
 
     // 0,52 is 0.52 and 5,2 is 5.2: 52000000 and 520000000 ticks of 10^-8, reduced to 10 : 1.
     // 1 unit before the split, so 1 x 10 / 1 = 10 units after it.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(
         contains(result.mOut, "After it you hold 10.0000 units (10 : 1 from 2023-01-15).\n"));
     EXPECT_TRUE(contains(result.mOut,
@@ -2101,7 +2166,7 @@ TEST(CliReportIntegrationTest, AShareCountWithACommaAndAPointIsAskedAgain) {
                             "1.000,5 -> 2\n2 : 1\n\nyes\n");
 
     // A comma and a point in one number could be digit grouping, which is never read.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "Ratio:\n"
                          "Enter the shares as numbers above 0 with up to 8 decimals, for example "
@@ -2133,7 +2198,7 @@ TEST(CliReportIntegrationTest, AnUnusualRatioIsWarnedAboutBeforeThePreview) {
                             "1001 : 1\n\nyes\n");
 
     // 1001 is above the limit of 1000 for a reduced number; the answer is still accepted.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "This ratio looks unusual: check the numbers.\n"
                          "After it you hold 1001.0000 units (1001 : 1 from 2023-01-15).\n"));
@@ -2294,8 +2359,9 @@ TEST(CliReportIntegrationTest, TwoQuestionsAreAskedInRequestOrder) {
                             "2 : 1\n\nyes\nno\n");
 
     // Requests are in source order: the split (row 3) before the loss sale (row 5). After the
-    // first answer the run is calculated again, so the loss question is then request-0001.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    // first answer the run is calculated again, so the loss question is then request-0001. Both
+    // answers are given, so both investments are listed.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
                          "Question request-0001: a corporate action of XX0000000002 Synthetic "
                          "Fund on 2023-01-15\n"));
@@ -2304,11 +2370,10 @@ TEST(CliReportIntegrationTest, TwoQuestionsAreAskedInRequestOrder) {
                          "\n"
                          "Question request-0001: the 30-day loss rule for XX0000000001 "
                          "Synthetic Share\n"));
-    EXPECT_TRUE(
-        contains(result.mOut,
-                 "Investments with a sale in 2025: 2\n"
-                 "  XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units\n"
-                 "  XX0000000002 Synthetic Fund: blocked (corporate_action_not_applied)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Investments with a sale in 2025: 2\n"
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units\n"
+                         "  XX0000000002 Synthetic Fund: listed, 1 sale, 2.0000 units\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "Answered in this run: 2\n"
                          "  XX0000000002 Synthetic Fund, corporate action on 2023-01-15: 2 : 1 "
@@ -2393,7 +2458,7 @@ TEST(CliReportIntegrationTest, ARunWithoutQuestionsAsksNothing) {
     EXPECT_FALSE(contains(result.mOut, "Open questions"));
 }
 
-TEST(CliReportIntegrationTest, ProfitableSaleWithALossMakingPortionBlocksTheReport) {
+TEST(CliReportIntegrationTest, ProfitableSaleWithABlockedLossMakingPortionIsTwoSaleRows) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -2414,22 +2479,90 @@ TEST(CliReportIntegrationTest, ProfitableSaleWithALossMakingPortionBlocksTheRepo
                              history},
                             "yes\n");
 
-    // Portions: 30 - 10 = +20 and 30 - 40 = -10. The sale gains 10 overall. The answer yes blocks
-    // its loss unit and not its profitable unit: such a sale needs split rows, so it blocks the
-    // report.
+    // Portions: 30 - 10 = +20 and 30 - 40 = -10. The sale gains 10 overall. The sale empties the
+    // holding, so the purchase of 2025-02-10 is no replacement (FURS example 14) and the loss
+    // unit is open. The answer yes blocks it and not the profitable unit: two rows, the
+    // profitable unit first.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml\n"));
+    EXPECT_TRUE(contains(result.mOut, "Answered in this run: 1\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 2.0000 units, 1.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2025-03-10</F6>
+              <F7>1.0000</F7>
+              <F9>30.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>1.0000</F8>
+          </Row>
+          <Row>
+            <ID>3</ID>
+            <Sale>
+              <F6>2025-03-10</F6>
+              <F7>1.0000</F7>
+              <F9>30.0000</F9>
+              <F10>false</F10>
+            </Sale>
+            <F8>0.0000</F8>
+)xml"));
+    expectValidForKdvpSchemas(xml);
+
+    const auto fifoLists = fifoOverKdvpRows(xml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+
+    const auto& fifoList = fifoLists.at(0);
+
+    EXPECT_TRUE(fifoList.mProblems.empty());
+    // F8: 1, 1 + 1 = 2, 2 - 1 = 1, 1 - 1 = 0.
+    EXPECT_EQ(fifoList.mWrittenF8, (std::vector<std::string>{"1", "2", "1", "0"}));
+    EXPECT_EQ(fifoList.mCountedF8, (std::vector<std::string>{"1", "2", "1", "0"}));
+    // 1 x (30 - 10) = 20 and 1 x (30 - 40) = -10.
+    EXPECT_EQ(fifoList.mSaleGains, (std::vector<std::string>{"20", "-10"}));
+}
+
+TEST(CliReportIntegrationTest, AnAdjustedUnitValueThatDoesNotFitBlocksTheReport) {
+    // 1 unit bought at EUR 92,233,720,368 (just below the largest UnitPrice) and a 1 : 2 reverse
+    // split: 0.5 units at EUR 184,467,440,736 each, which F4 cannot hold. The sale is a loss
+    // against that value, so the loss question is also asked; the answer no changes nothing.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,92233720368,-92233720368,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.5,92233720368,46116860184,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "1 : 2\n\nyes\nno\n");
+
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
     EXPECT_TRUE(contains(result.mOut,
-                         "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
-                         "below)\n"));
+                         "  XX0000000001 Synthetic Share: blocked "
+                         "(corporate_action_unrepresentable)\n"
+                         "    sale 2024-04-02, history.csv row 4\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000001 Synthetic Share: blocked (unsupported_tax_treatment)\n"
-                         "    sale 2025-03-10, history.csv row 4\n"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "Errors: 1\n"
-                         "  diagnostic-0001 unsupported_tax_treatment, XX0000000001 Synthetic "
-                         "Share, 2025-03-10, history.csv row 4\n"));
-    EXPECT_TRUE(contains(result.mOut, "Warnings: 0\n"));
+                         "corporate_action_unrepresentable, XX0000000001 Synthetic Share, "
+                         "2024-04-02, history.csv row 4\n"
+                         "    After a split or reverse split the value of one unit of this "
+                         "investment is too large for a Doh-KDVP row, so the sales of this "
+                         "investment cannot be reported. No Doh-KDVP file was written.\n"));
 }
 
 TEST(CliReportIntegrationTest, ALossBlockedByAJanuaryPurchaseIsWritten) {
@@ -3062,11 +3195,11 @@ TEST(CliReportIntegrationTest, ShareAndFundSalesGiveOneItemEach) {
     EXPECT_EQ(fifoLists.at(1).mSaleGains, (std::vector<std::string>{"50"}));
 }
 
-TEST(CliReportIntegrationTest, BlockedInvestmentListsEachOfItsSales) {
+TEST(CliReportIntegrationTest, TwoPartlyBlockedSalesAreWrittenInFourSaleRows) {
     // Lots in FIFO order: 2 @ 10, 3 @ 40, 5 @ 10. The sale of 4 @ 20 uses 2 @ 10 (+20) and 2 @ 40
     // (-40); the sale of 6 @ 25 uses 1 @ 40 (-15) and 5 @ 10 (+75). No purchase lies within 30
     // days of a sale, so one question covers both sales; the answer yes blocks the loss units and
-    // not the profitable ones: both sales need split rows (#267).
+    // not the profitable ones: each sale is written as two rows.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -3089,37 +3222,57 @@ TEST(CliReportIntegrationTest, BlockedInvestmentListsEachOfItsSales) {
                              history},
                             "yes\n");
 
-    // The code is listed once; each sale gets its own line and its own error.
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
-    EXPECT_EQ(folder.readOutput("summary_2024.txt"),
-              R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
-Input files: 1
-  source-0001 history.csv
-
-Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
-
-Investments with a sale in 2024: 1
-  XX0000000001 Synthetic Share: blocked (unsupported_tax_treatment)
-    sale 2024-03-10, history.csv row 5
-    sale 2024-05-10, history.csv row 6
-
-Units past the holding period (tax free, not in the XML): 0
-
-Private-market events skipped (only a cash amount, no units): 0
-
-Errors: 2
-  diagnostic-0001 unsupported_tax_treatment, XX0000000001 Synthetic Share, 2024-03-10, history.csv row 5
-    The 30-day loss rule blocks only part of the loss of this sale. Rows for such a sale are not supported yet, so the sale cannot be reported. No Doh-KDVP file was written.
-  diagnostic-0002 unsupported_tax_treatment, XX0000000001 Synthetic Share, 2024-05-10, history.csv row 6
-    The 30-day loss rule blocks only part of the loss of this sale. Rows for such a sale are not supported yet, so the sale cannot be reported. No Doh-KDVP file was written.
-
-Warnings: 0
-
-Answered in this run: 1
-  XX0000000001 Synthetic Share, 30-day loss rule: yes, bought or sold elsewhere (the open loss is not deductible, F10 false)
-)");
+    // 2 + 2 + 1 + 5 = 10 listed units, of which 2 + 1 = 3 have a blocked loss.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: listed, 2 sales, 10.0000 units, 3.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
     EXPECT_TRUE(result.mOut.ends_with(folder.readOutput("summary_2024.txt")));
+
+    // Rows: the three purchases (F8 2, 5, 10), then sale 1 as 2 units with F10 true (F8 8) and
+    // 2 units with F10 false (F8 6), then sale 2 as 1 unit with F10 false (F8 5) and 5 units with
+    // F10 true (F8 0).
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2024-03-10</F6>
+              <F7>2.0000</F7>
+              <F9>20.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>8.0000</F8>
+          </Row>
+          <Row>
+            <ID>4</ID>
+            <Sale>
+              <F6>2024-03-10</F6>
+              <F7>2.0000</F7>
+              <F9>20.0000</F9>
+              <F10>false</F10>
+            </Sale>
+            <F8>6.0000</F8>
+          </Row>
+          <Row>
+            <ID>5</ID>
+            <Sale>
+              <F6>2024-05-10</F6>
+              <F7>1.0000</F7>
+              <F9>25.0000</F9>
+              <F10>false</F10>
+            </Sale>
+            <F8>5.0000</F8>
+          </Row>
+          <Row>
+            <ID>6</ID>
+            <Sale>
+              <F6>2024-05-10</F6>
+              <F7>5.0000</F7>
+              <F9>25.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>0.0000</F8>
+)xml"));
+    expectValidForKdvpSchemas(xml);
 }
 
 TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {

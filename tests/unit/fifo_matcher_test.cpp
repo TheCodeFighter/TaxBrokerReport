@@ -1854,7 +1854,6 @@ TEST(FifoMatcherTest, SplitThenReverseSplitKeepsThePurchaseDateAndBasis) {
     EXPECT_EQ(match.mBasis.mTicks, ticks(1'800'000'000'000'000'000));   // 360 / 2 = EUR 180
     EXPECT_EQ(match.mSaleValueTicks, ticks(2'000'000'000'000'000'000)); // EUR 200
     EXPECT_EQ(match.mGainTicks, ticks(200'000'000'000'000'000));        // 200 - 180 = EUR 20
-    EXPECT_TRUE(match.mLotChangedByAction);
 
     ASSERT_EQ(isin.mOpenLots.size(), 1U);
 
@@ -1863,7 +1862,6 @@ TEST(FifoMatcherTest, SplitThenReverseSplitKeepsThePurchaseDateAndBasis) {
     EXPECT_EQ(lot.mPurchaseDate, day("2022-05-10"));
     EXPECT_EQ(lot.mState.mRemainingUnits, 100'000'000); // 2 - 1 = 1 unit
     EXPECT_EQ(lot.mState.mRemainingBasis.mTicks, ticks(1'800'000'000'000'000'000)); // EUR 180
-    EXPECT_TRUE(lot.mChangedByAction);
 }
 
 TEST(FifoMatcherTest, LargestRemainderGivesTheExtraUnitToTheLargerRemainder) {
@@ -2010,7 +2008,6 @@ TEST(FifoMatcherTest, ARoundingWorthOneCentOrMoreStopsThePool) {
     EXPECT_TRUE(isin.mAppliedActions.empty());
     ASSERT_EQ(isin.mOpenLots.size(), 1U);
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 100'000'000); // unchanged
-    EXPECT_FALSE(isin.mOpenLots.at(0).mChangedByAction);
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Error);
@@ -2173,7 +2170,6 @@ TEST(FifoMatcherTest, TheSeveralYearsExampleKeepsOlderAndNewerShares) {
     // The 2023 sale is before the split: 4 units of the 2008 lot, not changed.
     ASSERT_EQ(isin.mEarlierMatches.size(), 1U);
     EXPECT_EQ(isin.mEarlierMatches.at(0).mUnits, 400'000'000);
-    EXPECT_FALSE(isin.mEarlierMatches.at(0).mLotChangedByAction);
 
     ASSERT_EQ(isin.mMatches.size(), 3U);
 
@@ -2182,14 +2178,12 @@ TEST(FifoMatcherTest, TheSeveralYearsExampleKeepsOlderAndNewerShares) {
     EXPECT_EQ(older.mPurchaseDate, day("2008-05-10"));
     EXPECT_EQ(older.mUnits, 1'200'000'000);                         // 6 x 2 = 12 units
     EXPECT_EQ(older.mBasis.mTicks, ticks(600'000'000'000'000'000)); // 6 x 10 = EUR 60
-    EXPECT_TRUE(older.mLotChangedByAction);
 
     const auto& newer = isin.mMatches.at(1);
 
     EXPECT_EQ(newer.mPurchaseDate, day("2023-09-01"));
     EXPECT_EQ(newer.mUnits, 800'000'000);                           // 8 of the 16 units
     EXPECT_EQ(newer.mBasis.mTicks, ticks(800'000'000'000'000'000)); // 160 x 8 / 16 = EUR 80
-    EXPECT_TRUE(newer.mLotChangedByAction);
 
     const auto& december = isin.mMatches.at(2);
 
@@ -2241,9 +2235,7 @@ TEST(FifoMatcherTest, ATradeOnTheEffectiveDateIsInNewUnits) {
 
     ASSERT_EQ(lots.size(), 2U);
     EXPECT_EQ(lots.at(0).mState.mRemainingUnits, 600'000'000); // 3 x 2 = 6
-    EXPECT_TRUE(lots.at(0).mChangedByAction);
     EXPECT_EQ(lots.at(1).mState.mRemainingUnits, 100'000'000); // 1, not changed
-    EXPECT_FALSE(lots.at(1).mChangedByAction);
 }
 
 TEST(FifoMatcherTest, AnEarlierConfirmedDatePutsTheLaterPurchaseAfterTheSplit) {
@@ -2290,7 +2282,6 @@ TEST(FifoMatcherTest, AnEarlierConfirmedDatePutsTheLaterPurchaseAfterTheSplit) {
     ASSERT_EQ(isin.mOpenLots.size(), 2U);
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 200'000'000); // 2 units
     EXPECT_EQ(isin.mOpenLots.at(1).mState.mRemainingUnits, 10'000'000);  // 0.1 units
-    EXPECT_FALSE(isin.mOpenLots.at(1).mChangedByAction);
 }
 
 TEST(FifoMatcherTest, TheRowDateAsEffectiveDatePutsTheLaterPurchaseBeforeTheSplit) {
@@ -2331,7 +2322,6 @@ TEST(FifoMatcherTest, TheRowDateAsEffectiveDatePutsTheLaterPurchaseBeforeTheSpli
     ASSERT_EQ(lots.size(), 2U);
     EXPECT_EQ(lots.at(0).mState.mRemainingUnits, 200'000'000); // 2 units
     EXPECT_EQ(lots.at(1).mState.mRemainingUnits, 20'000'000);  // 0.2 units
-    EXPECT_TRUE(lots.at(1).mChangedByAction);
 }
 
 TEST(FifoMatcherTest, OneActionRowChangesTheLotsOfEveryBrokerOnce) {
@@ -2415,12 +2405,10 @@ TEST(FifoMatcherTest, ASplitAfterTheLastSaleChangesOnlyTheLotsAtYearEnd) {
     EXPECT_EQ(isin.mStatus, FifoIsinStatus::Matched);
     ASSERT_EQ(isin.mMatches.size(), 1U);
     EXPECT_EQ(isin.mMatches.at(0).mUnits, 100'000'000);
-    EXPECT_FALSE(isin.mMatches.at(0).mLotChangedByAction);
     ASSERT_EQ(isin.mOpenLots.size(), 1U);
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 200'000'000); // 1 x 2
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingBasis.mTicks,
               ticks(100'000'000'000'000'000)); // still EUR 10
-    EXPECT_TRUE(isin.mOpenLots.at(0).mChangedByAction);
 }
 
 TEST(FifoMatcherTest, AnUnconfirmedActionAfterAConfirmedOneStopsWithTheLotsAfterTheFirst) {

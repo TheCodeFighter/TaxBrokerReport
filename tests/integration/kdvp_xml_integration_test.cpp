@@ -4,6 +4,7 @@
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "processors/loss_eligibility.hpp"
+#include "utils/date_utils.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <gtest/gtest.h>
@@ -1695,6 +1696,173 @@ TEST(KdvpXmlIntegrationTest, AJanuaryReplacementWritesF10False) {
     EXPECT_EQ(fifoList.mCountedF8, (std::vector<std::string>{"4", "0"}));
     // 4 x (8 - 10) = -8: a loss that F10 false keeps from reducing the gains.
     EXPECT_EQ(fifoList.mSaleGains, (std::vector<std::string>{"-8"}));
+}
+
+TEST(KdvpXmlIntegrationTest, ASplitLotAndASaleInTwoRowsWriteTheRowsAfterTheSplit2024) {
+    // 1 unit bought at EUR 3 and 2 units at EUR 10; the 5 / 3 split on 2024-04-02 makes them
+    // 1.66666667 and 3.33333333 units with the unchanged bases EUR 3 and EUR 20. F4 is the basis
+    // over the units after the split, rounded once to 8 decimals: 3 / 1.66666667 = 1.79999999640
+    // -> 1.8 and 20 / 3.33333333 = 6.000000006 -> 6.00000001. The sale of 5 units at EUR 4 takes
+    // the profitable first lot and the loss-making second lot. The purchase of 3.33333333 units
+    // on 2024-05-10 blocks the whole loss, so the sale is two rows: F10 true, then false.
+    constexpr std::string_view firstPurchase =
+        R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,3,-3,,,EUR,,,,,synthetic-buy-1,,,,)";
+    constexpr std::string_view secondPurchase =
+        R"(2024-02-12T09:00:00Z,2024-02-12,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-2,,,,)";
+    constexpr std::string_view split =
+        R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,5,,,,,,,,,,synthetic-split-1,,,,)";
+    constexpr std::string_view sale =
+        R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,4,20,,,EUR,,,,,synthetic-sell-1,,,,)";
+    constexpr std::string_view replacement =
+        R"(2024-05-10T09:00:00Z,2024-05-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,3.33333333,4,-13.33,,,EUR,,,,,synthetic-buy-3,,,,)";
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+
+    const TemporaryKdvpInputs files;
+    const auto historyPath =
+        files.write("history.csv", {firstPurchase, secondPurchase, split, sale, replacement});
+    tr::TradeRepublicParser parser;
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
+
+    ASSERT_TRUE(prepared.mLedger.has_value());
+
+    const auto fifo = FifoMatcher::match(prepared.mMerged.mStatement,
+                                         *prepared.mLedger,
+                                         {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                                           .mRatio = {.mNewShares = 5, .mOldShares = 3},
+                                           .mEffectiveDate = *parseCalendarDate("2024-04-02")}});
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(prepared.mMerged.mStatement,
+                                                    *prepared.mLedger,
+                                                    fifo,
+                                                    decisions);
+
+    EXPECT_TRUE(fifo.mDiagnostics.empty());
+    EXPECT_TRUE(loss.mRequests.empty());
+
+    const auto built = CapitalGainsReportBuilder::build(prepared.mMerged.mStatement,
+                                                        *prepared.mLedger,
+                                                        fifo,
+                                                        loss,
+                                                        {});
+
+    EXPECT_TRUE(built.mBlocked.empty());
+    ASSERT_TRUE(built.mReport.has_value());
+
+    const auto result = KdvpXmlWriter::write(metadata, *built.mReport);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_EQ(*result.mXml, R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_KDVP>
+      <KDVP>
+        <DocumentWorkflowID>O</DocumentWorkflowID>
+        <DocumentWorkflowName>Original</DocumentWorkflowName>
+        <Year>2024</Year>
+        <PeriodStart>2024-01-01</PeriodStart>
+        <PeriodEnd>2024-12-31</PeriodEnd>
+        <IsResident>true</IsResident>
+        <SecurityCount>1</SecurityCount>
+        <SecurityShortCount>0</SecurityShortCount>
+        <SecurityWithContractCount>0</SecurityWithContractCount>
+        <SecurityWithContractShortCount>0</SecurityWithContractShortCount>
+        <ShareCount>0</ShareCount>
+      </KDVP>
+      <KDVPItem>
+        <ItemID>1</ItemID>
+        <InventoryListType>PLVP</InventoryListType>
+        <Securities>
+          <ISIN>XX0000000001</ISIN>
+          <Name>Synthetic Share</Name>
+          <IsFond>false</IsFond>
+          <Row>
+            <ID>0</ID>
+            <Purchase>
+              <F1>2024-01-10</F1>
+              <F2>B</F2>
+              <F3>1.66666667</F3>
+              <F4>1.8000</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>1.66666667</F8>
+          </Row>
+          <Row>
+            <ID>1</ID>
+            <Purchase>
+              <F1>2024-02-12</F1>
+              <F2>B</F2>
+              <F3>3.33333333</F3>
+              <F4>6.00000001</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>5.0000</F8>
+          </Row>
+          <Row>
+            <ID>2</ID>
+            <Sale>
+              <F6>2024-05-02</F6>
+              <F7>1.66666667</F7>
+              <F9>4.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>3.33333333</F8>
+          </Row>
+          <Row>
+            <ID>3</ID>
+            <Sale>
+              <F6>2024-05-02</F6>
+              <F7>3.33333333</F7>
+              <F9>4.0000</F9>
+              <F10>false</F10>
+            </Sale>
+            <F8>0.0000</F8>
+          </Row>
+        </Securities>
+      </KDVPItem>
+    </Doh_KDVP>
+  </body>
+</Envelope>
+)xml");
+
+    expectValidForKdvpSchemas(*result.mXml);
+
+    const auto fifoLists = fifoOverKdvpRows(*result.mXml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+
+    const auto& fifoList = fifoLists.at(0);
+
+    EXPECT_TRUE(fifoList.mProblems.empty());
+    // F8: 1.66666667, + 3.33333333 = 5, - 1.66666667 = 3.33333333, - 3.33333333 = 0.
+    EXPECT_EQ(fifoList.mWrittenF8,
+              (std::vector<std::string>{"1.66666667", "5", "3.33333333", "0"}));
+    EXPECT_EQ(fifoList.mCountedF8,
+              (std::vector<std::string>{"1.66666667", "5", "3.33333333", "0"}));
+    // 1.66666667 x (4 - 1.8) = 3.666666674 and 3.33333333 x (4 - 6.00000001) = -6.6666666933333333
+    // (the exact gains are 3.66666668 and -6.66666668; the F4 rounding moves them by about 1e-8).
+    EXPECT_EQ(fifoList.mSaleGains,
+              (std::vector<std::string>{"3.666666674", "-6.6666666933333333"}));
 }
 
 } // namespace

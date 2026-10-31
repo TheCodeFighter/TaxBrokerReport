@@ -6,7 +6,9 @@ are covered automatically by the unit and integration tests. The results go in
 [`docs/verification.md`](../../../docs/verification.md).
 
 All trades are in EUR, without fees. Every listed sale of S1 to S4 is a gain; the loss of S5 is
-blocked in full by a purchase within 30 days, so no CLI gate blocks any of them.
+blocked in full by a purchase within 30 days, so no CLI gate blocks any of them. S6 and S8 contain
+a split: the command asks for its ratio (answer `2 : 1`, an empty line for the broker's date and
+`yes`). S7 has a sale whose loss is blocked in part and needs no answer.
 The ISINs (`XX…`) and names are made up. Purchase value is F3 × F4, sale value F7 × F9.
 
 ## How to run a check
@@ -234,3 +236,82 @@ Purchase value 40, sale value 32, loss **−8**, not deductible.
 
 Checks: eDavki imports `F10` false, and, if it shows anything, does not let the loss reduce the
 gains.
+
+## S6: a split before the sale
+
+File `kdvp_2025_s6_split_lot.csv`, tax year **2025**, ISIN `XX0000000606`. Answer the ratio
+question with `2 : 1`, an empty line (the broker's date, 2024-06-03) and `yes`.
+
+| Date | Type | Units | Price |
+| --- | --- | --- | --- |
+| 2024-03-01 | BUY | 10 | 100 |
+| 2024-06-03 | SPLIT | | answered 2 : 1 |
+| 2025-09-02 | SELL | 20 | 60 |
+
+The 10 units are 20 after the split, EUR 50 each. The purchase row lists the 20 units after the
+split with the original date.
+
+| Row | F1 / F6 | F3 / F7 | F4 / F9 | F8 |
+| --- | --- | --- | --- | --- |
+| Purchase | 2024-03-01 | 20 | 50 | 20 |
+| Sale | 2025-09-02 | 20 | 60 | 0 |
+
+Purchase value 1,000, sale value 1,200, gain **200**.
+
+Checks: eDavki imports `F3` 20 and `F4` 50 for a purchase of 10 units at EUR 100 (the units and
+price of the broker confirmation are not the row's).
+
+## S7: a loss blocked in part (two sale rows)
+
+File `kdvp_2025_s7_loss_in_two_rows.csv`, tax year **2025**, ISIN `XX0000000707`.
+
+| Date | Type | Units | Price |
+| --- | --- | --- | --- |
+| 2024-06-03 | BUY | 10 | 10 |
+| 2024-07-03 | BUY | 10 | 20 |
+| 2025-03-11 | SELL | 15 | 18 |
+| 2025-03-20 | BUY | 8 | 18 |
+
+The sale uses 10 units at EUR 10 (+80) and 5 at EUR 20 (−10). The purchase of 8 units 9 days later
+blocks the loss of the 5 units, so the sale has two rows: the 10 profitable units with `F10` true,
+then the 5 loss units with `F10` false. The 2025-03-20 purchase has no row.
+
+| Row | F1 / F6 | F3 / F7 | F4 / F9 | F8 | F10 |
+| --- | --- | --- | --- | --- | --- |
+| Purchase | 2024-06-03 | 10 | 10 | 10 | |
+| Purchase | 2024-07-03 | 5 | 20 | 15 | |
+| Sale | 2025-03-11 | 10 | 18 | 5 | true |
+| Sale | 2025-03-11 | 5 | 18 | 0 | false |
+
+Purchase value 100 + 100 = 200, sale value 270, gain 70: **+80** on the first row and **−10**
+(not deductible) on the second.
+
+Checks: eDavki imports two sale rows with the same date and price, and does not let the −10 reduce
+the gains.
+
+## S8: a purchase sold before and after a split
+
+File `kdvp_2024_s8_split_between_sales.csv`, tax year **2024**, ISIN `XX0000000808`. Answer the
+ratio question with `2 : 1`, an empty line (the broker's date, 2024-06-03) and `yes`.
+
+| Date | Type | Units | Price |
+| --- | --- | --- | --- |
+| 2023-05-02 | BUY | 10 | 100 |
+| 2024-02-01 | SELL | 4 | 120 |
+| 2024-06-03 | SPLIT | | answered 2 : 1 |
+| 2024-09-02 | SELL | 12 | 55 |
+
+The 4 units sold in February are old units; the 6 left become 12 after the split, EUR 50 each. The
+purchase has one row for each state, both at its date.
+
+| Row | F1 / F6 | F3 / F7 | F4 / F9 | F8 |
+| --- | --- | --- | --- | --- |
+| Purchase | 2023-05-02 | 4 | 100 | 4 |
+| Purchase | 2023-05-02 | 12 | 50 | 16 |
+| Sale | 2024-02-01 | 4 | 120 | 12 |
+| Sale | 2024-09-02 | 12 | 55 | 0 |
+
+Purchase value 400 + 600 = 1,000, sale value 480 + 660 = 1,140, gain **140** (80 + 60).
+
+Checks: eDavki imports two purchase rows with the same date, and `F8` (old and new units added) is
+accepted.
