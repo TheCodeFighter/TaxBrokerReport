@@ -219,7 +219,7 @@ TEST(DecisionSessionTest, WithoutAnAnswerTheReportStaysNeedsInput) {
 
 TEST(DecisionSessionTest, FailReportRecalculates) {
     // Capital gains asks the failure choice for XX0000000001 until it has a choice; the error
-    // stays (applying a choice is #227). Dividends have XML.
+    // stays, because this calculation does not apply the choice. Dividends have XML.
     SeenAnswers seen;
     const auto calculation = [&seen](RunDecisions& aDecisions) {
         const auto question = capitalQuestion({{

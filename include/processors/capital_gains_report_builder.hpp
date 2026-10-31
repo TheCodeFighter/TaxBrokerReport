@@ -34,6 +34,19 @@ struct KdvpBlockedIsin {
     bool operator==(const KdvpBlockedIsin&) const = default;
 };
 
+/// An ISIN with a sale in the selected year that the user left out of the report. It gets no
+/// rows, whether or not it was blocked.
+struct KdvpExcludedIsin {
+    Isin mIsin;
+    std::string mName;
+    /// Why the builder blocked it, when it did.
+    std::optional<KdvpBlockReason> mBlockReason;
+    /// Every sale of the year, in ledger order.
+    std::vector<StatementEventReference> mSales;
+
+    bool operator==(const KdvpExcludedIsin&) const = default;
+};
+
 /// Units of a sale of the year that are past the holding period (15 years for a sale from 2022,
 /// 20 years before). They are tax free and get no row, so they are kept here to stay visible.
 struct KdvpLongHeldUnits {
@@ -50,9 +63,9 @@ struct CapitalGainsBuildResult {
     /// Present only when every blocked ISIN is one the user agreed to leave out or there are no
     /// blocked ISINs.
     std::optional<CapitalGainsReportKDVP> mReport;
-    /// Blocked ISINs the user agreed to leave out. They stay visible beside the report and are
-    /// never written to the XML.
-    std::vector<KdvpBlockedIsin> mExcluded;
+    /// ISINs with a sale of the year that the user agreed to leave out, blocked or not. They stay
+    /// visible beside the report and are never written to the XML.
+    std::vector<KdvpExcludedIsin> mExcluded;
     /// Blocked ISINs without the user's agreement. Any entry here means there is no report.
     std::vector<KdvpBlockedIsin> mBlocked;
     /// The units left out of the rows because they are past the holding period, for every ISIN
@@ -62,7 +75,7 @@ struct CapitalGainsBuildResult {
 
 class CapitalGainsReportBuilder final {
   public:
-    /// Builds the Doh-KDVP filing rows from the FIFO result.
+    /// Builds the Doh-KDVP filing rows from the FIFO result, without the ISINs in aExcludedIsins.
     [[nodiscard]] static CapitalGainsBuildResult build(const MergedStatement& aStatement,
                                                        const ReportingYearLedger& aLedger,
                                                        const FifoMatchingResult& aFifo,

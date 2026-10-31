@@ -335,6 +335,10 @@ struct ReportInput {
     std::optional<std::string> mXml;
     /// The reason when the form has no rows and no XML.
     std::optional<NoDataReason> mNoDataReason;
+    /// What the user chose for the failed investments of this form, when a stage asked.
+    std::optional<FailureResolution> mFailureResolution;
+    /// The investments left out of this form, only with ExcludeFailedInstruments.
+    std::vector<FailedInvestment> mExcludedInvestments;
 };
 
 struct ReportResult {
@@ -345,6 +349,12 @@ struct ReportResult {
     std::optional<std::string> mXml;
     /// Present only for NoData, and only when the report stage gave a reason.
     std::optional<NoDataReason> mNoDataReason;
+    /// Present only after the user answered the failure question of this form.
+    std::optional<FailureResolution> mFailureResolution;
+    /// The investments left out of this form, by ISIN and name, each with the IDs of the
+    /// diagnostics that the exclusion resolved. Empty unless mFailureResolution is
+    /// ExcludeFailedInstruments.
+    std::vector<RequestInvestment> mExcludedInvestments;
     /// Always false until the developer-mode flow exists
     bool mUnsafe{};
 };
@@ -373,6 +383,9 @@ struct ApplicationResultInput {
     std::vector<StatementMergeDiagnostic> mMergeDiagnostics;
     std::vector<ProcessingDiagnostic> mProcessingDiagnostics;
     std::vector<RequestInput> mRequests;
+    /// Positions in mProcessingDiagnostics of the errors that an exclusion resolved. They stay
+    /// errors but no longer block.
+    std::vector<std::size_t> mResolvedDiagnostics;
     /// Indexed by ReportType.
     std::array<ReportInput, 4> mReports;
 };
@@ -391,6 +404,10 @@ class ApplicationResultBuilder final {
     /// range that does not contain its effective date.
     [[nodiscard]] static ApplicationResult build(ApplicationResultInput&& aInput);
 };
+
+/// True when a parse or merge error of aInput affects aReport. Such an error belongs to a file or
+/// a row, not to one investment, so leaving an investment out cannot resolve it.
+[[nodiscard]] bool hasSourceError(const ApplicationResultInput& aInput, ReportType aReport);
 
 /// Appends the diagnostics and requests of one stage. The requests' diagnostic indices count from
 /// the stage's first diagnostic and are shifted to the numbering of aInput.

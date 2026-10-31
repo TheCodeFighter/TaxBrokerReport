@@ -79,10 +79,11 @@ adapters, report scope, deterministic order and IDs, report and overall status, 
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
 (`include/taxbroker/decision_session.hpp`); of the nine request types only the two
 failure-resolution types, the loss question and the ratio question have question data and answers
-so far. Applying the failure and exclusion
-choices, developer mode, `excludedItems`, the income summaries and XML failure isolation are not
-part of it yet. Until they exist, `excludedInvestments` is an empty list for capital gains and
-other interest, and `unsafe` is `false`.
+so far. The capital failure choice is applied (`CapitalFailureResolution`,
+`include/processors/capital_failure_resolution.hpp`): see "Choosing whether to exclude failed
+capital ISINs". The other-interest failure choice, developer mode, `excludedItems`, the income
+summaries and XML failure isolation are not part of it yet. Until they exist,
+`excludedInvestments` is an empty list for other interest, and `unsafe` is `false`.
 
 ### Report result
 
@@ -362,6 +363,23 @@ repaired by ISIN exclusion and follows its normal
 report failure scope. If any unresolved capital-gains error cannot be isolated this way, the app
 does not offer a pointless exclusion choice: capital gains fails and shows all of its diagnostics.
 
+**Implementation.** The stage runs after every other capital stage and before the XML. It lists
+the errors that block capital gains and are not linked to an open capital question. An error
+belongs to one investment when it affects only capital gains, names an ISIN and is not an XML
+error; a parse or merge error never does, even when it names an ISIN. One error that no
+investment owns suppresses the question. The question lists the ISINs of the errors found; the
+errors of an ISIN with an open loss or ratio question are not found, so they join the list only
+when that question is closed with a cancel. The CLI asks this question after the loss and ratio
+questions of the investments it does not list (a cancel there can add one) and before those of the
+investments it lists, so `exclude` never leaves a useless answer. After `exclude`, the errors of
+the listed ISINs stay with `blocking: false`, and the open loss and ratio questions of those ISINs
+are dropped, because no answer can change the report any more; a question whose linked error is
+not resolved (it also affects another form) stays open. Each entry of
+`excludedInvestments` keeps the reason codes of the question that was answered, and its
+diagnostic IDs are every error the exclusion resolved, also the error of a dropped question. A
+`cancel` closes the question: the errors stay blocking, capital gains is `failed` and no
+`failureResolution` is recorded.
+
 ### Choosing whether to exclude failed other-interest ISINs
 
 Collect all Doh-Obr errors that can be isolated safely to complete ISINs, including bond-income
@@ -501,11 +519,13 @@ rules:
   parameter (`all` when everything was to be deleted). Otherwise the run is recalculated and the
   questions are asked again.
 - **Cancellation and missing answers.** Cancel is an answer for every type with question data and
-  is recorded on the question; the stage applies the documented rule of its type. For both failure-resolution types
-  the question stays open, the report stays `needs_input` and no XML is written. For the loss
+  is recorded on the question; the stage applies the documented rule of its type. For the
+  capital failure question the question is closed, its errors stay blocking, capital gains is
+  `failed` and no XML is written. For the other-interest failure question the question stays open,
+  the report stays `needs_input` and no XML is written. For the loss
   question, each open sale gets a blocking `loss_eligibility_unresolved` error with the key
-  `loss_eligibility_unresolved.cancelled` and no request, so capital gains fails until the
-  exclusion choice exists (latter task). For the ratio question, the action gets a blocking
+  `loss_eligibility_unresolved.cancelled` and no request; the error belongs to its investment, so
+  the capital failure question then lists it. For the ratio question, the action gets a blocking
   `corporate_action_ambiguous` error with the key `corporate_action_ambiguous.cancelled` and no
   request, with the same result; for a question before a sale up to 31 December with too few
   units (`earlierSaleDate`), the sale gets the `incomplete_history` error instead, because a

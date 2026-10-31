@@ -24,6 +24,7 @@ endif()
 add_executable(taxbroker_unit_tests
     unit/application_result_json_test.cpp
     unit/application_result_test.cpp
+    unit/capital_failure_resolution_test.cpp
     unit/capital_gains_report_builder_test.cpp
     unit/capital_report_gates_test.cpp
     unit/corporate_actions_test.cpp

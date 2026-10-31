@@ -21,3 +21,7 @@ For trying the questions of `taxbroker report` by hand (no test reads them):
   the command asks for the ratio. A confirmed ratio is applied (1 unit becomes 2 with 2 : 1), and
   the report lists the 2 units after the split at EUR 5 (`F3` 2, `F4` 5) and the sale of 2 at
   EUR 30.
+- `exclusion_question.csv`: two investments in 2024. One is fine (1 @ 10 bought, 1 @ 30 sold); the
+  other sells 2 after buying 1, so its purchase history is incomplete. Run it with `--year 2024`:
+  the command asks the exclusion question. exclude writes the XML with the first investment only
+  and lists the other in the summary; fail and cancel block the report.

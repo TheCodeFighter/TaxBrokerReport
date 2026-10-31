@@ -607,10 +607,28 @@ Json reportToJson(ReportType aType, const ReportResult& aReport) {
         {"requestIds", aReport.mRequestIds},
     };
 
-    // Only the two forms with a failure choice list excluded investments; none exist yet.
+    // Only the two forms with a failure choice list excluded investments.
     if (aType == ReportType::CapitalGains || aType == ReportType::OtherInterest)
     {
-        serialized["excludedInvestments"] = Json::array();
+        Json excluded = Json::array();
+
+        std::transform(aReport.mExcludedInvestments.begin(),
+                       aReport.mExcludedInvestments.end(),
+                       std::back_inserter(excluded),
+                       [](const RequestInvestment& aInvestment) {
+                           return Json{
+                               {"name", aInvestment.mName},
+                               {"isin", aInvestment.mIsin},
+                               {"reasonCodes", reasonCodesToJson(aInvestment.mReasonCodes)},
+                               {"diagnosticIds", aInvestment.mDiagnosticIds},
+                           };
+                       });
+        serialized["excludedInvestments"] = std::move(excluded);
+    }
+
+    if (aReport.mFailureResolution)
+    {
+        serialized["failureResolution"] = toString(*aReport.mFailureResolution);
     }
 
     serialized["unsafe"] = aReport.mUnsafe;

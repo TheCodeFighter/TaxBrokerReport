@@ -531,8 +531,8 @@ The matcher reports two kinds of diagnostics, both for the capital report only:
   It names the investment and carries the failing sale's tax date and sources (file, row and
   transaction ID). It has no message parameters, so no unit count or amount is in the message.
   Only the first failing sale of an ISIN is reported, because the pool stops there;
-  `mAvailableUnits` keeps the open units. The error blocks the capital report; the choice to
-  exclude the ISIN or fail the report is later work.
+  `mAvailableUnits` keeps the open units. The error blocks the capital report until the user
+  chooses to exclude the ISIN or to fail the report (`CapitalFailureResolution`).
 
 The ratio questions and the other corporate-action errors come from the corporate-action stage
 ("Corporate-action contract"), the non-EUR errors from the capital report gates (see "CLI report
@@ -738,15 +738,17 @@ year:
   out with them, because it cannot reduce the tax base. A gain of zero is not a loss. A stopped
   pool without a sale in the year does not block. A loss from an earlier-year sale is not in the
   matches of the year and never blocks.
-- A blocked ISIN that the user agreed to leave out goes to `mExcluded` and stays visible beside
-  the report; any other blocked ISIN goes to `mBlocked`. The report exists only when `mBlocked` is
-  empty, and then holds a list for every ISIN without a problem. An ISIN without a problem is never
-  left out, even if it is on the user's list.
+- An ISIN with a sale in the year that the user agreed to leave out goes to `mExcluded` with
+  every sale of the year and the reason the builder blocked it, if it did; it gets no list and no
+  long-held units, also when the builder would not have blocked it (the gates block crypto, for
+  example). Any other blocked ISIN goes to `mBlocked`. The report exists only when `mBlocked` is
+  empty, and then holds a list for every ISIN that is not left out.
 
 The builder adds no diagnostics and no message keys. The capital report gates turn `mBlocked`
 into errors (see "CLI report command (walking skeleton)"), and the application result
-turns them into report statuses. Asking the user which blocked ISINs to leave out comes with the
-explicit ISIN exclusion.
+turns them into report statuses. `CapitalFailureResolution` (see "Choosing whether to exclude
+failed capital ISINs" in `diagnostics.md`) asks which of those ISINs to leave out and passes the
+answer to the builder.
 
 ### Doh-KDVP XML writer
 
@@ -818,18 +820,21 @@ stages.
 command line as the source index. Then merge and reporting-year preparation, once. The rest runs
 as the calculation of a `DecisionSession`, once per revision: FIFO, the corporate-action
 stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
-report gates and the XML writer; the session builds the application result. A loss that the files
-decide in full is written as they decide it. A sale whose blocked units are only part of its
-listed units is written in several rows.
+report gates, `CapitalFailureResolution` (after `exclude` the command builds the rows again without
+the investments the user left out) and the XML writer; the session builds the application result.
+A loss that the files decide in full is written as they decide it. A sale whose blocked units are
+only part of its listed units is written in several rows.
 
 **Questions** (`include/cli/decision_prompts.hpp`). After the first calculation the command asks
-the open loss and ratio questions in the terminal, one at a time in request order, and reads each
-answer from standard input. It only shows the request and passes the answer on: the session
-checks it, records it and calculates again, and the next question is the first open one of the
-new result (new revision, new request IDs). A rejected answer prints the session's message and
-the question is asked again; a line the command cannot read (another word, a number that is not
-whole, a share count of 0 or below, a date not in the form `YYYY-MM-DD`) is asked again without a
-session call.
+the open loss and ratio questions in the terminal, one at a time in request order, and the
+exclusion question after the questions of investments it does not list (an answer to one of
+those can add an investment to its list) and before those of the investments it lists (exclude
+drops them, so asking first saves a useless answer), and reads each answer from standard input. It
+only shows the request and passes the answer on: the session checks it, records it and calculates
+again, and the next question is the first open one of the new result (new revision, new request
+IDs). A rejected answer prints the session's message and the question is asked again; a line the
+command cannot read (another word, a number that is not whole, a share count of 0 or below, a
+date not in the form `YYYY-MM-DD`) is asked again without a session call.
 
 - Loss question: `yes` (`other_activity`), `no` (`no_other_activity`) or `cancel`, in any case.
 - Ratio question with rows on two dates (`mAskSameEvent`): first whether they are one split,
@@ -845,8 +850,7 @@ session call.
   `1,234` is 1.234 and `1.000,5` is refused; the confirmed preview catches a mistake. This is
   only for typed answers: broker CSV import stays strict ([`calculations.md`](calculations.md)).
   The CLI output keeps the point new logic is implemented.
-- A failure-resolution question is not asked yet (no stage emits one), and a request without
-  question data cannot be answered; both stay open.
+- A request without question data cannot be answered; it stays open.
 - With `--no-input`, nothing is read and the questions stay open. When the input ends, the
   current and every later question stay open. An open question keeps capital gains
   `needs_input`, a cancelled one makes it `failed`; either way no XML is written (exit 1).
@@ -857,8 +861,16 @@ session call.
 A confirmed split is applied. A sale that lists units of a lot the split changed is written with
 the units after the split.
 
+**Excluding investments.** When each error that blocks capital gains names its own investment
+(one or several), the command asks one exclusion question for all of them. `exclude` writes the
+XML from the other investments. The summary then says `generated without N excluded
+investments`, lists each excluded investment with its reason codes under "Excluded investments
+(not in the XML)", and marks the resolved errors. If nothing is left, the status is `no data` (exit 0). `fail` and `cancel` write no XML
+(exit 1). Like every answer, it is used only in that run.
+
 The XML is written only when the builder made a report with at least one list and no gate gave
-an error; a report without lists is `no_data` with `no_selected_year_disposals`. The capital
+an error that an exclusion did not resolve. A report without lists is `no_data` with
+`no_selected_year_disposals`, or without a reason when investments were left out. The capital
 status of the application result decides the files and the exit code, so a blocking parser or
 merger error (a rejected trade or corporate-action row, a file-level error, a
 `conflicting_duplicate` of a trade or corporate action, an `instrument_asset_class_conflict`) also

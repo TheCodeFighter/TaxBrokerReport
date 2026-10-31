@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <stdexcept>
@@ -2443,6 +2444,227 @@ TEST(ApplicationResultRequestTest, AStageOutputKeepsItsLinksWhenAppended) {
     EXPECT_EQ(input.mProcessingDiagnostics[2].mMessage, "Synthetic third error.");
     ASSERT_EQ(input.mRequests.size(), 1U);
     EXPECT_EQ(input.mRequests[0].mProcessingDiagnostics, (std::vector<std::size_t>{1, 2}));
+}
+
+// Exclusion of failed investments
+
+/// Two capital errors of XX0000000002 and one of XX0000000001, in that input order.
+ApplicationResultInput inputWithThreeCapitalErrors() {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mProcessingDiagnostics = {
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mInstrumentName = "Synthetic Other",
+                         .mIsin = "XX0000000002"},
+            .mMessage = "Synthetic first error.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mInstrumentName = "Synthetic Other",
+                         .mIsin = "XX0000000002"},
+            .mMessage = "Synthetic second error.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mInstrumentName = "Synthetic Share",
+                         .mIsin = "XX0000000001"},
+            .mMessage = "Synthetic third error.",
+        },
+    };
+
+    return input;
+}
+
+TEST(ApplicationResultExclusionTest, AResolvedErrorStaysAnErrorButNoLongerBlocks) {
+    // Input diagnostics 0 and 1 belong to XX0000000002, which the user left out. Diagnostic 2
+    // belongs to XX0000000001 and blocks. Sorted by ISIN, XX0000000001 is diagnostic-0001.
+    auto input = inputWithThreeCapitalErrors();
+
+    input.mResolvedDiagnostics = {0, 1};
+    input.mReports[0].mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+    input.mReports[0].mExcludedInvestments = {
+        {.mIsin = "XX0000000002",
+         .mName = "Synthetic Other",
+         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory,
+                          ProcessingDiagnosticCode::MissingExchangeRate}}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mIsin, "XX0000000001");
+    EXPECT_TRUE(result.mDiagnostics.at(0).mBlocking);
+    EXPECT_EQ(result.mDiagnostics.at(1).mIsin, "XX0000000002");
+    EXPECT_FALSE(result.mDiagnostics.at(1).mBlocking);
+    EXPECT_EQ(result.mDiagnostics.at(1).mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics.at(2).mIsin, "XX0000000002");
+    EXPECT_FALSE(result.mDiagnostics.at(2).mBlocking);
+
+    // XX0000000001 still blocks, so capital gains fails; the exclusion is recorded anyway.
+    const auto& capital = result.report(kCapital);
+
+    EXPECT_EQ(capital.mStatus, ReportStatus::Failed);
+    EXPECT_EQ(capital.mFailureResolution, FailureResolution::ExcludeFailedInstruments);
+    ASSERT_EQ(capital.mExcludedInvestments.size(), 1U);
+    EXPECT_EQ(capital.mExcludedInvestments.at(0).mIsin, "XX0000000002");
+    EXPECT_EQ(capital.mExcludedInvestments.at(0).mName, "Synthetic Other");
+    EXPECT_EQ(capital.mExcludedInvestments.at(0).mDiagnosticIds,
+              (std::vector<std::string>{"diagnostic-0002", "diagnostic-0003"}));
+}
+
+TEST(ApplicationResultExclusionTest, AFullyResolvedFormIsGeneratedAndTheRunCompletesWithWarnings) {
+    auto input = inputWithThreeCapitalErrors();
+
+    input.mResolvedDiagnostics = {0, 1, 2};
+    input.mReports[0].mXml = "<capital/>";
+    input.mReports[0].mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+    input.mReports[0].mExcludedInvestments = {
+        {.mIsin = "XX0000000002",
+         .mName = "Synthetic Other",
+         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+        {.mIsin = "XX0000000001",
+         .mName = "Synthetic Share",
+         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+    };
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(kCapital).mXml, "<capital/>");
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
+
+    // The investments are listed by ISIN, whatever order the stage gave.
+    const auto& excluded = result.report(kCapital).mExcludedInvestments;
+
+    ASSERT_EQ(excluded.size(), 2U);
+    EXPECT_EQ(excluded.at(0).mIsin, "XX0000000001");
+    EXPECT_EQ(excluded.at(0).mDiagnosticIds, std::vector<std::string>{"diagnostic-0001"});
+    EXPECT_EQ(excluded.at(1).mIsin, "XX0000000002");
+    EXPECT_EQ(excluded.at(1).mDiagnosticIds,
+              (std::vector<std::string>{"diagnostic-0002", "diagnostic-0003"}));
+}
+
+TEST(ApplicationResultExclusionTest, FailingTheReportRecordsTheChoiceWithoutExclusions) {
+    auto input = inputWithThreeCapitalErrors();
+
+    input.mReports[0].mFailureResolution = FailureResolution::FailReport;
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.report(kCapital).mFailureResolution, FailureResolution::FailReport);
+    EXPECT_TRUE(result.report(kCapital).mExcludedInvestments.empty());
+    EXPECT_FALSE(result.report(kDividends).mFailureResolution.has_value());
+}
+
+TEST(ApplicationResultExclusionTest, ExcludedInvestmentsNeedTheExclusionChoice) {
+    auto exclusionWithoutList = inputWithThreeCapitalErrors();
+
+    exclusionWithoutList.mReports[0].mFailureResolution =
+        FailureResolution::ExcludeFailedInstruments;
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(exclusionWithoutList)),
+                 std::invalid_argument);
+
+    auto listWithFailure = inputWithThreeCapitalErrors();
+
+    listWithFailure.mReports[0].mFailureResolution = FailureResolution::FailReport;
+    listWithFailure.mReports[0].mExcludedInvestments = {
+        {.mIsin = "XX0000000002", .mName = "Synthetic Other", .mReasonCodes = {}}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(listWithFailure)),
+                 std::invalid_argument);
+
+    auto listWithoutChoice = inputWithThreeCapitalErrors();
+
+    listWithoutChoice.mReports[0].mExcludedInvestments = {
+        {.mIsin = "XX0000000002", .mName = "Synthetic Other", .mReasonCodes = {}}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(listWithoutChoice)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultExclusionTest, AResolvedDiagnosticMustBeAProcessingDiagnostic) {
+    auto input = inputWithThreeCapitalErrors();
+
+    // There are three processing diagnostics, numbered 0 to 2.
+    input.mResolvedDiagnostics = {3};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+}
+
+TEST(ApplicationResultExclusionTest, AResolvedProcessingDiagnosticIsFoundBehindMergeDiagnostics) {
+    // The merge diagnostic comes first in the combined list; the resolved number counts only
+    // the processing diagnostics.
+    auto input = inputWithThreeCapitalErrors();
+
+    input.mMergeDiagnostics = {SourcedParseDiagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::TradeRepublic,
+        .mDiagnostic = {.mSeverity = DiagnosticSeverity::Warning,
+                        .mCode = DiagnosticCode::InvalidValue,
+                        .mSourceFile = "history.csv",
+                        .mRowIndex = 2,
+                        .mMessage = "Synthetic warning.",
+                        .mRowKind = ParsedRowKind::Dividend},
+    }};
+    input.mResolvedDiagnostics = {0};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    // Only the first processing error (XX0000000002, incomplete history) stops blocking.
+    const auto resolved = std::count_if(
+        result.mDiagnostics.begin(),
+        result.mDiagnostics.end(),
+        [](const ApplicationDiagnostic& aDiagnostic) {
+            return aDiagnostic.mSeverity == DiagnosticSeverity::Error && !aDiagnostic.mBlocking;
+        });
+
+    EXPECT_EQ(resolved, 1);
+}
+
+TEST(ApplicationResultExclusionTest, ASourceErrorIsFoundOnlyForTheFormsItAffects) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    EXPECT_FALSE(hasSourceError(input, kCapital));
+
+    // A rejected trade row affects capital gains only.
+    input.mMergeDiagnostics = {SourcedParseDiagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::TradeRepublic,
+        .mDiagnostic = {.mSeverity = DiagnosticSeverity::Error,
+                        .mCode = DiagnosticCode::InvalidValue,
+                        .mSourceFile = "history.csv",
+                        .mRowIndex = 3,
+                        .mMessage = "Synthetic error.",
+                        .mRowKind = ParsedRowKind::Trade},
+    }};
+
+    EXPECT_TRUE(hasSourceError(input, kCapital));
+    EXPECT_FALSE(hasSourceError(input, kDividends));
+
+    // A warning does not block.
+    input.mMergeDiagnostics.at(0) = SourcedParseDiagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::TradeRepublic,
+        .mDiagnostic = {.mSeverity = DiagnosticSeverity::Warning,
+                        .mCode = DiagnosticCode::InvalidValue,
+                        .mSourceFile = "history.csv",
+                        .mRowIndex = 3,
+                        .mMessage = "Synthetic warning.",
+                        .mRowKind = ParsedRowKind::Trade},
+    };
+
+    EXPECT_FALSE(hasSourceError(input, kCapital));
 }
 
 } // namespace

@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
@@ -152,6 +153,53 @@ std::optional<AnswerValue> readLossAnswer(std::istream& aIn, std::ostream& aOut)
         }
 
         aOut << "Answer yes, no or cancel.\n";
+    }
+}
+
+void writeFailureQuestion(std::ostream& aOut, const DecisionRequest& aRequest) {
+    aOut << "Question " << aRequest.mId << ": Doh-KDVP cannot include "
+         << countText(aRequest.mInvestments.size(), "investment", "investments") << ":\n";
+
+    for (const auto& investment : aRequest.mInvestments)
+    {
+        aOut << "  " << investmentText(investment.mIsin, investment.mName) << ": "
+             << reasonCodesText(investment) << '\n';
+    }
+
+    aOut
+        << "  exclude: write Doh-KDVP without every investment listed here; they are not in the\n"
+           "  XML, and the summary lists them. fail: write no Doh-KDVP. cancel: no answer, and no\n"
+           "  Doh-KDVP.\n";
+}
+
+std::optional<AnswerValue> readFailureAnswer(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (exclude, fail or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "exclude")
+        {
+            return FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments};
+        }
+
+        if (word == "fail")
+        {
+            return FailureResolutionAnswer{FailureResolution::FailReport};
+        }
+
+        if (word == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        aOut << "Answer exclude, fail or cancel.\n";
     }
 }
 
@@ -526,7 +574,8 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
         }
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
-            throw std::logic_error("the failure-resolution question is not asked yet");
+            writeFailureQuestion(aOut, aRequest);
+            return readFailureAnswer(aIn, aOut);
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
@@ -605,8 +654,7 @@ bool canAsk(const QuestionData& aData) {
         }
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
-            // No stage asks it yet; it comes with the ISIN exclusion.
-            return false;
+            return true;
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
@@ -622,16 +670,56 @@ bool canAsk(const QuestionData& aData) {
     return std::visit(askable, aData);
 }
 
+namespace {
+
+/// The ISINs that the failure question lists, empty when there is none.
+std::set<Isin> failedIsins(const std::vector<DecisionRequest>& aRequests) {
+    std::set<Isin> isins;
+
+    for (const auto& request : aRequests)
+    {
+        for (const auto& investment : request.mInvestments)
+        {
+            isins.insert(investment.mIsin);
+        }
+    }
+
+    return isins;
+}
+
+/// The next request to ask, or the end. First the questions of investments that the failure
+/// question does not list, so an answer that adds an investment to its list comes before it. Then
+/// the failure question. A question of a listed investment is asked after it, and only if the
+/// investment is not excluded, as exclusion drops the question.
+std::vector<DecisionRequest>::const_iterator
+nextQuestion(const std::vector<DecisionRequest>& aRequests) {
+    const auto isFailure = [](const DecisionRequest& aRequest) {
+        return std::holds_alternative<FailureResolutionQuestion>(aRequest.mData);
+    };
+    const auto listed = failedIsins(aRequests);
+    const auto isOtherQuestion = [&isFailure, &listed](const DecisionRequest& aRequest) {
+        return canAsk(aRequest.mData) && !isFailure(aRequest) &&
+               !(aRequest.mIsin && listed.contains(*aRequest.mIsin));
+    };
+    const auto other = std::find_if(aRequests.begin(), aRequests.end(), isOtherQuestion);
+
+    if (other != aRequests.end())
+    {
+        return other;
+    }
+
+    return std::find_if(aRequests.begin(), aRequests.end(), isFailure);
+}
+
+} // namespace
+
 void askOpenQuestions(DecisionSession& aSession, std::istream& aIn, std::ostream& aOut) {
     bool asked = false;
 
     while (true)
     {
         const auto& requests = aSession.result().mRequests;
-        const auto request =
-            std::find_if(requests.begin(), requests.end(), [](const DecisionRequest& aRequest) {
-                return canAsk(aRequest.mData);
-            });
+        const auto request = nextQuestion(requests);
 
         if (request == requests.end())
         {

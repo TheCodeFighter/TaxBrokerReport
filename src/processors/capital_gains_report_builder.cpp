@@ -359,27 +359,37 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
 
         const auto& pool = aFifo.mIsins.at(index);
         const auto& loss = aLoss.mIsins.at(index);
+        const bool leftOut = std::find(aExcludedIsins.begin(), aExcludedIsins.end(), pool.mIsin) !=
+                             aExcludedIsins.end();
         auto blocked = findBlock(pool, loss, yearSales.at(index));
 
-        if (!blocked)
+        if (leftOut)
         {
-            auto list = buildList(instruments, index, aLedger, pool, loss);
-            const auto longHeld = collectLongHeldUnits(pool, yearSales.at(index));
-
-            if (!list.mRows.empty())
-            {
-                report.mLists.push_back(std::move(list));
-            }
-
-            result.mLongHeld.insert(result.mLongHeld.end(), longHeld.begin(), longHeld.end());
+            result.mExcluded.push_back(KdvpExcludedIsin{
+                .mIsin = pool.mIsin,
+                .mName = pool.mName,
+                .mBlockReason = blocked ? std::optional{blocked->mReason} : std::nullopt,
+                .mSales = yearSales.at(index)});
 
             continue;
         }
 
-        const bool leftOut = std::find(aExcludedIsins.begin(), aExcludedIsins.end(), pool.mIsin) !=
-                             aExcludedIsins.end();
+        if (blocked)
+        {
+            result.mBlocked.push_back(std::move(*blocked));
 
-        (leftOut ? result.mExcluded : result.mBlocked).push_back(std::move(*blocked));
+            continue;
+        }
+
+        auto list = buildList(instruments, index, aLedger, pool, loss);
+        const auto longHeld = collectLongHeldUnits(pool, yearSales.at(index));
+
+        if (!list.mRows.empty())
+        {
+            report.mLists.push_back(std::move(list));
+        }
+
+        result.mLongHeld.insert(result.mLongHeld.end(), longHeld.begin(), longHeld.end());
     }
 
     if (result.mBlocked.empty())

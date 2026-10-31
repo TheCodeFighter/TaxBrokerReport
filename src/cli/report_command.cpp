@@ -4,6 +4,7 @@
 #include "cli/taxpayer_file.hpp"
 #include "cli_text.hpp"
 #include "parsers/traderepublic_parser.hpp"
+#include "processors/capital_failure_resolution.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
 #include "processors/corporate_actions.hpp"
@@ -121,6 +122,13 @@ Questions:
     split after it took effect. So do a split row in January within 30 days after a sale
     at a loss in December, and split rows of two brokers at most 10 days apart, which you
     first confirm as one split.
+  - Investments you could leave out: when each problem that blocks the report is tied to a
+    single investment sold in the year (one or several, for example earlier purchases are
+    missing), the command asks one question that lists them all. exclude: write Doh-KDVP
+    without them; they are not in the XML and the summary lists them. fail: write no
+    Doh-KDVP. A problem with a file, a row, the year or the XML is not solved this way. It
+    comes after the questions of other investments and before those of the listed ones,
+    which exclude drops.
   An answer that does not fit is explained and the question is asked again. cancel closes
   a question without an answer, and the report is blocked. With --no-input, or when the
   input ends (Ctrl-D), the open questions stay open: the report is blocked and the summary
@@ -460,6 +468,13 @@ void writeDiagnostic(std::ostream& aOut,
     }
 
     aOut << "\n    " << aDiagnostic.mMessage << '\n';
+
+    // An error that does not block was resolved by the user leaving its investment out.
+    if (aDiagnostic.mSeverity == DiagnosticSeverity::Error && !aDiagnostic.mBlocking &&
+        affectsCapital(aDiagnostic))
+    {
+        aOut << "    Resolved by your answer: the investment is left out of the XML.\n";
+    }
 }
 
 void writeDiagnostics(std::ostream& aOut,
@@ -549,6 +564,13 @@ std::map<Isin, InvestmentLine> investmentLines(const RunOutcome& aOutcome) {
         line.mSales = blocked.mSales;
     }
 
+    for (const auto& excluded : aOutcome.mBuilt.mExcluded)
+    {
+        auto& line = lines[excluded.mIsin];
+        line.mName = excluded.mName;
+        line.mSales = excluded.mSales;
+    }
+
     for (auto& [isin, line] : lines)
     {
         std::sort(line.mSales.begin(),
@@ -584,6 +606,11 @@ std::vector<std::string_view> blockingCodes(const ApplicationResult& aResult, co
     return codes;
 }
 
+/// The excluded investments of the capital result, empty unless the user chose to leave out.
+const std::vector<RequestInvestment>& excludedInvestments(const ApplicationResult& aResult) {
+    return aResult.report(ReportType::CapitalGains).mExcludedInvestments;
+}
+
 void writeCapitalStatus(std::ostream& aOut, const RunOutcome& aOutcome) {
     const int year = aOutcome.mOptions.mYear;
 
@@ -591,10 +618,24 @@ void writeCapitalStatus(std::ostream& aOut, const RunOutcome& aOutcome) {
 
     switch (aOutcome.mResult.report(ReportType::CapitalGains).mStatus)
     {
-    case ReportStatus::Generated:
-        aOut << "generated, written to " << xmlFileName(year) << '\n';
+    case ReportStatus::Generated: {
+        const auto excluded = excludedInvestments(aOutcome.mResult).size();
+
+        aOut << "generated"
+             << (excluded == 0
+                     ? ""
+                     : " without " +
+                           countText(excluded, "excluded investment", "excluded investments"))
+             << ", written to " << xmlFileName(year) << '\n';
         break;
+    }
     case ReportStatus::NoData:
+        if (!excludedInvestments(aOutcome.mResult).empty())
+        {
+            aOut << "no data, nothing is left to report after the excluded investments\n";
+            break;
+        }
+
         aOut << "no data, no sale in " << year << " needs a Doh-KDVP form\n";
         break;
     case ReportStatus::NeedsInput:
@@ -620,8 +661,25 @@ void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
     for (const auto& [isin, line] : lines)
     {
         const auto codes = blockingCodes(aOutcome.mResult, isin);
+        const auto& excluded = excludedInvestments(aOutcome.mResult);
+        const auto left = std::find_if(
+            excluded.begin(),
+            excluded.end(),
+            [&isin](const RequestInvestment& aInvestment) { return aInvestment.mIsin == isin; });
 
         aOut << "  " << investmentText(isin, line.mName) << ": ";
+
+        if (left != excluded.end())
+        {
+            aOut << "excluded (" << reasonCodesText(*left) << ")\n";
+
+            for (const auto& sale : line.mSales)
+            {
+                aOut << "    " << saleLine(aOutcome.mStatement, sale) << '\n';
+            }
+
+            continue;
+        }
 
         if (!codes.empty())
         {
@@ -660,6 +718,26 @@ void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
 
         aOut << '\n';
     }
+}
+
+/// The investments the user left out, only when there is one.
+void writeExcluded(std::ostream& aOut, const RunOutcome& aOutcome) {
+    const auto& excluded = excludedInvestments(aOutcome.mResult);
+
+    if (excluded.empty())
+    {
+        return;
+    }
+
+    aOut << "Excluded investments (not in the XML): " << excluded.size() << '\n';
+
+    for (const auto& investment : excluded)
+    {
+        aOut << "  " << investmentText(investment.mIsin, investment.mName) << ": "
+             << reasonCodesText(investment) << '\n';
+    }
+
+    aOut << '\n';
 }
 
 void writeLongHeld(std::ostream& aOut, const RunOutcome& aOutcome) {
@@ -718,7 +796,7 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
             // It lists several investments, not one.
-            return {};
+            return countText(aQuestion.mInvestments.size(), "investment", "investments");
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
@@ -776,6 +854,7 @@ std::string summaryText(const RunOutcome& aOutcome) {
     out << '\n';
     writeInvestments(out, aOutcome);
     out << '\n';
+    writeExcluded(out, aOutcome);
     writeLongHeld(out, aOutcome);
     out << '\n';
     writePrivateMarketEvents(out, aOutcome);
@@ -878,8 +957,9 @@ struct CalculatedRun {
 };
 
 /// One calculation from the merged files and the answers: FIFO, the corporate-action stage, the
-/// loss rule, the builder, the gates and the XML. It reads nothing from aCalculated, so it keeps
-/// no state between calls; aCalculated only receives what the summary needs.
+/// loss rule, the builder, the gates, the choice to leave failed investments out and the XML. It
+/// reads nothing from aCalculated, so it keeps no state between calls; aCalculated only receives
+/// what the summary needs.
 ApplicationResultInput calculateReport(const ReportOptions& aOptions,
                                        const TaxpayerMetadata& aTaxpayer,
                                        const TaxProcessingResult& aPrepared,
@@ -894,21 +974,6 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions);
     auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
     auto gateDiagnostics = CapitalReportGates::check(statement, ledger, fifo, loss, built);
-    std::optional<CapitalGainsReportKDVP> previewWithoutBlocked;
-
-    if (!built.mReport)
-    {
-        previewWithoutBlocked =
-            CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, blockedIsins(built))
-                .mReport;
-    }
-
-    const bool hasGateError =
-        std::any_of(gateDiagnostics.begin(),
-                    gateDiagnostics.end(),
-                    [](const ProcessingDiagnostic& aDiagnostic) {
-                        return aDiagnostic.mSeverity == DiagnosticSeverity::Error;
-                    });
 
     // Copied, not moved: every calculation of the run starts from the same diagnostics.
     ApplicationResultInput input{
@@ -921,7 +986,43 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
     appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
     appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));
+
+    const auto firstGateDiagnostic = processing.size();
+
     std::move(gateDiagnostics.begin(), gateDiagnostics.end(), std::back_inserter(processing));
+
+    // The user may leave out every investment with an error of its own (or ask for no report).
+    const auto excluded = CapitalFailureResolution::resolve(input, aDecisions);
+
+    if (!excluded.empty())
+    {
+        built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, excluded);
+    }
+
+    std::optional<CapitalGainsReportKDVP> previewWithoutBlocked;
+
+    if (!built.mReport)
+    {
+        auto leftOut = excluded;
+        const auto blocked = blockedIsins(built);
+
+        leftOut.insert(leftOut.end(), blocked.begin(), blocked.end());
+        previewWithoutBlocked =
+            CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, leftOut).mReport;
+    }
+
+    // A gate error of an excluded investment was resolved and does not stop the XML.
+    bool hasGateError = false;
+
+    for (auto position = firstGateDiagnostic; position < processing.size(); ++position)
+    {
+        const bool resolved = std::find(input.mResolvedDiagnostics.begin(),
+                                        input.mResolvedDiagnostics.end(),
+                                        position) != input.mResolvedDiagnostics.end();
+
+        hasGateError = hasGateError ||
+                       (processing[position].mSeverity == DiagnosticSeverity::Error && !resolved);
+    }
 
     // A blocked ISIN always has an error (FIFO, corporate action or gate), so without a report
     // the capital form is failed or needs input, never empty.
@@ -931,7 +1032,12 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 
         if (built.mReport->mLists.empty())
         {
-            capital.mNoDataReason = NoDataReason::NoSelectedYearDisposals;
+            // When investments were left out, nothing is left to report, which is not the same
+            // as having no sale.
+            if (excluded.empty())
+            {
+                capital.mNoDataReason = NoDataReason::NoSelectedYearDisposals;
+            }
         }
         else
         {

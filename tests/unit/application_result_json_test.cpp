@@ -1650,4 +1650,61 @@ TEST(ApplicationResultJsonTest, ARequestWithoutQuestionDataHasNoOptions) {
     EXPECT_FALSE(request.contains("investments"));
 }
 
+TEST(ApplicationResultJsonTest, AnExclusionIsListedWithItsChoiceAndItsResolvedDiagnostics) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {kCapital},
+                     .mInstrumentName = "Example Investment",
+                     .mIsin = "XX0000000001"},
+        .mMessage = "Synthetic error.",
+    }};
+    input.mResolvedDiagnostics = {0};
+    input.mReports[0].mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+    input.mReports[0].mExcludedInvestments = {{
+        .mIsin = "XX0000000001",
+        .mName = "Example Investment",
+        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& capital = json.at("reports").at("capitalGains");
+
+    EXPECT_EQ(json.at("status"), "completed_with_warnings");
+    EXPECT_EQ(capital.at("status"), "no_data");
+    EXPECT_EQ(capital.at("failureResolution"), "exclude_failed_instruments");
+    EXPECT_EQ(capital.at("excludedInvestments"), nlohmann::json::parse(R"([{
+      "name": "Example Investment",
+      "isin": "XX0000000001",
+      "reasonCodes": ["incomplete_history"],
+      "diagnosticIds": ["diagnostic-0001"]
+    }])"));
+    EXPECT_FALSE(json.at("reports").at("otherInterest").contains("failureResolution"));
+    EXPECT_FALSE(json.at("diagnostics").at(0).at("blocking").get<bool>());
+}
+
+TEST(ApplicationResultJsonTest, FailingTheReportListsTheChoiceAndNoInvestment) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {kCapital},
+                     .mInstrumentName = "Example Investment",
+                     .mIsin = "XX0000000001"},
+        .mMessage = "Synthetic error.",
+    }};
+    input.mReports[0].mFailureResolution = FailureResolution::FailReport;
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& capital = json.at("reports").at("capitalGains");
+
+    EXPECT_EQ(capital.at("status"), "failed");
+    EXPECT_EQ(capital.at("failureResolution"), "fail_report");
+    EXPECT_TRUE(capital.at("excludedInvestments").empty());
+    EXPECT_TRUE(json.at("diagnostics").at(0).at("blocking").get<bool>());
+}
+
 } // namespace
