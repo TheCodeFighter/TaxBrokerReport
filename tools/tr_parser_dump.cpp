@@ -1003,8 +1003,8 @@ std::string_view toString(LossSaleState aState) {
         return "Cancelled";
     case LossSaleState::CorporateActionInWindow:
         return "CorporateActionInWindow";
-    case LossSaleState::AppliedCorporateActionBefore:
-        return "AppliedCorporateActionBefore";
+    case LossSaleState::NumericFailure:
+        return "NumericFailure";
     }
 
     return "Unknown";
@@ -1030,7 +1030,7 @@ void writeLossEligibility(std::ostream& aOutput,
                              LossSaleState::WaitingForAnswer,
                              LossSaleState::Cancelled,
                              LossSaleState::CorporateActionInWindow,
-                             LossSaleState::AppliedCorporateActionBefore})
+                             LossSaleState::NumericFailure})
     {
         std::size_t count{};
 
@@ -1107,8 +1107,6 @@ std::string_view toString(CorporateActionState aState) {
         return "NoPosition";
     case CorporateActionState::NumericFailure:
         return "NumericFailure";
-    case CorporateActionState::NotAskedForClass:
-        return "NotAskedForClass";
     }
 
     return "Unknown";
@@ -1131,8 +1129,7 @@ void writeCorporateActions(std::ostream& aOutput,
                              CorporateActionState::DifferentDatesAmbiguous,
                              CorporateActionState::Unsupported,
                              CorporateActionState::NoPosition,
-                             CorporateActionState::NumericFailure,
-                             CorporateActionState::NotAskedForClass})
+                             CorporateActionState::NumericFailure})
     {
         aOutput << "  state_" << toString(state) << ": "
                 << std::count_if(aActions.mActions.begin(),

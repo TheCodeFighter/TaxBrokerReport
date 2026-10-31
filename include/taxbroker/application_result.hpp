@@ -151,6 +151,7 @@ struct LossEligibilityQuestion {
 struct CorporateActionSourceFacts {
     Broker mBroker{Broker::Unknown};
     std::optional<std::string> mTransactionId;
+    Date mDate;
     /// The broker's own quantity field as an exact decimal, when the record has one (Trade
     /// Republic `shares`). Its meaning is not verified, so it is shown read-only and is never a
     /// ratio.
@@ -197,9 +198,13 @@ struct CorporateActionRatioQuestion {
     /// Every date the action may have, in date order; one of them holds mEffectiveDate unless
     /// mEarlierSaleDate is set, when the last one ends on or before that sale's date. They are
     /// after the previous action of the ISIN, before its next one and up to 31 December of the
-    /// selected year. A date with no units before the action, or after a sale of more units than
-    /// were held, is in no range.
+    /// selected year, or up to the end of the loss-analysis view (30 January) for an action with
+    /// a row after 31 December. A date with no units before the action, or after a sale of more
+    /// units than were held, is in no range.
     std::vector<EffectiveDateRange> mDateRanges;
+    /// Rows of different brokers on different dates: a ratio answer also says that they are one
+    /// event, and SeparateEventsAnswer says they are not.
+    bool mAskSameEvent{};
 
     bool operator==(const CorporateActionRatioQuestion&) const = default;
 };
@@ -257,7 +262,7 @@ struct OtherActivityAnswer {
 
 /// The ratio from the announcement, new shares per old shares, its effective date, and the
 /// position after the action that the user saw in the preview and confirmed. The session keeps the
-/// reduced numbers.
+/// reduced numbers. For a question with mAskSameEvent it also says that the rows are one event.
 struct SplitRatioAnswer {
     std::int64_t mNewShares{};
     std::int64_t mOldShares{};
@@ -268,11 +273,17 @@ struct SplitRatioAnswer {
     bool operator==(const SplitRatioAnswer&) const = default;
 };
 
+/// `no` to the question whether the rows of a ratio question with mAskSameEvent are one event.
+struct SeparateEventsAnswer {
+    bool operator==(const SeparateEventsAnswer&) const = default;
+};
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
                                  OtherActivityAnswer,
-                                 SplitRatioAnswer>;
+                                 SplitRatioAnswer,
+                                 SeparateEventsAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {

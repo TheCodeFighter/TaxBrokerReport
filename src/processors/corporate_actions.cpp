@@ -42,8 +42,8 @@ bool hasSaleInYear(const TradeInstrument& aInstrument, const ReportingYearLedger
 }
 
 /// Tells whether sales of this class can reach Doh-KDVP: shares, funds, and an unknown class,
-/// which the user may still classify as one of them. The capital report gates block the others,
-/// so their ratio is not asked (the same rule as the loss stage).
+/// which the user may still classify as one of them. The capital report gates block the others
+/// with a class error, so their actions are not asked (the same rule as the loss stage).
 bool mayReachKdvp(AssetClass aAssetClass) {
     switch (aAssetClass)
     {
@@ -61,35 +61,51 @@ bool mayReachKdvp(AssetClass aAssetClass) {
     return false;
 }
 
-/// The corporate actions of one ISIN up to 31 December, grouped by date, in ledger order.
+/// The corporate actions of one ISIN up to 31 December, then those after it in the loss-analysis
+/// view, grouped by date, in ledger order.
 std::vector<std::vector<StatementEventReference>>
 actionsByDate(const std::vector<TradeInstrument>& aInstruments,
               const ReportingYearLedger& aLedger,
               std::size_t aInstrumentIndex) {
     std::vector<std::vector<StatementEventReference>> groups;
 
-    for (const auto& event : aLedger.mCapitalEvents)
-    {
-        if (event.mKind != StatementEventKind::CorporateAction ||
-            event.mInstrumentIndex != aInstrumentIndex)
+    const auto add = [&](const StatementEventReference& aEvent, bool aAfterYear) {
+        if (aEvent.mKind != StatementEventKind::CorporateAction ||
+            aEvent.mInstrumentIndex != aInstrumentIndex)
         {
-            continue;
+            return;
         }
 
-        // The ledger is in date order, so a new date starts a new group.
-        const auto date = actionOf(aInstruments, event).mMetadata.mTaxDate;
+        const auto date = actionOf(aInstruments, aEvent).mMetadata.mTaxDate;
+
+        if (aAfterYear != (date > aLedger.mYearEnd))
+        {
+            return;
+        }
+
+        // Both views are in date order, so a new date starts a new group.
         const bool sameDate =
             !groups.empty() &&
             actionOf(aInstruments, groups.back().front()).mMetadata.mTaxDate == date;
 
         if (sameDate)
         {
-            groups.back().push_back(event);
+            groups.back().push_back(aEvent);
         }
         else
         {
-            groups.push_back({event});
+            groups.push_back({aEvent});
         }
+    };
+
+    for (const auto& event : aLedger.mCapitalEvents)
+    {
+        add(event, false);
+    }
+
+    for (const auto& event : aLedger.mLossAnalysisEvents)
+    {
+        add(event, true);
     }
 
     return groups;
@@ -141,48 +157,90 @@ bool hasMerger(const std::vector<TradeInstrument>& aInstruments,
                        });
 }
 
-/// Tells whether another group of the ISIN has a split row of another broker on another date at
-/// most kDifferentDatesWindowDays from this group. Split, reverse split and a split of unknown
-/// direction are one kind, because two brokers may name one event differently; a merger row is
-/// not a split.
-bool hasSplitOfAnotherBrokerNearby(const std::vector<TradeInstrument>& aInstruments,
-                                   const std::vector<std::vector<StatementEventReference>>& aGroups,
-                                   std::size_t aGroup) {
-    const auto isSplit = [&aInstruments](const StatementEventReference& aEvent) {
-        return actionOf(aInstruments, aEvent).mType != CorporateActionType::Merger;
+/// The other groups of the ISIN with a split row of another broker on another date at most
+/// kDifferentDatesWindowDays from a split row of this group. Split, reverse split and a split of
+/// unknown direction are one kind, because two brokers may name one event differently; a merger
+/// row is not a split.
+std::vector<std::size_t>
+splitsOfAnotherBrokerNearby(const std::vector<TradeInstrument>& aInstruments,
+                            const std::vector<std::vector<StatementEventReference>>& aGroups,
+                            std::size_t aGroup) {
+    const auto pairs = [&aInstruments](const StatementEventReference& aEvent,
+                                       const StatementEventReference& aOtherEvent) {
+        const auto& action = actionOf(aInstruments, aEvent);
+        const auto& other = actionOf(aInstruments, aOtherEvent);
+        const auto date = action.mMetadata.mTaxDate;
+        const auto otherDate = other.mMetadata.mTaxDate;
+        const auto distance = date < otherDate ? otherDate - date : date - otherDate;
+
+        return action.mType != CorporateActionType::Merger &&
+               other.mType != CorporateActionType::Merger && brokerOf(action) != brokerOf(other) &&
+               distance > DayDuration{0} && distance <= DayDuration{kDifferentDatesWindowDays};
     };
-    const auto date = actionOf(aInstruments, aGroups[aGroup].front()).mMetadata.mTaxDate;
+    std::vector<std::size_t> nearby;
 
     for (std::size_t other = 0; other < aGroups.size(); ++other)
     {
-        const auto otherDate = actionOf(aInstruments, aGroups[other].front()).mMetadata.mTaxDate;
-        const auto distance = date < otherDate ? otherDate - date : date - otherDate;
+        const bool paired =
+            other != aGroup &&
+            std::any_of(aGroups[aGroup].begin(),
+                        aGroups[aGroup].end(),
+                        [&](const StatementEventReference& aEvent) {
+                            return std::any_of(aGroups[other].begin(),
+                                               aGroups[other].end(),
+                                               [&](const StatementEventReference& aOtherEvent) {
+                                                   return pairs(aEvent, aOtherEvent);
+                                               });
+                        });
 
-        if (other == aGroup || distance > DayDuration{kDifferentDatesWindowDays})
+        if (paired)
         {
-            continue;
-        }
-
-        const auto& otherEvents = aGroups[other];
-        const auto pairsWithOtherBroker = [&](const StatementEventReference& aEvent) {
-            const auto broker = brokerOf(actionOf(aInstruments, aEvent));
-
-            return isSplit(aEvent) &&
-                   std::any_of(otherEvents.begin(),
-                               otherEvents.end(),
-                               [&](const StatementEventReference& aOtherEvent) {
-                                   return isSplit(aOtherEvent) &&
-                                          brokerOf(actionOf(aInstruments, aOtherEvent)) != broker;
-                               });
-        };
-
-        if (std::any_of(aGroups[aGroup].begin(), aGroups[aGroup].end(), pairsWithOtherBroker))
-        {
-            return true;
+            nearby.push_back(other);
         }
     }
 
-    return false;
+    return nearby;
+}
+
+/// Joins a group and the next one into one action when each is the other's only group with a
+/// split row of another broker nearby, neither has a merger row and no broker has two rows: the
+/// rows may be one split that each broker booked on its own date, and the question asks whether
+/// they are (maintainer decision, 2026-10-29). Other nearby rows stay apart and are ambiguous.
+std::vector<std::vector<StatementEventReference>>
+joinOneEventPairs(const std::vector<TradeInstrument>& aInstruments,
+                  const std::vector<std::vector<StatementEventReference>>& aGroups) {
+    std::vector<std::vector<StatementEventReference>> joined;
+
+    for (std::size_t index = 0; index < aGroups.size(); ++index)
+    {
+        const auto next = index + 1;
+        const bool pairWithNext = next < aGroups.size() &&
+                                  splitsOfAnotherBrokerNearby(aInstruments, aGroups, index) ==
+                                      std::vector<std::size_t>{next} &&
+                                  splitsOfAnotherBrokerNearby(aInstruments, aGroups, next) ==
+                                      std::vector<std::size_t>{index};
+
+        if (!pairWithNext)
+        {
+            joined.push_back(aGroups[index]);
+            continue;
+        }
+
+        auto rows = aGroups[index];
+
+        rows.insert(rows.end(), aGroups[next].begin(), aGroups[next].end());
+
+        if (hasMerger(aInstruments, rows) || hasSameBrokerTwice(aInstruments, rows))
+        {
+            joined.push_back(aGroups[index]);
+            continue;
+        }
+
+        joined.push_back(std::move(rows));
+        ++index;
+    }
+
+    return joined;
 }
 
 /// The context of a capital-gains diagnostic of the action, with the sources of all its events.
@@ -241,29 +299,65 @@ struct TradeDay {
     Units mLowest{};
 };
 
+const TradeTransaction& tradeOf(const std::vector<TradeInstrument>& aInstruments,
+                                const StatementEventReference& aEvent) {
+    return aInstruments.at(aEvent.mInstrumentIndex.value()).mTransactions.at(aEvent.mEventIndex);
+}
+
+/// The trades of one ISIN in date order: every trade up to 31 December, then those after it in
+/// the loss-analysis view.
+std::vector<StatementEventReference> tradesOf(const std::vector<TradeInstrument>& aInstruments,
+                                              const ReportingYearLedger& aLedger,
+                                              std::size_t aInstrumentIndex) {
+    std::vector<StatementEventReference> trades;
+
+    const auto add = [&](const StatementEventReference& aEvent, bool aAfterYear) {
+        if (aEvent.mKind != StatementEventKind::Trade ||
+            aEvent.mInstrumentIndex != aInstrumentIndex)
+        {
+            return;
+        }
+
+        const auto& trade = tradeOf(aInstruments, aEvent);
+
+        if (aAfterYear == (trade.mMetadata.mTaxDate > aLedger.mYearEnd))
+        {
+            trades.push_back(aEvent);
+        }
+    };
+
+    for (const auto& event : aLedger.mCapitalEvents)
+    {
+        add(event, false);
+    }
+
+    for (const auto& event : aLedger.mLossAnalysisEvents)
+    {
+        add(event, true);
+    }
+
+    return trades;
+}
+
 /// The dates the action may have, each with the open units just before the action on that date.
 /// The dates run from the day after aPreviousDate (or the first trade) to the day before
-/// aNextActionDate (or 31 December). A date with no units, or after a sale of more units than
-/// were held, is left out. Each range also keeps the lowest running total of the trades after
-/// the action, so a later sale can be checked against it.
+/// aNextActionDate, and at most to aLastDate. A date with no units, or after a sale of more units
+/// than were held, is left out. Each range also keeps the lowest running total of the trades
+/// after the action, so a later sale can be checked against it.
 std::vector<EffectiveDateRange> dateRanges(const std::vector<TradeInstrument>& aInstruments,
                                            const ReportingYearLedger& aLedger,
                                            std::size_t aInstrumentIndex,
                                            Date aAnchorDate,
                                            Units aAnchorPosition,
                                            std::optional<Date> aPreviousDate,
-                                           std::optional<Date> aNextActionDate) {
-    // The trades of the ISIN per date, in date order (the ledger is in date order).
+                                           std::optional<Date> aNextActionDate,
+                                           Date aLastDate) {
+    // The trades of the ISIN per date, in date order.
     std::vector<TradeDay> days;
 
-    for (const auto& event : aLedger.mCapitalEvents)
+    for (const auto& event : tradesOf(aInstruments, aLedger, aInstrumentIndex))
     {
-        if (event.mKind != StatementEventKind::Trade || event.mInstrumentIndex != aInstrumentIndex)
-        {
-            continue;
-        }
-
-        const auto& trade = aInstruments.at(aInstrumentIndex).mTransactions.at(event.mEventIndex);
+        const auto& trade = tradeOf(aInstruments, event);
         const Units units = trade.mTradeSide == TradeSide::Buy ? trade.mUnits : -trade.mUnits;
 
         if (aPreviousDate && trade.mMetadata.mTaxDate <= *aPreviousDate)
@@ -281,9 +375,9 @@ std::vector<EffectiveDateRange> dateRanges(const std::vector<TradeInstrument>& a
     }
 
     // Open units need a purchase before the action, so the ISIN has a trade before the anchor
-    // date. The next action is in the ledger, so the day before it is always before 31 December.
+    // date. The caller passes a next action only when it is up to aLastDate.
     const Date earliest = aPreviousDate ? *aPreviousDate + DayDuration{1} : days.front().mDate;
-    const Date latest = aNextActionDate ? *aNextActionDate - DayDuration{1} : aLedger.mYearEnd;
+    const Date latest = aNextActionDate ? *aNextActionDate - DayDuration{1} : aLastDate;
 
     // A trade at most kBrokerDateMarginDays before the next action's row may come after that
     // action, which the broker booked later; the next action's own question checks it.
@@ -394,7 +488,8 @@ DecisionQuestion questionOf(const ResolvedCorporateAction& aAction,
     {
         const auto& action = actionOf(aInstruments, event);
         const auto identity = transactionIdentity(action.mMetadata);
-        CorporateActionSourceFacts facts{.mBroker = brokerOf(action)};
+        CorporateActionSourceFacts facts{.mBroker = brokerOf(action),
+                                         .mDate = action.mMetadata.mTaxDate};
 
         if (identity)
         {
@@ -407,6 +502,7 @@ DecisionQuestion questionOf(const ResolvedCorporateAction& aAction,
             facts.mSourceValue = action.mUnitEvidence.front().mCanonicalValue;
         }
 
+        data.mAskSameEvent |= facts.mDate != aAction.mEffectiveDate;
         data.mSources.push_back(std::move(facts));
     }
 
@@ -452,7 +548,7 @@ bool checkActionRows(ResolvedCorporateAction& aAction,
         return false;
     }
 
-    if (hasSplitOfAnotherBrokerNearby(aInstruments, aGroups, aGroup))
+    if (!splitsOfAnotherBrokerNearby(aInstruments, aGroups, aGroup).empty())
     {
         aAction.mState = CorporateActionState::DifferentDatesAmbiguous;
         aResult.mDiagnostics.push_back(actionDiagnostic(
@@ -469,37 +565,135 @@ bool checkActionRows(ResolvedCorporateAction& aAction,
     return true;
 }
 
-/// The neighbour of the first action a pool stopped at: the effective date of the action applied
-/// before it, if any, and the row date of the next action, if any.
+/// The neighbours of the first action a pool stopped at: the effective date of the action applied
+/// before it, if any, the row date of the next action, if any, and the last date the action may
+/// have: 31 December, or the end of the loss-analysis view for an action with a row after it.
 struct NeighbourDates {
     std::optional<Date> mPrevious;
     std::optional<Date> mNext;
+    Date mLast;
 };
 
 /// Where the date ranges of the first action start from: the row date with the open units, or,
-/// for a pool stopped at a sale with too few units just before the row, that sale's date with the
-/// units at the start of its day.
+/// for a sale with too few units just before the row, that sale's date with the units at the
+/// start of its day.
 struct RangeAnchor {
     Date mDate;
     Units mPosition{};
     /// Set for a sale with too few units.
     std::optional<Date> mEarlierSaleDate;
+    /// That sale, up to 31 December (not a January sale): a cancel of its question means missing
+    /// purchase history.
+    std::optional<StatementEventReference> mShortSale;
 };
 
-/// The anchor of the pool's first action; aOpenUnits are the pool's open units. The trades of the
-/// sale's day before it in the ledger are taken off, because the action comes before the trades of
-/// its day.
-RangeAnchor rangeAnchor(const ResolvedCorporateAction& aAction,
-                        const FifoIsinResult& aPool,
-                        const std::vector<TradeInstrument>& aInstruments,
-                        const ReportingYearLedger& aLedger,
-                        Units aOpenUnits) {
-    if (!aPool.mShortSale)
+/// The anchor of an action whose pool did not stop at a sale: the open units at the row date, or
+/// a January sale with too few units before a row after 31 December. Empty when the units after a
+/// confirmed action do not fit Units.
+std::optional<RangeAnchor> rowAnchor(const ResolvedCorporateAction& aAction,
+                                     const FifoIsinResult& aPool,
+                                     const std::vector<TradeInstrument>& aInstruments,
+                                     const ReportingYearLedger& aLedger,
+                                     Units aOpenUnits) {
+    const auto& laterActions = aPool.mLaterActions;
+    std::size_t appliedActions = 0;
+    Units position = aOpenUnits;
+    Units dayStart = aOpenUnits;
+    std::optional<Date> day;
+
+    // In date order; a later action changes the units before the trades of its date, rounded once
+    // as in the pool.
+    const auto applyActionsUpTo = [&](Date aDate) {
+        while (appliedActions < laterActions.size() &&
+               laterActions[appliedActions].mEffectiveDate <= aDate)
+        {
+            if (position > 0)
+            {
+                const auto adjusted =
+                    previewSplitUnits(position, laterActions[appliedActions].mRatio);
+
+                if (!adjusted)
+                {
+                    return false;
+                }
+
+                position = *adjusted;
+            }
+
+            ++appliedActions;
+        }
+
+        return true;
+    };
+
+    for (const auto& event :
+         tradesOf(aInstruments, aLedger, aAction.mEvents.front().mInstrumentIndex.value()))
     {
-        return RangeAnchor{.mDate = aAction.mEffectiveDate, .mPosition = aOpenUnits};
+        const auto& trade = tradeOf(aInstruments, event);
+        const auto date = trade.mMetadata.mTaxDate;
+
+        if (date <= aLedger.mYearEnd)
+        {
+            continue;
+        }
+
+        if (date >= aAction.mEffectiveDate)
+        {
+            break;
+        }
+
+        if (!applyActionsUpTo(date))
+        {
+            return std::nullopt;
+        }
+
+        if (day != date)
+        {
+            day = date;
+            dayStart = position;
+        }
+
+        position += trade.mTradeSide == TradeSide::Buy ? trade.mUnits : -trade.mUnits;
+
+        if (position >= 0)
+        {
+            continue;
+        }
+
+        // The broker may have booked the action after it took effect before this sale, as for a
+        // sale of the year. The sale is after 31 December, so a cancel is a plain cancel, not its
+        // missing history. A row later than that points to missing purchases, so no units are known
+        // before the action.
+        if (aAction.mEffectiveDate - date <= DayDuration{kBrokerDateMarginDays})
+        {
+            return RangeAnchor{.mDate = date, .mPosition = dayStart, .mEarlierSaleDate = date};
+        }
+
+        return RangeAnchor{.mDate = aAction.mEffectiveDate, .mPosition = 0};
     }
 
-    const auto instrumentIndex = aPool.mShortSale->mInstrumentIndex.value();
+    if (!applyActionsUpTo(aAction.mEffectiveDate - DayDuration{1}))
+    {
+        return std::nullopt;
+    }
+
+    return RangeAnchor{.mDate = aAction.mEffectiveDate, .mPosition = position};
+}
+
+/// The anchor of the pool's first action; aOpenUnits are the pool's open units. For a pool stopped
+/// at a sale with too few units, the trades of the sale's day before it in the ledger are taken
+/// off, because the action comes before the trades of its day. Empty as for rowAnchor.
+std::optional<RangeAnchor> rangeAnchor(const ResolvedCorporateAction& aAction,
+                                       const FifoIsinResult& aPool,
+                                       const std::vector<TradeInstrument>& aInstruments,
+                                       const ReportingYearLedger& aLedger,
+                                       Units aOpenUnits) {
+    if (!aPool.mShortSale)
+    {
+        return rowAnchor(aAction, aPool, aInstruments, aLedger, aOpenUnits);
+    }
+
+    const auto instrumentIndex = aAction.mEvents.front().mInstrumentIndex.value();
     const auto& transactions = aInstruments.at(instrumentIndex).mTransactions;
     const auto saleDate = transactions.at(aPool.mShortSale->mEventIndex).mMetadata.mTaxDate;
     Units position = aOpenUnits;
@@ -524,7 +718,10 @@ RangeAnchor rangeAnchor(const ResolvedCorporateAction& aAction,
         }
     }
 
-    return RangeAnchor{.mDate = saleDate, .mPosition = position, .mEarlierSaleDate = saleDate};
+    return RangeAnchor{.mDate = saleDate,
+                       .mPosition = position,
+                       .mEarlierSaleDate = saleDate,
+                       .mShortSale = aPool.mShortSale};
 }
 
 /// Resolves the first action a pool stopped at: asks its ratio, or takes a recorded answer.
@@ -540,19 +737,6 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
                    RunDecisions& aDecisions,
                    CorporateActionResult& aResult) {
     const auto instrumentIndex = aAction.mEvents.front().mInstrumentIndex.value();
-    const auto& instrument = aInstruments.at(instrumentIndex);
-
-    if (!mayReachKdvp(instrument.mAssetClass))
-    {
-        aAction.mState = CorporateActionState::NotAskedForClass;
-        aResult.mDiagnostics.push_back(
-            actionDiagnostic(ProcessingDiagnosticCode::CorporateActionNotApplied,
-                             makeDiagnosticMessage(MessageKey::CorporateActionNotApplied),
-                             aAction,
-                             aInstruments));
-
-        return std::nullopt;
-    }
 
     if (!checkActionRows(aAction, aInstruments, aGroups, aGroup, aResult))
     {
@@ -570,19 +754,31 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
         return std::nullopt;
     }
 
-    const auto anchor =
+    const auto foundAnchor =
         rangeAnchor(aAction, aPool, aInstruments, aLedger, std::get<std::int64_t>(openUnits));
+
+    if (!foundAnchor)
+    {
+        aAction.mState = CorporateActionState::NumericFailure;
+        aResult.mDiagnostics.push_back(
+            numericDiagnostic(NumericError::Overflow, actionContext(aAction, aInstruments)));
+
+        return std::nullopt;
+    }
+
+    const auto& anchor = *foundAnchor;
     auto ranges = dateRanges(aInstruments,
                              aLedger,
                              instrumentIndex,
                              anchor.mDate,
                              anchor.mPosition,
                              aNeighbours.mPrevious,
-                             aNeighbours.mNext);
+                             aNeighbours.mNext,
+                             aNeighbours.mLast);
 
     // A broker row for an action while the files show no units points to missing history. Before
     // a sale with too few units the same holds when no date before it has units.
-    if (anchor.mPosition == 0 || ranges.empty())
+    if (anchor.mPosition <= 0 || ranges.empty())
     {
         aAction.mState = CorporateActionState::NoPosition;
         aResult.mDiagnostics.push_back(
@@ -627,7 +823,7 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
         return aResult.mRequests.size() - 1;
     }
 
-    const auto apply = [&aAction, &aInstruments, &aResult](const auto& aAnswer) {
+    const auto apply = [&aAction, &aPool, &anchor, &aInstruments, &aResult](const auto& aAnswer) {
         using Answer = std::decay_t<decltype(aAnswer)>;
 
         if constexpr (std::is_same_v<Answer, SplitRatioAnswer>)
@@ -641,9 +837,31 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
         else if constexpr (std::is_same_v<Answer, CancelAnswer>)
         {
             aAction.mState = CorporateActionState::Cancelled;
+
+            // The question before a sale with too few units says that a cancel means missing
+            // purchases, so the sale gets the error it would have without the action row.
+            if (anchor.mShortSale)
+            {
+                aResult.mDiagnostics.push_back(
+                    incompleteHistoryDiagnostic(aPool, tradeOf(aInstruments, *anchor.mShortSale)));
+                return;
+            }
+
             aResult.mDiagnostics.push_back(actionDiagnostic(
                 ProcessingDiagnosticCode::CorporateActionAmbiguous,
                 makeDiagnosticMessage(MessageKey::CorporateActionAmbiguousCancelled),
+                aAction,
+                aInstruments));
+        }
+        else if constexpr (std::is_same_v<Answer, SeparateEventsAnswer>)
+        {
+            // Two splits within a few days need the identity question, which does not exist yet.
+            aAction.mState = CorporateActionState::DifferentDatesAmbiguous;
+            aResult.mDiagnostics.push_back(actionDiagnostic(
+                ProcessingDiagnosticCode::CorporateActionAmbiguous,
+                makeDiagnosticMessage(
+                    MessageKey::CorporateActionAmbiguousDifferentDates,
+                    {numberParam("days", static_cast<std::uint64_t>(kDifferentDatesWindowDays))}),
                 aAction,
                 aInstruments));
         }
@@ -662,15 +880,37 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
     return std::nullopt;
 }
 
-/// The applied action of the pool that starts with this action row, if there is one.
+/// The applied action of the pool that starts with this action row, if there is one: applied to
+/// the lots, or confirmed with an effective date after 31 December for the loss rule only.
 const AppliedCorporateAction* appliedActionOf(const FifoIsinResult& aPool,
                                               const StatementEventReference& aEvent) {
-    const auto applied = std::find_if(
-        aPool.mAppliedActions.begin(),
-        aPool.mAppliedActions.end(),
-        [&aEvent](const AppliedCorporateAction& aApplied) { return aApplied.mAction == aEvent; });
+    for (const auto* list : {&aPool.mAppliedActions, &aPool.mLaterActions})
+    {
+        const auto applied = std::find_if(list->begin(),
+                                          list->end(),
+                                          [&aEvent](const AppliedCorporateAction& aApplied) {
+                                              return aApplied.mEvents.front() == aEvent;
+                                          });
 
-    return applied == aPool.mAppliedActions.end() ? nullptr : &*applied;
+        if (applied != list->end())
+        {
+            return &*applied;
+        }
+    }
+
+    return nullptr;
+}
+
+/// Tells whether a loss sale of the selected year has its 30-day window up to aDate or later, so
+/// the loss rule needs an action on that date. Units past the holding period are not checked.
+bool isInLossWindow(const FifoIsinResult& aPool, Date aDate) {
+    return std::any_of(aPool.mMatches.begin(),
+                       aPool.mMatches.end(),
+                       [aDate](const FifoMatch& aMatch) {
+                           return aMatch.mGainTicks.numerator() < 0 &&
+                                  !isPastHoldingPeriod(aMatch) &&
+                                  aMatch.mSaleDate + DayDuration{kLossWindowDays} >= aDate;
+                       });
 }
 
 /// The confirmed action that starts with this action row; the caller knows it exists.
@@ -684,13 +924,14 @@ confirmedActionOf(const std::vector<ConfirmedCorporateAction>& aConfirmedActions
                          });
 }
 
-/// Marks an action that the pool applied and adds the warning that the user supplied its ratio.
+/// Marks an action that the pool applied, or keeps for the loss rule, and adds the warning that
+/// the user supplied its ratio.
 void markApplied(ResolvedCorporateAction& aAction,
                  const AppliedCorporateAction& aApplied,
                  const std::vector<ConfirmedCorporateAction>& aConfirmedActions,
                  const std::vector<TradeInstrument>& aInstruments,
                  CorporateActionResult& aResult) {
-    const auto& confirmed = confirmedActionOf(aConfirmedActions, aApplied.mAction);
+    const auto& confirmed = confirmedActionOf(aConfirmedActions, aApplied.mEvents.front());
 
     aAction.mState = CorporateActionState::Applied;
     aAction.mRatio = confirmed.mRatio;
@@ -727,12 +968,16 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
     {
         const auto& pool = aFifo.mIsins.at(index);
 
-        if (!hasSaleInYear(instruments.at(index), aLedger))
+        // A class that cannot reach Doh-KDVP has its own class error, so its actions are not
+        // asked and give no error of their own.
+        if (!hasSaleInYear(instruments.at(index), aLedger) ||
+            !mayReachKdvp(instruments.at(index).mAssetClass))
         {
             continue;
         }
 
-        const auto groups = actionsByDate(instruments, aLedger, index);
+        const auto groups =
+            joinOneEventPairs(instruments, actionsByDate(instruments, aLedger, index));
         std::optional<std::size_t> openRequest;
         std::optional<Date> previousDate;
         bool reachedFirst = false;
@@ -746,6 +991,19 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
                     actionOf(instruments, groups[position].front()).mMetadata.mTaxDate,
                 .mEvents = groups[position],
             };
+            const bool reachesNextYear = std::any_of(
+                action.mEvents.begin(),
+                action.mEvents.end(),
+                [&instruments, &aLedger](const StatementEventReference& aEvent) {
+                    return actionOf(instruments, aEvent).mMetadata.mTaxDate > aLedger.mYearEnd;
+                });
+            const bool afterYear = action.mEffectiveDate > aLedger.mYearEnd;
+
+            // A row after 31 December waits for nothing: it matters only when it is asked.
+            if (reachedFirst && afterYear)
+            {
+                break;
+            }
 
             if (!reachedFirst)
             {
@@ -757,30 +1015,40 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
                     continue;
                 }
 
+                // A pool that was not stopped asks a split row after 31 December only when the
+                // loss rule needs it; a merger row there blocks the loss sale in the loss stage.
+                const bool neededByLossRule = pool.mStatus == FifoIsinStatus::Matched &&
+                                              afterYear &&
+                                              !hasMerger(instruments, action.mEvents) &&
+                                              isInLossWindow(pool, action.mEffectiveDate);
+
                 // The pool stopped earlier for another reason (missing history, a non-EUR trade,
                 // an action that could not be applied), which has its own error.
-                if (pool.mStatus != FifoIsinStatus::CorporateAction)
+                if (pool.mStatus != FifoIsinStatus::CorporateAction && !neededByLossRule)
                 {
                     break;
                 }
 
-                const auto nextActionDate =
+                const Date lastDate = reachesNextYear ? aLedger.mLossWindowEnd : aLedger.mYearEnd;
+                const auto nextRowDate =
                     position + 1 < groups.size()
                         ? std::optional<Date>{actionOf(instruments, groups[position + 1].front())
                                                   .mMetadata.mTaxDate}
                         : std::nullopt;
+                const auto nextActionDate =
+                    nextRowDate && *nextRowDate <= lastDate ? nextRowDate : std::nullopt;
 
                 reachedFirst = true;
-                openRequest =
-                    resolveFirstAction(action,
-                                       pool,
-                                       instruments,
-                                       aLedger,
-                                       groups,
-                                       position,
-                                       {.mPrevious = previousDate, .mNext = nextActionDate},
-                                       aDecisions,
-                                       result);
+                openRequest = resolveFirstAction(
+                    action,
+                    pool,
+                    instruments,
+                    aLedger,
+                    groups,
+                    position,
+                    {.mPrevious = previousDate, .mNext = nextActionDate, .mLast = lastDate},
+                    aDecisions,
+                    result);
                 result.mActions.push_back(std::move(action));
                 continue;
             }

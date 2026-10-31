@@ -11,6 +11,29 @@
 #include <vector>
 
 namespace taxbroker {
+
+ProcessingDiagnostic incompleteHistoryDiagnostic(const FifoIsinResult& aPool,
+                                                 const TradeTransaction& aSale) {
+    auto message = makeDiagnosticMessage(MessageKey::IncompleteHistory);
+
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext =
+            {
+                .mStage = PipelineStage::HistoricalValidation,
+                .mAffectedReports = {ReportType::CapitalGains},
+                .mSources = aSale.mMetadata.mSources,
+                .mTaxDate = aSale.mMetadata.mTaxDate,
+                .mInstrumentName = aPool.mName,
+                .mIsin = aPool.mIsin,
+            },
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
+}
+
 namespace {
 
 /// Marks a pool as stopped at an event. Its later events are ignored.
@@ -50,25 +73,7 @@ void stopForMissingHistory(FifoIsinResult& aPool,
     stopPool(aPool, FifoIsinStatus::InsufficientUnits, aEvent);
     aPool.mAvailableUnits = aAvailableUnits;
 
-    auto message = makeDiagnosticMessage(MessageKey::IncompleteHistory);
-    ProcessingDiagnostic diagnostic{
-        .mSeverity = DiagnosticSeverity::Error,
-        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
-        .mContext =
-            {
-                .mStage = PipelineStage::HistoricalValidation,
-                .mAffectedReports = {ReportType::CapitalGains},
-                .mSources = aTrade.mMetadata.mSources,
-                .mTaxDate = aTrade.mMetadata.mTaxDate,
-                .mInstrumentName = aPool.mName,
-                .mIsin = aPool.mIsin,
-            },
-        .mMessage = std::move(message.mEnglish),
-        .mMessageKey = message.mKey,
-        .mMessageParams = std::move(message.mParams),
-    };
-
-    aDiagnostics.push_back(std::move(diagnostic));
+    aDiagnostics.push_back(incompleteHistoryDiagnostic(aPool, aTrade));
 }
 
 /// Adds a lot with the exact basis of a purchase at the end of the FIFO queue.
@@ -217,22 +222,37 @@ confirmedActionOf(const StatementEventReference& aEvent,
     return action == aConfirmedActions.end() ? nullptr : &*action;
 }
 
-/// The first corporate action without a confirmed ratio of each instrument in the ledger, by
-/// instrument index.
+/// The first corporate action without a confirmed ratio of each instrument, by instrument index:
+/// in the ledger, or else after 31 December in the loss-analysis view. A row after 31 December
+/// never stops a pool; a sale with too few units just before it may still ask for it.
 std::vector<std::optional<StatementEventReference>>
 firstUnconfirmedActions(const std::vector<TradeInstrument>& aInstruments,
                         const ReportingYearLedger& aLedger,
                         const std::vector<ConfirmedCorporateAction>& aConfirmedActions) {
     std::vector<std::optional<StatementEventReference>> firstActions(aInstruments.size());
 
-    for (const auto& event : aLedger.mCapitalEvents)
-    {
-        auto& firstAction = firstActions.at(event.mInstrumentIndex.value());
+    const auto take = [&firstActions, &aConfirmedActions](const StatementEventReference& aEvent) {
+        auto& firstAction = firstActions.at(aEvent.mInstrumentIndex.value());
 
-        if (event.mKind == StatementEventKind::CorporateAction && !firstAction &&
-            confirmedActionOf(event, aConfirmedActions) == nullptr)
+        if (aEvent.mKind == StatementEventKind::CorporateAction && !firstAction &&
+            confirmedActionOf(aEvent, aConfirmedActions) == nullptr)
         {
-            firstAction = event;
+            firstAction = aEvent;
+        }
+    };
+
+    std::for_each(aLedger.mCapitalEvents.begin(), aLedger.mCapitalEvents.end(), take);
+
+    for (const auto& event : aLedger.mLossAnalysisEvents)
+    {
+        const bool afterYear = event.mKind == StatementEventKind::CorporateAction &&
+                               aInstruments.at(event.mInstrumentIndex.value())
+                                       .mCorporateActions.at(event.mEventIndex)
+                                       .mMetadata.mTaxDate > aLedger.mYearEnd;
+
+        if (afterYear)
+        {
+            take(event);
         }
     }
 
@@ -466,8 +486,9 @@ void applyAction(FifoIsinResult& aPool,
     }
 
     aPool.mOpenLots = std::move(lots);
-    aPool.mAppliedActions.push_back(
-        {.mAction = aAction.mEvents.front(), .mEffectiveDate = aAction.mEffectiveDate});
+    aPool.mAppliedActions.push_back({.mEvents = aAction.mEvents,
+                                     .mEffectiveDate = aAction.mEffectiveDate,
+                                     .mRatio = aAction.mRatio});
 }
 
 /// Applies the pool's confirmed actions dated on or before aDate, in date order, until one fails.
@@ -631,14 +652,23 @@ FifoMatcher::match(const MergedStatement& aStatement,
         }
     }
 
-    // Confirmed actions after the last trade still change the lots at 31 December.
+    // Confirmed actions after the last trade still change the lots at 31 December. Those dated
+    // after it are kept for the loss rule only.
     for (std::size_t index = 0; index < result.mIsins.size(); ++index)
     {
-        applyActionsUpTo(result.mIsins[index],
-                         pending[index],
-                         aLedger.mYearEnd,
-                         instruments,
-                         result.mDiagnostics);
+        auto& pool = result.mIsins[index];
+
+        applyActionsUpTo(pool, pending[index], aLedger.mYearEnd, instruments, result.mDiagnostics);
+
+        for (const auto* action : pending[index].mActions)
+        {
+            if (action->mEffectiveDate > aLedger.mYearEnd)
+            {
+                pool.mLaterActions.push_back({.mEvents = action->mEvents,
+                                              .mEffectiveDate = action->mEffectiveDate,
+                                              .mRatio = action->mRatio});
+            }
+        }
     }
 
     return result;

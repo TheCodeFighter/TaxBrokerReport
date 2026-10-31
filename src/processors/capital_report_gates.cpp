@@ -194,9 +194,35 @@ void checkStoppedPool(const FifoIsinResult& aPool,
     }
 }
 
-/// Errors for loss sales that cannot be written yet: one per corporate action in a loss window or
-/// applied before a window end, and one per partly blocked sale. Open and cancelled questions
-/// already have theirs.
+/// The first merger row of the ISIN on the date of this action row, if any. The corporate-action
+/// stage asks the ratio of every other row after 31 December that a loss window needs, or gives
+/// it its own error, so only a date with a merger is not asked there.
+std::optional<StatementEventReference>
+mergerOnDate(const std::vector<TradeInstrument>& aInstruments,
+             const StatementEventReference& aEvent) {
+    const auto& actions = aInstruments.at(aEvent.mInstrumentIndex.value()).mCorporateActions;
+    const auto date = actions.at(aEvent.mEventIndex).mMetadata.mTaxDate;
+
+    const auto merger =
+        std::find_if(actions.begin(), actions.end(), [date](const CorporateAction& aAction) {
+            return aAction.mType == CorporateActionType::Merger &&
+                   aAction.mMetadata.mTaxDate == date;
+        });
+
+    if (merger == actions.end())
+    {
+        return std::nullopt;
+    }
+
+    return StatementEventReference{StatementEventKind::CorporateAction,
+                                   aEvent.mInstrumentIndex,
+                                   static_cast<std::size_t>(merger - actions.begin())};
+}
+
+/// Errors for loss sales that cannot be written yet: one per merger date in a loss window, and one
+/// per partly blocked sale. Open and cancelled loss questions, a split row in a loss window (its
+/// ratio question or error comes from the corporate-action stage) and a numeric failure already
+/// have theirs.
 void checkLossSales(const KdvpBlockedIsin& aBlocked,
                     const LossEligibilityIsin& aLoss,
                     const std::vector<TradeInstrument>& aInstruments,
@@ -220,29 +246,27 @@ void checkLossSales(const KdvpBlockedIsin& aBlocked,
         {
         case LossSaleState::WaitingForAnswer:
         case LossSaleState::Cancelled:
+        case LossSaleState::NumericFailure:
             break;
-        case LossSaleState::CorporateActionInWindow:
-        case LossSaleState::AppliedCorporateActionBefore: {
-            const auto& event = loss->mCorporateAction.value();
+        case LossSaleState::CorporateActionInWindow: {
+            const auto merger = mergerOnDate(aInstruments, loss->mCorporateAction.value());
 
-            if (std::find(reportedActions.begin(), reportedActions.end(), event) !=
-                reportedActions.end())
+            if (!merger || std::find(reportedActions.begin(), reportedActions.end(), *merger) !=
+                               reportedActions.end())
             {
                 break;
             }
 
-            reportedActions.push_back(event);
+            reportedActions.push_back(*merger);
 
-            const auto& action = aInstruments.at(event.mInstrumentIndex.value())
-                                     .mCorporateActions.at(event.mEventIndex);
+            const auto& action = aInstruments.at(merger->mInstrumentIndex.value())
+                                     .mCorporateActions.at(merger->mEventIndex);
 
             aDiagnostics.push_back(capitalDiagnostic(
                 DiagnosticSeverity::Error,
                 ProcessingDiagnosticCode::CorporateActionNotApplied,
                 PipelineStage::CorporateAction,
-                makeDiagnosticMessage(loss->mState == LossSaleState::CorporateActionInWindow
-                                          ? MessageKey::CorporateActionNotAppliedLossWindow
-                                          : MessageKey::CorporateActionNotAppliedLossRuleSplit),
+                makeDiagnosticMessage(MessageKey::CorporateActionNotAppliedLossWindow),
                 action.mMetadata.mSources,
                 action.mMetadata.mTaxDate,
                 aBlocked.mName,

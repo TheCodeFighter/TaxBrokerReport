@@ -118,7 +118,9 @@ Questions:
     for old shares, or your shares just before and just after it) and its effective date.
     You then confirm the position after it. A sale with too few units and a split row at
     most 10 days after it ask the same question, because the broker may have booked the
-    split after it took effect.
+    split after it took effect. So do a split row in January within 30 days after a sale
+    at a loss in December, and split rows of two brokers at most 10 days apart, which you
+    first confirm as one split.
   An answer that does not fit is explained and the question is asked again. cancel closes
   a question without an answer, and the report is blocked. With --no-input, or when the
   input ends (Ctrl-D), the open questions stay open: the report is blocked and the summary
@@ -128,12 +130,12 @@ Questions:
 The report is blocked (no XML) when an investment sold in the year:
   - is crypto, a private fund, a bond or a derivative, or has an unknown asset class;
   - has a split or reverse split up to 31 December whose ratio is not answered, a merger,
-    or split rows of two brokers at most 10 days apart. An answered split is applied, but a
-    sale of units that the split changed, or a sale at a loss with a split before it or up to
-    30 days after it, still blocks the report;
+    or split rows of two brokers at most 10 days apart that are not one split. An answered
+    split is applied, but a sale of units that the split changed still blocks the report;
   - misses earlier purchase history;
-  - has a sale whose loss the 30-day rule blocks only in part, or a corporate action within
-    30 days after a sale at a loss in December;
+  - has a sale whose loss the 30-day rule blocks only in part, or a corporate action
+    without an answered ratio, or a merger, within 30 days after a sale at a loss in
+    December;
   - has a trade that is not in EUR;
   - has a question that is open or was cancelled.
 It is also blocked when a file cannot be read, when a trade or corporate-action row of

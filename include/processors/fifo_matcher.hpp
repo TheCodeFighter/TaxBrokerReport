@@ -68,8 +68,10 @@ struct ConfirmedCorporateAction {
 };
 
 struct AppliedCorporateAction {
-    StatementEventReference mAction;
+    /// Every action row of the action, as in ConfirmedCorporateAction.
+    std::vector<StatementEventReference> mEvents;
     Date mEffectiveDate;
+    SplitRatio mRatio;
 
     bool operator==(const AppliedCorporateAction&) const = default;
 };
@@ -99,6 +101,9 @@ struct FifoIsinResult {
     /// For CorporateAction: at the start of the action's day, without the trades of that day.
     std::vector<FifoLot> mOpenLots;
     std::vector<AppliedCorporateAction> mAppliedActions;
+    /// Confirmed actions with an effective date after 31 December. They never change the lots;
+    /// only the 30-day loss rule uses them.
+    std::vector<AppliedCorporateAction> mLaterActions;
 };
 
 struct FifoMatchingResult {
@@ -109,6 +114,11 @@ struct FifoMatchingResult {
 
 /// Tells whether the match uses units past the holding period, which are tax free.
 [[nodiscard]] bool isPastHoldingPeriod(const FifoMatch& aMatch);
+
+/// The incomplete_history error of a sale that needs more units than the pool holds. No units or
+/// amounts in the message.
+[[nodiscard]] ProcessingDiagnostic incompleteHistoryDiagnostic(const FifoIsinResult& aPool,
+                                                               const TradeTransaction& aSale);
 
 class FifoMatcher final {
   public:
@@ -130,7 +140,8 @@ class FifoMatcher final {
     /// with the sale's sources and tax date. Only the first such sale of an ISIN is reported. When
     /// some units are open, the ISIN has a sale in the selected year and its first unconfirmed
     /// action is a split row at most kBrokerDateMarginDays after the sale, the pool stops at that
-    /// action instead (mShortSale), because the split may have taken effect before the sale.
+    /// action instead (mShortSale), because the split may have taken effect before the sale. That
+    /// action may also be a row after 31 December in the loss-analysis view.
     ///
     /// aStatement must be the statement that aLedger was prepared from.
     [[nodiscard]] static FifoMatchingResult

@@ -153,7 +153,6 @@ constexpr std::array kDefinitions{
                       {}},
     MessageDefinition{
         MessageKey::TaxClassificationUnknownCapital, "tax_classification_unknown.capital", {}},
-    MessageDefinition{MessageKey::CorporateActionNotApplied, "corporate_action_not_applied", {}},
     MessageDefinition{
         MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", kCurrency},
     MessageDefinition{MessageKey::LossEligibilityUnresolvedConfirmationRequired,
@@ -228,9 +227,6 @@ constexpr std::array kDefinitions{
                       kDays},
     MessageDefinition{
         MessageKey::UnsupportedCorporateActionMerger, "unsupported_corporate_action.merger", {}},
-    MessageDefinition{MessageKey::CorporateActionNotAppliedLossRuleSplit,
-                      "corporate_action_not_applied.loss_rule_split",
-                      {}},
     MessageDefinition{MessageKey::CorporateActionNotAppliedFilingRows,
                       "corporate_action_not_applied.filing_rows",
                       {}},

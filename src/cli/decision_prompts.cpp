@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -107,7 +108,7 @@ void writeLossQuestion(std::ostream& aOut,
             continue;
         }
 
-        aOut << ", purchases in your files that count against it:";
+        aOut << ", purchases in your files that count against it, in the units of this sale:";
 
         for (const auto& replacement : sale.mKnownReplacements)
         {
@@ -164,6 +165,11 @@ void writeRatioQuestion(std::ostream& aOut,
     for (const auto& source : aQuestion.mSources)
     {
         aOut << "  Source: " << brokerText(source.mBroker);
+
+        if (aQuestion.mAskSameEvent)
+        {
+            aOut << ", row of " << formatCalendarDate(source.mDate);
+        }
 
         if (source.mTransactionId)
         {
@@ -365,12 +371,66 @@ std::optional<bool> readConfirmation(std::istream& aIn, std::ostream& aOut) {
     }
 }
 
-/// Reads the ratio, the effective date and the confirmation of the preview. A ratio without a
-/// preview (a number 0, equal numbers, a position that does not fit, a date in no range) is passed
-/// on as it is, so the session's rejection says what is wrong.
+/// For rows of different brokers on different dates: yes, no or cancel. Empty when the input has
+/// ended.
+std::optional<std::variant<bool, CancelAnswer>> readSameEvent(std::istream& aIn,
+                                                              std::ostream& aOut) {
+    aOut << "  The rows are on different dates. If both brokers booked the same split, answer yes\n"
+            "  and enter it once. If they are two splits, answer no: two splits so close together\n"
+            "  are not supported yet, and the sales cannot be reported.\n";
+
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Are these rows one split? (yes, no or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "yes" || word == "no")
+        {
+            return word == "yes";
+        }
+
+        if (word == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        aOut << "Answer yes, no or cancel.\n";
+    }
+}
+
+/// Reads the ratio, the effective date and the confirmation of the preview, after asking whether
+/// rows on different dates are one split. A ratio without a preview (a number 0, equal numbers, a
+/// position that does not fit, a date in no range) is passed on as it is, so the session's
+/// rejection says what is wrong.
 std::optional<AnswerValue> readRatioAnswer(const CorporateActionRatioQuestion& aQuestion,
                                            std::istream& aIn,
                                            std::ostream& aOut) {
+    if (aQuestion.mAskSameEvent)
+    {
+        const auto sameEvent = readSameEvent(aIn, aOut);
+
+        if (!sameEvent)
+        {
+            return std::nullopt;
+        }
+
+        if (std::holds_alternative<CancelAnswer>(*sameEvent))
+        {
+            return CancelAnswer{};
+        }
+
+        if (!std::get<bool>(*sameEvent))
+        {
+            return SeparateEventsAnswer{};
+        }
+    }
+
     while (true)
     {
         const auto line = readLine(aIn, aOut, "Ratio:");
@@ -517,6 +577,10 @@ std::string answerText(const AnswerValue& aAnswer) {
         {
             return "yes, bought or sold elsewhere (the open loss is not deductible, F10 false)";
         }
+        else if constexpr (std::is_same_v<Value, SeparateEventsAnswer>)
+        {
+            return "no, the rows are two splits";
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -623,12 +687,43 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
-            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", corporate action on " +
-                   formatCalendarDate(aQuestion.mEffectiveDate);
+            auto text = investmentText(aQuestion.mIsin, aQuestion.mName) +
+                        ", corporate action on " + formatCalendarDate(aQuestion.mEffectiveDate);
+
+            if (!aQuestion.mAskSameEvent)
+            {
+                return text;
+            }
+
+            // The sources are in date order, so a new date is a new row date.
+            std::vector<Date> dates;
+
+            for (const auto& source : aQuestion.mSources)
+            {
+                if (dates.empty() || dates.back() != source.mDate)
+                {
+                    dates.push_back(source.mDate);
+                }
+            }
+
+            text += " (rows of ";
+
+            for (std::size_t index = 0; index < dates.size(); ++index)
+            {
+                text += (index == 0 ? "" : " and ") + formatCalendarDate(dates[index]);
+            }
+
+            return text + ")";
         }
     };
+    const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aDecision.mData);
 
-    return std::visit(questionText, aDecision.mData) + ": " + answerText(aDecision.mAnswer);
+    // A ratio for rows on two dates also says that they are one split.
+    const bool oneSplit = ratio != nullptr && ratio->mAskSameEvent &&
+                          std::holds_alternative<SplitRatioAnswer>(aDecision.mAnswer);
+
+    return std::visit(questionText, aDecision.mData) + ": " + (oneSplit ? "one split, " : "") +
+           answerText(aDecision.mAnswer);
 }
 
 } // namespace taxbroker::cli
