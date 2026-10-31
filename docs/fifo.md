@@ -230,10 +230,10 @@ rejected with a message key that tells which number to correct (see `diagnostics
 change inventory.
 
 The units held just before the action are the units at the start of its day: the action comes
-before the trades of its day for the same ISIN (maintainer decision, 2026-10-28), also when a
+before the trades of its day for the same ISIN, also when a
 trade has an earlier time. For example, 3 units bought earlier and 1 bought at 09:00 on the day
 of a split at 10:00 give a position of 3 units before the split, so `2 / 1` previews 6 units, not
-8. The 1 unit bought that day is already in new units: the split makes 6 + 1 = 7 units (see
+1 unit. The 1 unit bought that day is already in new units: the split makes 6 + 1 = 7 units (see
 "Corporate actions on the same date as trades").
 
 The broker's row date may be a later booking date, so the user also enters the effective date
@@ -270,7 +270,8 @@ and the 0.1 units stay 0.1; with 14 November, 0.62 units become 6.2. The row's t
 changes; the lot step orders the action by the confirmed date.
 
 The question is asked only for an ISIN with a sale in the selected year, and not for a bond,
-derivative, crypto or private fund, whose sales are blocked anyway. When an ISIN has several
+derivative, crypto or private fund, whose sales are blocked anyway by their class error; their
+actions give no error of their own. When an ISIN has several
 actions, only the first unresolved one is asked, because the units before a later action depend
 on the earlier one being applied. A later action of any ratio is listed from the start as waiting
 for the earlier one, and is asked in the same run once that one is applied, with the units after
@@ -286,11 +287,40 @@ before it) has a split row of the ISIN at most 10 days after it, as the first ac
 answered, and the ISIN has a sale in the selected year, the app does not report
 `incomplete_history`: the FIFO pool stops at that split with the lots just before the sale, and
 the ratio question is asked with dates up to the sale only (`mEarlierSaleDate`, no units on the
-row date, key `corporate_action_ambiguous.ratio_required_before_sale`, maintainer decision,
-2026-10-28). The rule above makes sure the ratio covers the sale. A merger row, a row 11 or more
+row date, key `corporate_action_ambiguous.ratio_required_before_sale`.
+The rule above makes sure the ratio covers the sale. A merger row, a row 11 or more
 days later, or no unit before the sale's day keeps the error for missing history (or
 `corporate_action_missing_position`). For example, 10 units, a sale of 20 on 1 June and a split
-row on 3 June: `2 / 1` from 30 May makes 20 units, and the sale fits.
+row on 3 June: `2 / 1` from 30 May makes 20 units, and the sale fits. A split row in January after
+31 December counts too, for a sale in December: the answer's
+date is then in December, so the split changes the selected year's lots. Cancelling such a
+question means that the split did not take effect before the sale, so purchases are missing: the
+sale gets the `incomplete_history` error, not `corporate_action_ambiguous`.
+
+A split row after 31 December (up to 30 January, the end of the loss-analysis view) is also asked
+when the window of a loss sale of the year reaches its row date: the 30-day loss rule needs the
+ratio to compare a January purchase with the December sale. Its
+dates run up to 30 January. An answer dated after 31 December is used only by the loss rule and
+never changes the lots at 31 December; an answer dated in December (a late booking) changes them
+like an action of the year. Either way the action gets the `corporate_action_applied` warning,
+because the result uses a ratio the user gave. While the question is open, or after a cancel or
+another error of the row, the loss sale stays blocked and only the row's own error is shown.
+A merger row there is not asked, and the loss sale blocks
+(`corporate_action_not_applied`, key `.loss_window`). The units before such a row are the
+lots at 31 December with the January trades before the row, each counted after the confirmed
+January actions up to its date. A January sale of more units than were held there is handled as
+a sale of the year with too few units (maintainer decision, 2026-10-30): when the row is at most
+10 days after it, the question ends at that sale (key `.ratio_required_before_sale`); a cancel
+gives `corporate_action_ambiguous.cancelled`, not missing history, because that sale is not in the
+selected year's report (maintainer decision, 2026-10-30). A row 11 or more days after it gets
+`corporate_action_missing_position`. So does a row with no units before it, for example after a
+December loss sale that empties the holding and before a January rebuy: a broker books a split
+only for units held, so purchases are missing.
+
+Known limit: a split row dated after the window end of a December loss is not asked, although a
+broker may book an action up to 10 days after it took effect. A reverse split that took effect
+inside the window is then compared in the old units, which blocks too little loss. This is later
+work (support for reverse splits and mergers that change the ISIN).
 
 The confirmation applies only to the combined action identity, its complete source set (by broker
 and transaction ID) and the units held just before it. A new or changed source record, or another
@@ -302,16 +332,14 @@ was supplied by the user, together with the original action source, but must not
 broker supplied it: an applied action gets a `corporate_action_applied` warning (key `.user_ratio`)
 with the ratio and the effective date, shown beside the download.
 
-Two parts of a split-adjusted history are not reported yet, so they still block the ISIN:
+One part of a split-adjusted history is not reported yet, so it still blocks the ISIN: a sale of
+the year that lists units (within the holding period) of a lot the split changed, whose Doh-KDVP
+rows are not decided yet (`corporate_action_not_applied`, key `.filing_rows`). A sale before the
+split is reported as usual. The 30-day loss rule compares units across every confirmed split (see
+`tax_rules.md`, rule 7).
 
-- a sale of the year that lists units (within the holding period) of a lot the split changed:
-  the Doh-KDVP rows for such units are not decided yet (`corporate_action_not_applied`, key
-  `.filing_rows`). A sale before the split is reported as usual.
-- a sale at a loss with an applied split dated on or before the end of its 30-day window: the loss
-  rule cannot compare the units before and after the split yet (`corporate_action_not_applied`,
-  key `.loss_rule_split`).
-
-If the user cancels or cannot find the ratio, the app reports `corporate_action_ambiguous`. The
+If the user cancels or cannot find the ratio, the app reports `corporate_action_ambiguous` (for
+a question before a sale with too few units: `incomplete_history`, see above). The
 affected ISIN follows the normal exclusion flow. No developer-mode option may bypass the missing
 ratio.
 
@@ -345,12 +373,14 @@ below exists.
 
 Split rows of one ISIN from different brokers on different dates at most 10 days apart could be
 one split that each broker booked on its own date (for example 10 and 14 November). Applying both
-would apply the split twice (0.52 units → 52 instead of 5.20), so until the identity question
-exists the app reports `corporate_action_ambiguous` (key `.different_dates`) for both and asks
-nothing (maintainer decision, 2026-10-28). Rows are never combined automatically by a date
-window. A split, a reverse split and a split of unknown direction are one kind of row here,
-because two brokers may name one event differently; a merger row never pairs with a split. Rows
-more than 10 days apart, or rows of one broker, are separate actions.
+would apply the split twice (0.52 units → 52 instead of 5.20). Rows are never combined
+automatically by a date window: when the rows of one date have exactly one such neighbour date,
+and no broker has a row on both, one ratio question lists the rows of both dates and first asks
+whether they are one split. Yes, with the ratio and the date: one action, applied once, for every row. No (`separate_events`): two splits so close together are not supported until the identity question exists, so the app reports `corporate_action_ambiguous` (key `.different_dates`) and the ISIN blocks. This also pairs a row in December with a row in January of the loss-analysis view, even when no loss sale needs the
+January row: the next year's run pairs the same two rows anyway, and a "no" blocks on the safe
+side. The identity question will ask the dates, the ratios and the order of two such splits instead of blocking. Rows of one date with more than one such neighbour date (for example three rows of two brokers within 10 days), or with a merger row or a broker on both dates, are not asked and get `.different_dates` too. A split, a reverse split and a split of unknown direction are one kind of row here, because two brokers may name one event
+differently; a merger row never pairs with a split. Rows more than 10 days apart, or rows of one
+broker, are separate actions.
 
 The same calendar year is a warning group, never a deduplication key. Two established actions on
 different dates remain two actions. If records could describe the same action but disagree about
