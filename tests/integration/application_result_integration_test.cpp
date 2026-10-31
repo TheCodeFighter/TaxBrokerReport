@@ -1,4 +1,5 @@
 #include "parsers/traderepublic_parser.hpp"
+#include "processors/capital_failure_resolution.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
@@ -934,8 +935,8 @@ TEST(ApplicationResultIntegrationTest, AnOpenRequestForTheIncompleteHistoryNeeds
 
     ASSERT_EQ(fifo.mDiagnostics.size(), 1U);
 
-    // No stage produces requests yet (#215), so the request is written here, on the sources of the
-    // real FIFO diagnostic at position 0.
+    // The request is written here, on the sources of the real FIFO diagnostic at position 0, to
+    // test the result builder alone. Like the real one, it lists investments and has no ISIN.
     ApplicationResultInput input{
         .mReportingYear = 2024,
         .mMergeDiagnostics = prepared.mMerged.mDiagnostics,
@@ -946,7 +947,6 @@ TEST(ApplicationResultIntegrationTest, AnOpenRequestForTheIncompleteHistoryNeeds
                     .mType = RequestType::CapitalGainsFailureResolutionRequired,
                     .mAffectedReports = {ReportType::CapitalGains},
                     .mSources = fifo.mDiagnostics[0].mContext.mSources,
-                    .mIsin = fifo.mDiagnostics[0].mContext.mIsin,
                     .mData =
                         FailureResolutionQuestion{
                             .mInvestments = {FailedInvestment{
@@ -973,7 +973,7 @@ TEST(ApplicationResultIntegrationTest, AnOpenRequestForTheIncompleteHistoryNeeds
     EXPECT_EQ(request.mId, "request-0001");
     EXPECT_EQ(request.mType, RequestType::CapitalGainsFailureResolutionRequired);
     EXPECT_EQ(request.mAffectedReports, (std::vector{ReportType::CapitalGains}));
-    EXPECT_EQ(request.mIsin, "XX0000000001");
+    EXPECT_FALSE(request.mIsin.has_value());
     ASSERT_EQ(request.mSources.size(), 1U);
 
     // Row 3 is the sale.
@@ -1023,32 +1023,14 @@ TEST(ApplicationResultIntegrationTest, AnAnsweredQuestionIsRecalculatedFromTheFu
             {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
         auto fifo = FifoMatcher::match(prepared.mMerged.mStatement, prepared.mLedger.value());
 
-        // No stage asks the failure choice yet (#227), so the question is written here, on the
-        // sources of the real FIFO diagnostic at position 0.
-        const DecisionQuestion question{
-            .mType = RequestType::CapitalGainsFailureResolutionRequired,
-            .mAffectedReports = {ReportType::CapitalGains},
-            .mSources = fifo.mDiagnostics.at(0).mContext.mSources,
-            .mIsin = "XX0000000001",
-            .mData =
-                FailureResolutionQuestion{
-                    .mInvestments = {FailedInvestment{
-                        .mIsin = "XX0000000001",
-                        .mName = "Synthetic Share",
-                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
-                    }},
-                },
-        };
         ApplicationResultInput input{
             .mReportingYear = 2024,
             .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
             .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
         };
 
-        if (aDecisions.find(question) == nullptr)
-        {
-            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
-        }
+        // The real stage asks the failure question for the incomplete history until it is answered.
+        static_cast<void>(CapitalFailureResolution::resolve(input, aDecisions));
 
         return input;
     };
@@ -1117,32 +1099,14 @@ TEST(ApplicationResultIntegrationTest, ANewRunOfTheSameFileUsesTheRecordedAnswer
             {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
         auto fifo = FifoMatcher::match(prepared.mMerged.mStatement, prepared.mLedger.value());
 
-        // No stage asks the failure choice yet (#227), so the question is written here, on the
-        // sources of the real FIFO diagnostic at position 0.
-        const DecisionQuestion question{
-            .mType = RequestType::CapitalGainsFailureResolutionRequired,
-            .mAffectedReports = {ReportType::CapitalGains},
-            .mSources = fifo.mDiagnostics.at(0).mContext.mSources,
-            .mIsin = "XX0000000001",
-            .mData =
-                FailureResolutionQuestion{
-                    .mInvestments = {FailedInvestment{
-                        .mIsin = "XX0000000001",
-                        .mName = "Synthetic Share",
-                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
-                    }},
-                },
-        };
         ApplicationResultInput input{
             .mReportingYear = 2024,
             .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
             .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
         };
 
-        if (aDecisions.find(question) == nullptr)
-        {
-            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
-        }
+        // The real stage asks the failure question for the incomplete history until it is answered.
+        static_cast<void>(CapitalFailureResolution::resolve(input, aDecisions));
 
         return input;
     };
@@ -1244,32 +1208,14 @@ TEST(ApplicationResultIntegrationTest, DeletingTheRecordedAnswerAsksTheQuestionA
             {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
         auto fifo = FifoMatcher::match(prepared.mMerged.mStatement, prepared.mLedger.value());
 
-        // No stage asks the failure choice yet (#227), so the question is written here, on the
-        // sources of the real FIFO diagnostic at position 0.
-        const DecisionQuestion question{
-            .mType = RequestType::CapitalGainsFailureResolutionRequired,
-            .mAffectedReports = {ReportType::CapitalGains},
-            .mSources = fifo.mDiagnostics.at(0).mContext.mSources,
-            .mIsin = "XX0000000001",
-            .mData =
-                FailureResolutionQuestion{
-                    .mInvestments = {FailedInvestment{
-                        .mIsin = "XX0000000001",
-                        .mName = "Synthetic Share",
-                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
-                    }},
-                },
-        };
         ApplicationResultInput input{
             .mReportingYear = 2024,
             .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
             .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
         };
 
-        if (aDecisions.find(question) == nullptr)
-        {
-            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
-        }
+        // The real stage asks the failure question for the incomplete history until it is answered.
+        static_cast<void>(CapitalFailureResolution::resolve(input, aDecisions));
 
         return input;
     };
@@ -1474,6 +1420,87 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
   "requests": [],
   "decisions": []
 })");
+}
+
+TEST(ApplicationResultIntegrationTest, ExcludingAnInvestmentLeavesTheDividendErrorBlocking) {
+    // XX0000000002 sells 2 units after a purchase of 1: incomplete history. The dividend row has
+    // text in its amount, so it is rejected and fails only the dividend form.
+    constexpr std::string_view purchase =
+        R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Other,XX0000000002,1,10,-10,,,EUR,,,,,synthetic-purchase,,,,)";
+    constexpr std::string_view sale =
+        R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Other,XX0000000002,-2,30,60,,,EUR,,,,,synthetic-sale,,,,)";
+    constexpr std::string_view rejectedDividend =
+        R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share,XX0000000001,,,5x,,0,EUR,,,,,synthetic-dividend,,,,)";
+
+    const TemporaryApplicationInputs files;
+    const auto path = files.write("synthetic.csv", {purchase, sale, rejectedDividend});
+    tr::TradeRepublicParser parser;
+    const auto parsed = parser.parse(path);
+    std::vector<Isin> excluded;
+
+    // Every calculation starts again from the parsed file, then runs FIFO and the exclusion stage.
+    const auto calculation = [&parsed, &excluded](RunDecisions& aDecisions) {
+        std::vector<StatementMergeInput> inputs{{0, parsed}};
+        auto prepared = TaxProcessor::prepareReportingYear(
+            {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
+        auto fifo = FifoMatcher::match(prepared.mMerged.mStatement, prepared.mLedger.value());
+        ApplicationResultInput input{
+            .mReportingYear = 2024,
+            .mMergeDiagnostics = std::move(prepared.mMerged.mDiagnostics),
+            .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
+        };
+
+        excluded = CapitalFailureResolution::resolve(input, aDecisions);
+
+        return input;
+    };
+    DecisionSession session;
+
+    const auto& first = session.start(calculation);
+
+    // The dividend error belongs to another form, so it does not suppress the question.
+    ASSERT_EQ(first.mRequests.size(), 1U);
+    EXPECT_EQ(first.mRequests[0].mType, RequestType::CapitalGainsFailureResolutionRequired);
+    ASSERT_EQ(first.mRequests[0].mInvestments.size(), 1U);
+    EXPECT_EQ(first.mRequests[0].mInvestments[0].mIsin, "XX0000000002");
+    EXPECT_EQ(first.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+    EXPECT_EQ(first.report(ReportType::Dividends).mStatus, ReportStatus::Failed);
+
+    const auto rejections = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = 1,
+        .mValue = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments},
+    }});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const auto& second = session.result();
+
+    EXPECT_EQ(excluded, std::vector<Isin>{"XX0000000002"});
+    EXPECT_TRUE(second.mRequests.empty());
+
+    // Parsing comes before historical validation, so the dividend error is diagnostic-0001.
+    ASSERT_EQ(second.mDiagnostics.size(), 2U);
+    EXPECT_EQ(second.mDiagnostics[0].mId, "diagnostic-0001");
+    EXPECT_EQ(second.mDiagnostics[0].mAffectedReports, (std::vector{ReportType::Dividends}));
+    EXPECT_TRUE(second.mDiagnostics[0].mBlocking);
+    EXPECT_EQ(second.mDiagnostics[1].mId, "diagnostic-0002");
+    EXPECT_EQ(second.mDiagnostics[1].mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::IncompleteHistory});
+    EXPECT_FALSE(second.mDiagnostics[1].mBlocking);
+
+    // No other investment is sold, so nothing is left for Doh-KDVP; the dividend form still fails.
+    const auto& capital = second.report(ReportType::CapitalGains);
+
+    EXPECT_EQ(capital.mStatus, ReportStatus::NoData);
+    EXPECT_EQ(capital.mFailureResolution, FailureResolution::ExcludeFailedInstruments);
+    ASSERT_EQ(capital.mExcludedInvestments.size(), 1U);
+    EXPECT_EQ(capital.mExcludedInvestments[0].mIsin, "XX0000000002");
+    EXPECT_EQ(capital.mExcludedInvestments[0].mDiagnosticIds,
+              (std::vector<std::string>{"diagnostic-0002"}));
+    EXPECT_EQ(second.report(ReportType::Dividends).mStatus, ReportStatus::Failed);
+    EXPECT_FALSE(second.report(ReportType::Dividends).mFailureResolution.has_value());
+    EXPECT_EQ(second.mStatus, OverallStatus::PartialSuccess);
 }
 
 } // namespace

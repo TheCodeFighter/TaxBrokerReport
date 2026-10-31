@@ -28,14 +28,17 @@ tax year from **Trade Republic** CSV exports:
   within 30 days of the sale, you also traded the investment anywhere not in your files (another
   broker or account, or after the export), and for a split it asks the ratio and the effective
   date from its announcement and applies the split to the earlier purchases. The answers are
-  used only in that run and are never saved;
+  used only in that run and are never saved. When each problem that blocks the report is tied
+  to a single investment (one or several, for example earlier purchases are missing), the
+  command also asks, once, whether to write Doh-KDVP without all of them or to write none;
 - the XML imports into eDavki as a draft; the checks so far are recorded in
   [docs/verification.md](docs/verification.md).
 
 The tool blocks a report instead of guessing. No XML is written when an investment sold in the
 year is crypto, a private fund, a bond or a derivative, has a merger, misses earlier purchases, has
 a trade that is not in EUR, or has a question without an answer (with `--no-input`, or when you end
-the input).
+the input). When each such problem except an unanswered question is tied to a single
+investment (one or several), the command asks whether to leave all of them out instead.
 `scripts/report.sh --command-help` lists every case.
 
 Not yet available: Doh-Div (dividends), Doh-DHO and Doh-Obr (interest), Interactive Brokers, the

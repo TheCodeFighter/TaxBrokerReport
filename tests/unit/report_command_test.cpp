@@ -1313,9 +1313,8 @@ TEST(ReportCommandTest, FolderAtTheTemporarySummaryPathKeepsTheOldXmlOfAYearWith
 
 // Questions
 
-TEST(ReportCommandTest, OnlyTheLossAndTheRatioQuestionAreAsked) {
-    // No stage asks a failure-resolution question yet, and a question without question data cannot
-    // be answered.
+TEST(ReportCommandTest, EveryQuestionWithQuestionDataIsAsked) {
+    // A question without question data cannot be answered.
     const QuestionData noData{std::monostate{}};
     const QuestionData failure{FailureResolutionQuestion{
         .mInvestments = {{.mIsin = "XX0000000001", .mName = "Synthetic Share", .mReasonCodes = {}}},
@@ -1326,13 +1325,12 @@ TEST(ReportCommandTest, OnlyTheLossAndTheRatioQuestionAreAsked) {
         CorporateActionRatioQuestion{.mIsin = "XX0000000001", .mName = "Synthetic Share"}};
 
     EXPECT_FALSE(cli::canAsk(noData));
-    EXPECT_FALSE(cli::canAsk(failure));
+    EXPECT_TRUE(cli::canAsk(failure));
     EXPECT_TRUE(cli::canAsk(loss));
     EXPECT_TRUE(cli::canAsk(ratio));
 }
 
 TEST(ReportCommandTest, AnAnswerToAFailureQuestionCountsTheFailedInvestments) {
-    // No stage asks this question yet; the summary line must still name it.
     const RecordedDecision exclude{
         .mId = "decision-0001",
         .mType = RequestType::CapitalGainsFailureResolutionRequired,

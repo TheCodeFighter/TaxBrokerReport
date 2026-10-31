@@ -480,8 +480,9 @@ and the CLI show all of them together as one checklist.
 - `no_other_activity`: the open units keep their loss.
 - `other_activity`: every open unit is treated as blocked (`F10` `false`). This is the safe side,
   more tax and never less; the user corrects the deemed disposal in eDavki.
-- Cancel: each open sale gets a blocking `loss_eligibility_unresolved` error. The ISIN exclusion
-  or report-failure choice for it comes with other task; until then the capital report fails.
+- Cancel: each open sale gets a blocking `loss_eligibility_unresolved` error. When every
+  other error that blocks capital gains also names its own investment, the capital exclusion
+  question lists it: exclude it, or write no Doh-KDVP ([`diagnostics.md`](diagnostics.md)).
 
 While a question is open, capital gains is `needs_input` and has no XML; unrelated reports
 continue. An unanswered question is never written as `true` or `false`, and developer mode cannot

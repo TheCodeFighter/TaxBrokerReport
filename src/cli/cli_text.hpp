@@ -1,5 +1,7 @@
 #pragma once
 
+#include "taxbroker/api/application_result_json.hpp"
+#include "taxbroker/application_result.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/numeric_util.hpp"
 
@@ -29,6 +31,19 @@ inline std::string investmentText(const Isin& aIsin, const std::string& aName) {
     }
 
     return aIsin + " " + aName;
+}
+
+/// The reason codes of an investment of a failure question or of an exclusion, in the order of the
+/// result: `incomplete_history, missing_exchange_rate`.
+inline std::string reasonCodesText(const RequestInvestment& aInvestment) {
+    std::string text;
+
+    for (const auto& code : aInvestment.mReasonCodes)
+    {
+        text += (text.empty() ? "" : ", ") + std::string{api::diagnosticCodeName(code)};
+    }
+
+    return text;
 }
 
 } // namespace taxbroker::cli

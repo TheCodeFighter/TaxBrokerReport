@@ -1190,15 +1190,15 @@ TEST(CapitalGainsReportBuilderTest, AgreedExclusionLeavesOutTheBlockedIsinAndRep
 
     ASSERT_EQ(result.mExcluded.size(), 1U);
     EXPECT_EQ(result.mExcluded.at(0),
-              (KdvpBlockedIsin{
+              (KdvpExcludedIsin{
                   .mIsin = "XX0000000002",
                   .mName = "Synthetic Share B",
-                  .mReason = KdvpBlockReason::LossNotReportable,
+                  .mBlockReason = KdvpBlockReason::LossNotReportable,
                   .mSales = {{StatementEventKind::Trade, 1, 1}},
               }));
 }
 
-TEST(CapitalGainsReportBuilderTest, ExclusionOfAnIsinWithoutAProblemChangesNothing) {
+TEST(CapitalGainsReportBuilderTest, AnExcludedIsinWithoutABlockGetsNoRows) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {
         {
@@ -1240,11 +1240,20 @@ TEST(CapitalGainsReportBuilderTest, ExclusionOfAnIsinWithoutAProblemChangesNothi
     const auto result = buildYear(merged, 2024, {"XX0000000002"});
 
     EXPECT_TRUE(result.mBlocked.empty());
-    EXPECT_TRUE(result.mExcluded.empty());
     ASSERT_TRUE(result.mReport.has_value());
-    ASSERT_EQ(result.mReport->mLists.size(), 2U);
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
     EXPECT_EQ(result.mReport->mLists.at(0).mIsin, "XX0000000001");
-    EXPECT_EQ(result.mReport->mLists.at(1).mIsin, "XX0000000002");
+    EXPECT_TRUE(result.mLongHeld.empty());
+
+    // B has no block (buy 2 at EUR 10, sell 2 at EUR 13, a gain), but the user left it out.
+    ASSERT_EQ(result.mExcluded.size(), 1U);
+    EXPECT_EQ(result.mExcluded.at(0),
+              (KdvpExcludedIsin{
+                  .mIsin = "XX0000000002",
+                  .mName = "Synthetic Share B",
+                  .mBlockReason = std::nullopt,
+                  .mSales = {{StatementEventKind::Trade, 1, 1}},
+              }));
 }
 
 TEST(CapitalGainsReportBuilderTest, LeavingOutEveryBlockedIsinGivesAnEmptyReport) {
@@ -1328,7 +1337,7 @@ TEST(CapitalGainsReportBuilderTest, PartlyAgreedExclusionStillBlocksTheOtherIsin
     EXPECT_FALSE(result.mReport.has_value());
     ASSERT_EQ(result.mExcluded.size(), 1U);
     EXPECT_EQ(result.mExcluded.at(0).mIsin, "XX0000000001");
-    EXPECT_EQ(result.mExcluded.at(0).mReason, KdvpBlockReason::FifoStopped);
+    EXPECT_EQ(result.mExcluded.at(0).mBlockReason, KdvpBlockReason::FifoStopped);
     ASSERT_EQ(result.mBlocked.size(), 1U);
     EXPECT_EQ(result.mBlocked.at(0).mIsin, "XX0000000002");
     EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossNotReportable);
@@ -2429,7 +2438,7 @@ TEST(CapitalGainsReportBuilderTest, ABlockedLossNextToLongHeldAndProfitableUnits
     EXPECT_EQ(gainsOfRows(list), (std::vector<WideInteger>{eurTicks(20), eurTicks(-20)}));
 }
 
-TEST(CapitalGainsReportBuilderTest, ExclusionOfALongHeldIsinChangesNothing) {
+TEST(CapitalGainsReportBuilderTest, AnExcludedLongHeldIsinKeepsNoUnitsInTheLongHeldList) {
     // A is bought 2008-01-10 and sold 2024-03-10: past 15 years, so it is not blocked and the
     // user's exclusion does nothing. B is bought and sold in 2024 and is listed.
     StatementMergeResult merged;
@@ -2473,18 +2482,19 @@ TEST(CapitalGainsReportBuilderTest, ExclusionOfALongHeldIsinChangesNothing) {
     const auto result = buildYear(merged, 2024, {"XX0000000001"});
 
     EXPECT_TRUE(result.mBlocked.empty());
-    EXPECT_TRUE(result.mExcluded.empty());
     ASSERT_TRUE(result.mReport.has_value());
     ASSERT_EQ(result.mReport->mLists.size(), 1U);
     EXPECT_EQ(result.mReport->mLists.at(0).mIsin, "XX0000000002");
 
-    ASSERT_EQ(result.mLongHeld.size(), 1U);
-    EXPECT_EQ(result.mLongHeld.at(0),
-              (KdvpLongHeldUnits{
+    // A is left out as a whole: its 2 units past the holding period are not listed either.
+    EXPECT_TRUE(result.mLongHeld.empty());
+    ASSERT_EQ(result.mExcluded.size(), 1U);
+    EXPECT_EQ(result.mExcluded.at(0),
+              (KdvpExcludedIsin{
                   .mIsin = "XX0000000001",
                   .mName = "Synthetic Share A",
-                  .mSale = {StatementEventKind::Trade, 0, 1},
-                  .mUnits = 200'000'000, // 2 units
+                  .mBlockReason = std::nullopt,
+                  .mSales = {{StatementEventKind::Trade, 0, 1}},
               }));
 }
 

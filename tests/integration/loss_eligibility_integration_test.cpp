@@ -421,7 +421,8 @@ TEST(LossEligibilityIntegrationTest, CancellingTheLossQuestionFailsTheReport) {
 
     ASSERT_TRUE(session.answer({{"request-0001", kFirstRunRevision, CancelAnswer{}}}).empty());
 
-    // The exclusion choice after a cancel comes with #227; until then the error fails the form.
+    // This calculation has no exclusion stage, so the error fails the form. The CLI tests show the
+    // exclusion question that follows a cancel.
     const auto& result = session.result();
 
     EXPECT_EQ(result.mRunRevision, 2U);

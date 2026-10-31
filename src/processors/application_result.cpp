@@ -330,6 +330,26 @@ struct DraftDiagnostic {
     return DraftDiagnostic{std::move(diagnostic), std::nullopt};
 }
 
+/// The draft of a parser or merger diagnostic, as the merger returns it.
+[[nodiscard]] DraftDiagnostic draftOfMergeInput(const StatementMergeDiagnostic& aDiagnostic,
+                                                int aReportingYear) {
+    const auto toDraft = [aReportingYear](const auto& aEntry) {
+        using Diagnostic = std::decay_t<decltype(aEntry)>;
+
+        if constexpr (std::is_same_v<Diagnostic, SourcedParseDiagnostic>)
+        {
+            return draftOfParse(aEntry, aReportingYear);
+        }
+        else
+        {
+            static_assert(std::is_same_v<Diagnostic, MergeDiagnostic>);
+            return draftOfMerge(aEntry);
+        }
+    };
+
+    return std::visit(toDraft, aDiagnostic);
+}
+
 [[nodiscard]] DraftDiagnostic draftOfProcessing(const ProcessingDiagnostic& aProcessing,
                                                 std::size_t aIndex) {
     const auto& context = aProcessing.mContext;
@@ -540,6 +560,38 @@ investmentsOf(const QuestionData& aData,
     return investments;
 }
 
+/// The exclusion of a form needs a non-empty list; every other choice, or none, has none.
+void checkFailureResolution(const ReportInput& aInput) {
+    const bool excludes = aInput.mFailureResolution == FailureResolution::ExcludeFailedInstruments;
+
+    if (excludes != !aInput.mExcludedInvestments.empty())
+    {
+        throw std::invalid_argument("Only an exclusion lists excluded investments.");
+    }
+}
+
+/// The excluded investments of a form, sorted like the question, each with the IDs of the resolved
+/// diagnostics of its ISIN in diagnostic order.
+[[nodiscard]] std::vector<RequestInvestment>
+excludedInvestmentsOf(const ReportInput& aInput,
+                      const std::vector<std::size_t>& aResolved,
+                      const std::vector<std::size_t>& aProcessingToDiagnostic,
+                      const std::vector<ApplicationDiagnostic>& aDiagnostics) {
+    std::vector<std::size_t> resolvedPositions;
+
+    std::transform(aResolved.begin(),
+                   aResolved.end(),
+                   std::back_inserter(resolvedPositions),
+                   [&aProcessingToDiagnostic](std::size_t aIndex) {
+                       return aProcessingToDiagnostic.at(aIndex);
+                   });
+    std::sort(resolvedPositions.begin(), resolvedPositions.end());
+
+    return investmentsOf(normalizedData(FailureResolutionQuestion{aInput.mExcludedInvestments}),
+                         resolvedPositions,
+                         aDiagnostics);
+}
+
 } // namespace
 
 const EffectiveDateRange* findEffectiveDateRange(const CorporateActionRatioQuestion& aQuestion,
@@ -612,6 +664,17 @@ QuestionData normalizedData(QuestionData aData) {
     return aData;
 }
 
+bool hasSourceError(const ApplicationResultInput& aInput, ReportType aReport) {
+    return std::any_of(aInput.mMergeDiagnostics.begin(),
+                       aInput.mMergeDiagnostics.end(),
+                       [&aInput, aReport](const StatementMergeDiagnostic& aDiagnostic) {
+                           const auto draft = draftOfMergeInput(aDiagnostic, aInput.mReportingYear);
+
+                           return draft.mDiagnostic.mBlocking &&
+                                  affects(draft.mDiagnostic.mAffectedReports, aReport);
+                       });
+}
+
 void appendStageOutput(ApplicationResultInput& aInput,
                        std::vector<ProcessingDiagnostic>&& aDiagnostics,
                        std::vector<RequestInput>&& aRequests) {
@@ -642,27 +705,25 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
     // Collect the diagnostics of every stage in stage order; the position is the creation order.
     std::vector<DraftDiagnostic> drafts;
 
-    for (const auto& merged : aInput.mMergeDiagnostics)
-    {
-        const auto toDraft = [&aInput](const auto& aDiagnostic) {
-            using Diagnostic = std::decay_t<decltype(aDiagnostic)>;
-
-            if constexpr (std::is_same_v<Diagnostic, SourcedParseDiagnostic>)
-            {
-                return draftOfParse(aDiagnostic, aInput.mReportingYear);
-            }
-            else
-            {
-                static_assert(std::is_same_v<Diagnostic, MergeDiagnostic>);
-                return draftOfMerge(aDiagnostic);
-            }
-        };
-
-        drafts.push_back(std::visit(toDraft, merged));
-    }
+    std::transform(aInput.mMergeDiagnostics.begin(),
+                   aInput.mMergeDiagnostics.end(),
+                   std::back_inserter(drafts),
+                   [&aInput](const StatementMergeDiagnostic& aMerged) {
+                       return draftOfMergeInput(aMerged, aInput.mReportingYear);
+                   });
     for (std::size_t index = 0; index < aInput.mProcessingDiagnostics.size(); ++index)
     {
         drafts.push_back(draftOfProcessing(aInput.mProcessingDiagnostics[index], index));
+    }
+    for (const auto position : aInput.mResolvedDiagnostics)
+    {
+        if (position >= aInput.mProcessingDiagnostics.size())
+        {
+            throw std::invalid_argument("A resolved diagnostic must be a processing diagnostic.");
+        }
+
+        // The error stays in the result, but the exclusion lifted its block.
+        drafts[aInput.mMergeDiagnostics.size() + position].mDiagnostic.mBlocking = false;
     }
     for (auto& draft : drafts)
     {
@@ -778,6 +839,13 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
         const auto type = static_cast<ReportType>(index);
         auto& report = result.mReports[index];
         auto& input = aInput.mReports[index];
+
+        checkFailureResolution(input);
+        report.mFailureResolution = input.mFailureResolution;
+        report.mExcludedInvestments = excludedInvestmentsOf(input,
+                                                            aInput.mResolvedDiagnostics,
+                                                            processingToDiagnostic,
+                                                            result.mDiagnostics);
 
         bool hasUnresolvedBlocker = false;
 

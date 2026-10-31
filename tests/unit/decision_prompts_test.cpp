@@ -1007,4 +1007,287 @@ TEST(DecisionPromptsTest, TwoQuestionsAreAskedInRequestOrderWithABlankLineBetwee
     EXPECT_EQ(session.result().mDecisions[1].mAnswer, AnswerValue{CancelAnswer{}});
 }
 
+// The failure question
+
+TEST(DecisionPromptsTest, TheFailureQuestionListsEveryInvestmentAndTakesExclude) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {
+                        {.mIsin = "XX0000000002",
+                         .mName = "Synthetic Other",
+                         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+                        {.mIsin = "XX0000000005",
+                         .mName = "Synthetic Coin",
+                         .mReasonCodes = {ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                                          ProcessingDiagnosticCode::MissingExchangeRate}},
+                    },
+            },
+    }}));
+
+    const auto output = ask(session, "exclude\n");
+
+    EXPECT_EQ(output,
+              R"(Question request-0001: Doh-KDVP cannot include 2 investments:
+  XX0000000002 Synthetic Other: incomplete_history
+  XX0000000005 Synthetic Coin: unsupported_tax_treatment, missing_exchange_rate
+  exclude: write Doh-KDVP without every investment listed here; they are not in the
+  XML, and the summary lists them. fail: write no Doh-KDVP. cancel: no answer, and no
+  Doh-KDVP.
+Your answer (exclude, fail or cancel):
+
+)");
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments}});
+}
+
+TEST(DecisionPromptsTest, TheFailureQuestionOfOneInvestmentTakesFail) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments = {{.mIsin = "XX0000000002",
+                                  .mName = "Synthetic Other",
+                                  .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}}},
+            },
+    }}));
+
+    const auto output = ask(session, "fail\n");
+
+    EXPECT_TRUE(output.starts_with("Question request-0001: Doh-KDVP cannot include 1 investment:\n"
+                                   "  XX0000000002 Synthetic Other: incomplete_history\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::FailReport}});
+}
+
+TEST(DecisionPromptsTest, AnInvalidFailureAnswerIsAskedAgainAndCaseAndSpacesDoNotMatter) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {
+                        {.mIsin = "XX0000000002",
+                         .mName = "Synthetic Other",
+                         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+                        {.mIsin = "XX0000000005",
+                         .mName = "Synthetic Coin",
+                         .mReasonCodes = {ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                                          ProcessingDiagnosticCode::MissingExchangeRate}},
+                    },
+            },
+    }}));
+
+    const auto output = ask(session, "yes\n\n  EXCLUDE  \n");
+
+    EXPECT_TRUE(output.ends_with("Your answer (exclude, fail or cancel):\n"
+                                 "Answer exclude, fail or cancel.\n"
+                                 "Your answer (exclude, fail or cancel):\n"
+                                 "Answer exclude, fail or cancel.\n"
+                                 "Your answer (exclude, fail or cancel):\n"
+                                 "\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments}});
+}
+
+TEST(DecisionPromptsTest, ACancelledFailureQuestionRecordsTheCancel) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {
+                        {.mIsin = "XX0000000002",
+                         .mName = "Synthetic Other",
+                         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+                        {.mIsin = "XX0000000005",
+                         .mName = "Synthetic Coin",
+                         .mReasonCodes = {ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                                          ProcessingDiagnosticCode::MissingExchangeRate}},
+                    },
+            },
+    }}));
+
+    ask(session, "cancel\n");
+
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{CancelAnswer{}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheFailureQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {
+                        {.mIsin = "XX0000000002",
+                         .mName = "Synthetic Other",
+                         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+                        {.mIsin = "XX0000000005",
+                         .mName = "Synthetic Coin",
+                         .mReasonCodes = {ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                                          ProcessingDiagnosticCode::MissingExchangeRate}},
+                    },
+            },
+    }}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(output.ends_with("Your answer (exclude, fail or cancel):\n"
+                                 "Input ended: the open questions are listed in the summary.\n"
+                                 "\n"));
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionPromptsTest, TheFailureQuestionIsAskedAfterTheQuestionsOfOtherInvestments) {
+    // The failure question lists XX0000000002 and XX0000000005. The loss question is of
+    // XX0000000001, which is not listed, and an answer to it (a cancel) could add that investment
+    // to the list, so it comes first although the failure question has the earlier date.
+    DecisionSession session;
+    session.start(asksUntilAnswered(
+        {DecisionQuestion{
+             .mType = RequestType::CapitalGainsFailureResolutionRequired,
+             .mAffectedReports = {ReportType::CapitalGains},
+             .mTaxDate = day(2024, 1, 1),
+             .mData =
+                 FailureResolutionQuestion{
+                     .mInvestments =
+                         {
+                             {.mIsin = "XX0000000002",
+                              .mName = "Synthetic Other",
+                              .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+                             {.mIsin = "XX0000000005",
+                              .mName = "Synthetic Coin",
+                              .mReasonCodes = {ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                                               ProcessingDiagnosticCode::MissingExchangeRate}},
+                         },
+                 },
+         },
+         DecisionQuestion{
+             .mType = RequestType::LossEligibilityConfirmationRequired,
+             .mAffectedReports = {ReportType::CapitalGains},
+             .mTaxDate = day(2024, 3, 10),
+             .mIsin = "XX0000000001",
+             .mData =
+                 LossEligibilityQuestion{
+                     .mIsin = "XX0000000001",
+                     .mName = "Synthetic Share",
+                     .mSales = {{
+                         .mSaleDate = day(2024, 3, 10),
+                         .mSaleUnits = 100'000'000, // 1 unit
+                         .mLossUnits = 100'000'000,
+                         .mWindowStart = day(2024, 2, 9),
+                         .mWindowEnd = day(2024, 4, 9),
+                         .mKnownReplacements = {},
+                         .mKnownIneligibleUnits = 0,
+                         .mOpenUnits = 100'000'000,
+                     }},
+                 },
+         }}));
+
+    ASSERT_EQ(session.result().mRequests.size(), 2U);
+    EXPECT_EQ(session.result().mRequests[0].mType,
+              RequestType::CapitalGainsFailureResolutionRequired);
+
+    const auto output = ask(session, "no\nexclude\n");
+
+    EXPECT_TRUE(output.starts_with(
+        "Question request-0002: the 30-day loss rule for XX0000000001 Synthetic Share\n"));
+    EXPECT_TRUE(contains(output,
+                         "Your answer (yes, no or cancel):\n"
+                         "\n"
+                         "Question request-0001: Doh-KDVP cannot include 2 investments:\n"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 2U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{NoOtherActivityAnswer{}});
+    EXPECT_EQ(session.result().mDecisions[1].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments}});
+}
+
+TEST(DecisionPromptsTest, ALossQuestionOfAListedInvestmentIsAskedAfterTheFailureQuestion) {
+    // The loss question is of XX0000000005, which the failure question lists. The failure
+    // question comes first although its date is later, because excluding XX0000000005 would make
+    // the loss answer useless. Here the answer is fail, so the loss question is still asked.
+    DecisionSession session;
+    session.start(asksUntilAnswered(
+        {DecisionQuestion{
+             .mType = RequestType::CapitalGainsFailureResolutionRequired,
+             .mAffectedReports = {ReportType::CapitalGains},
+             .mTaxDate = day(2024, 6, 1),
+             .mData =
+                 FailureResolutionQuestion{
+                     .mInvestments =
+                         {
+                             {.mIsin = "XX0000000002",
+                              .mName = "Synthetic Other",
+                              .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}},
+                             {.mIsin = "XX0000000005",
+                              .mName = "Synthetic Coin",
+                              .mReasonCodes = {ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                                               ProcessingDiagnosticCode::MissingExchangeRate}},
+                         },
+                 },
+         },
+         DecisionQuestion{
+             .mType = RequestType::LossEligibilityConfirmationRequired,
+             .mAffectedReports = {ReportType::CapitalGains},
+             .mTaxDate = day(2024, 3, 10),
+             .mIsin = "XX0000000005",
+             .mData =
+                 LossEligibilityQuestion{
+                     .mIsin = "XX0000000005",
+                     .mName = "Synthetic Coin",
+                     .mSales = {{
+                         .mSaleDate = day(2024, 3, 10),
+                         .mSaleUnits = 100'000'000, // 1 unit
+                         .mLossUnits = 100'000'000,
+                         .mWindowStart = day(2024, 2, 9),
+                         .mWindowEnd = day(2024, 4, 9),
+                         .mKnownReplacements = {},
+                         .mKnownIneligibleUnits = 0,
+                         .mOpenUnits = 100'000'000,
+                     }},
+                 },
+         }}));
+
+    ASSERT_EQ(session.result().mRequests.size(), 2U);
+    EXPECT_EQ(session.result().mRequests[0].mType,
+              RequestType::LossEligibilityConfirmationRequired);
+
+    const auto output = ask(session, "fail\nno\n");
+
+    EXPECT_TRUE(
+        output.starts_with("Question request-0002: Doh-KDVP cannot include 2 investments:\n"));
+    EXPECT_TRUE(
+        contains(output,
+                 "Your answer (exclude, fail or cancel):\n"
+                 "\n"
+                 "Question request-0001: the 30-day loss rule for XX0000000005 Synthetic Coin\n"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    // The decisions are listed by request type, not in the order they were answered.
+    ASSERT_EQ(session.result().mDecisions.size(), 2U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::FailReport}});
+    EXPECT_EQ(session.result().mDecisions[1].mAnswer, AnswerValue{NoOtherActivityAnswer{}});
+}
+
 } // namespace
