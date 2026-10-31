@@ -1021,6 +1021,51 @@ TEST(CliReportIntegrationTest, ASaleWithTooFewUnitsBeforeASplitRowBlocksWithoutI
     EXPECT_FALSE(contains(result.mOut, "incomplete_history"));
 }
 
+TEST(CliReportIntegrationTest, ACancelledQuestionBeforeASaleWithTooFewUnitsGivesIncompleteHistory) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-20,6,120,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,10,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "cancel\n");
+
+    // The sale of 20 units needs more than the 10 bought, and the split row follows 2 days later.
+    // The question says that a cancel means missing purchases, so the sale gets the error it would
+    // have without the split row.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  The sale on 2024-06-01 needs more units than you held. If the action "
+                         "took effect on\n"
+                         "  or before that sale, enter it; if not, cancel: earlier purchases are "
+                         "then missing.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: blocked (incomplete_history)\n"
+                         "    sale 2024-06-01, history.csv row 3\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Errors: 1\n"
+                         "  diagnostic-0001 incomplete_history, XX0000000001 Synthetic Share, "
+                         "2024-06-01, history.csv row 3\n"));
+    EXPECT_FALSE(contains(result.mOut, "corporate_action_ambiguous"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, corporate action on 2024-06-03: "
+                         "cancelled\n"));
+}
+
 TEST(CliReportIntegrationTest, SaleWithoutEnoughPurchasesBlocksTheReport) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -1235,6 +1280,109 @@ TEST(CliReportIntegrationTest, AJanuarySaleWithTooFewUnitsBeforeTheJanuarySplitI
                          "    A sale of this investment on 2025-01-03 needs more units than the "
                          "earlier purchases left, and a corporate action, such as a split, follows "
                          "it within 10 days."));
+}
+
+TEST(CliReportIntegrationTest, AJanuarySaleWithTooFewUnitsLongBeforeTheJanuarySplitIsNotAsked) {
+    // 10 bought, 4 sold at a loss on 2024-12-30, 12 sold on 2025-01-02 with only 6 held, a split
+    // row on 2025-01-20, inside the loss window (to 2025-01-29). The row is 18 days after the
+    // January sale, more than the 10 days a broker may book late, so the sale points to missing
+    // purchases: no units are known just before the split, and no question is asked.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-12-30T09:00:00Z,2024-12-30,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-01-02T09:00:00Z,2025-01-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-12,4,48,,,EUR,,,,,synthetic-sell-2,,,,)",
+            R"(2025-01-20T09:00:00Z,2025-01-20,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,12,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_FALSE(contains(result.mOut, "Question request-0001"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "  XX0000000001 Synthetic Share: blocked (corporate_action_missing_position)\n"
+                 "    sale 2024-12-30, history.csv row 3\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Errors: 1\n"
+                         "  diagnostic-0001 corporate_action_missing_position, XX0000000001 "
+                         "Synthetic Share, 2025-01-20, history.csv row 5\n"));
+}
+
+TEST(CliReportIntegrationTest, TwoJanuarySplitsInADecemberLossWindowAreAskedInDateOrder) {
+    // 10 bought, 4 sold at a loss on 2024-12-10 (window to 2025-01-09), a split row on 2025-01-03,
+    // 2 bought on 2025-01-05 and a second split row on 2025-01-07. The first split is asked
+    // first; the second is asked after it, with the first applied to the units before it.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-12-10T09:00:00Z,2024-12-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-01-03T09:00:00Z,2025-01-03,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,6,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-01-05T09:00:00Z,2025-01-05,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,4,-8,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2025-01-07T09:00:00Z,2025-01-07,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,14,,,,,,,,,,synthetic-split-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nyes\n2 : 1\n\nyes\nyes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    // First split: 10 - 4 = 6 units at its row; 6 + 2 = 8 after the January purchase, up to the
+    // day before the second row.
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: a corporate action of XX0000000001 Synthetic "
+                         "Share on 2025-01-03\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Effective date from the announcement (YYYY-MM-DD, 2024-03-02 to "
+                         "2024-12-10 with 10.0000 units, or 2024-12-11 to 2025-01-05 with 6.0000 "
+                         "units, or 2025-01-06 to 2025-01-06 with 8.0000 units), or empty for "
+                         "2025-01-03:\n"
+                         "After it you hold 12.0000 units (2 : 1 from 2025-01-03).\n"));
+    // Second split: 6 units are 12 after 2 : 1 from 2025-01-03, plus the 2 bought on 2025-01-05
+    // are 14 at its row.
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: a corporate action of XX0000000001 Synthetic "
+                         "Share on 2025-01-07\n"));
+    EXPECT_TRUE(contains(result.mOut, "  You held 14.0000 units just before it.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Effective date from the announcement (YYYY-MM-DD, 2025-01-04 to "
+                         "2025-01-05 with 12.0000 units, or 2025-01-06 to 2025-01-30 with 14.0000 "
+                         "units), or empty for 2025-01-07:\n"
+                         "After it you hold 28.0000 units (2 : 1 from 2025-01-07).\n"));
+    // The 2 units bought after the first 2 : 1 and before the second are 1 unit of the sale, so
+    // 3 of the 4 loss units are open; yes blocks them too.
+    EXPECT_TRUE(contains(result.mOut,
+                         "    sale 2024-12-10: 4.0000 units, 4.0000 at a loss, 3.0000 open; window "
+                         "2024-11-10 to 2025-01-09, purchases in your files that count against it, "
+                         "in the units of this sale: 2025-01-05 1.0000 units\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 4.0000 units, 4.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml, "<F10>false</F10>"));
+    expectValidForKdvpSchemas(xml);
 }
 
 TEST(CliReportIntegrationTest, AJanuarySplitWithAnOpenLossAnsweredNoBlocksAsPartlyBlocked) {
