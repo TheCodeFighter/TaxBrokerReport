@@ -131,11 +131,11 @@ The report is blocked (no XML) when an investment sold in the year:
   - is crypto, a private fund, a bond or a derivative, or has an unknown asset class;
   - has a split or reverse split up to 31 December whose ratio is not answered, a merger,
     or split rows of two brokers at most 10 days apart that are not one split. An answered
-    split is applied, but a sale of units that the split changed still blocks the report;
+    split is applied;
   - misses earlier purchase history;
-  - has a sale whose loss the 30-day rule blocks only in part, or a corporate action
-    without an answered ratio, or a merger, within 30 days after a sale at a loss in
-    December;
+  - has a corporate action without an answered ratio, or a merger, within 30 days after a
+    sale at a loss in December;
+  - has a split or reverse split that makes the value of one unit too large for the form;
   - has a trade that is not in EUR;
   - has a question that is open or was cancelled.
 It is also blocked when a file cannot be read, when a trade or corporate-action row of
@@ -477,8 +477,9 @@ void writeDiagnostics(std::ostream& aOut,
 /// What the summary says about one ISIN with a sale in the selected year.
 struct InvestmentLine {
     std::string mName;
-    /// Sale rows and their units, when the ISIN has a list in the filing rows.
-    std::size_t mSaleRows{};
+    /// Sales and their units, when the ISIN has a list in the filing rows. A sale whose loss is
+    /// blocked in part has several rows but is one sale.
+    std::size_t mListedSales{};
     Units mListedUnits{};
     Units mBlockedLossUnits{};
     bool mListed{};
@@ -520,11 +521,16 @@ std::map<Isin, InvestmentLine> investmentLines(const RunOutcome& aOutcome) {
         {
             if (const auto* sale = std::get_if<KdvpSaleRow>(&row.mEntry))
             {
-                ++line.mSaleRows;
+                // The rows of one sale follow each other.
+                if (line.mSales.empty() || line.mSales.back() != sale->mSale)
+                {
+                    ++line.mListedSales;
+                    line.mSales.push_back(sale->mSale);
+                }
+
                 line.mListedUnits += sale->mUnits;
                 line.mBlockedLossUnits +=
                     sale->mLossRule == KdvpLossRule::Blocked ? sale->mUnits : Units{0};
-                line.mSales.push_back(sale->mSale);
             }
         }
     }
@@ -643,8 +649,8 @@ void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
         }
 
         aOut << (generated ? "listed, " : "no problem, ")
-             << countText(line.mSaleRows, "sale", "sales") << ", " << unitsText(line.mListedUnits)
-             << " units";
+             << countText(line.mListedSales, "sale", "sales") << ", "
+             << unitsText(line.mListedUnits) << " units";
 
         if (line.mBlockedLossUnits > 0)
         {

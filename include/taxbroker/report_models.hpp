@@ -57,8 +57,9 @@ enum class KdvpLossRule {
     Blocked,
 };
 
-/// Lists only the units that sales of the year use within
-/// the holding period.
+/// Lists only the units that sales of the year use within the holding period. A lot a split
+/// changed lists the units after the split and the exact basis over them (F4, rounded to 8
+/// decimals). A purchase sold before and after a split has one row for each run of the same state.
 struct KdvpPurchaseRow {
     StatementEventReference mPurchase;
     Date mDate;
@@ -70,6 +71,8 @@ struct KdvpPurchaseRow {
     bool operator==(const KdvpPurchaseRow&) const = default;
 };
 
+/// A sale whose loss the 30-day rule blocks only in part has one row for each run of units with
+/// the same F10; their units add up to the listed units of the sale.
 struct KdvpSaleRow {
     StatementEventReference mSale;
     Date mDate;

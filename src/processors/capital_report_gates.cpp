@@ -220,9 +220,9 @@ mergerOnDate(const std::vector<TradeInstrument>& aInstruments,
 }
 
 /// Errors for loss sales that cannot be written yet: one per merger date in a loss window, and one
-/// per partly blocked sale. Open and cancelled loss questions, a split row in a loss window (its
-/// ratio question or error comes from the corporate-action stage) and a numeric failure already
-/// have theirs.
+/// per sale whose blocked units exceed its loss units. Open and cancelled loss questions, a split
+/// row in a loss window (its ratio question or error comes from the corporate-action stage) and a
+/// numeric failure already have theirs.
 void checkLossSales(const KdvpBlockedIsin& aBlocked,
                     const LossEligibilityIsin& aLoss,
                     const std::vector<TradeInstrument>& aInstruments,
@@ -248,6 +248,22 @@ void checkLossSales(const KdvpBlockedIsin& aBlocked,
         case LossSaleState::Cancelled:
         case LossSaleState::NumericFailure:
             break;
+        case LossSaleState::Decided: {
+            // The builder lists a decided sale only when the rule blocks more units than the
+            // sale has loss units.
+            const auto& trade = tradeOf(aInstruments, sale);
+
+            aDiagnostics.push_back(capitalDiagnostic(
+                DiagnosticSeverity::Error,
+                ProcessingDiagnosticCode::LossEligibilityUnresolved,
+                PipelineStage::FifoTax,
+                makeDiagnosticMessage(MessageKey::LossEligibilityUnresolvedUnitsMismatch),
+                trade.mMetadata.mSources,
+                trade.mMetadata.mTaxDate,
+                aBlocked.mName,
+                aBlocked.mIsin));
+            break;
+        }
         case LossSaleState::CorporateActionInWindow: {
             const auto merger = mergerOnDate(aInstruments, loss->mCorporateAction.value());
 
@@ -269,20 +285,6 @@ void checkLossSales(const KdvpBlockedIsin& aBlocked,
                 makeDiagnosticMessage(MessageKey::CorporateActionNotAppliedLossWindow),
                 action.mMetadata.mSources,
                 action.mMetadata.mTaxDate,
-                aBlocked.mName,
-                aBlocked.mIsin));
-            break;
-        }
-        case LossSaleState::Decided: {
-            const auto& trade = tradeOf(aInstruments, sale);
-
-            aDiagnostics.push_back(capitalDiagnostic(
-                DiagnosticSeverity::Error,
-                ProcessingDiagnosticCode::UnsupportedTaxTreatment,
-                PipelineStage::FifoTax,
-                makeDiagnosticMessage(MessageKey::UnsupportedTaxTreatmentPartialLossEligibility),
-                trade.mMetadata.mSources,
-                trade.mMetadata.mTaxDate,
                 aBlocked.mName,
                 aBlocked.mIsin));
             break;
@@ -378,15 +380,15 @@ std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatemen
 
             break;
         }
-        case KdvpBlockReason::SplitAdjustedRows: {
-            // The error points at the first sale that lists units of a changed lot.
+        case KdvpBlockReason::UnitValueTooLarge: {
+            // The error points at the first sale that uses a unit value that does not fit F4.
             const auto& sale = tradeOf(instruments, blocked.mSales.front());
 
             diagnostics.push_back(capitalDiagnostic(
                 DiagnosticSeverity::Error,
-                ProcessingDiagnosticCode::CorporateActionNotApplied,
+                ProcessingDiagnosticCode::CorporateActionUnrepresentable,
                 PipelineStage::FifoTax,
-                makeDiagnosticMessage(MessageKey::CorporateActionNotAppliedFilingRows),
+                makeDiagnosticMessage(MessageKey::CorporateActionUnrepresentableUnitValue),
                 sale.mMetadata.mSources,
                 sale.mMetadata.mTaxDate,
                 blocked.mName,
