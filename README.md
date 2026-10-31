@@ -33,9 +33,9 @@ tax year from **Trade Republic** CSV exports:
   [docs/verification.md](docs/verification.md).
 
 The tool blocks a report instead of guessing. No XML is written when an investment sold in the
-year is crypto, a private fund, a bond or a derivative, has a merger, sells units that a split
-changed (not supported yet), misses earlier purchases, has a trade that is not in EUR, or has a
-question without an answer (with `--no-input`, or when you end the input).
+year is crypto, a private fund, a bond or a derivative, has a merger, misses earlier purchases, has
+a trade that is not in EUR, or has a question without an answer (with `--no-input`, or when you end
+the input).
 `scripts/report.sh --command-help` lists every case.
 
 Not yet available: Doh-Div (dividends), Doh-DHO and Doh-Obr (interest), Interactive Brokers, the

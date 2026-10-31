@@ -404,7 +404,7 @@ invalid value.
 | --- | --- | --- |
 | Doh-KDVP quantities and stock (`F3`, `F7`, `F8`) | 4 to 8 decimals | Write exact `Units`; remove trailing zeros only down to four decimals. |
 | Ordinary Doh-KDVP unit values (`F4`, `F9`) | 4 to 8 decimals | Write `UnitPrice` without changing its value; remove trailing zeros only down to four decimals. |
-| Corporate-action-adjusted Doh-KDVP unit values | 4 to 8 decimals | Round once as defined in `fifo.md`; remove trailing zeros only down to four decimals. |
+| Corporate-action-adjusted Doh-KDVP unit values (`F4`) | 4 to 8 decimals | Exact lot basis over the units after the action, rounded once to eight decimals, halves away from zero (`fifo.md`); remove trailing zeros only down to four decimals. |
 | Dividend value and foreign tax | 2 decimals | Round `Money` once at XML output. |
 | Doh-DHO and Doh-Obr income and foreign tax | 2 decimals | Round `Money` once at the documented form-row boundary. |
 | Doh-DHO and Doh-Obr totals | 2 decimals | Sum the already emitted two-decimal row values. |
@@ -542,8 +542,12 @@ price produces an overflow error.
 
 A Doh-KDVP `F4` or `F9` value may contain at most 14 integer digits and 8 decimal places. The
 largest `UnitPrice` has 11 integer digits, so an ordinary unit price always fits. An adjusted unit
-value is calculated from the exact lot basis and can be larger: `100000000000000.0000` produces
-`xml_value_out_of_range` because it has 15 integer digits.
+value is calculated from the exact lot basis and can be larger. The row builder rounds it to a
+`UnitPrice`; a value above `92233720368.54775807` does not fit and blocks the ISIN
+(`corporate_action_unrepresentable`, key `.unit_value`), so the writer never sees it. A value
+below `0.000000005` rounds to `0.00000000`, which is written as it is: the exact basis stays in
+the app and the row differs by less than half a step per unit (not checked with eDavki; no real
+case is expected).
 
 ## Required processor and XML tests
 
