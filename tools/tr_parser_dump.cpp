@@ -985,8 +985,8 @@ std::string_view toString(KdvpBlockReason aReason) {
         return "FifoStopped";
     case KdvpBlockReason::LossNotReportable:
         return "LossNotReportable";
-    case KdvpBlockReason::SplitAdjustedRows:
-        return "SplitAdjustedRows";
+    case KdvpBlockReason::UnitValueTooLarge:
+        return "UnitValueTooLarge";
     }
 
     return "Unknown";
@@ -1269,7 +1269,7 @@ void writeKdvpReport(std::ostream& aOutput,
 
     for (const auto reason : {KdvpBlockReason::FifoStopped,
                               KdvpBlockReason::LossNotReportable,
-                              KdvpBlockReason::SplitAdjustedRows})
+                              KdvpBlockReason::UnitValueTooLarge})
     {
         aOutput << "  blocked_" << toString(reason) << ": "
                 << std::count_if(withoutExclusions.mBlocked.begin(),

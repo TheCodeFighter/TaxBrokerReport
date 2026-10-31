@@ -5,6 +5,7 @@
 #include "processors/fifo_matcher.hpp"
 #include "processors/loss_eligibility.hpp"
 #include "processors/tax_processor.hpp"
+#include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/decision_session.hpp"
 #include "utils/date_utils.hpp"
 
@@ -258,9 +259,9 @@ TEST(CorporateActionIntegrationTest, APurchaseOnTheSplitDayIsNotInThePositionBef
     EXPECT_EQ(result.mDiagnostics.at(0).mSources.at(0).mRow, 4U); // the header is row 1
 }
 
-TEST(CorporateActionIntegrationTest, AConfirmedRatioIsAppliedAndASaleOfChangedUnitsBlocks) {
-    // The split is applied: 3 units become 6. The sale of 1 unit uses the changed lot, whose
-    // Doh-KDVP rows are not decided yet, so the report fails with filing_rows.
+TEST(CorporateActionIntegrationTest, AConfirmedRatioIsAppliedAndASaleOfChangedUnitsIsListed) {
+    // The split is applied: 3 units at EUR 10 become 6 units at EUR 5. The sale of 1 unit uses
+    // the changed lot: the purchase row lists 1 unit at EUR 5.
     const TemporaryActionInputs files;
     const auto history = files.write(
         "history.csv",
@@ -288,19 +289,13 @@ TEST(CorporateActionIntegrationTest, AConfirmedRatioIsAppliedAndASaleOfChangedUn
     const auto& result = session.result();
 
     EXPECT_TRUE(result.mRequests.empty());
-    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
 
-    // The corporate-action stage comes before the FIFO stage in the diagnostic order.
-    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    // No error: the sale is listed. This helper does not write the XML, so the form has no data;
+    // the CLI tests check the rows.
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
 
-    const auto& rows = result.mDiagnostics.at(1);
-
-    EXPECT_EQ(rows.mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(rows.mCode,
-              ApplicationDiagnosticCode{ProcessingDiagnosticCode::CorporateActionNotApplied});
-    EXPECT_EQ(rows.mMessageKey, MessageKey::CorporateActionNotAppliedFilingRows);
-    ASSERT_EQ(rows.mSources.size(), 1U);
-    EXPECT_EQ(rows.mSources.at(0).mRow, 4U); // the sale; the header is row 1
+    // The applied warning is the only diagnostic.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
     const auto& applied = result.mDiagnostics.at(0);
 
@@ -493,11 +488,11 @@ TEST(CorporateActionIntegrationTest, TheSameRowInTwoFilesIsOneQuestion) {
 
     EXPECT_TRUE(rejections.empty());
     EXPECT_TRUE(session.result().mRequests.empty());
-    // One action applied once (one warning); the sale of changed units waits for its rows.
-    EXPECT_EQ(codesOf(session.result()),
-              (std::vector<ApplicationDiagnosticCode>{
-                  ProcessingDiagnosticCode::CorporateActionApplied,
-                  ProcessingDiagnosticCode::CorporateActionNotApplied}));
+    // One action applied once (one warning), and the report is written.
+    EXPECT_EQ(
+        codesOf(session.result()),
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::CorporateActionApplied}));
+    EXPECT_EQ(session.result().report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
 }
 
 TEST(CorporateActionIntegrationTest, TwoSplitsAreAskedOneAtATime) {
@@ -537,6 +532,10 @@ TEST(CorporateActionIntegrationTest, TwoSplitsAreAskedOneAtATime) {
               (std::vector<MessageParam>{textParam("earlierDate", "2024-03-01")}));
     EXPECT_EQ(asked.mDiagnostics.at(1).mRequestId, "request-0001");
 
+    // The JSON of the result names the code of the waiting action.
+    EXPECT_NE(api::serializeApplicationResultJson(asked).find("\"corporate_action_not_applied\""),
+              std::string::npos);
+
     const auto rejections = session.answer({{"request-0001",
                                              1,
                                              SplitRatioAnswer{.mNewShares = 2,
@@ -572,17 +571,17 @@ TEST(CorporateActionIntegrationTest, TwoSplitsAreAskedOneAtATime) {
 
     EXPECT_TRUE(second.empty());
 
-    // Both are applied; the sale of 2024-10-01 uses a changed lot, so its rows wait.
+    // Both are applied; the sale of 2024-10-01 uses a changed lot and gives no error (this helper
+    // writes no XML, so NoData).
     const auto& applied = session.result();
 
     EXPECT_TRUE(applied.mRequests.empty());
-    EXPECT_EQ(applied.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(applied.report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
     EXPECT_EQ(applied.mDecisions.size(), 2U);
-    EXPECT_EQ(codesOf(applied),
-              (std::vector<ApplicationDiagnosticCode>{
-                  ProcessingDiagnosticCode::CorporateActionApplied,
-                  ProcessingDiagnosticCode::CorporateActionApplied,
-                  ProcessingDiagnosticCode::CorporateActionNotApplied}));
+    EXPECT_EQ(
+        codesOf(applied),
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::CorporateActionApplied,
+                                                ProcessingDiagnosticCode::CorporateActionApplied}));
 }
 
 TEST(CorporateActionIntegrationTest, TwoSplitRowsOnOneDayAreAmbiguous) {
@@ -739,11 +738,11 @@ TEST(CorporateActionIntegrationTest, AnAnnouncementDateBeforeAPurchaseTakesTheUn
     EXPECT_TRUE(rejections.empty());
     ASSERT_EQ(session.result().mDecisions.size(), 1U);
     // The sale of 0.1 units on 2025-12-01 takes them from the changed lot of 2025-03-01 (5.2
-    // units), so its rows wait.
-    EXPECT_EQ(codesOf(session.result()),
-              (std::vector<ApplicationDiagnosticCode>{
-                  ProcessingDiagnosticCode::CorporateActionApplied,
-                  ProcessingDiagnosticCode::CorporateActionNotApplied}));
+    // units) and gives no error (NoData: the helper writes no XML).
+    EXPECT_EQ(
+        codesOf(session.result()),
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::CorporateActionApplied}));
+    EXPECT_EQ(session.result().report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
     EXPECT_EQ(session.result().mDiagnostics.at(0).mMessageParams,
               (std::vector<MessageParam>{numberParam("newShares", 10),
                                          numberParam("oldShares", 1),
@@ -856,7 +855,6 @@ TEST(CorporateActionIntegrationTest, ASplitAfterTheSaleKeepsTheSaleRowsAndDouble
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 1'200'000'000); // 12 units
     EXPECT_EQ(basisInEur(isin.mOpenLots.at(0).mState.mRemainingBasis),
               ExactRational::create(60, 1)); // EUR 60
-    EXPECT_TRUE(isin.mOpenLots.at(0).mChangedByAction);
 }
 
 TEST(CorporateActionIntegrationTest, AnEarlyDateWithTooFewUnitsForALaterSaleIsRejected) {

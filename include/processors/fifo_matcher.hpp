@@ -19,7 +19,6 @@ struct FifoLot {
     StatementEventReference mPurchase;
     Date mPurchaseDate;
     LotBasisState mState;
-    bool mChangedByAction{};
 
     bool operator==(const FifoLot&) const = default;
 };
@@ -38,7 +37,6 @@ struct FifoMatch {
     ExactRational mSaleValueTicks;
     /// Sale value minus basis, in ticks of 10^-16 EUR. Negative means a loss-making portion.
     ExactRational mGainTicks;
-    bool mLotChangedByAction{};
 
     bool operator==(const FifoMatch&) const = default;
 };

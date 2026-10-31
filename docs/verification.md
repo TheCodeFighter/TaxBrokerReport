@@ -31,6 +31,10 @@ only.
 | S2 | 2025 | A sale mixes units past the 15 years with newer units; `F7` (1) is lower than the broker quantity (3) |
 | S3 | 2025 | Sale on the 15-year anniversary (listed) and on the day after (left out), in one sale |
 | S4 | 2023 | Purchase on 29 February: the 15 years end on 28 February (listed), 1 March is past (left out) |
+| S5 | 2024 | A loss blocked in full by a purchase within 30 days: one sale row with `F10` false |
+| S6 | 2025 | A split before the sale: the purchase row lists the units after the split with `F4` = basis / units |
+| S7 | 2025 | A sale whose loss is blocked in part: two sale rows with the same date and price, `F10` true and false |
+| S8 | 2024 | A purchase sold before and after a split: two purchase rows of one purchase, `F8` mixing old and new units |
 | P1 | 2025 | Probe: S3 with the left-out unit added back by hand |
 | P2 | 2023 | Probe: S4 with the left-out sale added back by hand |
 
@@ -75,6 +79,7 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
 - **Doh-Div, Doh-DHO and Doh-Obr.** Their writers do not exist yet.
 - **S5, a loss blocked by the 30-day rule (`F10` false)** (`tests/manual/edavki/README.md`, from
   following tasks): not imported yet.
-- **Doh-KDVP rows for split-adjusted history and partially eligible losses** (#267), and the
-  developer export without `F10` (#188). The CLI blocks these cases today.
+- **S6 to S8, the rows for split lots and partly blocked losses** (#267): not imported yet. The
+  files and expected rows are in `tests/manual/edavki/README.md`.
+- **The developer export without `F10`** (#188). The CLI blocks that case today.
 - If a result is unclear, the FURS developer contact is `sd.fu@gov.si`.

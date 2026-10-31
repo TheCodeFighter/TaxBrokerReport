@@ -18,6 +18,6 @@ For trying the questions of `taxbroker report` by hand (no test reads them):
   so the command asks the 30-day loss question. no writes the loss with F10 true, yes with F10
   false; cancel blocks the report.
 - `split_question.csv`: 1 @ 10 bought in 2022, a split on 2023-01-15 and 2 @ 30 sold in 2025, so
-  the command asks for the ratio. A confirmed ratio is applied (1 unit becomes 2 with 2 : 1), but
-  the sale uses units the split changed, whose Doh-KDVP rows are not decided yet, so the report
-  is blocked with `corporate_action_not_applied` (`.filing_rows`).
+  the command asks for the ratio. A confirmed ratio is applied (1 unit becomes 2 with 2 : 1), and
+  the report lists the 2 units after the split at EUR 5 (`F3` 2, `F4` 5) and the sale of 2 at
+  EUR 30.

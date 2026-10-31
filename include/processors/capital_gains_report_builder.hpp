@@ -14,11 +14,11 @@ enum class KdvpBlockReason {
     /// The FIFO pool of the ISIN stopped (corporate action, non-EUR trade, missing history or an
     /// invalid value), so its sales have no reliable matches.
     FifoStopped,
-    /// The 30-day loss rule result of a sale cannot be written yet
+    /// The 30-day loss rule result of a sale is not decided (a question is open or cancelled).
     LossNotReportable,
-    /// A sale lists units of a lot that a corporate action changed; the rows for such units are
-    /// not decided yet.
-    SplitAdjustedRows,
+    /// The unit value (F4) of a purchase row does not fit a UnitPrice, for example after a large
+    /// reverse split.
+    UnitValueTooLarge,
 };
 
 /// An ISIN with a sale in the selected year that cannot get a *popisni list*.
@@ -28,7 +28,7 @@ struct KdvpBlockedIsin {
     KdvpBlockReason mReason{KdvpBlockReason::FifoStopped};
     /// The sales of the year that cannot be listed, in ledger order: every sale of the year for
     /// FifoStopped, only the sales whose loss-rule result cannot be written for LossNotReportable,
-    /// and only the sales that list units of a changed lot for SplitAdjustedRows.
+    /// and only the sales that use a unit value that does not fit for UnitValueTooLarge.
     std::vector<StatementEventReference> mSales;
 
     bool operator==(const KdvpBlockedIsin&) const = default;

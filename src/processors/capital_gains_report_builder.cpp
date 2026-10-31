@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <map>
 #include <numeric>
 #include <utility>
+#include <variant>
 
 namespace taxbroker {
 namespace {
@@ -37,18 +37,6 @@ collectSelectedYearSales(const std::vector<TradeInstrument>& aInstruments,
     return sales;
 }
 
-/// The units of the sale within the holding period.
-Units listedUnitsOf(const FifoIsinResult& aPool, const StatementEventReference& aSale) {
-    return std::accumulate(aPool.mMatches.begin(),
-                           aPool.mMatches.end(),
-                           Units{0},
-                           [&aSale](Units aSum, const FifoMatch& aMatch) {
-                               return aMatch.mSale == aSale && !isPastHoldingPeriod(aMatch)
-                                          ? aSum + aMatch.mUnits
-                                          : aSum;
-                           });
-}
-
 /// The loss-rule result of a sale, or nullptr for a sale without a loss unit.
 const LossSaleEligibility* lossOf(const LossEligibilityIsin& aLoss,
                                   const StatementEventReference& aSale) {
@@ -60,13 +48,39 @@ const LossSaleEligibility* lossOf(const LossEligibilityIsin& aLoss,
     return found == aLoss.mSales.end() ? nullptr : &*found;
 }
 
-/// A decided sale can be written when the rule blocks none or all of its listed units. A partly
-/// blocked sale needs split rows.
-bool isReportable(const LossSaleEligibility& aLoss, Units aListedUnits) {
-    const Units ineligible = aLoss.ineligibleUnits();
+/// Exact EUR per unit of the matched units: the basis of the match over its units. For a lot a
+/// split changed this is the basis over the units after the split.
+ExactRational exactUnitValueOf(const FifoMatch& aMatch) {
+    // basis ticks / (UnitPrice scale * raw units): the Units scale cancels, as in
+    // exactLotUnitValue. The divisor is positive and the ticks are far below the 256-bit range.
+    return std::get<ExactRational>(
+        divideExact(aMatch.mBasis.mTicks,
+                    ExactRational{WideInteger{UNIT_PRICE_SCALE} * aMatch.mUnits}));
+}
 
-    return aLoss.mState == LossSaleState::Decided &&
-           (ineligible == 0 || ineligible == aListedUnits);
+/// The F4 value of an exact unit value, rounded once to 8 decimals, half away from zero.
+NumericResult<UnitPrice> filingUnitPriceOf(const ExactRational& aUnitValue) {
+    return roundToScaled(aUnitValue,
+                         UNIT_PRICE_SCALE,
+                         DestinationRange{.mPolicy = ValuePolicy::Nonnegative});
+}
+
+/// Tells whether the unit value of the match fits F4 (a UnitPrice).
+bool hasFilingUnitPrice(const FifoMatch& aMatch) {
+    return std::holds_alternative<UnitPrice>(filingUnitPriceOf(exactUnitValueOf(aMatch)));
+}
+
+/// The units of the sale that make a loss within the holding period, as the loss rule counts them.
+Units listedLossUnitsOf(const FifoIsinResult& aPool, const StatementEventReference& aSale) {
+    return std::accumulate(aPool.mMatches.begin(),
+                           aPool.mMatches.end(),
+                           Units{0},
+                           [&aSale](Units aSum, const FifoMatch& aMatch) {
+                               return aMatch.mSale == aSale && aMatch.mGainTicks.numerator() < 0 &&
+                                              !isPastHoldingPeriod(aMatch)
+                                          ? aSum + aMatch.mUnits
+                                          : aSum;
+                           });
 }
 
 /// Why the ISIN gets no list.
@@ -81,31 +95,31 @@ std::optional<KdvpBlockedIsin> findBlock(const FifoIsinResult& aPool,
                                .mSales = aYearSales};
     }
 
-    std::vector<StatementEventReference> adjustedSales;
+    std::vector<StatementEventReference> largeValueSales;
 
-    // Units past the holding period get no row, so only listed units of a changed lot matter.
+    // Units past the holding period get no row, so only listed units need an F4.
     for (const auto& sale : aYearSales)
     {
-        const bool listsChangedLot = std::any_of(aPool.mMatches.begin(),
+        const bool needsLargeValue = std::any_of(aPool.mMatches.begin(),
                                                  aPool.mMatches.end(),
                                                  [&sale](const FifoMatch& aMatch) {
                                                      return aMatch.mSale == sale &&
-                                                            aMatch.mLotChangedByAction &&
-                                                            !isPastHoldingPeriod(aMatch);
+                                                            !isPastHoldingPeriod(aMatch) &&
+                                                            !hasFilingUnitPrice(aMatch);
                                                  });
 
-        if (listsChangedLot)
+        if (needsLargeValue)
         {
-            adjustedSales.push_back(sale);
+            largeValueSales.push_back(sale);
         }
     }
 
-    if (!adjustedSales.empty())
+    if (!largeValueSales.empty())
     {
         return KdvpBlockedIsin{.mIsin = aPool.mIsin,
                                .mName = aPool.mName,
-                               .mReason = KdvpBlockReason::SplitAdjustedRows,
-                               .mSales = std::move(adjustedSales)};
+                               .mReason = KdvpBlockReason::UnitValueTooLarge,
+                               .mSales = std::move(largeValueSales)};
     }
 
     std::vector<StatementEventReference> lossSales;
@@ -114,7 +128,10 @@ std::optional<KdvpBlockedIsin> findBlock(const FifoIsinResult& aPool,
     {
         const auto* loss = lossOf(aLoss, sale);
 
-        if (loss != nullptr && !isReportable(*loss, listedUnitsOf(aPool, sale)))
+        // A decided sale is written in one or more rows, whatever part of its loss is blocked. A
+        // rule that blocks more units than the sale has loss units is a fault; the gates report it.
+        if (loss != nullptr && (loss->mState != LossSaleState::Decided ||
+                                loss->ineligibleUnits() > listedLossUnitsOf(aPool, sale)))
         {
             lossSales.push_back(sale);
         }
@@ -159,17 +176,18 @@ collectLongHeldUnits(const FifoIsinResult& aPool,
     return longHeld;
 }
 
-/// Builds the list of an ISIN that findBlock did not block. Units past the holding period get no
-/// row.
-KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
-                            std::size_t aInstrumentIndex,
-                            const ReportingYearLedger& aLedger,
-                            const FifoIsinResult& aPool,
-                            const LossEligibilityIsin& aLoss) {
-    // The units within the holding period that the sales of the year use, by purchase and by
-    // sale event index. A purchase used only by earlier sales has no match and gets no row.
-    std::map<std::size_t, Units> usedUnits;
-    std::map<std::size_t, Units> listedSaleUnits;
+/// The units of one purchase that sales of the year use, all at one exact unit value.
+struct PurchaseGroup {
+    std::size_t mPurchaseIndex{};
+    ExactRational mUnitValue;
+    Units mUnits{};
+};
+
+/// The listed units of the sales of the year, by purchase and exact unit value, in the order the
+/// sales use them. A purchase sold before and after a split has one group for each unit state; a
+/// sale in a different state than the last one of its purchase starts a new group.
+std::vector<PurchaseGroup> purchaseGroupsOf(const FifoIsinResult& aPool) {
+    std::vector<PurchaseGroup> groups;
 
     for (const auto& match : aPool.mMatches)
     {
@@ -178,9 +196,88 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
             continue;
         }
 
-        usedUnits[match.mPurchase.mEventIndex] += match.mUnits;
-        listedSaleUnits[match.mSale.mEventIndex] += match.mUnits;
+        const auto value = exactUnitValueOf(match);
+
+        // Only the last group of the purchase can take the units: after a split and a reverse
+        // split that cancel, units sold before, between and after them are three groups.
+        const auto last =
+            std::find_if(groups.rbegin(), groups.rend(), [&match](const PurchaseGroup& aGroup) {
+                return aGroup.mPurchaseIndex == match.mPurchase.mEventIndex;
+            });
+
+        if (last != groups.rend() && last->mUnitValue == value)
+        {
+            last->mUnits += match.mUnits;
+        }
+        else
+        {
+            groups.push_back({.mPurchaseIndex = match.mPurchase.mEventIndex,
+                              .mUnitValue = value,
+                              .mUnits = match.mUnits});
+        }
     }
+
+    return groups;
+}
+
+/// A run of listed sale units with one F10 value.
+struct SalePart {
+    Units mUnits{};
+    KdvpLossRule mLossRule{KdvpLossRule::NotBlocked};
+};
+
+/// Splits the listed units of a sale into runs by F10. In FIFO order, the loss units of the
+/// sale take the blocked units first; profitable units are never blocked. Neighbouring runs with
+/// the same F10 are one run.
+std::vector<SalePart> salePartsOf(const FifoIsinResult& aPool,
+                                  const StatementEventReference& aSale,
+                                  Units aBlockedUnits) {
+    std::vector<SalePart> parts;
+    Units blockedLeft = aBlockedUnits;
+
+    const auto append = [&parts](Units aUnits, KdvpLossRule aRule) {
+        if (aUnits == 0)
+        {
+            return;
+        }
+
+        if (!parts.empty() && parts.back().mLossRule == aRule)
+        {
+            parts.back().mUnits += aUnits;
+        }
+        else
+        {
+            parts.push_back({.mUnits = aUnits, .mLossRule = aRule});
+        }
+    };
+
+    for (const auto& match : aPool.mMatches)
+    {
+        if (match.mSale != aSale || isPastHoldingPeriod(match))
+        {
+            continue;
+        }
+
+        const Units blocked =
+            match.mGainTicks.numerator() < 0 ? std::min(blockedLeft, match.mUnits) : Units{0};
+
+        blockedLeft -= blocked;
+        append(blocked, KdvpLossRule::Blocked);
+        append(match.mUnits - blocked, KdvpLossRule::NotBlocked);
+    }
+
+    return parts;
+}
+
+/// Builds the list of an ISIN that findBlock did not block. Units past the holding period get no
+/// row.
+KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
+                            std::size_t aInstrumentIndex,
+                            const ReportingYearLedger& aLedger,
+                            const FifoIsinResult& aPool,
+                            const LossEligibilityIsin& aLoss) {
+    // A purchase used only by earlier sales has no group and gets no row.
+    const auto groups = purchaseGroupsOf(aPool);
 
     KdvpInventoryList list{.mIsin = aPool.mIsin, .mName = aPool.mName};
     Units stock = 0;
@@ -198,44 +295,42 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
 
         if (trade.mTradeSide == TradeSide::Buy)
         {
-            const auto used = usedUnits.find(event.mEventIndex);
-
-            if (used == usedUnits.end())
+            for (const auto& group : groups)
             {
-                continue;
-            }
+                if (group.mPurchaseIndex != event.mEventIndex)
+                {
+                    continue;
+                }
 
-            // Every sale uses only earlier purchases, so the stock never goes below zero.
-            stock += used->second;
-            list.mRows.push_back({.mEntry = KdvpPurchaseRow{.mPurchase = event,
-                                                            .mDate = trade.mMetadata.mTaxDate,
-                                                            .mMethod = KdvpPurchaseMethod::B,
-                                                            .mUnits = used->second,
-                                                            .mUnitPrice = trade.mUnitPrice},
-                                  .mStock = stock});
+                // Every sale uses only earlier purchases, so the stock never goes below zero.
+                // findBlock checked that the unit value fits F4.
+                stock += group.mUnits;
+                list.mRows.push_back(
+                    {.mEntry = KdvpPurchaseRow{.mPurchase = event,
+                                               .mDate = trade.mMetadata.mTaxDate,
+                                               .mMethod = KdvpPurchaseMethod::B,
+                                               .mUnits = group.mUnits,
+                                               .mUnitPrice = std::get<UnitPrice>(
+                                                   filingUnitPriceOf(group.mUnitValue))},
+                     .mStock = stock});
+            }
         }
         else if (position >= aLedger.mHistoricalCapitalEventCount)
         {
-            const auto listed = listedSaleUnits.find(event.mEventIndex);
-
-            if (listed == listedSaleUnits.end())
-            {
-                continue;
-            }
-
-            // findBlock let through only sales whose rule blocks none or all listed units.
             const auto* loss = lossOf(aLoss, event);
-            const bool blocked = loss != nullptr && loss->ineligibleUnits() > 0;
+            const Units blockedUnits = loss != nullptr ? loss->ineligibleUnits() : Units{0};
 
-            stock -= listed->second;
-            list.mRows.push_back(
-                {.mEntry = KdvpSaleRow{.mSale = event,
-                                       .mDate = trade.mMetadata.mTaxDate,
-                                       .mUnits = listed->second,
-                                       .mUnitPrice = trade.mUnitPrice,
-                                       .mLossRule = blocked ? KdvpLossRule::Blocked
-                                                            : KdvpLossRule::NotBlocked},
-                 .mStock = stock});
+            // A sale with only units past the holding period has no part and no row.
+            for (const auto& part : salePartsOf(aPool, event, blockedUnits))
+            {
+                stock -= part.mUnits;
+                list.mRows.push_back({.mEntry = KdvpSaleRow{.mSale = event,
+                                                            .mDate = trade.mMetadata.mTaxDate,
+                                                            .mUnits = part.mUnits,
+                                                            .mUnitPrice = trade.mUnitPrice,
+                                                            .mLossRule = part.mLossRule},
+                                      .mStock = stock});
+            }
         }
     }
 

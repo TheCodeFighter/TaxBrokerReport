@@ -3493,7 +3493,6 @@ TEST(CorporateActionResolverTest, AJanuaryDateKeepsTheLotsAtTheYearEnd) {
     EXPECT_EQ(pool.mLaterActions.at(0).mEffectiveDate, day("2025-01-05"));
     ASSERT_EQ(pool.mOpenLots.size(), 1U);
     EXPECT_EQ(pool.mOpenLots.at(0).mState.mRemainingUnits, 600'000'000); // 6 units
-    EXPECT_FALSE(pool.mOpenLots.at(0).mChangedByAction);
 }
 
 TEST(CorporateActionResolverTest, ADecemberDateForAJanuaryRowChangesTheLots) {
@@ -3556,7 +3555,6 @@ TEST(CorporateActionResolverTest, ADecemberDateForAJanuaryRowChangesTheLots) {
     EXPECT_TRUE(pool.mLaterActions.empty());
     ASSERT_EQ(pool.mOpenLots.size(), 1U);
     EXPECT_EQ(pool.mOpenLots.at(0).mState.mRemainingUnits, 1'200'000'000); // 12 units
-    EXPECT_TRUE(pool.mOpenLots.at(0).mChangedByAction);
 }
 
 TEST(CorporateActionResolverTest, ADecemberSaleWithTooFewUnitsAsksTheJanuarySplit) {

@@ -488,8 +488,7 @@ diagnostics of the run. Each entry holds:
 - `mEarlierMatches`: the matches of the sales before the selected year, in ledger order. Only
   the 30-day loss rule reads them: an earlier loss takes its replacement units first.
 - `mOpenLots`: the lots still open in FIFO order at 31 December, each with its purchase event,
-  date, remaining units, exact remaining basis and whether a corporate action changed its units
-  (`mChangedByAction`; a match from such a lot has `mLotChangedByAction`).
+  date, remaining units and exact remaining basis.
 - `mAppliedActions`: the confirmed actions the pool applied, with their effective dates.
 - `mStatus`, `mStoppedAt` and `mAvailableUnits`: why and where the pool stopped, if it did.
   A pool stopped at a corporate action keeps the lots at the start of the action's day.
@@ -703,7 +702,7 @@ their eight decimals, and rounding to the XML text is the writer's job.
 
 `KdvpLossRule` has only `NotBlocked` (F10 true) and `Blocked` (F10 false). It has no "unresolved"
 value, so an open loss check can never be written as a decision. Only the loss rule
-produces `Blocked`; a partly eligible sale will become two sale rows that share the source sale.
+produces `Blocked`; a partly eligible sale is several sale rows that share the source sale.
 `IsFond` is always false for now: the class check (what belongs in Doh-KDVP) is the job of the
 classification gate, not of the builder.
 
@@ -714,21 +713,28 @@ entry per trade instrument, by the same index. For an ISIN with at least one sal
 year:
 
 - A purchase row is made for each purchase that the matches of the year use, at its ledger
-  position, with F3 the sum of its matched units. A sale row is made for each sale of the year,
-  with F7 the sum of its matched units. F8 is the running total of the listed purchase units minus
-  the listed sale units.
+  position, with F3 the sum of its matched units. The matches of one purchase are grouped by
+  their exact unit value (the match basis over its units): an unchanged lot has one group and
+  F4 is the trade price; a lot a split changed lists the units after the split with F4 the exact
+  basis over them, rounded once to 8 decimals; a purchase used both before and after a split has
+  one row for each group, in the order the sales use them (a group is a run of the same state:
+  after a split and a reverse split that cancel, units sold before, between and after them are
+  three). A sale row is made for each sale of the year, or several rows for a sale whose loss is
+  blocked in part (below), with F7 the sum of its matched units. F8 is the running total of the
+  listed purchase units minus the listed sale units.
 - Matches that use units past the holding period ([`tax_rules.md`](tax_rules.md), "Long-held
   investments") are tax free and are left out of F3 and F7. A sale with only such units has no
   row, and an ISIN with no listed unit has no list. The units left out are in `mLongHeld` (ISIN,
   name, sale, units) for every ISIN that is not blocked, so they stay visible beside the report.
-- A sale row gets `Blocked` when the loss rule blocks the loss of every listed unit (`F7`), else
-  `NotBlocked`.
+- The blocked quantity of a sale (`ineligibleUnits`) is given to its loss-making matches within
+  the holding period, in FIFO order: each takes units until the quantity is used up. The units
+  taken are `Blocked` (F10 false), all other listed units `NotBlocked`; neighbouring runs with the
+  same value are one row. A sale with no blocked unit, or whose units are all blocked, is one row.
 - The ISIN is blocked, with no list, for the first of these reasons that applies:
-  `FifoStopped` (the pool stopped; all its sales of the year are named), `SplitAdjustedRows` (a
-  sale lists units, within the holding period, of a lot that a corporate action changed; the rows
-  for such units are not decided yet, so only those sales are named) or `LossNotReportable` (a
-  sale whose loss-rule state is not `Decided`, or whose rule blocks more than none and fewer than
-  all of its listed units; only those sales are named). A loss on units past the period is left
+  `FifoStopped` (the pool stopped; all its sales of the year are named), `UnitValueTooLarge` (the
+  F4 of a purchase row does not fit a `UnitPrice`, for example after a large reverse split; only
+  the sales that use such a unit value are named) or `LossNotReportable` (a sale whose loss-rule
+  state is not `Decided`; only those sales are named). A loss on units past the period is left
   out with them, because it cannot reduce the tax base. A gain of zero is not a loss. A stopped
   pool without a sale in the year does not block. A loss from an earlier-year sale is not in the
   matches of the year and never blocks.
@@ -814,7 +820,7 @@ as the calculation of a `DecisionSession`, once per revision: FIFO, the corporat
 stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
 report gates and the XML writer; the session builds the application result. A loss that the files
 decide in full is written as they decide it. A sale whose blocked units are only part of its
-listed units still blocks the report.
+listed units is written in several rows.
 
 **Questions** (`include/cli/decision_prompts.hpp`). After the first calculation the command asks
 the open loss and ratio questions in the terminal, one at a time in request order, and reads each
@@ -848,8 +854,8 @@ session call.
   answers of this run ("Answered in this run"). The answers live only in the session's memory:
   nothing else is written, and the next run asks again.
 
-A confirmed split is applied. A sale that lists units of a lot the split changed still blocks
-with `corporate_action_not_applied` (key `.filing_rows`) until those rows are decided.
+A confirmed split is applied. A sale that lists units of a lot the split changed is written with
+the units after the split.
 
 The XML is written only when the builder made a report with at least one list and no gate gave
 an error; a report without lists is `no_data` with `no_selected_year_disposals`. The capital
@@ -868,9 +874,8 @@ capital gains only and carry no units, amounts or prices:
 | Class crypto, private fund, bond or derivative | `unsupported_tax_treatment` error (`fifo_tax`), parameter `assetClass` | ISIN; sources of its sales of the year, date of the first |
 | Class unknown (missing, unrecognized or conflicting) | `tax_classification_unknown` error (`fifo_tax`) | ISIN; as above |
 | Pool stopped at a non-EUR trade | `missing_exchange_rate` error (`fifo_tax`), parameter `currency` | ISIN; date and sources of that trade |
-| Sale whose loss the 30-day rule blocks only in part | `unsupported_tax_treatment` error (`fifo_tax`), key `unsupported_tax_treatment.partial_loss_eligibility` | sale |
+| Adjusted unit value that does not fit F4 (a `UnitPrice`) | `corporate_action_unrepresentable` error (`fifo_tax`), key `corporate_action_unrepresentable.unit_value` | ISIN; date and sources of its first sale that uses it |
 | Date after 31 December with a merger row inside the window of a December loss (a split row there has its ratio question or its own error instead) | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_window` | one per merger date, even when several sales share it; date and sources of the merger row |
-| Sale that lists units of a lot a corporate action changed | `corporate_action_not_applied` error (`fifo_tax`), key `corporate_action_not_applied.filing_rows` | ISIN; date and sources of its first such sale |
 | Private-market event dated in the selected year | `unsupported_tax_treatment` **warning** (`fifo_tax`) | event |
 
 Only `Stock` and `Fund` pass the class check; `IsFond` stays `false` for both. A pool stopped for

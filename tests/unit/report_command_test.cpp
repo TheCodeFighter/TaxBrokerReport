@@ -752,8 +752,8 @@ TEST(ReportCommandTest, YearWithoutDataDeletesAnOldXml) {
 }
 
 TEST(ReportCommandTest, BlockedYearWithoutAnOldXmlDeletesNothing) {
-    // Buy 1 @ 10 and 1 @ 40, sell 2 @ 30: +20 and -10. The loss unit is assumed blocked (no
-    // answer), the profitable one is not, so the sale needs split rows (#267) and blocks the year.
+    // Buy 1 @ 10 and 1 @ 40, sell 2 @ 30: +20 and -10. The sale empties the holding, so the loss
+    // question is asked; the input ends without an answer, so the question blocks the year.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -842,18 +842,18 @@ TEST(ReportCommandTest, TwoSalesOfOneInvestmentAreCountedTogether) {
 }
 
 TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsBlocked) {
-    // The share is fine. The fund sells 5 @ 40 from 2 @ 30 (+20) and 3 @ 50 (-30): the answer yes
-    // blocks the 3 loss units and not the 2 others, so the sale blocks the report.
+    // The share is sold at a loss with no purchase within 30 days; the answer yes blocks the loss
+    // of its 10 units (F10 false), which the list can say, so the share is fine. The coin is
+    // crypto, which Doh-KDVP does not cover here, so it blocks the report.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
-            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,FUND,Synthetic Fund,XX0000000003,2,30,-60,,,EUR,,,,,synthetic-buy-2,,,,)",
-            R"(2024-01-12T09:00:00Z,2024-01-12,DEFAULT,TRADING,BUY,FUND,Synthetic Fund,XX0000000003,3,50,-150,,,EUR,,,,,synthetic-buy-3,,,,)",
-            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
-            R"(2024-04-10T09:00:00Z,2024-04-10,DEFAULT,TRADING,SELL,FUND,Synthetic Fund,XX0000000003,-5,40,200,,,EUR,,,,,synthetic-sell-2,,,,)",
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,CRYPTO,Synthetic Coin,XX0000000003,5,10,-50,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-04-10T09:00:00Z,2024-04-10,DEFAULT,TRADING,SELL,CRYPTO,Synthetic Coin,XX0000000003,-5,40,200,,,EUR,,,,,synthetic-sell-2,,,,)",
         });
 
     const auto result = run({"report",
@@ -869,9 +869,10 @@ TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsB
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
                          "Investments with a sale in 2024: 2\n"
-                         "  XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units\n"
-                         "  XX0000000003 Synthetic Fund: blocked (unsupported_tax_treatment)\n"
-                         "    sale 2024-04-10, history.csv row 6\n"));
+                         "  XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units, "
+                         "10.0000 units with a loss blocked by the 30-day rule (F10 false)\n"
+                         "  XX0000000003 Synthetic Coin: blocked (unsupported_tax_treatment)\n"
+                         "    sale 2024-04-10, history.csv row 5\n"));
 }
 
 TEST(ReportCommandTest, LongHeldUnitsAreListedApart) {

@@ -185,7 +185,6 @@ void applySale(FifoIsinResult& aPool,
             .mBasis = consumed.mAllocatedBasis,
             .mSaleValueTicks = saleValue,
             .mGainTicks = std::get<ExactRational>(gain),
-            .mLotChangedByAction = lot.mChangedByAction,
         });
 
         lot.mState = consumed.mRemaining;
@@ -446,7 +445,6 @@ void applyAction(FifoIsinResult& aPool,
     {
         lots[index].mState =
             std::get<LotBasisState>(adjustLotUnits(lots[index].mState, allocated.mParts[index]));
-        lots[index].mChangedByAction = true;
     }
 
     if (allocated.mResidual.numerator() != 0)

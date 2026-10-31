@@ -332,11 +332,11 @@ was supplied by the user, together with the original action source, but must not
 broker supplied it: an applied action gets a `corporate_action_applied` warning (key `.user_ratio`)
 with the ratio and the effective date, shown beside the download.
 
-One part of a split-adjusted history is not reported yet, so it still blocks the ISIN: a sale of
-the year that lists units (within the holding period) of a lot the split changed, whose Doh-KDVP
-rows are not decided yet (`corporate_action_not_applied`, key `.filing_rows`). A sale before the
-split is reported as usual. The 30-day loss rule compares units across every confirmed split (see
-`tax_rules.md`, rule 7).
+A sale that uses units of a lot a split changed is reported in the units after the split: the
+purchase row lists those units, `F4` is the exact basis over them rounded once to 8 decimals,
+and the purchase date is the original one ([`tax_rules.md`](tax_rules.md), "Doh-KDVP filing
+rows"). The 30-day loss rule compares units across every confirmed split (see `tax_rules.md`,
+rule 7).
 
 If the user cancels or cannot find the ratio, the app reports `corporate_action_ambiguous` (for
 a question before a sale with too few units: `incomplete_history`, see above). The

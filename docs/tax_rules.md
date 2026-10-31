@@ -133,11 +133,19 @@ For selected year `Y`, the app writes a *popisni list* only for an ISIN with at 
 - **One sale row for each sale in `Y`**, with the sale quantity (`F7`) and unit value (`F9`). A
   sale that uses several purchases stays one sale row. `F7` leaves out units past the holding
   period ([Long-held investments](#long-held-investments)), and a sale with only such units has no
-  row. The only other exception is the split of a partially eligible loss described in
-  [The 30-day loss rule](#the-30-day-loss-rule).
+  row. The only other exception is a sale whose loss the 30-day rule blocks only in part: it has
+  one row for each run of units with the same `F10` ([The 30-day loss
+  rule](#the-30-day-loss-rule)), and the quantities add up to the listed units of the sale.
 - **One purchase row for each purchase that a sale in `Y` uses.** `F1` and `F4` come from that
   purchase. `F3` is the number of its units used by all sales in `Y` together, not the full
   purchase quantity, and again without units past the holding period.
+- **A lot a split or reverse split changed** lists the units after the split (`F3`) and `F4` =
+  the exact basis of those units over their number, rounded once to 8 decimals, half away from
+  zero ([`calculations.md`](calculations.md)), with the original purchase date (`F1`). The split
+  itself has no row. A purchase that sales of `Y` use both before and after a split has one row
+  for each run of the same state, all at the purchase position, in the order the sales use them;
+  `F4` is the price of that state. After a split and a reverse split that cancel, units sold
+  before, between and after them are three rows, so a FIFO over the rows keeps each sale's gain.
 - **No row for a sale before `Y`.** It was reported in its own year. The purchase units it used
   are left out of the purchase rows. Its gain or loss counts only in that year: a capital loss
   reduces only the gains of the same tax year and is not carried forward (ZDoh-2 Article 97), so
@@ -154,8 +162,7 @@ For selected year `Y`, the app writes a *popisni list* only for an ISIN with at 
   (*vložek kapitala*) is a capital contribution to one's own company and is not used.
 - `F10` exists only on sale rows. It is `true` (*Da*) unless the 30-day loss rule blocks the loss,
   and `false` (*Ne*) for the blocked part ([The 30-day loss rule](#the-30-day-loss-rule)). A
-  profitable sale gets `true`. Until decides the split rows, a sale whose loss the rule blocks
-  only in part is not written. The only exception is the developer-mode export of a sale with
+  profitable sale gets `true`. The only exception is the developer-mode export of a sale with
   unknown purchase value ([`fifo.md`](fifo.md)), which leaves `F10` out.
 
 This is simpler for the user than repeating the full history every year. It differs from a literal
@@ -165,9 +172,9 @@ same units as the internal matches. This reading must be confirmed with an eDavk
 before release. eDavki imports such a list as a draft (scenario S1 in
 [`verification.md`](verification.md), 2026-10-27); a draft does not show the calculation.
 
-The rows for split-adjusted history and partially eligible losses are not decided yet. A sale
-that lists units of a lot a split changed blocks its ISIN (`corporate_action_not_applied`, key
-`.filing_rows`); a sale before the split is listed as usual.
+If the unit value of a split lot does not fit `F4` (a `UnitPrice`, at most
+EUR 92,233,720,368.54775807), the ISIN is blocked (`corporate_action_unrepresentable`, key
+`.unit_value`).
 
 ### Example: one sale uses two purchases
 
@@ -247,6 +254,79 @@ still held on 31 December are not listed for 2024.
 | 2 | Sale | 2025-01-15 | 3 | 15 | 0 |
 
 Gain: 3 × (15 − 11) = EUR 12.
+
+### Example: a split before the sale
+
+| Date | Event | Internal FIFO matches |
+| --- | --- | --- |
+| 2024-03-01 | Buy 10 units at EUR 100. | |
+| 2024-06-03 | Split 2 : 1 (confirmed): 20 units, EUR 50 a unit. | |
+| 2024-09-02 | Sell 20 units at EUR 60. | 20 units from the 2024-03-01 purchase. |
+
+2024 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2024-03-01 | 20 | 50 | 20 |
+| 2 | Sale | 2024-09-02 | 20 | 60 | 0 |
+
+Gain: 20 × (60 − 50) = EUR 200, the same as 1,200 − 1,000 from the unsplit purchase. The purchase
+row shows the units after the split, the date of the original purchase and `F4` = EUR 1,000 / 20.
+There is no row for the split.
+
+### Example: one purchase sold before and after a split
+
+| Date | Event | Internal FIFO matches |
+| --- | --- | --- |
+| 2023-05-02 | Buy 10 units at EUR 100. | |
+| 2024-02-01 | Sell 4 units at EUR 120. | 4 units from the 2023-05-02 purchase (old units). |
+| 2024-06-03 | Split 2 : 1 (confirmed): the 6 left become 12 units at EUR 50. | |
+| 2024-09-02 | Sell 12 units at EUR 55. | 12 units from the 2023-05-02 purchase (new units). |
+
+2024 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2023-05-02 | 4 | 100 | 4 |
+| 2 | Purchase | 2023-05-02 | 12 | 50 | 16 |
+| 3 | Sale | 2024-02-01 | 4 | 120 | 12 |
+| 4 | Sale | 2024-09-02 | 12 | 55 | 0 |
+
+Gains: 4 × (120 − 100) = EUR 80 and 12 × (55 − 50) = EUR 60. The units before the split and the
+units after it are two rows of the same purchase, so a FIFO over the rows gives the same gains.
+`F8` counts the listed units as they are in each row, old and new together; it is a running total
+of the rows, not a number of the same shares.
+
+### Example: a loss blocked in part
+
+FURS example 10 ([FURS examples](#furs-examples)) a year later, with prices. Selected year 2024:
+
+| Date | Event | Internal FIFO matches |
+| --- | --- | --- |
+| 2023-02-01 | Buy 50 units at EUR 20. | |
+| 2023-12-12 | Buy 10 units at EUR 20. | |
+| 2024-01-05 | Sell 40 units at EUR 10. | 40 units from the 2023-02-01 purchase. |
+
+All 40 units are sold at a loss. The 2023-12-12 purchase blocks 10 of them; after the user answers
+that nothing else was bought or sold, the other 30 keep their loss (*NE-10 DA-30*). 2024 filing
+rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 | F10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2023-02-01 | 40 | 20 | 40 | |
+| 2 | Sale | 2024-01-05 | 10 | 10 | 30 | false |
+| 3 | Sale | 2024-01-05 | 30 | 10 | 0 | true |
+
+Losses: 10 × (10 − 20) = −EUR 100 (blocked) and 30 × (10 − 20) = −EUR 300. The two sale rows have
+the same date and `F9`, and 10 + 30 is the sold 40. The source sale, the total units and `F8` do
+not change.
+
+The blocked units are loss units only, taken in FIFO order, and the rows follow FIFO order. When
+a sale first uses profitable units and then loss units, the profitable row comes first. Example:
+10 units bought at EUR 10 and 10 at EUR 20, 15 sold at EUR 18 on 2024-03-11, 8 units bought on
+2024-03-20. The 5 units from the EUR 20 purchase are the loss (−EUR 10) and the 8 new units block
+all 5. Rows: purchase 10 at EUR 10 (F8 10); purchase 5 at EUR 20 (F8 15); sale 10 at EUR 18,
+`F10` true (F8 5); sale 5 at EUR 18, `F10` false (F8 0).
 
 ## Currency conversion and fees
 
@@ -413,15 +493,17 @@ file, is a new question.
 
 ### Doh-KDVP rows
 
-`F10` is written on every sale row: `true` when no loss unit of the sale is blocked (a profitable
-sale included), `false` when the rule blocks the loss of every listed unit (`F7`). The writer does
-not perform the eligibility calculation.
+`F10` is written on every sale row: `true` when none of the row's units is a blocked loss unit
+(a profitable sale included), `false` when the rule blocks the loss of all of them. The writer
+does not perform the eligibility calculation.
 
 A sale whose rule blocks only part of its listed units (for example `NE-10 DA-30`, or a blocked
-loss next to profitable units of the same sale) needs to be split into sale rows with the same
-source sale date and unit value, whose quantities add back to the original sale without consuming
-FIFO twice. How is decided in following tasks; until then such a sale blocks its ISIN with an
-`unsupported_tax_treatment` error.
+loss next to profitable units of the same sale) is written as several sale rows with the same
+source sale date and unit value (`F9`). The loss units of the sale, in FIFO order, take the
+blocked quantity first (`F10` false); every other listed unit has `F10` true; neighbouring units
+with the same `F10` are one row. The quantities add up to the listed units of the sale (`F7`
+without units past the holding period), the sale is not matched twice, and `F8` stays the running
+total of the rows. Examples: [A loss blocked in part](#example-a-loss-blocked-in-part).
 
 ### Evidence retained after exclusions
 
@@ -474,7 +556,7 @@ question is asked:
 | --- | --- |
 | Buy 50 on 12 December 2023; sell all 50 on 5 January 2024; no replacement. | All 50 units remain eligible despite the recent acquisition; FURS example 1 covers complete liquidation. |
 | Buy 100 in September 2023; sell 4 on 20 December 2024 at a loss; buy 4 on 5 January 2025. | All 4 replacement units are ineligible, without a question, and the sale's 2024 closing FIFO position remains unchanged by the January buy. |
-| Buy 50 earlier and 10 on 12 December 2023; sell 40 on 5 January 2024 leaving 20. | Apply FURS example 10: 10 units are ineligible and 30 eligible (rows decided in latter task). |
+| Buy 50 earlier and 10 on 12 December 2023; sell 40 on 5 January 2024 leaving 20. | Apply FURS example 10: 10 units are ineligible and 30 eligible: two sale rows ([A loss blocked in part](#example-a-loss-blocked-in-part)). |
 | Buy 200 earlier; sell 100 on 10 March and 100 on 15 March; buy 100 on 20 March. | The first loss uses the 100 replacement units; the second cannot reuse them (FURS example 11). |
 | Sell 10 at a loss on 20 December 2023; buy 10 on 5 January 2024; sell 10 at a loss on 10 January 2024. | The December loss takes the January purchase, in the 2023 report and again when the 2024 report rebuilds the history; the January loss has no known replacement. |
 
@@ -516,20 +598,29 @@ selected year.
 
 ## Example across several years
 
-Assume the selected year is 2024 and all rows refer to the same investment. Prices are left out
-because this example is about dates, FIFO shares, and report output. The exact filing rows for
-this history need the split and long-held rules, which are not decided yet.
+Assume the selected year is 2024 and all rows refer to the same investment.
 
 | Date | Event | Ledger result | 2024 report |
 | --- | --- | --- | --- |
-| 2008-05-10 | Buy 10 shares. | Hold 10 shares bought in 2008. | No row of its own; see the 2024-06-20 sale. |
-| 2023-03-01 | Sell 4 shares. | Use 4 shares from the 2008 buy; 6 remain. | Nothing because the sale was before 2024. |
-| 2023-09-01 | Buy 8 shares. | Hold 6 older and 8 newer shares. | No row of its own; see the 2024 sales. |
-| 2024-02-01 | Trade Republic records a split. Its announcement says 2 new shares for 1 old share. | The user confirms `2 / 1`; hold 12 older and 16 newer adjusted shares. | Nothing. |
-| 2024-06-20 | Sell 20 shares. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | One sale row of 20. Its purchase units come from the 2008 and 2023 buys. The 2008 units are past 15 years; how they are listed is still open. |
-| 2024-12-20 | Sell 4 shares at a loss. | Use 4 newer shares; 4 remain at year-end. | Report the loss, but the January replacement buy means it cannot reduce taxable gains. |
+| 2008-05-10 | Buy 10 shares at EUR 5. | Hold 10 shares bought in 2008. | No row of its own; see the 2024-06-20 sale. |
+| 2023-03-01 | Sell 4 shares at EUR 6. | Use 4 shares from the 2008 buy; 6 remain. | Nothing because the sale was before 2024. |
+| 2023-09-01 | Buy 8 shares at EUR 40. | Hold 6 older and 8 newer shares. | No row of its own; see the 2024 sales. |
+| 2024-02-01 | Trade Republic records a split. Its announcement says 2 new shares for 1 old share. | The user confirms `2 / 1`; hold 12 older and 16 newer adjusted shares (EUR 20 a share). | Nothing. |
+| 2024-06-20 | Sell 20 shares at EUR 25. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | One sale row of 8 (`F9` 25). The 12 shares from 2008 are past 15 years: no row, listed beside the report. |
+| 2024-12-20 | Sell 4 shares at EUR 15. | Use 4 newer shares (a loss of 4 × (15 − 20) = EUR 20); 4 remain at year-end. | One sale row of 4 (`F9` 15), `F10` false: the January replacement buy means it cannot reduce taxable gains. |
 | 2025-01-05 | Buy 4 shares of the same investment. | Check it only for the 30-day loss rule in the 2024 run. | Nothing. |
 | 2025-02-10 | Sell 2 shares. | Ignore it in the 2024 run. | Nothing. |
+
+2024 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 | F10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2023-09-01 | 12 | 20 | 12 | |
+| 2 | Sale | 2024-06-20 | 8 | 25 | 4 | true |
+| 3 | Sale | 2024-12-20 | 4 | 15 | 0 | false |
+
+The purchase row lists the 12 shares the two sales use (8 + 4) after the split, at EUR 40 / 2 =
+EUR 20. Gains: 8 × (25 − 20) = EUR 40 and 4 × (15 − 20) = −EUR 20.
 
 The 2024 closing position is 4 shares. A separate 2025 report starts again from the full history
 and processes the January buy and February sale normally.
@@ -740,6 +831,13 @@ Tests based on this document must prove that:
 - a loss from an earlier-year sale does not block the selected year and is not listed;
 - a FIFO over the filing rows, independent of the production code, gives the literal gains and
   `F8` values;
+- a lot a split or reverse split changed is listed in the units after the split, with the original
+  purchase date and `F4` = exact basis over those units, rounded once to 8 decimals; a purchase
+  that sales use both before and after a split has one row for each run of the same state; an
+  `F4` that does not fit a `UnitPrice` blocks the ISIN;
+- a sale whose loss the 30-day rule blocks only in part is several sale rows (same date and `F9`),
+  the loss units taking the blocked quantity first in FIFO order, and the quantities add up to the
+  listed units;
 - holding time does not change FIFO use;
 - replacement buys exactly 30 days before or after a loss are included in the loss check, and
   31 days are not;

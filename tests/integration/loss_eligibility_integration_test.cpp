@@ -294,9 +294,10 @@ TEST(LossEligibilityIntegrationTest, ACallerThatDoesNotAskTreatsTheOpenLossAsBlo
     expectValidForKdvpSchemas(xml);
 }
 
-TEST(LossEligibilityIntegrationTest, APartlyBlockedLossIsNotReportableYet) {
+TEST(LossEligibilityIntegrationTest, APartlyBlockedLossIsWrittenInTwoSaleRows) {
     // FURS example 10 a year later: the 2023-12-12 purchase blocks 10 of the 40 loss units. With
-    // `no`, the other 30 keep their loss: one sale row cannot say that (#267).
+    // `no`, the other 30 keep their loss: the sale is two rows, 10 units with F10 false and 30
+    // with F10 true.
     constexpr std::string_view olderPurchase =
         R"(2023-02-01T09:00:00Z,2023-02-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,50,10,-500,,,EUR,,,,,synthetic-buy-1,,,,)";
     constexpr std::string_view decemberPurchase =
@@ -325,16 +326,39 @@ TEST(LossEligibilityIntegrationTest, APartlyBlockedLossIsNotReportableYet) {
 
     const auto& second = session.result();
 
-    EXPECT_EQ(second.report(kCapital).mStatus, ReportStatus::Failed);
-    EXPECT_FALSE(second.report(kCapital).mXml.has_value());
-    ASSERT_EQ(second.mDiagnostics.size(), 1U);
-    EXPECT_EQ(std::get<ProcessingDiagnosticCode>(second.mDiagnostics[0].mCode),
-              ProcessingDiagnosticCode::UnsupportedTaxTreatment);
-    EXPECT_EQ(second.mDiagnostics[0].mMessageKey,
-              MessageKey::UnsupportedTaxTreatmentPartialLossEligibility);
-    EXPECT_EQ(second.mDiagnostics[0].mTaxDate,
-              Date{std::chrono::sys_days{std::chrono::year{2024} / 1 / 5}.time_since_epoch()});
-    EXPECT_TRUE(second.mDiagnostics[0].mBlocking);
+    EXPECT_EQ(second.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_TRUE(second.mDiagnostics.empty());
+
+    const auto& xml = second.report(kCapital).mXml.value();
+
+    // One purchase row for the 40 units used (the 2023-12-12 purchase is not listed), then the
+    // 10 blocked units (F8 = 40 - 10), then the other 30 units (F8 = 0).
+    EXPECT_TRUE(contains(xml, R"xml(            <Purchase>
+              <F1>2023-02-01</F1>
+              <F2>B</F2>
+              <F3>40.0000</F3>
+              <F4>10.0000</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>40.0000</F8>
+)xml"));
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2024-01-05</F6>
+              <F7>10.0000</F7>
+              <F9>8.0000</F9>
+              <F10>false</F10>
+            </Sale>
+            <F8>30.0000</F8>
+)xml"));
+    EXPECT_TRUE(contains(xml, R"xml(            <Sale>
+              <F6>2024-01-05</F6>
+              <F7>30.0000</F7>
+              <F9>8.0000</F9>
+              <F10>true</F10>
+            </Sale>
+            <F8>0.0000</F8>
+)xml"));
+    expectValidForKdvpSchemas(xml);
 }
 
 TEST(LossEligibilityIntegrationTest, AnsweringYesBlocksAPartlyKnownLossInFull) {
