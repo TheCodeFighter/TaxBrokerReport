@@ -101,7 +101,6 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "unsupported_tax_treatment.private_market_skipped",
          {}},
         {MessageKey::TaxClassificationUnknownCapital, "tax_classification_unknown.capital", {}},
-        {MessageKey::CorporateActionNotApplied, "corporate_action_not_applied", {}},
         {MessageKey::MissingExchangeRateTrade,
          "missing_exchange_rate.trade",
          {{"currency", MessageParamKind::Text}}},
@@ -183,9 +182,6 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "corporate_action_ambiguous.different_dates",
          {{"days", MessageParamKind::Number}}},
         {MessageKey::UnsupportedCorporateActionMerger, "unsupported_corporate_action.merger", {}},
-        {MessageKey::CorporateActionNotAppliedLossRuleSplit,
-         "corporate_action_not_applied.loss_rule_split",
-         {}},
         {MessageKey::CorporateActionNotAppliedFilingRows,
          "corporate_action_not_applied.filing_rows",
          {}},
@@ -255,8 +251,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 74U);
-    ASSERT_EQ(expectedMessages().size(), 74U);
+    ASSERT_EQ(definitions.size(), 72U);
+    ASSERT_EQ(expectedMessages().size(), 72U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -290,8 +286,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 74U);
-    EXPECT_EQ(keys.size(), 74U);
+    EXPECT_EQ(ids.size(), 72U);
+    EXPECT_EQ(keys.size(), 72U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -312,7 +308,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 81U); // 74 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 79U); // 72 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

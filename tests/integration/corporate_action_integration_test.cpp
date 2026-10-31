@@ -188,6 +188,7 @@ TEST(CorporateActionIntegrationTest, ASplitAsksForTheRatio) {
     EXPECT_EQ(data.mSources,
               (std::vector<CorporateActionSourceFacts>{{.mBroker = Broker::TradeRepublic,
                                                         .mTransactionId = "synthetic-split-1",
+                                                        .mDate = day("2024-06-01"),
                                                         .mSourceValue = "3"}}));
 
     // Only capital gains waits for the answer.
@@ -887,6 +888,74 @@ TEST(CorporateActionIntegrationTest, AnEarlyDateWithTooFewUnitsForALaterSaleIsRe
     EXPECT_EQ(rejections.at(0).mReason, AnswerRejection::LaterSaleTooLarge);
     EXPECT_TRUE(session.result().mDecisions.empty());
     EXPECT_EQ(session.result().report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+}
+
+TEST(CorporateActionIntegrationTest, ALossSaleBeforeASplitIsComparedWithARebuyAfterIt) {
+    // 12 bought at EUR 10, 10 sold at EUR 8 on 2024-05-02 (a loss), a split row on 2024-05-10,
+    // 6 bought at EUR 4 on 2024-05-20. With 2 / 1 the 6 new units are 3 units of the sale, so 3
+    // of its 10 loss units are blocked by the files and 7 are asked. yes (bought elsewhere) blocks
+    // them too: the sale is written with F10 false.
+    const TemporaryActionInputs files;
+    const auto history = files.write(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,12,10,-120,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,8,80,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-05-10T09:00:00Z,2024-05-10,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,2,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2024-05-20T09:00:00Z,2024-05-20,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,6,4,-24,,,EUR,,,,,synthetic-buy-2,,,,)",
+        });
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    CapitalStages stages;
+    DecisionSession session;
+
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    // 2 units before the split, 2 x 2 / 1 = 4 after it.
+    const auto ratio = session.answer({{"request-0001",
+                                        1,
+                                        SplitRatioAnswer{.mNewShares = 2,
+                                                         .mOldShares = 1,
+                                                         .mEffectiveDate = day("2024-05-10"),
+                                                         .mConfirmedUnits = 400'000'000}}});
+
+    EXPECT_TRUE(ratio.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+
+    const auto& lossCheck =
+        std::get<LossEligibilityQuestion>(session.result().mRequests.at(0).mData);
+
+    ASSERT_EQ(lossCheck.mSales.size(), 1U);
+    EXPECT_EQ(lossCheck.mSales.at(0).mLossUnits, 1'000'000'000);          // 10 units
+    EXPECT_EQ(lossCheck.mSales.at(0).mKnownIneligibleUnits, 300'000'000); // 3 units
+    EXPECT_EQ(lossCheck.mSales.at(0).mOpenUnits, 700'000'000);            // 7 units
+
+    const auto loss = session.answer({{"request-0001", 2, OtherActivityAnswer{}}});
+
+    EXPECT_TRUE(loss.empty());
+
+    // Only the warning that the user gave the ratio; the sale used no changed lot.
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_EQ(
+        codesOf(session.result()),
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::CorporateActionApplied}));
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+
+    const auto& rows = stages.mBuilt.mReport->mLists.at(0).mRows;
+
+    ASSERT_EQ(rows.size(), 2U);
+
+    const auto& purchase = std::get<KdvpPurchaseRow>(rows.at(0).mEntry);
+    const auto& sale = std::get<KdvpSaleRow>(rows.at(1).mEntry);
+
+    EXPECT_EQ(purchase.mDate, day("2024-01-10"));
+    EXPECT_EQ(purchase.mUnits, 1'000'000'000); // 10 units
+    EXPECT_EQ(sale.mDate, day("2024-05-02"));
+    EXPECT_EQ(sale.mUnits, 1'000'000'000); // 10 units
+    EXPECT_EQ(sale.mLossRule, KdvpLossRule::Blocked);
 }
 
 } // namespace

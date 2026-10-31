@@ -907,6 +907,7 @@ TEST(ApplicationResultJsonTest, WritesEveryRequestTypeWithItsDateAndIsin) {
                             .mSources = {CorporateActionSourceFacts{
                                 .mBroker = Broker::TradeRepublic,
                                 .mTransactionId = "synthetic-split",
+                                .mDate = day("2024-11-30"),
                                 .mSourceValue = "3",
                             }},
                             .mPositionBefore = 300'000'000, // 3 units
@@ -1234,6 +1235,39 @@ TEST(ApplicationResultJsonTest, WritesEveryAnswer) {
     EXPECT_EQ(decisions[4].at("lossCheck").at("isin"), "XX0000000003");
 }
 
+TEST(ApplicationResultJsonTest, RowsOnTwoDatesAnsweredAsTwoSplitsAreListedWithTheirDates) {
+    auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    result.mDecisions = {
+        RecordedDecision{
+            .mId = "decision-0001",
+            .mType = RequestType::CorporateActionRatioRequired,
+            .mData =
+                CorporateActionRatioQuestion{
+                    .mIsin = "XX0000000001",
+                    .mName = "Synthetic Share",
+                    .mEffectiveDate = day("2024-06-01"),
+                    .mSources = {{.mBroker = Broker::TradeRepublic, .mDate = day("2024-06-01")},
+                                 {.mBroker = Broker::InteractiveBrokers,
+                                  .mDate = day("2024-06-05")}},
+                    .mPositionBefore = 300'000'000, // 3 units
+                    .mDateRanges = {{.mEarliestDate = day("2024-01-11"),
+                                     .mLatestDate = day("2024-12-31"),
+                                     .mPositionBefore = 300'000'000}},
+                    .mAskSameEvent = true,
+                },
+            .mAnswer = SeparateEventsAnswer{},
+        },
+    };
+
+    const auto json = nlohmann::json::parse(api::serializeApplicationResultJson(result));
+    const auto& decision = json.at("decisions").at(0);
+
+    EXPECT_EQ(decision.at("answer"), "separate_events");
+    EXPECT_EQ(decision.at("ratioCheck").at("askSameEvent"), true);
+    EXPECT_EQ(decision.at("ratioCheck").at("sources").at(0).at("date"), "2024-06-01");
+    EXPECT_EQ(decision.at("ratioCheck").at("sources").at(1).at("date"), "2024-06-05");
+}
+
 TEST(ApplicationResultJsonTest, ALossRequestHasItsOptionsAndItsSales) {
     // Two sales of one ISIN whose loss the files cannot decide. The first has a transaction ID
     // and two replacements (2 + 3 = 5 of its 10 loss units); the second has neither.
@@ -1395,9 +1429,11 @@ TEST(ApplicationResultJsonTest, ARatioRequestListsTheActionItsSourcesAndThePosit
                         .mName = "Synthetic Share",
                         .mEffectiveDate = day("2024-06-01"),
                         .mSources = {{.mBroker = Broker::InteractiveBrokers,
-                                      .mTransactionId = "synthetic-ibkr-split"},
+                                      .mTransactionId = "synthetic-ibkr-split",
+                                      .mDate = day("2024-06-01")},
                                      {.mBroker = Broker::TradeRepublic,
                                       .mTransactionId = "synthetic-tr-split",
+                                      .mDate = day("2024-06-01"),
                                       .mSourceValue = "3"}},
                         .mPositionBefore = 300'000'000, // 3 units
                         // A purchase of 1 unit on 2024-06-01: from the next day 4 units. A
@@ -1425,8 +1461,10 @@ TEST(ApplicationResultJsonTest, ARatioRequestListsTheActionItsSourcesAndThePosit
       "isin": "XX0000000001",
       "effectiveDate": "2024-06-01",
       "sources": [
-        {"broker": "trade_republic", "transactionId": "synthetic-tr-split", "sourceValue": "3"},
-        {"broker": "interactive_brokers", "transactionId": "synthetic-ibkr-split"}
+        {"broker": "trade_republic", "date": "2024-06-01", "transactionId": "synthetic-tr-split",
+         "sourceValue": "3"},
+        {"broker": "interactive_brokers", "date": "2024-06-01",
+         "transactionId": "synthetic-ibkr-split"}
       ],
       "positionBefore": "3.00000000",
       "dateRanges": [
@@ -1434,7 +1472,8 @@ TEST(ApplicationResultJsonTest, ARatioRequestListsTheActionItsSourcesAndThePosit
          "lowestChangeAfter": "0.00000000"},
         {"earliestDate": "2024-06-02", "latestDate": "2024-09-01", "positionBefore": "4.00000000",
          "lowestChangeAfter": "-0.50000000"}
-      ]
+      ],
+      "askSameEvent": false
     })");
 
     EXPECT_EQ(request.at("type"), "corporate_action_ratio_required");
@@ -1461,6 +1500,7 @@ TEST(ApplicationResultJsonTest, ARatioRequestBeforeASaleHasTheSaleDateInsteadOfT
                         .mEffectiveDate = day("2024-06-03"),
                         .mSources = {{.mBroker = Broker::TradeRepublic,
                                       .mTransactionId = "synthetic-tr-split",
+                                      .mDate = day("2024-06-03"),
                                       .mSourceValue = "10"}},
                         .mEarlierSaleDate = day("2024-06-01"),
                         .mDateRanges = {{.mEarliestDate = day("2024-01-11"),
@@ -1479,13 +1519,15 @@ TEST(ApplicationResultJsonTest, ARatioRequestBeforeASaleHasTheSaleDateInsteadOfT
       "isin": "XX0000000001",
       "effectiveDate": "2024-06-03",
       "sources": [
-        {"broker": "trade_republic", "transactionId": "synthetic-tr-split", "sourceValue": "10"}
+        {"broker": "trade_republic", "date": "2024-06-03", "transactionId": "synthetic-tr-split",
+         "sourceValue": "10"}
       ],
       "earlierSaleDate": "2024-06-01",
       "dateRanges": [
         {"earliestDate": "2024-01-11", "latestDate": "2024-06-01", "positionBefore": "10.00000000",
          "lowestChangeAfter": "-20.00000000"}
-      ]
+      ],
+      "askSameEvent": false
     })");
 
     EXPECT_EQ(json.at("requests").at(0).at("ratioCheck"), expected);
@@ -1502,7 +1544,7 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
                     .mIsin = "XX0000000001",
                     .mName = "Synthetic Share",
                     .mEffectiveDate = day("2024-06-01"),
-                    .mSources = {{.mBroker = Broker::TradeRepublic}},
+                    .mSources = {{.mBroker = Broker::TradeRepublic, .mDate = day("2024-06-01")}},
                     .mPositionBefore = 52'000'000, // 0.52 units
                     .mDateRanges = {{.mEarliestDate = day("2024-03-02"),
                                      .mLatestDate = day("2024-06-10"),
@@ -1526,6 +1568,7 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
                     .mEffectiveDate = day("2024-09-01"),
                     .mSources = {{.mBroker = Broker::TradeRepublic,
                                   .mTransactionId = "synthetic-split-2",
+                                  .mDate = day("2024-09-01"),
                                   .mSourceValue = "-1.5"}},
                     .mPositionBefore = 300'000'000, // 3 units
                     .mDateRanges = {{.mEarliestDate = day("2024-02-01"),
@@ -1540,7 +1583,7 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
 
     const auto json = nlohmann::ordered_json::parse(api::serializeApplicationResultJson(result));
 
-    // A source without a transaction ID or a quantity field has only its broker.
+    // A source without a transaction ID or a quantity field has only its broker and date.
     const auto expected = nlohmann::ordered_json::parse(R"([{
       "id": "decision-0001",
       "type": "corporate_action_ratio_required",
@@ -1550,12 +1593,13 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
         "name": "Synthetic Share",
         "isin": "XX0000000001",
         "effectiveDate": "2024-06-01",
-        "sources": [{"broker": "trade_republic"}],
+        "sources": [{"broker": "trade_republic", "date": "2024-06-01"}],
         "positionBefore": "0.52000000",
         "dateRanges": [
           {"earliestDate": "2024-03-02", "latestDate": "2024-06-10", "positionBefore": "0.52000000",
            "lowestChangeAfter": "0.00000000"}
-        ]
+        ],
+        "askSameEvent": false
       },
       "answer": {
         "newShares": 10,
@@ -1573,13 +1617,15 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
         "isin": "XX0000000002",
         "effectiveDate": "2024-09-01",
         "sources": [
-          {"broker": "trade_republic", "transactionId": "synthetic-split-2", "sourceValue": "-1.5"}
+          {"broker": "trade_republic", "date": "2024-09-01", "transactionId": "synthetic-split-2",
+           "sourceValue": "-1.5"}
         ],
         "positionBefore": "3.00000000",
         "dateRanges": [
           {"earliestDate": "2024-02-01", "latestDate": "2024-12-31", "positionBefore": "3.00000000",
            "lowestChangeAfter": "0.00000000"}
-        ]
+        ],
+        "askSameEvent": false
       },
       "answer": "cancel"
     }])");

@@ -1161,6 +1161,114 @@ TEST(CliReportIntegrationTest, ALossQuestionAnsweredYesWritesTheLossAsBlocked) {
     expectValidForKdvpSchemas(xml);
 }
 
+TEST(CliReportIntegrationTest, AJanuarySplitInADecemberLossWindowIsAskedThenTheLoss) {
+    // 10 bought, 4 sold at a loss on 2024-12-10, a split row on 2025-01-05 and 4 bought on
+    // 2025-01-08. The split ratio is asked first: 2 : 1 from the row date (6 units, 12 after).
+    // The 4 new units are 2 units of the sale, so 2 loss units are open; yes blocks them too.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-12-10T09:00:00Z,2024-12-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-01-05T09:00:00Z,2025-01-05,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,6,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-01-08T09:00:00Z,2025-01-08,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,4,4,-16,,,EUR,,,,,synthetic-buy-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nyes\nyes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Effective date from the announcement (YYYY-MM-DD, 2024-03-02 to "
+                         "2024-12-10 with 10.0000 units, or 2024-12-11 to 2025-01-08 with 6.0000 "
+                         "units, or 2025-01-09 to 2025-01-30 with 10.0000 units), or empty for "
+                         "2025-01-05:"));
+    // 4 units bought after 2 : 1 are 2 units of the sale.
+    EXPECT_TRUE(contains(result.mOut, "in the units of this sale: 2025-01-08 2.0000 units\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: listed, 1 sale, 4.0000 units, 4.0000 "
+                         "units with a loss blocked by the 30-day rule (F10 false)\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml, "<F10>false</F10>"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(CliReportIntegrationTest, AJanuarySaleWithTooFewUnitsBeforeTheJanuarySplitIsAsked) {
+    // 10 bought, 4 sold at a loss on 2024-12-10, 12 sold on 2025-01-03, a split row on
+    // 2025-01-05: only 6 units before the January sale, so the split may have taken effect
+    // before it. The question ends at that sale and stays open.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-12-10T09:00:00Z,2024-12-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-01-03T09:00:00Z,2025-01-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-12,4,48,,,EUR,,,,,synthetic-sell-2,,,,)",
+            R"(2025-01-05T09:00:00Z,2025-01-05,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,12,,,,,,,,,,synthetic-split-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--no-input",
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(contains(result.mOut,
+                         "    A sale of this investment on 2025-01-03 needs more units than the "
+                         "earlier purchases left, and a corporate action, such as a split, follows "
+                         "it within 10 days."));
+}
+
+TEST(CliReportIntegrationTest, AJanuarySplitWithAnOpenLossAnsweredNoBlocksAsPartlyBlocked) {
+    // 10 bought, 4 sold at a loss on 2024-12-10, split row on 2025-01-05 answered 2 : 1, 4 bought
+    // on 2025-01-08. No keeps the 2 open units deductible, but the other 2 are blocked by the
+    // January purchase: a partly blocked sale, whose rows are not decided yet.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-12-10T09:00:00Z,2024-12-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-01-05T09:00:00Z,2025-01-05,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,6,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-01-08T09:00:00Z,2025-01-08,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,4,4,-16,,,EUR,,,,,synthetic-buy-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "2 : 1\n\nyes\nno\n");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000001 Synthetic Share: blocked (unsupported_tax_treatment)\n"
+                         "    sale 2024-12-10, history.csv row 3\n"));
+}
+
 TEST(CliReportIntegrationTest, AnInvalidLossAnswerIsAskedAgain) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -1349,7 +1457,8 @@ TEST(CliReportIntegrationTest, ALossQuestionWithAKnownPurchaseListsIt) {
     EXPECT_TRUE(contains(result.mOut,
                          "    sale 2025-03-10: 10.0000 units, 10.0000 at a loss, 6.0000 open; "
                          "window 2025-02-08 to 2025-04-09, purchases in your files that count "
-                         "against it: 2025-03-20 3.0000 units, 2025-03-25 1.0000 units\n"));
+                         "against it, in the units of this sale: 2025-03-20 3.0000 units, "
+                         "2025-03-25 1.0000 units\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units, 10.0000 "
                          "units with a loss blocked by the 30-day rule (F10 false)\n"));

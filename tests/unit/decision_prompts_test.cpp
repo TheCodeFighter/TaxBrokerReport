@@ -117,7 +117,7 @@ TEST(DecisionPromptsTest, ALossQuestionListsEachSaleAndItsPurchasesAndTakesNo) {
               R"(Question request-0001: the 30-day loss rule for XX0000000001 Synthetic Share
   Your files cannot decide the loss of 2 sales:
     sale 2024-03-10: 10.0000 units, 10.0000 at a loss, 10.0000 open; window 2024-02-09 to 2024-04-09, no purchase in your files counts against it
-    sale 2024-05-20: 4.0000 units, 4.0000 at a loss, 2.5000 open; window 2024-04-20 to 2024-06-19, purchases in your files that count against it: 2024-05-25 1.0000 units, 2024-06-01 0.5000 units
+    sale 2024-05-20: 4.0000 units, 4.0000 at a loss, 2.5000 open; window 2024-04-20 to 2024-06-19, purchases in your files that count against it, in the units of this sale: 2024-05-25 1.0000 units, 2024-06-01 0.5000 units
   Within 30 days before or after the sale, did you also buy or sell this investment
   anywhere that is not in your files (another broker, another account, or after the
   export)? yes: the open loss is not deductible (F10 false). no: it is deductible.
@@ -285,6 +285,167 @@ Is this right? (yes or no):
 
     ASSERT_EQ(session.result().mDecisions.size(), 1U);
     EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+}
+
+TEST(DecisionPromptsTest, RowsOnTwoDatesAreConfirmedAsOneSplitBeforeTheRatio) {
+    // Trade Republic on 2024-06-01, Interactive Brokers on 2024-06-05. yes: one split, then the
+    // ratio 2 : 1 for it, once. 1 unit x 2 / 1 = 2 units.
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CorporateActionRatioRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionRatioQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mEffectiveDate = day(2024, 6, 1),
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-split",
+                              .mDate = day(2024, 6, 1)},
+                             {.mBroker = Broker::InteractiveBrokers, .mDate = day(2024, 6, 5)}},
+                .mPositionBefore = 100'000'000, // 1 unit
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
+                .mAskSameEvent = true,
+            },
+    }}));
+
+    const auto output = ask(session, "yes\n2 : 1\n\nyes\n");
+
+    EXPECT_EQ(
+        output,
+        R"(Question request-0001: a corporate action of XX0000000001 Synthetic Share on 2024-06-01
+  Source: Trade Republic, row of 2024-06-01, transaction synthetic-split
+  Source: Interactive Brokers, row of 2024-06-05
+  You held 1.0000 units just before it.
+  Enter the ratio from the announcement as new : old, for example 10 : 1 (every old share
+  becomes 10 shares; "nine additional shares for every share" is also 10 : 1; a reverse
+  split is 1 : 10), or your shares just before and just after it as before -> after, for
+  example 0,52 -> 5,2 (a decimal comma or point), or cancel.
+  The rows are on different dates. If both brokers booked the same split, answer yes
+  and enter it once. If they are two splits, answer no: two splits so close together
+  are not supported yet, and the sales cannot be reported.
+Are these rows one split? (yes, no or cancel):
+Ratio:
+Effective date from the announcement (YYYY-MM-DD, 2024-01-11 to 2024-09-01), or empty for 2024-06-01:
+After it you hold 2.0000 units (2 : 1 from 2024-06-01).
+Is this right? (yes or no):
+
+)");
+    const AnswerValue expected = SplitRatioAnswer{.mNewShares = 2,
+                                                  .mOldShares = 1,
+                                                  .mEffectiveDate = day(2024, 6, 1),
+                                                  .mConfirmedUnits = 200'000'000};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+    // The summary says that the two rows were confirmed as one split.
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000001 Synthetic Share, corporate action on 2024-06-01 (rows of 2024-06-01 "
+              "and 2024-06-05): one split, 2 : 1 from 2024-06-01, 2.0000 units after it");
+}
+
+TEST(DecisionPromptsTest, RowsOnTwoDatesAnsweredAsTwoSplitsAskNoRatio) {
+    // An unreadable answer is asked again; no: two splits, so no ratio is asked.
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CorporateActionRatioRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionRatioQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mEffectiveDate = day(2024, 6, 1),
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-split",
+                              .mDate = day(2024, 6, 1)},
+                             {.mBroker = Broker::InteractiveBrokers, .mDate = day(2024, 6, 5)}},
+                .mPositionBefore = 100'000'000, // 1 unit
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
+                .mAskSameEvent = true,
+            },
+    }}));
+
+    const auto output = ask(session, "maybe\nno\n");
+
+    EXPECT_EQ(textFrom(output, "Are these rows"),
+              "Are these rows one split? (yes, no or cancel):\n"
+              "Answer yes, no or cancel.\n"
+              "Are these rows one split? (yes, no or cancel):\n"
+              "\n");
+
+    const AnswerValue expected = SeparateEventsAnswer{};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000001 Synthetic Share, corporate action on 2024-06-01 (rows of 2024-06-01 "
+              "and 2024-06-05): no, the rows are two splits");
+}
+
+TEST(DecisionPromptsTest, ACancelAtTheOneSplitQuestionRecordsTheCancel) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CorporateActionRatioRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionRatioQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mEffectiveDate = day(2024, 6, 1),
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-split",
+                              .mDate = day(2024, 6, 1)},
+                             {.mBroker = Broker::InteractiveBrokers, .mDate = day(2024, 6, 5)}},
+                .mPositionBefore = 100'000'000, // 1 unit
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
+                .mAskSameEvent = true,
+            },
+    }}));
+
+    static_cast<void>(ask(session, "cancel\n"));
+
+    const AnswerValue expected = CancelAnswer{};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheOneSplitQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CorporateActionRatioRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionRatioQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mEffectiveDate = day(2024, 6, 1),
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-split",
+                              .mDate = day(2024, 6, 1)},
+                             {.mBroker = Broker::InteractiveBrokers, .mDate = day(2024, 6, 5)}},
+                .mPositionBefore = 100'000'000, // 1 unit
+                .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                 .mLatestDate = day(2024, 9, 1),
+                                 .mPositionBefore = 100'000'000}},
+                .mAskSameEvent = true,
+            },
+    }}));
+
+    static_cast<void>(ask(session, ""));
+
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
 }
 
 TEST(DecisionPromptsTest, SeveralDateRangesAreListedAndThePreviewTakesTheUnitsOfTheDate) {
