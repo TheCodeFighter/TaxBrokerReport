@@ -2430,6 +2430,56 @@ TEST(CliReportIntegrationTest, NoAnswerIsSavedAndTheNextRunAsksAgain) {
     EXPECT_EQ(folder.fileNames("out"), (std::vector<std::string>{"summary_2025.txt"}));
 }
 
+TEST(CliReportIntegrationTest, NoSplitAnswerIsSavedAndTheNextRunAsksAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    // The ratio 2 : 1, an empty line for the broker's date, and yes to the preview.
+    const auto answered = run({"report",
+                               "--year",
+                               "2025",
+                               "--taxpayer",
+                               taxpayer,
+                               "--out",
+                               folder.outputDirectory(),
+                               history},
+                              "2 : 1\n\nyes\n");
+
+    // Only the two output files, and the input folder has only what the test wrote.
+    EXPECT_EQ(answered.mExitCode, kExitSuccess);
+    EXPECT_EQ(folder.fileNames("out"),
+              (std::vector<std::string>{"Doh-KDVP_2025.xml", "summary_2025.txt"}));
+    EXPECT_EQ(folder.fileNames(""),
+              (std::vector<std::string>{"history.csv", "out", "taxpayer.json"}));
+
+    const auto again = run({"report",
+                            "--year",
+                            "2025",
+                            "--taxpayer",
+                            taxpayer,
+                            "--no-input",
+                            "--out",
+                            folder.outputDirectory(),
+                            history});
+
+    // The second run knows nothing of the first answer: the question is open again, the report
+    // is blocked and the XML of the first run is deleted.
+    EXPECT_EQ(again.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(again.mOut,
+                         "Open questions: 1\n"
+                         "  request-0001 corporate_action_ratio_required, XX0000000001 "
+                         "Synthetic Share\n"));
+    EXPECT_FALSE(contains(again.mOut, "Answered in this run"));
+    EXPECT_EQ(folder.fileNames("out"), (std::vector<std::string>{"summary_2025.txt"}));
+}
+
 TEST(CliReportIntegrationTest, ARunWithoutQuestionsAsksNothing) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -3307,6 +3357,10 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(report.mOut,
                          "It is also blocked when a file cannot be read, when a trade or "
                          "corporate-action row of\nany file is rejected"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "or split rows of two brokers at most 10 days apart that are not one "
+                         "split. An answered\n"
+                         "    split is applied;\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "A private-market row that cannot be read is listed with\n"
                          "    its error, but it does not block the report.\n"));
