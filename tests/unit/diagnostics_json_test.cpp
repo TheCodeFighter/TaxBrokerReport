@@ -182,6 +182,7 @@ TEST(DiagnosticsJsonTest, KeepsEveryDiagnosticCodeStable) {
         ExpectedCode{DiagnosticCode::MissingField, "missing_field"},
         ExpectedCode{DiagnosticCode::InvalidValue, "invalid_value"},
         ExpectedCode{DiagnosticCode::InconsistentValue, "inconsistent_value"},
+        ExpectedCode{DiagnosticCode::TradeAmountMismatch, "trade_amount_mismatch"},
         ExpectedCode{DiagnosticCode::FieldCountMismatch, "field_count_mismatch"},
         ExpectedCode{DiagnosticCode::LocalizedNumberFormat, "localized_number_format"},
         ExpectedCode{DiagnosticCode::InvalidHeader, "invalid_header"},

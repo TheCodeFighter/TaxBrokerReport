@@ -389,6 +389,10 @@ difference may use the bounded reconciliation rules in `fifo.md`. An unexplained
 a source-correction request or error; the processor must not guess which value is correct. Neither a
 net settlement amount nor a fee-inclusive cash amount is a gross tax-value control total.
 
+The Trade Republic parser compares a trade's `amount` with its unit price times units and warns
+(`trade_amount_mismatch`) above EUR 0.01. This only makes a corrupted file visible: the amount is
+not a control total for any FURS value, and nothing is repaired or reconciled.
+
 An ordinary XML reconstruction difference is not itself missing history. Preserve the exact lot
 basis and the correctly rounded XML unit value, and show `xml_basis_rounding_difference` when the
 reconstructed value differs at `Money` precision. Include the difference without changing a price

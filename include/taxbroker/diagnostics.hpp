@@ -23,6 +23,7 @@ enum class DiagnosticCode {
     MissingField,
     InvalidValue,
     InconsistentValue,
+    TradeAmountMismatch,
     FieldCountMismatch,
     LocalizedNumberFormat,
     InvalidHeader,

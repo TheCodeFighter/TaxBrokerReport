@@ -2544,9 +2544,343 @@ TEST(TradeRepublicParserTest, UsesTheDateColumnAndPreservesTheBrokerReportedAmou
     EXPECT_EQ(transaction->mUnits, 200'000'000);
     ASSERT_TRUE(transaction->mAmount.has_value());
     EXPECT_EQ(*transaction->mAmount, 990'000);
+
+    // The amount 99.00 does not fit 2.00 * 3.00 = 6.00, so it is warned about and kept as it is.
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 2U);
+    EXPECT_EQ(parseResult.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(parseResult.mDiagnostics[0].mCode, DiagnosticCode::TradeAmountMismatch);
+    EXPECT_EQ(parseResult.mDiagnostics[0].mField, "amount");
+    EXPECT_EQ(parseResult.mDiagnostics[1].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(parseResult.mDiagnostics[1].mField, "datetime");
+}
+
+TEST(TradeRepublicParserTest, TradeAmountWithinRoundingHasNoWarning) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "-25.31",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+    const auto* transaction =
+        findTradeTransaction(parseResult.mStatement, "synthetic-amount-check");
+
+    // 2.5 * 10.123456 = 25.30864; the amount 25.31 differs by 0.00136, which is below EUR 0.01.
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+    ASSERT_NE(transaction, nullptr);
+    ASSERT_TRUE(transaction->mAmount.has_value());
+    EXPECT_EQ(*transaction->mAmount, 253'100); // EUR 25.31 at 4 decimals
+}
+
+TEST(TradeRepublicParserTest, TradeAmountExactlyAtTheToleranceHasNoWarning) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.0000000000",
+        .mPrice = "10.500000",
+        .mAmount = "-21.01",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+
+    // 2 * 10.5 = 21.00; the amount 21.01 differs by exactly EUR 0.01, which is still allowed.
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+}
+
+TEST(TradeRepublicParserTest, TradeAmountJustBeyondTheToleranceWarns) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.0000000000",
+        .mPrice = "10.500000",
+        .mAmount = "-21.0101",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+
+    // 2 * 10.5 = 21.00; the amount 21.0101 differs by EUR 0.0101, one ten-thousandth above.
     ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(parseResult.mDiagnostics.front().mField, "datetime");
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::TradeAmountMismatch);
+}
+
+TEST(TradeRepublicParserTest, TradeAmountBeyondToleranceWarnsAndKeepsTheRow) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "-25.32",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+    const auto* transaction =
+        findTradeTransaction(parseResult.mStatement, "synthetic-amount-check");
+
+    // 2.5 * 10.123456 = 25.30864; the amount 25.32 differs by 0.01136, which is above EUR 0.01.
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& warning = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::TradeAmountMismatch);
+    EXPECT_EQ(warning.mField, "amount");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, "synthetic-amount-check");
+    EXPECT_EQ(warning.mRowKind, ParsedRowKind::Trade);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::TradeAmountMismatch);
+    ASSERT_EQ(warning.mMessageParams.size(), 1U);
+    EXPECT_EQ(warning.mMessageParams.front().mName, "field");
+
+    // Nothing is repaired: price, units and amount stay as exported.
+    ASSERT_NE(transaction, nullptr);
+    EXPECT_EQ(transaction->mUnitPrice, 1'012'345'600); // 10.123456 at 8 decimals
+    EXPECT_EQ(transaction->mUnits, 250'000'000);       // 2.5 at 8 decimals
+    ASSERT_TRUE(transaction->mAmount.has_value());
+    EXPECT_EQ(*transaction->mAmount, 253'200); // EUR 25.32 at 4 decimals
+}
+
+TEST(TradeRepublicParserTest, SaleAmountBeyondToleranceWarns) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "SELL",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "-2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "25.40",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+
+    // |-2.5| * 10.123456 = 25.30864; the amount 25.40 differs by 0.09136.
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::TradeAmountMismatch);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mField, "amount");
+}
+
+TEST(TradeRepublicParserTest, TradeAmountIsComparedWithoutTheFee) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "-25.31",
+        .mFee = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+
+    // The amount 25.31 matches 2.5 * 10.123456 = 25.30864 without the fee of 1.00.
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, TradeWithEmptyAmountHasNoAmountWarning) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+    const auto* transaction =
+        findTradeTransaction(parseResult.mStatement, "synthetic-amount-check");
+
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::TradeAmountMismatch), 0U);
+    ASSERT_NE(transaction, nullptr);
+    EXPECT_FALSE(transaction->mAmount.has_value());
+}
+
+TEST(TradeRepublicParserTest, ForeignTradeOriginalAmountBeyondToleranceWarns) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "-23.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-25.40",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.90",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+
+    // The price and original_amount are in USD: 25.30864 against 25.40 differs by 0.09136.
+    // The cash amount 23.00 is in EUR and is not compared.
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::TradeAmountMismatch);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mField, "original_amount");
+}
+
+TEST(TradeRepublicParserTest, ForeignTradeMatchingOriginalAmountHasNoWarning) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "-23.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-25.31",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.90",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+
+    // original_amount 25.31 matches 25.30864 in USD; the different cash amount is not compared.
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::TradeAmountMismatch), 0U);
+    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+}
+
+TEST(TradeRepublicParserTest, RejectedTradeHasNoAmountWarning) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "not-a-date",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "2.5000000000",
+        .mPrice = "10.123456",
+        .mAmount = "-99.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-amount-check",
+    };
+
+    const ParseResult parseResult = parseRows({row});
+
+    // The invalid date rejects the row, so its amount is never compared.
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::InvalidValue), 1U);
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::TradeAmountMismatch), 0U);
+    EXPECT_TRUE(parseResult.mStatement.mTradeInstruments.empty());
 }
 
 TEST(TradeRepublicParserTest, UsesDefaultHourWhenSourceDateIsEarlierThanReportingDate) {
@@ -11114,7 +11448,7 @@ TEST(TradeRepublicParserTest, KeepsSignedSourceUnitsAndDiscardedDigitsForReconci
         .mSymbol = "XX9000000001",
         .mShares = "0.12345678400",
         .mPrice = "10.000000",
-        .mAmount = "-10.000000",
+        .mAmount = "-1.23", // 10.000000 * 0.12345678 = 1.2345678, to cents
         .mCurrency = "EUR",
         .mDescription = "Synthetic test row",
         .mTransactionId = "synthetic-test-transaction",
@@ -11130,7 +11464,7 @@ TEST(TradeRepublicParserTest, KeepsSignedSourceUnitsAndDiscardedDigitsForReconci
         .mSymbol = "XX9000000001",
         .mShares = "-0.123456785",
         .mPrice = "10.000000",
-        .mAmount = "1.00",
+        .mAmount = "1.23", // 10.000000 * 0.12345678 = 1.2345678, to cents
         .mCurrency = "EUR",
         .mDescription = "Synthetic test row",
         .mTransactionId = "synthetic-evidence-sell",
