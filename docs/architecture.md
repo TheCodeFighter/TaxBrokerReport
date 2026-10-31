@@ -555,29 +555,33 @@ describes it. It never depends on the broker, except to tell whether two rows of
 from one broker.
 
 - **Which ISINs.** Every ISIN with a sale in the selected year and a corporate action up to 31
-  December. Its actions are listed, grouped by date, as far as the pool reached: the applied
-  ones, the one the pool stopped at, and the later ones. A pool stopped for another reason before
-  an action (missing history, a non-EUR trade, an action that could not be applied) lists no
-  further action; its own error blocks it. A later action is never asked before the earlier one
-  is applied, because the position before it depends on that.
+  December (or a split row after it that a December loss window needs, see "Rows after 31
+  December" below), except a bond, derivative, crypto or private fund: the gates block its sales
+  with a class error, so its actions are not listed, not asked and give no error of their own.
+  Its actions are listed, grouped by date, as far as the pool
+  reached: the applied ones, the one the pool stopped at, and the later ones. A pool stopped for
+  another reason before an action (missing history, a non-EUR trade, an action that could not be
+  applied) lists no further action; its own error blocks it. A later action is never asked before
+  the earlier one is applied, because the position before it depends on that.
 - **Result.** `CorporateActionResult` has one `ResolvedCorporateAction` per date (by ISIN, then by
   date): its events, effective date, state and, for `RatioConfirmed`, the reduced ratio and the
   effective date (`mConfirmedDate`) that the user supplied (never the broker); `mEffectiveDate`
   stays the broker's row date. States: `Applied`, `RatioConfirmed` (only between two rounds of
   `matchCapitalPools`), `WaitingForRatio`, `WaitingForEarlierAction`, `Cancelled`,
-  `SameDayAmbiguous`, `DifferentDatesAmbiguous`, `Unsupported`, `NoPosition`, `NumericFailure`
-  and `NotAskedForClass`.
+  `SameDayAmbiguous`, `DifferentDatesAmbiguous`, `Unsupported`, `NoPosition` and
+  `NumericFailure`.
 - **Applied action.** `Applied` with the confirmed ratio and date, and one
   `corporate_action_applied` warning (key `.user_ratio`, parameters `newShares`, `oldShares` and
   `effectiveDate`) that says the user supplied the ratio.
-- **First action of the pool.** A bond, derivative, crypto or private fund is not asked
-  (`NotAskedForClass`, `corporate_action_not_applied`): the gates block its sales anyway. A merger
-  row is `Unsupported` (`unsupported_corporate_action`, key `.merger`, no request). Two rows of the
-  same broker on that date are `SameDayAmbiguous` (`corporate_action_ambiguous`, key `.same_day`,
-  no request); rows of different brokers on that date are one action. A split row of another
-  broker on another date at most `kDifferentDatesWindowDays` (10) days away makes both actions
-  `DifferentDatesAmbiguous` (`corporate_action_ambiguous`, key `.different_dates`, parameter
-  `days`, no request), until the identity question exists; a merger row never pairs with a split.
+- **First action of the pool.** A merger row is `Unsupported` (`unsupported_corporate_action`, key
+  `.merger`, no request). Two rows of the same broker on that date are `SameDayAmbiguous`
+  (`corporate_action_ambiguous`, key `.same_day`, no request); rows of different brokers on that
+  date are one action. Split rows of different brokers on dates at most `kDifferentDatesWindowDays`
+  (10) days apart are one action with rows on two dates (`joinOneEventPairs`) when each date is the
+  other's only such neighbour, neither has a merger row and no broker has rows on both; its question
+  has `mAskSameEvent`. Other such rows make the actions `DifferentDatesAmbiguous`
+  (`corporate_action_ambiguous`, key `.different_dates`, parameter `days`, no request), until the
+  identity question exists; a merger row never pairs with a split.
   No open units just before it is `NoPosition` (`corporate_action_missing_position`); so is a
   pool with `mShortSale` without a unit at the start of the sale's day or any date before it with
   units. Open units whose checked sum
@@ -588,18 +592,34 @@ from one broker.
   effective date the action may have, as ranges with the units just before the action on them)
   and one `corporate_action_ambiguous` error (key `.ratio_required`) linked to it. The ranges run
   from the day after the previous applied action's effective date (or the first trade) to the day
-  before the next action's row date or 31 December; a trade counts in the units before the action
-  when it is dated before the date. Dates with no units, and every date after a sale of more units
-  than were held, are in no range. Each range also has `mLowestChangeAfter`, the lowest running
-  total of the trades after the action up to the last date (without the trades at most 10 days
-  before the next action's row, which that action's question checks, except those on the date
-  itself: each such trade date is a range of its own), which the answer check uses. For a pool
+  before the next action's row date or 31 December (30 January for an action with a row after 31
+  December); a trade counts in the units before the action when it is dated before the date.
+  Dates with no units, and every date after a sale of more units than were held, are in no range.
+  Each range also has `mLowestChangeAfter`, the lowest running total of the trades after the
+  action up to the last date (without the trades at most 10 days before the next action's row,
+  which that action's question checks, except those on the date itself: each such trade date is
+  a range of its own), which the answer check uses. For a pool
   with `mShortSale` the ranges start from the sale's day and end on it at the latest, the question
   has `mEarlierSaleDate` instead of the units on the row date, and the error has key
   `.ratio_required_before_sale` (parameters `saleDate` and `days`). A recorded ratio gives
   `RatioConfirmed`, and the next round applies it; a cancel gives `Cancelled` and
-  `corporate_action_ambiguous` (key `.cancelled`, no request). `matchCapitalPools` adds each
-  confirmed action once, so its loop always ends.
+  `corporate_action_ambiguous` (key `.cancelled`, no request), or, for a pool with `mShortSale`
+  (a sale up to 31 December), the `incomplete_history` error of the sale. `SeparateEventsAnswer`
+  (only for `mAskSameEvent`) gives `DifferentDatesAmbiguous` and `.different_dates`.
+  `matchCapitalPools` adds each confirmed action once, so its loop always ends.
+- **Rows after 31 December.** The stage also groups the action rows of `mLossAnalysisEvents`
+  after 31 December. One is asked like a first action when the pool stopped at it (`mShortSale`,
+  the matcher's first unconfirmed action includes these rows), or when the pool is `Matched` and
+  a loss sale of the year (a loss-making match within the holding period) has its window end on
+  or after the row date; a merger row there is not asked (the loss stage blocks the sale). A
+  confirmed one with a date after 31 December is in `FifoIsinResult::mLaterActions` (never
+  applied to the lots) and is marked `Applied` with the same warning. Other rows after
+  31 December are ignored. The units before such a row are the lots at 31 December plus the
+  January trades before it, each after the `mLaterActions` up to its date (`previewSplitUnits`).
+  A January sale there of more units than were held makes the question end at that sale, as for
+  `mShortSale`, when the row is at most 10 days later, but a cancel gives `.cancelled` (the sale
+  is not in the selected year); otherwise, and with no units before the row, the action is
+  `NoPosition`.
 - **Later actions.** A merger, two rows of the same broker on a later date, or split rows of
   different brokers close together get the same errors as above (not linked to the open
   question, because answering it does not resolve them).
@@ -623,15 +643,20 @@ class is checked, because it may still be classified as a share or a fund.
 - **Inputs per ISIN.** The sales up to 31 December with their matches (`mEarlierMatches` and
   `mMatches`), every purchase in `mCapitalEvents`, and from `mLossAnalysisEvents` the purchases
   and corporate actions after 31 December. Sales after 31 December are left out. The stock after
-  each sale comes from walking the ISIN's events.
+  each sale comes from walking the ISIN's events. The confirmed actions of the pool
+  (`mAppliedActions` and `mLaterActions`) make units comparable: a trade's units times the old
+  numbers of the actions dated on or before it and the new numbers of the others (`UnitScale`);
+  the stock is adjusted at each action and rounded once like the FIFO lots; a replacement is
+  stored in the sale's units, rounded up to 8 decimals (the safe side). When the product of the
+  new or of the old numbers is above 2^64, the ISIN's loss sales are `NumericFailure` with one
+  `arithmetic_overflow` error.
 - **Result.** `LossEligibilityResult` has one `LossEligibilityIsin` per trade instrument, by the
   same index as the FIFO result, each with its sales of the year that have a loss unit
   (`LossSaleEligibility`): sale, window, loss units, the replacements taken (purchase, date, units),
   the known ineligible units, the units blocked by a `yes` answer and a state: `Decided`,
   `WaitingForAnswer`, `Cancelled`, `CorporateActionInWindow` (an action after 31 December inside
-  the window) or `AppliedCorporateActionBefore` (an applied action dated on or before the window
-  end, whose units the rule cannot compare yet), each of the last two with the action. Neither
-  is asked.
+  the window without a confirmed ratio, or a merger, with the action) or `NumericFailure`. Neither
+  of the last two is asked.
 - **Question.** The open sales of one ISIN give one `loss_eligibility_confirmation_required`
   request with `LossEligibilityQuestion` data and one `loss_eligibility_unresolved` error per open
   sale (key `loss_eligibility_unresolved.confirmation_required`, the sale's sources and date),
@@ -801,6 +826,8 @@ whole, a share count of 0 or below, a date not in the form `YYYY-MM-DD`) is aske
 session call.
 
 - Loss question: `yes` (`other_activity`), `no` (`no_other_activity`) or `cancel`, in any case.
+- Ratio question with rows on two dates (`mAskSameEvent`): first whether they are one split,
+  `yes`, `no` (`SeparateEventsAnswer`, no ratio is asked) or `cancel`.
 - Ratio question: `new : old` (whole numbers) or `before -> after` (share counts above 0 with up
   to 8 decimals, turned into the ratio after / before as `splitRatioFromShareCounts` does), or
   `cancel`; then the effective date (an empty line takes the broker's row date); then the
@@ -822,8 +849,7 @@ session call.
   nothing else is written, and the next run asks again.
 
 A confirmed split is applied. A sale that lists units of a lot the split changed still blocks
-with `corporate_action_not_applied` (key `.filing_rows`) until those rows are decided, and a loss
-sale with an applied split up to its window end with key `.loss_rule_split`.
+with `corporate_action_not_applied` (key `.filing_rows`) until those rows are decided.
 
 The XML is written only when the builder made a report with at least one list and no gate gave
 an error; a report without lists is `no_data` with `no_selected_year_disposals`. The capital
@@ -843,8 +869,7 @@ capital gains only and carry no units, amounts or prices:
 | Class unknown (missing, unrecognized or conflicting) | `tax_classification_unknown` error (`fifo_tax`) | ISIN; as above |
 | Pool stopped at a non-EUR trade | `missing_exchange_rate` error (`fifo_tax`), parameter `currency` | ISIN; date and sources of that trade |
 | Sale whose loss the 30-day rule blocks only in part | `unsupported_tax_treatment` error (`fifo_tax`), key `unsupported_tax_treatment.partial_loss_eligibility` | sale |
-| Corporate action after 31 December inside the window of a December loss | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_window` | one per action, even when several sales share it; date and sources of the action |
-| Applied corporate action dated on or before the window end of a loss sale | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_rule_split` | one per action, as above |
+| Date after 31 December with a merger row inside the window of a December loss (a split row there has its ratio question or its own error instead) | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_window` | one per merger date, even when several sales share it; date and sources of the merger row |
 | Sale that lists units of a lot a corporate action changed | `corporate_action_not_applied` error (`fifo_tax`), key `corporate_action_not_applied.filing_rows` | ISIN; date and sources of its first such sale |
 | Private-market event dated in the selected year | `unsupported_tax_treatment` **warning** (`fifo_tax`) | event |
 
@@ -855,10 +880,10 @@ stage. Only
 the first stop of a pool is reported, because FIFO stops there. A crypto purchase without a sale
 in the year keeps only its parser warning. Private-market events (`PRIVATE_MARKET_BUY`,
 `PRIVATE_MARKET_SELL`, `BONUS`) have only a cash amount, without units or a price, so they are
-skipped, a sale included; the warning keeps each one visible (maintainer decision, 2026-10-26).
+skipped, a sale included; the warning keeps each one visible.
 For the same reason a rejected private-market row, or a merger error on a private-market event,
-affects no report: it stays an error and is listed in the summary, but it blocks nothing
-(maintainer decision, 2026-10-26). When private markets are supported, these errors get the
+affects no report: it stays an error and is listed in the summary, but it blocks nothing.
+When private markets are supported, these errors get the
 capital scope back.
 An open or cancelled loss question already has its `loss_eligibility_unresolved` error from the
 loss rule, so the gates add nothing for it. Each gate goes away when its rule exists: applied

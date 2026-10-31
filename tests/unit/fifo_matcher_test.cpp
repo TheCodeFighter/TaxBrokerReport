@@ -1838,10 +1838,12 @@ TEST(FifoMatcherTest, SplitThenReverseSplitKeepsThePurchaseDateAndBasis) {
     EXPECT_EQ(isin.mStatus, FifoIsinStatus::Matched);
     EXPECT_EQ(isin.mAppliedActions,
               (std::vector<AppliedCorporateAction>{
-                  {.mAction = {StatementEventKind::CorporateAction, 0, 0},
-                   .mEffectiveDate = day("2023-08-01")},
-                  {.mAction = {StatementEventKind::CorporateAction, 0, 1},
-                   .mEffectiveDate = day("2024-04-01")}}));
+                  {.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                   .mEffectiveDate = day("2023-08-01"),
+                   .mRatio = {.mNewShares = 2, .mOldShares = 1}},
+                  {.mEvents = {{StatementEventKind::CorporateAction, 0, 1}},
+                   .mEffectiveDate = day("2024-04-01"),
+                   .mRatio = {.mNewShares = 1, .mOldShares = 3}}}));
     ASSERT_EQ(isin.mMatches.size(), 1U);
 
     const auto& match = isin.mMatches.at(0);
@@ -2282,8 +2284,9 @@ TEST(FifoMatcherTest, AnEarlierConfirmedDatePutsTheLaterPurchaseAfterTheSplit) {
 
     EXPECT_EQ(isin.mAppliedActions,
               (std::vector<AppliedCorporateAction>{
-                  {.mAction = {StatementEventKind::CorporateAction, 0, 0},
-                   .mEffectiveDate = day("2024-11-10")}}));
+                  {.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                   .mEffectiveDate = day("2024-11-10"),
+                   .mRatio = {.mNewShares = 2, .mOldShares = 1}}}));
     ASSERT_EQ(isin.mOpenLots.size(), 2U);
     EXPECT_EQ(isin.mOpenLots.at(0).mState.mRemainingUnits, 200'000'000); // 2 units
     EXPECT_EQ(isin.mOpenLots.at(1).mState.mRemainingUnits, 10'000'000);  // 0.1 units

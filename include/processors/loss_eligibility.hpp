@@ -15,12 +15,12 @@ enum class LossSaleState {
     WaitingForAnswer,
     /// The user closed the ISIN's question without an answer.
     Cancelled,
-    /// A corporate action after 31 December lies inside the window. Its units cannot be compared
-    /// with the sale's units yet.
+    /// A corporate action after 31 December without a confirmed ratio, or a merger, lies inside
+    /// the window, so its units cannot be compared with the sale's units.
     CorporateActionInWindow,
-    /// A corporate action that the pool applied is dated on or before the window end, so the
-    /// trade units before and after it cannot be compared yet.
-    AppliedCorporateActionBefore,
+    /// The ratios of the ISIN's confirmed actions are too large to compare units exactly. The
+    /// result has a numeric error for the ISIN.
+    NumericFailure,
 };
 
 /// The units of one purchase that the 30-day loss rule counts against one sale.
@@ -78,7 +78,8 @@ struct LossEligibilityResult {
 class LossEligibilityChecker final {
   public:
     /// Applies the 30-day loss rule to the sales of the selected year, by quantity, as in the
-    /// FURS examples.
+    /// FURS examples. Units are compared across the confirmed splits of the FIFO pool, also
+    /// those after 31 December.
     ///
     /// All inputs must come from the same run.
     [[nodiscard]] static LossEligibilityResult

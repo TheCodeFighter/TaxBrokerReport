@@ -507,7 +507,9 @@ rules:
   `loss_eligibility_unresolved.cancelled` and no request, so capital gains fails until the
   exclusion choice exists (latter task). For the ratio question, the action gets a blocking
   `corporate_action_ambiguous` error with the key `corporate_action_ambiguous.cancelled` and no
-  request, with the same result. An unanswered
+  request, with the same result; for a question before a sale up to 31 December with too few
+  units (`earlierSaleDate`), the sale gets the `incomplete_history` error instead, because a
+  cancel there means that purchases are missing. An unanswered
   request stays open: the session never answers anything by itself.
 - **Memory only.** Answers are never written to disk or browser storage and are gone when the app
   closes. Only the taxpayer profile may be saved (#278).
@@ -515,26 +517,32 @@ rules:
 In the JSON, a loss request has `"options":["no_other_activity","other_activity"]` and
 `"lossCheck"` with `name`, `isin` and `sales`; each sale has `saleDate`, `transaction` (`broker`,
 `transactionId`; left out without an ID), `saleUnits`, `lossUnits`, `windowStart`, `windowEnd`,
-`knownReplacements` (`date`, `units`), `knownIneligibleUnits` and `openUnits`. Units are exact
-decimal strings with eight decimals (`"4.00000000"`). A recorded loss answer lists the same
-`lossCheck` and `"answer":"no_other_activity"`, `"other_activity"` or `"cancel"`.
+`knownReplacements` (`date`, `units` in the units of the sale: a purchase on the other side of a
+confirmed split is converted, `tax_rules.md` rule 7), `knownIneligibleUnits` and `openUnits`.
+Units are exact decimal strings with eight decimals (`"4.00000000"`). A recorded loss answer lists
+the same `lossCheck` and `"answer":"no_other_activity"`, `"other_activity"` or `"cancel"`.
 
 A ratio request has no `options` and has `"ratioCheck"` with `name`, `isin`, `effectiveDate`,
-`sources` (each with `broker`, and `transactionId` and `sourceValue` when the record has them;
-`sourceValue` is the broker's quantity field as an exact decimal, shown read-only) and
+`sources` (each with `broker`, `date` (the row's date), and `transactionId` and `sourceValue`
+when the record has them; `sourceValue` is the broker's quantity field as an exact decimal, shown
+read-only) and
 `positionBefore` (units, eight decimals, just before the action on the broker's row date
 `effectiveDate`), or instead `earlierSaleDate` when a sale before the row needs more units than
 were held and the action must come on or before it, and `dateRanges`: in date order, each with
 `earliestDate`, `latestDate`, `positionBefore`, the units just before the action on every date
 of the range, and `lowestChangeAfter`, the lowest running total of the trades after the action
-up to 31 December, or up to 11 days before the next action's row; a later trade date is a range
-of its own with the trades of that day only (eight decimals, 0 or below).
+up to 31 December (30 January for an action with a row after 31 December), or up to 11 days
+before the next action's row; a later trade date is a range of its own with the trades of that
+day only (eight decimals, 0 or below). `ratioCheck` also has `askSameEvent`: `true` when the rows
+are on different dates (split rows of two brokers at most 10 days apart). Such a question also
+takes the answer `"separate_events"` (the rows are two splits), which blocks the investment with
+`corporate_action_ambiguous.different_dates`; a ratio answer to it says the rows are one split.
 It is answered with `newShares`, `oldShares` (whole numbers), `effectiveDate` (from the
 announcement, within a range) and `confirmedUnits` (the previewed position for that date's units,
 eight decimals). A
 recorded ratio answer lists the same `ratioCheck` and
 `"answer":{"newShares":2,"oldShares":1,"effectiveDate":"2024-06-01","confirmedUnits":"6.00000000"}`
-with the reduced numbers, or `"answer":"cancel"`.
+with the reduced numbers, `"answer":"separate_events"` or `"answer":"cancel"`.
 
 A request type whose processor does not define its question data yet cannot be answered, not even
 cancelled: without question data, all its questions would be the same question, and one answer
@@ -545,9 +553,9 @@ request type, and a failure-resolution question without an investment.
 | --- | --- |
 | `exchange_rates_required` | Missing currency/date pairs, usage and any verified event-specific fallback; answer with official pair rates or explicit fallback acknowledgements. |
 | `corporate_action_identity_required` | Candidate actions with ISIN, dates, types, ratios and all sources; answer with confirmed grouping, effective dates and order where needed. |
-| `corporate_action_ratio_required` | One request per ISIN, for the first action its pool reached: the ISIN, its name, the effective date, every source record of the action (broker, transaction ID, read-only quantity field; rows of different brokers on one date are one action) the open units of all brokers just before it, and the range of effective dates that keep them. Answer with positive, different whole-number new/old shares, the effective date from the announcement within the range and the confirmed previewed position, or cancel. The GUI and the CLI also accept the shares before and after and turn them into the two numbers; they warn about a reduced number above 1000. |
+| `corporate_action_ratio_required` | One request per ISIN, for the first action its pool reached: the ISIN, its name, the effective date, every source record of the action (broker, transaction ID, read-only quantity field; rows of different brokers on one date are one action) the open units of all brokers just before it, and the range of effective dates that keep them. Also asked for a split row after 31 December that a December loss window reaches, and for split rows of two brokers at most 10 days apart (`askSameEvent`, answer `separate_events` when they are two splits). Answer with positive, different whole-number new/old shares, the effective date from the announcement within the range and the confirmed previewed position, or cancel. The GUI and the CLI also accept the shares before and after and turn them into the two numbers; they warn about a reduced number above 1000. |
 | `quantity_correction_required` | Source event, original/proposed quantity, evidence, difference, resulting position and EUR impact/budget; answer with confirmed proposed quantity or a validated correction and supporting assertion. |
-| `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
+| `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units in the units of the sale) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | Investment/event identity, current category, safe sources, permitted treatment choices and treatment-specific missing fields; answer with classification, required facts, or explicit exclusion and reason. |
 | `income_details_required` | Income items and missing or conflicting payer/catalogue, country, gross amount, withholding jurisdiction/status, payment evidence or requested treaty-claim facts, including external deposit interest; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
@@ -633,8 +641,8 @@ Additional codes and their default scope are:
 | `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
 | `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked; no request. |
-| `corporate_action_not_applied` | Error for capital gains: a corporate action whose result cannot be reported yet. Key `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one; `.filing_rows` (stage `fifo_tax`, on the first such sale) when a sale of the year lists units of a lot that an applied split changed, whose Doh-KDVP rows are not decided yet; `.loss_rule_split` when a loss sale has an applied split up to its window end; `.loss_window` for an action after 31 December inside a December loss window; and the plain key for a class that never reaches Doh-KDVP, whose action is not asked. |
-| `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.ratio_required_before_sale` (parameters `saleDate` and `days`, 10) for the same question when a sale before the row needs more units than were held and the row may be a late booking, `.cancelled` after a cancel (no request), `.same_day` for two or more rows of one broker for the ISIN on one date, and `.different_dates` (parameter `days`, 10) for split rows of different brokers on dates at most that far apart (no request for either until the identity question exists). |
+| `corporate_action_not_applied` | Error for capital gains: a corporate action whose result cannot be reported yet. Key `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one; `.filing_rows` (stage `fifo_tax`, on the first such sale) when a sale of the year lists units of a lot that an applied split changed, whose Doh-KDVP rows are not decided yet; `.loss_window` for a date after 31 December with a merger row inside a December loss window (a split row there has its ratio question or its own error instead). An action of a class that never reaches Doh-KDVP gets none: that class has its own error. |
+| `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.ratio_required_before_sale` (parameters `saleDate` and `days`, 10) for the same question when a sale before the row needs more units than were held and the row may be a late booking, `.cancelled` after a cancel (no request), `.same_day` for two or more rows of one broker for the ISIN on one date, and `.different_dates` (parameter `days`, 10) for split rows of different brokers on dates at most that far apart that the user says are two splits, or that cannot be asked as one split (more than one such neighbour date, a merger row, or a broker on both dates; no request for these until the identity question exists). |
 | `corporate_action_applied` | Warning for capital gains on one applied action, key `.user_ratio` (parameters `newShares`, `oldShares` and `effectiveDate`): the user, not the broker, supplied the ratio and the effective date. |
 | `corporate_action_missing_position` | Error for capital gains on one action: the files show no units just before it on its row date. No question is asked. |
 | `corporate_action_unrepresentable` | Error for capital gains on one action that cannot be applied: an overflow, a lot that would become 0 units, or, with key `.rounding_budget`, rounding that reaches EUR 0.01 for the ISIN. The pool stops at the action. |

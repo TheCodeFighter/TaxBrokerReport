@@ -463,6 +463,19 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         throw std::invalid_argument("A ratio question before a sale needs dates up to that sale.");
     }
 
+    // Rows on different dates are asked whether they are one event, and only they are.
+    if (ratio != nullptr &&
+        ratio->mAskSameEvent != std::any_of(ratio->mSources.begin(),
+                                            ratio->mSources.end(),
+                                            [ratio](const CorporateActionSourceFacts& aSource) {
+                                                return aSource.mDate !=
+                                                       ratio->mSources.front().mDate;
+                                            }))
+    {
+        throw std::invalid_argument("Only a ratio question with rows on different dates asks "
+                                    "whether they are one event.");
+    }
+
     if (loss == nullptr)
     {
         return;
@@ -586,8 +599,13 @@ QuestionData normalizedData(QuestionData aData) {
             ratio->mSources.begin(),
             ratio->mSources.end(),
             [](const CorporateActionSourceFacts& aLeft, const CorporateActionSourceFacts& aRight) {
-                return std::tie(aLeft.mBroker, aLeft.mTransactionId, aLeft.mSourceValue) <
-                       std::tie(aRight.mBroker, aRight.mTransactionId, aRight.mSourceValue);
+                return std::tie(aLeft.mDate,
+                                aLeft.mBroker,
+                                aLeft.mTransactionId,
+                                aLeft.mSourceValue) < std::tie(aRight.mDate,
+                                                               aRight.mBroker,
+                                                               aRight.mTransactionId,
+                                                               aRight.mSourceValue);
             });
     }
 

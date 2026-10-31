@@ -11,7 +11,7 @@
 namespace taxbroker {
 
 /// Split rows of one ISIN from different brokers at most this many days apart may be one split
-/// booked on different dates, so they block until the identity question exists.
+/// booked on different dates: the question asks whether they are, or they block when it cannot.
 inline constexpr int kDifferentDatesWindowDays = kBrokerDateMarginDays;
 
 enum class CorporateActionState {
@@ -24,7 +24,8 @@ enum class CorporateActionState {
     /// several, and in which order, is unknown.
     SameDayAmbiguous,
     /// Another broker has a split row of the ISIN on another date at most
-    /// kDifferentDatesWindowDays away: one split or two is unknown.
+    /// kDifferentDatesWindowDays away, and the rows cannot be asked as one split or the user said
+    /// they are two splits.
     DifferentDatesAmbiguous,
     /// A merger, which the app does not support.
     Unsupported,
@@ -32,15 +33,14 @@ enum class CorporateActionState {
     NoPosition,
     /// The open units just before the action do not fit Units, so no question can be asked.
     NumericFailure,
-    /// The class cannot reach Doh-KDVP (bond, derivative, crypto, private fund), so we skip it.
-    NotAskedForClass,
 };
 
-/// One economic action: every action row of one ISIN on one date, one per broker.
+/// One economic action: every action row of one ISIN on one date, one per broker, or the rows of
+/// two brokers on two dates at most kDifferentDatesWindowDays apart.
 struct ResolvedCorporateAction {
     Isin mIsin;
     std::string mName;
-    /// The date of the broker's rows.
+    /// The date of the broker's rows (the first row's date for rows on two dates).
     Date mEffectiveDate;
     std::vector<StatementEventReference> mEvents;
     CorporateActionState mState{CorporateActionState::WaitingForRatio};
@@ -59,16 +59,10 @@ struct CorporateActionResult {
 
 class CorporateActionResolver final {
   public:
-    /// Finds every corporate action up to 31 December of each ISIN with a sale in the selected
-    /// year. An action in aConfirmedActions that the pool applied gets a warning that the user
-    /// supplied its ratio. The first action the pool stopped at is asked: its ratio and effective
-    /// date, with the open units just before it for every date it may have. A recorded answer
-    /// makes it RatioConfirmed. The later actions wait for it, whatever their ratio.
-    ///
-    /// Action rows of one ISIN and date from different brokers are one action with one question;
-    /// two rows of the same broker on one date, or split rows of different brokers on different
-    /// dates at most kDifferentDatesWindowDays apart, are ambiguous; a merger is unsupported.
-    /// The stage never depends on the broker otherwise.
+    /// The corporate actions of each ISIN with a sale in the selected year whose class may reach
+    /// Doh-KDVP: applied ones with a user-ratio warning, the first one the pool stopped at (or a
+    /// January split row a loss window needs) with its ratio question, and the others waiting or
+    /// with their error. The grouping and date rules are in docs/architecture.md and fifo.md.
     [[nodiscard]] static CorporateActionResult
     resolve(const MergedStatement& aStatement,
             const ReportingYearLedger& aLedger,

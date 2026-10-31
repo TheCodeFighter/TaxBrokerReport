@@ -79,8 +79,8 @@ TaxProcessingResult TaxProcessor::prepareReportingYear(TaxProcessingRequest aReq
         .mYear = *aRequest.mReportingYear,
         .mYearStart = start,
         .mYearEnd = end,
-        .mLossWindowStart = start - DayDuration{30},
-        .mLossWindowEnd = end + DayDuration{30},
+        .mLossWindowStart = start - DayDuration{kLossWindowDays},
+        .mLossWindowEnd = end + DayDuration{kLossWindowDays},
     };
 
     for (const auto& reference : result.mMerged.mStatement.mChronologicalOrder)

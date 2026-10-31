@@ -385,6 +385,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return "other_activity";
         }
+        else if constexpr (std::is_same_v<Value, SeparateEventsAnswer>)
+        {
+            return "separate_events";
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -448,7 +452,7 @@ Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
 
     for (const auto& source : aQuestion.mSources)
     {
-        Json serialized{{"broker", toString(source.mBroker)}};
+        Json serialized{{"broker", toString(source.mBroker)}, {"date", isoDate(source.mDate)}};
 
         if (source.mTransactionId)
         {
@@ -494,6 +498,7 @@ Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
     }
 
     check["dateRanges"] = std::move(dateRanges);
+    check["askSameEvent"] = aQuestion.mAskSameEvent;
 
     return check;
 }

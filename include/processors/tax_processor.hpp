@@ -13,6 +13,10 @@ namespace taxbroker {
 inline constexpr int kMinimumReportingYear = 2000;
 inline constexpr int kMaximumReportingYear = 9999;
 
+/// The 30-day loss window: the sale day with this many days before and after it, both ends
+/// included.
+inline constexpr int kLossWindowDays = 30;
+
 struct TaxProcessingRequest {
     std::optional<int> mReportingYear;
     StatementMergeResult mMerged;

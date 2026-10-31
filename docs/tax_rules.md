@@ -369,11 +369,18 @@ reading gives the FURS result in all 23 examples (maintainer decision, 2026-10-2
    window) are not checked and not asked (in practice only the
    same ISIN matters). Names and symbols never identify a replacement.
 7. **Units only.** A replacement is counted by its units; its currency and price are not needed.
-   A corporate action after 31 December inside the window of a December loss blocks that ISIN
+   Units are compared across every confirmed split and reverse split of the ISIN: a trade dated before the split's effective date is in the units before it, a trade on or after that date in the units after it. The holding after each sale (rule 3) is changed at each split and rounded once, as the FIFO lots are, and each replacement is counted in the units of the sale, rounded up to 8 decimals (the safe side: at most 0.00000001
+   unit more is blocked). Example: 12 units bought, 10 sold at a loss on 2 May, split `2 / 1` on
+   10 May, 6 units bought on 20 May: the 6 new units are 3 units of the sale, so 3 of its 10 loss
+   units are blocked. A split row after 31 December inside the window of a December loss is
+   asked too, and used only for this comparison when its date is after 31 December
+   ([`fifo.md`](fifo.md)).
+   Until such a split row has a confirmed ratio, the sale stays blocked with the error of its
+   ratio question. A merger after 31 December inside the window blocks that ISIN
    (`corporate_action_not_applied`, key `.loss_window`), because the units before and after it
-   cannot be compared yet. So does a split up to 31 December that is applied on or before the
-   end of a loss sale's window (key `.loss_rule_split`): the rule counts trade units, and a split
-   changes them. Comparing units across a split is later work.
+   cannot be compared. Known limit: a split row dated after the window end is not asked, although
+   a broker may book an action up to 10 days late. A reverse split that took effect inside the
+   window is then compared in the old units, which blocks too little loss (later work).
 
 The check covers all supplied brokers and accounts. Checking only the last buy before the sale is
 not enough; the legacy app's shortcut of checking only the last earlier buy must not be copied.

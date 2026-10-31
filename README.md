@@ -22,7 +22,8 @@ tax year from **Trade Republic** CSV exports:
 - shares and funds (ETFs) bought and sold in EUR;
 - units held longer than the holding period are left out as tax free and listed in the summary;
 - the 30-day loss rule (*pravilo navidezne odsvojitve*): a loss that a purchase of the same
-  investment within 30 days before or after the sale blocks in full is written with `F10` false;
+  investment within 30 days before or after the sale blocks in full is written with `F10` false,
+  also across a split;
 - questions in the terminal: when the files alone cannot decide a loss, the command asks whether,
   within 30 days of the sale, you also traded the investment anywhere not in your files (another
   broker or account, or after the export), and for a split it asks the ratio and the effective
@@ -33,9 +34,9 @@ tax year from **Trade Republic** CSV exports:
 
 The tool blocks a report instead of guessing. No XML is written when an investment sold in the
 year is crypto, a private fund, a bond or a derivative, has a merger, sells units that a split
-changed or sells at a loss near a split (both are not supported yet), misses earlier
-purchases, has a trade that is not in EUR, or has a question without an answer (with
-`--no-input`, or when you end the input). `scripts/report.sh --command-help` lists every case.
+changed (not supported yet), misses earlier purchases, has a trade that is not in EUR, or has a
+question without an answer (with `--no-input`, or when you end the input).
+`scripts/report.sh --command-help` lists every case.
 
 Not yet available: Doh-Div (dividends), Doh-DHO and Doh-Obr (interest), Interactive Brokers, the
 browser app, Windows and macOS builds, and downloadable releases.

@@ -2317,6 +2317,55 @@ TEST(ApplicationResultRequestTest, ARatioQuestionBeforeASaleNeedsTheSaleDateInst
     EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(noRange)), std::invalid_argument);
 }
 
+TEST(ApplicationResultRequestTest, OnlyARatioQuestionWithRowsOnTwoDatesAsksForOneEvent) {
+    // Rows on 2024-06-01 and 2024-06-05 without the question whether they are one event.
+    ApplicationResultInput twoDates{.mReportingYear = 2024};
+    twoDates.mRequests = {
+        RequestInput{
+            .mQuestion = {
+                .mType = RequestType::CorporateActionRatioRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    CorporateActionRatioQuestion{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mEffectiveDate = day(2024, 6, 1),
+                        .mSources = {{.mBroker = Broker::TradeRepublic, .mDate = day(2024, 6, 1)},
+                                     {.mBroker = Broker::InteractiveBrokers,
+                                      .mDate = day(2024, 6, 5)}},
+                        .mPositionBefore = 300'000'000, // 3 units
+                        .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                         .mLatestDate = day(2024, 12, 31),
+                                         .mPositionBefore = 300'000'000}},
+                        .mAskSameEvent = false,
+                    },
+            }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(twoDates)), std::invalid_argument);
+
+    // One row with the question: there is nothing to tell apart.
+    ApplicationResultInput oneDate{.mReportingYear = 2024};
+    oneDate.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::CorporateActionRatioRequired,
+            .mAffectedReports = {kCapital},
+            .mData =
+                CorporateActionRatioQuestion{
+                    .mIsin = "XX0000000001",
+                    .mName = "Synthetic Share",
+                    .mEffectiveDate = day(2024, 6, 1),
+                    .mSources = {{.mBroker = Broker::TradeRepublic, .mDate = day(2024, 6, 1)}},
+                    .mPositionBefore = 300'000'000, // 3 units
+                    .mDateRanges = {{.mEarliestDate = day(2024, 1, 11),
+                                     .mLatestDate = day(2024, 12, 31),
+                                     .mPositionBefore = 300'000'000}},
+                    .mAskSameEvent = true,
+                },
+        }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(oneDate)), std::invalid_argument);
+}
+
 TEST(ApplicationResultRequestTest, TheOrderOfSourcesDoesNotChangeTheRatioQuestion) {
     // The same action from Trade Republic and Interactive Brokers, listed in two orders.
     const QuestionData ibkrFirst = CorporateActionRatioQuestion{
