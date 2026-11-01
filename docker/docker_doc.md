@@ -74,6 +74,8 @@ nothing, and fails with a hint when `build/dev` does not exist:
 ```
 `valgrind.sh` and `cppcheck.sh` take the same flag. Without it, `cppcheck.sh` configures
 `build/cppcheck` from scratch; with it, it uses the compile database of `build/dev`.
+`valgrind.sh --part regular|large|all` (default `all`) runs everything but the
+`*LargeInputTest` unit test suites, only those suites, or both.
 
 ### 4. Run the Server
 Builds `build/dev` from scratch, then starts the backend server and maps port 8080 to your host
@@ -105,7 +107,9 @@ run. Later jobs load them and compile nothing:
 
 ```text
 Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reuse-build)
-           │                     ├─ Valgrind         (valgrind.sh --reuse-build)
+           │                     ├─ Valgrind         (valgrind.sh --reuse-build --part regular)
+           │                     ├─ Valgrind (large inputs)  (--part large, only when related
+           │                     │                            files change, not required)
            │                     └─ Cppcheck         (cppcheck.sh --reuse-build)
            ├─ format-check                  (pull requests only)
            ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 60 s, own sanitizer build, not required yet)

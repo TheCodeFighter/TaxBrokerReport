@@ -80,8 +80,17 @@ memory leaks. Each test executable is started once to avoid Valgrind startup ove
 test discovered by CTest. With `scripts/valgrind.sh --reuse-build` it runs the existing `build/dev`
 as it is and compiles nothing.
 
-The `Valgrind` job of the `CI` workflow runs the same memory checks for pull requests and after
-changes reach `main`, on the build that the `Development build` job made.
+Unit test suites named `*LargeInputTest` read inputs of several megabytes (today an 11 MB and a
+21 MB ECB rate file) and take minutes under Valgrind (about 5 locally, 9 on a CI runner).
+`scripts/valgrind.sh --part regular` leaves them out, `--part large` runs only them, and
+`--part all` (the default) runs both. A test with such an input goes into a `*LargeInputTest`
+suite.
+
+The `Valgrind` job of the `CI` workflow runs `--part regular` for pull requests and after changes
+reach `main`, on the build that the `Development build` job made. The `Valgrind (large inputs)`
+job runs `--part large` on every push to `main`, and on a pull request only when it changes the
+ECB rate loader, SHA-256, the ECB loader tests, a `CMakeLists.txt`, `docker/`, the Valgrind script
+or the CI workflow. It is not a required check.
 
 ## Test suites
 

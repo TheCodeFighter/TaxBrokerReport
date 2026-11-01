@@ -125,7 +125,9 @@ TEST(EcbRateFileTest, LoadsACoveredPairWithFullProvenance) {
     EXPECT_EQ(result.mTable.mFiles[0].mRateCount, 1U);
 }
 
-TEST(EcbRateFileTest, LoadsAFileLargerThanTheReaderChunk) {
+// A *LargeInputTest suite takes minutes under Valgrind. CI runs it on every push to main, and on a
+// pull request only when a related file changes (`scripts/valgrind.sh --part large`).
+TEST(EcbRateFileLargeInputTest, LoadsAFileLargerThanTheReaderChunk) {
     TemporaryDirectory directory;
 
     // The CSV reader reads 10 MB at a time. Each row has a 1,000,000-character TITLE, so the
@@ -1169,7 +1171,7 @@ TEST(EcbRateFileTest, RejectsADirectoryAndKeepsTheOtherFile) {
               "The rate file could not be opened or read. No rates were loaded.");
 }
 
-TEST(EcbRateFileTest, RejectsARowLongerThanTheReaderLimitAndKeepsTheOtherFile) {
+TEST(EcbRateFileLargeInputTest, RejectsARowLongerThanTheReaderLimitAndKeepsTheOtherFile) {
     TemporaryDirectory directory;
 
     // The CSV reader throws on a row longer than two 10 MB chunks. This row has a
