@@ -4,6 +4,7 @@
 #include "processors/fifo_matcher.hpp"
 #include "processors/loss_eligibility.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
+#include "taxbroker/currency.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/statement_merger.hpp"
 #include "taxbroker/types.hpp"
@@ -137,23 +138,9 @@ std::string_view toString(TradeSide aTradeSide) {
 }
 
 std::string_view toString(Currency aCurrency) {
-    switch (aCurrency)
-    {
-    case Currency::EUR:
-        return "EUR";
-    case Currency::USD:
-        return "USD";
-    case Currency::GBP:
-        return "GBP";
-    case Currency::CHF:
-        return "CHF";
-    case Currency::JPY:
-        return "JPY";
-    case Currency::Unknown:
-        return "Unknown";
-    }
+    const auto code = currencyCode(aCurrency);
 
-    return "Unknown";
+    return code.empty() ? "Unknown" : code;
 }
 
 std::string_view toString(AssetClass aAssetClass) {

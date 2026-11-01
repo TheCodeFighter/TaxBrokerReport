@@ -1,4 +1,5 @@
 #include "parsers/traderepublic_parser.hpp"
+#include "taxbroker/currency.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
 #include "taxbroker/types.hpp"
@@ -1512,20 +1513,8 @@ std::optional<Money> TradeRepublicParser::parseFeePaid(std::string_view aValue) 
     return std::abs(*signedFee);
 }
 
-// TODO: Extend when more currencies are known
 Currency TradeRepublicParser::parseCurrency(std::string_view aValue) {
-    if (aValue == "EUR")
-        return Currency::EUR;
-    if (aValue == "USD")
-        return Currency::USD;
-    if (aValue == "GBP")
-        return Currency::GBP;
-    if (aValue == "CHF")
-        return Currency::CHF;
-    if (aValue == "JPY")
-        return Currency::JPY;
-    // add others as needed
-    return Currency::Unknown;
+    return parseCurrencyCode(aValue);
 }
 
 AssetClass TradeRepublicParser::parseAssetClass(std::string_view aValue) {

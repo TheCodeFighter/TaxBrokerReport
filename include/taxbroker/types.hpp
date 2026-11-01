@@ -91,12 +91,42 @@ enum class TradeSide {
     Sell,
 };
 
+/// EUR and the currencies with an official ECB reference rate since 2020 (docs/calculations.md,
+/// "Supported currencies"). Unknown stays last: the code table in currency.cpp counts on it.
 enum class Currency {
     EUR,
     USD,
     GBP,
     CHF,
     JPY,
+    AUD,
+    BGN,
+    BRL,
+    CAD,
+    CNY,
+    CZK,
+    DKK,
+    HKD,
+    HRK,
+    HUF,
+    IDR,
+    ILS,
+    INR,
+    ISK,
+    KRW,
+    MXN,
+    MYR,
+    NOK,
+    NZD,
+    PHP,
+    PLN,
+    RON,
+    RUB,
+    SEK,
+    SGD,
+    THB,
+    TRY,
+    ZAR,
     Unknown
 };
 

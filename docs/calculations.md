@@ -184,6 +184,32 @@ The user copies the rate that Banka Slovenije shows as valid for that currency a
 covers a date for which the site uses its applicable daily or monthly rate. The app must not
 interpolate rates or silently choose an average, annual, current, or nearby rate.
 
+## Supported currencies
+
+A broker file may use a currency only when the ECB published a reference rate for it on or after
+2020-01-01. That is EUR and 32 codes. *Banka Slovenije* republishes the same rates, so these are the
+currencies an official rate can exist for (checked 2026-11-01 against the public ECB daily file
+from 2020-01-01):
+
+- the 30 codes of the 2025 file: AUD, BGN, BRL, CAD, CHF, CNY, CZK, DKK, GBP, HKD, HUF, IDR, ILS,
+  INR, ISK, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RON, SEK, SGD, THB, TRY, USD, ZAR (BGN stops
+  after 2025-12-31); and
+- HRK (last rate 2022-12-30) and RUB (last rate 2022-03-01), because 2020 to 2022 income and
+  trades can still be in them.
+
+Rules:
+
+- The code must be exact capitals, as in `currency` and `original_currency`. A lowercase code or
+  any other text is an `InvalidValue` on that field, and the row is not imported. An empty
+  `currency` is a `MissingField`; an empty `original_currency` means the row has no foreign amount.
+- A code that ended before 2020 (for example SIT, SKK, EEK, LTL, LVL) is not supported. The ECB
+  also published a few indicative-only rates in 2020 (for example ARS); they are not reference
+  rates and are not supported.
+- A supported code is only a name. It does not mean a rate exists on a date. A missing rate is
+  handled where the rate is needed (see "Asking the user for official rates"), not by the parser.
+- EUR keeps its identity rate and never needs an official rate.
+- Trades in a currency other than EUR are still blocked in the first release.
+
 ## Official ECB rate files
 
 The app ships no rate data. The user loads one file per calendar year, so new rates need no new

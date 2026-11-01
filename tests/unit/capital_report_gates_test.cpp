@@ -572,6 +572,33 @@ TEST(CapitalReportGatesTest, GbpChfAndJpyTradesNameTheirCurrency) {
               (std::vector<MessageParam>{textParam("currency", "JPY")}));
 }
 
+TEST(CapitalReportGatesTest, NokTradeNamesItsCurrency) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            .mName = "Synthetic Krone Share",
+            .mIsin = "XX0000000001",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-03-10"),
+                                   .mSources = {source(2, "synthetic-sell-1")}},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 2'000'000'000, // NOK 20
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::NOK},
+                },
+        },
+    };
+
+    const auto diagnostics = checkYear(merged, 2024);
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+    EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
+    EXPECT_EQ(diagnostics.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("currency", "NOK")}));
+}
+
 TEST(CapitalReportGatesTest, TradeWithoutACurrencyNamesTheCurrencyUnknown) {
     // The parser rejects an unknown currency; a trade built without one keeps the default.
     StatementMergeResult merged;

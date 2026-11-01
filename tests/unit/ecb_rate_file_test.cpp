@@ -282,6 +282,23 @@ TEST(EcbRateFileTest, FindsByCurrencyAndNeverReturnsEurOrUnknown) {
     EXPECT_EQ(result.mTable.find(Currency::USD, date("2025-01-03")), nullptr);
 }
 
+TEST(EcbRateFileTest, FindsACurrencyThatIsNotOneOfTheFirstFour) {
+    TemporaryDirectory directory;
+
+    const auto path = directory.write(
+        "exr_2025.csv",
+        std::string{kHeader} + "\n" +
+            R"csv(EXR.D.NOK.EUR.SP00.A,D,NOK,EUR,SP00,A,2025-01-02,11.5,A,F,,,P1D,,A,,,,,,,99Q1=100,,,4,,4F0,,Synthetic currency/Euro ECB reference exchange rate,"ECB reference exchange rate, Synthetic currency/Euro, 2.15 pm (C.E.T.)",NOK,0)csv" +
+            "\n");
+    const auto result = loadEcbRateFiles({path});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_NE(result.mTable.find(Currency::NOK, date("2025-01-02")), nullptr);
+    EXPECT_EQ(result.mTable.find(Currency::NOK, date("2025-01-02"))->mValue, 1'150'000'000); // 11.5
+    EXPECT_EQ(result.mTable.find(Currency::SEK, date("2025-01-02")), nullptr); // not in the file
+    EXPECT_EQ(result.mTable.find(Currency::EUR, date("2025-01-02")), nullptr);
+}
+
 TEST(EcbRateFileTest, ReadsColumnsByNameInAnyOrderAndIgnoresOtherColumns) {
     TemporaryDirectory directory;
 

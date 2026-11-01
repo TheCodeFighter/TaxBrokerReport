@@ -41,6 +41,7 @@ add_executable(taxbroker_unit_tests
     unit/processing_diagnostics_test.cpp
     unit/report_command_test.cpp
     unit/sha256_test.cpp
+    unit/currency_test.cpp
     unit/date_utils_test.cpp
     unit/diagnostic_messages_test.cpp
     unit/diagnostics_json_test.cpp
