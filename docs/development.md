@@ -105,6 +105,61 @@ Inside the development container, `ctest --test-dir /workspace/build/dev -L unit
 separate steps on the shared build, including integration tests after a unit-test failure when the
 build was loaded. The **Required tests** check still requires both suites to pass.
 
+### Property tests
+
+Three unit test files check rules that must hold for any input, on 100 to 200 generated cases each:
+`statement_merger_property_test.cpp` (the merge result does not depend on the order of the input
+files), `fifo_basis_property_test.cpp` (allocated plus remaining basis is the original basis) and
+`fifo_matcher_property_test.cpp` (stock never goes negative without an `incomplete_history` error).
+The numbers come from a small generator with a fixed seed (`tests/support/property_random.hpp`), so
+every run is the same. A failure prints the seed of its case; set `PROPERTY_SEED` in that file to
+the printed seed and the failing case runs first. Each check is a function with its own tests that
+feed it a result with a deliberately broken rule and expect a report, so a check that can no longer
+fail is caught by the normal test run.
+
+## Fuzzing
+
+`scripts/fuzz.sh` fuzzes the Trade Republic parser with libFuzzer (`tests/fuzz/`). It builds
+`build/fuzz` from scratch with Clang, AddressSanitizer and UndefinedBehaviorSanitizer (the CMake
+option `TAXBROKER_BUILD_FUZZERS`; that build has no unit tests), then runs the target in the
+development container:
+
+```sh
+scripts/fuzz.sh                  # 60 seconds, fixed libFuzzer seed 1
+scripts/fuzz.sh --seconds 600
+scripts/fuzz.sh --replay runtime/fuzz/crash-<hash>
+```
+
+A finding prints a `Replay with:` line for each saved input. `--replay` also takes the
+`/workspace/runtime/fuzz/...` path that libFuzzer prints and an absolute path on the host.
+
+Each input is written as a CSV file and parsed. The run stops when one of these fails:
+
+- the program crashes or a sanitizer reports an error;
+- one input takes longer than 10 seconds (saved as `timeout-<hash>`);
+- an accepted trade has a sign that disagrees with its side (`SELL` must have negative source units,
+  `BUY` positive) or stores no positive units or amount;
+- a record row has neither an event nor an error diagnostic. Cash rows that the parser ignores on
+  purpose (card and transfer types) are the only exception, and the check gives up after a
+  file-level error because the parser then discards the rows.
+
+The seeds are the synthetic CSV files under `tests/test_data` and the small one-row files in
+`tests/fuzz/seeds`: one for each kind of row, and one for each way the parser rejects a row (a share
+or amount with the wrong sign, a record with the wrong field count, an unknown or unsupported type,
+a missing datetime). A parser that stops rejecting one of them breaks a check on the first run;
+the fuzzer's own changes then look for new cases around them. New inputs are kept in
+`runtime/fuzz/corpus` and a failing input in `runtime/fuzz/crash-<hash>` (the folder is ignored by
+Git). The next local run starts from that kept corpus too, so two local runs differ even with seed
+1; delete `runtime/fuzz/corpus` to start from the seeds only, as CI does. Never put a real export
+in the seeds. The leak check of AddressSanitizer is off because it reports a leak at exit even for
+an empty program on Alpine (musl); Valgrind covers leaks.
+
+The checks and the list of rows they must account for are in
+`tests/support/trade_republic_parser_checks.hpp` and have unit tests
+(`trade_republic_parser_checks_test.cpp`) that feed them a wrong result. The CI job
+`Fuzz (Trade Republic parser)` runs `scripts/fuzz.sh --seconds 60` in parallel with the other jobs
+and uploads a failing input as the artifact `fuzz-findings`. It is not a required check yet.
+
 ## Debug tests in VS Code
 
 Open this repository locally in VS Code, install Microsoft's **C/C++** extension, and use the

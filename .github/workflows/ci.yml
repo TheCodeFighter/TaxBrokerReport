@@ -191,6 +191,38 @@ jobs:
       - name: Run Cppcheck static analysis
         run: scripts/cppcheck.sh --reuse-build
 
+  # Not a required check yet (execution plan line 3.4a makes it one). It waits only for the dev
+  # image, so it runs beside the development build and the coverage jobs and adds no time.
+  fuzz:
+    name: Fuzz (Trade Republic parser)
+    needs: dev-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Load development image
+        uses: ./.github/actions/load-dev-image
+
+      - name: Fuzz the Trade Republic parser for 60 seconds
+        run: scripts/fuzz.sh --seconds 60
+
+      - name: Upload the input that broke a check
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-findings
+          path: |
+            runtime/fuzz/crash-*
+            runtime/fuzz/leak-*
+            runtime/fuzz/oom-*
+            runtime/fuzz/slow-unit-*
+            runtime/fuzz/timeout-*
+          if-no-files-found: ignore
+          retention-days: 14
+
   format-check:
     # Keep this job id stable: it is the check name that the main-branch protection rule requires.
     if: github.event_name == 'pull_request'
