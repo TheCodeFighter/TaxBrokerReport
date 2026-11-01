@@ -16,6 +16,19 @@ endif()
 # Option to build legacy QT GUI
 option(BUILD_LEGACY_GUI "Build the legacy Qt-based GUI codebase" OFF)
 option(BUILD_DEBUG_TOOLS "Build local debugging tools" OFF)
+# The libFuzzer targets (tests/fuzz) with AddressSanitizer and UndefinedBehaviorSanitizer on every
+# project target. Clang only. This build has no unit or integration tests; use scripts/fuzz.sh.
+option(TAXBROKER_BUILD_FUZZERS "Build the libFuzzer targets with sanitizers (Clang only)" OFF)
+
+if(TAXBROKER_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "TAXBROKER_BUILD_FUZZERS needs Clang (libFuzzer).")
+    endif()
+
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined
+                        -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 if(BUILD_LEGACY_GUI)
     add_subdirectory(legacy-QT-GUI)
@@ -72,4 +85,8 @@ add_subdirectory(src)
 if(BUILD_DEBUG_TOOLS)
     add_subdirectory(tools)
 endif()
-add_subdirectory(tests)
+if(TAXBROKER_BUILD_FUZZERS)
+    add_subdirectory(tests/fuzz)
+else()
+    add_subdirectory(tests)
+endif()

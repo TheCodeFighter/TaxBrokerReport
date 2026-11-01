@@ -92,6 +92,7 @@ machine:
 | `build/cppcheck` | `cppcheck.sh` (configure only) |
 | `build/debug-tools` | the `dump_*.sh` scripts |
 | `build/coverage` | `coverage.sh` |
+| `build/fuzz` | `fuzz.sh` (Clang with sanitizers, only the fuzz target) |
 | `build/test-debug` | `debug_tests.sh` (VS Code), incremental on purpose |
 | `build/static` | `build.sh prod` (the static binaries copied out of the production image) |
 
@@ -107,6 +108,7 @@ Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reus
            │                     ├─ Valgrind         (valgrind.sh --reuse-build)
            │                     └─ Cppcheck         (cppcheck.sh --reuse-build)
            ├─ format-check                  (pull requests only)
+           ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 60 s, own sanitizer build, not required yet)
            └─ Coverage (current) ─┬─ coverage      (pull requests only)
               Coverage (baseline) ┘
 Production image                   (own Release build inside the Dockerfile)

@@ -161,6 +161,7 @@ _tbr_build() { _tbr_complete --help :: "words:dev image docker-build prod"; }
 _tbr_coverage() { _tbr_complete --help; }
 _tbr_cppcheck() { _tbr_complete --reuse-build --help; }
 _tbr_valgrind() { _tbr_complete --reuse-build --help; }
+_tbr_fuzz() { _tbr_complete --seconds=none --replay=file --help; }
 _tbr_format() { _tbr_complete --check --help; }
 _tbr_test() { _tbr_complete --reuse-build "--suite=words:unit integration" --help :: none; }
 _tbr_debug_tests() { _tbr_complete --help :: "words:build" "words:unit integration"; }
@@ -182,8 +183,8 @@ _tbr_report() {
         --out=dir --command-help --help -- :: csv+
 }
 
-_tbr_scripts=(build coverage cppcheck valgrind format test debug_tests dump_tr_parse dump_tr_merge
-    dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_exact_arithmetic report)
+_tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse
+    dump_tr_merge dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_exact_arithmetic report)
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     # The shared functions above expect bash's zero-based arrays.

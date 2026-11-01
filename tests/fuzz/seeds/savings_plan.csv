@@ -1,0 +1,2 @@
+"datetime","date","account_type","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","currency","original_amount","original_currency","fx_rate","description","transaction_id","counterparty_name","counterparty_iban","payment_reference","mcc_code"
+"2024-03-02T10:00:00.000Z","2024-03-02","DEFAULT","TRADING","SAVINGS_PLAN_EXECUTED","FUND","Synthetic Index Fund","XX0000000002","0.2500000000","40.000000","-10.00","","","EUR","","","","Synthetic savings plan","synthetic-savings-001","","","",""
