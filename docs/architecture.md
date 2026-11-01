@@ -52,6 +52,11 @@ diagnostic, in the column order of the export. A sign check (shares or amount ag
 side) runs after the field checks and only on valid fields. A missing `datetime` is reported
 first, and the other fields of that row are still checked.
 
+For a valid trade with an `amount`, the parser also compares `|amount|` with
+`|price × shares|` (for a trade with `original_currency`, `original_amount` in that currency). A
+difference above EUR 0.01 adds a `trade_amount_mismatch` warning and keeps the row; `amount` stays
+informational. See `diagnostics.md`.
+
 Broker numbers must be plain dot decimals (see `calculations.md`). A comma or parentheses makes the
 field `invalid_value` and skips the row. From 3 such rows in one file, the parser adds one
 file-level `localized_number_format` warning that suggests downloading the export again. A row

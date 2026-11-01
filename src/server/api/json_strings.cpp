@@ -45,6 +45,8 @@ std::string_view toString(DiagnosticCode aCode) {
         return "invalid_value";
     case DiagnosticCode::InconsistentValue:
         return "inconsistent_value";
+    case DiagnosticCode::TradeAmountMismatch:
+        return "trade_amount_mismatch";
     case DiagnosticCode::FieldCountMismatch:
         return "field_count_mismatch";
     case DiagnosticCode::LocalizedNumberFormat:

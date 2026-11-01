@@ -29,6 +29,7 @@ enum class MessageKey {
     InconsistentValueDatetimeDate,
     InconsistentValueTradeSide,
     InconsistentValueAssetClass,
+    TradeAmountMismatch,
     UnsupportedAssetClassUnrecognized,
     UnsupportedAssetClassTaxUnsupported,
     UnsupportedAssetClassInterestMapping,

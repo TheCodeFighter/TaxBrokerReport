@@ -282,6 +282,8 @@ std::string_view toString(DiagnosticCode aDiagnosticCode) {
         return "InvalidValue";
     case DiagnosticCode::InconsistentValue:
         return "InconsistentValue";
+    case DiagnosticCode::TradeAmountMismatch:
+        return "TradeAmountMismatch";
     case DiagnosticCode::FieldCountMismatch:
         return "FieldCountMismatch";
     case DiagnosticCode::LocalizedNumberFormat:

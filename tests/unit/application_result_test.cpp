@@ -475,6 +475,36 @@ TEST(ApplicationResultStatusTest, AWarningNeverBlocksAReport) {
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kCapital}));
 }
 
+TEST(ApplicationResultStatusTest, ATradeAmountMismatchWarningDoesNotBlockCapitalGains) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mMergeDiagnostics = {SourcedParseDiagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::TradeRepublic,
+        .mDiagnostic =
+            ParseDiagnostic{
+                .mSeverity = DiagnosticSeverity::Warning,
+                .mCode = DiagnosticCode::TradeAmountMismatch,
+                .mSourceFile = "export.csv",
+                .mRowIndex = 7,
+                .mField = "amount",
+                .mMessage = "Synthetic parser message.",
+                .mRowKind = ParsedRowKind::Trade,
+            },
+    }};
+    input.mReports[0].mXml = "<capital/>";
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(kCapital).mXml, "<capital/>");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
+}
+
 TEST(ApplicationResultStatusTest, AnUnsupportedRowTypeIsVisibleButBlocksNoReport) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mMergeDiagnostics = {SourcedParseDiagnostic{

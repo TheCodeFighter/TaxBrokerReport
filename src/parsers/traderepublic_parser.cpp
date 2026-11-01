@@ -1,5 +1,6 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
+#include "taxbroker/exact_arithmetic.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/logger.hpp"
@@ -114,6 +115,27 @@ bool isNumericField(std::string_view aField) {
 /// numbers after saving a file again with local number settings.
 bool looksLikeLocalizedNumber(std::string_view aValue) {
     return aValue.find_first_of(",()") != std::string_view::npos;
+}
+
+/// Largest difference between |price x units| and |amount| that is still rounding: EUR 0.01.
+/// The export rounds the amount to cents; the extra half cent covers a rounded price.
+constexpr taxbroker::Money TRADE_AMOUNT_TOLERANCE = 100;
+
+/// True when |amount| differs from |unit price x units| by more than the tolerance. The
+/// comparison is exact, at the scale of price times units, with no rounding.
+bool exceedsTradeAmountTolerance(taxbroker::UnitPrice aUnitPrice,
+                                 taxbroker::Units aUnits,
+                                 taxbroker::Money aAmount) {
+    constexpr std::int64_t MONEY_TO_PRODUCT_SCALE =
+        (taxbroker::UNIT_PRICE_SCALE * taxbroker::UNITS_SCALE) / taxbroker::MONEY_SCALE;
+
+    const taxbroker::WideInteger product = abs(taxbroker::WideInteger{aUnitPrice} * aUnits);
+    const taxbroker::WideInteger amount =
+        abs(taxbroker::WideInteger{aAmount}) * MONEY_TO_PRODUCT_SCALE;
+    const taxbroker::WideInteger tolerance =
+        taxbroker::WideInteger{TRADE_AMOUNT_TOLERANCE} * MONEY_TO_PRODUCT_SCALE;
+
+    return abs(product - amount) > tolerance;
 }
 
 /// Columns the parser reads by name. The other columns of the export are not used.
@@ -948,6 +970,17 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     if (aContext.mRowRejected)
     {
         return false;
+    }
+
+    // The amount is informational. A mismatch is reported, never repaired, and the row is kept.
+    if (amount && exceedsTradeAmountTolerance(*unitPrice, *normalizedUnits, *amount))
+    {
+        aContext.addDiagnostic(
+            DiagnosticSeverity::Warning,
+            DiagnosticCode::TradeAmountMismatch,
+            makeDiagnosticMessage(MessageKey::TradeAmountMismatch,
+                                  {textParam("field", std::string{amountField})}),
+            std::string{amountField});
     }
 
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);

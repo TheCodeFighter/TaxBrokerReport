@@ -62,6 +62,9 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "inconsistent_value.trade_side",
          {{"field", MessageParamKind::Text}}},
         {MessageKey::InconsistentValueAssetClass, "inconsistent_value.asset_class", {}},
+        {MessageKey::TradeAmountMismatch,
+         "trade_amount_mismatch",
+         {{"field", MessageParamKind::Text}}},
         {MessageKey::UnsupportedAssetClassUnrecognized, "unsupported_asset_class.unrecognized", {}},
         {MessageKey::UnsupportedAssetClassTaxUnsupported,
          "unsupported_asset_class.tax_unsupported",
@@ -251,8 +254,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 72U);
-    ASSERT_EQ(expectedMessages().size(), 72U);
+    ASSERT_EQ(definitions.size(), 73U);
+    ASSERT_EQ(expectedMessages().size(), 73U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -286,8 +289,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 72U);
-    EXPECT_EQ(keys.size(), 72U);
+    EXPECT_EQ(ids.size(), 73U);
+    EXPECT_EQ(keys.size(), 73U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -308,7 +311,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 79U); // 72 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 80U); // 73 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

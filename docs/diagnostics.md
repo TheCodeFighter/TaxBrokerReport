@@ -609,6 +609,16 @@ the file was probably saved again in a spreadsheet program. The message gives on
 Each of those rows still has its own `invalid_value` error, and the count is a number of rows,
 not fields.
 
+It also adds `trade_amount_mismatch`, a row-level warning on the field `amount` (or
+`original_amount` for a trade with `original_currency`). The Trade Republic parser reports it
+for a valid trade when `|amount|` differs from `|unit price × units|` by more than EUR 0.01. The
+comparison is exact at the stored scales, never rounded, and the fee is not part of it (the export
+amount is gross of fees). A Trade Republic export rounds the amount to cents, so a healthy file
+differs by at most EUR 0.005; a larger difference means a corrupted file or a changed export
+format. The row is kept with its values, the amount is not used for any tax value, and nothing is
+repaired. The warning never blocks a report, and its message gives only the field name, no
+amounts. A trade with an empty `amount` or a rejected row gets no such warning.
+
 It also adds `invalid_header`, a file-level error without row or field. The parser reports it when
 the header misses a column the parser reads (the list is in [`architecture.md`](architecture.md)),
 which includes a file saved with semicolons or tabs instead of commas. No rows are read. The

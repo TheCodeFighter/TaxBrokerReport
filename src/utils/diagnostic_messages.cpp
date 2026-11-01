@@ -113,6 +113,7 @@ constexpr std::array kDefinitions{
         MessageKey::InconsistentValueTradeSide, "inconsistent_value.trade_side", kField},
     MessageDefinition{
         MessageKey::InconsistentValueAssetClass, "inconsistent_value.asset_class", {}},
+    MessageDefinition{MessageKey::TradeAmountMismatch, "trade_amount_mismatch", kField},
     MessageDefinition{
         MessageKey::UnsupportedAssetClassUnrecognized, "unsupported_asset_class.unrecognized", {}},
     MessageDefinition{MessageKey::UnsupportedAssetClassTaxUnsupported,
