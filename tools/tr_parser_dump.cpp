@@ -330,6 +330,14 @@ std::string_view toString(DiagnosticCode aDiagnosticCode) {
         return "InvalidHeader";
     case DiagnosticCode::ParseError:
         return "ParseError";
+    case DiagnosticCode::DuplicateRate:
+        return "DuplicateRate";
+    case DiagnosticCode::MixedRateYears:
+        return "MixedRateYears";
+    case DiagnosticCode::DuplicateRateYear:
+        return "DuplicateRateYear";
+    case DiagnosticCode::NoRates:
+        return "NoRates";
     }
 
     return "Unknown";

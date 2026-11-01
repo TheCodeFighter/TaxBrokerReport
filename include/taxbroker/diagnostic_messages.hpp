@@ -85,6 +85,19 @@ enum class MessageKey {
     UnsupportedCorporateActionMerger,
     CorporateActionAmbiguousRatioRequiredBeforeSale,
     AnswerRejectedLaterSaleTooLarge,
+    InvalidHeaderRateFileColumns,
+    FieldCountMismatchRateFile,
+    ParseErrorUnreadableRateFile,
+    InvalidValueRateFieldExpected,
+    InvalidValueRateCurrency,
+    InvalidValueRateDate,
+    InvalidValueRateValue,
+    MissingFieldRateValue,
+    DuplicateRate,
+    MixedRateYears,
+    DuplicateRateYear,
+    NoRates,
+    InvalidHeaderRateFileDuplicateColumn,
 };
 
 enum class MessageParamKind {

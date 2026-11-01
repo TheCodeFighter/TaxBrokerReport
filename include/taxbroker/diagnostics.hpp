@@ -28,6 +28,10 @@ enum class DiagnosticCode {
     LocalizedNumberFormat,
     InvalidHeader,
     ParseError,
+    DuplicateRate,
+    MixedRateYears,
+    DuplicateRateYear,
+    NoRates,
 };
 
 /// The kind of row a parser diagnostic is about. The application result uses it to decide which

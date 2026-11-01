@@ -943,6 +943,27 @@ anything is written. So a run that fails keeps the files of an earlier run as th
 output file is changed (a missing output folder may already be created) and stderr names the
 problem with file names only, never a folder.
 
+## Official rate files
+
+`loadEcbRateFiles` (`include/taxbroker/official_rates.hpp`, `src/parsers/ecb_rate_file.cpp`) reads
+the ECB Data Portal `csvdata` files described in [`calculations.md`](calculations.md), "Official
+ECB rate files". Rate files are a separate input next to the broker exports, one file per calendar
+year, and no rate data ships with the app. The result is an `OfficialRateTable` and a list of
+`ParseDiagnostic` errors.
+
+- The table is found by exact currency code and date (`find`); there is no nearby-date lookup.
+- Each `OfficialRate` keeps its value (foreign units per 1 EUR, eight decimals), observation date,
+  series key, file checksum, display name and logical row.
+- A file is accepted whole or rejected whole. A rejected file adds no rate, and the other files
+  still load. Two files for the same year that both pass the checks are both rejected. The caller
+  decides whether any rate file error stops the run.
+- The checksum is SHA-256 (`utils/sha256.hpp`, own implementation, tested with the NIST vectors),
+  computed on the bytes that are parsed.
+- Domain code does not read the files; a caller passes the paths. We will use CLI options and add file picker functionality. The processor's use of the table, the missing-rate request and the broker
+  fallback are also in plan to do it.
+- `scripts/dump_ecb_rates.sh <file...>` loads files with the same code and writes a summary of
+  names, years, checksums and counts to `runtime/debug/`, for checking a real download.
+
 ## Parser diagnostics
 
 Parser diagnostics have three separate responsibilities:

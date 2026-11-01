@@ -187,6 +187,10 @@ TEST(DiagnosticsJsonTest, KeepsEveryDiagnosticCodeStable) {
         ExpectedCode{DiagnosticCode::LocalizedNumberFormat, "localized_number_format"},
         ExpectedCode{DiagnosticCode::InvalidHeader, "invalid_header"},
         ExpectedCode{DiagnosticCode::ParseError, "parse_error"},
+        ExpectedCode{DiagnosticCode::DuplicateRate, "duplicate_rate"},
+        ExpectedCode{DiagnosticCode::MixedRateYears, "mixed_rate_years"},
+        ExpectedCode{DiagnosticCode::DuplicateRateYear, "duplicate_rate_year"},
+        ExpectedCode{DiagnosticCode::NoRates, "no_rates"},
     };
 
     for (const auto& expected : expectedCodes)

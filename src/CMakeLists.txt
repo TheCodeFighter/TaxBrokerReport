@@ -15,6 +15,7 @@ configure_file(utils/diagnostic_messages_table.cpp.in
 
 # Define the core library
 add_library(taxbroker_core STATIC
+    parsers/ecb_rate_file.cpp
     parsers/ibkr_parser.cpp
     parsers/traderepublic_parser.cpp
     processors/application_result.cpp
@@ -35,6 +36,7 @@ add_library(taxbroker_core STATIC
     utils/exact_arithmetic.cpp
     utils/logger.cpp
     utils/numeric_util.cpp
+    utils/sha256.cpp
     utils/split_ratio.cpp
 )
 

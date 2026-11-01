@@ -55,6 +55,14 @@ std::string_view toString(DiagnosticCode aCode) {
         return "invalid_header";
     case DiagnosticCode::ParseError:
         return "parse_error";
+    case DiagnosticCode::DuplicateRate:
+        return "duplicate_rate";
+    case DiagnosticCode::MixedRateYears:
+        return "mixed_rate_years";
+    case DiagnosticCode::DuplicateRateYear:
+        return "duplicate_rate_year";
+    case DiagnosticCode::NoRates:
+        return "no_rates";
     }
 
     return "parse_error";
