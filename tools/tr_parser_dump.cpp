@@ -64,6 +64,44 @@ void writeOptionalFixedPoint(std::ostream& aOutput,
     }
 }
 
+std::string_view toString(ExchangeRateDirection aDirection) {
+    switch (aDirection)
+    {
+    case ExchangeRateDirection::ForeignPerEur:
+        return "foreign_per_eur";
+    case ExchangeRateDirection::EurPerForeign:
+        return "eur_per_foreign";
+    }
+
+    return "unknown";
+}
+
+std::string_view toString(RateDirectionVerification aVerification) {
+    switch (aVerification)
+    {
+    case RateDirectionVerification::Unverified:
+        return "unverified";
+    case RateDirectionVerification::VerifiedBySourceSamples:
+        return "verified_by_source_samples";
+    case RateDirectionVerification::VerifiedByMaintainerDecision:
+        return "verified_by_maintainer_decision";
+    }
+
+    return "unknown";
+}
+
+/// Writes the value, direction and verification of a broker rate, or `<unknown>`.
+void writeBrokerRate(std::ostream& aOutput, const std::optional<BrokerExchangeRate>& aRate) {
+    if (!aRate)
+    {
+        aOutput << "<unknown>";
+        return;
+    }
+
+    writeFixedPoint(aOutput, aRate->mValue, EXCHANGE_RATE_SCALE);
+    aOutput << ' ' << toString(aRate->mDirection) << ' ' << toString(aRate->mVerification);
+}
+
 void writeCalendarDate(std::ostream& aOutput, std::chrono::year_month_day aDate) {
     aOutput << static_cast<int>(aDate.year()) << '-' << std::setfill('0') << std::setw(2)
             << static_cast<unsigned>(aDate.month()) << '-' << std::setw(2)
@@ -436,7 +474,7 @@ void writeTrades(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      fee_paid: ";
             writeFixedPoint(aOutput, transaction.mFeePaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            writeBrokerRate(aOutput, transaction.mExchangeRate);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
                     << "\n      fee_currency: " << toString(transaction.mFeeCurrency) << '\n';
             writeUnitEvidence(aOutput, transaction.mUnitEvidence);
@@ -491,7 +529,7 @@ void writeDividends(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      tax_paid: ";
             writeOptionalFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            writeBrokerRate(aOutput, transaction.mExchangeRate);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
                     << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
             writeInstrumentEvidence(aOutput, transaction.mInstrumentEvidence);
@@ -521,7 +559,7 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      tax_paid: ";
             writeOptionalFixedPoint(aOutput, transaction.mTaxPaid, MONEY_SCALE);
             aOutput << "\n      exchange_rate: ";
-            writeOptionalFixedPoint(aOutput, transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+            writeBrokerRate(aOutput, transaction.mExchangeRate);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
                     << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
             writeInstrumentEvidence(aOutput, transaction.mInstrumentEvidence);

@@ -108,6 +108,101 @@ TEST(ExactArithmeticTest, ConvertsEachMoneyValueInTheExplicitRateDirection) {
                        NumericError::InvalidExchangeRate);
 }
 
+TEST(ExactArithmeticTest, ConvertsMoneyWithAVerifiedEurPerForeignBrokerRate) {
+    const BrokerExchangeRate rate{
+        .mValue = 90'000'000, // 0.9 EUR per USD at eight decimals.
+        .mDirection = ExchangeRateDirection::EurPerForeign,
+        .mVerification = RateDirectionVerification::VerifiedBySourceSamples,
+    };
+
+    // 100.0000 USD * 0.9 = 90.0000 EUR. Read the other way it would be 111.1111 EUR.
+    EXPECT_EQ(requireSuccessfulValue(convertBrokerMoney(1'000'000, rate)), 900'000);
+}
+
+TEST(ExactArithmeticTest, ConvertsMoneyWithAVerifiedForeignPerEurBrokerRate) {
+    const BrokerExchangeRate rate{
+        .mValue = 125'000'000, // 1 EUR = 1.25 USD at eight decimals.
+        .mDirection = ExchangeRateDirection::ForeignPerEur,
+        .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision,
+    };
+
+    // 10.0000 USD / 1.25 = 8.0000 EUR.
+    EXPECT_EQ(requireSuccessfulValue(convertBrokerMoney(100'000, rate)), 80'000);
+}
+
+TEST(ExactArithmeticTest, ConvertsAUnitPriceWithAVerifiedBrokerRate) {
+    const BrokerExchangeRate rate{
+        .mValue = 90'000'000, // 0.9 EUR per USD at eight decimals.
+        .mDirection = ExchangeRateDirection::EurPerForeign,
+        .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision,
+    };
+
+    // 10.00000000 USD * 0.9 = 9.00000000 EUR.
+    EXPECT_EQ(requireSuccessfulValue(convertBrokerUnitPrice(1'000'000'000, rate)), 900'000'000);
+}
+
+TEST(ExactArithmeticTest, RefusesToConvertWithAnUnverifiedBrokerRate) {
+    const BrokerExchangeRate eurPerForeign{
+        .mValue = 90'000'000,
+        .mDirection = ExchangeRateDirection::EurPerForeign,
+        .mVerification = RateDirectionVerification::Unverified,
+    };
+    const BrokerExchangeRate foreignPerEur{
+        .mValue = 125'000'000,
+        .mDirection = ExchangeRateDirection::ForeignPerEur,
+        .mVerification = RateDirectionVerification::Unverified,
+    };
+
+    expectNumericError(convertBrokerMoney(1'000'000, eurPerForeign),
+                       NumericError::UnverifiedExchangeRateDirection);
+    expectNumericError(convertBrokerMoney(1'000'000, foreignPerEur),
+                       NumericError::UnverifiedExchangeRateDirection);
+    expectNumericError(convertBrokerUnitPrice(1'000'000'000, eurPerForeign),
+                       NumericError::UnverifiedExchangeRateDirection);
+    expectNumericError(convertBrokerUnitPrice(1'000'000'000, foreignPerEur),
+                       NumericError::UnverifiedExchangeRateDirection);
+}
+
+TEST(ExactArithmeticTest, RefusesAnInvalidBrokerRateVerificationValue) {
+    const BrokerExchangeRate rate{
+        .mValue = 90'000'000, // 0.9 EUR per USD at eight decimals.
+        .mDirection = ExchangeRateDirection::EurPerForeign,
+        .mVerification = static_cast<RateDirectionVerification>(99),
+    };
+
+    // A value outside the enum is not a verified state, so it never converts.
+    expectNumericError(convertBrokerMoney(1'000'000, rate),
+                       NumericError::UnverifiedExchangeRateDirection);
+    expectNumericError(convertBrokerUnitPrice(1'000'000'000, rate),
+                       NumericError::UnverifiedExchangeRateDirection);
+}
+
+TEST(ExactArithmeticTest, RefusesAVerifiedBrokerRateThatIsNotUsable) {
+    const BrokerExchangeRate zeroRate{
+        .mValue = 0,
+        .mDirection = ExchangeRateDirection::EurPerForeign,
+        .mVerification = RateDirectionVerification::VerifiedBySourceSamples,
+    };
+    const BrokerExchangeRate negativeRate{
+        .mValue = -1,
+        .mDirection = ExchangeRateDirection::EurPerForeign,
+        .mVerification = RateDirectionVerification::VerifiedBySourceSamples,
+    };
+    const BrokerExchangeRate unknownDirection{
+        .mValue = 90'000'000,
+        .mDirection = static_cast<ExchangeRateDirection>(99),
+        .mVerification = RateDirectionVerification::VerifiedBySourceSamples,
+    };
+
+    expectNumericError(convertBrokerMoney(1'000'000, zeroRate), NumericError::InvalidExchangeRate);
+    expectNumericError(convertBrokerMoney(1'000'000, negativeRate),
+                       NumericError::InvalidExchangeRate);
+    expectNumericError(convertBrokerMoney(1'000'000, unknownDirection),
+                       NumericError::InvalidExchangeRate);
+    expectNumericError(convertBrokerUnitPrice(1'000'000'000, zeroRate),
+                       NumericError::InvalidExchangeRate);
+}
+
 TEST(ExactArithmeticTest, ConvertsEachUnitPriceInTheExplicitRateDirection) {
     // USD 10 at eight decimals, 1 EUR = 1.0845 USD: 9.220839096... rounds at the eighth decimal.
     EXPECT_EQ(

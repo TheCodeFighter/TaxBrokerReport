@@ -79,10 +79,15 @@ class TradeRepublicParser final : public CsvParser {
     static std::optional<Units> normalizeTradeUnits(TradeSide aTradeSide, Units aSignedUnits);
     static std::optional<Money> normalizeTradeAmount(TradeSide aTradeSide, Money aSignedAmount);
     GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow);
-    /// The broker rate of a trade or income row: the supplied `fx_rate`, or the identity rate for a
-    /// plain EUR row, or none. An invalid supplied rate also gives none; the caller reports it.
-    std::optional<ExchangeRate>
-    parseBrokerRate(std::string_view aRateText, bool aUsesOriginalCurrency, Currency aRowCurrency);
+    /// The broker rate of a trade or income row, EUR per 1 foreign unit: the supplied `fx_rate`, or
+    /// the identity rate for a plain EUR row, or none. Only a foreign `original_currency` row
+    /// settled in EUR, and the identity rate, get aVerifiedAs; any other supplied rate is
+    /// unverified (also an EUR or unknown original currency). An invalid supplied rate gives none.
+    std::optional<BrokerExchangeRate> parseBrokerRate(std::string_view aRateText,
+                                                      bool aUsesOriginalCurrency,
+                                                      Currency aAmountCurrency,
+                                                      Currency aColumnCurrency,
+                                                      RateDirectionVerification aVerifiedAs);
     static std::pair<std::string_view, std::string> pickAmountField(const csv::CSVRow& aRow);
     static std::optional<Money> parseTaxPaid(std::string_view aValue);
     static std::optional<Money> parseFeePaid(std::string_view aValue);

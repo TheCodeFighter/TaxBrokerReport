@@ -481,7 +481,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(trades[0].mAmount, 180'000);
         EXPECT_EQ(trades[0].mFeePaid, 0);
         EXPECT_EQ(trades[0].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[0].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[0].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[0].mMetadata.mTaxDate, parseCalendarDate("2023-12-31"));
 
         EXPECT_EQ(trades[1].mTradeSide, TradeSide::Buy);
@@ -490,7 +494,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(trades[1].mAmount, 125'000);
         EXPECT_EQ(trades[1].mFeePaid, 2'500);
         EXPECT_EQ(trades[1].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[1].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[1].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[1].mMetadata.mTaxDate, parseCalendarDate("2024-01-02"));
 
         EXPECT_EQ(trades[2].mTradeSide, TradeSide::Buy);
@@ -499,7 +507,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(trades[2].mAmount, 10'000);
         EXPECT_EQ(trades[2].mFeePaid, 0);
         EXPECT_EQ(trades[2].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[2].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[2].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[2].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
 
         EXPECT_EQ(trades[3].mTradeSide, TradeSide::Buy);
@@ -508,7 +520,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(trades[3].mAmount, 10'000);
         EXPECT_EQ(trades[3].mFeePaid, 0);
         EXPECT_EQ(trades[3].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[3].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[3].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[3].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
 
         EXPECT_EQ(trades[4].mTradeSide, TradeSide::Buy);
@@ -517,7 +533,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(trades[4].mAmount, 10'000);
         EXPECT_EQ(trades[4].mFeePaid, 0);
         EXPECT_EQ(trades[4].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[4].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[4].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[4].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
 
         EXPECT_EQ(trades[5].mTradeSide, TradeSide::Buy);
@@ -526,7 +546,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(trades[5].mAmount, 100'000);
         EXPECT_EQ(trades[5].mFeePaid, 0);
         EXPECT_EQ(trades[5].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[5].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[5].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[5].mMetadata.mTaxDate, parseCalendarDate("2025-01-01"));
 
         ASSERT_EQ(presentation.mDividendInstruments.size(), 1U);
@@ -538,7 +562,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(dividend.mTaxPaid, 23'400);
         EXPECT_EQ(dividend.mCurrency, Currency::EUR);
         EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
-        EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+        EXPECT_EQ(dividend.mExchangeRate,
+                  (BrokerExchangeRate{.mValue = 100'000'000,
+                                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                                      .mVerification =
+                                          RateDirectionVerification::VerifiedBySourceSamples}));
         ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
         ASSERT_EQ(presentation.mInterestInstruments.front().mTransactions.size(), 1U);
 
@@ -548,7 +576,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_FALSE(interest.mTaxPaid.has_value());
         EXPECT_EQ(interest.mCurrency, Currency::EUR);
         EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
-        EXPECT_EQ(interest.mExchangeRate, 100'000'000);
+        EXPECT_EQ(interest.mExchangeRate,
+                  (BrokerExchangeRate{.mValue = 100'000'000,
+                                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                                      .mVerification =
+                                          RateDirectionVerification::VerifiedBySourceSamples}));
         ASSERT_EQ(presentation.mBenefitEvents.size(), 1U);
         EXPECT_EQ(presentation.mBenefitEvents.front().mType, BenefitType::Saveback);
         EXPECT_EQ(presentation.mBenefitEvents.front().mAmount, 25'000);
@@ -658,7 +690,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(survivingTrades[0].mAmount, 180'000);
         EXPECT_EQ(survivingTrades[0].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[0].mCurrency, Currency::EUR);
-        EXPECT_EQ(survivingTrades[0].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[0].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(survivingTrades[0].mMetadata.mTaxDate, parseCalendarDate("2023-12-31"));
 
         EXPECT_EQ(survivingTrades[1].mTradeSide, TradeSide::Buy);
@@ -667,7 +703,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(survivingTrades[1].mAmount, 10'000);
         EXPECT_EQ(survivingTrades[1].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[1].mCurrency, Currency::EUR);
-        EXPECT_EQ(survivingTrades[1].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[1].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(survivingTrades[1].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
 
         EXPECT_EQ(survivingTrades[2].mTradeSide, TradeSide::Buy);
@@ -676,7 +716,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(survivingTrades[2].mAmount, 100'000);
         EXPECT_EQ(survivingTrades[2].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[2].mCurrency, Currency::EUR);
-        EXPECT_EQ(survivingTrades[2].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[2].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(survivingTrades[2].mMetadata.mTaxDate, parseCalendarDate("2024-01-04"));
 
         EXPECT_EQ(survivingTrades[3].mTradeSide, TradeSide::Buy);
@@ -685,7 +729,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(survivingTrades[3].mAmount, 100'000);
         EXPECT_EQ(survivingTrades[3].mFeePaid, 0);
         EXPECT_EQ(survivingTrades[3].mCurrency, Currency::EUR);
-        EXPECT_EQ(survivingTrades[3].mExchangeRate, 100'000'000);
+        EXPECT_EQ(survivingTrades[3].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(survivingTrades[3].mMetadata.mTaxDate, parseCalendarDate("2025-01-01"));
 
         ASSERT_EQ(presentation.mDividendInstruments.size(), 1U);
@@ -697,7 +745,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_EQ(dividend.mTaxPaid, 23'400);
         EXPECT_EQ(dividend.mCurrency, Currency::EUR);
         EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
-        EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+        EXPECT_EQ(dividend.mExchangeRate,
+                  (BrokerExchangeRate{.mValue = 100'000'000,
+                                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                                      .mVerification =
+                                          RateDirectionVerification::VerifiedBySourceSamples}));
         ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
         ASSERT_EQ(presentation.mInterestInstruments.front().mTransactions.size(), 1U);
 
@@ -707,7 +759,11 @@ TEST(StatementMergerIntegrationTest,
         EXPECT_FALSE(interest.mTaxPaid.has_value());
         EXPECT_EQ(interest.mCurrency, Currency::EUR);
         EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
-        EXPECT_EQ(interest.mExchangeRate, 100'000'000);
+        EXPECT_EQ(interest.mExchangeRate,
+                  (BrokerExchangeRate{.mValue = 100'000'000,
+                                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                                      .mVerification =
+                                          RateDirectionVerification::VerifiedBySourceSamples}));
         ASSERT_EQ(presentation.mBenefitEvents.size(), 1U);
         EXPECT_EQ(presentation.mBenefitEvents.front().mType, BenefitType::Saveback);
         EXPECT_EQ(presentation.mBenefitEvents.front().mAmount, 25'000);
@@ -884,7 +940,11 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         EXPECT_EQ(trades[0].mAmount, 180'000);
         EXPECT_EQ(trades[0].mFeePaid, 0);
         EXPECT_EQ(trades[0].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[0].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[0].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[0].mMetadata.mTaxDate, parseCalendarDate("2023-12-31"));
 
         EXPECT_EQ(trades[1].mTradeSide, TradeSide::Buy);
@@ -893,7 +953,11 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         EXPECT_EQ(trades[1].mAmount, 125'000);
         EXPECT_EQ(trades[1].mFeePaid, 2'500);
         EXPECT_EQ(trades[1].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[1].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[1].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[1].mMetadata.mTaxDate, parseCalendarDate("2024-01-02"));
 
         EXPECT_EQ(trades[2].mTradeSide, TradeSide::Buy);
@@ -902,7 +966,11 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         EXPECT_EQ(trades[2].mAmount, 10'000);
         EXPECT_EQ(trades[2].mFeePaid, 0);
         EXPECT_EQ(trades[2].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[2].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[2].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[2].mMetadata.mTaxDate, parseCalendarDate("2024-01-03"));
 
         EXPECT_EQ(trades[3].mTradeSide, TradeSide::Buy);
@@ -911,7 +979,11 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         EXPECT_EQ(trades[3].mAmount, 100'000);
         EXPECT_EQ(trades[3].mFeePaid, 0);
         EXPECT_EQ(trades[3].mCurrency, Currency::EUR);
-        EXPECT_EQ(trades[3].mExchangeRate, 100'000'000);
+        EXPECT_EQ(trades[3].mExchangeRate,
+                  (BrokerExchangeRate{
+                      .mValue = 100'000'000,
+                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                      .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
         EXPECT_EQ(trades[3].mMetadata.mTaxDate, parseCalendarDate("2025-01-01"));
 
         ASSERT_EQ(presentation.mDividendInstruments.size(), 1U);
@@ -923,7 +995,11 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         EXPECT_EQ(dividend.mTaxPaid, 23'400);
         EXPECT_EQ(dividend.mCurrency, Currency::EUR);
         EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
-        EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+        EXPECT_EQ(dividend.mExchangeRate,
+                  (BrokerExchangeRate{.mValue = 100'000'000,
+                                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                                      .mVerification =
+                                          RateDirectionVerification::VerifiedBySourceSamples}));
         ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
         ASSERT_EQ(presentation.mInterestInstruments.front().mTransactions.size(), 1U);
 
@@ -933,7 +1009,11 @@ TEST(StatementMergerIntegrationTest, EmptyAndFailedFilesPreserveHealthyDataAndAl
         EXPECT_FALSE(interest.mTaxPaid.has_value());
         EXPECT_EQ(interest.mCurrency, Currency::EUR);
         EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
-        EXPECT_EQ(interest.mExchangeRate, 100'000'000);
+        EXPECT_EQ(interest.mExchangeRate,
+                  (BrokerExchangeRate{.mValue = 100'000'000,
+                                      .mDirection = ExchangeRateDirection::EurPerForeign,
+                                      .mVerification =
+                                          RateDirectionVerification::VerifiedBySourceSamples}));
         ASSERT_EQ(presentation.mBenefitEvents.size(), 1U);
         EXPECT_EQ(presentation.mBenefitEvents.front().mType, BenefitType::Saveback);
         EXPECT_EQ(presentation.mBenefitEvents.front().mAmount, 25'000);
@@ -1305,7 +1385,11 @@ TEST(StatementMergerIntegrationTest, IdenticalBlankIncomeFactsDeduplicateWithout
 
     EXPECT_EQ(knownDividend.mGrossAmount, 50'000);
     EXPECT_EQ(knownDividend.mTaxPaid, 0);
-    EXPECT_EQ(knownDividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        knownDividend.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(knownDividend.mCurrency, Currency::EUR);
     EXPECT_EQ(knownDividend.mTaxCurrency, Currency::EUR);
     ASSERT_EQ(knownDividend.mMetadata.mSources.size(), 2U);
@@ -1413,7 +1497,11 @@ TEST(StatementMergerIntegrationTest,
 
     EXPECT_EQ(dividend.mGrossAmount, 50'000);
     EXPECT_EQ(dividend.mTaxPaid, 0);
-    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        dividend.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(
         dividend.mMetadata.mSources,
         (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
@@ -1538,7 +1626,11 @@ TEST(StatementMergerIntegrationTest,
 
     EXPECT_EQ(dividend.mGrossAmount, 50'000);
     EXPECT_EQ(dividend.mTaxPaid, 0);
-    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        dividend.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(
         dividend.mMetadata.mSources,
         (std::vector<SourceReference>{{.mBroker = Broker::TradeRepublic,
@@ -2343,7 +2435,11 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -2368,7 +2464,11 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInOneFile) {
     EXPECT_EQ(other.mAmount, 120000);
     EXPECT_EQ(other.mFeePaid, 2000);
     EXPECT_EQ(other.mCurrency, Currency::EUR);
-    EXPECT_EQ(other.mExchangeRate, 100'000'000);
+    EXPECT_EQ(other.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(other.mUnitEvidence.size(), 1U);
     EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
@@ -2496,7 +2596,11 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInTwoFiles) {
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -2521,7 +2625,11 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInTwoFiles) {
     EXPECT_EQ(other.mAmount, 120000);
     EXPECT_EQ(other.mFeePaid, 2000);
     EXPECT_EQ(other.mCurrency, Currency::EUR);
-    EXPECT_EQ(other.mExchangeRate, 100'000'000);
+    EXPECT_EQ(other.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(other.mUnitEvidence.size(), 1U);
     EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
@@ -2646,7 +2754,11 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInReversedRows) {
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -2671,7 +2783,11 @@ TEST(StatementMergerIntegrationTest, RetainsTradeClassConflictInReversedRows) {
     EXPECT_EQ(other.mAmount, 120000);
     EXPECT_EQ(other.mFeePaid, 2000);
     EXPECT_EQ(other.mCurrency, Currency::EUR);
-    EXPECT_EQ(other.mExchangeRate, 100'000'000);
+    EXPECT_EQ(other.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(other.mUnitEvidence.size(), 1U);
     EXPECT_EQ(other.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(other.mUnitEvidence[0].mSource, other.mMetadata.mSources[0]);
@@ -2796,7 +2912,11 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInOneFile) {
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -2945,7 +3065,11 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInTwoFiles) {
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -3091,7 +3215,11 @@ TEST(StatementMergerIntegrationTest, RetainsActionClassConflictInReversedRows) {
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -3263,7 +3391,11 @@ TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) 
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -3288,7 +3420,11 @@ TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) 
     EXPECT_EQ(sale.mAmount, 120000);
     EXPECT_EQ(sale.mFeePaid, 2000);
     EXPECT_EQ(sale.mCurrency, Currency::EUR);
-    EXPECT_EQ(sale.mExchangeRate, 100'000'000);
+    EXPECT_EQ(sale.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(sale.mUnitEvidence.size(), 1U);
     EXPECT_EQ(sale.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(sale.mUnitEvidence[0].mSource, sale.mMetadata.mSources[0]);
@@ -3315,7 +3451,11 @@ TEST(StatementMergerIntegrationTest, LaterStockDoesNotClearEarlierFundConflict) 
     EXPECT_EQ(laterPurchase.mAmount, 240000);
     EXPECT_EQ(laterPurchase.mFeePaid, 0);
     EXPECT_EQ(laterPurchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(laterPurchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(laterPurchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(laterPurchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(laterPurchase.mUnitEvidence[0].mSourceText, "3.000000000");
     EXPECT_EQ(laterPurchase.mUnitEvidence[0].mSource, laterPurchase.mMetadata.mSources[0]);
@@ -3439,7 +3579,11 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockLast) {
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
-    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    EXPECT_EQ(unknown.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
     EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
@@ -3464,7 +3608,11 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockLast) {
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
-    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    EXPECT_EQ(known.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(known.mUnitEvidence.size(), 1U);
     EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
@@ -3597,7 +3745,11 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockFirst) 
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
-    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    EXPECT_EQ(unknown.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
     EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
@@ -3622,7 +3774,11 @@ TEST(StatementMergerIntegrationTest, MissingClassStaysUnresolvedWithStockFirst) 
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
-    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    EXPECT_EQ(known.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(known.mUnitEvidence.size(), 1U);
     EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
@@ -3755,7 +3911,11 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockLa
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
-    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    EXPECT_EQ(unknown.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
     EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
@@ -3780,7 +3940,11 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockLa
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
-    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    EXPECT_EQ(known.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(known.mUnitEvidence.size(), 1U);
     EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
@@ -3913,7 +4077,11 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockFi
     EXPECT_EQ(unknown.mAmount, 200000);
     EXPECT_EQ(unknown.mFeePaid, 1000);
     EXPECT_EQ(unknown.mCurrency, Currency::EUR);
-    EXPECT_EQ(unknown.mExchangeRate, 100'000'000);
+    EXPECT_EQ(unknown.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(unknown.mUnitEvidence.size(), 1U);
     EXPECT_EQ(unknown.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(unknown.mUnitEvidence[0].mSource, unknown.mMetadata.mSources[0]);
@@ -3938,7 +4106,11 @@ TEST(StatementMergerIntegrationTest, UnrecognizedClassStaysUnresolvedWithStockFi
     EXPECT_EQ(known.mAmount, 120000);
     EXPECT_EQ(known.mFeePaid, 2000);
     EXPECT_EQ(known.mCurrency, Currency::EUR);
-    EXPECT_EQ(known.mExchangeRate, 100'000'000);
+    EXPECT_EQ(known.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(known.mUnitEvidence.size(), 1U);
     EXPECT_EQ(known.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(known.mUnitEvidence[0].mSource, known.mMetadata.mSources[0]);
@@ -4071,7 +4243,11 @@ TEST(StatementMergerIntegrationTest, RetainsDistinctUnrecognizedClassLabels) {
     EXPECT_EQ(first.mAmount, 200000);
     EXPECT_EQ(first.mFeePaid, 1000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
-    EXPECT_EQ(first.mExchangeRate, 100'000'000);
+    EXPECT_EQ(first.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(first.mUnitEvidence.size(), 1U);
     EXPECT_EQ(first.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(first.mUnitEvidence[0].mSource, first.mMetadata.mSources[0]);
@@ -4096,7 +4272,11 @@ TEST(StatementMergerIntegrationTest, RetainsDistinctUnrecognizedClassLabels) {
     EXPECT_EQ(second.mAmount, 120000);
     EXPECT_EQ(second.mFeePaid, 2000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
-    EXPECT_EQ(second.mExchangeRate, 100'000'000);
+    EXPECT_EQ(second.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(second.mUnitEvidence.size(), 1U);
     EXPECT_EQ(second.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(second.mUnitEvidence[0].mSource, second.mMetadata.mSources[0]);
@@ -4246,7 +4426,11 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInOn
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
-    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    EXPECT_EQ(survivor.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
     EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
     EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
@@ -4401,7 +4585,11 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithKnownClassesInTw
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
-    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    EXPECT_EQ(survivor.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
     EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
     EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
@@ -4551,7 +4739,11 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabe
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
-    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    EXPECT_EQ(survivor.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
     EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
     EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
@@ -4706,7 +4898,11 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithUnrecognizedLabe
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
-    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    EXPECT_EQ(survivor.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
     EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
     EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
@@ -4856,7 +5052,11 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionIn
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
-    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    EXPECT_EQ(survivor.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
     EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
     EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
@@ -5012,7 +5212,11 @@ TEST(StatementMergerIntegrationTest, RejectsWholeSameIdGroupWithTradeAndActionIn
     EXPECT_EQ(survivor.mAmount, 240000);
     EXPECT_EQ(survivor.mFeePaid, 0);
     EXPECT_EQ(survivor.mCurrency, Currency::EUR);
-    EXPECT_EQ(survivor.mExchangeRate, 100'000'000);
+    EXPECT_EQ(survivor.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(survivor.mUnitEvidence.size(), 1U);
     EXPECT_EQ(survivor.mUnitEvidence[0].mSourceText, "3.000000000");
     EXPECT_EQ(survivor.mUnitEvidence[0].mSource, survivor.mMetadata.mSources[0]);
@@ -5142,7 +5346,11 @@ TEST(StatementMergerIntegrationTest, RetainsTwoClassifiedEventsWithoutTransactio
     EXPECT_EQ(first.mAmount, 200000);
     EXPECT_EQ(first.mFeePaid, 1000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
-    EXPECT_EQ(first.mExchangeRate, 100'000'000);
+    EXPECT_EQ(first.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(first.mUnitEvidence.size(), 1U);
     EXPECT_EQ(first.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(first.mUnitEvidence[0].mSource, first.mMetadata.mSources[0]);
@@ -5167,7 +5375,11 @@ TEST(StatementMergerIntegrationTest, RetainsTwoClassifiedEventsWithoutTransactio
     EXPECT_EQ(second.mAmount, 200000);
     EXPECT_EQ(second.mFeePaid, 1000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
-    EXPECT_EQ(second.mExchangeRate, 100'000'000);
+    EXPECT_EQ(second.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(second.mUnitEvidence.size(), 1U);
     EXPECT_EQ(second.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(second.mUnitEvidence[0].mSource, second.mMetadata.mSources[0]);
@@ -5265,7 +5477,11 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInOneFileLayout) {
     EXPECT_EQ(unnamed.mAmount, 200000);
     EXPECT_EQ(unnamed.mFeePaid, 1000);
     EXPECT_EQ(unnamed.mCurrency, Currency::EUR);
-    EXPECT_EQ(unnamed.mExchangeRate, 100'000'000);
+    EXPECT_EQ(unnamed.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(unnamed.mUnitEvidence.size(), 1U);
     EXPECT_EQ(unnamed.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(unnamed.mUnitEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
@@ -5290,7 +5506,11 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInOneFileLayout) {
     EXPECT_EQ(named.mAmount, 120000);
     EXPECT_EQ(named.mFeePaid, 2000);
     EXPECT_EQ(named.mCurrency, Currency::EUR);
-    EXPECT_EQ(named.mExchangeRate, 100'000'000);
+    EXPECT_EQ(named.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(named.mUnitEvidence.size(), 1U);
     EXPECT_EQ(named.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(named.mUnitEvidence[0].mSource, named.mMetadata.mSources[0]);
@@ -5409,7 +5629,11 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInTwoFileLayout) {
     EXPECT_EQ(unnamed.mAmount, 200000);
     EXPECT_EQ(unnamed.mFeePaid, 1000);
     EXPECT_EQ(unnamed.mCurrency, Currency::EUR);
-    EXPECT_EQ(unnamed.mExchangeRate, 100'000'000);
+    EXPECT_EQ(unnamed.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(unnamed.mUnitEvidence.size(), 1U);
     EXPECT_EQ(unnamed.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(unnamed.mUnitEvidence[0].mSource, unnamed.mMetadata.mSources[0]);
@@ -5434,7 +5658,11 @@ TEST(StatementMergerIntegrationTest, CompletesMissingTradeNameInTwoFileLayout) {
     EXPECT_EQ(named.mAmount, 120000);
     EXPECT_EQ(named.mFeePaid, 2000);
     EXPECT_EQ(named.mCurrency, Currency::EUR);
-    EXPECT_EQ(named.mExchangeRate, 100'000'000);
+    EXPECT_EQ(named.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(named.mUnitEvidence.size(), 1U);
     EXPECT_EQ(named.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(named.mUnitEvidence[0].mSource, named.mMetadata.mSources[0]);
@@ -6558,7 +6786,11 @@ TEST(StatementMergerIntegrationTest, PreservesEveryNameVariantWithinOneFile) {
     EXPECT_EQ(first.mAmount, 200000);
     EXPECT_EQ(first.mFeePaid, 1000);
     EXPECT_EQ(first.mCurrency, Currency::EUR);
-    EXPECT_EQ(first.mExchangeRate, 100'000'000);
+    EXPECT_EQ(first.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(first.mUnitEvidence.size(), 1U);
     EXPECT_EQ(first.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(first.mUnitEvidence[0].mSource, first.mMetadata.mSources[0]);
@@ -6583,7 +6815,11 @@ TEST(StatementMergerIntegrationTest, PreservesEveryNameVariantWithinOneFile) {
     EXPECT_EQ(second.mAmount, 120000);
     EXPECT_EQ(second.mFeePaid, 2000);
     EXPECT_EQ(second.mCurrency, Currency::EUR);
-    EXPECT_EQ(second.mExchangeRate, 100'000'000);
+    EXPECT_EQ(second.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(second.mUnitEvidence.size(), 1U);
     EXPECT_EQ(second.mUnitEvidence[0].mSourceText, "-1.000000000");
     EXPECT_EQ(second.mUnitEvidence[0].mSource, second.mMetadata.mSources[0]);
@@ -6847,7 +7083,11 @@ TEST(StatementMergerIntegrationTest,
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -6960,7 +7200,11 @@ TEST(StatementMergerIntegrationTest,
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);
@@ -7072,7 +7316,11 @@ TEST(StatementMergerIntegrationTest, InvalidNamelessTradeDoesNotContaminateHealt
     EXPECT_EQ(purchase.mAmount, 200000);
     EXPECT_EQ(purchase.mFeePaid, 1000);
     EXPECT_EQ(purchase.mCurrency, Currency::EUR);
-    EXPECT_EQ(purchase.mExchangeRate, 100'000'000);
+    EXPECT_EQ(purchase.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     ASSERT_EQ(purchase.mUnitEvidence.size(), 1U);
     EXPECT_EQ(purchase.mUnitEvidence[0].mSourceText, "2.000000000");
     EXPECT_EQ(purchase.mUnitEvidence[0].mSource, purchase.mMetadata.mSources[0]);

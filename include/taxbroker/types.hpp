@@ -33,6 +33,31 @@ constexpr UnitPrice UNIT_PRICE_SCALE = 100000000;
 using ExchangeRate = std::int64_t;
 constexpr ExchangeRate EXCHANGE_RATE_SCALE = 100000000;
 
+/// What a rate means: ForeignPerEur is `1 EUR = rate` foreign units (the official direction),
+/// EurPerForeign is `1 foreign unit = rate` EUR.
+enum class ExchangeRateDirection {
+    ForeignPerEur,
+    EurPerForeign,
+};
+
+/// How a broker rate's direction is known. Only a verified direction may convert an amount.
+enum class RateDirectionVerification {
+    Unverified,
+    /// Export samples fit only this direction (Trade Republic income).
+    VerifiedBySourceSamples,
+    /// No sample exists; the maintainer decided the direction (Trade Republic trades, 2026-10-20).
+    VerifiedByMaintainerDecision,
+};
+
+/// A broker rate with the direction it is read in and how that direction is known.
+struct BrokerExchangeRate {
+    ExchangeRate mValue{};
+    ExchangeRateDirection mDirection{ExchangeRateDirection::EurPerForeign};
+    RateDirectionVerification mVerification{RateDirectionVerification::Unverified};
+
+    bool operator==(const BrokerExchangeRate&) const = default;
+};
+
 /*
     Fixed-point asset/unit representation with 8 decimal precision.
     Supports fractional shares and precise partial trade matching.
@@ -159,8 +184,9 @@ struct TradeTransaction {
     std::optional<Money> mAmount;
     /// Positive fee paid; zero when the export has no fee.
     Money mFeePaid{};
-    /// Optional broker rate, separate from the official rate selected during processing.
-    std::optional<ExchangeRate> mExchangeRate;
+    /// Optional broker rate with its direction, separate from the official rate selected during
+    /// processing.
+    std::optional<BrokerExchangeRate> mExchangeRate;
     /// Currency of the unit price and the amount.
     Currency mCurrency{Currency::Unknown};
     /// Currency of mFeePaid; the export's `currency` field.
@@ -182,8 +208,9 @@ struct DividendTransaction {
     Money mGrossAmount{};
     /// Positive withholding in mTaxCurrency; absent means unknown, including blank source tax.
     std::optional<Money> mTaxPaid;
-    /// Optional broker rate, separate from the official rate selected during processing.
-    std::optional<ExchangeRate> mExchangeRate;
+    /// Optional broker rate with its direction, separate from the official rate selected during
+    /// processing.
+    std::optional<BrokerExchangeRate> mExchangeRate;
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
@@ -200,8 +227,9 @@ struct InterestTransaction {
     Money mGrossAmount{};
     /// Positive withholding in mTaxCurrency; absent means unknown, including blank source tax.
     std::optional<Money> mTaxPaid;
-    /// Optional broker rate, separate from the official rate selected during processing.
-    std::optional<ExchangeRate> mExchangeRate;
+    /// Optional broker rate with its direction, separate from the official rate selected during
+    /// processing.
+    std::optional<BrokerExchangeRate> mExchangeRate;
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;

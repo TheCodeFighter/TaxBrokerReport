@@ -20,6 +20,7 @@ enum class NumericError {
     InvalidInput,
     InvalidDenominator,
     InvalidExchangeRate,
+    UnverifiedExchangeRateDirection,
     Overflow,
     UnrepresentableValue,
 };
@@ -96,11 +97,6 @@ class ExactRational {
                                                         std::int64_t aScale,
                                                         const DestinationRange& aRange = {});
 
-enum class ExchangeRateDirection {
-    ForeignPerEur,
-    EurPerForeign,
-};
-
 /// Converts foreign Money to EUR using a rate stored at EXCHANGE_RATE_SCALE.
 /// ForeignPerEur divides by the rate; EurPerForeign multiplies. Rounds once to MONEY_SCALE.
 [[nodiscard]] NumericResult<Money> convertMoney(Money aForeignMoney,
@@ -114,6 +110,17 @@ enum class ExchangeRateDirection {
                                                         ExchangeRate aRate,
                                                         ExchangeRateDirection aDirection,
                                                         const DestinationRange& aRange = {});
+
+/// Converts foreign Money to EUR with a broker rate in its own stored direction. A rate whose
+/// direction is not verified returns UnverifiedExchangeRateDirection; otherwise as convertMoney.
+[[nodiscard]] NumericResult<Money> convertBrokerMoney(Money aForeignMoney,
+                                                      const BrokerExchangeRate& aRate,
+                                                      const DestinationRange& aRange = {});
+
+/// Converts a foreign unit price to EUR with a broker rate, like convertBrokerMoney.
+[[nodiscard]] NumericResult<UnitPrice> convertBrokerUnitPrice(UnitPrice aForeignUnitPrice,
+                                                              const BrokerExchangeRate& aRate,
+                                                              const DestinationRange& aRange = {});
 
 struct AllocationKey {
     std::size_t mLotOrder{};
