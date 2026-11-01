@@ -232,8 +232,14 @@ must not be selected by a pre-checked control, a saved preference, or the Enter 
 rate field.
 
 The fallback is available only when the broker parser knows the rate's direction and the rate is
-positive. The frontend shows the direction and a conversion example. An unexplained decimal must
-not be guessed to mean either foreign currency per EUR or EUR per foreign currency.
+positive. Each broker rate is stored with its direction and a verification state, and
+`convertBrokerMoney` and `convertBrokerUnitPrice` read the direction from the stored rate; an
+unverified rate is refused. Trade Republic `fx_rate` means EUR per 1 foreign unit: verified from
+export samples for income, and by the maintainer's decision for trades (there is no foreign trade
+sample). Only a row with a foreign `original_currency` settled in EUR, and the identity rate of a
+plain EUR row, are verified; any other supplied rate is kept as unverified. The frontend shows the
+direction and a conversion example. An unexplained decimal must not be guessed to mean either
+foreign currency per EUR or EUR per foreign currency.
 
 A broker rate applies only to its source event. It is not reused for another instrument or event,
 even on the same date, because broker conversion rates may differ by transaction. If the user
@@ -513,7 +519,7 @@ The processor uses these diagnostic codes:
 | Code | Meaning |
 | --- | --- |
 | `missing_exchange_rate` | The required official rate was not entered and no broker fallback was confirmed. |
-| `invalid_exchange_rate` | A rate is zero, negative, malformed, too precise, out of range, or has an unknown direction. |
+| `invalid_exchange_rate` | A rate is zero, negative, malformed, too precise, out of range, or has an unknown or unverified direction. |
 | `unrepresentable_value` | A required value cannot be represented at its destination scale, including a positive value that becomes zero. |
 | `arithmetic_overflow` | A checked multiplication, division, addition, subtraction, or rounding result exceeds its integer range. |
 | `xml_value_out_of_range` | A valid internal value does not fit the target FURS XML field. |

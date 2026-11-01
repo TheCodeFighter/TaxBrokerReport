@@ -352,7 +352,7 @@ struct TradeRepublicParser::ParsedIncome {
     Date mDate;
     Money mGrossAmount{};
     std::optional<Money> mTaxPaid;
-    std::optional<ExchangeRate> mExchangeRate;
+    std::optional<BrokerExchangeRate> mExchangeRate;
     Currency mCurrency{};
     Currency mTaxCurrency{};
 };
@@ -795,16 +795,20 @@ void TradeRepublicParser::isInstrumentValid(std::string_view aContext,
 GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) {
     const auto originalCurrencyValue = aCsvRow["original_currency"].get<std::string>();
     const bool usesOriginalCurrency = !originalCurrencyValue.empty();
-    const auto currency = parseCurrency(
-        usesOriginalCurrency ? originalCurrencyValue : aCsvRow["currency"].get<std::string>());
+    const auto columnCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
+    const auto currency =
+        usesOriginalCurrency ? parseCurrency(originalCurrencyValue) : columnCurrency;
 
     // The amount, the currency and the rate are parsed on their own, so that each invalid
     // field can be reported.
     auto grossAmount =
         parseMoney(usesOriginalCurrency ? aCsvRow["original_amount"].get<std::string>()
                                         : aCsvRow["amount"].get<std::string>());
-    const auto exchangeRate =
-        parseBrokerRate(aCsvRow["fx_rate"].get<std::string>(), usesOriginalCurrency, currency);
+    const auto exchangeRate = parseBrokerRate(aCsvRow["fx_rate"].get<std::string>(),
+                                              usesOriginalCurrency,
+                                              currency,
+                                              columnCurrency,
+                                              RateDirectionVerification::VerifiedBySourceSamples);
 
     if (grossAmount && *grossAmount < 0)
     {
@@ -818,15 +822,43 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
     };
 }
 
-std::optional<ExchangeRate> TradeRepublicParser::parseBrokerRate(std::string_view aRateText,
-                                                                 bool aUsesOriginalCurrency,
-                                                                 Currency aRowCurrency) {
-    if (!aUsesOriginalCurrency && aRowCurrency == Currency::EUR && aRateText.empty())
+std::optional<BrokerExchangeRate>
+TradeRepublicParser::parseBrokerRate(std::string_view aRateText,
+                                     bool aUsesOriginalCurrency,
+                                     Currency aAmountCurrency,
+                                     Currency aColumnCurrency,
+                                     RateDirectionVerification aVerifiedAs) {
+    // Trade Republic rates are EUR per 1 foreign unit.
+    const bool isPlainEurRow = !aUsesOriginalCurrency && aColumnCurrency == Currency::EUR;
+
+    if (isPlainEurRow && aRateText.empty())
     {
-        return EXCHANGE_RATE_SCALE;
+        return BrokerExchangeRate{
+            .mValue = EXCHANGE_RATE_SCALE,
+            .mDirection = ExchangeRateDirection::EurPerForeign,
+            .mVerification = aVerifiedAs,
+        };
     }
 
-    return parseExchangeRate(aRateText);
+    const auto rate = parseExchangeRate(aRateText);
+
+    if (!rate)
+    {
+        return std::nullopt;
+    }
+
+    // Only the shape the direction evidence covers is verified: a foreign (known, not EUR)
+    // amount in original_currency, settled in EUR. Any other supplied rate stays unverified.
+    const bool isForeignAmount =
+        aAmountCurrency != Currency::EUR && aAmountCurrency != Currency::Unknown;
+    const bool isVerifiedShape =
+        aUsesOriginalCurrency && isForeignAmount && aColumnCurrency == Currency::EUR;
+
+    return BrokerExchangeRate{
+        .mValue = *rate,
+        .mDirection = ExchangeRateDirection::EurPerForeign,
+        .mVerification = isVerifiedShape ? aVerifiedAs : RateDirectionVerification::Unverified,
+    };
 }
 
 std::pair<std::string_view, std::string>
@@ -868,7 +900,12 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     const auto feeCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
     const auto currency = parseCurrency(getAmountCurrencyValue(aCsvRow));
     const auto rateText = aCsvRow["fx_rate"].get<std::string>();
-    const auto exchangeRate = parseBrokerRate(rateText, usesOriginalCurrency, feeCurrency);
+    const auto exchangeRate =
+        parseBrokerRate(rateText,
+                        usesOriginalCurrency,
+                        currency,
+                        feeCurrency,
+                        RateDirectionVerification::VerifiedByMaintainerDecision);
     const auto& classLabel = aParsedValues.mAssetClass;
     const auto assetClass = parseAssetClass(classLabel);
 

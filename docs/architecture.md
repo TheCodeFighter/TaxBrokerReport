@@ -114,7 +114,12 @@ zero, negative, out-of-range or nonzero values rounded to zero produce an `Inval
 on `fx_rate` and skip that row. The diagnostic retains filename, row and transaction ID without
 repeating the value. Other valid rows and their diagnostics remain available through merging.
 Valid source rates retain the established eight-decimal import rounding; a positive rate that
-rounds to one rate tick is representable. This numeric validation does not verify rate direction.
+rounds to one rate tick is representable. A stored broker rate also carries its direction and how
+that direction is known (`BrokerExchangeRate`). Trade Republic `fx_rate` is EUR per 1 foreign
+unit. The direction is verified only for a row with a foreign `original_currency` settled in EUR
+(export samples for income, the maintainer's decision for trades) and for the identity rate of a
+plain EUR row. Any other supplied rate, such as a foreign amount directly in `amount`, is kept as
+unverified and cannot convert an amount.
 
 Required income facts remain required even when broker FX is absent. Empty fields produce
 `MissingField`; invalid supplied fields produce `InvalidValue`. Trade Republic's required

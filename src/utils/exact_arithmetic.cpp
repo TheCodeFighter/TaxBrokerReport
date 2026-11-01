@@ -133,6 +133,20 @@ NumericResult<std::int64_t> convertScaledAmount(std::int64_t aForeignAmount,
     return roundToScaled(std::get<ExactRational>(converted), 1, aRange);
 }
 
+/// True only for a verified state; an unverified or invalid value is not verified.
+bool isDirectionVerified(RateDirectionVerification aVerification) {
+    switch (aVerification)
+    {
+    case RateDirectionVerification::VerifiedBySourceSamples:
+    case RateDirectionVerification::VerifiedByMaintainerDecision:
+        return true;
+    case RateDirectionVerification::Unverified:
+        return false;
+    }
+
+    return false;
+}
+
 } // namespace
 
 ExactRational::ExactRational(WideInteger aInteger) : mNumerator(std::move(aInteger)) {}
@@ -306,6 +320,28 @@ NumericResult<UnitPrice> convertUnitPrice(UnitPrice aForeignUnitPrice,
                                           ExchangeRateDirection aDirection,
                                           const DestinationRange& aRange) {
     return convertScaledAmount(aForeignUnitPrice, aRate, aDirection, aRange);
+}
+
+NumericResult<Money> convertBrokerMoney(Money aForeignMoney,
+                                        const BrokerExchangeRate& aRate,
+                                        const DestinationRange& aRange) {
+    if (!isDirectionVerified(aRate.mVerification))
+    {
+        return NumericError::UnverifiedExchangeRateDirection;
+    }
+
+    return convertScaledAmount(aForeignMoney, aRate.mValue, aRate.mDirection, aRange);
+}
+
+NumericResult<UnitPrice> convertBrokerUnitPrice(UnitPrice aForeignUnitPrice,
+                                                const BrokerExchangeRate& aRate,
+                                                const DestinationRange& aRange) {
+    if (!isDirectionVerified(aRate.mVerification))
+    {
+        return NumericError::UnverifiedExchangeRateDirection;
+    }
+
+    return convertScaledAmount(aForeignUnitPrice, aRate.mValue, aRate.mDirection, aRange);
 }
 
 NumericResult<RoundedAllocation>

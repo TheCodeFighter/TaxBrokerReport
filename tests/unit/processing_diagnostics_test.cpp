@@ -119,6 +119,17 @@ TEST(ProcessingDiagnosticsTest, InvalidExchangeRateReturnsAControlledMessage) {
     EXPECT_TRUE(diagnostic.mMessageParams.empty());
 }
 
+TEST(ProcessingDiagnosticsTest,
+     UnverifiedExchangeRateDirectionReturnsTheInvalidExchangeRateMessage) {
+    const auto diagnostic = numericDiagnostic(NumericError::UnverifiedExchangeRateDirection, {});
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::InvalidExchangeRate);
+    EXPECT_EQ(diagnostic.mMessage, "The exchange rate is invalid.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InvalidExchangeRate);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
+}
+
 TEST(ProcessingDiagnosticsTest, CorporateActionContextOverridesTheGenericOverflowCode) {
     const ProcessingContext context{
         .mStage = PipelineStage::CorporateAction,

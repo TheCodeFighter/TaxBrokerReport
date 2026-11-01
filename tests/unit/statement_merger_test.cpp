@@ -508,7 +508,11 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
             .mUnits = 2 * UNITS_SCALE,
             .mAmount = 24000,
             .mFeePaid = 100,
-            .mExchangeRate = 110000000,
+            .mExchangeRate =
+                BrokerExchangeRate{.mValue = 110000000,
+                                   .mDirection = ExchangeRateDirection::EurPerForeign,
+                                   .mVerification =
+                                       RateDirectionVerification::VerifiedByMaintainerDecision},
             .mCurrency = Currency::USD,
             .mFeeCurrency = Currency::EUR,
         }},
@@ -538,7 +542,11 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
                                       "dividend-id"),
             .mGrossAmount = 5000,
             .mTaxPaid = 1000,
-            .mExchangeRate = 110000000,
+            .mExchangeRate =
+                BrokerExchangeRate{.mValue = 110000000,
+                                   .mDirection = ExchangeRateDirection::EurPerForeign,
+                                   .mVerification =
+                                       RateDirectionVerification::VerifiedBySourceSamples},
             .mCurrency = Currency::USD,
             .mTaxCurrency = Currency::EUR,
         }},
@@ -556,7 +564,11 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
                                       "interest-id"),
             .mGrossAmount = 6000,
             .mTaxPaid = 1200,
-            .mExchangeRate = 120000000,
+            .mExchangeRate =
+                BrokerExchangeRate{.mValue = 120000000,
+                                   .mDirection = ExchangeRateDirection::EurPerForeign,
+                                   .mVerification =
+                                       RateDirectionVerification::VerifiedBySourceSamples},
             .mCurrency = Currency::GBP,
             .mTaxCurrency = Currency::EUR,
         }},
@@ -890,7 +902,7 @@ void expectFieldConflicts(StatementEventKind aKind,
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
-    const std::array<FieldChange<TradeInstrument>, 15> changes{{
+    const std::array<FieldChange<TradeInstrument>, 17> changes{{
         {"tax date",
          [](TradeInstrument& aValue) {
              aValue.mTransactions.front().mMetadata.mTaxDate += DayDuration{1};
@@ -917,7 +929,17 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
         {"missing exchange rate",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
-         [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate.value(); }},
+         [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate->mValue; }},
+        {"exchange rate direction",
+         [](TradeInstrument& aValue) {
+             aValue.mTransactions.front().mExchangeRate->mDirection =
+                 ExchangeRateDirection::ForeignPerEur;
+         }},
+        {"exchange rate verification",
+         [](TradeInstrument& aValue) {
+             aValue.mTransactions.front().mExchangeRate->mVerification =
+                 RateDirectionVerification::Unverified;
+         }},
         {"currency",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mCurrency = Currency::GBP; }},
         {"fee currency",
@@ -956,7 +978,12 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdWhenOnlyOneHasA
         .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
         .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
         .mFeePaid = 10'000,          // 1.00 at four decimal places.
-        .mExchangeRate = 90'000'000, // 0.9 at eight decimal places.
+        // Rate 0.9 at eight decimal places.
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 90'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::USD,
         .mFeeCurrency = Currency::EUR,
     };
@@ -1039,7 +1066,11 @@ TEST(DeterministicStatementMergerTest,
         .mUnits = 100'000'000,       // 1 unit at eight decimal places.
         .mAmount = 100'000,          // EUR 10.00 at four decimal places.
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mFeeCurrency = Currency::EUR,
     };
@@ -1050,7 +1081,11 @@ TEST(DeterministicStatementMergerTest,
         .mUnits = 100'000'000,       // 1 unit at eight decimal places.
         .mAmount = 100'000,          // EUR 10.00 at four decimal places.
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mFeeCurrency = Currency::EUR,
     };
@@ -1120,7 +1155,12 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdThatDifferOnlyI
         .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
         .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
         .mFeePaid = 10'000,          // 1.00 at four decimal places.
-        .mExchangeRate = 90'000'000, // 0.9 at eight decimal places.
+        // Rate 0.9 at eight decimal places.
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 90'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::USD,
         .mFeeCurrency = Currency::EUR,
     };
@@ -1131,7 +1171,12 @@ TEST(DeterministicStatementMergerTest, RejectsTradesWithTheSameIdThatDifferOnlyI
         .mUnits = 1'000'000'000,     // 10 units at eight decimal places.
         .mAmount = 1'000'000,        // USD 100.00 at four decimal places.
         .mFeePaid = 10'000,          // 1.00 at four decimal places.
-        .mExchangeRate = 90'000'000, // 0.9 at eight decimal places.
+        // Rate 0.9 at eight decimal places.
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 90'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::USD,
         .mFeeCurrency = Currency::USD,
     };
@@ -1205,7 +1250,7 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedCorporateActionFact) {
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
-    const std::array<FieldChange<DividendInstrument>, 8> changes{{
+    const std::array<FieldChange<DividendInstrument>, 10> changes{{
         {"ISIN", [](DividendInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
         {"gross", [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mGrossAmount; }},
         {"tax",
@@ -1215,7 +1260,17 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
         {"missing exchange rate",
          [](DividendInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
-         [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate.value(); }},
+         [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate->mValue; }},
+        {"exchange rate direction",
+         [](DividendInstrument& aValue) {
+             aValue.mTransactions.front().mExchangeRate->mDirection =
+                 ExchangeRateDirection::ForeignPerEur;
+         }},
+        {"exchange rate verification",
+         [](DividendInstrument& aValue) {
+             aValue.mTransactions.front().mExchangeRate->mVerification =
+                 RateDirectionVerification::Unverified;
+         }},
         {"currency",
          [](DividendInstrument& aValue) {
              aValue.mTransactions.front().mCurrency = Currency::GBP;
@@ -1234,7 +1289,7 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
-    const std::array<FieldChange<InterestInstrument>, 10> changes{{
+    const std::array<FieldChange<InterestInstrument>, 12> changes{{
         {"name without ISIN", [](InterestInstrument& aValue) { aValue.mName = "Other payer"; }},
         {"ISIN presence", [](InterestInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
         {"type",
@@ -1247,7 +1302,17 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
         {"missing exchange rate",
          [](InterestInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
-         [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate.value(); }},
+         [](InterestInstrument& aValue) { ++aValue.mTransactions.front().mExchangeRate->mValue; }},
+        {"exchange rate direction",
+         [](InterestInstrument& aValue) {
+             aValue.mTransactions.front().mExchangeRate->mDirection =
+                 ExchangeRateDirection::ForeignPerEur;
+         }},
+        {"exchange rate verification",
+         [](InterestInstrument& aValue) {
+             aValue.mTransactions.front().mExchangeRate->mVerification =
+                 RateDirectionVerification::Unverified;
+         }},
         {"currency",
          [](InterestInstrument& aValue) {
              aValue.mTransactions.front().mCurrency = Currency::USD;
@@ -1427,7 +1492,12 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
-                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    trade.mExchangeRate,
+                    (BrokerExchangeRate{
+                        .mValue = 110'000'000,
+                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                        .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
                 EXPECT_EQ(trade.mCurrency, Currency::USD);
                 EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
             }
@@ -1447,7 +1517,12 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
             {
                 EXPECT_EQ(dividend.mGrossAmount, 5'000);
                 EXPECT_EQ(dividend.mTaxPaid, 1'000);
-                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    dividend.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 110'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(dividend.mCurrency, Currency::USD);
                 EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
@@ -1463,7 +1538,12 @@ TEST(DeterministicStatementMergerTest, DuplicateAndConflictResultsIgnoreInputArr
             {
                 EXPECT_EQ(interest.mGrossAmount, 6'000);
                 EXPECT_EQ(interest.mTaxPaid, 1'200);
-                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(
+                    interest.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 120'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(interest.mCurrency, Currency::GBP);
                 EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
@@ -3465,7 +3545,12 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
-                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    trade.mExchangeRate,
+                    (BrokerExchangeRate{
+                        .mValue = 110'000'000,
+                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                        .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
                 EXPECT_EQ(trade.mCurrency, Currency::USD);
                 EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
             }
@@ -3485,7 +3570,12 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
             {
                 EXPECT_EQ(dividend.mGrossAmount, 5'000);
                 EXPECT_EQ(dividend.mTaxPaid, 1'000);
-                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    dividend.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 110'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(dividend.mCurrency, Currency::USD);
                 EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
@@ -3501,7 +3591,12 @@ TEST(DeterministicStatementMergerTest, EveryDuplicateKindRetainsExactSourcesAcro
             {
                 EXPECT_EQ(interest.mGrossAmount, 6'000);
                 EXPECT_EQ(interest.mTaxPaid, 1'200);
-                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(
+                    interest.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 120'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(interest.mCurrency, Currency::GBP);
                 EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
@@ -3598,7 +3693,12 @@ TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependen
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
-                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    trade.mExchangeRate,
+                    (BrokerExchangeRate{
+                        .mValue = 110'000'000,
+                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                        .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
                 EXPECT_EQ(trade.mCurrency, Currency::USD);
                 EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
             }
@@ -3618,7 +3718,12 @@ TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependen
             {
                 EXPECT_EQ(dividend.mGrossAmount, 5'000);
                 EXPECT_EQ(dividend.mTaxPaid, 1'000);
-                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    dividend.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 110'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(dividend.mCurrency, Currency::USD);
                 EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
@@ -3634,7 +3739,12 @@ TEST(DeterministicStatementMergerTest, MissingAndEmptyIdsKeepEveryKindIndependen
             {
                 EXPECT_EQ(interest.mGrossAmount, 6'000);
                 EXPECT_EQ(interest.mTaxPaid, 1'200);
-                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(
+                    interest.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 120'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(interest.mCurrency, Currency::GBP);
                 EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
@@ -4117,7 +4227,12 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
                 EXPECT_EQ(trade.mUnits, 200'000'000);
                 EXPECT_EQ(trade.mAmount, 24'000);
                 EXPECT_EQ(trade.mFeePaid, 100);
-                EXPECT_EQ(trade.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    trade.mExchangeRate,
+                    (BrokerExchangeRate{
+                        .mValue = 110'000'000,
+                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                        .mVerification = RateDirectionVerification::VerifiedByMaintainerDecision}));
                 EXPECT_EQ(trade.mCurrency, Currency::USD);
                 EXPECT_EQ(trade.mMetadata.mTaxDate, makeDate(2024, 1, 1));
             }
@@ -4137,7 +4252,12 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
             {
                 EXPECT_EQ(dividend.mGrossAmount, 5'000);
                 EXPECT_EQ(dividend.mTaxPaid, 1'000);
-                EXPECT_EQ(dividend.mExchangeRate, 110'000'000);
+                EXPECT_EQ(
+                    dividend.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 110'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(dividend.mCurrency, Currency::USD);
                 EXPECT_EQ(dividend.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(dividend.mMetadata.mTaxDate, makeDate(2024, 1, 3));
@@ -4153,7 +4273,12 @@ TEST(DeterministicStatementMergerTest, CollectionReorderingPreservesCompleteResu
             {
                 EXPECT_EQ(interest.mGrossAmount, 6'000);
                 EXPECT_EQ(interest.mTaxPaid, 1'200);
-                EXPECT_EQ(interest.mExchangeRate, 120'000'000);
+                EXPECT_EQ(
+                    interest.mExchangeRate,
+                    (BrokerExchangeRate{.mValue = 120'000'000,
+                                        .mDirection = ExchangeRateDirection::EurPerForeign,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples}));
                 EXPECT_EQ(interest.mCurrency, Currency::GBP);
                 EXPECT_EQ(interest.mTaxCurrency, Currency::EUR);
                 EXPECT_EQ(interest.mMetadata.mTaxDate, makeDate(2024, 1, 4));
@@ -4573,7 +4698,11 @@ TEST(DeterministicStatementMergerTest, OriginalClassesWithSameIdRemainScopedByBr
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = trSource,
@@ -4589,7 +4718,11 @@ TEST(DeterministicStatementMergerTest, OriginalClassesWithSameIdRemainScopedByBr
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = ibkrSource,
@@ -4680,7 +4813,11 @@ TEST(DeterministicStatementMergerTest, EvidenceFreeFirstCopyCannotHideConflictin
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
     };
     const TradeTransaction secondTrade{
@@ -4690,7 +4827,11 @@ TEST(DeterministicStatementMergerTest, EvidenceFreeFirstCopyCannotHideConflictin
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = secondSource,
@@ -4706,7 +4847,11 @@ TEST(DeterministicStatementMergerTest, EvidenceFreeFirstCopyCannotHideConflictin
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = thirdSource,
@@ -4794,7 +4939,11 @@ TEST(DeterministicStatementMergerTest, ExactCopiesNormalizeEvidenceAndRetainEvid
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
     };
     const TradeTransaction secondTrade{
@@ -4804,7 +4953,11 @@ TEST(DeterministicStatementMergerTest, ExactCopiesNormalizeEvidenceAndRetainEvid
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = secondSource,
@@ -4891,7 +5044,11 @@ TEST(DeterministicStatementMergerTest, ClassConflictIncludesSourcesWithoutOrigin
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
     };
     const TradeTransaction secondTrade{
@@ -4901,7 +5058,11 @@ TEST(DeterministicStatementMergerTest, ClassConflictIncludesSourcesWithoutOrigin
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = secondSource,
@@ -4920,7 +5081,11 @@ TEST(DeterministicStatementMergerTest, ClassConflictIncludesSourcesWithoutOrigin
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = fundSource,
@@ -5018,7 +5183,11 @@ TEST(DeterministicStatementMergerTest, ExactCopiesPreserveOriginalClassEvidenceF
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = firstSource,
@@ -5034,7 +5203,11 @@ TEST(DeterministicStatementMergerTest, ExactCopiesPreserveOriginalClassEvidenceF
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = secondSource,
@@ -5109,7 +5282,11 @@ TEST(DeterministicStatementMergerTest, LeavesTradeNameEmptyWhenOriginalNameIsBla
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = source,
@@ -5163,7 +5340,10 @@ TEST(DeterministicStatementMergerTest, LeavesDividendNameEmptyWhenOriginalNameIs
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {source}},
         .mGrossAmount = 100'000, // EUR 10 at four decimal places.
         .mTaxPaid = 10'000,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification = RateDirectionVerification::VerifiedBySourceSamples},
         .mCurrency = Currency::EUR,
         .mTaxCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
@@ -5214,7 +5394,10 @@ TEST(DeterministicStatementMergerTest, LeavesBondInterestNameEmptyWhenOriginalNa
         .mMetadata = {.mTaxDate = makeDate(2024, 1, 15), .mSources = {source}},
         .mGrossAmount = 100'000, // EUR 10 at four decimal places.
         .mTaxPaid = 10'000,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification = RateDirectionVerification::VerifiedBySourceSamples},
         .mCurrency = Currency::EUR,
         .mTaxCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
@@ -5279,7 +5462,11 @@ TEST(DeterministicStatementMergerTest, TradeAndActionKeepDifferentOriginalClasse
         .mUnits = 200'000'000,       // 2 units at eight decimal places.
         .mAmount = 200'000,
         .mFeePaid = 0,
-        .mExchangeRate = 100'000'000,
+        .mExchangeRate =
+            BrokerExchangeRate{.mValue = 100'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification =
+                                   RateDirectionVerification::VerifiedByMaintainerDecision},
         .mCurrency = Currency::EUR,
         .mInstrumentEvidence = {{
             .mSource = tradeSource,

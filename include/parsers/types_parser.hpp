@@ -33,7 +33,7 @@ struct RowMeta {
 
 struct GetAmount {
     std::optional<Money> mGrossAmount;
-    std::optional<ExchangeRate> mExchangeRate;
+    std::optional<BrokerExchangeRate> mExchangeRate;
     std::optional<Currency> mCurrency;
 };
 } // namespace taxbroker

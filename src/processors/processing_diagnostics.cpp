@@ -17,6 +17,7 @@ ProcessingDiagnostic numericDiagnostic(NumericError aError, ProcessingContext aC
         key = MessageKey::ArithmeticOverflow;
         break;
     case NumericError::InvalidExchangeRate:
+    case NumericError::UnverifiedExchangeRateDirection:
         code = ProcessingDiagnosticCode::InvalidExchangeRate;
         key = MessageKey::InvalidExchangeRate;
         break;

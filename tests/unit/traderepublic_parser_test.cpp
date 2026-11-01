@@ -1,5 +1,6 @@
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/diagnostics.hpp"
+#include "taxbroker/exact_arithmetic.hpp"
 #include "taxbroker/types.hpp"
 
 #include <gtest/gtest.h>
@@ -18,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -629,7 +631,11 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
     ASSERT_TRUE(buy->mAmount.has_value());
     EXPECT_EQ(*buy->mAmount, 152'400);
     EXPECT_EQ(buy->mFeePaid, 12'500);
-    EXPECT_EQ(buy->mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(buy->mExchangeRate,
+              (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
     EXPECT_EQ(buy->mCurrency, Currency::EUR);
 
     const auto* sell = findTradeTransaction(statement, "synthetic-sell-001");
@@ -702,7 +708,11 @@ TEST(TradeRepublicParserTest, ParsesLocalAndForeignIncomeCurrenciesExactly) {
     ASSERT_NE(eur, nullptr);
     EXPECT_EQ(eur->mGrossAmount, 123'400);
     EXPECT_EQ(eur->mTaxPaid, 23'400);
-    EXPECT_EQ(eur->mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        eur->mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(eur->mCurrency, Currency::EUR);
     EXPECT_EQ(eur->mTaxCurrency, Currency::EUR);
 
@@ -710,30 +720,42 @@ TEST(TradeRepublicParserTest, ParsesLocalAndForeignIncomeCurrenciesExactly) {
         std::string_view mTransactionId;
         Money mGrossAmount{};
         std::optional<Money> mTaxPaid;
-        ExchangeRate mExchangeRate{};
+        BrokerExchangeRate mExchangeRate;
         Currency mCurrency{};
     };
     const std::array expectedForeignDividends{
-        ExpectedForeignDividend{"synthetic-distribution-usd-001",
-                                100'000,
-                                10'000,
-                                90'000'000,
-                                Currency::USD},
-        ExpectedForeignDividend{"synthetic-dividend-gbp-001",
-                                40'000,
-                                8'000,
-                                120'000'000,
-                                Currency::GBP},
-        ExpectedForeignDividend{"synthetic-dividend-chf-001",
-                                50'000,
-                                2'500,
-                                105'000'000,
-                                Currency::CHF},
-        ExpectedForeignDividend{"synthetic-dividend-jpy-001",
-                                1'000'000,
-                                std::nullopt,
-                                610'000,
-                                Currency::JPY},
+        ExpectedForeignDividend{
+            "synthetic-distribution-usd-001",
+            100'000,
+            10'000,
+            BrokerExchangeRate{.mValue = 90'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification = RateDirectionVerification::VerifiedBySourceSamples},
+            Currency::USD},
+        ExpectedForeignDividend{
+            "synthetic-dividend-gbp-001",
+            40'000,
+            8'000,
+            BrokerExchangeRate{.mValue = 120'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification = RateDirectionVerification::VerifiedBySourceSamples},
+            Currency::GBP},
+        ExpectedForeignDividend{
+            "synthetic-dividend-chf-001",
+            50'000,
+            2'500,
+            BrokerExchangeRate{.mValue = 105'000'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification = RateDirectionVerification::VerifiedBySourceSamples},
+            Currency::CHF},
+        ExpectedForeignDividend{
+            "synthetic-dividend-jpy-001",
+            1'000'000,
+            std::nullopt,
+            BrokerExchangeRate{.mValue = 610'000,
+                               .mDirection = ExchangeRateDirection::EurPerForeign,
+                               .mVerification = RateDirectionVerification::VerifiedBySourceSamples},
+            Currency::JPY},
     };
 
     for (const auto& expected : expectedForeignDividends)
@@ -775,7 +797,11 @@ TEST(TradeRepublicParserTest, GroupsBrokerInterestAndPreservesBondInterest) {
     const auto& transaction = bondInterest->mTransactions.front();
     EXPECT_EQ(transaction.mGrossAmount, 20'000);
     EXPECT_EQ(transaction.mTaxPaid, 2'000);
-    EXPECT_EQ(transaction.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        transaction.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(transaction.mCurrency, Currency::USD);
     EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-bond-interest-001");
@@ -2403,7 +2429,11 @@ TEST(TradeRepublicParserTest, ParsesAStandaloneDividendInstrument) {
     EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
     EXPECT_EQ(transaction.mGrossAmount, 100'000);
     EXPECT_EQ(transaction.mTaxPaid, 10'000);
-    EXPECT_EQ(transaction.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        transaction.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
     EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-dividend-validation");
@@ -5701,7 +5731,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithInvalidDate) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mDate = "2024-02-30";
@@ -5756,7 +5790,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMalformedTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "not-a-number";
@@ -5811,7 +5849,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithPositiveTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "1.00";
@@ -5866,7 +5908,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMinimumSignedTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "-922337203685477.5808";
@@ -5921,7 +5967,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithOverflowingTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "-922337203685477.5809";
@@ -5976,7 +6026,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMissingTaxCurrency) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mCurrency = "";
@@ -6031,7 +6085,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithUnsupportedTaxCurrency) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mCurrency = "CAD";
@@ -6086,7 +6144,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMissingGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "";
@@ -6141,7 +6203,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMalformedGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "not-a-number";
@@ -6196,7 +6262,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithOverflowingGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "922337203685477.5808";
@@ -6251,7 +6321,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithUnsupportedOriginalCurrency) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalCurrency = "CAD";
@@ -6307,7 +6381,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMissingOriginalAmount) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalAmount = "";
@@ -6362,7 +6440,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMalformedOriginalAmount) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalAmount = "not-a-number";
@@ -6417,7 +6499,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithZeroExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "0";
@@ -6472,7 +6558,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithNegativeExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "-0.90";
@@ -6527,7 +6617,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMalformedExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "not-a-number";
@@ -6582,7 +6676,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithOverflowingExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "92233720368.54775808";
@@ -6749,7 +6847,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithTinyBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "0.000000004";
@@ -6804,7 +6906,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithWhitespaceBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "   ";
@@ -6859,7 +6965,10 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMalformedDirectForeignBrokerRat
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::USD);
 
     row.mFxRate = "not-a-number";
@@ -6915,7 +7024,11 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMalformedEurBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "not-a-number";
@@ -6970,7 +7083,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithInvalidDate) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mDate = "2024-02-30";
@@ -7025,7 +7142,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMalformedTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "not-a-number";
@@ -7080,7 +7201,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithPositiveTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "1.00";
@@ -7135,7 +7260,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMinimumSignedTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "-922337203685477.5808";
@@ -7190,7 +7319,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithOverflowingTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "-922337203685477.5809";
@@ -7245,7 +7378,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMissingTaxCurrency) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mCurrency = "";
@@ -7300,7 +7437,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithUnsupportedTaxCurrency) 
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mCurrency = "CAD";
@@ -7356,7 +7497,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMissingGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "";
@@ -7411,7 +7556,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMalformedGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "not-a-number";
@@ -7467,7 +7616,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithOverflowingGrossAmount) 
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "922337203685477.5808";
@@ -7523,7 +7676,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithUnsupportedOriginalCurre
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalCurrency = "CAD";
@@ -7579,7 +7736,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMissingOriginalAmount) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalAmount = "";
@@ -7635,7 +7796,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMalformedOriginalAmount)
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalAmount = "not-a-number";
@@ -7691,7 +7856,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithZeroExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "0";
@@ -7746,7 +7915,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithNegativeExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "-0.90";
@@ -7802,7 +7975,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMalformedExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "not-a-number";
@@ -7858,7 +8035,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithOverflowingExchangeRate)
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "92233720368.54775808";
@@ -8026,7 +8207,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithTinyBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "0.000000004";
@@ -8081,7 +8266,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithWhitespaceBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "   ";
@@ -8137,7 +8326,10 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMalformedDirectForeignBr
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::USD);
 
     row.mFxRate = "not-a-number";
@@ -8193,7 +8385,11 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithMalformedEurBrokerRate) 
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "not-a-number";
@@ -8249,7 +8445,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithInvalidDate) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mDate = "2024-02-30";
@@ -8304,7 +8504,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMalformedTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "not-a-number";
@@ -8359,7 +8563,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithPositiveTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "1.00";
@@ -8414,7 +8622,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMinimumSignedTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "-922337203685477.5808";
@@ -8469,7 +8681,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithOverflowingTax) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mTax = "-922337203685477.5809";
@@ -8524,7 +8740,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingTaxCurrency) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mCurrency = "";
@@ -8579,7 +8799,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithUnsupportedTaxCurrency) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mCurrency = "CAD";
@@ -8635,7 +8859,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "";
@@ -8690,7 +8918,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMalformedGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "not-a-number";
@@ -8745,7 +8977,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithOverflowingGrossAmount) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mAmount = "922337203685477.5808";
@@ -8801,7 +9037,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithUnsupportedOriginalCurrency
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalCurrency = "CAD";
@@ -8857,7 +9097,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingOriginalAmount) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalAmount = "";
@@ -8912,7 +9156,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMalformedOriginalAmount) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mOriginalAmount = "not-a-number";
@@ -8968,7 +9216,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithZeroExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "0";
@@ -9023,7 +9275,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithNegativeExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "-0.90";
@@ -9078,7 +9334,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMalformedExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "not-a-number";
@@ -9133,7 +9393,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithOverflowingExchangeRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "92233720368.54775808";
@@ -9301,7 +9565,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithTinyBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "0.000000004";
@@ -9356,7 +9624,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithWhitespaceBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "   ";
@@ -9411,7 +9683,10 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMalformedDirectForeignBroke
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::USD);
 
     row.mFxRate = "not-a-number";
@@ -9467,7 +9742,11 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMalformedEurBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
     row.mFxRate = "not-a-number";
@@ -9509,7 +9788,11 @@ TEST(TradeRepublicParserTest, PreservesGrossDividendWithBlankTax) {
     EXPECT_FALSE(income.mTaxPaid.has_value());
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, PreservesGrossDividendWithZeroTax) {
@@ -9528,7 +9811,11 @@ TEST(TradeRepublicParserTest, PreservesGrossDividendWithZeroTax) {
     EXPECT_EQ(income.mTaxPaid, 0);
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, PreservesGrossDividendWithWithholding) {
@@ -9547,7 +9834,11 @@ TEST(TradeRepublicParserTest, PreservesGrossDividendWithWithholding) {
     EXPECT_EQ(income.mTaxPaid, 23'400);
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, RetainsForeignGrossDividendWithoutBrokerRate) {
@@ -9612,7 +9903,11 @@ TEST(TradeRepublicParserTest, PreservesGrossDepositInterestWithBlankTax) {
     EXPECT_FALSE(income.mTaxPaid.has_value());
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, PreservesGrossDepositInterestWithZeroTax) {
@@ -9631,7 +9926,11 @@ TEST(TradeRepublicParserTest, PreservesGrossDepositInterestWithZeroTax) {
     EXPECT_EQ(income.mTaxPaid, 0);
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, PreservesGrossDepositInterestWithWithholding) {
@@ -9650,7 +9949,11 @@ TEST(TradeRepublicParserTest, PreservesGrossDepositInterestWithWithholding) {
     EXPECT_EQ(income.mTaxPaid, 23'400);
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, RetainsForeignGrossDepositInterestWithoutBrokerRate) {
@@ -9715,7 +10018,11 @@ TEST(TradeRepublicParserTest, PreservesGrossBondInterestWithBlankTax) {
     EXPECT_FALSE(income.mTaxPaid.has_value());
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, PreservesGrossBondInterestWithZeroTax) {
@@ -9734,7 +10041,11 @@ TEST(TradeRepublicParserTest, PreservesGrossBondInterestWithZeroTax) {
     EXPECT_EQ(income.mTaxPaid, 0);
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, PreservesGrossBondInterestWithWithholding) {
@@ -9753,7 +10064,11 @@ TEST(TradeRepublicParserTest, PreservesGrossBondInterestWithWithholding) {
     EXPECT_EQ(income.mTaxPaid, 23'400);
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
-    EXPECT_EQ(income.mExchangeRate, EXCHANGE_RATE_SCALE);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = EXCHANGE_RATE_SCALE,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, RetainsForeignGrossBondInterestWithoutBrokerRate) {
@@ -12794,7 +13109,11 @@ TEST(TradeRepublicParserTest, RoundsForeignDividendAndWithholdingAtTheirImportSc
     // Gross income and withholding round separately; the tax never increases gross income.
     EXPECT_EQ(income.mGrossAmount, 123'457);
     EXPECT_EQ(income.mTaxPaid, 23'457);
-    EXPECT_EQ(income.mExchangeRate, 90'000'001);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'001,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 }
@@ -12918,7 +13237,11 @@ TEST(TradeRepublicParserTest, RoundsForeignDepositInterestAndWithholdingAtTheirI
     // Gross income and withholding round separately; the tax never increases gross income.
     EXPECT_EQ(income.mGrossAmount, 123'457);
     EXPECT_EQ(income.mTaxPaid, 23'457);
-    EXPECT_EQ(income.mExchangeRate, 90'000'001);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'001,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 }
@@ -13042,7 +13365,11 @@ TEST(TradeRepublicParserTest, RoundsForeignBondInterestAndWithholdingAtTheirImpo
     // Gross income and withholding round separately; the tax never increases gross income.
     EXPECT_EQ(income.mGrossAmount, 123'457);
     EXPECT_EQ(income.mTaxPaid, 23'457);
-    EXPECT_EQ(income.mExchangeRate, 90'000'001);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 90'000'001,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 }
@@ -13742,7 +14069,11 @@ TEST(TradeRepublicParserTest, InvalidIncomeDoesNotSuppressALaterDividendForTheSa
 
     EXPECT_EQ(dividend.mGrossAmount, 50'000);
     EXPECT_EQ(dividend.mTaxPaid, 0);
-    EXPECT_EQ(dividend.mExchangeRate, 100'000'000);
+    EXPECT_EQ(
+        dividend.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 100'000'000,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     ASSERT_EQ(dividend.mMetadata.mSources.size(), 1U);
     EXPECT_EQ(dividend.mMetadata.mSources.front().mSourceRow, 3U);
     EXPECT_EQ(dividend.mMetadata.mSources.front().mTransactionId, "synthetic-valid-dividend");
@@ -13837,7 +14168,10 @@ TEST(TradeRepublicParserTest, RetainsDividendDirectForeignIncomeWithBrokerRate) 
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::USD);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -13850,6 +14184,146 @@ TEST(TradeRepublicParserTest, RetainsDividendDirectForeignIncomeWithBrokerRate) 
                                        .mSourceRow = 2,
                                        .mTransactionId = "synthetic-dividend-validation",
                                        .mInputSequence = {0, 0}}}));
+}
+
+TEST(TradeRepublicParserTest, ConvertsTheOriginalAmountWithAVerifiedForeignDividendRate) {
+    // 100.00 USD at 0.9 EUR per USD is the 90.00 EUR of the amount column.
+    SyntheticCsvRow row{.mDatetime = "2024-01-15T10:00:00.000Z",
+                        .mDate = "2024-01-15",
+                        .mCategory = "CASH",
+                        .mType = "DIVIDEND",
+                        .mAssetClass = "STOCK",
+                        .mName = "Synthetic Validation Share",
+                        .mSymbol = "XX9000000001",
+                        .mShares = "",
+                        .mPrice = "",
+                        .mAmount = "90.00",
+                        .mTax = "",
+                        .mCurrency = "EUR",
+                        .mOriginalAmount = "100.00",
+                        .mOriginalCurrency = "USD",
+                        .mFxRate = "0.900000",
+                        .mTransactionId = "synthetic-dividend-validation"};
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& income = result.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    ASSERT_TRUE(income.mExchangeRate.has_value());
+    EXPECT_EQ(income.mGrossAmount, 1'000'000); // USD 100.0000 at four decimals.
+
+    const auto converted = convertBrokerMoney(income.mGrossAmount, *income.mExchangeRate);
+
+    ASSERT_TRUE(std::holds_alternative<Money>(converted));
+    EXPECT_EQ(std::get<Money>(converted), 900'000); // EUR 90.0000 at four decimals.
+}
+
+TEST(TradeRepublicParserTest, RefusesToConvertWithTheRateOfADirectForeignDividend) {
+    // The amount is directly in USD, a shape no direction evidence covers.
+    SyntheticCsvRow row{.mDatetime = "2024-01-15T10:00:00.000Z",
+                        .mDate = "2024-01-15",
+                        .mCategory = "CASH",
+                        .mType = "DIVIDEND",
+                        .mAssetClass = "STOCK",
+                        .mName = "Synthetic Validation Share",
+                        .mSymbol = "XX9000000001",
+                        .mShares = "",
+                        .mPrice = "",
+                        .mAmount = "10.00",
+                        .mTax = "",
+                        .mCurrency = "USD",
+                        .mOriginalAmount = "",
+                        .mOriginalCurrency = "",
+                        .mFxRate = "0.900000",
+                        .mTransactionId = "synthetic-dividend-validation"};
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& income = result.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    ASSERT_TRUE(income.mExchangeRate.has_value());
+
+    const auto converted = convertBrokerMoney(income.mGrossAmount, *income.mExchangeRate);
+
+    ASSERT_TRUE(std::holds_alternative<NumericError>(converted));
+    EXPECT_EQ(std::get<NumericError>(converted), NumericError::UnverifiedExchangeRateDirection);
+}
+
+TEST(TradeRepublicParserTest,
+     KeepsTheRateOfAnOriginalCurrencyRowSettledInAForeignCurrencyUnverified) {
+    // original_currency is set, but the cash currency is USD, not EUR: not the verified shape.
+    SyntheticCsvRow row{.mDatetime = "2024-01-15T10:00:00.000Z",
+                        .mDate = "2024-01-15",
+                        .mCategory = "CASH",
+                        .mType = "DIVIDEND",
+                        .mAssetClass = "STOCK",
+                        .mName = "Synthetic Validation Share",
+                        .mSymbol = "XX9000000001",
+                        .mShares = "",
+                        .mPrice = "",
+                        .mAmount = "9.00",
+                        .mTax = "",
+                        .mCurrency = "USD",
+                        .mOriginalAmount = "10.00",
+                        .mOriginalCurrency = "GBP",
+                        .mFxRate = "0.900000",
+                        .mTransactionId = "synthetic-dividend-validation"};
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& income = result.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(income.mCurrency, Currency::GBP);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
+}
+
+TEST(TradeRepublicParserTest, KeepsTheRateOfAnEurOriginalCurrencyDividendUnverified) {
+    // original_currency is EUR, so the amount is not foreign: not the verified shape.
+    SyntheticCsvRow row{.mDatetime = "2024-01-15T10:00:00.000Z",
+                        .mDate = "2024-01-15",
+                        .mCategory = "CASH",
+                        .mType = "DIVIDEND",
+                        .mAssetClass = "STOCK",
+                        .mName = "Synthetic Validation Share",
+                        .mSymbol = "XX9000000001",
+                        .mShares = "",
+                        .mPrice = "",
+                        .mAmount = "90.00",
+                        .mTax = "",
+                        .mCurrency = "EUR",
+                        .mOriginalAmount = "100.00",
+                        .mOriginalCurrency = "EUR",
+                        .mFxRate = "0.900000",
+                        .mTransactionId = "synthetic-dividend-validation"};
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& income = result.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(income.mCurrency, Currency::EUR);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000, // 0.9 at eight decimals.
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
 }
 
 TEST(TradeRepublicParserTest, RetainsDividendOriginalIncomeWithoutLocalAmount) {
@@ -13973,7 +14447,11 @@ TEST(TradeRepublicParserTest, RetainsDividendSmallestRoundedBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 1);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 1,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -14018,7 +14496,10 @@ TEST(TradeRepublicParserTest, RetainsDividendEurIncomeWithSuppliedBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -14108,7 +14589,10 @@ TEST(TradeRepublicParserTest, RetainsDepositInterestDirectForeignIncomeWithBroke
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::USD);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -14244,7 +14728,11 @@ TEST(TradeRepublicParserTest, RetainsDepositInterestSmallestRoundedBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 1);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 1,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -14289,7 +14777,10 @@ TEST(TradeRepublicParserTest, RetainsDepositInterestEurIncomeWithSuppliedBrokerR
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -14379,7 +14870,10 @@ TEST(TradeRepublicParserTest, RetainsBondInterestDirectForeignIncomeWithBrokerRa
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 90'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::USD);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -14515,7 +15009,11 @@ TEST(TradeRepublicParserTest, RetainsBondInterestSmallestRoundedBrokerRate) {
     EXPECT_EQ(income.mCurrency, Currency::USD);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 1);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 1,
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -14560,7 +15058,10 @@ TEST(TradeRepublicParserTest, RetainsBondInterestEurIncomeWithSuppliedBrokerRate
     EXPECT_EQ(income.mCurrency, Currency::EUR);
     EXPECT_EQ(income.mTaxPaid, 10'000);
     EXPECT_EQ(income.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(income.mExchangeRate, 100'000'000);
+    EXPECT_EQ(income.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(income.mMetadata.mSourceTimestamp,
               SourceTimestamp{makeDate(2024, 1, 15).time_since_epoch() + std::chrono::hours{10}});
@@ -17941,7 +18442,13 @@ TEST(TradeRepublicParserTest, KeepsTheIdentityRateForAnEurTrade) {
 
     const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
 
-    EXPECT_EQ(trade.mExchangeRate, 100'000'000); // 1.0 at eight decimals.
+    EXPECT_EQ(trade.mExchangeRate,
+              (BrokerExchangeRate{
+                  .mValue = 100'000'000,
+                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                  .mVerification =
+                      RateDirectionVerification::VerifiedByMaintainerDecision})); // 1.0 at eight
+                                                                                  // decimals.
     EXPECT_EQ(trade.mCurrency, Currency::EUR);
     EXPECT_EQ(trade.mFeeCurrency, Currency::EUR);
 
@@ -18037,7 +18544,13 @@ TEST(TradeRepublicParserTest, KeepsTheForeignFactsAndBrokerRateOfAForeignBuy) {
     EXPECT_EQ(*trade.mAmount, 1'000'000);       // USD 100.00 from original_amount, not EUR 90.00.
     EXPECT_EQ(trade.mUnitPrice, 1'000'000'000); // 10.00 at eight decimals.
     EXPECT_EQ(trade.mFeePaid, 10'000);          // EUR 1.00.
-    EXPECT_EQ(trade.mExchangeRate, 90'000'000); // 0.9 at eight decimals.
+    EXPECT_EQ(trade.mExchangeRate,
+              (BrokerExchangeRate{
+                  .mValue = 90'000'000,
+                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                  .mVerification =
+                      RateDirectionVerification::VerifiedByMaintainerDecision})); // 0.9 at eight
+                                                                                  // decimals.
 
     EXPECT_TRUE(result.mDiagnostics.empty());
 }
@@ -18125,7 +18638,11 @@ TEST(TradeRepublicParserTest, KeepsTheForeignFactsAndBrokerRateOfAForeignSell) {
     EXPECT_EQ(trade.mCurrency, Currency::USD);
     ASSERT_TRUE(trade.mAmount.has_value());
     EXPECT_EQ(*trade.mAmount, 1'000'000); // USD 100.00.
-    EXPECT_EQ(trade.mExchangeRate, 90'000'000);
+    EXPECT_EQ(trade.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification =
+                                      RateDirectionVerification::VerifiedByMaintainerDecision}));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
 }
@@ -18165,8 +18682,55 @@ TEST(TradeRepublicParserTest, KeepsASuppliedRateOnAnEurTrade) {
 
     const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
 
-    EXPECT_EQ(trade.mExchangeRate, 100'000'000);
+    EXPECT_EQ(trade.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 100'000'000,
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
     EXPECT_EQ(trade.mCurrency, Currency::EUR);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, KeepsTheRateOfAnEurOriginalCurrencyBuyUnverified) {
+    // original_currency is EUR, so the amount is not foreign: not the verified shape.
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "10.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-90.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-100.000000",
+        .mOriginalCurrency = "EUR",
+        .mFxRate = "0.900000",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments[0].mTransactions.size(), 1U);
+
+    const auto& trade = result.mStatement.mTradeInstruments[0].mTransactions[0];
+
+    EXPECT_EQ(trade.mCurrency, Currency::EUR);
+    EXPECT_EQ(trade.mExchangeRate,
+              (BrokerExchangeRate{.mValue = 90'000'000, // 0.9 at eight decimals.
+                                  .mDirection = ExchangeRateDirection::EurPerForeign,
+                                  .mVerification = RateDirectionVerification::Unverified}));
 
     EXPECT_TRUE(result.mDiagnostics.empty());
 }
