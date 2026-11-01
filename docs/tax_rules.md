@@ -609,8 +609,8 @@ Assume the selected year is 2024 and all rows refer to the same investment.
 | 2024-02-01 | Trade Republic records a split. Its announcement says 2 new shares for 1 old share. | The user confirms `2 / 1`; hold 12 older and 16 newer adjusted shares (EUR 20 a share). | Nothing. |
 | 2024-06-20 | Sell 20 shares at EUR 25. | FIFO uses 12 older and 8 newer shares; 8 newer shares remain. | One sale row of 8 (`F9` 25). The 12 shares from 2008 are past 15 years: no row, listed beside the report. |
 | 2024-12-20 | Sell 4 shares at EUR 15. | Use 4 newer shares (a loss of 4 × (15 − 20) = EUR 20); 4 remain at year-end. | One sale row of 4 (`F9` 15), `F10` false: the January replacement buy means it cannot reduce taxable gains. |
-| 2025-01-05 | Buy 4 shares of the same investment. | Check it only for the 30-day loss rule in the 2024 run. | Nothing. |
-| 2025-02-10 | Sell 2 shares. | Ignore it in the 2024 run. | Nothing. |
+| 2025-01-05 | Buy 4 shares of the same investment at EUR 16. | Check it only for the 30-day loss rule in the 2024 run. | Nothing. |
+| 2025-02-10 | Sell 2 shares at EUR 22. | Ignore it in the 2024 run. | Nothing. |
 
 2024 filing rows:
 
@@ -625,6 +625,17 @@ EUR 20. Gains: 8 × (25 − 20) = EUR 40 and 4 × (15 − 20) = −EUR 20.
 
 The 2024 closing position is 4 shares. A separate 2025 report starts again from the full history
 and processes the January buy and February sale normally.
+
+2025 filing rows:
+
+| Row | Type | Date | Quantity (F3/F7) | Unit value EUR (F4/F9) | F8 | F10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Purchase | 2023-09-01 | 2 | 20 | 2 | |
+| 2 | Sale | 2025-02-10 | 2 | 22 | 0 | true |
+
+The February sale uses 2 of the 4 shares left from the 2023 purchase (EUR 20 a share after the
+split), not the January buy: 2 × (22 − 20) = EUR 4. The January buy has no row because no sale of
+the year uses it, and the 2024 sales are not listed.
 
 ## Date-boundary examples
 
