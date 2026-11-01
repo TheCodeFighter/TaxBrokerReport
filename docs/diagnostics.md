@@ -625,6 +625,18 @@ which includes a file saved with semicolons or tabs instead of commas. No rows a
 message gives only our own column names, never text from the file. A file of 0 bytes is still a
 `parse_error`.
 
+The rate-file reader (see [`calculations.md`](calculations.md), "Official ECB rate files") uses
+`invalid_header`, `field_count_mismatch`, `missing_field`, `invalid_value` and `parse_error` with
+their own keys, and adds `duplicate_rate`, `mixed_rate_years`, `duplicate_rate_year` and
+`no_rates`. A rate file is rejected whole at its first fault, so a file has one diagnostic, with
+its row and column where the fault is in a row. `duplicate_rate_year` is a file-level error on each
+of the files that cover the same year. These diagnostics have no row kind and name the file by
+its display name only. Their keys are `invalid_header.rate_file_columns`, `invalid_header.rate_file_duplicate_column`,
+`field_count_mismatch.rate_file`, `parse_error.unreadable_rate_file`,
+`invalid_value.rate_field_expected`, `invalid_value.rate_currency`, `invalid_value.rate_date`,
+`invalid_value.rate_value`, `missing_field.rate_value`, `duplicate_rate`, `mixed_rate_years`,
+`duplicate_rate_year` and `no_rates`. A message never holds a rate value.
+
 A skipped row reports every invalid field, so one row can have several diagnostics. They follow
 the column order of the export; the sign checks (`inconsistent_value`) come last and only use
 valid fields. The JSON `errorCount` counts diagnostics, not rows.

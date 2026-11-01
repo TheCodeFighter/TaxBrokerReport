@@ -5,25 +5,27 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$script_dir/lib.sh"
 
+# Unit test suites whose inputs are megabytes long. Valgrind runs them for minutes, so CI checks
+# them in their own job, and only when a related file changes.
+large_input_filter='*LargeInputTest.*'
+
 usage() {
     cat <<'EOF'
-Usage: valgrind.sh [--reuse-build]
+Usage: valgrind.sh [--reuse-build] [--part regular|large|all]
 
   Builds build/dev from scratch, then runs each C++ executable under Valgrind
   inside the development container. The dump tools use synthetic test data.
   --reuse-build runs the existing build/dev as it is and compiles nothing.
+  --part regular  every executable, without the *LargeInputTest unit test suites
+  --part large    only the *LargeInputTest unit test suites (minutes under Valgrind)
+  --part all      both (the default)
 EOF
 }
 
-if [[ $# -gt 1 ]]; then
-    echo "Too many arguments." >&2
-    usage >&2
-    exit 1
-fi
-
 reuse_build=false
+part=all
 
-if [[ $# -eq 1 ]]; then
+while [[ $# -gt 0 ]]; do
     case "$1" in
         -h | --help)
             usage
@@ -31,6 +33,27 @@ if [[ $# -eq 1 ]]; then
             ;;
         --reuse-build)
             reuse_build=true
+            shift
+            ;;
+        --part)
+            if [[ $# -lt 2 ]]; then
+                echo "--part needs a value." >&2
+                usage >&2
+                exit 1
+            fi
+
+            case "$2" in
+                regular | large | all)
+                    part="$2"
+                    ;;
+                *)
+                    echo "Unknown part: $2" >&2
+                    usage >&2
+                    exit 1
+                    ;;
+            esac
+
+            shift 2
             ;;
         *)
             echo "Unknown option: $1" >&2
@@ -38,7 +61,7 @@ if [[ $# -eq 1 ]]; then
             exit 1
             ;;
     esac
-fi
+done
 
 prepare_dev_build "$reuse_build"
 
@@ -59,9 +82,25 @@ run_valgrind() {
         "$@"
 }
 
-run_valgrind \
-    /workspace/build/dev/tests/taxbroker_unit_tests \
-    --gtest_brief=1
+if [[ "$part" == large ]]; then
+    run_valgrind \
+        /workspace/build/dev/tests/taxbroker_unit_tests \
+        --gtest_brief=1 \
+        --gtest_fail_if_no_test_selected \
+        "--gtest_filter=$large_input_filter"
+    exit 0
+fi
+
+if [[ "$part" == regular ]]; then
+    run_valgrind \
+        /workspace/build/dev/tests/taxbroker_unit_tests \
+        --gtest_brief=1 \
+        "--gtest_filter=-$large_input_filter"
+else
+    run_valgrind \
+        /workspace/build/dev/tests/taxbroker_unit_tests \
+        --gtest_brief=1
+fi
 
 run_valgrind \
     /workspace/build/dev/tests/taxbroker_integration_tests \

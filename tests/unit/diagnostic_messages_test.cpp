@@ -194,6 +194,31 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::AnswerRejectedLaterSaleTooLarge,
          "answer_rejected.later_sale_too_large",
          {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::InvalidHeaderRateFileColumns,
+         "invalid_header.rate_file_columns",
+         {{"count", MessageParamKind::Number}, {"columns", MessageParamKind::Text}}},
+        {MessageKey::FieldCountMismatchRateFile,
+         "field_count_mismatch.rate_file",
+         {{"expected", MessageParamKind::Number}, {"found", MessageParamKind::Number}}},
+        {MessageKey::ParseErrorUnreadableRateFile, "parse_error.unreadable_rate_file", {}},
+        {MessageKey::InvalidValueRateFieldExpected,
+         "invalid_value.rate_field_expected",
+         {{"field", MessageParamKind::Text}, {"expected", MessageParamKind::Text}}},
+        {MessageKey::InvalidValueRateCurrency, "invalid_value.rate_currency", {}},
+        {MessageKey::InvalidValueRateDate, "invalid_value.rate_date", {}},
+        {MessageKey::InvalidValueRateValue, "invalid_value.rate_value", {}},
+        {MessageKey::MissingFieldRateValue, "missing_field.rate_value", {}},
+        {MessageKey::DuplicateRate, "duplicate_rate", {}},
+        {MessageKey::MixedRateYears,
+         "mixed_rate_years",
+         {{"firstYear", MessageParamKind::Number}, {"foundYear", MessageParamKind::Number}}},
+        {MessageKey::DuplicateRateYear,
+         "duplicate_rate_year",
+         {{"year", MessageParamKind::Number}}},
+        {MessageKey::NoRates, "no_rates", {}},
+        {MessageKey::InvalidHeaderRateFileDuplicateColumn,
+         "invalid_header.rate_file_duplicate_column",
+         {{"column", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -254,8 +279,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 73U);
-    ASSERT_EQ(expectedMessages().size(), 73U);
+    ASSERT_EQ(definitions.size(), 86U);
+    ASSERT_EQ(expectedMessages().size(), 86U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -289,8 +314,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 73U);
-    EXPECT_EQ(keys.size(), 73U);
+    EXPECT_EQ(ids.size(), 86U);
+    EXPECT_EQ(keys.size(), 86U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -311,7 +336,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 80U); // 73 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 93U); // 86 message keys and 7 terms.
 
     std::set<std::string> tableKeys;
 

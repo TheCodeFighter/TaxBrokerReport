@@ -1,0 +1,2 @@
+# The ECB rate fixture is checked by SHA-256, so Git must never change its line ends.
+tests/test_data/ecb/*.csv -text

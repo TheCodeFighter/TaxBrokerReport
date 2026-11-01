@@ -19,3 +19,6 @@ add_test(NAME ExactArithmeticDump.LocalTransactions
         -P ${CMAKE_SOURCE_DIR}/tests/support/check_exact_dump.cmake
 )
 set_tests_properties(ExactArithmeticDump.LocalTransactions PROPERTIES LABELS debug)
+
+add_executable(taxbroker_ecb_dump ecb_rates_dump.cpp)
+target_link_libraries(taxbroker_ecb_dump PRIVATE taxbroker_core)

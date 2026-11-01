@@ -184,6 +184,86 @@ The user copies the rate that Banka Slovenije shows as valid for that currency a
 covers a date for which the site uses its applicable daily or monthly rate. The app must not
 interpolate rates or silently choose an average, annual, current, or nearby rate.
 
+## Official ECB rate files
+
+The app ships no rate data. The user loads one file per calendar year, so new rates need no new
+app version, and every conversion stays offline and reproducible. The source is the ECB reference
+rate table, which *Banka Slovenije* republishes as its daily rates.
+
+Evidence that the two tables are the same (checked 2026-11-01, public data only):
+
+- The English *Banka Slovenije* page on exchange rates (heading "Banka Slovenije's exchange rates -
+  ECB reference rates") names the table "ECB reference rates", ends with
+  "Source: European Central Bank", and writes the direction as `EUR 1 = USD 1.2010`.
+- Its 2025 table (`dtecbs-l.xml`) and the ECB 2025 file have the same 7,650 `(date, currency)`
+  pairs. 7,649 values are equal. The one difference is NOK on 2025-10-23: the ECB file has
+  `11.5829`, which fits its neighbours (`11.643` and `11.6185`), and the *Banka Slovenije* table
+  has `11.8529`, which looks like a typing error. The ECB file is therefore the accepted source,
+  and a difference from the *Banka Slovenije* page is not a reason to reject a file.
+
+**Accepted file.** Exactly one format: the unmodified ECB Data Portal `csvdata` export of the
+`EXR` dataset for one calendar year, for example
+
+```text
+https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A?startPeriod=2025-01-01&endPeriod=2025-12-31&format=csvdata
+```
+
+It has one row per date and currency, and every row states its own key. The wide
+`eurofxref-hist.csv` is not accepted. The `detail=dataonly` download drops the `OBS_STATUS` column
+and is rejected for that reason. Other columns, and the column order, do not matter: the columns
+are read by header name. Quoted fields with commas are handled (`TITLE_COMPL` has them).
+
+**Checks.** The whole file is rejected, with a diagnostic that names the file by its display name
+and, where it applies, the row and the column, at the first of these faults:
+
+| Fault | Rule |
+| --- | --- |
+| a required column is missing | `KEY`, `FREQ`, `CURRENCY`, `CURRENCY_DENOM`, `EXR_TYPE`, `EXR_SUFFIX`, `TIME_PERIOD`, `OBS_VALUE`, `OBS_STATUS` |
+| a required column named twice in the header | rejected, because it is unclear which one holds the value |
+| a record with a wrong field count | same rule as for the broker files |
+| `FREQ`, `CURRENCY_DENOM`, `EXR_TYPE`, `EXR_SUFFIX` | must be `D`, `EUR`, `SP00`, `A` in every row: `1 EUR = OBS_VALUE CURRENCY`, the direction above |
+| `CURRENCY` | three capital letters, not `EUR` |
+| `KEY` | must be `EXR.D.<CURRENCY>.EUR.SP00.A` |
+| `TIME_PERIOD` | a real calendar date `YYYY-MM-DD` |
+| `OBS_STATUS` | only `A`, the ECB code for a normal value |
+| `OBS_VALUE` | not empty, positive, at most eight decimals, strict number format |
+| the same `(date, currency)` twice | rejected |
+| dates from more than one calendar year | rejected |
+| no rows | rejected, because the year is unknown |
+| an unclosed quote, or a line break inside a field | rejected, because records would be merged (a quote that closes on a later line merges the lines into one record, even with the right field count) |
+| the file cannot be opened or read, or a row is longer than the CSV reader allows (20 MB) | rejected; the other files still load |
+
+`OBS_STATUS` has other codes in the ECB code list `CL_OBS_STATUS` (for example `E` estimated, `P`
+provisional, `M` and `L` missing). Every row of the 2022 and 2025 downloads is `A`, and a suspended
+currency does not show as a status: the series just stops (RUB after 2022-03-01). Until a real
+file needs another code, any other value rejects the file. The rate keeps all eight decimals; the
+file has at most five.
+
+**Several files.** The user can load the tax year and older purchase years, one file per year. Two
+files for the same year that both pass the checks, even byte-identical ones, are an error, and both
+are rejected. A file rejected for its own fault does not count, so a good file of the same year
+beside it still loads. A file of another year is not affected.
+
+**Lookup.** A rate is found only by its exact currency code and date. The ECB publishes no rate on
+weekends and TARGET holidays, and a suspended or unpublished currency has no rows, so those dates
+and currencies simply have no rate. The app never takes a nearby date and never carries a rate
+forward. What happens to an event without a rate (typed rate, or the broker fallback below) is
+decided by the exchange-rate request, what will be implemented latter.
+
+**Provenance.** Each rate keeps the value, the observation date, the ECB series key, the SHA-256 of
+the file bytes, the file's display name and the row. A file rate is an official rate and is labelled
+so; a broker rate never is. The checksum is the checksum of the file as the user loaded it. The
+maintainer publishes the unmodified download of each year as a release asset with its SHA-256, the
+query URL and the download date, and anyone can download the same query from the ECB and compare:
+three downloads of the 2025 query, about 30 minutes apart, were byte-identical. The app does not
+require the published copy.
+
+**Attribution.** The ECB allows free reuse of its statistics "on the condition that the source is
+quoted". Any report or screen that shows these rates says "Source: ECB statistics." See the ECB
+statistics reuse policy (`ecb.europa.eu`, "Usage policy of ECB statistics").
+
+Any download is explicit and opt-in. The app works with no network access.
+
 ## Asking the user for official rates
 
 Importing foreign trades, dividends or interest does not require a broker exchange rate. Retain the
@@ -191,6 +271,9 @@ original payment amount, currency, tax date and provenance when that optional va
 the event then has no broker fallback. A supplied invalid broker rate is a separate sourced
 parser error under the income policy in [`architecture.md`](architecture.md). It is never
 silently treated as absent or replaced with a fabricated rate.
+
+A rate from a loaded ECB file for the exact currency and date is used by default, with no prompt
+(see "Official ECB rate files"). Only a currency and date without such a rate is requested.
 
 After merging and deduplicating the input, the processor collects every foreign currency and date
 needed for a FURS report value. Older acquisition dates are included when those acquisitions are

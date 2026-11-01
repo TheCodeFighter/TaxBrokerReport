@@ -40,9 +40,11 @@ add_executable(taxbroker_unit_tests
     unit/loss_eligibility_test.cpp
     unit/processing_diagnostics_test.cpp
     unit/report_command_test.cpp
+    unit/sha256_test.cpp
     unit/date_utils_test.cpp
     unit/diagnostic_messages_test.cpp
     unit/diagnostics_json_test.cpp
+    unit/ecb_rate_file_test.cpp
     unit/kdvp_xml_writer_test.cpp
     unit/statement_merger_property_test.cpp
     unit/statement_merger_test.cpp
@@ -85,6 +87,7 @@ add_executable(taxbroker_integration_tests
     integration/application_result_integration_test.cpp
     integration/cli_report_integration_test.cpp
     integration/corporate_action_integration_test.cpp
+    integration/ecb_rate_file_integration_test.cpp
     integration/fifo_matching_integration_test.cpp
     integration/historical_scenario_integration_test.cpp
     integration/kdvp_xml_integration_test.cpp

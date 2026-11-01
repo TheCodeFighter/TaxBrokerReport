@@ -79,6 +79,20 @@ constexpr std::array kRequestIdAndDateRange{
 constexpr std::array kEarlierDate{
     MessageParamDefinition{"earlierDate", MessageParamKind::Text},
 };
+constexpr std::array kFieldAndExpected{
+    MessageParamDefinition{"field", MessageParamKind::Text},
+    MessageParamDefinition{"expected", MessageParamKind::Text},
+};
+constexpr std::array kFirstAndFoundYear{
+    MessageParamDefinition{"firstYear", MessageParamKind::Number},
+    MessageParamDefinition{"foundYear", MessageParamKind::Number},
+};
+constexpr std::array kColumn{
+    MessageParamDefinition{"column", MessageParamKind::Text},
+};
+constexpr std::array kYear{
+    MessageParamDefinition{"year", MessageParamKind::Number},
+};
 constexpr std::array kYearRange{
     MessageParamDefinition{"minYear", MessageParamKind::Number},
     MessageParamDefinition{"maxYear", MessageParamKind::Number},
@@ -237,6 +251,28 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::AnswerRejectedLaterSaleTooLarge,
                       "answer_rejected.later_sale_too_large",
                       kRequestId},
+    MessageDefinition{MessageKey::InvalidHeaderRateFileColumns,
+                      "invalid_header.rate_file_columns",
+                      kCountAndColumns},
+    MessageDefinition{MessageKey::FieldCountMismatchRateFile,
+                      "field_count_mismatch.rate_file",
+                      kExpectedAndFound},
+    MessageDefinition{
+        MessageKey::ParseErrorUnreadableRateFile, "parse_error.unreadable_rate_file", {}},
+    MessageDefinition{MessageKey::InvalidValueRateFieldExpected,
+                      "invalid_value.rate_field_expected",
+                      kFieldAndExpected},
+    MessageDefinition{MessageKey::InvalidValueRateCurrency, "invalid_value.rate_currency", {}},
+    MessageDefinition{MessageKey::InvalidValueRateDate, "invalid_value.rate_date", {}},
+    MessageDefinition{MessageKey::InvalidValueRateValue, "invalid_value.rate_value", {}},
+    MessageDefinition{MessageKey::MissingFieldRateValue, "missing_field.rate_value", {}},
+    MessageDefinition{MessageKey::DuplicateRate, "duplicate_rate", {}},
+    MessageDefinition{MessageKey::MixedRateYears, "mixed_rate_years", kFirstAndFoundYear},
+    MessageDefinition{MessageKey::DuplicateRateYear, "duplicate_rate_year", kYear},
+    MessageDefinition{MessageKey::NoRates, "no_rates", {}},
+    MessageDefinition{MessageKey::InvalidHeaderRateFileDuplicateColumn,
+                      "invalid_header.rate_file_duplicate_column",
+                      kColumn},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -253,7 +289,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::AnswerRejectedLaterSaleTooLarge) + 1,
+                  static_cast<std::size_t>(MessageKey::InvalidHeaderRateFileDuplicateColumn) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 7> kTermKeys{
