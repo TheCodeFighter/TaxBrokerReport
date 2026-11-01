@@ -5667,7 +5667,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithUnsupportedCurrency) {
         .mAmount = "-10.000000",
         .mFee = "",
         .mTax = "",
-        .mCurrency = "CAD",
+        .mCurrency = "ZZZ",
         .mOriginalAmount = "",
         .mOriginalCurrency = "",
         .mFxRate = "",
@@ -6092,7 +6092,7 @@ TEST(TradeRepublicParserTest, RejectsDividendWithUnsupportedTaxCurrency) {
                             .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
-    row.mCurrency = "CAD";
+    row.mCurrency = "ZZZ";
 
     const auto rejected = parseRows({row});
 
@@ -6328,7 +6328,7 @@ TEST(TradeRepublicParserTest, RejectsDividendWithUnsupportedOriginalCurrency) {
                             .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
-    row.mOriginalCurrency = "CAD";
+    row.mOriginalCurrency = "ZZZ";
 
     const auto rejected = parseRows({row});
 
@@ -6349,6 +6349,281 @@ TEST(TradeRepublicParserTest, RejectsDividendWithUnsupportedOriginalCurrency) {
         "taxbroker_TradeRepublicParserTest_RejectsDividendWithUnsupportedOriginalCurrency.csv");
     EXPECT_EQ(error.mRowIndex, 2U);
     EXPECT_EQ(error.mTransactionId, "synthetic-dividend-validation");
+}
+
+TEST(TradeRepublicParserTest, ParsesDividendsInEveryNewlySupportedOriginalCurrency) {
+    // One dividend per currency, each 11.00 at a broker rate of 0.90 EUR per unit: EUR 9.90.
+    const auto result = parseRows({
+        {.mDatetime = "2024-01-15T10:00:00.000Z",
+         .mDate = "2024-01-15",
+         .mAccountType = "DEFAULT",
+         .mCategory = "CASH",
+         .mType = "DIVIDEND",
+         .mAssetClass = "STOCK",
+         .mName = "Synthetic Share DKK",
+         .mSymbol = "XX9000000001",
+         .mShares = "",
+         .mPrice = "",
+         .mAmount = "9.90",
+         .mFee = "",
+         .mTax = "-1.00",
+         .mCurrency = "EUR",
+         .mOriginalAmount = "11.00",
+         .mOriginalCurrency = "DKK",
+         .mFxRate = "0.90",
+         .mDescription = "Synthetic test row",
+         .mTransactionId = "synthetic-dividend-dkk",
+         .mCounterpartyName = "",
+         .mCounterpartyIban = "",
+         .mPaymentReference = "",
+         .mMccCode = ""},
+        {.mDatetime = "2024-01-15T10:00:00.000Z",
+         .mDate = "2024-01-15",
+         .mAccountType = "DEFAULT",
+         .mCategory = "CASH",
+         .mType = "DIVIDEND",
+         .mAssetClass = "STOCK",
+         .mName = "Synthetic Share SEK",
+         .mSymbol = "XX9000000002",
+         .mShares = "",
+         .mPrice = "",
+         .mAmount = "9.90",
+         .mFee = "",
+         .mTax = "-1.00",
+         .mCurrency = "EUR",
+         .mOriginalAmount = "11.00",
+         .mOriginalCurrency = "SEK",
+         .mFxRate = "0.90",
+         .mDescription = "Synthetic test row",
+         .mTransactionId = "synthetic-dividend-sek",
+         .mCounterpartyName = "",
+         .mCounterpartyIban = "",
+         .mPaymentReference = "",
+         .mMccCode = ""},
+        {.mDatetime = "2024-01-15T10:00:00.000Z",
+         .mDate = "2024-01-15",
+         .mAccountType = "DEFAULT",
+         .mCategory = "CASH",
+         .mType = "DIVIDEND",
+         .mAssetClass = "STOCK",
+         .mName = "Synthetic Share NOK",
+         .mSymbol = "XX9000000003",
+         .mShares = "",
+         .mPrice = "",
+         .mAmount = "9.90",
+         .mFee = "",
+         .mTax = "-1.00",
+         .mCurrency = "EUR",
+         .mOriginalAmount = "11.00",
+         .mOriginalCurrency = "NOK",
+         .mFxRate = "0.90",
+         .mDescription = "Synthetic test row",
+         .mTransactionId = "synthetic-dividend-nok",
+         .mCounterpartyName = "",
+         .mCounterpartyIban = "",
+         .mPaymentReference = "",
+         .mMccCode = ""},
+        {.mDatetime = "2024-01-15T10:00:00.000Z",
+         .mDate = "2024-01-15",
+         .mAccountType = "DEFAULT",
+         .mCategory = "CASH",
+         .mType = "DIVIDEND",
+         .mAssetClass = "STOCK",
+         .mName = "Synthetic Share CAD",
+         .mSymbol = "XX9000000004",
+         .mShares = "",
+         .mPrice = "",
+         .mAmount = "9.90",
+         .mFee = "",
+         .mTax = "-1.00",
+         .mCurrency = "EUR",
+         .mOriginalAmount = "11.00",
+         .mOriginalCurrency = "CAD",
+         .mFxRate = "0.90",
+         .mDescription = "Synthetic test row",
+         .mTransactionId = "synthetic-dividend-cad",
+         .mCounterpartyName = "",
+         .mCounterpartyIban = "",
+         .mPaymentReference = "",
+         .mMccCode = ""},
+        {.mDatetime = "2024-01-15T10:00:00.000Z",
+         .mDate = "2024-01-15",
+         .mAccountType = "DEFAULT",
+         .mCategory = "CASH",
+         .mType = "DIVIDEND",
+         .mAssetClass = "STOCK",
+         .mName = "Synthetic Share AUD",
+         .mSymbol = "XX9000000005",
+         .mShares = "",
+         .mPrice = "",
+         .mAmount = "9.90",
+         .mFee = "",
+         .mTax = "-1.00",
+         .mCurrency = "EUR",
+         .mOriginalAmount = "11.00",
+         .mOriginalCurrency = "AUD",
+         .mFxRate = "0.90",
+         .mDescription = "Synthetic test row",
+         .mTransactionId = "synthetic-dividend-aud",
+         .mCounterpartyName = "",
+         .mCounterpartyIban = "",
+         .mPaymentReference = "",
+         .mMccCode = ""},
+        {.mDatetime = "2024-01-15T10:00:00.000Z",
+         .mDate = "2024-01-15",
+         .mAccountType = "DEFAULT",
+         .mCategory = "CASH",
+         .mType = "DIVIDEND",
+         .mAssetClass = "STOCK",
+         .mName = "Synthetic Share HKD",
+         .mSymbol = "XX9000000006",
+         .mShares = "",
+         .mPrice = "",
+         .mAmount = "9.90",
+         .mFee = "",
+         .mTax = "-1.00",
+         .mCurrency = "EUR",
+         .mOriginalAmount = "11.00",
+         .mOriginalCurrency = "HKD",
+         .mFxRate = "0.90",
+         .mDescription = "Synthetic test row",
+         .mTransactionId = "synthetic-dividend-hkd",
+         .mCounterpartyName = "",
+         .mCounterpartyIban = "",
+         .mPaymentReference = "",
+         .mMccCode = ""},
+    });
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 6U);
+
+    const auto& dkkInstrument = result.mStatement.mDividendInstruments[0];
+
+    EXPECT_EQ(dkkInstrument.mIsin, "XX9000000001");
+    ASSERT_EQ(dkkInstrument.mTransactions.size(), 1U);
+    EXPECT_EQ(dkkInstrument.mTransactions.front().mCurrency, Currency::DKK);
+    EXPECT_EQ(dkkInstrument.mTransactions.front().mGrossAmount, 110'000); // 11.00
+
+    const auto& sekInstrument = result.mStatement.mDividendInstruments[1];
+
+    EXPECT_EQ(sekInstrument.mIsin, "XX9000000002");
+    ASSERT_EQ(sekInstrument.mTransactions.size(), 1U);
+    EXPECT_EQ(sekInstrument.mTransactions.front().mCurrency, Currency::SEK);
+    EXPECT_EQ(sekInstrument.mTransactions.front().mGrossAmount, 110'000); // 11.00
+
+    const auto& nokInstrument = result.mStatement.mDividendInstruments[2];
+
+    EXPECT_EQ(nokInstrument.mIsin, "XX9000000003");
+    ASSERT_EQ(nokInstrument.mTransactions.size(), 1U);
+    EXPECT_EQ(nokInstrument.mTransactions.front().mCurrency, Currency::NOK);
+    EXPECT_EQ(nokInstrument.mTransactions.front().mGrossAmount, 110'000); // 11.00
+
+    const auto& cadInstrument = result.mStatement.mDividendInstruments[3];
+
+    EXPECT_EQ(cadInstrument.mIsin, "XX9000000004");
+    ASSERT_EQ(cadInstrument.mTransactions.size(), 1U);
+    EXPECT_EQ(cadInstrument.mTransactions.front().mCurrency, Currency::CAD);
+    EXPECT_EQ(cadInstrument.mTransactions.front().mGrossAmount, 110'000); // 11.00
+
+    const auto& audInstrument = result.mStatement.mDividendInstruments[4];
+
+    EXPECT_EQ(audInstrument.mIsin, "XX9000000005");
+    ASSERT_EQ(audInstrument.mTransactions.size(), 1U);
+    EXPECT_EQ(audInstrument.mTransactions.front().mCurrency, Currency::AUD);
+    EXPECT_EQ(audInstrument.mTransactions.front().mGrossAmount, 110'000); // 11.00
+
+    const auto& hkdInstrument = result.mStatement.mDividendInstruments[5];
+
+    EXPECT_EQ(hkdInstrument.mIsin, "XX9000000006");
+    ASSERT_EQ(hkdInstrument.mTransactions.size(), 1U);
+    EXPECT_EQ(hkdInstrument.mTransactions.front().mCurrency, Currency::HKD);
+    EXPECT_EQ(hkdInstrument.mTransactions.front().mGrossAmount, 110'000); // 11.00
+}
+
+TEST(TradeRepublicParserTest, ParsesANorwegianKroneDividendWithItsBrokerRate) {
+    const SyntheticCsvRow row{.mDatetime = "2024-01-15T10:00:00.000Z",
+                              .mDate = "2024-01-15",
+                              .mAccountType = "DEFAULT",
+                              .mCategory = "CASH",
+                              .mType = "DIVIDEND",
+                              .mAssetClass = "STOCK",
+                              .mName = "Synthetic Validation Share",
+                              .mSymbol = "XX9000000001",
+                              .mShares = "",
+                              .mPrice = "",
+                              .mAmount = "1.06",
+                              .mFee = "",
+                              .mTax = "-0.16",
+                              .mCurrency = "EUR",
+                              .mOriginalAmount = "12.50",
+                              .mOriginalCurrency = "NOK",
+                              .mFxRate = "0.085",
+                              .mDescription = "Synthetic test row",
+                              .mTransactionId = "synthetic-dividend-nok",
+                              .mCounterpartyName = "",
+                              .mCounterpartyIban = "",
+                              .mPaymentReference = "",
+                              .mMccCode = ""};
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mDividendInstruments.front().mTransactions.size(), 1U);
+
+    const auto& income = result.mStatement.mDividendInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(income.mCurrency, Currency::NOK);
+    EXPECT_EQ(income.mGrossAmount, 125'000); // NOK 12.50 at 4 decimals
+    EXPECT_EQ(income.mTaxPaid, 1'600);       // EUR 0.16 at 4 decimals
+    EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 8'500'000, // 0.085 EUR per NOK at 8 decimals
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
+}
+
+TEST(TradeRepublicParserTest, ParsesABondInterestPaymentInNorwegianKrone) {
+    const SyntheticCsvRow row{.mDatetime = "2024-01-15T10:00:00.000Z",
+                              .mDate = "2024-01-15",
+                              .mAccountType = "DEFAULT",
+                              .mCategory = "CASH",
+                              .mType = "INTEREST_PAYMENT",
+                              .mAssetClass = "BOND",
+                              .mName = "Synthetic Validation Bond",
+                              .mSymbol = "XX9000000002",
+                              .mShares = "",
+                              .mPrice = "",
+                              .mAmount = "1.06",
+                              .mFee = "",
+                              .mTax = "-0.16",
+                              .mCurrency = "EUR",
+                              .mOriginalAmount = "12.50",
+                              .mOriginalCurrency = "NOK",
+                              .mFxRate = "0.085",
+                              .mDescription = "Synthetic test row",
+                              .mTransactionId = "synthetic-bond-interest-nok",
+                              .mCounterpartyName = "",
+                              .mCounterpartyIban = "",
+                              .mPaymentReference = "",
+                              .mMccCode = ""};
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& income = result.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(income.mCurrency, Currency::NOK);
+    EXPECT_EQ(income.mGrossAmount, 125'000); // NOK 12.50 at 4 decimals
+    EXPECT_EQ(
+        income.mExchangeRate,
+        (BrokerExchangeRate{.mValue = 8'500'000, // 0.085 EUR per NOK at 8 decimals
+                            .mDirection = ExchangeRateDirection::EurPerForeign,
+                            .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
 }
 
 TEST(TradeRepublicParserTest, RejectsDividendWithMissingOriginalAmount) {
@@ -7444,7 +7719,7 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithUnsupportedTaxCurrency) 
                             .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
-    row.mCurrency = "CAD";
+    row.mCurrency = "ZZZ";
 
     const auto rejected = parseRows({row});
 
@@ -7683,7 +7958,7 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestWithUnsupportedOriginalCurre
                             .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
-    row.mOriginalCurrency = "CAD";
+    row.mOriginalCurrency = "ZZZ";
 
     const auto rejected = parseRows({row});
 
@@ -8806,7 +9081,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithUnsupportedTaxCurrency) {
                             .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
-    row.mCurrency = "CAD";
+    row.mCurrency = "ZZZ";
 
     const auto rejected = parseRows({row});
 
@@ -9044,7 +9319,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithUnsupportedOriginalCurrency
                             .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(income.mTaxCurrency, Currency::EUR);
 
-    row.mOriginalCurrency = "CAD";
+    row.mOriginalCurrency = "ZZZ";
 
     const auto rejected = parseRows({row});
 
@@ -11606,7 +11881,7 @@ TEST(TradeRepublicParserTest, RejectsInvalidBenefits) {
                        +[](SyntheticCsvRow& aRow) { aRow.mAmount = "922337203685477.5808"; }},
         InvalidRowCase{"MissingCurrency", +[](SyntheticCsvRow& aRow) { aRow.mCurrency.clear(); }},
         InvalidRowCase{"UnsupportedCurrency",
-                       +[](SyntheticCsvRow& aRow) { aRow.mCurrency = "CAD"; }},
+                       +[](SyntheticCsvRow& aRow) { aRow.mCurrency = "ZZZ"; }},
     };
 
     for (const auto& invalidCase : invalidCases)
@@ -11636,7 +11911,7 @@ TEST(TradeRepublicParserTest, RejectsInvalidPrivateMarketEvents) {
                        +[](SyntheticCsvRow& aRow) { aRow.mFee = "-922337203685477.5808"; }},
         InvalidRowCase{"MissingCurrency", +[](SyntheticCsvRow& aRow) { aRow.mCurrency.clear(); }},
         InvalidRowCase{"UnsupportedCurrency",
-                       +[](SyntheticCsvRow& aRow) { aRow.mCurrency = "CAD"; }},
+                       +[](SyntheticCsvRow& aRow) { aRow.mCurrency = "ZZZ"; }},
     };
 
     for (const auto& invalidCase : invalidCases)

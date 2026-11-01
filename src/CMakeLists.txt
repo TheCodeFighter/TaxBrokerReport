@@ -31,6 +31,7 @@ add_library(taxbroker_core STATIC
     processors/statement_merger.cpp
     processors/tax_processor.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/diagnostic_messages_table.cpp
+    utils/currency.cpp
     utils/date_utils.cpp
     utils/diagnostic_messages.cpp
     utils/exact_arithmetic.cpp

@@ -1,4 +1,5 @@
 #include "processors/capital_report_gates.hpp"
+#include "taxbroker/currency.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -92,24 +93,11 @@ std::optional<std::string_view> unsupportedClassName(AssetClass aAssetClass) {
     return std::nullopt;
 }
 
-std::string_view currencyCode(Currency aCurrency) {
-    switch (aCurrency)
-    {
-    case Currency::EUR:
-        return "EUR";
-    case Currency::USD:
-        return "USD";
-    case Currency::GBP:
-        return "GBP";
-    case Currency::CHF:
-        return "CHF";
-    case Currency::JPY:
-        return "JPY";
-    case Currency::Unknown:
-        break;
-    }
+/// The currency code for a gate message, or "unknown" for Currency::Unknown.
+std::string_view gateCurrencyCode(Currency aCurrency) {
+    const auto code = currencyCode(aCurrency);
 
-    return "unknown";
+    return code.empty() ? "unknown" : code;
 }
 
 /// One error for an ISIN with a sale of the year whose class is not Stock or Fund. The sources
@@ -183,7 +171,7 @@ void checkStoppedPool(const FifoIsinResult& aPool,
             PipelineStage::FifoTax,
             makeDiagnosticMessage(
                 MessageKey::MissingExchangeRateTrade,
-                {textParam("currency", std::string{currencyCode(trade.mCurrency)})}),
+                {textParam("currency", std::string{gateCurrencyCode(trade.mCurrency)})}),
             trade.mMetadata.mSources,
             trade.mMetadata.mTaxDate,
             aPool.mName,

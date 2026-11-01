@@ -1,5 +1,6 @@
 #include "taxbroker/official_rates.hpp"
 
+#include "taxbroker/currency.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/numeric_util.hpp"
@@ -344,22 +345,13 @@ const OfficialRate* OfficialRateTable::find(std::string_view aCurrencyCode, Date
 }
 
 const OfficialRate* OfficialRateTable::find(Currency aCurrency, Date aDate) const {
-    switch (aCurrency)
+    // EUR has no rate, and an unknown currency has no code.
+    if (aCurrency == Currency::EUR || aCurrency == Currency::Unknown)
     {
-    case Currency::USD:
-        return find("USD", aDate);
-    case Currency::GBP:
-        return find("GBP", aDate);
-    case Currency::CHF:
-        return find("CHF", aDate);
-    case Currency::JPY:
-        return find("JPY", aDate);
-    case Currency::EUR:
-    case Currency::Unknown:
         return nullptr;
     }
 
-    return nullptr;
+    return find(currencyCode(aCurrency), aDate);
 }
 
 OfficialRateLoadResult loadEcbRateFiles(const std::vector<std::filesystem::path>& aPaths) {
