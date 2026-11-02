@@ -62,6 +62,12 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "inconsistent_value.trade_side",
          {{"field", MessageParamKind::Text}}},
         {MessageKey::InconsistentValueAssetClass, "inconsistent_value.asset_class", {}},
+        {MessageKey::InconsistentValueRedemptionSign,
+         "inconsistent_value.redemption_sign",
+         {{"field", MessageParamKind::Text}}},
+        {MessageKey::InconsistentValueRedemptionUnusedField,
+         "inconsistent_value.redemption_unused_field",
+         {{"field", MessageParamKind::Text}}},
         {MessageKey::TradeAmountMismatch,
          "trade_amount_mismatch",
          {{"field", MessageParamKind::Text}}},
@@ -72,6 +78,9 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::UnsupportedAssetClassPrivateMarketUnits,
          "unsupported_asset_class.private_market_units",
          {}},
+        {MessageKey::UnsupportedAssetClassRedemptionNotBond,
+         "unsupported_asset_class.redemption_not_bond",
+         {{"assetClass", MessageParamKind::Text}}},
         {MessageKey::UnsupportedAssetClassInterestMapping,
          "unsupported_asset_class.interest_mapping",
          {}},
@@ -236,6 +245,7 @@ const std::vector<std::string_view>& expectedTerms() {
         "row_kind.corporate_action",
         "row_kind.benefit",
         "row_kind.private_market",
+        "row_kind.bond_redemption",
     };
 
     return terms;
@@ -282,8 +292,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 87U);
-    ASSERT_EQ(expectedMessages().size(), 87U);
+    ASSERT_EQ(definitions.size(), 90U);
+    ASSERT_EQ(expectedMessages().size(), 90U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -317,8 +327,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 87U);
-    EXPECT_EQ(keys.size(), 87U);
+    EXPECT_EQ(ids.size(), 90U);
+    EXPECT_EQ(keys.size(), 90U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -334,12 +344,13 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
     EXPECT_EQ(term::kRowKindCorporateAction, "row_kind.corporate_action");
     EXPECT_EQ(term::kRowKindBenefit, "row_kind.benefit");
     EXPECT_EQ(term::kRowKindPrivateMarket, "row_kind.private_market");
+    EXPECT_EQ(term::kRowKindBondRedemption, "row_kind.bond_redemption");
 }
 
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 94U); // 87 message keys and 7 terms.
+    ASSERT_EQ(table.size(), 98U); // 90 message keys and 8 terms.
 
     std::set<std::string> tableKeys;
 
@@ -634,7 +645,8 @@ TEST(DiagnosticMessagesTest, EmbedsTheTableUpToItsLastByte) {
     const auto table = diagnosticMessagesCsv();
 
     // The byte array has no terminating zero: the text ends with the newline of the last row.
-    EXPECT_TRUE(table.ends_with("row_kind.private_market,private-market row,zasebni trg\n"));
+    EXPECT_TRUE(
+        table.ends_with("row_kind.bond_redemption,bond-maturity row,zapadlost obveznice\n"));
     EXPECT_EQ(table.find('\0'), std::string_view::npos);
 }
 

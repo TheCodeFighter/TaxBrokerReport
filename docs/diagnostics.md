@@ -300,6 +300,7 @@ the scope from it:
 | Interactive Brokers cash interest | Other interest. |
 | interest of unknown subtype | Both interest forms. |
 | benefit | No report. |
+| bond maturity | No report: a maturity is information only, and bond sales and maturities are in no form. The same row with an asset class other than a bond has the capital scope (corporate action), because it can be a taxable sale. |
 | private market | No report: private-market events are skipped (no units or price), so a rejected one changes no form. It gets the capital scope back when private markets are supported. |
 | no kind (file, header, record with the wrong field count, unknown row type) | All four reports. |
 
@@ -652,6 +653,18 @@ A private-market row with shares or a price is kept as a cash-only event and get
 `unsupported_asset_class` warning (key `unsupported_asset_class.private_market_units`, field
 `shares`, or `price` when only the price is filled). It has the row kind private market, so it
 affects no report.
+
+A Trade Republic bond maturity is several rows, and each is one event of its own (kind `Maturity`,
+`MaturityCancelled`, `Payment` or `PaymentReversal`); nothing is linked or added up at parsing.
+They have the row kind bond maturity, so they affect no report. Units with the wrong sign for the
+kind are `inconsistent_value` (key `inconsistent_value.redemption_sign`, field `shares`); a row of
+another asset class is `unsupported_asset_class` (key `unsupported_asset_class.redemption_not_bond`)
+with the capital scope. The two correction rows of a maturity (a cancelled maturity and the
+maturity booked again) keep the maturity `date` but have a later `datetime`, so each also gets the
+usual `inconsistent_value.datetime_date` warning. A value in a column the row kind does not use
+(for example `amount` on a corporate-action row, or `price` on a cash row) is not stored and gets a
+warning with key `inconsistent_value.redemption_unused_field` and the column as `field`. See
+"Trade Republic bond rows" in `architecture.md`.
 
 A missing display name with a known ISIN is a `missing_field` warning on `name`, not rejection.
 The original blank remains source evidence even if another supplied name completes presentation.

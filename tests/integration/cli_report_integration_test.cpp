@@ -607,6 +607,39 @@ Warnings: 0
 )");
 }
 
+// The bond fixture (`test_data/csv/README.md`) holds a bond from purchase to a corrected maturity.
+TEST(CliReportIntegrationTest, ABondMaturityIsInformationOnlyAndKeepsTheReport) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto bondFixture = std::filesystem::path{__FILE__}.parent_path().parent_path() /
+                             "test_data" / "csv" / "traderepublic_bond_maturity_fixture.csv";
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history,
+                             bondFixture.string()});
+
+    // The report is generated: the maturity rows are no sale and the bond is not in the XML.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2025.xml"), "XS0000000001"));
+    EXPECT_TRUE(contains(result.mOut, "Errors: 0"));
+    EXPECT_FALSE(contains(result.mOut, "unknown_row_type"));
+    EXPECT_TRUE(contains(result.mOut, "Investments with a sale in 2025: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "  XX0000000001 Synthetic Share: listed, 1 sale"));
+}
+
 TEST(CliReportIntegrationTest, APrivateMarketBuyWithSharesGetsAnExtraWarning) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -3501,6 +3534,12 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "BONUS and\n"
                          "    REFERRAL) are information only. They are in no form and never "
                          "change a purchase value.\n"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "  - Bond maturities and their corrections (Trade Republic "
+                         "FINAL_MATURITY,\n"
+                         "    FINAL_MATURITY_CANCELLED and REDEMPTION rows) are information "
+                         "only. Bond sales and\n"
+                         "    maturities are in no form.\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "It is also blocked when a file cannot be read, when a trade or "
                          "corporate-action row of\nany file is rejected"));

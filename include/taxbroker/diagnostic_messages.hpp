@@ -29,10 +29,13 @@ enum class MessageKey {
     InconsistentValueDatetimeDate,
     InconsistentValueTradeSide,
     InconsistentValueAssetClass,
+    InconsistentValueRedemptionSign,
+    InconsistentValueRedemptionUnusedField,
     TradeAmountMismatch,
     UnsupportedAssetClassUnrecognized,
     UnsupportedAssetClassTaxUnsupported,
     UnsupportedAssetClassPrivateMarketUnits,
+    UnsupportedAssetClassRedemptionNotBond,
     UnsupportedAssetClassInterestMapping,
     UnsupportedRowTypeRecognized,
     UnsupportedRowTypeInterestType,
@@ -122,6 +125,7 @@ inline constexpr std::string_view kRowKindBrokerInterest = "row_kind.broker_inte
 inline constexpr std::string_view kRowKindCorporateAction = "row_kind.corporate_action";
 inline constexpr std::string_view kRowKindBenefit = "row_kind.benefit";
 inline constexpr std::string_view kRowKindPrivateMarket = "row_kind.private_market";
+inline constexpr std::string_view kRowKindBondRedemption = "row_kind.bond_redemption";
 
 } // namespace term
 

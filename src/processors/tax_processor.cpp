@@ -35,6 +35,8 @@ const EventMetadata& eventMetadata(const MergedStatement& aStatement,
         return presentation.mBenefitEvents.at(aReference.mEventIndex).mMetadata;
     case StatementEventKind::PrivateMarket:
         return presentation.mPrivateMarketEvents.at(aReference.mEventIndex).mMetadata;
+    case StatementEventKind::BondRedemption:
+        return presentation.mBondRedemptions.at(aReference.mEventIndex).mMetadata;
     }
 
     throw std::logic_error{"Unknown statement event kind"};

@@ -14,6 +14,7 @@ enum class RowType {
     CorporateAction,
     Benefit,
     PrivateMarket,
+    BondRedemption, ///< A maturity row of a bond (cash or corporate action).
     Ignored,
     Unsupported,
     Unknown

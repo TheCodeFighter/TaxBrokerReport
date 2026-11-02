@@ -72,6 +72,10 @@ void normalizeReports(ReportList& aReports) {
     // Private-market events are skipped (no units or price), so a rejected one changes no form.
     case ParsedRowKind::PrivateMarket:
         return {};
+    // A bond maturity is information only: bond sales and maturities are in no form yet. The same
+    // row of another class has the capital scope (the row kind says so).
+    case ParsedRowKind::BondRedemption:
+        return {};
     case ParsedRowKind::Dividend:
         return {ReportType::Dividends};
     case ParsedRowKind::BondInterest:
@@ -119,6 +123,9 @@ void normalizeReports(ReportList& aReports) {
         return {ReportType::CapitalGains};
     // Private-market events are skipped (no units or price), so a rejected one changes no form.
     case StatementEventKind::PrivateMarket:
+        return {};
+    // A bond maturity is information only: no form uses it yet.
+    case StatementEventKind::BondRedemption:
         return {};
     case StatementEventKind::Dividend:
         return {ReportType::Dividends};

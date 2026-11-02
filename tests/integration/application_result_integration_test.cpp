@@ -21,6 +21,12 @@
 namespace {
 using namespace taxbroker;
 
+/// The committed synthetic bond fixture; its rows are described in `test_data/csv/README.md`.
+std::filesystem::path bondFixturePath() {
+    return std::filesystem::path{__FILE__}.parent_path().parent_path() / "test_data" / "csv" /
+           "traderepublic_bond_maturity_fixture.csv";
+}
+
 class TemporaryApplicationInputs {
   public:
     TemporaryApplicationInputs() {
@@ -222,6 +228,49 @@ TEST(ApplicationResultIntegrationTest, ARejectedTradeRepublicInterestRowIsAlsoOt
     EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::Failed);
     EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
     EXPECT_EQ(result.report(ReportType::Dividends).mStatus, ReportStatus::NoData);
+}
+
+TEST(ApplicationResultIntegrationTest, TheBondMaturityFixtureBlocksNoReport) {
+    tr::TradeRepublicParser parser;
+    std::vector<StatementMergeInput> inputs{{0, parser.parse(bondFixturePath())}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2025, .mMergeDiagnostics = merged.mDiagnostics});
+
+    // Bond maturity rows are information only: no form fails or waits because of them, and the
+    // four warnings (accrued interest on rows 2 and 3, dates of rows 8 and 9) block nothing.
+    for (const auto type : {ReportType::CapitalGains,
+                            ReportType::Dividends,
+                            ReportType::BankDepositInterest,
+                            ReportType::OtherInterest})
+    {
+        EXPECT_EQ(result.report(type).mStatus, ReportStatus::NoData);
+    }
+
+    // The two date warnings affect no report. The two accrued-interest warnings of the purchase
+    // rows belong to Doh-KDVP (a purchase is a trade row), but they only warn.
+    ASSERT_EQ(result.mDiagnostics.size(), 4U);
+
+    std::size_t withoutReport = 0;
+    std::size_t withCapitalGains = 0;
+
+    for (const auto& diagnostic : result.mDiagnostics)
+    {
+        EXPECT_FALSE(diagnostic.mBlocking);
+
+        if (diagnostic.mAffectedReports.empty())
+        {
+            ++withoutReport;
+        }
+        else if (diagnostic.mAffectedReports == std::vector{ReportType::CapitalGains})
+        {
+            ++withCapitalGains;
+        }
+    }
+
+    EXPECT_EQ(withoutReport, 2U);
+    EXPECT_EQ(withCapitalGains, 2U);
 }
 
 TEST(ApplicationResultIntegrationTest, ARowOfUnknownTypeFailsAllFourReports) {

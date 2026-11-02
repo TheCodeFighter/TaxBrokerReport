@@ -81,5 +81,10 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
   following tasks): not imported yet.
 - **S6 to S8, the rows for split lots and partly blocked losses** (#267): not imported yet. The
   files and expected rows are in `tests/manual/edavki/README.md`.
-- **The developer export without `F10`** (#188). The CLI blocks that case today.
+- **The developer export without `F10`**. The CLI blocks that case today.
+- **Trade Republic bond maturity rows**: `FINAL_MATURITY` (action and cash rows),
+  `FINAL_MATURITY_CANCELLED` and the foreign payout are checked against one real export (shapes
+  only). Still guesses: `REDEMPTION`, `shares` filled on a cash row, the sign of `tax`
+  on a maturity, `TILG`, `SEC_ACCOUNT` and `EARLY_REDEMPTION` rows (`architecture.md`, "Trade
+  Republic bond rows").
 - If a result is unclear, the FURS developer contact is `sd.fu@gov.si`.

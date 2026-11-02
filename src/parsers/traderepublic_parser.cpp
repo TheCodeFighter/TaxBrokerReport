@@ -51,6 +51,15 @@ constexpr auto kTransactionTypeMappings = std::array{
     TransactionTypeMapping{"PRIVATE_MARKET_BUY", "CASH", taxbroker::RowType::PrivateMarket},
     TransactionTypeMapping{"PRIVATE_MARKET_SELL", "CASH", taxbroker::RowType::PrivateMarket},
 
+    // A bond maturity is several rows: corporate-action rows take the units out (or back, when
+    // the maturity is cancelled) and cash rows pay (or take back) the money. All are events.
+    TransactionTypeMapping{"FINAL_MATURITY", "CASH", taxbroker::RowType::BondRedemption},
+    TransactionTypeMapping{
+        "FINAL_MATURITY", "CORPORATE_ACTION", taxbroker::RowType::BondRedemption},
+    TransactionTypeMapping{
+        "FINAL_MATURITY_CANCELLED", "CORPORATE_ACTION", taxbroker::RowType::BondRedemption},
+    TransactionTypeMapping{"REDEMPTION", "CORPORATE_ACTION", taxbroker::RowType::BondRedemption},
+
     TransactionTypeMapping{"TAX_OPTIMIZATION", "", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"TAX_REFUND", "", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"SSP_TAX_CORRECTION_INVOICE", "", taxbroker::RowType::Unsupported},
@@ -578,11 +587,13 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                 .mRowKind = rowKindFor(row, rowMeta.mRowType),
             };
 
-            const bool isImportedEvent =
-                rowMeta.mRowType == RowType::Trade || rowMeta.mRowType == RowType::Dividend ||
-                rowMeta.mRowType == RowType::Interest ||
-                rowMeta.mRowType == RowType::CorporateAction ||
-                rowMeta.mRowType == RowType::Benefit || rowMeta.mRowType == RowType::PrivateMarket;
+            const bool isImportedEvent = rowMeta.mRowType == RowType::Trade ||
+                                         rowMeta.mRowType == RowType::Dividend ||
+                                         rowMeta.mRowType == RowType::Interest ||
+                                         rowMeta.mRowType == RowType::CorporateAction ||
+                                         rowMeta.mRowType == RowType::Benefit ||
+                                         rowMeta.mRowType == RowType::PrivateMarket ||
+                                         rowMeta.mRowType == RowType::BondRedemption;
 
             if (isImportedEvent && datetimeValue.empty())
             {
@@ -638,6 +649,12 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                                       parsedResult.mStatement.mPrivateMarketEvents,
                                       rowMeta.mParsedValues,
                                       context);
+                break;
+            case RowType::BondRedemption:
+                parseBondRedemptionRow(row,
+                                       parsedResult.mStatement.mBondRedemptions,
+                                       rowMeta.mParsedValues,
+                                       context);
                 break;
             case RowType::Ignored:
                 break;
@@ -767,6 +784,11 @@ std::optional<ParsedRowKind> TradeRepublicParser::rowKindFor(const csv::CSVRow& 
         return ParsedRowKind::Benefit;
     case RowType::PrivateMarket:
         return ParsedRowKind::PrivateMarket;
+    case RowType::BondRedemption:
+        // Only a bond maturity is information only. The same row of another class (a
+        // certificate or a derivative) may be a taxable sale, so it keeps the capital scope.
+        return aCsvRow["asset_class"].get<std::string>() == "BOND" ? ParsedRowKind::BondRedemption
+                                                                   : ParsedRowKind::CorporateAction;
     case RowType::Ignored:
     case RowType::Unsupported:
     case RowType::Unknown:
@@ -1341,6 +1363,250 @@ void TradeRepublicParser::parseBenefitRow(const csv::CSVRow& aCsvRow,
         .mAmount = *amount,
         .mCurrency = currency,
     });
+}
+
+/// Rejects a bond maturity row whose asset class is not `BOND`: a blank class is a missing field.
+void TradeRepublicParser::checkRedemptionAssetClass(const csv::CSVRow& aCsvRow,
+                                                    const RowContext& aContext) {
+    const auto classLabel = aCsvRow["asset_class"].get<std::string>();
+
+    if (classLabel.empty())
+    {
+        aContext.addInvalidFieldDiagnostic("asset_class", classLabel, term::kRowKindBondRedemption);
+    }
+    else if (classLabel != "BOND")
+    {
+        aContext.rejectRow(DiagnosticCode::UnsupportedAssetClass,
+                           makeDiagnosticMessage(MessageKey::UnsupportedAssetClassRedemptionNotBond,
+                                                 {textParam("assetClass", classLabel)}),
+                           "asset_class");
+    }
+}
+
+/// Reads one maturity row of a bond: a corporate-action row has the units and no amount, a cash
+/// row has the amount and no units (negative amount: a payout taken back). Real shapes of
+/// `FINAL_MATURITY` and `FINAL_MATURITY_CANCELLED`; GUESS: `REDEMPTION`, and units on a cash row.
+/// A filled value the row does not use is kept out of the event and reported as a warning.
+void TradeRepublicParser::parseBondRedemptionRow(const csv::CSVRow& aCsvRow,
+                                                 std::vector<BondRedemptionEvent>& aEvents,
+                                                 const RowParsedValues& aParsedValues,
+                                                 const RowContext& aContext) {
+    const bool isActionRow = aParsedValues.mCategory == "CORPORATE_ACTION";
+    const auto isin = aCsvRow["symbol"].get<std::string>();
+    const auto name = aCsvRow["name"].get<std::string>();
+    const auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
+    const auto sharesText = aCsvRow["shares"].get<std::string>();
+    const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
+    const auto* units = std::get_if<ParsedFixedPoint>(&importedUnits);
+    const bool hasUnits = !sharesText.empty();
+    const auto priceText = aCsvRow["price"].get<std::string>();
+    const auto price = priceText.empty() ? std::optional<UnitPrice>{} : parseUnitPrice(priceText);
+    const auto isUsable = [](std::int64_t aValue) {
+        return aValue != 0 && aValue != std::numeric_limits<std::int64_t>::min();
+    };
+
+    // The cash row only: the amount is in original_amount when original_currency is filled.
+    const bool usesOriginalCurrency = !aCsvRow["original_currency"].get<std::string>().empty();
+    const std::string_view amountField = usesOriginalCurrency ? "original_amount" : "amount";
+    const auto amountText = aCsvRow[std::string{amountField}].get<std::string>();
+    const auto signedAmount = parseMoney(amountText);
+    const auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
+    const auto taxText = aCsvRow["tax"].get<std::string>();
+    const auto taxPaid = parseTaxPaid(taxText);
+    const auto columnCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
+    const auto rateText = aCsvRow["fx_rate"].get<std::string>();
+    const auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
+    const bool isAmountUsable = signedAmount && isUsable(*signedAmount);
+
+    BondRedemptionKind kind = BondRedemptionKind::Maturity;
+
+    if (isActionRow)
+    {
+        kind = aParsedValues.mType == "FINAL_MATURITY_CANCELLED"
+                   ? BondRedemptionKind::MaturityCancelled
+                   : BondRedemptionKind::Maturity;
+    }
+    else
+    {
+        kind = isAmountUsable && *signedAmount < 0 ? BondRedemptionKind::PaymentReversal
+                                                   : BondRedemptionKind::Payment;
+    }
+
+    // Every invalid field is reported, in the column order of the export.
+    if (!date)
+    {
+        aContext.addInvalidFieldDiagnostic("date",
+                                           aCsvRow["date"].get<std::string>(),
+                                           term::kRowKindBondRedemption);
+    }
+
+    checkRedemptionAssetClass(aCsvRow, aContext);
+    isInstrumentValid(term::kRowKindBondRedemption, isin, name, aContext);
+
+    // An action row needs its units; a cash row may leave them blank.
+    if ((isActionRow || hasUnits) && (!units || !isUsable(units->mValue)))
+    {
+        aContext.addInvalidFieldDiagnostic("shares", sharesText, term::kRowKindBondRedemption);
+    }
+
+    // The price of an action row is the redemption price; a cash row has none.
+    if (isActionRow && !priceText.empty() && (!price || *price <= 0))
+    {
+        aContext.addInvalidFieldDiagnostic("price", priceText, term::kRowKindBondRedemption);
+    }
+
+    if (!isActionRow)
+    {
+        if (!usesOriginalCurrency && !isAmountUsable)
+        {
+            aContext.addInvalidFieldDiagnostic(amountField,
+                                               amountText,
+                                               term::kRowKindBondRedemption);
+        }
+
+        // With original_currency the cash amount is not stored, but it must still be a number.
+        const auto cashAmountText = aCsvRow["amount"].get<std::string>();
+
+        if (usesOriginalCurrency && !parseMoney(cashAmountText))
+        {
+            aContext.addInvalidFieldDiagnostic("amount",
+                                               cashAmountText,
+                                               term::kRowKindBondRedemption);
+        }
+
+        if (!feePaid)
+        {
+            aContext.addInvalidFieldDiagnostic("fee",
+                                               aCsvRow["fee"].get<std::string>(),
+                                               term::kRowKindBondRedemption);
+        }
+
+        if (!taxPaid && !taxText.empty())
+        {
+            aContext.addInvalidFieldDiagnostic("tax", taxText, term::kRowKindBondRedemption);
+        }
+
+        if (columnCurrency == Currency::Unknown)
+        {
+            aContext.addInvalidFieldDiagnostic("currency",
+                                               aCsvRow["currency"].get<std::string>(),
+                                               term::kRowKindBondRedemption);
+        }
+
+        if (usesOriginalCurrency && !isAmountUsable)
+        {
+            aContext.addInvalidFieldDiagnostic(amountField,
+                                               amountText,
+                                               term::kRowKindBondRedemption);
+        }
+
+        if (usesOriginalCurrency && !amountAndCurrency.mCurrency)
+        {
+            aContext.addInvalidFieldDiagnostic("original_currency",
+                                               getAmountCurrencyValue(aCsvRow),
+                                               term::kRowKindBondRedemption);
+        }
+
+        if (!amountAndCurrency.mExchangeRate && !rateText.empty())
+        {
+            aContext.addInvalidFieldDiagnostic("fx_rate", rateText, term::kRowKindBondRedemption);
+        }
+    }
+
+    // A value in a column the row kind does not use is never dropped silently.
+    const auto warnIfFilled = [&aCsvRow, &aContext](std::string_view aField) {
+        if (aCsvRow[std::string{aField}].get<std::string>().empty())
+        {
+            return;
+        }
+
+        aContext.addDiagnostic(
+            DiagnosticSeverity::Warning,
+            DiagnosticCode::InconsistentValue,
+            makeDiagnosticMessage(MessageKey::InconsistentValueRedemptionUnusedField,
+                                  {textParam("field", std::string{aField})}),
+            std::string{aField});
+    };
+
+    // The sign check uses only a valid field. A maturity takes units out, a cancelled maturity
+    // gives them back, a payout has no negative units, and a reversal has none at all.
+    bool isUnitsSignWrong = false;
+
+    if (units && isUsable(units->mValue))
+    {
+        switch (kind)
+        {
+        case BondRedemptionKind::Maturity:
+            isUnitsSignWrong = units->mValue > 0;
+            break;
+        case BondRedemptionKind::MaturityCancelled:
+        case BondRedemptionKind::Payment:
+            isUnitsSignWrong = units->mValue < 0;
+            break;
+        case BondRedemptionKind::PaymentReversal:
+            isUnitsSignWrong = true;
+            break;
+        }
+    }
+
+    if (isUnitsSignWrong)
+    {
+        aContext.rejectRow(DiagnosticCode::InconsistentValue,
+                           makeDiagnosticMessage(MessageKey::InconsistentValueRedemptionSign,
+                                                 {textParam("field", "shares")}),
+                           "shares");
+    }
+
+    if (aContext.mRowRejected)
+    {
+        return;
+    }
+
+    // Only a kept row gets the warning: its message says the row was kept.
+    if (isActionRow)
+    {
+        for (const std::string_view field : {"amount",
+                                             "fee",
+                                             "tax",
+                                             "currency",
+                                             "original_amount",
+                                             "original_currency",
+                                             "fx_rate"})
+        {
+            warnIfFilled(field);
+        }
+    }
+    else
+    {
+        warnIfFilled("price");
+    }
+
+    BondRedemptionEvent event{
+        .mMetadata = aContext.metadata(*date),
+        .mKind = kind,
+        .mName = name,
+        .mIsin = isin,
+    };
+
+    if (hasUnits)
+    {
+        event.mUnits = units->mValue < 0 ? -units->mValue : units->mValue;
+    }
+
+    if (isActionRow)
+    {
+        event.mRedemptionPrice = price;
+    }
+    else
+    {
+        event.mAmount = *signedAmount < 0 ? -*signedAmount : *signedAmount;
+        event.mFeePaid = *feePaid;
+        event.mTaxPaid = taxPaid;
+        event.mExchangeRate = amountAndCurrency.mExchangeRate;
+        event.mCurrency = *amountAndCurrency.mCurrency;
+    }
+
+    aEvents.emplace_back(std::move(event));
 }
 
 void TradeRepublicParser::parsePrivateMarketRow(

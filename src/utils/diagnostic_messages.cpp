@@ -127,6 +127,11 @@ constexpr std::array kDefinitions{
         MessageKey::InconsistentValueTradeSide, "inconsistent_value.trade_side", kField},
     MessageDefinition{
         MessageKey::InconsistentValueAssetClass, "inconsistent_value.asset_class", {}},
+    MessageDefinition{
+        MessageKey::InconsistentValueRedemptionSign, "inconsistent_value.redemption_sign", kField},
+    MessageDefinition{MessageKey::InconsistentValueRedemptionUnusedField,
+                      "inconsistent_value.redemption_unused_field",
+                      kField},
     MessageDefinition{MessageKey::TradeAmountMismatch, "trade_amount_mismatch", kField},
     MessageDefinition{
         MessageKey::UnsupportedAssetClassUnrecognized, "unsupported_asset_class.unrecognized", {}},
@@ -136,6 +141,9 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::UnsupportedAssetClassPrivateMarketUnits,
                       "unsupported_asset_class.private_market_units",
                       {}},
+    MessageDefinition{MessageKey::UnsupportedAssetClassRedemptionNotBond,
+                      "unsupported_asset_class.redemption_not_bond",
+                      kAssetClass},
     MessageDefinition{MessageKey::UnsupportedAssetClassInterestMapping,
                       "unsupported_asset_class.interest_mapping",
                       {}},
@@ -295,7 +303,7 @@ static_assert(kDefinitions.size() ==
                   static_cast<std::size_t>(MessageKey::InvalidHeaderRateFileDuplicateColumn) + 1,
               "Every MessageKey needs one definition");
 
-constexpr std::array<std::string_view, 7> kTermKeys{
+constexpr std::array<std::string_view, 8> kTermKeys{
     taxbroker::term::kRowKindTrade,
     taxbroker::term::kRowKindDividend,
     taxbroker::term::kRowKindBondInterest,
@@ -303,6 +311,7 @@ constexpr std::array<std::string_view, 7> kTermKeys{
     taxbroker::term::kRowKindCorporateAction,
     taxbroker::term::kRowKindBenefit,
     taxbroker::term::kRowKindPrivateMarket,
+    taxbroker::term::kRowKindBondRedemption,
 };
 
 /// Throws when the parameters differ from the definition. Wrong parameters are a programming

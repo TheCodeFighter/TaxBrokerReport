@@ -795,6 +795,49 @@ TEST(ApplicationResultScopeTest, ARejectedPrivateMarketRowAffectsNoReport) {
     EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
 }
 
+TEST(ApplicationResultScopeTest, ARejectedBondMaturityRowAffectsNoReport) {
+    // A bond maturity is information only: no form uses it yet.
+    const SourcedParseDiagnostic diagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::TradeRepublic,
+        .mDiagnostic =
+            ParseDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = DiagnosticCode::InvalidValue,
+                .mSourceFile = "export.csv",
+                .mRowIndex = 5,
+                .mMessage = "Synthetic parser message.",
+                .mRowKind = ParsedRowKind::BondRedemption,
+            },
+    };
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2025, .mMergeDiagnostics = {diagnostic}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_TRUE(result.mDiagnostics[0].mAffectedReports.empty());
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
+}
+
+TEST(ApplicationResultScopeTest, AConflictingBondMaturityAffectsNoReport) {
+    const MergeDiagnostic diagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = MergeDiagnosticCode::ConflictingDuplicate,
+        .mMessage = "Synthetic merge message.",
+        .mEventKinds = {StatementEventKind::BondRedemption},
+    };
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2025, .mMergeDiagnostics = {diagnostic}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_TRUE(result.mDiagnostics[0].mAffectedReports.empty());
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
+}
+
 TEST(ApplicationResultScopeTest, ABenefitRowAffectsNoReport) {
     const SourcedParseDiagnostic diagnostic{
         .mSourceIndex = 0,
