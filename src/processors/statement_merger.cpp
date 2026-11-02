@@ -53,6 +53,7 @@ std::vector<SourceReference> statementSources(const BrokerStatement& aStatement)
 
     appendEventSources(sources, aStatement.mBenefitEvents);
     appendEventSources(sources, aStatement.mPrivateMarketEvents);
+    appendEventSources(sources, aStatement.mBondRedemptions);
 
     normalizeSources(sources);
 
@@ -249,7 +250,8 @@ using MergeEvent = std::variant<TradeRecord,
                                 DividendRecord,
                                 InterestRecord,
                                 BenefitEvent,
-                                PrivateMarketEvent>;
+                                PrivateMarketEvent,
+                                BondRedemptionEvent>;
 
 struct TransactionIdentityOrder {
     [[nodiscard]] bool operator()(const TransactionIdentity& aLeft,
@@ -331,6 +333,9 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
     appendChronologicalEntries(entries,
                                presentation.mPrivateMarketEvents,
                                StatementEventKind::PrivateMarket);
+    appendChronologicalEntries(entries,
+                               presentation.mBondRedemptions,
+                               StatementEventKind::BondRedemption);
 
     std::stable_sort(entries.begin(), entries.end(), [](const auto& aLeft, const auto& aRight) {
         return ChronologicalEventOrder{}(*aLeft.mMetadata, *aRight.mMetadata);
@@ -347,7 +352,8 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
 [[nodiscard]] const EventMetadata& eventMetadata(const MergeEvent& aEvent) {
     const auto getMetadata = [](const auto& aValue) -> const EventMetadata& {
         if constexpr (std::is_same_v<std::decay_t<decltype(aValue)>, BenefitEvent> ||
-                      std::is_same_v<std::decay_t<decltype(aValue)>, PrivateMarketEvent>)
+                      std::is_same_v<std::decay_t<decltype(aValue)>, PrivateMarketEvent> ||
+                      std::is_same_v<std::decay_t<decltype(aValue)>, BondRedemptionEvent>)
         {
             return aValue.mMetadata;
         }
@@ -387,6 +393,10 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
         else if constexpr (std::is_same_v<Value, PrivateMarketEvent>)
         {
             return StatementEventKind::PrivateMarket;
+        }
+        else if constexpr (std::is_same_v<Value, BondRedemptionEvent>)
+        {
+            return StatementEventKind::BondRedemption;
         }
         else
         {
@@ -556,6 +566,14 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mDescription == aRight.mDescription;
 }
 
+[[nodiscard]] bool sameEventFacts(const BondRedemptionEvent& aLeft,
+                                  const BondRedemptionEvent& aRight) {
+    return sameMetadataFacts(aLeft.mMetadata, aRight.mMetadata) && aLeft.mName == aRight.mName &&
+           aLeft.mIsin == aRight.mIsin && aLeft.mUnits == aRight.mUnits &&
+           aLeft.mAmount == aRight.mAmount && aLeft.mFeePaid == aRight.mFeePaid &&
+           aLeft.mTaxPaid == aRight.mTaxPaid && aLeft.mCurrency == aRight.mCurrency;
+}
+
 [[nodiscard]] bool sameEventFacts(const MergeEvent& aLeft, const MergeEvent& aRight) {
     if (aLeft.index() != aRight.index())
     {
@@ -577,7 +595,8 @@ void mergeExactEvent(MergeEvent& aDestination, const MergeEvent& aSource) {
         const auto& source = std::get<Value>(aSource);
 
         if constexpr (std::is_same_v<Value, BenefitEvent> ||
-                      std::is_same_v<Value, PrivateMarketEvent>)
+                      std::is_same_v<Value, PrivateMarketEvent> ||
+                      std::is_same_v<Value, BondRedemptionEvent>)
         {
             appendSources(aDestinationValue.mMetadata.mSources, source.mMetadata);
             normalizeSources(aDestinationValue.mMetadata.mSources);
@@ -1191,6 +1210,18 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
                 events.emplace_back(std::move(event));
             }
         }
+
+        for (auto& event : input->mParseResult.mStatement.mBondRedemptions)
+        {
+            if (normalizeAndValidateEvent(event,
+                                          input->mSourceIndex,
+                                          event.mName,
+                                          event.mIsin,
+                                          mergeDiagnostics))
+            {
+                events.emplace_back(std::move(event));
+            }
+        }
     }
 
     deduplicateEvents(events, mergeDiagnostics);
@@ -1200,6 +1231,7 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
     std::map<InterestIdentity, InterestBucket, InterestIdentityOrder> interestBuckets;
     std::vector<BenefitEvent> benefitEvents;
     std::vector<PrivateMarketEvent> privateMarketEvents;
+    std::vector<BondRedemptionEvent> bondRedemptions;
 
     const auto addToPresentation = [&](auto& aValue) {
         using Value = std::decay_t<decltype(aValue)>;
@@ -1257,6 +1289,10 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
         else if constexpr (std::is_same_v<Value, PrivateMarketEvent>)
         {
             privateMarketEvents.push_back(std::move(aValue));
+        }
+        else if constexpr (std::is_same_v<Value, BondRedemptionEvent>)
+        {
+            bondRedemptions.push_back(std::move(aValue));
         }
         else
         {
@@ -1332,9 +1368,11 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
 
     sortEvents(benefitEvents);
     sortEvents(privateMarketEvents);
+    sortEvents(bondRedemptions);
 
     result.mStatement.mPresentation.mBenefitEvents = std::move(benefitEvents);
     result.mStatement.mPresentation.mPrivateMarketEvents = std::move(privateMarketEvents);
+    result.mStatement.mPresentation.mBondRedemptions = std::move(bondRedemptions);
 
     buildChronologicalOrder(result.mStatement);
 

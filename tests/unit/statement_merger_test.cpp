@@ -138,6 +138,8 @@ const EventMetadata& referencedMetadata(const MergedStatement& aStatement,
         return presentation.mBenefitEvents.at(aReference.mEventIndex).mMetadata;
     case StatementEventKind::PrivateMarket:
         return presentation.mPrivateMarketEvents.at(aReference.mEventIndex).mMetadata;
+    case StatementEventKind::BondRedemption:
+        return presentation.mBondRedemptions.at(aReference.mEventIndex).mMetadata;
     }
 
     throw std::logic_error{"Unsupported event reference"};
@@ -609,6 +611,68 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
     return input;
 }
 
+BondRedemptionEvent
+makeBondRedemption(std::size_t aSourceIndex, std::string_view aFilename, Units aUnits) {
+    return BondRedemptionEvent{
+        .mMetadata = makeMetadata(aSourceIndex,
+                                  0,
+                                  makeDate(2025, 3, 14),
+                                  Broker::TradeRepublic,
+                                  aFilename,
+                                  std::nullopt,
+                                  "maturity-id"),
+        .mName = "Synthetic Bond 2025",
+        .mIsin = "XS0000000001",
+        .mUnits = aUnits,
+        .mAmount = 10'000'000, // EUR 1,000.00 at 4 decimals
+        .mFeePaid = 0,
+        .mTaxPaid = std::nullopt,
+        .mCurrency = Currency::EUR,
+    };
+}
+
+TEST(DeterministicStatementMergerTest, MergesTheSameBondMaturityOfTwoFilesIntoOneEvent) {
+    std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                            StatementMergeInput{.mSourceIndex = 1}};
+    // 1,000 units at 8 decimals in both files.
+    inputs[0].mParseResult.mStatement.mBondRedemptions.push_back(
+        makeBondRedemption(0, "first.csv", 100'000'000'000));
+    inputs[1].mParseResult.mStatement.mBondRedemptions.push_back(
+        makeBondRedemption(1, "second.csv", 100'000'000'000));
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    EXPECT_TRUE(diagnosticsOf<MergeDiagnostic>(result).empty());
+    ASSERT_EQ(result.mStatement.mPresentation.mBondRedemptions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mBondRedemptions.front().mMetadata.mSources.size(),
+              2U);
+    ASSERT_EQ(result.mStatement.mChronologicalOrder.size(), 1U);
+    EXPECT_EQ(result.mStatement.mChronologicalOrder.front().mKind,
+              StatementEventKind::BondRedemption);
+    EXPECT_EQ(result.mStatement.mChronologicalOrder.front().mEventIndex, 0U);
+}
+
+TEST(DeterministicStatementMergerTest, RejectsABondMaturityWhoseUnitsDifferBetweenFiles) {
+    std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                            StatementMergeInput{.mSourceIndex = 1}};
+    inputs[0].mParseResult.mStatement.mBondRedemptions.push_back(
+        makeBondRedemption(0, "first.csv", 100'000'000'000)); // 1,000 units
+    inputs[1].mParseResult.mStatement.mBondRedemptions.push_back(
+        makeBondRedemption(1, "second.csv", 99'900'000'000)); // 999 units
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mBondRedemptions.empty());
+    EXPECT_TRUE(result.mStatement.mChronologicalOrder.empty());
+
+    const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+    EXPECT_EQ(diagnostics.front()->mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(diagnostics.front()->mEventKinds, std::vector{StatementEventKind::BondRedemption});
+    EXPECT_EQ(diagnostics.front()->mSources.size(), 2U);
+}
+
 TEST(DeterministicStatementMergerTest, DeduplicatesEverySupportedEventKind) {
     std::vector inputs{makeDuplicateTestInput(1, "overlap.csv"),
                        makeDuplicateTestInput(0, "complete.csv")};
@@ -742,6 +806,9 @@ void expectFieldConflicts(StatementEventKind aKind,
         case StatementEventKind::PrivateMarket:
             expectedStatement.mPrivateMarketEvents.clear();
             std::erase(expectedSurvivingIds, "private-id");
+            break;
+        case StatementEventKind::BondRedemption:
+            ADD_FAILURE() << "This scenario has no bond maturity event.";
             break;
         }
 
@@ -883,6 +950,9 @@ void expectFieldConflicts(StatementEventKind aKind,
                 EXPECT_EQ(metadata.mSources, expectedSources);
                 break;
             }
+            case StatementEventKind::BondRedemption:
+                ADD_FAILURE() << "This scenario has no bond maturity event.";
+                break;
             }
 
             survivingIds.push_back(primarySource(metadata).mTransactionId.value_or(""));

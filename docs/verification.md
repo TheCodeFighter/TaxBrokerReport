@@ -81,5 +81,9 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
   following tasks): not imported yet.
 - **S6 to S8, the rows for split lots and partly blocked losses** (#267): not imported yet. The
   files and expected rows are in `tests/manual/edavki/README.md`.
-- **The developer export without `F10`** (#188). The CLI blocks that case today.
+- **The developer export without `F10`**. The CLI blocks that case today.
+- **Trade Republic bond maturity rows**: the shapes of the `CASH` `FINAL_MATURITY` row and
+  of the `CORPORATE_ACTION` row are guesses from the bond-interest row and other tools' samples,
+  checked by synthetic tests only. No live bond export exists; check them against one before the
+  beta (`architecture.md`, "Trade Republic bond rows").
 - If a result is unclear, the FURS developer contact is `sd.fu@gov.si`.

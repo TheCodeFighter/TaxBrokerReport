@@ -10,8 +10,8 @@ classes prematurely.
 
 ## Imported event metadata
 
-Every imported trade, corporate action, dividend, interest payment, benefit, and private-market
-event owns the same `EventMetadata`:
+Every imported trade, corporate action, dividend, interest payment, benefit, private-market event
+and bond maturity owns the same `EventMetadata`:
 
 - `mTaxDate` is the broker-provided calendar date used for tax reporting. It is not derived from
   the source timestamp.
@@ -140,6 +140,42 @@ stored. An invalid value is an `InvalidValue` error on `amount` and skips the ro
 `amount` stays allowed. Foreign income stays lenient: it ignores `amount` when `original_currency`
 is supplied.
 
+### Trade Republic bond rows
+
+A bond leaves three kinds of rows in a Trade Republic export. Only the first is verified; the
+other two are **guesses**, because no live bond export was available when #281 was written (the
+maintainer holds no bonds on Trade Republic). The guesses follow the verified rows and the row
+shapes of other open-source tools; they are marked `GUESS` in the parser and its tests, and they
+must be checked against a real export before the beta.
+
+| Row | Status | What the parser does |
+| --- | --- | --- |
+| `TRADING` `BUY`, asset class `BOND` | Verified (trade rows are the same for every class) | A normal trade of a bond; sales are blocked by the class error. |
+| `CASH` `INTEREST_PAYMENT`, `BOND` | Verified shape: units in `shares`, gross in `amount`, `price` and `fee` blank, `tax` blank or negative (withheld) | A bond coupon (Doh-Obr later). |
+| `CASH` `FINAL_MATURITY`, `BOND` | **Guess**: the same shape as the coupon row, so positive units and a positive amount, `tax` blank or negative | One `BondRedemptionEvent`: tax date, ISIN, name, units, amount, fee, tax, currency, sources. |
+| `CORPORATE_ACTION` `FINAL_MATURITY` or `REDEMPTION`, `BOND` | **Guess**: the same units with a negative sign, on the same day or one day earlier, its own transaction ID, no amount | Not an event. One `unsupported_row_type.redemption_evidence` warning per row. |
+| `CASH` `SEC_ACCOUNT`, `BOND` | **Guess**: no amount, only `tax` (negative withheld, positive refunded) | Not read yet: `unknown_row_type`. Planned with the bond treatment. |
+| `CASH` `TILG` (*Tilgung*, repayment) | Unknown shape | `unsupported_row_type`, not read as a maturity. |
+
+Rules the guesses rest on:
+
+- The cash row carries the units and the amount. The corporate-action row only repeats the units,
+  so it is never a second redemption. The two rows have different transaction IDs and may be one
+  day apart, so they are not linked; each cash row is one event even if its action row is missing.
+- `amount` is the whole payout. For a discount or zero-coupon bond it contains interest; the
+  event does not split it, and the tax treatment stays `unsupported_tax_treatment` until the bond
+  treatment is built.
+- A foreign `original_amount` is not read. The cash `amount` and `currency` are stored.
+- Only the class `BOND` gives an event. A maturity row of another class (a certificate, a
+  derivative) is rejected with `unsupported_asset_class.redemption_not_bond` and keeps the capital
+  scope, because it can be a taxable sale.
+- Units must be positive on the cash row and negative on the action row (`inconsistent_value`
+  otherwise); a zero, negative or missing amount is invalid.
+
+The event is information only. It is not a sale, it never reaches Doh-KDVP, and the FIFO, the loss
+rule and the corporate-action stage do not read it. The bond list (every bond with its buys and
+maturities) and the reporting of bond interest only (Doh-Obr) build on it later.
+
 ### Stable input sequence
 
 The stable input sequence is scoped to the complete input request. `mSourceIndex` is the zero-based
@@ -237,7 +273,8 @@ and private-market references have no instrument index.
 
 Presentation order is independent of economic processing order:
 
-1. collections appear as trades, dividends, interest, benefits and private-market events;
+1. collections appear as trades, dividends, interest, benefits, private-market events and bond
+   maturities;
 2. instrument collections use their broker-neutral identity, with deterministic identity and name
    ordering; and
 3. events within an instrument use the normal event chronology.

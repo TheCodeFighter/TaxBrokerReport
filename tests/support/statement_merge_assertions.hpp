@@ -37,6 +37,8 @@ inline const EventMetadata& referencedMetadata(const MergedStatement& aStatement
         return presentation.mBenefitEvents.at(aReference.mEventIndex).mMetadata;
     case StatementEventKind::PrivateMarket:
         return presentation.mPrivateMarketEvents.at(aReference.mEventIndex).mMetadata;
+    case StatementEventKind::BondRedemption:
+        return presentation.mBondRedemptions.at(aReference.mEventIndex).mMetadata;
     }
 
     throw std::logic_error{"Unsupported event reference"};
@@ -91,6 +93,16 @@ inline auto eventFacts(const PrivateMarketEvent& aEvent) {
                       aEvent.mFeePaid,
                       aEvent.mCurrency,
                       aEvent.mDescription};
+}
+
+inline auto eventFacts(const BondRedemptionEvent& aEvent) {
+    return std::tuple{aEvent.mName,
+                      aEvent.mIsin,
+                      aEvent.mUnits,
+                      aEvent.mAmount,
+                      aEvent.mFeePaid,
+                      aEvent.mTaxPaid,
+                      aEvent.mCurrency};
 }
 
 template <typename Event>
@@ -180,6 +192,7 @@ inline void expectStatementsEqual(const BrokerStatement& aActual,
     expectEventsEqual(aActual.mPrivateMarketEvents,
                       aExpected.mPrivateMarketEvents,
                       aCompareSources);
+    expectEventsEqual(aActual.mBondRedemptions, aExpected.mBondRedemptions, aCompareSources);
 }
 
 inline void expectDiagnosticsEqual(const std::vector<StatementMergeDiagnostic>& aActual,

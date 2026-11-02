@@ -160,6 +160,9 @@ Skipped:
     one more warning, because those units are not used.
   - Bonus credits (Trade Republic types BENEFITS_SAVEBACK, STOCKPERK, BONUS and
     REFERRAL) are information only. They are in no form and never change a purchase value.
+  - Bond maturities (Trade Republic FINAL_MATURITY and REDEMPTION rows) are information
+    only. Bond sales and maturities are in no form. The corporate-action row of a maturity
+    gets a warning, because only the cash row is used.
   - Dividends and interest: their forms (Doh-Div, Doh-DHO, Doh-Obr) are not made yet.
 
 Exit codes:

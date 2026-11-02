@@ -23,6 +23,7 @@ enum class StatementEventKind {
     Interest,
     Benefit,
     PrivateMarket,
+    BondRedemption,
 };
 
 // Addresses one event owned by MergedStatement::mPresentation.

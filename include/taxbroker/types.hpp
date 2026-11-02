@@ -285,6 +285,24 @@ struct BenefitEvent {
     Currency mCurrency{Currency::EUR};
 };
 
+/// A bond that matured and left the holding. Information only: it is not a sale, never reaches
+/// Doh-KDVP and nothing downstream changes a lot or a basis because of it. The bond list and the
+/// coupon (Doh-Obr) work use it later.
+///
+/// GUESS: no live Trade Republic bond export was available. The shape follows the bond-interest
+/// row (positive units, positive gross amount, negative tax when withheld) and sample shapes of
+/// other tools; see `docs/architecture.md`, "Trade Republic bond rows".
+struct BondRedemptionEvent {
+    EventMetadata mMetadata;
+    std::string mName;
+    Isin mIsin;
+    Units mUnits{};                ///< Units that matured; positive.
+    Money mAmount{};               ///< Positive amount paid out; may include accrued interest.
+    Money mFeePaid{};              ///< Positive fee paid; zero when the export has no fee.
+    std::optional<Money> mTaxPaid; ///< Positive tax withheld; absent means unknown.
+    Currency mCurrency{Currency::EUR};
+};
+
 struct PrivateMarketEvent {
     EventMetadata mMetadata;
     PrivateMarketEventType mType{};
@@ -302,6 +320,7 @@ struct BrokerStatement {
     std::vector<DividendInstrument> mDividendInstruments;
     std::vector<InterestInstrument> mInterestInstruments;
     std::vector<BenefitEvent> mBenefitEvents;
+    std::vector<BondRedemptionEvent> mBondRedemptions; ///< Information only
     std::vector<PrivateMarketEvent> mPrivateMarketEvents;
 };
 

@@ -582,6 +582,33 @@ void writeBenefits(std::ostream& aOutput, const BrokerStatement& aStatement) {
     }
 }
 
+void writeBondRedemptions(std::ostream& aOutput, const BrokerStatement& aStatement) {
+    aOutput << "BOND REDEMPTIONS: " << aStatement.mBondRedemptions.size() << "\n\n";
+
+    for (const auto& event : aStatement.mBondRedemptions)
+    {
+        aOutput << "- ";
+        writeMetadata(aOutput, event.mMetadata, "  ");
+        aOutput << "\n  name: " << (event.mName.empty() ? "<none>" : event.mName)
+                << "\n  isin: " << event.mIsin << "\n  units: ";
+        writeFixedPoint(aOutput, event.mUnits, UNITS_SCALE);
+        aOutput << "\n  amount: ";
+        writeFixedPoint(aOutput, event.mAmount, MONEY_SCALE);
+        aOutput << "\n  fee_paid: ";
+        writeFixedPoint(aOutput, event.mFeePaid, MONEY_SCALE);
+        aOutput << "\n  tax_paid: ";
+        if (event.mTaxPaid)
+        {
+            writeFixedPoint(aOutput, *event.mTaxPaid, MONEY_SCALE);
+        }
+        else
+        {
+            aOutput << "<unknown>";
+        }
+        aOutput << "\n  currency: " << toString(event.mCurrency) << "\n\n";
+    }
+}
+
 void writePrivateMarketEvents(std::ostream& aOutput, const BrokerStatement& aStatement) {
     aOutput << "PRIVATE MARKET EVENTS: " << aStatement.mPrivateMarketEvents.size() << "\n\n";
 
@@ -653,6 +680,7 @@ void writeParseResult(std::ostream& aOutput, const ParseResult& aParseResult) {
     writeInterests(aOutput, aParseResult.mStatement);
     writeBenefits(aOutput, aParseResult.mStatement);
     writePrivateMarketEvents(aOutput, aParseResult.mStatement);
+    writeBondRedemptions(aOutput, aParseResult.mStatement);
     writeDiagnostics(aOutput, aParseResult);
 }
 
@@ -681,8 +709,8 @@ std::size_t eventCount(const BrokerStatement& aStatement) {
                             return aCount + aInstrument.mTransactions.size();
                         });
 
-    return aStatement.mBenefitEvents.size() + aStatement.mPrivateMarketEvents.size() + tradeCount +
-           dividendCount + interestCount;
+    return aStatement.mBenefitEvents.size() + aStatement.mPrivateMarketEvents.size() +
+           aStatement.mBondRedemptions.size() + tradeCount + dividendCount + interestCount;
 }
 
 void createParentDirectory(const std::filesystem::path& aPath) {
@@ -850,6 +878,7 @@ int writeMergedResult(std::span<char*> aArguments, bool aDiagnosticsOnly = false
     writeInterests(output, mergeResult.mStatement.mPresentation);
     writeBenefits(output, mergeResult.mStatement.mPresentation);
     writePrivateMarketEvents(output, mergeResult.mStatement.mPresentation);
+    writeBondRedemptions(output, mergeResult.mStatement.mPresentation);
     writeMergeDiagnostics(output, mergeResult);
 
     if (!output)

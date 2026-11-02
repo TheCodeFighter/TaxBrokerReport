@@ -46,6 +46,8 @@ enum class ParsedRowKind {
     UnknownInterest,
     Benefit,
     PrivateMarket,
+    /// A bond maturity row of a bond; the same row of another class has the capital scope.
+    BondRedemption,
 };
 
 struct ParseDiagnostic {
