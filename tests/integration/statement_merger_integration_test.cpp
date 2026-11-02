@@ -23,6 +23,16 @@ std::filesystem::path fixturePath(std::string_view aFilename) {
            "merger" / aFilename;
 }
 
+Date makeDate(int aYear, unsigned aMonth, unsigned aDay) {
+    return Date{std::chrono::sys_days{std::chrono::year{aYear} / aMonth / aDay}.time_since_epoch()};
+}
+
+/// The committed synthetic bond fixture; its rows are described in `test_data/csv/README.md`.
+std::filesystem::path bondFixturePath() {
+    return std::filesystem::path{__FILE__}.parent_path().parent_path() / "test_data" / "csv" /
+           "traderepublic_bond_maturity_fixture.csv";
+}
+
 // Tests supply synthetic CSV fields directly; unspecified fields are empty.
 struct IncomeCsvRow {
     std::string_view mDatetime;
@@ -2035,6 +2045,153 @@ TEST(StatementMergerIntegrationTest, RetainsBondInterestWithoutFxWhileInvalidFxI
     EXPECT_EQ(error.mSourceFile, "first.csv");
     EXPECT_EQ(error.mRowIndex, 3U);
     EXPECT_EQ(error.mTransactionId, "synthetic-invalid-bondinterest");
+}
+
+TEST(StatementMergerIntegrationTest, ParsesTheBondMaturityFixtureFromPurchaseToCorrectedPayout) {
+    tr::TradeRepublicParser parser;
+    auto parsed = parser.parse(bondFixturePath(), 0);
+
+    // Four warnings and nothing else (no unknown row type, no error). Fixture rows 2 and 3 are
+    // purchases whose amount also has accrued interest, so it is above units x price. Rows 8 and 9
+    // have a datetime on another day than their date.
+    ASSERT_EQ(parsed.mDiagnostics.size(), 4U);
+    EXPECT_EQ(parsed.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(parsed.mDiagnostics[0].mMessageKey, MessageKey::TradeAmountMismatch);
+    EXPECT_EQ(parsed.mDiagnostics[0].mRowIndex, 2U);
+    EXPECT_EQ(parsed.mDiagnostics[1].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(parsed.mDiagnostics[1].mMessageKey, MessageKey::TradeAmountMismatch);
+    EXPECT_EQ(parsed.mDiagnostics[1].mRowIndex, 3U);
+    EXPECT_EQ(parsed.mDiagnostics[2].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(parsed.mDiagnostics[2].mMessageKey, MessageKey::InconsistentValueDatetimeDate);
+    EXPECT_EQ(parsed.mDiagnostics[2].mRowIndex, 8U);
+    EXPECT_EQ(parsed.mDiagnostics[3].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(parsed.mDiagnostics[3].mMessageKey, MessageKey::InconsistentValueDatetimeDate);
+    EXPECT_EQ(parsed.mDiagnostics[3].mRowIndex, 9U);
+
+    std::vector inputs{StatementMergeInput{.mSourceIndex = 0, .mParseResult = std::move(parsed)}};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+    const auto& presentation = result.mStatement.mPresentation;
+
+    // The merger adds nothing to the four parser warnings.
+    ASSERT_EQ(result.mDiagnostics.size(), 4U);
+
+    for (const auto& diagnostic : result.mDiagnostics)
+    {
+        EXPECT_EQ(diagnosticStage(diagnostic), StatementDiagnosticStage::Parsing);
+    }
+
+    // Two purchase rows of one bond, 932.5 + 67.5 nominal at EUR 0.90 per nominal.
+    ASSERT_EQ(presentation.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(presentation.mTradeInstruments[0].mIsin, "XS0000000001");
+    EXPECT_TRUE(presentation.mTradeInstruments[0].mCorporateActions.empty());
+    ASSERT_EQ(presentation.mTradeInstruments[0].mTransactions.size(), 2U);
+
+    const auto& firstBuy = presentation.mTradeInstruments[0].mTransactions[0];
+    const auto& secondBuy = presentation.mTradeInstruments[0].mTransactions[1];
+
+    EXPECT_EQ(firstBuy.mUnits, 93'250'000'000); // 932.5 units at 8 decimals
+    EXPECT_EQ(secondBuy.mUnits, 6'750'000'000); // 67.5 units at 8 decimals
+    EXPECT_EQ(firstBuy.mUnitPrice, 90'000'000); // EUR 0.90 at 8 decimals
+    EXPECT_EQ(secondBuy.mUnitPrice, 90'000'000);
+    EXPECT_EQ(firstBuy.mFeePaid, 10'000); // EUR 1.00 at 4 decimals
+    EXPECT_EQ(secondBuy.mFeePaid, 0);
+
+    // Two coupons of USD 20.00, one on the maturity day.
+    ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
+    EXPECT_EQ(presentation.mInterestInstruments[0].mInterestType, InterestType::BondInterest);
+    ASSERT_EQ(presentation.mInterestInstruments[0].mTransactions.size(), 2U);
+
+    const auto& firstCoupon = presentation.mInterestInstruments[0].mTransactions[0];
+    const auto& secondCoupon = presentation.mInterestInstruments[0].mTransactions[1];
+
+    EXPECT_EQ(firstCoupon.mMetadata.mTaxDate, makeDate(2025, 2, 14));
+    EXPECT_EQ(secondCoupon.mMetadata.mTaxDate, makeDate(2025, 8, 14));
+    EXPECT_EQ(firstCoupon.mGrossAmount, 200'000); // USD 20.00 at 4 decimals
+    EXPECT_EQ(secondCoupon.mGrossAmount, 200'000);
+    EXPECT_EQ(firstCoupon.mCurrency, Currency::USD);
+    EXPECT_EQ(secondCoupon.mCurrency, Currency::USD);
+    ASSERT_TRUE(firstCoupon.mExchangeRate.has_value());
+    ASSERT_TRUE(secondCoupon.mExchangeRate.has_value());
+    EXPECT_EQ(firstCoupon.mExchangeRate->mValue, 90'000'000);  // 0.90 EUR per USD
+    EXPECT_EQ(secondCoupon.mExchangeRate->mValue, 92'000'000); // 0.92 EUR per USD
+
+    // Six maturity events. Fixture rows 8 and 9 order at 09:00 of their tax date, before the
+    // original rows 6 and 7 at 15:01 and 15:02, so the cancel comes before the maturity it cancels.
+    ASSERT_EQ(presentation.mBondRedemptions.size(), 6U);
+
+    const auto& events = presentation.mBondRedemptions;
+
+    EXPECT_EQ(events[0].mKind, BondRedemptionKind::MaturityCancelled);
+    EXPECT_EQ(events[1].mKind, BondRedemptionKind::Maturity);
+    EXPECT_EQ(events[2].mKind, BondRedemptionKind::Maturity);
+    EXPECT_EQ(events[3].mKind, BondRedemptionKind::Payment);
+    EXPECT_EQ(events[4].mKind, BondRedemptionKind::PaymentReversal);
+    EXPECT_EQ(events[5].mKind, BondRedemptionKind::Payment);
+
+    EXPECT_EQ(events[0].mMetadata.mSources.front().mSourceRow, 8U);
+    EXPECT_EQ(events[1].mMetadata.mSources.front().mSourceRow, 9U);
+    EXPECT_EQ(events[2].mMetadata.mSources.front().mSourceRow, 6U);
+    EXPECT_EQ(events[3].mMetadata.mSources.front().mSourceRow, 7U);
+    EXPECT_EQ(events[4].mMetadata.mSources.front().mSourceRow, 10U);
+    EXPECT_EQ(events[5].mMetadata.mSources.front().mSourceRow, 11U);
+
+    EXPECT_EQ(events[0].mMetadata.mTaxDate, makeDate(2025, 8, 14));
+    EXPECT_EQ(events[3].mMetadata.mTaxDate, makeDate(2025, 8, 14));
+    EXPECT_EQ(events[4].mMetadata.mTaxDate, makeDate(2025, 8, 21));
+    EXPECT_EQ(events[5].mMetadata.mTaxDate, makeDate(2025, 8, 21));
+
+    // 1,000 units at 8 decimals on each action event, no amount.
+    for (const std::size_t index : {0U, 1U, 2U})
+    {
+        EXPECT_EQ(events[index].mUnits, 100'000'000'000);
+        EXPECT_FALSE(events[index].mAmount.has_value());
+    }
+
+    // No units on a cash event. EUR 1,000.00 at 4 decimals paid, taken back, then USD 999.99
+    // (one cent below the nominal) at 0.92.
+    EXPECT_EQ(events[3].mAmount, 10'000'000);
+    EXPECT_EQ(events[3].mCurrency, Currency::EUR);
+    EXPECT_EQ(events[4].mAmount, 10'000'000);
+    EXPECT_EQ(events[4].mCurrency, Currency::EUR);
+    EXPECT_EQ(events[5].mAmount, 9'999'900);
+    EXPECT_EQ(events[5].mCurrency, Currency::USD);
+    ASSERT_TRUE(events[5].mExchangeRate.has_value());
+    EXPECT_EQ(events[5].mExchangeRate->mValue, 92'000'000);
+
+    for (const std::size_t index : {3U, 4U, 5U})
+    {
+        EXPECT_FALSE(events[index].mUnits.has_value());
+    }
+}
+
+TEST(StatementMergerIntegrationTest, MergesTheBondMaturityFixtureWithItselfIntoTheSameEvents) {
+    tr::TradeRepublicParser parser;
+    std::vector inputs{
+        StatementMergeInput{.mSourceIndex = 0, .mParseResult = parser.parse(bondFixturePath(), 0)},
+        StatementMergeInput{.mSourceIndex = 1, .mParseResult = parser.parse(bondFixturePath(), 1)},
+    };
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+    const auto& presentation = result.mStatement.mPresentation;
+
+    // The same file twice: every row merges with its copy, so no conflict and no extra event.
+    for (const auto& diagnostic : result.mDiagnostics)
+    {
+        EXPECT_EQ(diagnosticStage(diagnostic), StatementDiagnosticStage::Parsing);
+    }
+
+    ASSERT_EQ(presentation.mBondRedemptions.size(), 6U);
+
+    for (const auto& event : presentation.mBondRedemptions)
+    {
+        EXPECT_EQ(event.mMetadata.mSources.size(), 2U);
+    }
+
+    ASSERT_EQ(presentation.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(presentation.mTradeInstruments[0].mTransactions.size(), 2U);
+    ASSERT_EQ(presentation.mInterestInstruments.size(), 1U);
+    EXPECT_EQ(presentation.mInterestInstruments[0].mTransactions.size(), 2U);
 }
 
 TEST(StatementMergerIntegrationTest, MergesTradesWhosePricesDifferOnlyAfterTheEighthDecimal) {

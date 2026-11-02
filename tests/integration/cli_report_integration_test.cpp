@@ -607,37 +607,36 @@ Warnings: 0
 )");
 }
 
-// GUESS: the maturity rows follow the bond-interest row and sample shapes of other tools; there is
-// no live Trade Republic bond export.
+// The bond fixture (`test_data/csv/README.md`) holds a bond from purchase to a corrected maturity.
 TEST(CliReportIntegrationTest, ABondMaturityIsInformationOnlyAndKeepsTheReport) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto bondFixture = std::filesystem::path{__FILE__}.parent_path().parent_path() /
+                             "test_data" / "csv" / "traderepublic_bond_maturity_fixture.csv";
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
-            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
-            R"(2024-02-01T09:00:00Z,2024-02-01,DEFAULT,TRADING,BUY,BOND,Synthetic Bond 2025,XS0000000001,1000,1,-1000,,,EUR,,,,,synthetic-bond-buy-1,,,,)",
-            R"(2024-03-14T09:00:00Z,2024-03-14,DEFAULT,CASH,FINAL_MATURITY,BOND,Synthetic Bond 2025,XS0000000001,1000,,1000,,,EUR,,,,,synthetic-maturity-cash-1,,,,)",
-            R"(2024-03-14T09:00:00Z,2024-03-14,DEFAULT,CORPORATE_ACTION,REDEMPTION,BOND,Synthetic Bond 2025,XS0000000001,-1000,1,,,,EUR,,,,,synthetic-maturity-action-1,,,,)",
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
 
     const auto result = run({"report",
                              "--year",
-                             "2024",
+                             "2025",
                              "--taxpayer",
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
-                             history});
+                             history,
+                             bondFixture.string()});
 
-    // The report is generated: the maturity is no sale and the bond is not in the XML.
+    // The report is generated: the maturity rows are no sale and the bond is not in the XML.
     EXPECT_EQ(result.mExitCode, kExitSuccess);
-    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
-    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XS0000000001"));
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2025.xml"), "XS0000000001"));
     EXPECT_TRUE(contains(result.mOut, "Errors: 0"));
-    EXPECT_TRUE(contains(result.mOut, "unsupported_row_type, history.csv row 6"));
-    EXPECT_TRUE(contains(result.mOut, "Investments with a sale in 2024: 1\n"));
+    EXPECT_FALSE(contains(result.mOut, "unknown_row_type"));
+    EXPECT_TRUE(contains(result.mOut, "Investments with a sale in 2025: 1\n"));
     EXPECT_TRUE(contains(result.mOut, "  XX0000000001 Synthetic Share: listed, 1 sale"));
 }
 
@@ -3536,11 +3535,11 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "    REFERRAL) are information only. They are in no form and never "
                          "change a purchase value.\n"));
     EXPECT_TRUE(contains(report.mOut,
-                         "  - Bond maturities (Trade Republic FINAL_MATURITY and REDEMPTION "
-                         "rows) are information\n"
-                         "    only. Bond sales and maturities are in no form. The "
-                         "corporate-action row of a maturity\n"
-                         "    gets a warning, because only the cash row is used.\n"));
+                         "  - Bond maturities and their corrections (Trade Republic "
+                         "FINAL_MATURITY,\n"
+                         "    FINAL_MATURITY_CANCELLED and REDEMPTION rows) are information "
+                         "only. Bond sales and\n"
+                         "    maturities are in no form.\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "It is also blocked when a file cannot be read, when a trade or "
                          "corporate-action row of\nany file is rejected"));

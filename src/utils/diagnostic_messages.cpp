@@ -129,6 +129,9 @@ constexpr std::array kDefinitions{
         MessageKey::InconsistentValueAssetClass, "inconsistent_value.asset_class", {}},
     MessageDefinition{
         MessageKey::InconsistentValueRedemptionSign, "inconsistent_value.redemption_sign", kField},
+    MessageDefinition{MessageKey::InconsistentValueRedemptionUnusedField,
+                      "inconsistent_value.redemption_unused_field",
+                      kField},
     MessageDefinition{MessageKey::TradeAmountMismatch, "trade_amount_mismatch", kField},
     MessageDefinition{
         MessageKey::UnsupportedAssetClassUnrecognized, "unsupported_asset_class.unrecognized", {}},
@@ -149,9 +152,6 @@ constexpr std::array kDefinitions{
                       kTypeAndCategory},
     MessageDefinition{
         MessageKey::UnsupportedRowTypeInterestType, "unsupported_row_type.interest_type", {}},
-    MessageDefinition{MessageKey::UnsupportedRowTypeRedemptionEvidence,
-                      "unsupported_row_type.redemption_evidence",
-                      kTypeAndCategory},
     MessageDefinition{MessageKey::UnknownRowType, "unknown_row_type", kTypeAndCategory},
     MessageDefinition{MessageKey::DuplicateSourceIndex, "duplicate_source_index", {}},
     MessageDefinition{

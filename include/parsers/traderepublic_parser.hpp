@@ -50,10 +50,8 @@ class TradeRepublicParser final : public CsvParser {
                          const RowContext& aContext);
     void parseBondRedemptionRow(const csv::CSVRow& aCsvRow,
                                 std::vector<BondRedemptionEvent>& aEvents,
+                                const RowParsedValues& aParsedValues,
                                 const RowContext& aContext);
-    void parseBondRedemptionEvidenceRow(const csv::CSVRow& aCsvRow,
-                                        const RowParsedValues& aParsedValues,
-                                        const RowContext& aContext);
     static void checkRedemptionAssetClass(const csv::CSVRow& aCsvRow, const RowContext& aContext);
     void parsePrivateMarketRow(const csv::CSVRow& aCsvRow,
                                std::vector<PrivateMarketEvent>& aPrivateMarketEvents,

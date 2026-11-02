@@ -96,12 +96,15 @@ inline auto eventFacts(const PrivateMarketEvent& aEvent) {
 }
 
 inline auto eventFacts(const BondRedemptionEvent& aEvent) {
-    return std::tuple{aEvent.mName,
+    return std::tuple{aEvent.mKind,
+                      aEvent.mName,
                       aEvent.mIsin,
                       aEvent.mUnits,
                       aEvent.mAmount,
+                      aEvent.mRedemptionPrice,
                       aEvent.mFeePaid,
                       aEvent.mTaxPaid,
+                      aEvent.mExchangeRate,
                       aEvent.mCurrency};
 }
 

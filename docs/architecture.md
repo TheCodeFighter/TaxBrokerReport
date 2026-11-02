@@ -142,39 +142,59 @@ is supplied.
 
 ### Trade Republic bond rows
 
-A bond leaves three kinds of rows in a Trade Republic export. Only the first is verified; the
-other two are **guesses**, because no live bond export was available when #281 was written (the
-maintainer holds no bonds on Trade Republic). The guesses follow the verified rows and the row
-shapes of other open-source tools; they are marked `GUESS` in the parser and its tests, and they
-must be checked against a real export before the beta.
+A bond leaves several kinds of rows in a Trade Republic export. The shapes marked **verified** were
+checked against a real export of one USD bond (outside user source); only the shapes were kept, never
+its values. The rest are **guesses**, marked `GUESS` in the parser and its tests, and must be
+checked against a real export before the beta.
+`tests/test_data/csv/README.md` explains the synthetic fixture that copies the verified shapes.
 
 | Row | Status | What the parser does |
 | --- | --- | --- |
-| `TRADING` `BUY`, asset class `BOND` | Verified (trade rows are the same for every class) | A normal trade of a bond; sales are blocked by the class error. |
-| `CASH` `INTEREST_PAYMENT`, `BOND` | Verified shape: units in `shares`, gross in `amount`, `price` and `fee` blank, `tax` blank or negative (withheld) | A bond coupon (Doh-Obr later). |
-| `CASH` `FINAL_MATURITY`, `BOND` | **Guess**: the same shape as the coupon row, so positive units and a positive amount, `tax` blank or negative | One `BondRedemptionEvent`: tax date, ISIN, name, units, amount, fee, tax, currency, sources. |
-| `CORPORATE_ACTION` `FINAL_MATURITY` or `REDEMPTION`, `BOND` | **Guess**: the same units with a negative sign, on the same day or one day earlier, its own transaction ID, no amount | Not an event. One `unsupported_row_type.redemption_evidence` warning per row. |
+| `TRADING` `BUY`, asset class `BOND` | Verified. `shares` is the nominal (may be a fraction), `price` is EUR per 1 nominal of the bond's currency (below 1 because of the exchange rate, not because the bond is under par); `amount` is higher than `shares` × `price` because it also has the accrued interest; one purchase can be two rows a few milliseconds apart | A normal trade of a bond, with a `trade_amount_mismatch` warning on each row (the row is kept); sales are blocked by the class error. |
+| `CASH` `INTEREST_PAYMENT`, `BOND` | Verified: `shares`, `price`, `fee` and `tax` blank; `amount` in EUR; for a foreign bond `original_amount`, `original_currency` and `fx_rate` are filled | A bond coupon (Doh-Obr later). The last coupon is its own row on the maturity day. |
+| `CORPORATE_ACTION` `FINAL_MATURITY`, `BOND` | Verified: `shares` negative (the whole nominal); `price`, `amount` and `currency` blank | One `BondRedemptionEvent`, kind `Maturity`, with the units. |
+| `CASH` `FINAL_MATURITY`, `BOND`, positive `amount` | Verified: `shares` **blank**; `amount` in EUR; a foreign payout has `original_amount`, `original_currency` and `fx_rate` | Kind `Payment`: the amount (in the original currency when there is one), the broker rate, fee and tax. |
+| `CORPORATE_ACTION` `FINAL_MATURITY_CANCELLED`, `BOND` | Verified: `shares` positive, the size of the maturity; `date` is the maturity day, `datetime` the correction day | Kind `MaturityCancelled`, with the units. |
+| `CASH` `FINAL_MATURITY`, `BOND`, negative `amount` | Verified: the cancelled payout; only the sign of `amount` and the description say so | Kind `PaymentReversal`, the amount without its sign. |
+| `CORPORATE_ACTION` `REDEMPTION`, `BOND` | **Guess**: the same as `FINAL_MATURITY` (seen in other tools) | Kind `Maturity`. |
+| `CASH` `FINAL_MATURITY` with filled `shares` | **Guess**: positive units on a payment | Kind `Payment` with the units; negative units are `inconsistent_value`. |
 | `CASH` `SEC_ACCOUNT`, `BOND` | **Guess**: no amount, only `tax` (negative withheld, positive refunded) | Not read yet: `unknown_row_type`. Planned with the bond treatment. |
 | `CASH` `TILG` (*Tilgung*, repayment) | Unknown shape | `unsupported_row_type`, not read as a maturity. |
 
-Rules the guesses rest on:
+Rules:
 
-- The cash row carries the units and the amount. The corporate-action row only repeats the units,
-  so it is never a second redemption. The two rows have different transaction IDs and may be one
-  day apart, so they are not linked; each cash row is one event even if its action row is missing.
+- The action rows carry the units and the cash rows carry the amount. Every event has positive
+  numbers; the kind carries the direction. A real maturity can be cancelled and booked again days
+  later, after a payout in the wrong currency: units out, units back, units out again, and a
+  payout, the payout taken back, a new payout. The parser keeps all rows as events and adds nothing
+  up (the bond list, per ISIN and by sum: the correction rows keep the maturity
+  `date` but have another `datetime`, so they sort at the default hour of that day, before the
+  maturity they cancel).
 - `amount` is the whole payout. For a discount or zero-coupon bond it contains interest; the
   event does not split it, and the tax treatment stays `unsupported_tax_treatment` until the bond
   treatment is built.
-- A foreign `original_amount` is not read. The cash `amount` and `currency` are stored.
+- A cash row with `original_currency` stores `original_amount` in that currency and the broker
+  rate (EUR per 1 foreign unit, verified by the source samples), as the coupon rows do. The EUR
+  `amount` must be a valid number (blank is `missing_field`, a bad value `invalid_value`) but is
+  not stored. A payout and its reversal can have
+  different currencies.
 - Only the class `BOND` gives an event. A maturity row of another class (a certificate, a
   derivative) is rejected with `unsupported_asset_class.redemption_not_bond` and keeps the capital
   scope, because it can be a taxable sale.
-- Units must be positive on the cash row and negative on the action row (`inconsistent_value`
-  otherwise); a zero, negative or missing amount is invalid.
+- An action row needs non-zero units (sign by kind, `inconsistent_value` otherwise). A cash row
+  may leave `shares` blank; a zero amount is invalid; a reversal has no units.
+- A filled `price` on an action row is stored as the redemption price (a positive number, else
+  `invalid_value`); this is a guess, because the real action rows leave it blank. A value in
+  another column the row does not use (on an action row: `amount`, `fee`, `tax`, `currency`,
+  `original_amount`, `original_currency`, `fx_rate`; on a cash row: `price`) is not stored and gets
+  an `inconsistent_value.redemption_unused_field` warning, so it is never dropped silently. A
+  row skipped for another error gets no such warning.
+- The payout of a corrected maturity is not the nominal exactly (a real correction paid one cent
+  less), so the bond list must never assume payout = nominal.
 
-The event is information only. It is not a sale, it never reaches Doh-KDVP, and the FIFO, the loss
-rule and the corporate-action stage do not read it. The bond list (every bond with its buys and
-maturities) and the reporting of bond interest only (Doh-Obr) build on it later.
+The events are information only. They are not a sale, they never reach Doh-KDVP, and the FIFO, the
+loss rule and the corporate-action stage do not read them. The bond list (every bond with its buys
+and maturities) and the reporting of bond interest only (Doh-Obr) build on them later.
 
 ### Stable input sequence
 

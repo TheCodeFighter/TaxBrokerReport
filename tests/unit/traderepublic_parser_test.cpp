@@ -877,9 +877,54 @@ TEST(TradeRepublicParserTest, WarnsAboutAPrivateMarketBuyWithOnlyAPrice) {
     EXPECT_EQ(warning.mRowKind, ParsedRowKind::PrivateMarket);
 }
 
-// GUESS: the bond maturity rows are modelled on the bond-interest row and on sample shapes of
-// other tools; there is no live Trade Republic bond export. These tests pin the guessed shape.
-TEST(TradeRepublicParserTest, ParsesABondMaturityCashRowAsOneRedemptionEvent) {
+// The maturity rows are verified for FINAL_MATURITY and FINAL_MATURITY_CANCELLED (a real export,
+// shapes only; see tests/test_data/csv/README.md). REDEMPTION and units on a cash row are guesses.
+TEST(TradeRepublicParserTest, ParsesAMaturityActionRowAsAnEventWithUnitsOnly) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
+
+    const auto& redemption = result.mStatement.mBondRedemptions.front();
+
+    EXPECT_EQ(redemption.mKind, BondRedemptionKind::Maturity);
+    EXPECT_EQ(redemption.mMetadata.mTaxDate, makeDate(2025, 3, 14));
+    EXPECT_EQ(redemption.mIsin, "XS0000000001");
+    EXPECT_EQ(redemption.mName, "Synthetic Bond 2025");
+    EXPECT_EQ(redemption.mUnits, 100'000'000'000); // 1,000 units at 8 decimals, sign dropped
+    EXPECT_FALSE(redemption.mAmount.has_value());
+    EXPECT_FALSE(redemption.mRedemptionPrice.has_value());
+    EXPECT_FALSE(redemption.mExchangeRate.has_value());
+    EXPECT_EQ(redemption.mFeePaid, 0);
+    EXPECT_FALSE(redemption.mTaxPaid.has_value());
+    EXPECT_EQ(redemption.mCurrency, Currency::Unknown);
+    EXPECT_EQ(transactionId(redemption.mMetadata), "synthetic-maturity-action");
+}
+
+TEST(TradeRepublicParserTest, ParsesAMaturityCashRowWithBlankUnitsAsAPayment) {
     const SyntheticCsvRow cashRow{
         .mDatetime = "2025-03-14T10:00:00.000Z",
         .mDate = "2025-03-14",
@@ -889,7 +934,7 @@ TEST(TradeRepublicParserTest, ParsesABondMaturityCashRowAsOneRedemptionEvent) {
         .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
+        .mShares = "",
         .mPrice = "",
         .mAmount = "1000.00",
         .mFee = "",
@@ -911,18 +956,20 @@ TEST(TradeRepublicParserTest, ParsesABondMaturityCashRowAsOneRedemptionEvent) {
 
     const auto& redemption = result.mStatement.mBondRedemptions.front();
 
+    EXPECT_EQ(redemption.mKind, BondRedemptionKind::Payment);
     EXPECT_EQ(redemption.mMetadata.mTaxDate, makeDate(2025, 3, 14));
     EXPECT_EQ(redemption.mIsin, "XS0000000001");
-    EXPECT_EQ(redemption.mName, "Synthetic Bond 2025");
-    EXPECT_EQ(redemption.mUnits, 100'000'000'000); // 1,000 units at 8 decimals
-    EXPECT_EQ(redemption.mAmount, 10'000'000);     // EUR 1,000.00 at 4 decimals
+    EXPECT_FALSE(redemption.mUnits.has_value());
+    EXPECT_EQ(redemption.mAmount, 10'000'000); // EUR 1,000.00 at 4 decimals
+    EXPECT_EQ(redemption.mCurrency, Currency::EUR);
+    ASSERT_TRUE(redemption.mExchangeRate.has_value());
+    EXPECT_EQ(redemption.mExchangeRate->mValue, 100'000'000); // a plain EUR row has the rate 1.0
     EXPECT_EQ(redemption.mFeePaid, 0);
     EXPECT_FALSE(redemption.mTaxPaid.has_value());
-    EXPECT_EQ(redemption.mCurrency, Currency::EUR);
     EXPECT_EQ(transactionId(redemption.mMetadata), "synthetic-maturity-cash");
 }
 
-TEST(TradeRepublicParserTest, KeepsTheRedemptionActionRowAsEvidenceWithoutASecondEvent) {
+TEST(TradeRepublicParserTest, ParsesAMaturityCashRowWithPositiveUnitsAsAPaymentWithUnits) {
     const SyntheticCsvRow cashRow{
         .mDatetime = "2025-03-14T10:00:00.000Z",
         .mDate = "2025-03-14",
@@ -945,59 +992,32 @@ TEST(TradeRepublicParserTest, KeepsTheRedemptionActionRowAsEvidenceWithoutASecon
         .mTransactionId = "synthetic-maturity-cash",
     };
 
-    const SyntheticCsvRow actionRow{
-        .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-03-14",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CORPORATE_ACTION",
-        .mType = "REDEMPTION",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "-1000.0000000000",
-        .mPrice = "1.000000",
-        .mAmount = "",
-        .mFee = "",
-        .mTax = "",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-action",
-    };
+    const auto result = parseRows({cashRow});
 
-    const auto result = parseRows({cashRow, actionRow});
+    // GUESS: units on a cash row were assumed before the real rows were seen; they stay accepted.
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
 
-    // The action row has units of -1,000, the size of the cash row: still one event.
-    EXPECT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
-    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    const auto& redemption = result.mStatement.mBondRedemptions.front();
 
-    const auto& warning = result.mDiagnostics.front();
-
-    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(warning.mCode, DiagnosticCode::UnsupportedRowType);
-    EXPECT_EQ(warning.mMessageKey, MessageKey::UnsupportedRowTypeRedemptionEvidence);
-    EXPECT_EQ(warning.mField, "type");
-    EXPECT_EQ(warning.mRowIndex, 3U);
-    EXPECT_EQ(warning.mTransactionId, "synthetic-maturity-action");
-    EXPECT_EQ(warning.mRowKind, ParsedRowKind::BondRedemption);
+    EXPECT_EQ(redemption.mKind, BondRedemptionKind::Payment);
+    EXPECT_EQ(redemption.mUnits, 100'000'000'000); // 1,000 units at 8 decimals
+    EXPECT_EQ(redemption.mAmount, 10'000'000);     // EUR 1,000.00 at 4 decimals
 }
 
-TEST(TradeRepublicParserTest, KeepsAFinalMaturityActionRowOneDayEarlierAsEvidence) {
+TEST(TradeRepublicParserTest, ParsesANegativeMaturityCashAmountAsAPaymentReversal) {
     const SyntheticCsvRow cashRow{
-        .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-03-14",
+        .mDatetime = "2025-03-21T09:01:00.000001Z",
+        .mDate = "2025-03-21",
         .mAccountType = "DEFAULT",
         .mCategory = "CASH",
         .mType = "FINAL_MATURITY",
         .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
+        .mShares = "",
         .mPrice = "",
-        .mAmount = "1000.00",
+        .mAmount = "-1000.00",
         .mFee = "",
         .mTax = "",
         .mCurrency = "EUR",
@@ -1008,54 +1028,36 @@ TEST(TradeRepublicParserTest, KeepsAFinalMaturityActionRowOneDayEarlierAsEvidenc
         .mTransactionId = "synthetic-maturity-cash",
     };
 
-    const SyntheticCsvRow actionRow{
-        .mDatetime = "2025-03-13T10:00:00.000Z",
-        .mDate = "2025-03-13",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CORPORATE_ACTION",
-        .mType = "FINAL_MATURITY",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "-1000.0000000000",
-        .mPrice = "",
-        .mAmount = "",
-        .mFee = "",
-        .mTax = "",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-action",
-    };
+    const auto result = parseRows({cashRow});
 
-    const auto result = parseRows({actionRow, cashRow});
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
 
-    EXPECT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
-    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mMessageKey,
-              MessageKey::UnsupportedRowTypeRedemptionEvidence);
-    EXPECT_EQ(result.mDiagnostics.front().mRowIndex, 2U);
+    const auto& redemption = result.mStatement.mBondRedemptions.front();
+
+    EXPECT_EQ(redemption.mKind, BondRedemptionKind::PaymentReversal);
+    EXPECT_EQ(redemption.mMetadata.mTaxDate, makeDate(2025, 3, 21));
+    EXPECT_FALSE(redemption.mUnits.has_value());
+    EXPECT_EQ(redemption.mAmount, 10'000'000); // EUR 1,000.00 at 4 decimals, sign dropped
+    EXPECT_EQ(redemption.mCurrency, Currency::EUR);
 }
 
-TEST(TradeRepublicParserTest, KeepsAnActionRowAloneAsEvidenceWithNoEvent) {
+TEST(TradeRepublicParserTest, ParsesACancelledMaturityActionRowAsAnEvent) {
     const SyntheticCsvRow actionRow{
         .mDatetime = "2025-03-14T10:00:00.000Z",
         .mDate = "2025-03-14",
         .mAccountType = "DEFAULT",
         .mCategory = "CORPORATE_ACTION",
-        .mType = "REDEMPTION",
+        .mType = "FINAL_MATURITY_CANCELLED",
         .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
-        .mShares = "-1000.0000000000",
-        .mPrice = "1.000000",
+        .mShares = "1000.0000000000",
+        .mPrice = "",
         .mAmount = "",
         .mFee = "",
         .mTax = "",
-        .mCurrency = "EUR",
+        .mCurrency = "",
         .mOriginalAmount = "",
         .mOriginalCurrency = "",
         .mFxRate = "",
@@ -1065,25 +1067,355 @@ TEST(TradeRepublicParserTest, KeepsAnActionRowAloneAsEvidenceWithNoEvent) {
 
     const auto result = parseRows({actionRow});
 
-    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(result.mDiagnostics.front().mMessageKey,
-              MessageKey::UnsupportedRowTypeRedemptionEvidence);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
+
+    const auto& redemption = result.mStatement.mBondRedemptions.front();
+
+    EXPECT_EQ(redemption.mKind, BondRedemptionKind::MaturityCancelled);
+    EXPECT_EQ(redemption.mUnits, 100'000'000'000); // 1,000 units at 8 decimals
+    EXPECT_FALSE(redemption.mAmount.has_value());
 }
 
-TEST(TradeRepublicParserTest, RejectsAMaturityRowOfADerivativeWithTheCapitalScope) {
+TEST(TradeRepublicParserTest, ParsesARedemptionActionRowAsAMaturity) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "REDEMPTION",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "1.000000",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // GUESS: a REDEMPTION action row is taken to be the same as a FINAL_MATURITY one.
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mBondRedemptions.front().mKind, BondRedemptionKind::Maturity);
+    EXPECT_EQ(result.mStatement.mBondRedemptions.front().mUnits, 100'000'000'000);
+    EXPECT_EQ(result.mStatement.mBondRedemptions.front().mRedemptionPrice,
+              100'000'000); // 1.000000 at 8 decimals
+}
+
+TEST(TradeRepublicParserTest, ParsesAForeignMaturityPaymentWithItsBrokerRate) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-21T09:03:00.000001Z",
+        .mDate = "2025-03-21",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "920.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "1000.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.920000",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
+
+    const auto& redemption = result.mStatement.mBondRedemptions.front();
+
+    EXPECT_EQ(redemption.mKind, BondRedemptionKind::Payment);
+    EXPECT_EQ(redemption.mAmount,
+              10'000'000); // USD 1,000.00 at 4 decimals; the EUR amount is not stored
+    EXPECT_EQ(redemption.mCurrency, Currency::USD);
+    ASSERT_TRUE(redemption.mExchangeRate.has_value());
+    EXPECT_EQ(redemption.mExchangeRate->mValue, 92'000'000); // 0.92 EUR per USD at 8 decimals
+    EXPECT_EQ(redemption.mExchangeRate->mDirection, ExchangeRateDirection::EurPerForeign);
+    EXPECT_EQ(redemption.mExchangeRate->mVerification,
+              RateDirectionVerification::VerifiedBySourceSamples);
+}
+
+TEST(TradeRepublicParserTest, ParsesTheWholeCorrectionOfAMaturityAsSixEvents) {
+    const SyntheticCsvRow firstActionRow{
+        .mDatetime = "2025-08-14T15:01:00.000Z",
+        .mDate = "2025-08-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-1",
+    };
+
+    const SyntheticCsvRow firstCashRow{
+        .mDatetime = "2025-08-14T15:02:00.000001Z",
+        .mDate = "2025-08-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-payout-1",
+    };
+
+    const SyntheticCsvRow cancelRow{
+        .mDatetime = "2025-08-21T09:00:00.000Z",
+        .mDate = "2025-08-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY_CANCELLED",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-cancel-1",
+    };
+
+    const SyntheticCsvRow reversalRow{
+        .mDatetime = "2025-08-21T09:01:00.000001Z",
+        .mDate = "2025-08-21",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-reversal-1",
+    };
+
+    const SyntheticCsvRow secondActionRow{
+        .mDatetime = "2025-08-21T09:02:00.000Z",
+        .mDate = "2025-08-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-2",
+    };
+
+    const SyntheticCsvRow secondCashRow{
+        .mDatetime = "2025-08-21T09:03:00.000001Z",
+        .mDate = "2025-08-21",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "920.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "1000.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.920000",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-payout-2",
+    };
+
+    const auto result = parseRows(
+        {firstActionRow, firstCashRow, cancelRow, reversalRow, secondActionRow, secondCashRow});
+
+    // Units out once (rows 2, 4, 6: out, back, out) and one payout (rows 3, 5, 7: paid, taken
+    // back, paid again in USD). Nothing is added up here.
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 6U);
+
+    const auto& events = result.mStatement.mBondRedemptions;
+
+    EXPECT_EQ(events[0].mKind, BondRedemptionKind::Maturity);
+    EXPECT_EQ(events[1].mKind, BondRedemptionKind::Payment);
+    EXPECT_EQ(events[2].mKind, BondRedemptionKind::MaturityCancelled);
+    EXPECT_EQ(events[3].mKind, BondRedemptionKind::PaymentReversal);
+    EXPECT_EQ(events[4].mKind, BondRedemptionKind::Maturity);
+    EXPECT_EQ(events[5].mKind, BondRedemptionKind::Payment);
+
+    // The cancel and the second maturity keep the maturity date; the reversal and the new
+    // payout are on the correction day.
+    EXPECT_EQ(events[2].mMetadata.mTaxDate, makeDate(2025, 8, 14));
+    EXPECT_EQ(events[3].mMetadata.mTaxDate, makeDate(2025, 8, 21));
+    EXPECT_EQ(events[4].mMetadata.mTaxDate, makeDate(2025, 8, 14));
+    EXPECT_EQ(events[5].mMetadata.mTaxDate, makeDate(2025, 8, 21));
+
+    EXPECT_EQ(events[0].mUnits, 100'000'000'000);
+    EXPECT_EQ(events[2].mUnits, 100'000'000'000);
+    EXPECT_EQ(events[4].mUnits, 100'000'000'000);
+    EXPECT_EQ(events[1].mAmount, 10'000'000);
+    EXPECT_EQ(events[3].mAmount, 10'000'000);
+    EXPECT_EQ(events[5].mAmount, 10'000'000);
+    EXPECT_EQ(events[1].mCurrency, Currency::EUR);
+    EXPECT_EQ(events[3].mCurrency, Currency::EUR);
+    EXPECT_EQ(events[5].mCurrency, Currency::USD);
+
+    // Rows 4 and 6 have a datetime on another day than their date.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::InconsistentValueDatetimeDate);
+    EXPECT_EQ(result.mDiagnostics[0].mRowIndex, 4U);
+    EXPECT_EQ(result.mDiagnostics[1].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics[1].mMessageKey, MessageKey::InconsistentValueDatetimeDate);
+    EXPECT_EQ(result.mDiagnostics[1].mRowIndex, 6U);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithPositiveUnits) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // A maturity takes units out, so positive units are the wrong sign.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InconsistentValueRedemptionSign);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsACancelledMaturityActionRowWithNegativeUnits) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY_CANCELLED",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // A cancelled maturity gives units back, so negative units are the wrong sign.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InconsistentValueRedemptionSign);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithNegativeUnits) {
     const SyntheticCsvRow cashRow{
         .mDatetime = "2025-03-14T10:00:00.000Z",
         .mDate = "2025-03-14",
         .mAccountType = "DEFAULT",
         .mCategory = "CASH",
         .mType = "FINAL_MATURITY",
-        .mAssetClass = "DERIVATIVE",
+        .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
+        .mShares = "-1000.0000000000",
         .mPrice = "",
         .mAmount = "1000.00",
         .mFee = "",
@@ -1104,24 +1436,61 @@ TEST(TradeRepublicParserTest, RejectsAMaturityRowOfADerivativeWithTheCapitalScop
     const auto& error = result.mDiagnostics.front();
 
     EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
-    EXPECT_EQ(error.mMessageKey, MessageKey::UnsupportedAssetClassRedemptionNotBond);
-    EXPECT_EQ(error.mField, "asset_class");
-    // A maturing derivative may be a taxable sale, so the capital scope is kept.
-    EXPECT_EQ(error.mRowKind, ParsedRowKind::CorporateAction);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InconsistentValueRedemptionSign);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
 }
 
-TEST(TradeRepublicParserTest, RejectsAMaturityRowWithABlankAssetClass) {
+TEST(TradeRepublicParserTest, RejectsAPaymentReversalWithUnits) {
     const SyntheticCsvRow cashRow{
         .mDatetime = "2025-03-14T10:00:00.000Z",
         .mDate = "2025-03-14",
         .mAccountType = "DEFAULT",
         .mCategory = "CASH",
         .mType = "FINAL_MATURITY",
-        .mAssetClass = "",
+        .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
         .mShares = "1000.0000000000",
+        .mPrice = "",
+        .mAmount = "-1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    // The units of a maturity belong to the action rows, not to a reversed payout.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InconsistentValueRedemptionSign);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithZeroUnits) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "0.0000000000",
         .mPrice = "",
         .mAmount = "1000.00",
         .mFee = "",
@@ -1138,9 +1507,771 @@ TEST(TradeRepublicParserTest, RejectsAMaturityRowWithABlankAssetClass) {
 
     EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithZeroUnits) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "0.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithAnInvalidPrice) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "REDEMPTION",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "abc",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mField, "price");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithAZeroPrice) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "REDEMPTION",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "0.000000",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // A redemption price of zero is not a price.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics.front().mField, "price");
+}
+
+TEST(TradeRepublicParserTest, WarnsAboutEveryUnusedValueOfAMaturityActionRow) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "-1.00",
+        .mTax = "-2.00",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "1100.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.920000",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // The units are kept; the seven money columns are not used, so each gets a warning, in the
+    // column order of the export.
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
+
+    const auto& redemption = result.mStatement.mBondRedemptions.front();
+
+    EXPECT_EQ(redemption.mKind, BondRedemptionKind::Maturity);
+    EXPECT_EQ(redemption.mUnits, 100'000'000'000); // 1,000 units at 8 decimals
+    EXPECT_FALSE(redemption.mAmount.has_value());
+    EXPECT_EQ(redemption.mFeePaid, 0);
+    EXPECT_FALSE(redemption.mTaxPaid.has_value());
+    EXPECT_FALSE(redemption.mExchangeRate.has_value());
+    EXPECT_EQ(redemption.mCurrency, Currency::Unknown);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 7U);
+
+    const std::array<std::string_view, 7> expectedFields{"amount",
+                                                         "fee",
+                                                         "tax",
+                                                         "currency",
+                                                         "original_amount",
+                                                         "original_currency",
+                                                         "fx_rate"};
+
+    for (std::size_t index = 0; index < expectedFields.size(); ++index)
+    {
+        EXPECT_EQ(result.mDiagnostics[index].mSeverity, DiagnosticSeverity::Warning);
+        EXPECT_EQ(result.mDiagnostics[index].mCode, DiagnosticCode::InconsistentValue);
+        EXPECT_EQ(result.mDiagnostics[index].mMessageKey,
+                  MessageKey::InconsistentValueRedemptionUnusedField);
+        EXPECT_EQ(result.mDiagnostics[index].mField, expectedFields[index]);
+        EXPECT_EQ(result.mDiagnostics[index].mRowKind, ParsedRowKind::BondRedemption);
+    }
+}
+
+TEST(TradeRepublicParserTest, GivesARejectedMaturityActionRowNoUnusedValueWarning) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "1000.0000000000",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // Positive units on a maturity skip the row, so the unused amount gets no "row was kept"
+    // warning: the sign error is the only diagnostic.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InconsistentValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InconsistentValueRedemptionSign);
+    EXPECT_EQ(error.mField, "shares");
+}
+
+TEST(TradeRepublicParserTest, WarnsAboutAPriceOnAMaturityCashRow) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "1.000000",
+        .mAmount = "1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    // A cash row has no price: the payment is kept and the price is reported, not stored.
+    ASSERT_EQ(result.mStatement.mBondRedemptions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mBondRedemptions.front().mKind, BondRedemptionKind::Payment);
+    EXPECT_EQ(result.mStatement.mBondRedemptions.front().mAmount, 10'000'000); // 1,000.00
+    EXPECT_FALSE(result.mStatement.mBondRedemptions.front().mRedemptionPrice.has_value());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.front().mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics.front().mMessageKey,
+              MessageKey::InconsistentValueRedemptionUnusedField);
+    EXPECT_EQ(result.mDiagnostics.front().mField, "price");
+}
+
+TEST(TradeRepublicParserTest, RejectsAForeignMaturityPaymentWithAnInvalidEuroAmount) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "abc",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "1000.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.920000",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    // The EUR amount is not stored when original_amount is filled, but it must be a number.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
+    EXPECT_EQ(result.mDiagnostics.front().mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAForeignMaturityPaymentWithABlankEuroAmount) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "1000.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.920000",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::MissingField);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "asset_class");
-    EXPECT_EQ(result.mDiagnostics.front().mRowKind, ParsedRowKind::CorporateAction);
+    EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithBlankUnits) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // The units are the only fact of an action row, so a blank value is invalid.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldRequiredField);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithTheMinimumSignedUnits) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-92233720368.54775808",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // The smallest int64 at 8 decimals cannot lose its sign.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(error.mField, "shares");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAZeroAmount) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "0.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithTheMinimumSignedAmount) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-922337203685477.5808",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    // The smallest int64 at 4 decimals cannot lose its sign.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithABlankAmount) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldRequiredField);
+    EXPECT_EQ(error.mField, "amount");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAPositiveFee) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    // A fee is exported as a negative number, as in the trade rows.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(error.mField, "fee");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAPositiveTax) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "",
+        .mTax = "0.25",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    // Tax withheld is exported as a negative number, as in the income rows.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(error.mMessageKey, MessageKey::InvalidValueField);
+    EXPECT_EQ(error.mField, "tax");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityRowOfADerivativeWithTheCapitalScope) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "DERIVATIVE",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    // A maturing derivative may be a taxable sale, so the capital scope is kept.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(error.mMessageKey, MessageKey::UnsupportedAssetClassRedemptionNotBond);
+    EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::CorporateAction);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowOfAStockWithTheCapitalScope) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    // The same rule as for a cash row: a stock that disappears may be a taxable sale.
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(error.mMessageKey, MessageKey::UnsupportedAssetClassRedemptionNotBond);
+    EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::CorporateAction);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityRowWithABlankAssetClass) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldRequiredField);
+    EXPECT_EQ(error.mField, "asset_class");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::CorporateAction);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithABlankDatetime) {
+    const SyntheticCsvRow cashRow{
+        .mDatetime = "",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1000.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-cash",
+    };
+
+    const auto result = parseRows({cashRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldDatetime);
+    EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
+}
+
+TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithABlankDatetime) {
+    const SyntheticCsvRow actionRow{
+        .mDatetime = "",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000001",
+        .mShares = "-1000.0000000000",
+        .mPrice = "",
+        .mAmount = "",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-maturity-action",
+    };
+
+    const auto result = parseRows({actionRow});
+
+    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& error = result.mDiagnostics.front();
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(error.mMessageKey, MessageKey::MissingFieldDatetime);
+    EXPECT_EQ(error.mField, "datetime");
+    EXPECT_EQ(error.mRowKind, ParsedRowKind::BondRedemption);
 }
 
 TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfAMaturityCashRowInColumnOrder) {
@@ -1186,7 +2317,7 @@ TEST(TradeRepublicParserTest, ReportsEveryInvalidFieldOfAMaturityCashRowInColumn
     }
 }
 
-TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAZeroAmount) {
+TEST(TradeRepublicParserTest, ReportsEveryInvalidForeignFieldOfAMaturityCashRowInColumnOrder) {
     const SyntheticCsvRow cashRow{
         .mDatetime = "2025-03-14T10:00:00.000Z",
         .mDate = "2025-03-14",
@@ -1196,15 +2327,15 @@ TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAZeroAmount) {
         .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
+        .mShares = "",
         .mPrice = "",
-        .mAmount = "0.00",
+        .mAmount = "920.00",
         .mFee = "",
         .mTax = "",
         .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
+        .mOriginalAmount = "abc",
+        .mOriginalCurrency = "ZZZ",
+        .mFxRate = "abc",
         .mDescription = "Synthetic test row",
         .mTransactionId = "synthetic-maturity-cash",
     };
@@ -1212,40 +2343,52 @@ TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAZeroAmount) {
     const auto result = parseRows({cashRow});
 
     EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InvalidValue);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
+
+    // The column currency is fine; the original amount, the original currency and the rate are not.
+    EXPECT_EQ(result.mDiagnostics[0].mField, "original_amount");
+    EXPECT_EQ(result.mDiagnostics[1].mField, "original_currency");
+    EXPECT_EQ(result.mDiagnostics[2].mField, "fx_rate");
+
+    for (const auto& diagnostic : result.mDiagnostics)
+    {
+        EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+        EXPECT_EQ(diagnostic.mRowKind, ParsedRowKind::BondRedemption);
+    }
 }
 
-TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithANegativeAmount) {
-    const SyntheticCsvRow cashRow{
+TEST(TradeRepublicParserTest, ReportsAnInvalidDateAndSharesOfAMaturityActionRow) {
+    const SyntheticCsvRow actionRow{
         .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-03-14",
+        .mDate = "2025-13-01",
         .mAccountType = "DEFAULT",
-        .mCategory = "CASH",
-        .mType = "FINAL_MATURITY",
+        .mCategory = "CORPORATE_ACTION",
+        .mType = "REDEMPTION",
         .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
-        .mPrice = "",
-        .mAmount = "-1000.00",
+        .mShares = "abc",
+        .mPrice = "1.000000",
+        .mAmount = "",
         .mFee = "",
         .mTax = "",
-        .mCurrency = "EUR",
+        .mCurrency = "",
         .mOriginalAmount = "",
         .mOriginalCurrency = "",
         .mFxRate = "",
         .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-cash",
+        .mTransactionId = "synthetic-maturity-action",
     };
 
-    const auto result = parseRows({cashRow});
+    const auto result = parseRows({actionRow});
 
     EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InvalidValue);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "date");
+    EXPECT_EQ(result.mDiagnostics[1].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[1].mField, "shares");
+    EXPECT_EQ(result.mDiagnostics[1].mRowKind, ParsedRowKind::BondRedemption);
 }
 
 TEST(TradeRepublicParserTest, KeepsTheFeeAndTheWithheldTaxOfAMaturityCashRow) {
@@ -1258,7 +2401,7 @@ TEST(TradeRepublicParserTest, KeepsTheFeeAndTheWithheldTaxOfAMaturityCashRow) {
         .mAssetClass = "BOND",
         .mName = "Synthetic Bond 2025",
         .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
+        .mShares = "",
         .mPrice = "",
         .mAmount = "1000.00",
         .mFee = "-1.00",
@@ -1279,201 +2422,7 @@ TEST(TradeRepublicParserTest, KeepsTheFeeAndTheWithheldTaxOfAMaturityCashRow) {
     const auto& redemption = result.mStatement.mBondRedemptions.front();
 
     EXPECT_EQ(redemption.mFeePaid, 10'000); // EUR 1.00 at 4 decimals
-    ASSERT_TRUE(redemption.mTaxPaid.has_value());
-    EXPECT_EQ(*redemption.mTaxPaid, 2'500); // EUR 0.25 at 4 decimals
-}
-
-TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAPositiveFee) {
-    const SyntheticCsvRow cashRow{
-        .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-03-14",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CASH",
-        .mType = "FINAL_MATURITY",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
-        .mPrice = "",
-        .mAmount = "1000.00",
-        .mFee = "1.00",
-        .mTax = "",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-cash",
-    };
-
-    const auto result = parseRows({cashRow});
-
-    // A fee is exported as a negative number, as in the trade rows.
-    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InvalidValue);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "fee");
-}
-
-TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithAPositiveTax) {
-    const SyntheticCsvRow cashRow{
-        .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-03-14",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CASH",
-        .mType = "FINAL_MATURITY",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
-        .mPrice = "",
-        .mAmount = "1000.00",
-        .mFee = "",
-        .mTax = "0.25",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-cash",
-    };
-
-    const auto result = parseRows({cashRow});
-
-    // Withheld tax is exported as a negative number, as in the bond-interest row.
-    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InvalidValue);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "tax");
-}
-
-TEST(TradeRepublicParserTest, ReportsAnInvalidDateAndSharesOfAMaturityActionRow) {
-    const SyntheticCsvRow actionRow{
-        .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-13-01",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CORPORATE_ACTION",
-        .mType = "REDEMPTION",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "abc",
-        .mPrice = "1.000000",
-        .mAmount = "",
-        .mFee = "",
-        .mTax = "",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-action",
-    };
-
-    const auto result = parseRows({actionRow});
-
-    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 2U);
-    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(result.mDiagnostics[0].mField, "date");
-    EXPECT_EQ(result.mDiagnostics[1].mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(result.mDiagnostics[1].mField, "shares");
-    EXPECT_EQ(result.mDiagnostics[1].mRowKind, ParsedRowKind::BondRedemption);
-}
-
-TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithNegativeUnits) {
-    const SyntheticCsvRow cashRow{
-        .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-03-14",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CASH",
-        .mType = "FINAL_MATURITY",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "-1000.0000000000",
-        .mPrice = "",
-        .mAmount = "1000.00",
-        .mFee = "",
-        .mTax = "",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-cash",
-    };
-
-    const auto result = parseRows({cashRow});
-
-    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InconsistentValue);
-    EXPECT_EQ(result.mDiagnostics.front().mMessageKey, MessageKey::InconsistentValueRedemptionSign);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "shares");
-}
-
-TEST(TradeRepublicParserTest, RejectsAMaturityActionRowWithPositiveUnits) {
-    const SyntheticCsvRow actionRow{
-        .mDatetime = "2025-03-14T10:00:00.000Z",
-        .mDate = "2025-03-14",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CORPORATE_ACTION",
-        .mType = "REDEMPTION",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
-        .mPrice = "1.000000",
-        .mAmount = "",
-        .mFee = "",
-        .mTax = "",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-action",
-    };
-
-    const auto result = parseRows({actionRow});
-
-    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::InconsistentValue);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "shares");
-}
-
-TEST(TradeRepublicParserTest, RejectsAMaturityCashRowWithABlankDatetime) {
-    const SyntheticCsvRow cashRow{
-        .mDatetime = "",
-        .mDate = "2025-03-14",
-        .mAccountType = "DEFAULT",
-        .mCategory = "CASH",
-        .mType = "FINAL_MATURITY",
-        .mAssetClass = "BOND",
-        .mName = "Synthetic Bond 2025",
-        .mSymbol = "XS0000000001",
-        .mShares = "1000.0000000000",
-        .mPrice = "",
-        .mAmount = "1000.00",
-        .mFee = "",
-        .mTax = "",
-        .mCurrency = "EUR",
-        .mOriginalAmount = "",
-        .mOriginalCurrency = "",
-        .mFxRate = "",
-        .mDescription = "Synthetic test row",
-        .mTransactionId = "synthetic-maturity-cash",
-    };
-
-    const auto result = parseRows({cashRow});
-
-    EXPECT_TRUE(result.mStatement.mBondRedemptions.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::MissingField);
-    EXPECT_EQ(result.mDiagnostics.front().mField, "datetime");
+    EXPECT_EQ(redemption.mTaxPaid, 2'500);  // EUR 0.25 at 4 decimals
 }
 
 TEST(TradeRepublicParserTest, KeepsTilgAsAnUnsupportedRowType) {
@@ -10111,6 +11060,47 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingGrossAmount) {
               "taxbroker_TradeRepublicParserTest_RejectsBondInterestWithMissingGrossAmount.csv");
     EXPECT_EQ(error.mRowIndex, 2U);
     EXPECT_EQ(error.mTransactionId, "synthetic-bond-interest-validation");
+}
+
+TEST(TradeRepublicParserTest, ParsesABondCouponWithBlankSharesAndAForeignOriginalAmount) {
+    // The shape of a real bond coupon: shares, price, fee and tax are blank, and the amount in
+    // EUR comes from a USD original amount with a broker rate.
+    SyntheticCsvRow row{.mDatetime = "2025-02-14T16:00:00.000001Z",
+                        .mDate = "2025-02-14",
+                        .mCategory = "CASH",
+                        .mType = "INTEREST_PAYMENT",
+                        .mAssetClass = "BOND",
+                        .mName = "Synthetic Bond 2025",
+                        .mSymbol = "XS0000000001",
+                        .mShares = "",
+                        .mPrice = "",
+                        .mAmount = "18.000000",
+                        .mFee = "",
+                        .mTax = "",
+                        .mCurrency = "EUR",
+                        .mOriginalAmount = "20.00",
+                        .mOriginalCurrency = "USD",
+                        .mFxRate = "0.900000",
+                        .mTransactionId = "synthetic-bond-coupon"};
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+    EXPECT_EQ(result.mStatement.mInterestInstruments.front().mInterestType,
+              InterestType::BondInterest);
+
+    const auto& coupon = result.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(coupon.mGrossAmount, 200'000); // USD 20.00 at 4 decimals
+    EXPECT_EQ(coupon.mCurrency, Currency::USD);
+    EXPECT_FALSE(coupon.mTaxPaid.has_value());
+    ASSERT_TRUE(coupon.mExchangeRate.has_value());
+    EXPECT_EQ(coupon.mExchangeRate->mValue, 90'000'000); // 0.90 EUR per USD at 8 decimals
+    EXPECT_EQ(coupon.mExchangeRate->mDirection, ExchangeRateDirection::EurPerForeign);
+    EXPECT_EQ(coupon.mExchangeRate->mVerification,
+              RateDirectionVerification::VerifiedBySourceSamples);
 }
 
 TEST(TradeRepublicParserTest, RejectsBondInterestWithMalformedGrossAmount) {

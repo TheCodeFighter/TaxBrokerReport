@@ -568,10 +568,12 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
 
 [[nodiscard]] bool sameEventFacts(const BondRedemptionEvent& aLeft,
                                   const BondRedemptionEvent& aRight) {
-    return sameMetadataFacts(aLeft.mMetadata, aRight.mMetadata) && aLeft.mName == aRight.mName &&
-           aLeft.mIsin == aRight.mIsin && aLeft.mUnits == aRight.mUnits &&
-           aLeft.mAmount == aRight.mAmount && aLeft.mFeePaid == aRight.mFeePaid &&
-           aLeft.mTaxPaid == aRight.mTaxPaid && aLeft.mCurrency == aRight.mCurrency;
+    return sameMetadataFacts(aLeft.mMetadata, aRight.mMetadata) && aLeft.mKind == aRight.mKind &&
+           aLeft.mName == aRight.mName && aLeft.mIsin == aRight.mIsin &&
+           aLeft.mUnits == aRight.mUnits && aLeft.mAmount == aRight.mAmount &&
+           aLeft.mRedemptionPrice == aRight.mRedemptionPrice && aLeft.mFeePaid == aRight.mFeePaid &&
+           aLeft.mTaxPaid == aRight.mTaxPaid && aLeft.mExchangeRate == aRight.mExchangeRate &&
+           aLeft.mCurrency == aRight.mCurrency;
 }
 
 [[nodiscard]] bool sameEventFacts(const MergeEvent& aLeft, const MergeEvent& aRight) {

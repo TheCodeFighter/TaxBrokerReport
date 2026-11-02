@@ -200,7 +200,7 @@ struct CorporateAction {
     /// Rounded source quantity for UnresolvedSplit, not a verified inventory change.
     /// Its sign does not establish direction; mUnitEvidence retains the exact source decimal.
     Units mUnitsDelta{};
-    /// A verified ratio from the source, kept exact. Empty for Trade Republic.
+    /// A verified ratio from the source, kept exact. Empty when the source gives none.
     std::optional<SplitRatio> mRatio;
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
@@ -285,22 +285,30 @@ struct BenefitEvent {
     Currency mCurrency{Currency::EUR};
 };
 
-/// A bond that matured and left the holding. Information only: it is not a sale, never reaches
-/// Doh-KDVP and nothing downstream changes a lot or a basis because of it. The bond list and the
-/// coupon (Doh-Obr) work use it later.
-///
-/// GUESS: no live Trade Republic bond export was available. The shape follows the bond-interest
-/// row (positive units, positive gross amount, negative tax when withheld) and sample shapes of
-/// other tools; see `docs/architecture.md`, "Trade Republic bond rows".
+/// What one step of a bond maturity does. Every value is positive; the kind carries the sign.
+enum class BondRedemptionKind {
+    Maturity,          ///< Units leave the holding.
+    MaturityCancelled, ///< Units come back (the maturity is cancelled).
+    Payment,           ///< Money is paid out.
+    PaymentReversal,   ///< Money is taken back (a cancelled payout).
+};
+
+/// One step of a bond maturity. Information only: it is not a sale, never reaches Doh-KDVP and
+/// nothing downstream changes a lot or a basis because of it. A maturity can be cancelled and
+/// booked again, so the steps are not added up here; the bond list and the coupon (Doh-Obr) work
+/// do that later. Each parser documents how its rows map to the kinds (`docs/architecture.md`).
 struct BondRedemptionEvent {
     EventMetadata mMetadata;
+    BondRedemptionKind mKind{};
     std::string mName;
     Isin mIsin;
-    Units mUnits{};                ///< Units that matured; positive.
-    Money mAmount{};               ///< Positive amount paid out; may include accrued interest.
+    std::optional<Units> mUnits;  ///< Positive units moved; absent when the source gives none.
+    std::optional<Money> mAmount; ///< Positive money moved, in mCurrency; absent without one.
+    std::optional<UnitPrice> mRedemptionPrice; ///< Price per unit, when the source gives one.
     Money mFeePaid{};              ///< Positive fee paid; zero when the export has no fee.
     std::optional<Money> mTaxPaid; ///< Positive tax withheld; absent means unknown.
-    Currency mCurrency{Currency::EUR};
+    std::optional<BrokerExchangeRate> mExchangeRate; ///< Broker rate of a foreign amount.
+    Currency mCurrency{Currency::Unknown};           ///< Currency of mAmount; Unknown without one.
 };
 
 struct PrivateMarketEvent {
