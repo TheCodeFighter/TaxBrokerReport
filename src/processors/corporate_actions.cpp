@@ -869,7 +869,9 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
         {
             static_assert(std::is_same_v<Answer, FailureResolutionAnswer> ||
                           std::is_same_v<Answer, NoOtherActivityAnswer> ||
-                          std::is_same_v<Answer, OtherActivityAnswer>);
+                          std::is_same_v<Answer, OtherActivityAnswer> ||
+                          std::is_same_v<Answer, CapitalGainsAnswer> ||
+                          std::is_same_v<Answer, ExcludeFromReportsAnswer>);
             // The session accepts only a ratio or a cancel for a ratio question.
             throw std::logic_error("Only a ratio or a cancel can answer a ratio question.");
         }
@@ -970,7 +972,7 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
 
         // A class that cannot reach Doh-KDVP has its own class error, so its actions are not
         // asked and give no error of their own.
-        if (!hasSaleInYear(instruments.at(index), aLedger) ||
+        if (!hasSaleInYear(instruments.at(index), aLedger) || aLedger.isLeftOut(pool.mIsin) ||
             !mayReachKdvp(instruments.at(index).mAssetClass))
         {
             continue;

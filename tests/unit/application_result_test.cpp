@@ -1611,7 +1611,7 @@ TEST(ApplicationResultOrderTest, RequestsAreOrderedAndNumberedAfterTheSort) {
         RequestInput{
             .mQuestion =
                 {
-                    .mType = RequestType::TaxClassificationRequired,
+                    .mType = RequestType::ExchangeRatesRequired,
                     .mAffectedReports = {kCapital},
                     .mIsin = "XX0000000001",
                 },
@@ -1623,7 +1623,7 @@ TEST(ApplicationResultOrderTest, RequestsAreOrderedAndNumberedAfterTheSort) {
     ASSERT_EQ(result.mRequests.size(), 2U);
 
     EXPECT_EQ(result.mRequests[0].mId, "request-0001");
-    EXPECT_EQ(result.mRequests[0].mType, RequestType::TaxClassificationRequired);
+    EXPECT_EQ(result.mRequests[0].mType, RequestType::ExchangeRatesRequired);
     EXPECT_EQ(result.mRequests[1].mId, "request-0002");
     EXPECT_EQ(result.mRequests[1].mType, RequestType::IncomeDetailsRequired);
     // The reports of a request are in the fixed order too.
@@ -1980,7 +1980,7 @@ TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {
     ApplicationResultInput withList{.mReportingYear = 2024};
     withList.mRequests = {
         RequestInput{.mQuestion = {
-                         .mType = RequestType::TaxClassificationRequired,
+                         .mType = RequestType::QuantityCorrectionRequired,
                          .mAffectedReports = {kCapital},
                          .mData =
                              FailureResolutionQuestion{
@@ -2505,7 +2505,7 @@ TEST(ApplicationResultRequestTest, AStageOutputKeepsItsLinksWhenAppended) {
         },
     };
     std::vector<RequestInput> stageRequests{RequestInput{
-        .mQuestion = {.mType = RequestType::TaxClassificationRequired,
+        .mQuestion = {.mType = RequestType::QuantityCorrectionRequired,
                       .mAffectedReports = {kCapital}},
         .mProcessingDiagnostics = {0, 1},
     }};
@@ -2738,6 +2738,175 @@ TEST(ApplicationResultExclusionTest, ASourceErrorIsFoundOnlyForTheFormsItAffects
     };
 
     EXPECT_FALSE(hasSourceError(input, kCapital));
+}
+
+// Classification questions, resolved class errors and excluded items
+
+SourcedParseDiagnostic rejectedTradeRow(std::size_t aRow) {
+    return SourcedParseDiagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::TradeRepublic,
+        .mDiagnostic = {.mSeverity = DiagnosticSeverity::Error,
+                        .mCode = DiagnosticCode::MissingField,
+                        .mSourceFile = "history.csv",
+                        .mRowIndex = aRow,
+                        .mMessage = "Synthetic class error.",
+                        .mRowKind = ParsedRowKind::Trade},
+    };
+}
+
+TEST(ApplicationResultClassificationTest, AResolvedMergeDiagnosticStaysAnErrorButNoLongerBlocks) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mMergeDiagnostics = {rejectedTradeRow(2), rejectedTradeRow(3)};
+    input.mResolvedMergeDiagnostics = {0};
+
+    EXPECT_TRUE(hasSourceError(input, kCapital)); // row 3 still blocks
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking); // row 2, resolved
+    EXPECT_EQ(result.mDiagnostics[1].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_TRUE(result.mDiagnostics[1].mBlocking); // row 3
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
+}
+
+TEST(ApplicationResultClassificationTest, WhenEveryMergeErrorIsResolvedNoSourceErrorIsLeft) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mMergeDiagnostics = {rejectedTradeRow(2)};
+    input.mResolvedMergeDiagnostics = {0};
+
+    EXPECT_FALSE(hasSourceError(input, kCapital));
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::NoData);
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
+}
+
+TEST(ApplicationResultClassificationTest, AResolvedMergeDiagnosticOutsideTheListIsRejected) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mMergeDiagnostics = {rejectedTradeRow(2)};
+    input.mResolvedMergeDiagnostics = {1};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+}
+
+TEST(ApplicationResultClassificationTest, AClassificationQuestionSortsItsLabelsAndNeedsAnIsin) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::TaxClassificationRequired,
+            .mAffectedReports = {kCapital},
+            .mIsin = "XX0000000001",
+            .mData = TaxClassificationQuestion{.mIsin = "XX0000000001",
+                                               .mName = "Synthetic Share",
+                                               .mClassLabels = {"STOCK", "", "FUND", "STOCK"}},
+        }}};
+
+    const auto result = ApplicationResultBuilder::build(ApplicationResultInput{input});
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto* data = std::get_if<TaxClassificationQuestion>(&result.mRequests[0].mData);
+
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(data->mClassLabels, (std::vector<std::string>{"", "FUND", "STOCK"}));
+
+    // Without an ISIN the question cannot be told from another one.
+    std::get<TaxClassificationQuestion>(input.mRequests[0].mQuestion.mData).mIsin = "";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+}
+
+TEST(ApplicationResultClassificationTest, ClassificationDataAndTheRequestTypeMustFitEachOther) {
+    // Classification data on another type.
+    ApplicationResultInput onOtherType{.mReportingYear = 2024};
+    onOtherType.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::IncomeDetailsRequired,
+            .mAffectedReports = {kCapital},
+            .mData = TaxClassificationQuestion{.mIsin = "XX0000000001", .mName = "Synthetic Share"},
+        }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(onOtherType)),
+                 std::invalid_argument);
+
+    // The classification type without its data.
+    ApplicationResultInput withoutData{.mReportingYear = 2024};
+    withoutData.mRequests = {RequestInput{.mQuestion = {
+                                              .mType = RequestType::TaxClassificationRequired,
+                                              .mAffectedReports = {kCapital},
+                                          }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutData)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultClassificationTest, ExcludedItemsAreSortedByIsinWithTheirDiagnosticIds) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = ProcessingDiagnosticCode::TaxCategoryNotReported,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mTaxDate = day(2024, 5, 1),
+                         .mInstrumentName = "Synthetic Second",
+                         .mIsin = "XX0000000002"},
+            .mMessage = "Synthetic warning.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = ProcessingDiagnosticCode::TaxCategoryNotReported,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mTaxDate = day(2024, 3, 1),
+                         .mInstrumentName = "Synthetic First",
+                         .mIsin = "XX0000000001"},
+            .mMessage = "Synthetic warning.",
+        },
+    };
+    // The second ISIN is listed first, and its diagnostic is the first one by position.
+    input.mExcludedItems = {
+        ExcludedItemInput{
+            .mItem = {.mIsin = "XX0000000002",
+                      .mName = "Synthetic Second",
+                      .mCategory = ExcludedCategory::Crypto,
+                      .mReason = ExcludedReason::CryptoNotReported,
+                      .mClassLabels = {"CRYPTO"}},
+            .mSources = {SourceReference{.mBroker = Broker::TradeRepublic,
+                                         .mFilename = SourceFilename::fromPath("history.csv"),
+                                         .mSourceRow = 7}},
+            .mProcessingDiagnostics = {0},
+        },
+        ExcludedItemInput{
+            .mItem = {.mIsin = "XX0000000001",
+                      .mName = "Synthetic First",
+                      .mCategory = ExcludedCategory::Unknown,
+                      .mReason = ExcludedReason::UserChoice,
+                      .mClassLabels = {""}},
+            .mProcessingDiagnostics = {1, 1},
+        },
+    };
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mExcludedItems.size(), 2U);
+
+    // Diagnostics are sorted by date: the March one is diagnostic-0001.
+    EXPECT_EQ(result.mExcludedItems[0].mIsin, "XX0000000001");
+    EXPECT_FALSE(result.mExcludedItems[0].isTaxRule());
+    EXPECT_EQ(result.mExcludedItems[0].mDiagnosticIds, std::vector<std::string>{"diagnostic-0001"});
+    EXPECT_TRUE(result.mExcludedItems[0].mSources.empty());
+
+    EXPECT_EQ(result.mExcludedItems[1].mIsin, "XX0000000002");
+    EXPECT_TRUE(result.mExcludedItems[1].isTaxRule());
+    EXPECT_EQ(result.mExcludedItems[1].mDiagnosticIds, std::vector<std::string>{"diagnostic-0002"});
+    ASSERT_EQ(result.mExcludedItems[1].mSources.size(), 1U);
+    EXPECT_EQ(result.mExcludedItems[1].mSources[0].mRow, 7U);
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
 } // namespace

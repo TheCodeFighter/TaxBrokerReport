@@ -48,6 +48,7 @@ enum class ProcessingDiagnosticCode {
     CorporateActionQuantityRounded,
     CorporateActionApplied,
     UnsupportedCorporateAction,
+    TaxCategoryNotReported, ///< A warning for an instrument left out by a tax rule or the user.
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

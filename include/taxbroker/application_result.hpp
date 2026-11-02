@@ -213,12 +213,24 @@ struct CorporateActionRatioQuestion {
 [[nodiscard]] const EffectiveDateRange*
 findEffectiveDateRange(const CorporateActionRatioQuestion& aQuestion, Date aDate);
 
+/// The question data of `tax_classification_required` for a trade investment whose asset class is
+/// missing, not recognized or different between rows.
+struct TaxClassificationQuestion {
+    Isin mIsin;
+    std::string mName;
+    /// The class label of each row as the file gave it.
+    std::vector<std::string> mClassLabels;
+
+    bool operator==(const TaxClassificationQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
 using QuestionData = std::variant<std::monostate,
                                   FailureResolutionQuestion,
                                   LossEligibilityQuestion,
-                                  CorporateActionRatioQuestion>;
+                                  CorporateActionRatioQuestion,
+                                  TaxClassificationQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -231,9 +243,9 @@ struct DecisionQuestion {
 };
 
 /// Sorts the investments by ISIN and name and their reason codes in code order without repeats,
-/// the loss sales by date and transaction with their replacements by date and units, and the
-/// sources of a corporate action by broker and transaction ID, so the order in which a stage
-/// lists them never changes the question.
+/// the loss sales by date and transaction with their replacements by date and units, the
+/// sources of a corporate action by broker and transaction ID, and the class labels of a
+/// classification question, so the order in which a stage lists them never changes the question.
 [[nodiscard]] QuestionData normalizedData(QuestionData aData);
 
 struct FailureResolutionAnswer {
@@ -278,12 +290,26 @@ struct SeparateEventsAnswer {
     bool operator==(const SeparateEventsAnswer&) const = default;
 };
 
+/// `capital_gains` to a classification question: treat the investment as shares or fund units
+/// (Doh-KDVP).
+struct CapitalGainsAnswer {
+    bool operator==(const CapitalGainsAnswer&) const = default;
+};
+
+/// `exclude_from_supported_reports` to a classification question: leave the investment out of the
+/// reports and list it in the excluded items.
+struct ExcludeFromReportsAnswer {
+    bool operator==(const ExcludeFromReportsAnswer&) const = default;
+};
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
                                  OtherActivityAnswer,
                                  SplitRatioAnswer,
-                                 SeparateEventsAnswer>;
+                                 SeparateEventsAnswer,
+                                 CapitalGainsAnswer,
+                                 ExcludeFromReportsAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {
@@ -329,6 +355,58 @@ struct RecordedDecision {
     bool mUsed{};
 };
 
+/// The category an excluded item belongs to.
+enum class ExcludedCategory {
+    Bond,    ///< An ordinary debt security; only its interest is taxable.
+    Crypto,  ///< A crypto asset; not part of the supported reports.
+    Unknown, ///< The class was missing, not recognized or conflicting, and the user left it out.
+};
+
+/// Why an item is left out.
+enum class ExcludedReason {
+    DebtSecurity,      ///< Debt-security sales and redemptions are no capital gain.
+    CryptoNotReported, ///< Crypto is not part of Doh-KDVP.
+    UserChoice,        ///< The user answered `exclude_from_supported_reports`.
+};
+
+/// Units of an excluded bond in the selected year. Matured units are added up by sum, never by
+/// order: a cancelled maturity brings units back.
+struct BondExclusionFacts {
+    Units mBoughtUnits{};
+    Units mSoldUnits{};
+    Units mMaturedUnits{};             ///< Units out minus units back.
+    std::optional<Date> mMaturityDate; ///< The date of the first maturity row.
+
+    bool operator==(const BondExclusionFacts&) const = default;
+};
+
+/// An instrument left out of the supported reports, by a tax rule or by the user. It never
+/// masquerades as a processed event, and it is not an entry of a report's `excludedInvestments`.
+struct ExcludedItem {
+    Isin mIsin;
+    std::string mName;
+    ExcludedCategory mCategory{ExcludedCategory::Unknown};
+    ExcludedReason mReason{ExcludedReason::UserChoice};
+    /// The class labels of the rows as the files gave them, sorted; "" for a blank class.
+    std::vector<std::string> mClassLabels;
+    std::optional<BondExclusionFacts> mBond; ///< Only for a bond.
+    std::vector<ApplicationSource> mSources;
+    /// The diagnostics that explain the exclusion, in diagnostic order.
+    std::vector<std::string> mDiagnosticIds;
+
+    [[nodiscard]] bool isTaxRule() const {
+        return mReason != ExcludedReason::UserChoice;
+    }
+};
+
+/// An excluded item as a stage hands it over: the sources are source references and the
+/// diagnostics are positions in ApplicationResultInput::mProcessingDiagnostics.
+struct ExcludedItemInput {
+    ExcludedItem mItem;
+    std::vector<SourceReference> mSources;
+    std::vector<std::size_t> mProcessingDiagnostics;
+};
+
 /// What the report stage produced for one form, before the status is derived.
 struct ReportInput {
     /// The generated XML document, when the report stage produced one.
@@ -367,8 +445,8 @@ struct ApplicationResult {
     std::vector<ApplicationDiagnostic> mDiagnostics;
     std::vector<DecisionRequest> mRequests;
     std::array<ReportResult, 4> mReports;
-    /// Builder leaves mDecisions empty.
-    std::vector<RecordedDecision> mDecisions;
+    std::vector<RecordedDecision> mDecisions; ///< Builder leaves mDecisions empty.
+    std::vector<ExcludedItem> mExcludedItems; ///< Sorted by ISIN.
 
     [[nodiscard]] const ReportResult& report(ReportType aType) const {
         return mReports[static_cast<std::size_t>(aType)];
@@ -386,6 +464,10 @@ struct ApplicationResultInput {
     /// Positions in mProcessingDiagnostics of the errors that an exclusion resolved. They stay
     /// errors but no longer block.
     std::vector<std::size_t> mResolvedDiagnostics;
+    /// Positions in mMergeDiagnostics of the class errors that the classification stage took
+    /// over. They stay errors but no longer block; the classification stage gives its own.
+    std::vector<std::size_t> mResolvedMergeDiagnostics;
+    std::vector<ExcludedItemInput> mExcludedItems;
     /// Indexed by ReportType.
     std::array<ReportInput, 4> mReports;
 };

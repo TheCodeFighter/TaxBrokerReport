@@ -16,9 +16,10 @@ namespace taxbroker {
 namespace {
 
 /// A failure question takes a failure choice or a cancel, a loss question `no`, `yes` or a cancel,
-/// and a ratio question a ratio or a cancel, or, when its rows are on different dates, that they
-/// are separate events. A question without question data takes no answer
-/// until its processor defines one, because all questions of its type would be the same question.
+/// a classification question `capital_gains`, an exclusion or a cancel, and a ratio question a
+/// ratio or a cancel, or, when its rows are on different dates, that they are separate events. A
+/// question without question data takes no answer until its processor defines one, because all
+/// questions of its type would be the same question.
 [[nodiscard]] bool fitsQuestion(const QuestionData& aData, const AnswerValue& aAnswer) {
     const auto fits = [&aAnswer](const auto& aData) {
         using Data = std::decay_t<decltype(aData)>;
@@ -36,6 +37,12 @@ namespace {
         {
             return std::holds_alternative<NoOtherActivityAnswer>(aAnswer) ||
                    std::holds_alternative<OtherActivityAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
+        else if constexpr (std::is_same_v<Data, TaxClassificationQuestion>)
+        {
+            return std::holds_alternative<CapitalGainsAnswer>(aAnswer) ||
+                   std::holds_alternative<ExcludeFromReportsAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
         else

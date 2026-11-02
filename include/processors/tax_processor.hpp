@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace taxbroker {
@@ -36,6 +37,15 @@ struct ReportingYearLedger {
     std::vector<StatementEventReference> mLossAnalysisEvents;
     /// Source sales only. Classification and unresolved errors still control final no_data status.
     bool mHasSelectedYearSales{};
+    /// The ISINs that a tax rule or the user left out of capital gains (set by the classification
+    /// stage); empty means none. The FIFO pool, the corporate-action stage, the loss rule, the
+    /// builder and the gates skip them.
+    std::set<Isin> mLeftOutIsins;
+
+    /// True when the instrument with aIsin is left out of capital gains.
+    [[nodiscard]] bool isLeftOut(const Isin& aIsin) const {
+        return mLeftOutIsins.contains(aIsin);
+    }
 };
 
 struct TaxProcessingResult {

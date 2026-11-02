@@ -98,7 +98,9 @@ std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
             static_assert(std::is_same_v<Answer, NoOtherActivityAnswer> ||
                           std::is_same_v<Answer, OtherActivityAnswer> ||
                           std::is_same_v<Answer, SplitRatioAnswer> ||
-                          std::is_same_v<Answer, SeparateEventsAnswer>);
+                          std::is_same_v<Answer, SeparateEventsAnswer> ||
+                          std::is_same_v<Answer, CapitalGainsAnswer> ||
+                          std::is_same_v<Answer, ExcludeFromReportsAnswer>);
             // The session accepts only a failure choice or a cancel for this question.
             throw std::logic_error("Only a failure choice or a cancel can answer this question.");
         }

@@ -714,8 +714,10 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
             else
             {
                 static_assert(std::is_same_v<Answer, SplitRatioAnswer> ||
-                              std::is_same_v<Answer, SeparateEventsAnswer>);
-                throw std::logic_error("A corporate-action answer cannot answer a loss question.");
+                              std::is_same_v<Answer, SeparateEventsAnswer> ||
+                              std::is_same_v<Answer, CapitalGainsAnswer> ||
+                              std::is_same_v<Answer, ExcludeFromReportsAnswer>);
+                throw std::logic_error("Another question's answer cannot answer a loss question.");
             }
         }
     };
@@ -742,7 +744,7 @@ LossEligibilityResult LossEligibilityChecker::check(const MergedStatement& aStat
         const auto& pool = aFifo.mIsins.at(index);
         LossEligibilityIsin isin{.mIsin = pool.mIsin, .mName = pool.mName};
 
-        if (pool.mStatus == FifoIsinStatus::Matched &&
+        if (pool.mStatus == FifoIsinStatus::Matched && !aLedger.isLeftOut(pool.mIsin) &&
             mayReachKdvp(instruments.at(index).mAssetClass))
         {
             auto sales = checkIsin(histories.at(index), pool, aLedger);

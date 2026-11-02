@@ -1404,6 +1404,7 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
       "unsafe": false
     }
   },
+  "excludedItems": [],
   "diagnostics": [
     {
       "id": "diagnostic-0001",

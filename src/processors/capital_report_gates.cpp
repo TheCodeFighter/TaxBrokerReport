@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -72,20 +73,19 @@ ProcessingDiagnostic capitalDiagnostic(DiagnosticSeverity aSeverity,
     };
 }
 
-/// The class name for a message parameter, or nothing for a class the report supports.
+/// The class name for a message parameter. Only a derivative and a private fund get a name; the
+/// other classes never get here (checkClassification handles them first).
 std::optional<std::string_view> unsupportedClassName(AssetClass aAssetClass) {
     switch (aAssetClass)
     {
     case AssetClass::Stock:
     case AssetClass::Fund:
+    case AssetClass::Bond:
+    case AssetClass::Crypto:
     case AssetClass::Unknown:
         return std::nullopt;
-    case AssetClass::Bond:
-        return "bond";
     case AssetClass::Derivative:
         return "derivative";
-    case AssetClass::Crypto:
-        return "crypto";
     case AssetClass::PrivateFund:
         return "private_fund";
     }
@@ -100,16 +100,32 @@ std::string_view gateCurrencyCode(Currency aCurrency) {
     return code.empty() ? "unknown" : code;
 }
 
-/// One error for an ISIN with a sale of the year whose class is not Stock or Fund. The sources
-/// are those of all its sales of the year; the date is the first sale's.
+/// One error for an ISIN with a sale of the year whose class has no capital treatment: a
+/// derivative or a private fund. The sources are those of all its sales of the year; the date is
+/// the first sale's. A bond or crypto instrument must already be left out by the classification
+/// stage, so one that reaches this gate is a logic error.
 void checkClassification(const TradeInstrument& aInstrument,
                          const std::vector<StatementEventReference>& aYearSales,
                          const std::vector<TradeInstrument>& aInstruments,
                          std::vector<ProcessingDiagnostic>& aDiagnostics) {
-    if (aInstrument.mAssetClass == AssetClass::Stock || aInstrument.mAssetClass == AssetClass::Fund)
+    // Shares and fund units are reported; an unknown class is asked or blocked by the
+    // classification stage, and an answered one is reported as capital gains.
+    if (aInstrument.mAssetClass == AssetClass::Stock ||
+        aInstrument.mAssetClass == AssetClass::Fund ||
+        aInstrument.mAssetClass == AssetClass::Unknown)
     {
         return;
     }
+
+    if (aInstrument.mAssetClass == AssetClass::Bond ||
+        aInstrument.mAssetClass == AssetClass::Crypto)
+    {
+        throw std::logic_error("A bond or crypto instrument must be left out by the classification "
+                               "stage.");
+    }
+
+    // Only a derivative and a private fund are left, so the name is always there.
+    const auto className = unsupportedClassName(aInstrument.mAssetClass).value();
 
     std::vector<SourceReference> sources;
 
@@ -120,29 +136,13 @@ void checkClassification(const TradeInstrument& aInstrument,
     }
 
     const auto firstSaleDate = tradeOf(aInstruments, aYearSales.front()).mMetadata.mTaxDate;
-    const auto className = unsupportedClassName(aInstrument.mAssetClass);
-
-    if (className)
-    {
-        aDiagnostics.push_back(capitalDiagnostic(
-            DiagnosticSeverity::Error,
-            ProcessingDiagnosticCode::UnsupportedTaxTreatment,
-            PipelineStage::FifoTax,
-            makeDiagnosticMessage(MessageKey::UnsupportedTaxTreatmentCapitalClass,
-                                  {textParam("assetClass", std::string{*className})}),
-            std::move(sources),
-            firstSaleDate,
-            aInstrument.mName,
-            aInstrument.mIsin));
-
-        return;
-    }
 
     aDiagnostics.push_back(
         capitalDiagnostic(DiagnosticSeverity::Error,
-                          ProcessingDiagnosticCode::TaxClassificationUnknown,
+                          ProcessingDiagnosticCode::UnsupportedTaxTreatment,
                           PipelineStage::FifoTax,
-                          makeDiagnosticMessage(MessageKey::TaxClassificationUnknownCapital),
+                          makeDiagnosticMessage(MessageKey::UnsupportedTaxTreatmentCapitalClass,
+                                                {textParam("assetClass", std::string{className})}),
                           std::move(sources),
                           firstSaleDate,
                           aInstrument.mName,
@@ -326,7 +326,7 @@ std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatemen
 
     for (std::size_t index = 0; index < instruments.size(); ++index)
     {
-        if (!yearSales.at(index).empty())
+        if (!yearSales.at(index).empty() && !aLedger.isLeftOut(instruments.at(index).mIsin))
         {
             checkClassification(instruments.at(index),
                                 yearSales.at(index),

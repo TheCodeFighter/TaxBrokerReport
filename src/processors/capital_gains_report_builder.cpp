@@ -352,7 +352,8 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
     // aFifo.mIsins and aLoss.mIsins follow the instruments, so an index is all three.
     for (std::size_t index = 0; index < instruments.size(); ++index)
     {
-        if (yearSales.at(index).empty())
+        // A tax rule or the user already left this instrument out; it is not an excluded ISIN.
+        if (yearSales.at(index).empty() || aLedger.isLeftOut(instruments.at(index).mIsin))
         {
             continue;
         }

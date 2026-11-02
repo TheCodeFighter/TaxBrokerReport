@@ -134,6 +134,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "corporate_action_applied";
     case ProcessingDiagnosticCode::UnsupportedCorporateAction:
         return "unsupported_corporate_action";
+    case ProcessingDiagnosticCode::TaxCategoryNotReported:
+        return "tax_category_not_reported";
     }
 
     return "unrepresentable_value";
@@ -389,6 +391,14 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return "separate_events";
         }
+        else if constexpr (std::is_same_v<Value, CapitalGainsAnswer>)
+        {
+            return "capital_gains";
+        }
+        else if constexpr (std::is_same_v<Value, ExcludeFromReportsAnswer>)
+        {
+            return "exclude_from_supported_reports";
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -503,6 +513,15 @@ Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
     return check;
 }
 
+/// The question data of a classification question: the ISIN, the name and the class labels.
+Json classificationCheckToJson(const TaxClassificationQuestion& aQuestion) {
+    return Json{
+        {"name", aQuestion.mName},
+        {"isin", aQuestion.mIsin},
+        {"classLabels", aQuestion.mClassLabels},
+    };
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
     // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
@@ -533,6 +552,12 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["ratioCheck"] = ratioCheckToJson(*ratio);
     }
 
+    if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aRequest.mData))
+    {
+        serialized["options"] = Json::array({"capital_gains", "exclude_from_supported_reports"});
+        serialized["classificationCheck"] = classificationCheckToJson(*classification);
+    }
+
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
     {
         Json investments = Json::array();
@@ -552,6 +577,67 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["options"] = Json::array({toString(FailureResolution::ExcludeFailedInstruments),
                                              toString(FailureResolution::FailReport)});
         serialized["investments"] = std::move(investments);
+    }
+
+    return serialized;
+}
+
+std::string_view toString(ExcludedCategory aCategory) {
+    switch (aCategory)
+    {
+    case ExcludedCategory::Bond:
+        return "bond";
+    case ExcludedCategory::Crypto:
+        return "crypto";
+    case ExcludedCategory::Unknown:
+        break;
+    }
+
+    return "unknown";
+}
+
+std::string_view toString(ExcludedReason aReason) {
+    switch (aReason)
+    {
+    case ExcludedReason::DebtSecurity:
+        return "debt_security";
+    case ExcludedReason::CryptoNotReported:
+        return "crypto_not_reported";
+    case ExcludedReason::UserChoice:
+        return "user_choice";
+    }
+
+    return "user_choice";
+}
+
+/// An item left out of the supported reports: its identity, category, reason, whether a tax rule
+/// or the user chose it, the original class labels, the bond units and the safe sources.
+Json excludedItemToJson(const ExcludedItem& aItem) {
+    Json serialized{
+        {"name", aItem.mName},
+        {"isin", aItem.mIsin},
+        {"category", toString(aItem.mCategory)},
+        {"reason", toString(aItem.mReason)},
+        {"basis", aItem.isTaxRule() ? "tax_rule" : "user_choice"},
+        {"classLabels", aItem.mClassLabels},
+        {"sources", sourcesToJson(aItem.mSources)},
+        {"diagnosticIds", aItem.mDiagnosticIds},
+    };
+
+    if (aItem.mBond)
+    {
+        Json bond{
+            {"boughtUnits", unitsString(aItem.mBond->mBoughtUnits)},
+            {"soldUnits", unitsString(aItem.mBond->mSoldUnits)},
+            {"maturedUnits", unitsString(aItem.mBond->mMaturedUnits)},
+        };
+
+        if (aItem.mBond->mMaturityDate)
+        {
+            bond["maturityDate"] = isoDate(*aItem.mBond->mMaturityDate);
+        }
+
+        serialized["bond"] = std::move(bond);
     }
 
     return serialized;
@@ -593,6 +679,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aDecision.mData))
     {
         serialized["ratioCheck"] = ratioCheckToJson(*ratio);
+    }
+
+    if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aDecision.mData))
+    {
+        serialized["classificationCheck"] = classificationCheckToJson(*classification);
     }
 
     serialized["answer"] = answerToJson(aDecision.mAnswer);
@@ -688,11 +779,19 @@ std::string serializeApplicationResultJson(const ApplicationResult& aResult, int
                    std::back_inserter(decisions),
                    decisionToJson);
 
+    Json excludedItems = Json::array();
+
+    std::transform(aResult.mExcludedItems.begin(),
+                   aResult.mExcludedItems.end(),
+                   std::back_inserter(excludedItems),
+                   excludedItemToJson);
+
     const Json response{
         {"schemaVersion", kApplicationResultSchemaVersion},
         {"status", toString(aResult.mStatus)},
         {"runRevision", aResult.mRunRevision},
         {"reports", std::move(reports)},
+        {"excludedItems", std::move(excludedItems)},
         {"diagnostics", std::move(diagnostics)},
         {"requests", std::move(requests)},
         {"decisions", std::move(decisions)},

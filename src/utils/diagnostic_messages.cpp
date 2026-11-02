@@ -177,8 +177,18 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::UnsupportedTaxTreatmentPrivateMarketSkipped,
                       "unsupported_tax_treatment.private_market_skipped",
                       {}},
+    MessageDefinition{MessageKey::TaxClassificationUnknownConfirmationRequired,
+                      "tax_classification_unknown.confirmation_required",
+                      {}},
     MessageDefinition{
-        MessageKey::TaxClassificationUnknownCapital, "tax_classification_unknown.capital", {}},
+        MessageKey::TaxClassificationUnknownCancelled, "tax_classification_unknown.cancelled", {}},
+    MessageDefinition{MessageKey::TaxCategoryNotReportedDebtSecurity,
+                      "tax_category_not_reported.debt_security",
+                      {}},
+    MessageDefinition{
+        MessageKey::TaxCategoryNotReportedCrypto, "tax_category_not_reported.crypto", {}},
+    MessageDefinition{
+        MessageKey::TaxCategoryNotReportedUserChoice, "tax_category_not_reported.user_choice", {}},
     MessageDefinition{
         MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", kCurrency},
     MessageDefinition{MessageKey::LossEligibilityUnresolvedConfirmationRequired,

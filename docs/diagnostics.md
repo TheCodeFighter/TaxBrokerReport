@@ -78,12 +78,14 @@ The core of this contract is implemented in `ApplicationResultBuilder`
 adapters, report scope, deterministic order and IDs, report and overall status, and the JSON. The
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
 (`include/taxbroker/decision_session.hpp`); of the nine request types only the two
-failure-resolution types, the loss question and the ratio question have question data and answers
-so far. The capital failure choice is applied (`CapitalFailureResolution`,
-`include/processors/capital_failure_resolution.hpp`): see "Choosing whether to exclude failed
-capital ISINs". The other-interest failure choice, developer mode, `excludedItems`, the income
-summaries and XML failure isolation are not part of it yet. Until they exist,
-`excludedInvestments` is an empty list for other interest, and `unsafe` is `false`.
+failure-resolution types, the loss question, the ratio question and the classification question of
+a trade investment have question data and answers so far. The capital failure choice is applied
+(`CapitalFailureResolution`, `include/processors/capital_failure_resolution.hpp`): see "Choosing
+whether to exclude failed capital ISINs". The classification of trade investments is applied
+(`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
+`excludedItems`". The other-interest failure choice, developer mode, the income summaries and XML
+failure isolation are not part of it yet. Until they exist, `excludedInvestments` is an empty list
+for other interest, and `unsafe` is `false`.
 
 ### Report result
 
@@ -530,7 +532,10 @@ rules:
   `corporate_action_ambiguous` error with the key `corporate_action_ambiguous.cancelled` and no
   request, with the same result; for a question before a sale up to 31 December with too few
   units (`earlierSaleDate`), the sale gets the `incomplete_history` error instead, because a
-  cancel there means that purchases are missing. An unanswered
+  cancel there means that purchases are missing. For the classification question, the investment
+  gets a blocking `tax_classification_unknown` error with the key
+  `tax_classification_unknown.cancelled` and no request; the error belongs to its investment, so the
+  capital failure question then lists it, and a cancel is never an exclusion. An unanswered
   request stays open: the session never answers anything by itself.
 - **Memory only.** Answers are never written to disk or browser storage and are gone when the app
   closes. Only the taxpayer profile may be saved (#278).
@@ -565,6 +570,12 @@ recorded ratio answer lists the same `ratioCheck` and
 `"answer":{"newShares":2,"oldShares":1,"effectiveDate":"2024-06-01","confirmedUnits":"6.00000000"}`
 with the reduced numbers, `"answer":"separate_events"` or `"answer":"cancel"`.
 
+A classification request has `"options":["capital_gains","exclude_from_supported_reports"]` and
+`"classificationCheck"` with `name`, `isin` and `classLabels` (the class label of each row as the
+files gave it, `""` for a blank class, sorted without repeats). A recorded classification answer
+lists the same `classificationCheck` and `"answer":"capital_gains"`,
+`"exclude_from_supported_reports"` or `"cancel"`.
+
 A request type whose processor does not define its question data yet cannot be answered, not even
 cancelled: without question data, all its questions would be the same question, and one answer
 would reach questions the user never saw. The builder rejects question data that does not fit the
@@ -577,7 +588,7 @@ request type, and a failure-resolution question without an investment.
 | `corporate_action_ratio_required` | One request per ISIN, for the first action its pool reached: the ISIN, its name, the effective date, every source record of the action (broker, transaction ID, read-only quantity field; rows of different brokers on one date are one action) the open units of all brokers just before it, and the range of effective dates that keep them. Also asked for a split row after 31 December that a December loss window reaches, and for split rows of two brokers at most 10 days apart (`askSameEvent`, answer `separate_events` when they are two splits). Answer with positive, different whole-number new/old shares, the effective date from the announcement within the range and the confirmed previewed position, or cancel. The GUI and the CLI also accept the shares before and after and turn them into the two numbers; they warn about a reduced number above 1000. |
 | `quantity_correction_required` | Source event, original/proposed quantity, evidence, difference, resulting position and EUR impact/budget; answer with confirmed proposed quantity or a validated correction and supporting assertion. |
 | `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units in the units of the sale) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
-| `tax_classification_required` | Investment/event identity, current category, safe sources, permitted treatment choices and treatment-specific missing fields; answer with classification, required facts, or explicit exclusion and reason. |
+| `tax_classification_required` | One request per trade investment whose asset class is missing, not recognized or conflicting: the ISIN, its name and the class labels of its rows (question data), with the options `capital_gains` and `exclude_from_supported_reports` and no preselected choice; answer with one of them or cancel. Income events and treatment-specific missing fields for them are not asked yet. |
 | `income_details_required` | Income items and missing or conflicting payer/catalogue, country, gross amount, withholding jurisdiction/status, payment evidence or requested treaty-claim facts, including external deposit interest; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
 | `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
@@ -593,6 +604,54 @@ evidence; company-list membership alone cannot establish it. Capital and other-i
 exclusions use each report's own `excludedInvestments`. A classification request does not override malformed source rows, missing
 instrument identity or undocumented tax calculations. A known unsupported category can be shown
 without blocking unrelated reports; an unknown category cannot be silently assigned no scope.
+
+## Classification and `excludedItems`
+
+The classification stage runs before FIFO, from the asset class of each trade investment; it never
+reads a name or a symbol. Shares and fund units stay in capital gains. A bond and a crypto
+instrument are left out by a tax rule; an unknown class asks the question above; a derivative and
+a private fund are not changed by it (the capital gates give their `unsupported_tax_treatment`
+error, and the capital failure question can leave them out into `excludedInvestments`).
+
+Every instrument that is left out has one entry in the top-level `excludedItems` list, sorted by
+ISIN and always present (`[]` when empty). It is distinct from the `excludedInvestments` of a
+report, which lists failed investments the user chose to leave out of one form. An entry has:
+
+- `name`, `isin`, and `classLabels` (the class labels of its rows as the files gave them);
+- `category`: `bond`, `crypto` or `unknown` (an unknown class the user left out);
+- `reason`: `debt_security`, `crypto_not_reported` or `user_choice`, and `basis`: `tax_rule` or
+  `user_choice`;
+- for a bond only, `bond` with `boughtUnits`, `soldUnits` and `maturedUnits` in the selected year
+  (units out minus units back, never added up by order) and the `maturityDate` of the first
+  maturity row, when there is one. Units are exact decimal strings with eight decimals; amounts
+  are not listed;
+- safe `sources` and the `diagnosticIds` of its `tax_category_not_reported` warning.
+
+A bond with no trade or maturity row, or a crypto instrument with no trade or corporate-action
+row, in the selected year is left out of capital gains without an entry or a warning. For a bond whose units overflow, `bond` is left out. A bond that only has maturity rows (no file gave its class) has an empty `classLabels`.
+
+```json
+{
+  "excludedItems": [
+    {
+      "name": "Example Bond",
+      "isin": "XS0000000001",
+      "category": "bond",
+      "reason": "debt_security",
+      "basis": "tax_rule",
+      "classLabels": ["BOND"],
+      "bond": {
+        "boughtUnits": "1000.00000000",
+        "soldUnits": "0.00000000",
+        "maturedUnits": "1000.00000000",
+        "maturityDate": "2025-08-14"
+      },
+      "sources": [],
+      "diagnosticIds": ["diagnostic-0003"]
+    }
+  ]
+}
+```
 
 ## Diagnostic codes
 
@@ -707,9 +766,9 @@ Additional codes and their default scope are:
 | `corporate_action_missing_position` | Error for capital gains on one action: the files show no units just before it on its row date. No question is asked. |
 | `corporate_action_unrepresentable` | Error for capital gains on one action that cannot be applied: an overflow, a lot that would become 0 units, or, with key `.rounding_budget`, rounding that reaches EUR 0.01 for the ISIN. The pool stops at the action. With key `.unit_value` (stage `fifo_tax`, on the first sale that uses it) the value of one unit after a split does not fit the `F4` of a Doh-KDVP row; no pool stops, but the ISIN gets no list. |
 | `unsupported_corporate_action` | Error for capital gains on one action that needs tax rules the app does not have; key `.merger` for a merger row. No question is asked. |
-| `tax_classification_unknown` | Error for the potentially affected forms, with a classification request while resolvable. |
+| `tax_classification_unknown` | Error from the classification stage (never from the capital gates) for capital gains on an investment with an unknown asset class: key `.confirmation_required` while its classification request is open (linked to it), `.cancelled` after a cancel (no request). The parse and merge errors about the class of that investment stay errors but no longer block. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
-| `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion. |
+| `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion, one per excluded item of capital gains: key `.debt_security` (a bond), `.crypto`, or `.user_choice` (the user left an unknown-class investment out). Its sources and date are those of the rows that gave the entry: trade, corporate-action or maturity rows in the selected year, or for an unknown class every trade and action row up to 31 December. |
 | `income_details_missing` | Error for the affected income form, with a details request while resolvable. |
 | `deposit_interest_external_total_unchecked` | Warning for bank interest; remind the user of qualifying interest at other banks. |
 
@@ -719,9 +778,9 @@ always keep their original severity. New application rules do not change the mea
 parser codes.
 
 The CLI report command already emits `unsupported_tax_treatment`,
-`tax_classification_unknown`, `missing_exchange_rate` and `corporate_action_not_applied` for
-capital gains, without requests (the requests come with exchange-rate requests and tax
-classification). It also runs the 30-day loss rule and the corporate-action stage in a
+`tax_classification_unknown` (with its request), `tax_category_not_reported`,
+`missing_exchange_rate` and `corporate_action_not_applied` for capital gains, without requests
+except the classification request (the others come with exchange-rate requests). It also runs the 30-day loss rule and the corporate-action stage in a
 `DecisionSession` and asks their questions in the terminal; with `--no-input`, or when the input
 ends, they stay open and the summary lists them. `unsupported_tax_treatment` is also a non-blocking warning for
 each skipped private-market event of the selected year; a rejected private-market row or a merger

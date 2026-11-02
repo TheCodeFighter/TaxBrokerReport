@@ -666,9 +666,9 @@ Classify the legal instrument and income, not just the broker name or its CSV ca
 | Qualifying Slovenian/EU bank-deposit interest | Shared annual allowance and Doh-DHO when a return is required. |
 | IBKR cash interest | Other-interest category in Doh-Obr; no bank-deposit allowance. |
 | Ordinary bond coupons | Bond-interest category in Doh-Obr, subject to the settled Slovenian withholding rule below; separate from broker cash interest in the model and summary. |
-| Ordinary debt-security disposals | No taxable capital gain or deductible capital loss in Doh-KDVP; retain the source and explain the exclusion. A Trade Republic bond maturity, its cancellation and its payout (also a corrected one) are parsed as information-only redemption events (units out or back, amount paid or taken back, tax) and are never a sale (`architecture.md`, "Trade Republic bond rows"). Bonds are a separate category outside capital gains: the app lists every bond, and only the bond interest (coupons) is reported, in Doh-Obr. |
+| Ordinary debt-security disposals | No taxable capital gain or deductible capital loss in Doh-KDVP; retain the source and explain the exclusion. A bond is a *rule exclusion*: every bond with a purchase, sale or maturity row in the selected year gets a warning (`tax_category_not_reported`, key `.debt_security`) and an entry in `excludedItems` with the units bought, sold and matured and the maturity date, and it is skipped by FIFO, the corporate-action stage, the loss rule and the Doh-KDVP builder. A Trade Republic bond maturity, its cancellation and its payout (also a corrected one) are parsed as information-only redemption events (units out or back, amount paid or taken back, tax) and are never a sale (`architecture.md`, "Trade Republic bond rows"). Matured units are added up by sum (units out minus units back), never by row order. Bonds are a separate category outside capital gains: the application lists every bond and reports only the bond interest (coupons), in Doh-Obr. |
 | Discount or zero-coupon debt | Interest may arise on disposal or redemption; require instrument terms and acquisition data. Until these calculations are implemented, return `unsupported_tax_treatment` rather than silently excluding possible interest. |
-| Ordinary private crypto disposals | Exclude from the supported capital return with a year-specific explanation based on verified FURS guidance; business activity and tokens qualifying as securities or derivatives are not covered by this exclusion. |
+| Ordinary private crypto disposals | Left out of Doh-KDVP for every year: crypto never belongs in this form. Every crypto instrument with a trade or corporate-action row in the selected year gets a warning (`tax_category_not_reported`, key `.crypto`: crypto is not reported by this application and the user should check whether a separate crypto return applies) and an entry in `excludedItems`; it is skipped by every capital stage. The tax treatment of crypto disposals depends on the year and is unconfirmed here; confirm it against the official FURS guidance (below) before relying on it. Business activity and tokens qualifying as securities or derivatives are not covered by this exclusion. |
 | Derivatives | Different tax-return rules; `unsupported_tax_treatment` until a dedicated processor and form are implemented. |
 | Unknown instruments and private-market events | Ask for classification and required facts; cash movements alone do not establish a purchase quantity or cost basis. |
 | Broker benefits (saveback, stock perks, bonuses, referrals) | Information only: no units, lot, classification request or form. Purchase rows come only from trades (date, units, unit price); a benefit never lowers a purchase value. eDavki applies the standard costs (*normirani stroški*) itself, so the application never writes them. |
@@ -690,6 +690,33 @@ sources, proposed treatment if justified, and `missingFields`. Offer `capital_ga
 requires a subtype such as `broker_cash` or `bond_coupon`. No option is preselected for an unknown
 instrument. Classification does not let the user choose an arbitrary tax rate or claim an exemption.
 
+**Implemented for trade investments.** A trade investment whose asset class is missing, not
+recognized or different between rows (or files) gets one question, with one option from
+`capital_gains` and `exclude_from_supported_reports` and no preselected choice. The question data
+is the ISIN, the name and the class labels of its rows as the files gave them (a blank label stays
+blank), sorted without repeats; another label set is another question. It is asked for every
+unknown investment with a trade or corporate action up to 31 December of the selected year, a sale
+or not, because its class error blocks capital gains either way. Income events have no question
+yet.
+
+- `capital_gains` keeps the investment in FIFO and Doh-KDVP as shares or fund units, and the answer
+  is listed among the recorded decisions.
+- `exclude_from_supported_reports` leaves it out of every capital stage and lists it in
+  `excludedItems` with the reason `user_choice` and its original class labels; a warning
+  `tax_category_not_reported` (key `.user_choice`) tells the user to report it themselves if it is
+  taxable.
+- `cancel` is not an exclusion: a blocking `tax_classification_unknown` error (key `.cancelled`)
+  stays, and the capital failure question lists it.
+- Until it is answered, the question's own blocking error (key `.confirmation_required`) is linked
+  to it, so capital gains is `needs_input`, while the investment's loss and ratio questions are
+  still asked.
+
+The parse and merge errors about the class of such an investment (a missing, unrecognized or
+conflicting class on a row it was built from, and the merger's class conflict of its ISIN) stay in
+the result as errors but no longer block: this stage gives the blocking error. An unknown class
+of an investment with nothing up to 31 December has no question and no blocking error. Every other
+parse or merge error still blocks.
+
 The missing-field list is specific to the selected treatment: for capital it includes an ISIN,
 acquisition/disposal dates, units and unit values/currencies; for income it includes gross income,
 receipt date, foreign tax and its currency, payer identity and country, and source country. A known
@@ -701,6 +728,8 @@ Apply classification to the complete instrument history only when the confirmed 
 same; heterogeneous income events require event-specific choices. Store the decision
 and original classification in the current run. Explicit exclusions stay visible in a separate
 `excludedItems` list with sources, category and reason; they never masquerade as a processed event.
+A bond and a crypto instrument are listed there too, with the basis `tax_rule`; an unknown-class
+exclusion has the basis `user_choice`.
 This list is distinct from per-report capital and other-interest `excludedInvestments`. A known outside-scope category gives a
 warning without blocking unrelated reports. Unanswered unknown classifications leave every
 potentially affected report `needs_input`. Cancellation alone is not an exclusion or a successful

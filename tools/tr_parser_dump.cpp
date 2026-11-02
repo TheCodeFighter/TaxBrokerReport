@@ -989,6 +989,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "CorporateActionApplied";
     case ProcessingDiagnosticCode::UnsupportedCorporateAction:
         return "UnsupportedCorporateAction";
+    case ProcessingDiagnosticCode::TaxCategoryNotReported:
+        return "TaxCategoryNotReported";
     }
 
     return "Unknown";

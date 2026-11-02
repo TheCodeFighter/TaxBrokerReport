@@ -10,6 +10,7 @@
 #include "processors/corporate_actions.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "processors/loss_eligibility.hpp"
+#include "processors/tax_classifier.hpp"
 #include "processors/tax_processor.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
@@ -122,6 +123,10 @@ Questions:
     split after it took effect. So do a split row in January within 30 days after a sale
     at a loss in December, and split rows of two brokers at most 10 days apart, which you
     first confirm as one split.
+  - An asset class that is missing, not recognized or differs between rows (the question
+    names the labels in the files): capital: report the investment as shares or fund
+    units. exclude: leave it out of the reports; the summary lists it under "Excluded
+    items" and you report it yourself if it is taxable. This question comes first.
   - Investments you could leave out: when each problem that blocks the report is tied to a
     single investment sold in the year (one or several, for example earlier purchases are
     missing), the command asks one question that lists them all. exclude: write Doh-KDVP
@@ -135,8 +140,15 @@ Questions:
   lists them. The answers are used only in this run and are never saved, so the next run
   asks again.
 
+Left out by a tax rule (not in the XML, a warning and an entry under "Excluded items" in
+the summary):
+  - Bonds: debt securities are no capital gain. Only their interest is reported (Doh-Obr,
+    not made yet). The summary shows the units bought, sold and matured in the year.
+  - Crypto assets: they are not part of Doh-KDVP. Check whether a separate crypto return
+    applies to you.
+
 The report is blocked (no XML) when an investment sold in the year:
-  - is crypto, a private fund, a bond or a derivative, or has an unknown asset class;
+  - is a private fund or a derivative;
   - has a split or reverse split up to 31 December whose ratio is not answered, a merger,
     or split rows of two brokers at most 10 days apart that are not one split. An answered
     split is applied;
@@ -147,9 +159,10 @@ The report is blocked (no XML) when an investment sold in the year:
   - has a trade that is not in EUR;
   - has a question that is open or was cancelled.
 It is also blocked when a file cannot be read, when a trade or corporate-action row of
-any file is rejected, when two files disagree about the same trade or about the asset
-class of an investment, or when a value does not fit the form (for example a postCode
-that is too long).
+any file is rejected, when two files disagree about the same trade, when the asset class
+question of an investment with a row up to 31 December is open or cancelled (sold in the
+year or not), or when a value does not fit the form (for example a postCode that is too
+long).
 
 Skipped:
   - Private-market events (Trade Republic types PRIVATE_MARKET_BUY and
@@ -162,7 +175,7 @@ Skipped:
     REFERRAL) are information only. They are in no form and never change a purchase value.
   - Bond maturities and their corrections (Trade Republic FINAL_MATURITY,
     FINAL_MATURITY_CANCELLED and REDEMPTION rows) are information only. Bond sales and
-    maturities are in no form.
+    maturities are in no form; the summary adds them up per bond.
   - Dividends and interest: their forms (Doh-Div, Doh-DHO, Doh-Obr) are not made yet.
 
 Exit codes:
@@ -475,11 +488,18 @@ void writeDiagnostic(std::ostream& aOut,
 
     aOut << "\n    " << aDiagnostic.mMessage << '\n';
 
-    // An error that does not block was resolved by the user leaving its investment out.
+    // An error that does not block was resolved by the user leaving its investment out, unless it
+    // is a class error of a file row that the classification of its investment took over.
     if (aDiagnostic.mSeverity == DiagnosticSeverity::Error && !aDiagnostic.mBlocking &&
         affectsCapital(aDiagnostic))
     {
-        aOut << "    Resolved by your answer: the investment is left out of the XML.\n";
+        const bool isFileError = aDiagnostic.mStage == PipelineStage::Parsing ||
+                                 aDiagnostic.mStage == PipelineStage::Merging;
+
+        aOut << (isFileError
+                     ? "    Handled by the classification of its investment: see the question or "
+                       "the excluded items.\n"
+                     : "    Resolved by your answer: the investment is left out of the XML.\n");
     }
 }
 
@@ -746,6 +766,67 @@ void writeExcluded(std::ostream& aOut, const RunOutcome& aOutcome) {
     aOut << '\n';
 }
 
+std::string_view categoryText(ExcludedCategory aCategory) {
+    switch (aCategory)
+    {
+    case ExcludedCategory::Bond:
+        return "bond";
+    case ExcludedCategory::Crypto:
+        return "crypto";
+    case ExcludedCategory::Unknown:
+        break;
+    }
+
+    return "unknown class";
+}
+
+std::string_view reasonText(ExcludedReason aReason) {
+    switch (aReason)
+    {
+    case ExcludedReason::DebtSecurity:
+        return "tax rule: debt security, only its interest is taxable";
+    case ExcludedReason::CryptoNotReported:
+        return "tax rule: crypto is not part of Doh-KDVP";
+    case ExcludedReason::UserChoice:
+        break;
+    }
+
+    return "your choice";
+}
+
+/// The instruments left out by a tax rule or by the user's answer, only when there is one.
+void writeExcludedItems(std::ostream& aOut, const ApplicationResult& aResult) {
+    if (aResult.mExcludedItems.empty())
+    {
+        return;
+    }
+
+    aOut << "Excluded items (left out of the reports, not in the XML): "
+         << aResult.mExcludedItems.size() << '\n';
+
+    for (const auto& item : aResult.mExcludedItems)
+    {
+        aOut << "  " << investmentText(item.mIsin, item.mName) << ": "
+             << categoryText(item.mCategory) << ", " << reasonText(item.mReason);
+
+        if (item.mBond)
+        {
+            aOut << "; bought " << unitsText(item.mBond->mBoughtUnits) << ", sold "
+                 << unitsText(item.mBond->mSoldUnits) << ", matured "
+                 << unitsText(item.mBond->mMaturedUnits) << " units";
+
+            if (item.mBond->mMaturityDate)
+            {
+                aOut << ", maturity " << isoDate(*item.mBond->mMaturityDate);
+            }
+        }
+
+        aOut << '\n';
+    }
+
+    aOut << '\n';
+}
+
 void writeLongHeld(std::ostream& aOut, const RunOutcome& aOutcome) {
     aOut << "Units past the holding period (tax free, not in the XML): "
          << aOutcome.mBuilt.mLongHeld.size() << '\n';
@@ -808,6 +889,10 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         {
             return aQuestion.mName;
         }
+        else if constexpr (std::is_same_v<Question, TaxClassificationQuestion>)
+        {
+            return aQuestion.mName;
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -861,6 +946,7 @@ std::string summaryText(const RunOutcome& aOutcome) {
     writeInvestments(out, aOutcome);
     out << '\n';
     writeExcluded(out, aOutcome);
+    writeExcludedItems(out, aOutcome.mResult);
     writeLongHeld(out, aOutcome);
     out << '\n';
     writePrivateMarketEvents(out, aOutcome);
@@ -955,6 +1041,42 @@ std::vector<Isin> blockedIsins(const CapitalGainsBuildResult& aBuilt) {
     return isins;
 }
 
+/// True when an instrument that a tax rule or the user left out has a sale in the year, or an
+/// excluded bond has matured units. Only then did the year have a disposal that is not reported.
+bool hasLeftOutDisposal(const MergedStatement& aStatement,
+                        const ReportingYearLedger& aLedger,
+                        const std::vector<ExcludedItemInput>& aExcludedItems) {
+    const auto& instruments = aStatement.mPresentation.mTradeInstruments;
+
+    for (const auto& instrument : instruments)
+    {
+        if (!aLedger.isLeftOut(instrument.mIsin))
+        {
+            continue;
+        }
+
+        const auto& trades = instrument.mTransactions;
+        const bool hasSale =
+            std::any_of(trades.begin(), trades.end(), [&aLedger](const auto& aTrade) {
+                const auto date = aTrade.mMetadata.mTaxDate;
+
+                return aTrade.mTradeSide == TradeSide::Sell && date >= aLedger.mYearStart &&
+                       date <= aLedger.mYearEnd;
+            });
+
+        if (hasSale)
+        {
+            return true;
+        }
+    }
+
+    return std::any_of(aExcludedItems.begin(),
+                       aExcludedItems.end(),
+                       [](const ExcludedItemInput& aInput) {
+                           return aInput.mItem.mBond && aInput.mItem.mBond->mMaturedUnits != 0;
+                       });
+}
+
 /// The stage results of a calculation that the summary needs beside the application result.
 struct CalculatedRun {
     CapitalGainsBuildResult mBuilt;
@@ -971,9 +1093,15 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
                                        const TaxProcessingResult& aPrepared,
                                        RunDecisions& aDecisions,
                                        std::optional<CalculatedRun>& aCalculated) {
-    // The year was checked with the options, so the ledger is always there.
-    const auto& ledger = aPrepared.mLedger.value();
+    // The year was checked with the options, so the ledger is always there. The classification
+    // comes first: the instruments it leaves out are not part of the capital stages.
+    auto ledger = aPrepared.mLedger.value();
     const auto& statement = aPrepared.mMerged.mStatement;
+    auto classification =
+        TaxClassifier::classify(statement, ledger, aPrepared.mMerged.mDiagnostics, aDecisions);
+
+    ledger.mLeftOutIsins = classification.mLeftOutIsins;
+
     auto pools = matchCapitalPools(statement, ledger, aDecisions);
     auto& fifo = pools.mFifo;
     auto& actions = pools.mActions;
@@ -989,6 +1117,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     };
     auto& processing = input.mProcessingDiagnostics;
 
+    appendClassification(input, std::move(classification));
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
     appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
     appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));
@@ -1040,7 +1169,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
         {
             // When investments were left out, nothing is left to report, which is not the same
             // as having no sale.
-            if (excluded.empty())
+            if (excluded.empty() && !hasLeftOutDisposal(statement, ledger, input.mExcludedItems))
             {
                 capital.mNoDataReason = NoDataReason::NoSelectedYearDisposals;
             }
