@@ -526,7 +526,7 @@ invalid value.
 | Corporate-action-adjusted Doh-KDVP unit values (`F4`) | 4 to 8 decimals | Exact lot basis over the units after the action, rounded once to eight decimals, halves away from zero (`fifo.md`); remove trailing zeros only down to four decimals. |
 | Dividend value and foreign tax | 2 decimals | Round `Money` once at XML output. |
 | Doh-DHO and Doh-Obr income and foreign tax | 2 decimals | Round `Money` once at the documented form-row boundary. |
-| Doh-DHO and Doh-Obr totals | 2 decimals | Sum the already emitted two-decimal row values. |
+| Doh-DHO totals and Doh-Obr summary totals | 2 decimals | Sum the already emitted two-decimal row values. The Doh-Obr XML has no total element; the total is a summary value only. |
 
 The current official Doh-KDVP schema accepts up to eight decimal places for quantities, stock, and
 unit values. The official FURS display transform shows these fields with at least four decimal

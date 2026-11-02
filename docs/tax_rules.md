@@ -812,6 +812,102 @@ work. Start with synthetic broker-neutral fixtures, official form instructions a
 XSD. Track real broker-export and eDavki acceptance verification separately when no live bond
 example is available; passing synthetic tests must not be described as live verification.
 
+## Doh-Obr form contract
+
+Checked on 2 November 2026 against the files FURS publishes on the eDavki Doh-Obr page (see
+"Sources"). Only the schema and the instructions were read. No eDavki import was done, and no
+real bond export was available, so this section records what the official files say, not how
+eDavki behaves. Where the files are silent or disagree the point is marked unconfirmed.
+
+**Schema.** `resources/xml/schemas/Doh_Obr_2.xsd`, SHA-256
+`3fd134e0a4ccf6af58d820f69a52b267c5a5f0f5434451d4ad9808201b1891a6`, namespace
+`http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd`. It imports `EDP-Common-1.xsd`
+(`resources/xml/schemas/`, identical to the file online). Version 1 of the schema has other
+`Interest` fields and there is no version 3. The schema makes every element optional and has no
+total; the instructions make most fields required, so the writer enforces them (the schema alone
+accepts an empty document).
+
+**Document.** `Envelope` holds `edp:Header` (taxpayer `taxNumber` and `taxpayerType` `FO`,
+workflow), `edp:Signatures` and `body` with `edp:bodyContent` and `Doh_Obr`. `Doh_Obr` has, in
+this order: `SelfReport`, `WfTypeU`, `Notes`, `Period` (the year, for example `2025`),
+`DocumentWorkflowID` (one character: `O` original, `P` correction), `Email`, `TelephoneNumber`,
+`ResidentOfRepublicOfSlovenia` (`true`), `Country` (`SI`), then any number of `Interest` rows.
+`Reduction` is for a non-resident who claims a treaty reduction and is not written. A self-report
+uses the same header as Doh-KDVP (workflow `I`, name `SamoPrijava`), `DocumentWorkflowID` `I` and
+`SelfReport` `true`; this is unverified until a draft import. FURS requires electronic filing
+when more than five interest payments were received in the year.
+
+**One `Interest` row per payment, in this order:**
+
+| Field | Cash interest | Bond coupon | Rule |
+| --- | --- | --- | --- |
+| `Date` | Date the interest was received | Coupon payment date | `xs:date`, inside the filed year, required. |
+| `TaxNumber` | Left out | Left out | Only for a Slovenian payer (`xs:int`); both subtypes have a foreign payer. |
+| `IdentificationNumber` | Payer's tax or other identification number | Issuer's (unconfirmed, see "Still open") | At most 30 characters. Optional in general, required for a foreign payer. |
+| `Name` | Payer's name | Issuer's name | Required. |
+| `Address` | Payer's address | Issuer's address | Required. |
+| `Country` | Payer's country, two letters | Issuer's country, two letters | Required; `SI` for a Slovenian payer. |
+| `Type` | `4` (unconfirmed, see below) | `2` | Interest-type code, required. |
+| `Value` | Gross interest in EUR | Gross coupon in EUR | Two decimals, greater than zero, required. |
+| `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0` only when known to be zero), empty for a Slovenian payer. |
+| `Country2` | Payer's country | Country of the ISIN prefix | Source country, two letters, required. |
+| `ReliefStatement` | Left out | Left out | Optional, at most 100 characters; see below. |
+
+**Numbers.** `Value` and `ForeignTax` are `Decimal12_2Type`: digits only, at most 12 before the
+point and at most 2 after it, so `12.5`, `0` and `999999999999.99` pass and `-1.00`, `1.234` and
+`.5` fail. The schema accepts `0` for `Value`, but the instructions say the interest must be
+greater than zero. A foreign amount is converted at the *Banka Slovenije* rate of the receipt date
+(`calculations.md`). There is no total in the XML.
+
+**Rows the form cannot hold.** One payment is one row. A payment that is zero or negative (for
+example debit interest), or that rounds to `0.00`, is not written and is never netted against
+other rows; it is listed with a warning. Netting debit interest is a tax question and not
+decided here.
+
+**Interest-type codes.** The instructions list 1 loans; 2 debt securities, including convertible
+ones; 3 deposits at banks and savings banks not established in Slovenia or another EU state;
+4 similar financial claims against debtors; 5 finance lease; 6 life insurance; 7 fund income paid
+as interest; 8 fees, discounts, bonuses and premiums taxed as interest; 9 supplementary pension;
+11 asset-manager compensation; 12 assigned claims (the template adds 10, assessments ex officio).
+The application writes only two:
+
+- Ordinary bond coupons: code `2`.
+- Broker cash interest (Trade Republic before 6 December 2023, IBKR): code `4`. FURS says this
+  interest is not bank-deposit interest but does not name a code. Code `3` is for deposits at
+  banks, which these brokers did not hold for the customer. Unconfirmed: ask FURS
+  (`sd.fu@gov.si`) before the beta, and change the code if the answer differs.
+
+**Source country.** The instruction says the source country is visible from the ISIN. For a
+coupon the two-letter ISIN prefix fills `Country2` and is shown to the user. A prefix that is not
+a country (`XS`, `EU`) needs `income_details_required`. The prefix never fills the payer's
+country, residence or tax treatment (see "Payer lists, settled Slovenian tax and foreign-tax
+relief"). For cash interest `Country2` is the payer's country from the verified payer data.
+
+**Payer facts.** `Name`, `Address`, `Country` and `IdentificationNumber` are required for a
+foreign payer. They come from the verified payer resource or from the user, each with a source.
+A missing fact gives `income_details_required` for the form, not an empty element.
+
+**Foreign tax.** A blank source tax means unknown, so the row needs `ForeignTax` from the user:
+`income_details_required`. For broker interest the question is asked once per broker and year
+("no tax was withheld on this interest"), and a yes writes `0` on every row. The form
+instructions require evidence for a foreign-tax deduction (amount, base, final and actually
+paid); the result lists it, and XML generation does not mean it was attached.
+
+**Treaty claim.** The XML instructions describe `ReliefStatement` as `DA` or `NE`; the form
+instructions describe the treaty paragraph and article. They disagree, so the element is not
+written and no exemption is claimed. Unconfirmed: ask FURS together with the type code.
+
+**Still open.** The type code for broker cash interest; the content of `ReliefStatement`; who the
+payer of a bond coupon is (the issuer or the paying broker); the self-report encoding; a real bond
+export for the coupon and maturity shapes; an eDavki draft import of a file with both subtypes
+(`verification.md`).
+
+`tests/test_data/obr/Doh-Obr_2025_example.xml` is a synthetic file with one row of each subtype,
+checked against the schema by a unit test. This is a schema check only. Row 1 is cash interest:
+`Date` `2025-03-31`, `Type` `4`, `Value` `12.34`, `ForeignTax` `0`, payer and source country `DE`.
+Row 2 is a bond coupon: `Date` `2025-06-15`, `Type` `2`, `Value` `25.00`, `ForeignTax` `3.75`,
+payer and source country `FR`.
+
 ## Required processor tests
 
 Tests based on this document must prove that:
@@ -911,4 +1007,8 @@ Tests based on this document must prove that:
 - [eDavki dividend return instructions, including foreign-tax evidence and treaty claims](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_div.n.sl.pdf)
 - [FURS international taxation and treaty sources](https://www.fu.gov.si/davki_in_druge_dajatve/podrocja/mednarodno_obdavcenje)
 - [eDavki other-interest return (Doh-Obr)](https://edavki.durs.si/EdavkiPortal/OpenPortal/CommonPages/Opdynp/PageD.aspx?category=odmera_dohodnine_od_drugih_obresti)
+- [Doh-Obr XML instructions](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_obr_xml.n.sl.pdf)
+- [Doh-Obr XML template with the code lists](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_obr_xml.i.xlsx)
+- [Doh-Obr form instructions](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_dr_obr20.n.sl.pdf)
+- [Doh-Obr schema, version 2](https://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd)
 - [FURS private crypto-trading guidance](https://www.fu.gov.si/zivljenjski_dogodki_prebivalci/trgujem_z_virtualnimi_valutami)

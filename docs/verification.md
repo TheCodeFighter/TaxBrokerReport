@@ -76,7 +76,11 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
 - **The original workflow `O` from the CLI.** eDavki imports an original return only from
   1 January to 28 February. A working self-report is expected to mean the original works too, but
   that is an expectation, not a check. Next window: 1 January to 28 February 2027, tax year 2026.
-- **Doh-Div, Doh-DHO and Doh-Obr.** Their writers do not exist yet.
+- **Doh-Div, Doh-DHO and Doh-Obr.** Their writers do not exist yet. For Doh-Obr, check in a
+  draft import of a file with one cash-interest row and one bond-coupon row: that eDavki accepts
+  the interest-type code `4` for broker cash interest (FURS names no code), the self-report
+  encoding, `ForeignTax` `0` on a foreign row, and a row without `ReliefStatement`
+  (`tax_rules.md`, "Doh-Obr form contract").
 - **S5, a loss blocked by the 30-day rule (`F10` false)** (`tests/manual/edavki/README.md`, from
   following tasks): not imported yet.
 - **S6 to S8, the rows for split lots and partly blocked losses** (#267): not imported yet. The
