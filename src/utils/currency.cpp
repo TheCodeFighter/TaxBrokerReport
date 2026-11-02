@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 
 namespace taxbroker {
@@ -49,6 +50,24 @@ Currency parseCurrencyCode(std::string_view aCode) noexcept {
     const auto found = std::ranges::find(kCurrencies, aCode, &CurrencyEntry::mCode);
 
     return found == kCurrencies.end() ? Currency::Unknown : found->mCurrency;
+}
+
+std::optional<Date> euroReplacementDate(Currency aCurrency) noexcept {
+    using namespace std::chrono;
+
+    // Croatia joined the euro area on 1 January 2023 (Council Decision (EU) 2022/1211).
+    if (aCurrency == Currency::HRK)
+    {
+        return Date{sys_days{year{2023} / January / 1}.time_since_epoch()};
+    }
+
+    // Bulgaria joined the euro area on 1 January 2026 (Council Decision (EU) 2025/1407).
+    if (aCurrency == Currency::BGN)
+    {
+        return Date{sys_days{year{2026} / January / 1}.time_since_epoch()};
+    }
+
+    return std::nullopt;
 }
 
 } // namespace taxbroker

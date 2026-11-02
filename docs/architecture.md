@@ -1041,6 +1041,10 @@ year, and no rate data ships with the app. The result is an `OfficialRateTable` 
 `ParseDiagnostic` errors.
 
 - The table is found by exact currency code and date (`find`); there is no nearby-date lookup.
+- `selectOfficialRates` (`include/processors/official_rate_selection.hpp`) takes the rate needs
+  of a run (currency, tax date, report, sources) and the table. It returns one rate per currency
+  and tax date, takes the last earlier rate (at most 4 days back) with a warning, and gives one
+  blocking `missing_exchange_rate` error per pair it cannot fill. No processor calls it yet.
 - Each `OfficialRate` keeps its value (foreign units per 1 EUR, eight decimals), observation date,
   series key, file checksum, display name and logical row.
 - A file is accepted whole or rejected whole. A rejected file adds no rate, and the other files

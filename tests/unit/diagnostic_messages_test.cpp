@@ -239,6 +239,35 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::InvalidHeaderRateFileDuplicateColumn,
          "invalid_header.rate_file_duplicate_column",
          {{"column", MessageParamKind::Text}}},
+        {MessageKey::MissingExchangeRateNoRateFile,
+         "missing_exchange_rate.no_rate_file",
+         {{"currency", MessageParamKind::Text},
+          {"date", MessageParamKind::Text},
+          {"year", MessageParamKind::Number}}},
+        {MessageKey::MissingExchangeRateNoRateOnDate,
+         "missing_exchange_rate.no_rate_on_date",
+         {{"currency", MessageParamKind::Text}, {"date", MessageParamKind::Text}}},
+        {MessageKey::MissingExchangeRateRateFileEndsEarly,
+         "missing_exchange_rate.rate_file_ends_early",
+         {{"currency", MessageParamKind::Text},
+          {"date", MessageParamKind::Text},
+          {"lastDate", MessageParamKind::Text}}},
+        {MessageKey::MissingExchangeRateReplacedByEur,
+         "missing_exchange_rate.replaced_by_eur",
+         {{"currency", MessageParamKind::Text},
+          {"date", MessageParamKind::Text},
+          {"euroDate", MessageParamKind::Text}}},
+        {MessageKey::OfficialRateFromNearbyDate,
+         "official_rate_from_nearby_date",
+         {{"currency", MessageParamKind::Text},
+          {"date", MessageParamKind::Text},
+          {"rateDate", MessageParamKind::Text}}},
+        {MessageKey::OfficialRateFileIncompleteStartsLate,
+         "official_rate_file_incomplete.starts_late",
+         {{"year", MessageParamKind::Number}, {"firstDate", MessageParamKind::Text}}},
+        {MessageKey::OfficialRateFileIncompleteEndsEarly,
+         "official_rate_file_incomplete.ends_early",
+         {{"year", MessageParamKind::Number}, {"lastDate", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -300,8 +329,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 94U);
-    ASSERT_EQ(expectedMessages().size(), 94U);
+    ASSERT_EQ(definitions.size(), 101U);
+    ASSERT_EQ(expectedMessages().size(), 101U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -335,8 +364,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 94U);
-    EXPECT_EQ(keys.size(), 94U);
+    EXPECT_EQ(ids.size(), 101U);
+    EXPECT_EQ(keys.size(), 101U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -358,7 +387,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 102U); // 94 message keys and 8 terms.
+    ASSERT_EQ(table.size(), 109U); // 101 message keys and 8 terms.
 
     std::set<std::string> tableKeys;
 

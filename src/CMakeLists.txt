@@ -27,6 +27,7 @@ add_library(taxbroker_core STATIC
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
     processors/loss_eligibility.cpp
+    processors/official_rate_selection.cpp
     processors/processing_diagnostics.cpp
     processors/statement_merger.cpp
     processors/tax_classifier.cpp

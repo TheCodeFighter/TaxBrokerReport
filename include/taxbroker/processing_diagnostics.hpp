@@ -49,6 +49,10 @@ enum class ProcessingDiagnosticCode {
     CorporateActionApplied,
     UnsupportedCorporateAction,
     TaxCategoryNotReported, ///< A warning for an instrument left out by a tax rule or the user.
+    /// A warning: no ECB rate on the tax date, so the last earlier ECB rate was used.
+    OfficialRateFromNearbyDate,
+    /// A warning: a rate file starts after the beginning or ends before the end of its year.
+    OfficialRateFileIncomplete,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

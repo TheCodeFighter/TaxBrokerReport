@@ -93,6 +93,38 @@ constexpr std::array kColumn{
 constexpr std::array kYear{
     MessageParamDefinition{"year", MessageParamKind::Number},
 };
+constexpr std::array kCurrencyDateAndYear{
+    MessageParamDefinition{"currency", MessageParamKind::Text},
+    MessageParamDefinition{"date", MessageParamKind::Text},
+    MessageParamDefinition{"year", MessageParamKind::Number},
+};
+constexpr std::array kCurrencyAndDate{
+    MessageParamDefinition{"currency", MessageParamKind::Text},
+    MessageParamDefinition{"date", MessageParamKind::Text},
+};
+constexpr std::array kCurrencyDateAndLastDate{
+    MessageParamDefinition{"currency", MessageParamKind::Text},
+    MessageParamDefinition{"date", MessageParamKind::Text},
+    MessageParamDefinition{"lastDate", MessageParamKind::Text},
+};
+constexpr std::array kCurrencyDateAndEuroDate{
+    MessageParamDefinition{"currency", MessageParamKind::Text},
+    MessageParamDefinition{"date", MessageParamKind::Text},
+    MessageParamDefinition{"euroDate", MessageParamKind::Text},
+};
+constexpr std::array kCurrencyDateAndRateDate{
+    MessageParamDefinition{"currency", MessageParamKind::Text},
+    MessageParamDefinition{"date", MessageParamKind::Text},
+    MessageParamDefinition{"rateDate", MessageParamKind::Text},
+};
+constexpr std::array kYearAndFirstDate{
+    MessageParamDefinition{"year", MessageParamKind::Number},
+    MessageParamDefinition{"firstDate", MessageParamKind::Text},
+};
+constexpr std::array kYearAndLastDate{
+    MessageParamDefinition{"year", MessageParamKind::Number},
+    MessageParamDefinition{"lastDate", MessageParamKind::Text},
+};
 constexpr std::array kYearRange{
     MessageParamDefinition{"minYear", MessageParamKind::Number},
     MessageParamDefinition{"maxYear", MessageParamKind::Number},
@@ -294,6 +326,27 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::InvalidHeaderRateFileDuplicateColumn,
                       "invalid_header.rate_file_duplicate_column",
                       kColumn},
+    MessageDefinition{MessageKey::MissingExchangeRateNoRateFile,
+                      "missing_exchange_rate.no_rate_file",
+                      kCurrencyDateAndYear},
+    MessageDefinition{MessageKey::MissingExchangeRateNoRateOnDate,
+                      "missing_exchange_rate.no_rate_on_date",
+                      kCurrencyAndDate},
+    MessageDefinition{MessageKey::MissingExchangeRateRateFileEndsEarly,
+                      "missing_exchange_rate.rate_file_ends_early",
+                      kCurrencyDateAndLastDate},
+    MessageDefinition{MessageKey::MissingExchangeRateReplacedByEur,
+                      "missing_exchange_rate.replaced_by_eur",
+                      kCurrencyDateAndEuroDate},
+    MessageDefinition{MessageKey::OfficialRateFromNearbyDate,
+                      "official_rate_from_nearby_date",
+                      kCurrencyDateAndRateDate},
+    MessageDefinition{MessageKey::OfficialRateFileIncompleteStartsLate,
+                      "official_rate_file_incomplete.starts_late",
+                      kYearAndFirstDate},
+    MessageDefinition{MessageKey::OfficialRateFileIncompleteEndsEarly,
+                      "official_rate_file_incomplete.ends_early",
+                      kYearAndLastDate},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -310,7 +363,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::InvalidHeaderRateFileDuplicateColumn) + 1,
+                  static_cast<std::size_t>(MessageKey::OfficialRateFileIncompleteEndsEarly) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 8> kTermKeys{

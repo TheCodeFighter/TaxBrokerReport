@@ -991,6 +991,10 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "UnsupportedCorporateAction";
     case ProcessingDiagnosticCode::TaxCategoryNotReported:
         return "TaxCategoryNotReported";
+    case ProcessingDiagnosticCode::OfficialRateFromNearbyDate:
+        return "OfficialRateFromNearbyDate";
+    case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
+        return "OfficialRateFileIncomplete";
     }
 
     return "Unknown";
