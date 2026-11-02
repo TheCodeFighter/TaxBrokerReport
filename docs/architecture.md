@@ -245,6 +245,8 @@ Presentation order is independent of economic processing order:
 Trade and dividend instruments use ISIN as their identity. Interest instruments use interest type
 plus ISIN when one exists; without an ISIN, interest type plus payer or instrument name is the
 available broker-neutral identity. Benefits and private-market records remain standalone events.
+A Trade Republic benefit (`BENEFITS_SAVEBACK`, `STOCKPERK`, `BONUS`, `REFERRAL`) is information
+only: it has no units, lot, classification request or form, and it never changes a purchase value.
 Names never replace an ISIN. A valid trade, action, dividend or bond coupon with a known ISIN and
 blank display name is retained with a `MissingField` warning on `name`. Presentation uses the
 earliest non-empty supplied name for the same ISIN under `StableSourceOrder`. If every supplied name
@@ -906,8 +908,11 @@ one stopped at a corporate action up to 31 December has its diagnostics from the
 stage. Only
 the first stop of a pool is reported, because FIFO stops there. A crypto purchase without a sale
 in the year keeps only its parser warning. Private-market events (`PRIVATE_MARKET_BUY`,
-`PRIVATE_MARKET_SELL`, `BONUS`) have only a cash amount, without units or a price, so they are
-skipped, a sale included; the warning keeps each one visible.
+`PRIVATE_MARKET_SELL`) have only a cash amount, without units or a price, so they are
+skipped, a sale included; the warning keeps each one visible. A row that does have shares or a
+price stays a skipped event and gets one more parser warning (`unsupported_asset_class`, key
+`unsupported_asset_class.private_market_units`, field `shares`, or `price` when only the price
+is filled), because those units are not used.
 For the same reason a rejected private-market row, or a merger error on a private-market event,
 affects no report: it stays an error and is listed in the summary, but it blocks nothing.
 When private markets are supported, these errors get the

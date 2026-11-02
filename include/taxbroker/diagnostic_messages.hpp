@@ -32,6 +32,7 @@ enum class MessageKey {
     TradeAmountMismatch,
     UnsupportedAssetClassUnrecognized,
     UnsupportedAssetClassTaxUnsupported,
+    UnsupportedAssetClassPrivateMarketUnits,
     UnsupportedAssetClassInterestMapping,
     UnsupportedRowTypeRecognized,
     UnsupportedRowTypeInterestType,

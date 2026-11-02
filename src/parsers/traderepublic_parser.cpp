@@ -45,8 +45,9 @@ constexpr auto kTransactionTypeMappings = std::array{
 
     TransactionTypeMapping{"BENEFITS_SAVEBACK", "CASH", taxbroker::RowType::Benefit},
     TransactionTypeMapping{"STOCKPERK", "CASH", taxbroker::RowType::Benefit},
+    TransactionTypeMapping{"BONUS", "CASH", taxbroker::RowType::Benefit},
+    TransactionTypeMapping{"REFERRAL", "CASH", taxbroker::RowType::Benefit},
 
-    TransactionTypeMapping{"BONUS", "CASH", taxbroker::RowType::PrivateMarket},
     TransactionTypeMapping{"PRIVATE_MARKET_BUY", "CASH", taxbroker::RowType::PrivateMarket},
     TransactionTypeMapping{"PRIVATE_MARKET_SELL", "CASH", taxbroker::RowType::PrivateMarket},
 
@@ -1394,6 +1395,20 @@ void TradeRepublicParser::parsePrivateMarketRow(
         return;
     }
 
+    // The row stays a cash-only event. Units or a price would be lost, so the row is flagged.
+    for (const auto* field : {"shares", "price"})
+    {
+        if (!aCsvRow[field].get<std::string>().empty())
+        {
+            aContext.addDiagnostic(
+                DiagnosticSeverity::Warning,
+                DiagnosticCode::UnsupportedAssetClass,
+                makeDiagnosticMessage(MessageKey::UnsupportedAssetClassPrivateMarketUnits),
+                field);
+            break;
+        }
+    }
+
     const auto isin = aCsvRow["symbol"].get<std::string>();
     aPrivateMarketEvents.emplace_back(PrivateMarketEvent{
         .mMetadata = aContext.metadata(*date),
@@ -1538,6 +1553,10 @@ std::optional<BenefitType> TradeRepublicParser::parseBenefitType(std::string_vie
         return BenefitType::Saveback;
     if (aValue == "STOCKPERK")
         return BenefitType::StockPerk;
+    if (aValue == "BONUS")
+        return BenefitType::Bonus;
+    if (aValue == "REFERRAL")
+        return BenefitType::Referral;
     return std::nullopt;
 }
 
@@ -1547,8 +1566,6 @@ TradeRepublicParser::parsePrivateMarketEventType(std::string_view aValue) {
         return PrivateMarketEventType::Buy;
     if (aValue == "PRIVATE_MARKET_SELL")
         return PrivateMarketEventType::Sell;
-    if (aValue == "BONUS")
-        return PrivateMarketEventType::Bonus;
     return std::nullopt;
 }
 

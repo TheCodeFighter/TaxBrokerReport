@@ -204,6 +204,10 @@ std::string_view toString(BenefitType aBenefitType) {
         return "Saveback";
     case BenefitType::StockPerk:
         return "StockPerk";
+    case BenefitType::Bonus:
+        return "Bonus";
+    case BenefitType::Referral:
+        return "Referral";
     }
 
     return "Unknown";
@@ -216,8 +220,6 @@ std::string_view toString(PrivateMarketEventType aEventType) {
         return "Buy";
     case PrivateMarketEventType::Sell:
         return "Sell";
-    case PrivateMarketEventType::Bonus:
-        return "Bonus";
     }
 
     return "Unknown";
