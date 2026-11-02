@@ -240,8 +240,9 @@ jobs:
       - name: Run Cppcheck static analysis
         run: scripts/cppcheck.sh --reuse-build
 
-  # Not a required check yet (execution plan line 3.4a makes it one). It waits only for the dev
-  # image, so it runs beside the development build and the coverage jobs and adds no time.
+  # Keep this name stable: the main-branch protection rule should require this check. It waits
+  # only for the dev image, so it runs beside the development build and the coverage jobs, and
+  # the whole job still ends before the slowest of those jobs.
   fuzz:
     name: Fuzz (Trade Republic parser)
     needs: dev-image
@@ -255,8 +256,8 @@ jobs:
       - name: Load development image
         uses: ./.github/actions/load-dev-image
 
-      - name: Fuzz the Trade Republic parser for 60 seconds
-        run: scripts/fuzz.sh --seconds 60
+      - name: Fuzz the Trade Republic parser for 240 seconds
+        run: scripts/fuzz.sh --seconds 240
 
       - name: Upload the input that broke a check
         if: failure()

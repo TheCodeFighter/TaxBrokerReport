@@ -19,9 +19,10 @@ The `CI` GitHub Actions workflow runs on every pull request to `main` and after 
 Valgrind and Cppcheck jobs load that build and compile nothing, so the failing category stays
 visible. The jobs and timings are described in [docker/docker_doc.md](../docker/docker_doc.md). The
 `main` ruleset **Required CI checks** requires **Dev image**, **Development build**, **Production
-image**, **Required tests**, **Valgrind**, **Cppcheck**, **format-check**, **Coverage (current)**,
-**Coverage (baseline)** and **coverage**. **Required issue reference** is a separate workflow; it
-requires the pull request's `Related issue` section to contain an issue reference or exactly `N/A`.
+image**, **Required tests**, **Valgrind**, **Cppcheck**, **Fuzz (Trade Republic parser)**,
+**format-check**, **Coverage (current)**, **Coverage (baseline)** and **coverage**. **Required
+issue reference** is a separate workflow; it requires the pull request's `Related issue` section
+to contain an issue reference or exactly `N/A`.
 
 ## Build scripts
 
@@ -166,8 +167,11 @@ an empty program on Alpine (musl); Valgrind covers leaks.
 The checks and the list of rows they must account for are in
 `tests/support/trade_republic_parser_checks.hpp` and have unit tests
 (`trade_republic_parser_checks_test.cpp`) that feed them a wrong result. The CI job
-`Fuzz (Trade Republic parser)` runs `scripts/fuzz.sh --seconds 60` in parallel with the other jobs
-and uploads a failing input as the artifact `fuzz-findings`. It is not a required check yet.
+`Fuzz (Trade Republic parser)` runs `scripts/fuzz.sh --seconds 240` in parallel with the other jobs
+and uploads a failing input as the artifact `fuzz-findings`. It is a required check. A failure on
+an unrelated pull request is still a real parser bug (the run is time-bound, so a faster runner
+tries more inputs): download `fuzz-findings`, reproduce it with `scripts/fuzz.sh --replay FILE`
+and fix the parser first, in its own pull request.
 
 ## Debug tests in VS Code
 
