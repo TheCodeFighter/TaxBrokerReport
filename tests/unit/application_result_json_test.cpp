@@ -109,6 +109,7 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
           "unsafe": false
         }
       },
+      "excludedItems": [],
       "diagnostics": [
         {
           "id": "diagnostic-0001",
@@ -854,6 +855,9 @@ TEST(ApplicationResultJsonTest, WritesEveryRequestTypeWithItsDateAndIsin) {
                     .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
                                          .time_since_epoch()},
                     .mIsin = "XX0000000001",
+                    .mData = TaxClassificationQuestion{.mIsin = "XX0000000001",
+                                                       .mName = "Synthetic Share",
+                                                       .mClassLabels = {""}},
                 },
         },
         RequestInput{
@@ -1636,7 +1640,7 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
 TEST(ApplicationResultJsonTest, ARequestWithoutQuestionDataHasNoOptions) {
     ApplicationResultInput input{.mReportingYear = 2024, .mRunRevision = 3};
     input.mRequests = {RequestInput{.mQuestion = {
-                                        .mType = RequestType::TaxClassificationRequired,
+                                        .mType = RequestType::QuantityCorrectionRequired,
                                         .mAffectedReports = {kCapital},
                                     }}};
 
@@ -1705,6 +1709,130 @@ TEST(ApplicationResultJsonTest, FailingTheReportListsTheChoiceAndNoInvestment) {
     EXPECT_EQ(capital.at("failureResolution"), "fail_report");
     EXPECT_TRUE(capital.at("excludedInvestments").empty());
     EXPECT_TRUE(json.at("diagnostics").at(0).at("blocking").get<bool>());
+}
+
+TEST(ApplicationResultJsonTest, AClassificationRequestHasItsOptionsAndLabels) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mAffectedReports = {kCapital},
+                         .mTaxDate = day("2024-01-10"),
+                         .mIsin = "XX0000000001",
+                         .mData = TaxClassificationQuestion{.mIsin = "XX0000000001",
+                                                            .mName = "Synthetic Share",
+                                                            .mClassLabels = {"STOCK", "", "FUND"}},
+                     }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "tax_classification_required");
+    EXPECT_EQ(request.at("isin"), "XX0000000001");
+    EXPECT_EQ(request.at("options"),
+              (nlohmann::json::array({"capital_gains", "exclude_from_supported_reports"})));
+    EXPECT_EQ(request.at("classificationCheck"),
+              (nlohmann::json{{"name", "Synthetic Share"},
+                              {"isin", "XX0000000001"},
+                              {"classLabels", nlohmann::json::array({"", "FUND", "STOCK"})}}));
+    EXPECT_FALSE(request.contains("investments"));
+    EXPECT_FALSE(request.contains("lossCheck"));
+}
+
+TEST(ApplicationResultJsonTest, RecordedClassificationAnswersAreWrittenAsTheirChoice) {
+    ApplicationResult result;
+    const auto question = TaxClassificationQuestion{.mIsin = "XX0000000001",
+                                                    .mName = "Synthetic Share",
+                                                    .mClassLabels = {""}};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mData = question,
+                         .mAnswer = CapitalGainsAnswer{}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mData = question,
+                         .mAnswer = ExcludeFromReportsAnswer{}},
+        RecordedDecision{.mId = "decision-0003",
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mData = question,
+                         .mAnswer = CancelAnswer{}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    EXPECT_EQ(decisions[0].at("answer"), "capital_gains");
+    EXPECT_EQ(decisions[1].at("answer"), "exclude_from_supported_reports");
+    EXPECT_EQ(decisions[2].at("answer"), "cancel");
+    EXPECT_EQ(decisions[0].at("classificationCheck").at("isin"), "XX0000000001");
+    EXPECT_FALSE(decisions[0].contains("lossCheck"));
+}
+
+TEST(ApplicationResultJsonTest, ARunWithoutExcludedItemsHasAnEmptyList) {
+    const auto json = serialize(ApplicationResultBuilder::build(ApplicationResultInput{}));
+
+    ASSERT_TRUE(json.contains("excludedItems"));
+    EXPECT_TRUE(json.at("excludedItems").empty());
+    EXPECT_TRUE(json.at("excludedItems").is_array());
+}
+
+TEST(ApplicationResultJsonTest, ExcludedItemsWriteTheirCategoryReasonBasisAndBondUnits) {
+    ApplicationResult result;
+
+    result.mExcludedItems = {
+        ExcludedItem{.mIsin = "XS0000000001",
+                     .mName = "Synthetic Bond",
+                     .mCategory = ExcludedCategory::Bond,
+                     .mReason = ExcludedReason::DebtSecurity,
+                     .mClassLabels = {"BOND"},
+                     .mBond = BondExclusionFacts{.mBoughtUnits = 100'000'000'000, // 1000 units
+                                                 .mSoldUnits = 25'000'000'000,    // 250 units
+                                                 .mMaturedUnits = 75'000'000'000, // 750 units
+                                                 .mMaturityDate = day("2025-08-14")},
+                     .mDiagnosticIds = {"diagnostic-0004"}},
+        ExcludedItem{.mIsin = "XX0000000005",
+                     .mName = "Synthetic Coin",
+                     .mCategory = ExcludedCategory::Crypto,
+                     .mReason = ExcludedReason::CryptoNotReported,
+                     .mClassLabels = {"CRYPTO"}},
+        ExcludedItem{.mIsin = "XX0000000009",
+                     .mName = "Synthetic Mystery",
+                     .mCategory = ExcludedCategory::Unknown,
+                     .mReason = ExcludedReason::UserChoice,
+                     .mClassLabels = {"", "MYSTERY"},
+                     .mBond = BondExclusionFacts{}},
+    };
+
+    const auto json = serialize(result);
+    const auto& items = json.at("excludedItems");
+
+    ASSERT_EQ(items.size(), 3U);
+
+    EXPECT_EQ(items[0].at("isin"), "XS0000000001");
+    EXPECT_EQ(items[0].at("category"), "bond");
+    EXPECT_EQ(items[0].at("reason"), "debt_security");
+    EXPECT_EQ(items[0].at("basis"), "tax_rule");
+    EXPECT_EQ(items[0].at("classLabels"), nlohmann::json::array({"BOND"}));
+    EXPECT_EQ(items[0].at("diagnosticIds"), nlohmann::json::array({"diagnostic-0004"}));
+    EXPECT_EQ(items[0].at("bond"),
+              (nlohmann::json{{"boughtUnits", "1000.00000000"},
+                              {"soldUnits", "250.00000000"},
+                              {"maturedUnits", "750.00000000"},
+                              {"maturityDate", "2025-08-14"}}));
+
+    EXPECT_EQ(items[1].at("category"), "crypto");
+    EXPECT_EQ(items[1].at("reason"), "crypto_not_reported");
+    EXPECT_EQ(items[1].at("basis"), "tax_rule");
+    EXPECT_FALSE(items[1].contains("bond"));
+
+    EXPECT_EQ(items[2].at("category"), "unknown");
+    EXPECT_EQ(items[2].at("reason"), "user_choice");
+    EXPECT_EQ(items[2].at("basis"), "user_choice");
+    EXPECT_EQ(items[2].at("classLabels"), nlohmann::json::array({"", "MYSTERY"}));
+    // A bond without a maturity date writes no date.
+    EXPECT_FALSE(items[2].at("bond").contains("maturityDate"));
 }
 
 } // namespace

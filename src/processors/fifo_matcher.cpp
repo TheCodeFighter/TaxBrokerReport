@@ -563,7 +563,8 @@ FifoMatcher::match(const MergedStatement& aStatement,
         const auto instrumentIndex = event.mInstrumentIndex.value();
         auto& pool = result.mIsins.at(instrumentIndex);
 
-        if (pool.mStatus != FifoIsinStatus::Matched)
+        // A tax rule or the user left the instrument out of capital gains: it has no pool.
+        if (pool.mStatus != FifoIsinStatus::Matched || aLedger.isLeftOut(pool.mIsin))
         {
             continue;
         }

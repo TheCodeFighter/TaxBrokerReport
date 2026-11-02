@@ -193,8 +193,9 @@ Rules:
   less), so the bond list must never assume payout = nominal.
 
 The events are information only. They are not a sale, they never reach Doh-KDVP, and the FIFO, the
-loss rule and the corporate-action stage do not read them. The bond list (every bond with its buys
-and maturities) and the reporting of bond interest only (Doh-Obr) build on them later.
+loss rule and the corporate-action stage do not read them. The classification stage adds them up
+per bond into the excluded items (see "Classification" below); the reporting of bond interest only
+(Doh-Obr) builds on them later.
 
 ### Stable input sequence
 
@@ -624,8 +625,10 @@ from one broker.
 
 - **Which ISINs.** Every ISIN with a sale in the selected year and a corporate action up to 31
   December (or a split row after it that a December loss window needs, see "Rows after 31
-  December" below), except a bond, derivative, crypto or private fund: the gates block its sales
-  with a class error, so its actions are not listed, not asked and give no error of their own.
+  December" below), except a bond, derivative, crypto or private fund and an instrument that is left
+  out of capital gains (`ReportingYearLedger::mLeftOutIsins`, set by the classification stage):
+  its sales are blocked by a class error or it is not reported, so its actions are not listed, not
+  asked and give no error of their own.
   Its actions are listed, grouped by date, as far as the pool
   reached: the applied ones, the one the pool stopped at, and the later ones. A pool stopped for
   another reason before an action (missing history, a non-EUR trade, an action that could not be
@@ -809,8 +812,8 @@ year:
   matches of the year and never blocks.
 - An ISIN with a sale in the year that the user agreed to leave out goes to `mExcluded` with
   every sale of the year and the reason the builder blocked it, if it did; it gets no list and no
-  long-held units, also when the builder would not have blocked it (the gates block crypto, for
-  example). Any other blocked ISIN goes to `mBlocked`. The report exists only when `mBlocked` is
+  long-held units, also when the builder would not have blocked it (the gates block a private
+  fund, for example). Any other blocked ISIN goes to `mBlocked`. The report exists only when `mBlocked` is
   empty, and then holds a list for every ISIN that is not left out.
 
 The builder adds no diagnostics and no message keys. The capital report gates turn `mBlocked`
@@ -905,6 +908,9 @@ IDs). A rejected answer prints the session's message and the question is asked a
 command cannot read (another word, a number that is not whole, a share count of 0 or below, a
 date not in the form `YYYY-MM-DD`) is asked again without a session call.
 
+- Classification question: `capital` (`capital_gains`), `exclude`
+  (`exclude_from_supported_reports`) or `cancel`, in any case. It is asked before every other
+  question, because an exclusion drops the loss and ratio questions of its investment.
 - Loss question: `yes` (`other_activity`), `no` (`no_other_activity`) or `cancel`, in any case.
 - Ratio question with rows on two dates (`mAskSameEvent`): first whether they are one split,
   `yes`, `no` (`SeparateEventsAnswer`, no ratio is asked) or `cancel`.
@@ -937,13 +943,31 @@ investments`, lists each excluded investment with its reason codes under "Exclud
 (not in the XML)", and marks the resolved errors. If nothing is left, the status is `no data` (exit 0). `fail` and `cancel` write no XML
 (exit 1). Like every answer, it is used only in that run.
 
+**Classification** (`TaxClassifier::classify`, `include/processors/tax_classifier.hpp`). It runs
+first in each calculation, from the merged statement, the ledger, the parse and merge diagnostics
+and the answers, and returns diagnostics, requests, `excludedItems` and the set of left-out
+ISINs that the command copies into a copy of the ledger (`mLeftOutIsins`). The FIFO
+matcher, the corporate-action stage, the loss rule, the builder and the gates skip a left-out
+instrument; `appendClassification` adds the result to the application input.
+
+| Class | Treatment |
+| --- | --- |
+| `Stock`, `Fund` | Capital gains, nothing new. |
+| `Bond` | Left out by a tax rule. A warning and an excluded item per bond with a trade or maturity row in the selected year: units bought, sold and matured (maturities and their cancellations added up by sum), the first maturity date. A bond that only has maturity rows (the purchase is in no file) is listed too. |
+| `Crypto` | Left out by a tax rule. A warning and an excluded item per crypto instrument with a trade or corporate-action row in the selected year. |
+| `Derivative`, `PrivateFund` | Unchanged: the gates block their sales. |
+| `Unknown` | One question per instrument with a trade or action up to 31 December; its parse and merge class errors no longer block. Answer `capital_gains`: nothing changes. Answer `exclude_from_supported_reports`: left out, a warning and an excluded item with the original labels. Cancel: a blocking error. |
+
 The XML is written only when the builder made a report with at least one list and no gate gave
 an error that an exclusion did not resolve. A report without lists is `no_data` with
-`no_selected_year_disposals`, or without a reason when investments were left out. The capital
-status of the application result decides the files and the exit code, so a blocking parser or
-merger error (a rejected trade or corporate-action row, a file-level error, a
-`conflicting_duplicate` of a trade or corporate action, an `instrument_asset_class_conflict`) also
-blocks the report, whatever ISIN or year it belongs to.
+`no_selected_year_disposals`, or without a reason when investments were left out, or when an
+excluded item had a sale (or, for a bond, a maturity) in the year. An excluded item that was only
+bought gives the normal reason. The capital status of the application result decides the files and the exit code, so a
+blocking parser or merger error (a rejected trade or corporate-action row, a file-level error, a
+`conflicting_duplicate` of a trade or corporate action) also blocks the report, whatever ISIN or
+year it belongs to. The class errors of an unknown-class instrument (the three parser class errors
+and the `instrument_asset_class_conflict`) are the exception: the classification question owns
+them.
 An event the merger rejected is not in the ledger, so only this rule blocks it.
 
 **Capital report gates** (`CapitalReportGates::check`, `include/processors/capital_report_gates.hpp`).
@@ -952,19 +976,20 @@ capital gains only and carry no units, amounts or prices:
 
 | Case | Code (stage) | One diagnostic per |
 | --- | --- | --- |
-| Class crypto, private fund, bond or derivative | `unsupported_tax_treatment` error (`fifo_tax`), parameter `assetClass` | ISIN; sources of its sales of the year, date of the first |
-| Class unknown (missing, unrecognized or conflicting) | `tax_classification_unknown` error (`fifo_tax`) | ISIN; as above |
+| Class private fund or derivative | `unsupported_tax_treatment` error (`fifo_tax`), parameter `assetClass` | ISIN; sources of its sales of the year, date of the first |
 | Pool stopped at a non-EUR trade | `missing_exchange_rate` error (`fifo_tax`), parameter `currency` | ISIN; date and sources of that trade |
 | Adjusted unit value that does not fit F4 (a `UnitPrice`) | `corporate_action_unrepresentable` error (`fifo_tax`), key `corporate_action_unrepresentable.unit_value` | ISIN; date and sources of its first sale that uses it |
 | Date after 31 December with a merger row inside the window of a December loss (a split row there has its ratio question or its own error instead) | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_window` | one per merger date, even when several sales share it; date and sources of the merger row |
 | Private-market event dated in the selected year | `unsupported_tax_treatment` **warning** (`fifo_tax`) | event |
 
-Only `Stock` and `Fund` pass the class check; `IsFond` stays `false` for both. A pool stopped for
-missing history or a numeric failure already has its FIFO diagnostic and gets nothing more, and
+The class check blocks only `PrivateFund` and `Derivative`. `Stock` and `Fund` pass (`IsFond` stays
+`false` for both). A bond and crypto are left out of capital gains by the classification stage,
+and an unknown class is asked there (see below), so the gates give nothing for them. A bond or
+crypto sale that reaches the gates whose ISIN is not in the left-out set is a `std::logic_error`: debt
+securities and crypto never reach Doh-KDVP. A pool stopped for missing history or a numeric failure already has its FIFO diagnostic and gets nothing more, and
 one stopped at a corporate action up to 31 December has its diagnostics from the corporate-action
 stage. Only
-the first stop of a pool is reported, because FIFO stops there. A crypto purchase without a sale
-in the year keeps only its parser warning. Private-market events (`PRIVATE_MARKET_BUY`,
+the first stop of a pool is reported, because FIFO stops there. Private-market events (`PRIVATE_MARKET_BUY`,
 `PRIVATE_MARKET_SELL`) have only a cash amount, without units or a price, so they are
 skipped, a sale included; the warning keeps each one visible. A row that does have shares or a
 price stays a skipped event and gets one more parser warning (`unsupported_asset_class`, key
@@ -992,7 +1017,9 @@ says so, so a file of an earlier run is never taken for this run's result. The s
 input files (file names and source IDs only), the capital status, each ISIN with a sale in the year
 (listed with its sale rows and units, the units with `F10` false and how many of them were assumed
 without an answer, blocked with its codes and
-sales, or only units past the holding period), the units past the holding period (`mLongHeld`: ISIN, sale date, units), the
+sales, or only units past the holding period), the excluded items ("Excluded items": ISIN, name,
+category, reason and, for a bond, the units bought, sold and matured and the maturity date), the
+units past the holding period (`mLongHeld`: ISIN, sale date, units), the
 skipped private-market events, and the diagnostics in application order (capital errors, capital
 warnings, then the others with their severity). It has units and dates, no EUR amounts.
 

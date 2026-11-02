@@ -444,20 +444,28 @@ struct DraftDiagnostic {
 }
 
 /// A failure-resolution type needs a list with at least one investment, a loss question at
-/// least one sale, each with open units, and a ratio question a source, open units and a date
-/// range around its effective date; every other type has no question data until its processor
-/// defines it.
+/// least one sale, each with open units, a ratio question a source, open units and a date
+/// range around its effective date, and a classification question an ISIN; every other type has
+/// no question data until its processor defines it.
 void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
     const auto* loss = std::get_if<LossEligibilityQuestion>(&aQuestion.mData);
     const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aQuestion.mData);
+    const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
+    const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
-        (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType)
+        (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
+        (classification != nullptr) != isClassificationType)
     {
         throw std::invalid_argument("The question data does not fit the request type.");
+    }
+
+    if (classification != nullptr && classification->mIsin.empty())
+    {
+        throw std::invalid_argument("A classification question needs an ISIN.");
     }
 
     if (failure != nullptr && failure->mInvestments.empty())
@@ -599,6 +607,49 @@ excludedInvestmentsOf(const ReportInput& aInput,
                          aDiagnostics);
 }
 
+/// The excluded items of a run sorted by ISIN, each with its sources normalized and the IDs of its
+/// diagnostics in diagnostic order.
+[[nodiscard]] std::vector<ExcludedItem>
+excludedItemsOf(std::vector<ExcludedItemInput>& aInputs,
+                const std::vector<std::size_t>& aProcessingToDiagnostic,
+                const ApplicationResult& aResult) {
+    std::vector<ExcludedItem> items;
+
+    for (auto& input : aInputs)
+    {
+        auto item = std::move(input.mItem);
+
+        item.mSources = sourcesOf(input.mSources);
+        normalizeSources(item.mSources);
+
+        std::vector<std::size_t> positions;
+
+        std::transform(input.mProcessingDiagnostics.begin(),
+                       input.mProcessingDiagnostics.end(),
+                       std::back_inserter(positions),
+                       [&aProcessingToDiagnostic](std::size_t aIndex) {
+                           return aProcessingToDiagnostic.at(aIndex);
+                       });
+        std::sort(positions.begin(), positions.end());
+        positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
+
+        for (const auto position : positions)
+        {
+            item.mDiagnosticIds.push_back(aResult.mDiagnostics[position].mId);
+        }
+
+        items.push_back(std::move(item));
+    }
+
+    std::stable_sort(items.begin(),
+                     items.end(),
+                     [](const ExcludedItem& aLeft, const ExcludedItem& aRight) {
+                         return aLeft.mIsin < aRight.mIsin;
+                     });
+
+    return items;
+}
+
 } // namespace
 
 const EffectiveDateRange* findEffectiveDateRange(const CorporateActionRatioQuestion& aQuestion,
@@ -652,6 +703,14 @@ QuestionData normalizedData(QuestionData aData) {
                   });
     }
 
+    if (auto* classification = std::get_if<TaxClassificationQuestion>(&aData))
+    {
+        auto& labels = classification->mClassLabels;
+
+        std::sort(labels.begin(), labels.end());
+        labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
+    }
+
     if (auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aData))
     {
         std::sort(
@@ -672,14 +731,22 @@ QuestionData normalizedData(QuestionData aData) {
 }
 
 bool hasSourceError(const ApplicationResultInput& aInput, ReportType aReport) {
-    return std::any_of(aInput.mMergeDiagnostics.begin(),
-                       aInput.mMergeDiagnostics.end(),
-                       [&aInput, aReport](const StatementMergeDiagnostic& aDiagnostic) {
-                           const auto draft = draftOfMergeInput(aDiagnostic, aInput.mReportingYear);
+    for (std::size_t position = 0; position < aInput.mMergeDiagnostics.size(); ++position)
+    {
+        const bool isResolved = std::find(aInput.mResolvedMergeDiagnostics.begin(),
+                                          aInput.mResolvedMergeDiagnostics.end(),
+                                          position) != aInput.mResolvedMergeDiagnostics.end();
+        const auto draft =
+            draftOfMergeInput(aInput.mMergeDiagnostics[position], aInput.mReportingYear);
 
-                           return draft.mDiagnostic.mBlocking &&
-                                  affects(draft.mDiagnostic.mAffectedReports, aReport);
-                       });
+        if (!isResolved && draft.mDiagnostic.mBlocking &&
+            affects(draft.mDiagnostic.mAffectedReports, aReport))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void appendStageOutput(ApplicationResultInput& aInput,
@@ -721,6 +788,16 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
     for (std::size_t index = 0; index < aInput.mProcessingDiagnostics.size(); ++index)
     {
         drafts.push_back(draftOfProcessing(aInput.mProcessingDiagnostics[index], index));
+    }
+    for (const auto position : aInput.mResolvedMergeDiagnostics)
+    {
+        if (position >= aInput.mMergeDiagnostics.size())
+        {
+            throw std::invalid_argument("A resolved merge diagnostic must be a merge diagnostic.");
+        }
+
+        // The class error stays in the result, but the classification stage gives the blocking one.
+        drafts[position].mDiagnostic.mBlocking = false;
     }
     for (const auto position : aInput.mResolvedDiagnostics)
     {
@@ -908,6 +985,7 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
         }
     }
 
+    result.mExcludedItems = excludedItemsOf(aInput.mExcludedItems, processingToDiagnostic, result);
     result.mStatus = overallStatus(result);
 
     return result;

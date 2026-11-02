@@ -1290,4 +1290,139 @@ TEST(DecisionPromptsTest, ALossQuestionOfAListedInvestmentIsAskedAfterTheFailure
     EXPECT_EQ(session.result().mDecisions[1].mAnswer, AnswerValue{NoOtherActivityAnswer{}});
 }
 
+// The classification question
+
+DecisionQuestion classificationQuestion(const Isin& aIsin,
+                                        const std::string& aName,
+                                        std::vector<std::string> aLabels) {
+    return DecisionQuestion{
+        .mType = RequestType::TaxClassificationRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = aIsin,
+        .mData = TaxClassificationQuestion{.mIsin = aIsin,
+                                           .mName = aName,
+                                           .mClassLabels = std::move(aLabels)},
+    };
+}
+
+TEST(DecisionPromptsTest, AClassificationQuestionListsTheLabelsAndTakesCapital) {
+    DecisionSession session;
+    session.start(asksUntilAnswered(
+        {classificationQuestion("XX0000000001", "Synthetic Share", {"", "FUND", "STOCK"})}));
+
+    const auto output = ask(session, "capital\n");
+
+    EXPECT_EQ(output,
+              "Question request-0001: the asset class of XX0000000001 Synthetic Share is "
+              "missing, not recognized or differs between rows (class in the files: (blank), "
+              "FUND, STOCK).\n"
+              "  capital: report it as shares or fund units in Doh-KDVP.\n"
+              "  exclude: leave it out of the reports; the summary lists it, and you report it\n"
+              "  yourself if it is taxable. cancel: no answer, and no Doh-KDVP.\n"
+              "Your answer (capital, exclude or cancel):\n"
+              "\n");
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{CapitalGainsAnswer{}});
+}
+
+TEST(DecisionPromptsTest, AnInvalidClassificationAnswerIsAskedAgainAndExcludeIsRecorded) {
+    DecisionSession session;
+    session.start(asksUntilAnswered(
+        {classificationQuestion("XX0000000001", "Synthetic Share", {"MYSTERY"})}));
+
+    // "shares" is no answer; " EXCLUDE " with a tab and a carriage return is exclude.
+    const auto output = ask(session, "shares\n EXCLUDE \t\r\n");
+
+    EXPECT_EQ(textFrom(output, "Your answer"),
+              "Your answer (capital, exclude or cancel):\n"
+              "Answer capital, exclude or cancel.\n"
+              "Your answer (capital, exclude or cancel):\n"
+              "\n");
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{ExcludeFromReportsAnswer{}});
+}
+
+TEST(DecisionPromptsTest, ACancelledClassificationQuestionRecordsTheCancel) {
+    DecisionSession session;
+    session.start(
+        asksUntilAnswered({classificationQuestion("XX0000000001", "Synthetic Share", {""})}));
+
+    (void)ask(session, "cancel\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{CancelAnswer{}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheClassificationQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(
+        asksUntilAnswered({classificationQuestion("XX0000000001", "Synthetic Share", {""})}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary.\n"));
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionPromptsTest, AClassificationQuestionIsAskedBeforeALossQuestion) {
+    // The exclusion of an investment drops its other questions, so the class is asked first even
+    // though the loss question comes first in request order (it has the earlier tax date).
+    DecisionSession session;
+    session.start(asksUntilAnswered({
+        DecisionQuestion{
+            .mType = RequestType::LossEligibilityConfirmationRequired,
+            .mAffectedReports = {ReportType::CapitalGains},
+            .mTaxDate = day(2024, 1, 1),
+            .mIsin = "XX0000000001",
+            .mData =
+                LossEligibilityQuestion{
+                    .mIsin = "XX0000000001",
+                    .mName = "Synthetic Share",
+                    .mSales = {{
+                        .mSaleDate = day(2024, 3, 10),
+                        .mSaleUnits = 100'000'000, // 1 unit
+                        .mLossUnits = 100'000'000,
+                        .mWindowStart = day(2024, 2, 9),
+                        .mWindowEnd = day(2024, 4, 9),
+                        .mKnownReplacements = {},
+                        .mKnownIneligibleUnits = 0,
+                        .mOpenUnits = 100'000'000,
+                    }},
+                },
+        },
+        classificationQuestion("XX0000000002", "Synthetic Mystery", {""}),
+    }));
+
+    ASSERT_EQ(session.result().mRequests.size(), 2U);
+    EXPECT_EQ(session.result().mRequests[0].mType,
+              RequestType::LossEligibilityConfirmationRequired);
+
+    const auto output = ask(session, "exclude\nno\n");
+
+    EXPECT_TRUE(output.starts_with("Question request-0002: the asset class of XX0000000002 "));
+    EXPECT_TRUE(contains(output, "Question request-0001: the 30-day loss rule for XX0000000001"));
+    ASSERT_EQ(session.result().mDecisions.size(), 2U);
+}
+
+TEST(DecisionPromptsTest, TheAnswersOfAClassificationQuestionAreListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({
+        classificationQuestion("XX0000000001", "Synthetic Share", {""}),
+        classificationQuestion("XX0000000002", "Synthetic Other", {""}),
+        classificationQuestion("XX0000000003", "Synthetic Third", {""}),
+    }));
+
+    (void)ask(session, "capital\nexclude\ncancel\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 3U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000001 Synthetic Share, asset class: report it as shares or fund units "
+              "(Doh-KDVP)");
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[1]),
+              "XX0000000002 Synthetic Other, asset class: leave it out of the reports");
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[2]),
+              "XX0000000003 Synthetic Third, asset class: cancelled");
+}
+
 } // namespace

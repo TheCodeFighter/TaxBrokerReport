@@ -29,6 +29,7 @@ add_library(taxbroker_core STATIC
     processors/loss_eligibility.cpp
     processors/processing_diagnostics.cpp
     processors/statement_merger.cpp
+    processors/tax_classifier.cpp
     processors/tax_processor.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/diagnostic_messages_table.cpp
     utils/currency.cpp

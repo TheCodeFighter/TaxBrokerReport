@@ -843,17 +843,17 @@ TEST(ReportCommandTest, TwoSalesOfOneInvestmentAreCountedTogether) {
 
 TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsBlocked) {
     // The share is sold at a loss with no purchase within 30 days; the answer yes blocks the loss
-    // of its 10 units (F10 false), which the list can say, so the share is fine. The coin is
-    // crypto, which Doh-KDVP does not cover here, so it blocks the report.
+    // of its 10 units (F10 false), which the list can say, so the share is fine. The fund is a
+    // private fund, which Doh-KDVP does not cover here, so it blocks the report.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
         "history.csv",
         {
             R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,EUR,,,,,synthetic-buy-1,,,,)",
-            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,CRYPTO,Synthetic Coin,XX0000000003,5,10,-50,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000003,5,10,-50,,,EUR,,,,,synthetic-buy-2,,,,)",
             R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
-            R"(2024-04-10T09:00:00Z,2024-04-10,DEFAULT,TRADING,SELL,CRYPTO,Synthetic Coin,XX0000000003,-5,40,200,,,EUR,,,,,synthetic-sell-2,,,,)",
+            R"(2024-04-10T09:00:00Z,2024-04-10,DEFAULT,TRADING,SELL,PRIVATE_FUND,Synthetic Private Fund,XX0000000003,-5,40,200,,,EUR,,,,,synthetic-sell-2,,,,)",
         });
 
     const auto result = run({"report",
@@ -867,12 +867,13 @@ TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsB
                             "yes\n");
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_TRUE(contains(result.mOut,
-                         "Investments with a sale in 2024: 2\n"
-                         "  XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units, "
-                         "10.0000 units with a loss blocked by the 30-day rule (F10 false)\n"
-                         "  XX0000000003 Synthetic Coin: blocked (unsupported_tax_treatment)\n"
-                         "    sale 2024-04-10, history.csv row 5\n"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "Investments with a sale in 2024: 2\n"
+                 "  XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units, "
+                 "10.0000 units with a loss blocked by the 30-day rule (F10 false)\n"
+                 "  XX0000000003 Synthetic Private Fund: blocked (unsupported_tax_treatment)\n"
+                 "    sale 2024-04-10, history.csv row 5\n"));
 }
 
 TEST(ReportCommandTest, LongHeldUnitsAreListedApart) {
@@ -1074,15 +1075,16 @@ TEST(ReportCommandTest, DiagnosticWithoutASourceNamesOnlyItsCode) {
 }
 
 TEST(ReportCommandTest, BlockedInvestmentNamesEachCodeOnceAndEachSale) {
-    // STOCK in the purchase and FUND in the two sales: the class conflict and the unknown class.
+    // A private fund bought once (1 unit) and sold twice: the first sale needs more units than
+    // are held (incomplete history) and the class has no capital treatment (unsupported).
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-1,,,,)",
-            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,FUND,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
-            R"(2024-05-10T09:00:00Z,2024-05-10,DEFAULT,TRADING,SELL,FUND,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,PRIVATE_FUND,Synthetic Private Fund,XX0000000001,-2,30,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-05-10T09:00:00Z,2024-05-10,DEFAULT,TRADING,SELL,PRIVATE_FUND,Synthetic Private Fund,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
         });
 
     const auto result = run({"report",
@@ -1096,8 +1098,8 @@ TEST(ReportCommandTest, BlockedInvestmentNamesEachCodeOnceAndEachSale) {
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000001 Synthetic Share: blocked "
-                         "(instrument_asset_class_conflict, tax_classification_unknown)\n"
+                         "  XX0000000001 Synthetic Private Fund: blocked "
+                         "(incomplete_history, unsupported_tax_treatment)\n"
                          "    sale 2024-03-10, history.csv row 3\n"
                          "    sale 2024-05-10, history.csv row 4\n\n"));
 }

@@ -269,9 +269,11 @@ units, from 13 November after 0.62 units. With 10 November and `10 / 1`, 0.52 un
 and the 0.1 units stay 0.1; with 14 November, 0.62 units become 6.2. The row's tax date never
 changes; the lot step orders the action by the confirmed date.
 
-The question is asked only for an ISIN with a sale in the selected year, and not for a bond,
-derivative, crypto or private fund, whose sales are blocked anyway by their class error; their
-actions give no error of their own. When an ISIN has several
+The question is asked only for an ISIN with a sale in the selected year, and not for a bond or
+crypto instrument (left out of capital gains by a tax rule), a derivative or a private fund (whose
+sales are blocked by their class error), or an instrument whose unknown class the user left out;
+their actions give no error of their own. FIFO builds no pool for an instrument that is left out,
+so it has no incomplete-history error either. When an ISIN has several
 actions, only the first unresolved one is asked, because the units before a later action depend
 on the earlier one being applied. A later action of any ratio is listed from the start as waiting
 for the earlier one, and is asked in the same run once that one is applied, with the units after

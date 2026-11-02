@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -85,6 +87,25 @@ std::vector<ProcessingDiagnostic> checkYear(StatementMergeResult& aMerged, int a
     return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
 }
 
+/// Like checkYear, for instruments that the classification stage left out of capital gains
+/// (the ISINs in aLeftOut), as the report command does before the capital stages.
+std::vector<ProcessingDiagnostic>
+checkYearWithLeftOut(StatementMergeResult& aMerged, int aYear, const std::set<Isin>& aLeftOut) {
+    orderChronologically(aMerged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
+    auto ledger = prepared.mLedger.value();
+
+    ledger.mLeftOutIsins = aLeftOut;
+
+    const auto fifo = FifoMatcher::match(aMerged.mStatement, ledger);
+    RunDecisions decisions;
+    const auto loss = LossEligibilityChecker::check(aMerged.mStatement, ledger, fifo, decisions);
+    const auto built = CapitalGainsReportBuilder::build(aMerged.mStatement, ledger, fifo, loss, {});
+
+    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
+}
+
 /// Like checkYear, with confirmed corporate actions that the matcher applies.
 std::vector<ProcessingDiagnostic>
 checkYearWithActions(StatementMergeResult& aMerged,
@@ -152,7 +173,7 @@ TEST(CapitalReportGatesTest, StockAndFundSalesPassTheClassificationGate) {
     EXPECT_TRUE(diagnostics.empty());
 }
 
-TEST(CapitalReportGatesTest, CryptoSaleIsUnsupported) {
+TEST(CapitalReportGatesTest, CryptoSaleGivesNoGateError) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Coin",
@@ -175,28 +196,63 @@ TEST(CapitalReportGatesTest, CryptoSaleIsUnsupported) {
             },
     }};
 
-    const auto diagnostics = checkYear(merged, 2024);
+    const auto diagnostics = checkYearWithLeftOut(merged, 2024, {"XX0000000001"});
 
-    ASSERT_EQ(diagnostics.size(), 1U);
+    // The classification stage leaves crypto out of capital gains with its own warning.
+    EXPECT_TRUE(diagnostics.empty());
+}
 
-    const auto& diagnostic = diagnostics.at(0);
+TEST(CapitalReportGatesTest, ACryptoSaleThatIsNotLeftOutIsALogicError) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Coin",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Crypto,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-10"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // EUR 20
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+    }};
 
-    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::UnsupportedTaxTreatment);
-    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::UnsupportedTaxTreatmentCapitalClass);
-    EXPECT_EQ(diagnostic.mMessageParams,
-              (std::vector<MessageParam>{textParam("assetClass", "crypto")}));
-    EXPECT_EQ(diagnostic.mMessage,
-              "Sales of the asset class crypto are not supported in the capital-gains report yet, "
-              "so this investment's sales cannot be reported. No Doh-KDVP file was written.");
-    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::FifoTax);
-    EXPECT_EQ(diagnostic.mContext.mAffectedReports,
-              (std::vector<ReportType>{ReportType::CapitalGains}));
-    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
-    EXPECT_EQ(diagnostic.mContext.mInstrumentName, "Synthetic Coin");
-    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-03-10"));
-    EXPECT_EQ(diagnostic.mContext.mSources,
-              (std::vector<SourceReference>{source(3, "synthetic-sell-1")}));
+    // The ISIN is not in the left-out set: the classification stage did not run.
+    EXPECT_THROW(checkYear(merged, 2024), std::logic_error);
+}
+
+TEST(CapitalReportGatesTest, ABondSaleThatIsNotLeftOutIsALogicError) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Bond",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Bond,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-10"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // EUR 20
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    EXPECT_THROW(checkYear(merged, 2024), std::logic_error);
 }
 
 TEST(CapitalReportGatesTest, PrivateFundSaleIsUnsupported) {
@@ -231,7 +287,7 @@ TEST(CapitalReportGatesTest, PrivateFundSaleIsUnsupported) {
     EXPECT_EQ(diagnostics.at(0).mContext.mIsin, "XX0000000001");
 }
 
-TEST(CapitalReportGatesTest, BondSaleIsUnsupported) {
+TEST(CapitalReportGatesTest, BondSaleGivesNoGateError) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Bond",
@@ -254,12 +310,10 @@ TEST(CapitalReportGatesTest, BondSaleIsUnsupported) {
             },
     }};
 
-    const auto diagnostics = checkYear(merged, 2024);
+    const auto diagnostics = checkYearWithLeftOut(merged, 2024, {"XX0000000001"});
 
-    ASSERT_EQ(diagnostics.size(), 1U);
-    EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::UnsupportedTaxTreatment);
-    EXPECT_EQ(diagnostics.at(0).mMessageParams,
-              (std::vector<MessageParam>{textParam("assetClass", "bond")}));
+    // The classification stage leaves a bond out of capital gains with its own warning.
+    EXPECT_TRUE(diagnostics.empty());
 }
 
 TEST(CapitalReportGatesTest, DerivativeSaleIsUnsupported) {
@@ -315,7 +369,7 @@ TEST(CapitalReportGatesTest, CryptoPurchaseWithoutASaleThisYearIsNotChecked) {
     EXPECT_TRUE(diagnostics.empty());
 }
 
-TEST(CapitalReportGatesTest, UnknownClassWithTwoSalesIsOneUnclassifiedErrorNamingBothSales) {
+TEST(CapitalReportGatesTest, UnknownClassWithTwoSalesGivesNoGateError) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Share",
@@ -346,21 +400,8 @@ TEST(CapitalReportGatesTest, UnknownClassWithTwoSalesIsOneUnclassifiedErrorNamin
 
     const auto diagnostics = checkYear(merged, 2024);
 
-    ASSERT_EQ(diagnostics.size(), 1U);
-
-    const auto& diagnostic = diagnostics.at(0);
-
-    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::TaxClassificationUnknown);
-    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::TaxClassificationUnknownCapital);
-    EXPECT_TRUE(diagnostic.mMessageParams.empty());
-    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::FifoTax);
-    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
-    // The date of the first sale; the sources of both sales.
-    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-03-10"));
-    EXPECT_EQ(diagnostic.mContext.mSources,
-              (std::vector<SourceReference>{source(3, "synthetic-sell-1"),
-                                            source(4, "synthetic-sell-2")}));
+    // The classification stage asks about an unknown class and gives the blocking error.
+    EXPECT_TRUE(diagnostics.empty());
 }
 
 TEST(CapitalReportGatesTest, SplitBeforeTheSaleGivesNoGateError) {
@@ -1009,7 +1050,7 @@ TEST(CapitalReportGatesTest, IncompleteHistoryAddsNoSecondError) {
     EXPECT_TRUE(diagnostics.empty());
 }
 
-TEST(CapitalReportGatesTest, CryptoSaleAfterASplitGetsTheClassError) {
+TEST(CapitalReportGatesTest, CryptoSaleAfterASplitGivesNoGateError) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Coin",
@@ -1039,12 +1080,11 @@ TEST(CapitalReportGatesTest, CryptoSaleAfterASplitGetsTheClassError) {
             },
     }};
 
-    const auto diagnostics = checkYear(merged, 2024);
+    const auto diagnostics = checkYearWithLeftOut(merged, 2024, {"XX0000000001"});
 
-    // The corporate-action stage gives the error of the stopped pool
-    // (CorporateActionResolverTest); the gates give the class error.
-    ASSERT_EQ(diagnostics.size(), 1U);
-    EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::UnsupportedTaxTreatment);
+    // Left out: FIFO skips its split row, so no pool stops and no stage asks about the split;
+    // crypto has its own warning from the classification stage.
+    EXPECT_TRUE(diagnostics.empty());
 }
 
 TEST(CapitalReportGatesTest, PrivateMarketEventsOfTheYearGetOneWarningEach) {

@@ -203,6 +203,55 @@ std::optional<AnswerValue> readFailureAnswer(std::istream& aIn, std::ostream& aO
     }
 }
 
+void writeClassificationQuestion(std::ostream& aOut,
+                                 const DecisionRequest& aRequest,
+                                 const TaxClassificationQuestion& aQuestion) {
+    std::string labels;
+
+    for (const auto& label : aQuestion.mClassLabels)
+    {
+        labels += (labels.empty() ? "" : ", ") + (label.empty() ? std::string{"(blank)"} : label);
+    }
+
+    aOut << "Question " << aRequest.mId << ": the asset class of "
+         << investmentText(aQuestion.mIsin, aQuestion.mName) << " is missing, not recognized or "
+         << "differs between rows (class in the files: " << labels << ").\n"
+         << "  capital: report it as shares or fund units in Doh-KDVP.\n"
+            "  exclude: leave it out of the reports; the summary lists it, and you report it\n"
+            "  yourself if it is taxable. cancel: no answer, and no Doh-KDVP.\n";
+}
+
+std::optional<AnswerValue> readClassificationAnswer(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (capital, exclude or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "capital")
+        {
+            return CapitalGainsAnswer{};
+        }
+
+        if (word == "exclude")
+        {
+            return ExcludeFromReportsAnswer{};
+        }
+
+        if (word == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        aOut << "Answer capital, exclude or cancel.\n";
+    }
+}
+
 void writeRatioQuestion(std::ostream& aOut,
                         const DecisionRequest& aRequest,
                         const CorporateActionRatioQuestion& aQuestion) {
@@ -582,6 +631,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
             writeLossQuestion(aOut, aRequest, aQuestion);
             return readLossAnswer(aIn, aOut);
         }
+        else if constexpr (std::is_same_v<Question, TaxClassificationQuestion>)
+        {
+            writeClassificationQuestion(aOut, aRequest, aQuestion);
+            return readClassificationAnswer(aIn, aOut);
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -630,6 +684,14 @@ std::string answerText(const AnswerValue& aAnswer) {
         {
             return "no, the rows are two splits";
         }
+        else if constexpr (std::is_same_v<Value, CapitalGainsAnswer>)
+        {
+            return "report it as shares or fund units (Doh-KDVP)";
+        }
+        else if constexpr (std::is_same_v<Value, ExcludeFromReportsAnswer>)
+        {
+            return "leave it out of the reports";
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -660,6 +722,10 @@ bool canAsk(const QuestionData& aData) {
         {
             return true;
         }
+        else if constexpr (std::is_same_v<Question, TaxClassificationQuestion>)
+        {
+            return true;
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -687,15 +753,26 @@ std::set<Isin> failedIsins(const std::vector<DecisionRequest>& aRequests) {
     return isins;
 }
 
-/// The next request to ask, or the end. First the questions of investments that the failure
-/// question does not list, so an answer that adds an investment to its list comes before it. Then
-/// the failure question. A question of a listed investment is asked after it, and only if the
-/// investment is not excluded, as exclusion drops the question.
+/// The next request to ask, or the end. First a classification question. Then the questions of
+/// investments that the failure question does not list, so an answer that adds an investment to its
+/// list comes before it. Then the failure question. A question of a listed investment is asked
+/// after it, and only if the investment is not excluded, as exclusion drops the question.
 std::vector<DecisionRequest>::const_iterator
 nextQuestion(const std::vector<DecisionRequest>& aRequests) {
     const auto isFailure = [](const DecisionRequest& aRequest) {
         return std::holds_alternative<FailureResolutionQuestion>(aRequest.mData);
     };
+    const auto isClassification = [](const DecisionRequest& aRequest) {
+        return std::holds_alternative<TaxClassificationQuestion>(aRequest.mData);
+    };
+    const auto classification = std::find_if(aRequests.begin(), aRequests.end(), isClassification);
+
+    // An exclusion drops the loss and ratio questions of its investment, so it is asked first.
+    if (classification != aRequests.end())
+    {
+        return classification;
+    }
+
     const auto listed = failedIsins(aRequests);
     const auto isOtherQuestion = [&isFailure, &listed](const DecisionRequest& aRequest) {
         return canAsk(aRequest.mData) && !isFailure(aRequest) &&
@@ -771,6 +848,10 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
             return investmentText(aQuestion.mIsin, aQuestion.mName) + ", 30-day loss rule";
+        }
+        else if constexpr (std::is_same_v<Question, TaxClassificationQuestion>)
+        {
+            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", asset class";
         }
         else
         {

@@ -49,6 +49,8 @@ add_executable(taxbroker_unit_tests
     unit/kdvp_xml_writer_test.cpp
     unit/statement_merger_property_test.cpp
     unit/statement_merger_test.cpp
+    unit/left_out_instruments_test.cpp
+    unit/tax_classifier_test.cpp
     unit/tax_processor_test.cpp
     unit/taxpayer_file_test.cpp
     unit/trade_republic_parser_checks_test.cpp

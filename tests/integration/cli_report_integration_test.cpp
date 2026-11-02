@@ -723,7 +723,8 @@ TEST(CliReportIntegrationTest, PrivateMarketSaleWithoutAnIsinIsListedByItsName) 
 }
 
 TEST(CliReportIntegrationTest, WarningOnlyRunStillGeneratesTheXml) {
-    // A crypto purchase without a sale keeps only its parser warning.
+    // A crypto purchase of the year is left out by a tax rule with a warning of its own; the
+    // stock sale is still written.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -747,15 +748,25 @@ TEST(CliReportIntegrationTest, WarningOnlyRunStillGeneratesTheXml) {
     EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
+                         "Doh-KDVP\n"));
     // A parser diagnostic names the file and row, but no investment or tax date.
     EXPECT_TRUE(contains(result.mOut,
-                         "Errors: 0\n\nWarnings: 1\n"
+                         "Errors: 0\n\nWarnings: 2\n"
                          "  diagnostic-0001 unsupported_asset_class, history.csv row 3\n"
                          "    Asset class 'CRYPTO' was preserved, but its tax treatment is not "
-                         "supported yet.\n"));
+                         "supported yet.\n"
+                         "  diagnostic-0002 tax_category_not_reported, XX0000000005 Synthetic "
+                         "Coin, 2024-02-10, history.csv row 3\n"
+                         "    Crypto assets are not part of the Doh-KDVP report, so this "
+                         "investment is left out. Check whether a separate crypto return applies "
+                         "to you.\n"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000005"));
 }
 
-TEST(CliReportIntegrationTest, CryptoSaleBlocksTheReport) {
+TEST(CliReportIntegrationTest, CryptoSaleIsLeftOutByATaxRule) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -774,21 +785,22 @@ TEST(CliReportIntegrationTest, CryptoSaleBlocksTheReport) {
                              folder.outputDirectory(),
                              history});
 
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    // Nothing is left to report, which is not an error: the crypto sale is not a Doh-KDVP sale.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(result.mOut, "Capital gains (Doh-KDVP): no data"));
+    EXPECT_TRUE(contains(result.mOut, "Investments with a sale in 2024: 0\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
-                         "below)\n"));
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
+                         "Doh-KDVP\n"));
+    // The two parser warnings come first, then the one of the tax rule, with both rows.
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000005 Synthetic Coin: blocked (unsupported_tax_treatment)\n"
-                         "    sale 2024-03-10, history.csv row 3\n"));
+                         "Errors: 0\n\nWarnings: 3\n"
+                         "  diagnostic-0001 unsupported_asset_class, history.csv row 2\n"));
     EXPECT_TRUE(contains(result.mOut,
-                         "Errors: 1\n"
-                         "  diagnostic-0003 unsupported_tax_treatment, XX0000000005 Synthetic "
-                         "Coin, 2024-03-10, history.csv row 3\n"
-                         "    Sales of the asset class crypto are not supported in the "
-                         "capital-gains report yet, so this investment's sales cannot be "
-                         "reported. No Doh-KDVP file was written.\n"));
+                         "  diagnostic-0003 tax_category_not_reported, XX0000000005 Synthetic "
+                         "Coin, 2024-01-10, history.csv row 2 (+1 more)\n"));
 }
 
 TEST(CliReportIntegrationTest, PrivateFundTradeSaleBlocksTheReport) {
@@ -848,6 +860,7 @@ TEST(CliReportIntegrationTest, BlankAssetClassBlocksTheReport) {
                              folder.outputDirectory(),
                              history});
 
+    // The class is unknown: the question is open, so nothing is written (no answer was given).
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
     EXPECT_TRUE(contains(result.mOut,
@@ -856,13 +869,21 @@ TEST(CliReportIntegrationTest, BlankAssetClassBlocksTheReport) {
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000001 Synthetic Share: blocked (tax_classification_unknown)\n"
                          "    sale 2024-03-10, history.csv row 3\n"));
-    // The parser's errors for the two rows come first, then the gate's.
+    // The parser's errors for the two rows come first; the classification took them over, so they
+    // no longer block. Its own error comes last.
     EXPECT_TRUE(contains(result.mOut,
                          "Errors: 3\n"
-                         "  diagnostic-0001 missing_field, history.csv row 2\n"));
+                         "  diagnostic-0001 missing_field, history.csv row 2\n"
+                         "    Asset classification is unresolved; the event was retained.\n"
+                         "    Handled by the classification of its investment: see the question "
+                         "or the excluded items.\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "  diagnostic-0003 tax_classification_unknown, XX0000000001 Synthetic "
-                         "Share, 2024-03-10, history.csv row 3\n"));
+                         "Share, 2024-01-10, history.csv row 2 (+1 more)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Open questions: 1\n"
+                         "  request-0001 tax_classification_required, XX0000000001 Synthetic "
+                         "Share\n"));
 }
 
 TEST(CliReportIntegrationTest, ConflictingClassAcrossFilesBlocksTheReport) {
@@ -894,20 +915,22 @@ TEST(CliReportIntegrationTest, ConflictingClassAcrossFilesBlocksTheReport) {
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"));
-    // STOCK in one file and FUND in the other: the merger reports the conflict, the gate the
-    // unknown class.
+    // STOCK in one file and FUND in the other: the merger reports the conflict, which the
+    // classification took over, and asks the question with both labels.
     EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000001 Synthetic Share: blocked "
-                         "(instrument_asset_class_conflict, tax_classification_unknown)\n"
+                         "  XX0000000001 Synthetic Share: blocked (tax_classification_unknown)\n"
                          "    sale 2024-03-10, sales.csv row 2\n"));
-    // The merger's conflict names both rows; the gate's error names the sale.
     EXPECT_TRUE(contains(result.mOut,
                          "Errors: 2\n"
                          "  diagnostic-0001 instrument_asset_class_conflict, XX0000000001 "
-                         "Synthetic Share, purchases.csv row 2 (+1 more)\n"));
+                         "Synthetic Share, purchases.csv row 2 (+1 more)\n"
+                         "    Asset classes differ for the same ISIN; the merged asset class is "
+                         "unknown.\n"
+                         "    Handled by the classification of its investment: see the question "
+                         "or the excluded items.\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "  diagnostic-0002 tax_classification_unknown, XX0000000001 Synthetic "
-                         "Share, 2024-03-10, sales.csv row 2\n"));
+                         "Share, 2024-01-10, purchases.csv row 2 (+1 more)\n"));
 }
 
 TEST(CliReportIntegrationTest, SplitBeforeTheSaleBlocksTheReport) {
@@ -3539,7 +3562,31 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "FINAL_MATURITY,\n"
                          "    FINAL_MATURITY_CANCELLED and REDEMPTION rows) are information "
                          "only. Bond sales and\n"
-                         "    maturities are in no form.\n"));
+                         "    maturities are in no form; the summary adds them up per bond.\n"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "Left out by a tax rule (not in the XML, a warning and an entry under "
+                         "\"Excluded items\" in\n"
+                         "the summary):\n"
+                         "  - Bonds: debt securities are no capital gain. Only their interest is "
+                         "reported (Doh-Obr,\n"
+                         "    not made yet). The summary shows the units bought, sold and matured "
+                         "in the year.\n"
+                         "  - Crypto assets: they are not part of Doh-KDVP. Check whether a "
+                         "separate crypto return\n"
+                         "    applies to you.\n"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "  - An asset class that is missing, not recognized or differs between "
+                         "rows (the question\n"
+                         "    names the labels in the files): capital: report the investment as "
+                         "shares or fund\n"
+                         "    units. exclude: leave it out of the reports; the summary lists it "
+                         "under \"Excluded\n"
+                         "    items\" and you report it yourself if it is taxable. This question "
+                         "comes first.\n"));
+    EXPECT_TRUE(contains(report.mOut, "  - is a private fund or a derivative;\n"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "when the asset class\nquestion of an investment with a row up to 31 "
+                         "December is open or cancelled (sold in the\nyear or not)"));
     EXPECT_TRUE(contains(report.mOut,
                          "It is also blocked when a file cannot be read, when a trade or "
                          "corporate-action row of\nany file is rejected"));
@@ -4817,11 +4864,11 @@ TEST(CliReportIntegrationTest, ARetainedLossIsAskedBeforeTheExclusionQuestion) {
     EXPECT_FALSE(contains(xml, "XX0000000002"));
 }
 
-TEST(CliReportIntegrationTest, AnExcludedCryptoInvestmentIsNeverAskedItsLossQuestion) {
-    // The crypto sale at a loss (bought at 30, sold at 10) has a loss question of its own, but
-    // the crypto class is not supported, so its error is listed. The exclusion question comes
-    // first because it lists XX0000000005, and excluding it drops the loss question, so only one
-    // answer is typed. XX0000000001 stays.
+TEST(CliReportIntegrationTest, AnExcludedPrivateFundIsNeverAskedItsLossQuestion) {
+    // The private-fund sale at a loss (bought at 30, sold at 10) could have a loss question of
+    // its own, but the private-fund class is not supported, so its error is listed. The exclusion
+    // question comes first because it lists XX0000000005, and excluding it drops the loss question,
+    // so only one answer is typed. XX0000000001 stays.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -4829,8 +4876,8 @@ TEST(CliReportIntegrationTest, AnExcludedCryptoInvestmentIsNeverAskedItsLossQues
         {
             R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
             R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
-            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,CRYPTO,Synthetic Coin,XX0000000005,1,30,-30,,,EUR,,,,,synthetic-buy-5,,,,)",
-            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,CRYPTO,Synthetic Coin,XX0000000005,-1,10,10,,,EUR,,,,,synthetic-sell-5,,,,)",
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000005,1,30,-30,,,EUR,,,,,synthetic-buy-5,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,PRIVATE_FUND,Synthetic Private Fund,XX0000000005,-1,10,10,,,EUR,,,,,synthetic-sell-5,,,,)",
         });
 
     const auto result = run({"report",
@@ -4845,8 +4892,9 @@ TEST(CliReportIntegrationTest, AnExcludedCryptoInvestmentIsNeverAskedItsLossQues
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
     ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "  XX0000000005 Synthetic Coin: excluded (unsupported_tax_treatment)\n"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "  XX0000000005 Synthetic Private Fund: excluded (unsupported_tax_treatment)\n"));
     EXPECT_TRUE(
         result.mOut.starts_with("Question request-0001: Doh-KDVP cannot include 1 investment:\n"));
     EXPECT_FALSE(contains(result.mOut, "the 30-day loss rule"));
@@ -4856,8 +4904,8 @@ TEST(CliReportIntegrationTest, AnExcludedCryptoInvestmentIsNeverAskedItsLossQues
 }
 
 TEST(CliReportIntegrationTest, AFileErrorSuppressesTheExclusionQuestion) {
-    // Two files give XX0000000001 two asset classes: a merge error that no exclusion solves,
-    // even though it names an ISIN. XX0000000002 has incomplete history, but it is not offered.
+    // A sale row with an invalid price is rejected: a row error that no exclusion solves.
+    // XX0000000002 has incomplete history, but it is not offered.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto purchases = folder.writeCsv(
@@ -4869,8 +4917,10 @@ TEST(CliReportIntegrationTest, AFileErrorSuppressesTheExclusionQuestion) {
     const auto sales = folder.writeCsv(
         "sales.csv",
         {
-            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,FUND,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
             R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Other,XX0000000002,-2,30,60,,,EUR,,,,,synthetic-sell-2,,,,)",
+            // The price is not a number.
+            R"(2024-03-11T09:00:00Z,2024-03-11,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,abc,30,,,EUR,,,,,synthetic-sell-3,,,,)",
         });
 
     const auto result = run({"report",
@@ -4891,6 +4941,253 @@ TEST(CliReportIntegrationTest, AFileErrorSuppressesTheExclusionQuestion) {
     EXPECT_FALSE(contains(result.mOut, "Answered in this run"));
     EXPECT_TRUE(
         contains(result.mOut, "  XX0000000002 Synthetic Other: blocked (incomplete_history)\n"));
+}
+
+TEST(CliReportIntegrationTest, AnUnknownClassAnsweredCapitalWritesTheInvestment) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "capital\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000001"));
+    EXPECT_TRUE(result.mOut.starts_with(
+        "Question request-0001: the asset class of XX0000000001 Synthetic Share is missing, not "
+        "recognized or differs between rows (class in the files: (blank)).\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, asset class: report it as shares or "
+                         "fund units (Doh-KDVP)\n"));
+    EXPECT_FALSE(contains(result.mOut, "Excluded items"));
+}
+
+TEST(CliReportIntegrationTest, AnUnknownClassAnsweredExcludeLeavesItOutAsAUserChoice) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,,Synthetic Mystery,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,,Synthetic Mystery,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000002,1,10,-10,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-03-11T09:00:00Z,2024-03-11,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000002,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000002"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000001"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Investments with a sale in 2024: 1\n"
+                         "  XX0000000002 Synthetic Share: listed, 1 sale, 1.0000 units\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XX0000000001 Synthetic Mystery: unknown class, your choice\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  diagnostic-0003 tax_category_not_reported, XX0000000001 Synthetic "
+                         "Mystery, 2024-01-10, history.csv row 2 (+1 more)\n"));
+}
+
+TEST(CliReportIntegrationTest, ATradeWithoutAnIsinGetsNoClassificationQuestion) {
+    // The parser rejects the first row (blank ISIN), so there is no instrument to classify: the
+    // parser error blocks, and no classification question is asked.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,,Synthetic Mystery,,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_FALSE(contains(result.mOut, "tax_classification_required"));
+    EXPECT_FALSE(contains(result.mOut, "Excluded items"));
+    EXPECT_TRUE(contains(result.mOut, "missing_field"));
+}
+
+TEST(CliReportIntegrationTest, CancellingTheClassQuestionIsNotAnExclusion) {
+    // Cancel leaves a blocking error, which the exclusion question lists; only its answer
+    // leaves the investment out of the XML.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,,Synthetic Mystery,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,,Synthetic Mystery,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-01-11T09:00:00Z,2024-01-11,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000002,1,10,-10,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-03-11T09:00:00Z,2024-03-11,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000002,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
+        });
+
+    const auto cancelled = run({"report",
+                                "--year",
+                                "2024",
+                                "--taxpayer",
+                                taxpayer,
+                                "--out",
+                                folder.outputDirectory(),
+                                history},
+                               "cancel\n");
+
+    // The input ends at the exclusion question: it stays open and nothing is written.
+    EXPECT_EQ(cancelled.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(cancelled.mOut,
+                         "Question request-0001: Doh-KDVP cannot include 1 investment:\n"
+                         "  XX0000000001 Synthetic Mystery: tax_classification_unknown\n"));
+    EXPECT_FALSE(contains(cancelled.mOut, "Excluded items"));
+
+    const auto excluded = run({"report",
+                               "--year",
+                               "2024",
+                               "--taxpayer",
+                               taxpayer,
+                               "--out",
+                               folder.outputDirectory(),
+                               history},
+                              "cancel\nexclude\n");
+
+    EXPECT_EQ(excluded.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000001"));
+    EXPECT_TRUE(contains(excluded.mOut,
+                         "Excluded investments (not in the XML): 1\n"
+                         "  XX0000000001 Synthetic Mystery: tax_classification_unknown\n"));
+}
+
+TEST(CliReportIntegrationTest, ABondIsLeftOutWithItsUnitsAndMaturity) {
+    // A bond bought in 2025 (1000 units), matured on 2025-08-14, cancelled and booked again:
+    // 1000 out, 1000 back, 1000 out is 1000 matured. The share sale is still written.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-02-03T09:00:00Z,2025-02-03,DEFAULT,TRADING,BUY,BOND,Synthetic Bond,XS0000000001,1000,1,-1000,,,EUR,,,,,synthetic-bond-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-08-14T15:01:00.000Z,2025-08-14,DEFAULT,CORPORATE_ACTION,FINAL_MATURITY,BOND,Synthetic Bond,XS0000000001,-1000,,,,,,,,,FINAL_MATURITY XS0000000001,synthetic-bond-maturity-001,,,,)",
+            R"(2025-08-21T09:00:00.000Z,2025-08-14,DEFAULT,CORPORATE_ACTION,FINAL_MATURITY_CANCELLED,BOND,Synthetic Bond,XS0000000001,1000,,,,,,,,,FINAL_MATURITY XS0000000001,synthetic-bond-cancel-001,,,,)",
+            R"(2025-08-21T09:02:00.000Z,2025-08-14,DEFAULT,CORPORATE_ACTION,FINAL_MATURITY,BOND,Synthetic Bond,XS0000000001,-1000,,,,,,,,,FINAL_MATURITY XS0000000001,synthetic-bond-maturity-002,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2025.xml"), "XS0000000001"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XS0000000001 Synthetic Bond: bond, tax rule: debt security, only its "
+                         "interest is taxable; bought 1000.0000, sold 0.0000, matured 1000.0000 "
+                         "units, maturity 2025-08-14\n"));
+}
+
+TEST(CliReportIntegrationTest, ACryptoSaleWithTooFewUnitsAndASplitRowIsNoErrorOrQuestion) {
+    // The crypto sale needs 2 units but 1 was bought, and a split row follows 5 days later. Only
+    // an investment in Doh-KDVP stops its pool there or asks the ratio; crypto is left out by a
+    // tax rule, so the share sale is written and no question is asked.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,CRYPTO,Synthetic Coin,XX0000000005,1,10,-10,,,EUR,,,,,synthetic-buy-5,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,CRYPTO,Synthetic Coin,XX0000000005,-2,30,60,,,EUR,,,,,synthetic-sell-5,,,,)",
+            R"(2024-03-15T09:00:00Z,2024-03-15,DEFAULT,CORPORATE_ACTION,SPLIT,CRYPTO,Synthetic Coin,XX0000000005,1,,,,,,,,,,synthetic-split-5,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000005"));
+    EXPECT_FALSE(contains(result.mOut, "Question request"));
+    EXPECT_FALSE(contains(result.mOut, "incomplete_history"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
+                         "Doh-KDVP\n"));
+}
+
+TEST(CliReportIntegrationTest, ABuyOnlyCryptoYearStillHasNoSaleToReport) {
+    // Crypto is left out and listed, but it was only bought in 2024: no sale needs a form.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,CRYPTO,Synthetic Coin,XX0000000005,1,10,-10,,,EUR,,,,,synthetic-buy-5,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Capital gains (Doh-KDVP): no data, no sale in 2024 needs a Doh-KDVP "
+                         "form\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
+                         "Doh-KDVP\n"));
 }
 
 TEST(CliReportIntegrationTest, HelpExplainsTheExclusionQuestion) {
