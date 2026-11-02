@@ -112,7 +112,7 @@ Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reus
            │                     │                            files change, not required)
            │                     └─ Cppcheck         (cppcheck.sh --reuse-build)
            ├─ format-check                  (pull requests only)
-           ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 60 s, own sanitizer build, not required yet)
+           ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 240 s, own sanitizer build)
            └─ Coverage (current) ─┬─ coverage      (pull requests only)
               Coverage (baseline) ┘
 Production image                   (own Release build inside the Dockerfile)
