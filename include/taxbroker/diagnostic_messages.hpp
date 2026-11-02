@@ -106,6 +106,13 @@ enum class MessageKey {
     DuplicateRateYear,
     NoRates,
     InvalidHeaderRateFileDuplicateColumn,
+    MissingExchangeRateNoRateFile,
+    MissingExchangeRateNoRateOnDate,
+    MissingExchangeRateRateFileEndsEarly,
+    MissingExchangeRateReplacedByEur,
+    OfficialRateFromNearbyDate,
+    OfficialRateFileIncompleteStartsLate,
+    OfficialRateFileIncompleteEndsEarly,
 };
 
 enum class MessageParamKind {

@@ -313,6 +313,11 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
                           "TIME_PERIOD");
         }
 
+        aParsed.mInfo.mFirstDate = aParsed.mRates.empty()
+                                       ? *observationDate
+                                       : std::min(aParsed.mInfo.mFirstDate, *observationDate);
+        aParsed.mInfo.mLastDate = std::max(aParsed.mInfo.mLastDate, *observationDate);
+
         aParsed.mRates.push_back(OfficialRate{
             .mCurrencyCode = currency,
             .mObservationDate = *observationDate,

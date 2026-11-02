@@ -122,6 +122,8 @@ TEST(EcbRateFileTest, LoadsACoveredPairWithFullProvenance) {
     EXPECT_EQ(result.mTable.mFiles[0].mSha256,
               "477fc33becc38dd61cc8e9a98d20cfe222f93d6056f13394eb2eae9192498f9a");
     EXPECT_EQ(result.mTable.mFiles[0].mYear, 2025);
+    EXPECT_EQ(result.mTable.mFiles[0].mFirstDate, date("2025-01-02"));
+    EXPECT_EQ(result.mTable.mFiles[0].mLastDate, date("2025-01-02"));
     EXPECT_EQ(result.mTable.mFiles[0].mRateCount, 1U);
 }
 

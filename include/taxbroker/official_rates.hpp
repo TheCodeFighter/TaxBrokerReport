@@ -35,6 +35,8 @@ struct OfficialRateFile {
     SourceFilename mSourceFile;
     std::string mSha256;
     int mYear{};
+    Date mFirstDate{}; ///< The earliest observation date of any currency in the file.
+    Date mLastDate{};  ///< The latest observation date of any currency in the file.
     std::size_t mRateCount{};
 };
 

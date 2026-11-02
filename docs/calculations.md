@@ -182,7 +182,9 @@ The official rate date is:
 
 The user copies the rate that Banka Slovenije shows as valid for that currency and date. This also
 covers a date for which the site uses its applicable daily or monthly rate. The app must not
-interpolate rates or silently choose an average, annual, current, or nearby rate.
+interpolate rates or silently choose an average, annual or current rate. The only other rate it
+takes by itself is the last earlier ECB rate when the date has none, with a visible warning (see
+"Lookup" under "Official ECB rate files").
 
 ## Supported currencies
 
@@ -206,7 +208,12 @@ Rules:
   also published a few indicative-only rates in 2020 (for example ARS); they are not reference
   rates and are not supported.
 - A supported code is only a name. It does not mean a rate exists on a date. A missing rate is
-  handled where the rate is needed (see "Asking the user for official rates"), not by the parser.
+  handled where the rate is needed (see "Official ECB rate files", "Lookup"), not by the parser.
+- HRK is replaced by the euro from 2023-01-01 and BGN from 2026-01-01. The code is still accepted
+  on any date, but from those dates it has no rate and the report that needs it is blocked with
+  a message that the euro replaced the currency, never a request for a *Banka Slovenije* rate.
+  The fixed conversion rates of the changeover are not used: no source for taking them has been
+  confirmed.
 - EUR keeps its identity rate and never needs an official rate.
 - Trades in a currency other than EUR are still blocked in the first release.
 
@@ -270,11 +277,48 @@ files for the same year that both pass the checks, even byte-identical ones, are
 are rejected. A file rejected for its own fault does not count, so a good file of the same year
 beside it still loads. A file of another year is not affected.
 
-**Lookup.** A rate is found only by its exact currency code and date. The ECB publishes no rate on
+**Lookup.** A rate is found by its exact currency code and date. The ECB publishes no rate on
 weekends and TARGET holidays, and a suspended or unpublished currency has no rows, so those dates
-and currencies simply have no rate. The app never takes a nearby date and never carries a rate
-forward. What happens to an event without a rate (typed rate, or the broker fallback below) is
-decided by the exchange-rate request, what will be implemented latter.
+and currencies have no rate of their own. For such a date the app takes the **last earlier ECB
+rate** for the currency, at most 4 calendar days back (the longest gap is Good Friday to Easter
+Monday). Friday's rate serves a Saturday and a Sunday. This applies only to a day on which the
+ECB published no rate at all: if the loaded files have rates for other currencies on that day,
+the currency itself was stopped and no earlier rate is taken. It never takes a later rate: a rate
+published after the event was not known on that day. Each such rate gets a visible warning
+`official_rate_from_nearby_date` that names the currency, the date and the rate's own date. The
+rate is still an official ECB rate, and its provenance keeps its own observation date.
+
+The rule follows the general practice for a day without a fixing: the latest rate published at
+that time (for example Article 91(2) of the VAT Directive 2006/112/EC, "the latest exchange rate
+published by the European Central Bank"). It is **unconfirmed** for the Slovenian forms: no FURS
+instruction or *Banka Slovenije* page states what to do, so it needs a FURS answer.
+
+A date still has no rate, and the report that needs it is blocked with `missing_exchange_rate`,
+when:
+
+- the euro replaced the currency on or before the date (key `.replaced_by_eur`);
+- the rate file of the date's year, or of a year the search into earlier days reaches, is not
+  loaded (key `.no_rate_file`, with that year): an earlier rate is never used while the file of
+  the date's own year is missing, because the date may have a rate there;
+- the file of that year ends before the day (key `.rate_file_ends_early`, with the file's last
+  date): the app cannot tell a day without rates from a file that was downloaded early. A file
+  that ends within 4 days of 31 December counts as the whole year, because the ECB publishes
+  nothing on the last days of some years;
+- the ECB published rates on that day but none for the currency, for example a currency that
+  stopped being published, or the loaded files have no rate within the 4 days (key
+  `.no_rate_on_date`).
+
+A used rate file also gets one warning `official_rate_file_incomplete` when it is not a whole
+year, even if no rate is missing:
+
+- `.starts_late` (`year`, `firstDate`): the file's first date is more than 4 days after 1 January,
+  so earlier rates are missing;
+- `.ends_early` (`year`, `lastDate`): the file ends before 31 December, within the 4 days that
+  count as a whole year, and a need after its end was accepted. It names that end so the user can
+  check that no later rate exists.
+
+One error covers one currency and date, with every event and report that needs it. What happens
+next (a typed rate, or the broker fallback below) is decided by the exchange-rate request.
 
 **Provenance.** Each rate keeps the value, the observation date, the ECB series key, the SHA-256 of
 the file bytes, the file's display name and the row. A file rate is an official rate and is labelled

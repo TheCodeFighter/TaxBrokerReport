@@ -136,6 +136,10 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "unsupported_corporate_action";
     case ProcessingDiagnosticCode::TaxCategoryNotReported:
         return "tax_category_not_reported";
+    case ProcessingDiagnosticCode::OfficialRateFromNearbyDate:
+        return "official_rate_from_nearby_date";
+    case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
+        return "official_rate_file_incomplete";
     }
 
     return "unrepresentable_value";

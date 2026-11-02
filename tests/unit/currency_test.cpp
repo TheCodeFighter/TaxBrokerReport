@@ -1,5 +1,7 @@
 #include "taxbroker/currency.hpp"
 
+#include "utils/date_utils.hpp"
+
 #include <gtest/gtest.h>
 
 namespace {
@@ -120,6 +122,13 @@ TEST(CurrencyTest, WritesEveryCodeOfTheSupportedSet) {
 
 TEST(CurrencyTest, GivesAnEmptyCodeForAnUnknownCurrency) {
     EXPECT_EQ(currencyCode(Currency::Unknown), "");
+}
+
+TEST(CurrencyTest, GivesTheEuroDateOnlyForCurrenciesTheEuroReplaced) {
+    EXPECT_EQ(euroReplacementDate(Currency::HRK), parseCalendarDate("2023-01-01"));
+    EXPECT_EQ(euroReplacementDate(Currency::BGN), parseCalendarDate("2026-01-01"));
+    EXPECT_EQ(euroReplacementDate(Currency::USD), std::nullopt);
+    EXPECT_EQ(euroReplacementDate(Currency::EUR), std::nullopt);
 }
 
 } // namespace
