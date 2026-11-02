@@ -670,7 +670,8 @@ Classify the legal instrument and income, not just the broker name or its CSV ca
 | Discount or zero-coupon debt | Interest may arise on disposal or redemption; require instrument terms and acquisition data. Until these calculations are implemented, return `unsupported_tax_treatment` rather than silently excluding possible interest. |
 | Ordinary private crypto disposals | Exclude from the supported capital return with a year-specific explanation based on verified FURS guidance; business activity and tokens qualifying as securities or derivatives are not covered by this exclusion. |
 | Derivatives | Different tax-return rules; `unsupported_tax_treatment` until a dedicated processor and form are implemented. |
-| Unknown instruments, private-market events, and benefits | Ask for classification and required facts; cash movements alone do not establish a purchase quantity or cost basis. |
+| Unknown instruments and private-market events | Ask for classification and required facts; cash movements alone do not establish a purchase quantity or cost basis. |
+| Broker benefits (saveback, stock perks, bonuses, referrals) | Information only: no units, lot, classification request or form. Purchase rows come only from trades (date, units, unit price); a benefit never lowers a purchase value. eDavki applies the standard costs (*normirani stroški*) itself, so the application never writes them. |
 
 Known broker facts may suggest a classification but cannot resolve contradictory source evidence.
 Import retains otherwise valid trade/action facts when a broker class is missing, unrecognized or
@@ -697,7 +698,7 @@ requires issuer/instrument identity and coupon-versus-discount information. Unsu
 fields or calculations remain visible even after classification.
 
 Apply classification to the complete instrument history only when the confirmed treatment is the
-same; heterogeneous benefits or income events require event-specific choices. Store the decision
+same; heterogeneous income events require event-specific choices. Store the decision
 and original classification in the current run. Explicit exclusions stay visible in a separate
 `excludedItems` list with sources, category and reason; they never masquerade as a processed event.
 This list is distinct from per-report capital and other-interest `excludedInvestments`. A known outside-scope category gives a

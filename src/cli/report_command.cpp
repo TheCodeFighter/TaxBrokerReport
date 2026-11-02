@@ -152,11 +152,14 @@ class of an investment, or when a value does not fit the form (for example a pos
 that is too long).
 
 Skipped:
-  - Private-market events (Trade Republic types PRIVATE_MARKET_BUY, PRIVATE_MARKET_SELL
-    and BONUS) have only a cash amount, without units or a price, so they are not
-    processed. Each one in the year gets a warning in the summary: check whether you
+  - Private-market events (Trade Republic types PRIVATE_MARKET_BUY and
+    PRIVATE_MARKET_SELL) have only a cash amount, without units or a price, so they are
+    not processed. Each one in the year gets a warning in the summary: check whether you
     have to report it yourself. A private-market row that cannot be read is listed with
-    its error, but it does not block the report.
+    its error, but it does not block the report. A row that has units or a price gets
+    one more warning, because those units are not used.
+  - Bonus credits (Trade Republic types BENEFITS_SAVEBACK, STOCKPERK, BONUS and
+    REFERRAL) are information only. They are in no form and never change a purchase value.
   - Dividends and interest: their forms (Doh-Div, Doh-DHO, Doh-Obr) are not made yet.
 
 Exit codes:

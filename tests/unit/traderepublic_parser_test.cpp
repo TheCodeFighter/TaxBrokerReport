@@ -557,6 +557,326 @@ TEST(TradeRepublicParserTest, PreservesBenefitsWithoutDuplicatingBuyTransactions
     EXPECT_FALSE(hasDiagnosticContaining(parseResult, "BENEFITS_SAVEBACK"));
 }
 
+TEST(TradeRepublicParserTest, ParsesSavebackAsInformationOnlyBenefit) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-02-03T10:00:00.000Z",
+        .mDate = "2024-02-03",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "BENEFITS_SAVEBACK",
+        .mAssetClass = "FUND",
+        .mName = "Synthetic Reward Fund",
+        .mSymbol = "XX1000000002",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "1.50",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-saveback-test",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBenefitEvents.size(), 1U);
+
+    const auto& benefit = result.mStatement.mBenefitEvents.front();
+
+    EXPECT_EQ(benefit.mType, BenefitType::Saveback);
+    EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 2, 3));
+    EXPECT_EQ(benefit.mAmount, 15'000); // EUR 1.50 at 4 decimals
+    EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+    EXPECT_EQ(benefit.mAssetClass, AssetClass::Fund);
+    ASSERT_TRUE(benefit.mIsin.has_value());
+    EXPECT_EQ(*benefit.mIsin, "XX1000000002");
+    EXPECT_EQ(transactionId(benefit.mMetadata), "synthetic-saveback-test");
+}
+
+TEST(TradeRepublicParserTest, ParsesStockPerkAsInformationOnlyBenefit) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-02T10:00:00.000Z",
+        .mDate = "2024-01-02",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "STOCKPERK",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Reward Share",
+        .mSymbol = "XX1000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "12.34",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-stock-perk-test",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBenefitEvents.size(), 1U);
+
+    const auto& benefit = result.mStatement.mBenefitEvents.front();
+
+    EXPECT_EQ(benefit.mType, BenefitType::StockPerk);
+    EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 1, 2));
+    EXPECT_EQ(benefit.mAmount, 123'400); // EUR 12.34 at 4 decimals
+    EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+    EXPECT_EQ(benefit.mAssetClass, AssetClass::Stock);
+    ASSERT_TRUE(benefit.mIsin.has_value());
+    EXPECT_EQ(*benefit.mIsin, "XX1000000001");
+    EXPECT_EQ(transactionId(benefit.mMetadata), "synthetic-stock-perk-test");
+}
+
+TEST(TradeRepublicParserTest, ParsesBonusAsInformationOnlyBenefitNotAPrivateMarketEvent) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-12-01T10:00:00.000Z",
+        .mDate = "2024-12-01",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "BONUS",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "3.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-bonus-test",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBenefitEvents.size(), 1U);
+
+    const auto& benefit = result.mStatement.mBenefitEvents.front();
+
+    EXPECT_EQ(benefit.mType, BenefitType::Bonus);
+    EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 12, 1));
+    EXPECT_EQ(benefit.mAmount, 30'000); // EUR 3.00 at 4 decimals
+    EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+    EXPECT_EQ(benefit.mAssetClass, AssetClass::Unknown);
+    EXPECT_FALSE(benefit.mIsin.has_value());
+    EXPECT_EQ(transactionId(benefit.mMetadata), "synthetic-bonus-test");
+}
+
+TEST(TradeRepublicParserTest, ParsesReferralAsInformationOnlyBenefit) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-06-10T10:00:00.000Z",
+        .mDate = "2024-06-10",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "REFERRAL",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "15.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-referral-test",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    EXPECT_TRUE(result.mStatement.mPrivateMarketEvents.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mBenefitEvents.size(), 1U);
+
+    const auto& benefit = result.mStatement.mBenefitEvents.front();
+
+    EXPECT_EQ(benefit.mType, BenefitType::Referral);
+    EXPECT_EQ(benefit.mMetadata.mTaxDate, makeDate(2024, 6, 10));
+    EXPECT_EQ(benefit.mAmount, 150'000); // EUR 15.00 at 4 decimals
+    EXPECT_EQ(benefit.mCurrency, Currency::EUR);
+    EXPECT_EQ(benefit.mAssetClass, AssetClass::Unknown);
+    EXPECT_FALSE(benefit.mIsin.has_value());
+    EXPECT_EQ(transactionId(benefit.mMetadata), "synthetic-referral-test");
+}
+
+TEST(TradeRepublicParserTest, WarnsAboutAPrivateMarketBuyWithShares) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-03-04T10:00:00.000Z",
+        .mDate = "2024-03-04",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_BUY",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Private Fund",
+        .mSymbol = "XX1000000003",
+        .mShares = "100",
+        .mPrice = "1.00",
+        .mAmount = "-100.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-private-units-buy",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPrivateMarketEvents.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.front().mType, PrivateMarketEventType::Buy);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::UnsupportedAssetClassPrivateMarketUnits);
+    EXPECT_EQ(warning.mField, "shares");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, "synthetic-private-units-buy");
+    EXPECT_EQ(warning.mRowKind, ParsedRowKind::PrivateMarket);
+}
+
+TEST(TradeRepublicParserTest, DoesNotWarnAboutACashOnlyPrivateMarketBuy) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-03-04T10:00:00.000Z",
+        .mDate = "2024-03-04",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_BUY",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Private Fund",
+        .mSymbol = "XX1000000003",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-100.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-private-cash-buy",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPrivateMarketEvents.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.front().mType, PrivateMarketEventType::Buy);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, WarnsAboutAPrivateMarketSellWithShares) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-03-04T10:00:00.000Z",
+        .mDate = "2024-03-04",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_SELL",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Private Fund",
+        .mSymbol = "XX1000000003",
+        .mShares = "-100",
+        .mPrice = "1.25",
+        .mAmount = "125.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-private-units-sell",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPrivateMarketEvents.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.front().mType, PrivateMarketEventType::Sell);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::UnsupportedAssetClassPrivateMarketUnits);
+    EXPECT_EQ(warning.mField, "shares");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, "synthetic-private-units-sell");
+    EXPECT_EQ(warning.mRowKind, ParsedRowKind::PrivateMarket);
+}
+
+TEST(TradeRepublicParserTest, WarnsAboutAPrivateMarketBuyWithOnlyAPrice) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-03-04T10:00:00.000Z",
+        .mDate = "2024-03-04",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "PRIVATE_MARKET_BUY",
+        .mAssetClass = "PRIVATE_FUND",
+        .mName = "Synthetic Private Fund",
+        .mSymbol = "XX1000000003",
+        .mShares = "",
+        .mPrice = "1.00",
+        .mAmount = "-100.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-private-price-buy",
+    };
+
+    const auto result = parseRows({row});
+
+    EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
+    ASSERT_EQ(result.mStatement.mPrivateMarketEvents.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPrivateMarketEvents.front().mType, PrivateMarketEventType::Buy);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::UnsupportedAssetClassPrivateMarketUnits);
+    EXPECT_EQ(warning.mField, "price");
+    EXPECT_EQ(warning.mRowIndex, 2U);
+    EXPECT_EQ(warning.mTransactionId, "synthetic-private-price-buy");
+    EXPECT_EQ(warning.mRowKind, ParsedRowKind::PrivateMarket);
+}
+
 TEST(TradeRepublicParserTest, PreservesPrivateMarketEventsAndFundExecution) {
     const ParseResult parseResult = parseFixture();
 
@@ -1331,11 +1651,11 @@ TEST(TradeRepublicParserTest, RejectsNegativeZeroSplitQuantity) {
     EXPECT_EQ(diagnostic.mTransactionId, "synthetic-split-validation");
 }
 
-TEST(TradeRepublicParserTest, PreservesBenefitsAndEveryPrivateMarketEventType) {
+TEST(TradeRepublicParserTest, PreservesBenefitsAndBothPrivateMarketEventTypes) {
     const ParseResult parseResult = parseSupportedFixture();
     const auto& statement = parseResult.mStatement;
 
-    ASSERT_EQ(statement.mBenefitEvents.size(), 2U);
+    ASSERT_EQ(statement.mBenefitEvents.size(), 3U);
     const auto* saveback = findBenefitEvent(statement, "synthetic-saveback-001");
     ASSERT_NE(saveback, nullptr);
     EXPECT_EQ(saveback->mType, BenefitType::Saveback);
@@ -1352,13 +1672,13 @@ TEST(TradeRepublicParserTest, PreservesBenefitsAndEveryPrivateMarketEventType) {
     EXPECT_EQ(*stockPerk->mIsin, "XX0000000009");
     EXPECT_EQ(stockPerk->mAssetClass, AssetClass::Stock);
 
-    ASSERT_EQ(statement.mPrivateMarketEvents.size(), 3U);
-    const auto* bonus = findPrivateMarketEvent(statement, "synthetic-private-bonus-001");
+    const auto* bonus = findBenefitEvent(statement, "synthetic-private-bonus-001");
     ASSERT_NE(bonus, nullptr);
-    EXPECT_EQ(bonus->mType, PrivateMarketEventType::Bonus);
-    EXPECT_EQ(bonus->mAmount, 30'000);
-    EXPECT_EQ(bonus->mFeePaid, 0);
+    EXPECT_EQ(bonus->mType, BenefitType::Bonus);
+    EXPECT_EQ(bonus->mAmount, 30'000); // EUR 3.00 at 4 decimals.
     EXPECT_FALSE(bonus->mIsin.has_value());
+
+    ASSERT_EQ(statement.mPrivateMarketEvents.size(), 2U);
 
     const auto* buy = findPrivateMarketEvent(statement, "synthetic-private-buy-001");
     ASSERT_NE(buy, nullptr);

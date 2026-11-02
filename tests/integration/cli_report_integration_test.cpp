@@ -529,6 +529,133 @@ Warnings: 2
 )");
 }
 
+TEST(CliReportIntegrationTest, ASavebackDoesNotChangeAPurchase) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,CASH,BENEFITS_SAVEBACK,FUND,Synthetic Fund,XX0000000001,,,1.50,,,EUR,,,,,synthetic-saveback-1,,,,)",
+            R"(2024-03-01T10:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,FUND,Synthetic Fund,XX0000000001,0.1,15,-1.50,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,TRADING,SELL,FUND,Synthetic Fund,XX0000000001,-0.1,20,2.00,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    // The purchase is 0.1 units at EUR 15.00 (EUR 1.50). The saveback of EUR 1.50 is not
+    // subtracted: that would give EUR 0.00.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml, "<F1>2024-03-01</F1>"));
+    EXPECT_TRUE(contains(xml, "<F3>0.1000</F3>"));
+    EXPECT_TRUE(contains(xml, "<F4>15.0000</F4>"));
+    EXPECT_TRUE(contains(xml, "<F6>2024-06-03</F6>"));
+    EXPECT_TRUE(contains(xml, "<F7>0.1000</F7>"));
+    EXPECT_TRUE(contains(xml, "<F9>20.0000</F9>"));
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 0"));
+    EXPECT_TRUE(
+        contains(result.mOut, "Private-market events skipped (only a cash amount, no units): 0"));
+}
+
+TEST(CliReportIntegrationTest, ABonusIsNotASkippedPrivateMarketEvent) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,CASH,BONUS,,,,,,3,,,EUR,,,,,synthetic-bonus-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
+Input files: 1
+  source-0001 history.csv
+
+Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
+
+Investments with a sale in 2024: 1
+  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units
+
+Units past the holding period (tax free, not in the XML): 0
+
+Private-market events skipped (only a cash amount, no units): 0
+
+Errors: 0
+
+Warnings: 0
+)");
+}
+
+TEST(CliReportIntegrationTest, APrivateMarketBuyWithSharesGetsAnExtraWarning) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,CASH,PRIVATE_MARKET_BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000009,100,1,-100,,,EUR,,,,,synthetic-private-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    // Still no block: the fund is skipped, with the parser warning and the year warning.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000009"));
+    EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
+Input files: 1
+  source-0001 history.csv
+
+Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
+
+Investments with a sale in 2024: 1
+  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units
+
+Units past the holding period (tax free, not in the XML): 0
+
+Private-market events skipped (only a cash amount, no units): 1
+  XX0000000009 Synthetic Private Fund: 2024-05-02, history.csv row 4
+
+Errors: 0
+
+Warnings: 1
+  diagnostic-0002 unsupported_tax_treatment, XX0000000009 Synthetic Private Fund, 2024-05-02, history.csv row 4
+    Private-market events have only a cash amount, without units or a price, so they are skipped and are not in the Doh-KDVP report. Check whether you have to report them yourself.
+
+Not about Doh-KDVP (dividends, interest and skipped private-market rows): 1
+  diagnostic-0001 warning unsupported_asset_class, history.csv row 4
+    This private-market row has units or a unit price. Private-market rows are not used as purchases, so these units are not in the capital-gains report. Check the row and report it yourself if needed.
+)");
+}
+
 TEST(CliReportIntegrationTest, PrivateMarketSaleWithoutAnIsinIsListedByItsName) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -3367,7 +3494,13 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(report.mOut, "    \"taxNumber\": \"12345678\",\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "  - Private-market events (Trade Republic types "
-                         "PRIVATE_MARKET_BUY, PRIVATE_MARKET_SELL\n"));
+                         "PRIVATE_MARKET_BUY and\n"
+                         "    PRIVATE_MARKET_SELL) have only a cash amount"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "  - Bonus credits (Trade Republic types BENEFITS_SAVEBACK, STOCKPERK, "
+                         "BONUS and\n"
+                         "    REFERRAL) are information only. They are in no form and never "
+                         "change a purchase value.\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "It is also blocked when a file cannot be read, when a trade or "
                          "corporate-action row of\nany file is rejected"));
@@ -3377,7 +3510,9 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "    split is applied;\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "A private-market row that cannot be read is listed with\n"
-                         "    its error, but it does not block the report.\n"));
+                         "    its error, but it does not block the report. A row that has units "
+                         "or a price gets\n"
+                         "    one more warning, because those units are not used.\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "  0  The XML was written, or no sale in the year needs a Doh-KDVP "
                          "form.\n"

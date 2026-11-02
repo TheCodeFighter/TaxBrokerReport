@@ -648,6 +648,11 @@ as unresolved; messages must not say it was skipped. A same-file class disagreem
 and reports its instrument conflict after rejecting any conflicting transaction identity groups.
 Classification requests and report blocking remain the processor's responsibility.
 
+A private-market row with shares or a price is kept as a cash-only event and gets an
+`unsupported_asset_class` warning (key `unsupported_asset_class.private_market_units`, field
+`shares`, or `price` when only the price is filled). It has the row kind private market, so it
+affects no report.
+
 A missing display name with a known ISIN is a `missing_field` warning on `name`, not rejection.
 The original blank remains source evidence even if another supplied name completes presentation.
 The merger uses the first non-empty supplied name for that same ISIN under the documented source

@@ -163,13 +163,14 @@ enum class InterestType {
 
 enum class BenefitType {
     Saveback,
-    StockPerk
+    StockPerk,
+    Bonus,
+    Referral
 };
 
 enum class PrivateMarketEventType {
     Buy,
-    Sell,
-    Bonus
+    Sell
 };
 
 /// Preserves pre-rounding quantities for duplicate checks and later FIFO management.
@@ -272,8 +273,8 @@ struct InterestInstrument {
     std::vector<InterestTransaction> mTransactions;
 };
 
-// Broker benefits are preserved separately from security acquisitions. This keeps the exact
-// credited amount available for local analytics without creating a duplicate buy transaction.
+/// A broker bonus credit. Information only: never units, a lot, a classification request or a
+/// form, and it never changes a purchase value.
 struct BenefitEvent {
     EventMetadata mMetadata;
     BenefitType mType{};
@@ -290,9 +291,7 @@ struct PrivateMarketEvent {
     std::string mName;
     std::optional<Isin> mIsin;
     AssetClass mAssetClass{AssetClass::Unknown};
-    // Signed cash movement as exported by the broker.
     Money mAmount{};
-    // Positive fee paid; zero when the export has no fee.
     Money mFeePaid{};
     Currency mCurrency{Currency::EUR};
     std::string mDescription;
