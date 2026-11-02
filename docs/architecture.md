@@ -860,8 +860,8 @@ not fit the form, one `xml_value_out_of_range` error per field and no XML.
 - **An empty model** (no lists) gives a valid document without `KDVPItem`; the caller decides that
   the form has no data and writes no file.
 
-The FURS schemas are in `resources/xml/schemas/`: the official `Doh_KDVP_9.xsd` and
-`EDP-Common-1.xsd` as downloaded, and in `snapshot-2026-05-12/` the older copy that the legacy
+The FURS schemas are in `resources/xml/schemas/`: the official `Doh_KDVP_9.xsd`, `Doh_Obr_2.xsd`
+and `EDP-Common-1.xsd` as downloaded, and in `snapshot-2026-05-12/` the older copy that the legacy
 app used. The unit and integration tests check every document they write against both with
 libxml2. The application does not link libxml2 and does not check the schema at run time.
 

@@ -23,6 +23,9 @@ inline constexpr std::array<std::string_view, 2> kKdvpSchemaFiles{
     "snapshot-2026-05-12/Doh_KDVP_9.xsd",
 };
 
+/// The Doh-Obr schema below `resources/xml/schemas/`; it imports `EDP-Common-1.xsd` next to it.
+inline constexpr std::string_view kObrSchemaFile = "Doh_Obr_2.xsd";
+
 inline constexpr std::string_view kSkipWithoutLibXml2 =
     "libxml2 not found: XSD validation skipped, see CONTRIBUTING.md";
 
@@ -115,6 +118,24 @@ inline void expectInvalidForKdvpSchemas([[maybe_unused]] const std::string& aXml
         SCOPED_TRACE(schemaFile);
         EXPECT_NE(schemaErrors(aXml, schemaFile), "");
     }
+#else
+    GTEST_SKIP() << kSkipWithoutLibXml2;
+#endif
+}
+
+/// Checks a document against the Doh-Obr schema. Without libxml2 the test shows as skipped.
+inline void expectValidForObrSchema([[maybe_unused]] const std::string& aXml) {
+#ifdef TAXBROKER_HAS_LIBXML2
+    EXPECT_EQ(schemaErrors(aXml, kObrSchemaFile), "");
+#else
+    GTEST_SKIP() << kSkipWithoutLibXml2;
+#endif
+}
+
+/// Checks that the Doh-Obr schema rejects a document. Without libxml2 the test shows as skipped.
+inline void expectInvalidForObrSchema([[maybe_unused]] const std::string& aXml) {
+#ifdef TAXBROKER_HAS_LIBXML2
+    EXPECT_NE(schemaErrors(aXml, kObrSchemaFile), "");
 #else
     GTEST_SKIP() << kSkipWithoutLibXml2;
 #endif

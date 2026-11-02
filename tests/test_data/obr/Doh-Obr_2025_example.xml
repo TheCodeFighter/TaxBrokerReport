@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_Obr>
+      <SelfReport>false</SelfReport>
+      <Period>2025</Period>
+      <DocumentWorkflowID>O</DocumentWorkflowID>
+      <ResidentOfRepublicOfSlovenia>true</ResidentOfRepublicOfSlovenia>
+      <Country>SI</Country>
+      <Interest>
+        <Date>2025-03-31</Date>
+        <IdentificationNumber>DE000000000</IdentificationNumber>
+        <Name>Example Broker AG</Name>
+        <Address>Example Street 1, 10115 Berlin</Address>
+        <Country>DE</Country>
+        <Type>4</Type>
+        <Value>12.34</Value>
+        <ForeignTax>0</ForeignTax>
+        <Country2>DE</Country2>
+      </Interest>
+      <Interest>
+        <Date>2025-06-15</Date>
+        <IdentificationNumber>FR0000000000</IdentificationNumber>
+        <Name>Example Issuer SA</Name>
+        <Address>1 Rue Exemple, 75001 Paris</Address>
+        <Country>FR</Country>
+        <Type>2</Type>
+        <Value>25.00</Value>
+        <ForeignTax>3.75</ForeignTax>
+        <Country2>FR</Country2>
+      </Interest>
+    </Doh_Obr>
+  </body>
+</Envelope>
