@@ -1,10 +1,10 @@
 #include "taxbroker/diagnostic_messages.hpp"
 
+#include "utils/csv_text_reader.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <csv.hpp>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -553,34 +553,67 @@ std::span<const std::string_view> termKeys() {
     return kTermKeys;
 }
 
+namespace {
+
+/// The developer error text for the first fault of a message table.
+std::string messageTableFaultText(const CsvFault& aFault) {
+    switch (aFault.mKind)
+    {
+    case CsvFaultKind::UnclosedQuote:
+        return "The message table has an unclosed quote";
+    case CsvFaultKind::MissingColumns: {
+        std::string columns;
+
+        for (const std::string& column : aFault.mColumns)
+        {
+            columns += columns.empty() ? "" : ", ";
+            columns += column;
+        }
+
+        return "The message table is missing the columns " + columns;
+    }
+    case CsvFaultKind::RepeatedColumn:
+        return "The message table has the column " + aFault.mColumns.front() + " twice";
+    case CsvFaultKind::LineBreakInField:
+        return "Message table row " + std::to_string(*aFault.mRowNumber) +
+               " has a line break inside a text";
+    case CsvFaultKind::FieldCountMismatch:
+        return "Message table row " + std::to_string(*aFault.mRowNumber) + " has " +
+               std::to_string(aFault.mFoundFields) + " fields instead of " +
+               std::to_string(aFault.mExpectedFields);
+    case CsvFaultKind::Unreadable:
+        return "The message table could not be read";
+    }
+
+    throw std::logic_error{"Unknown CSV fault kind"};
+}
+
+} // namespace
+
 std::vector<MessageTableRow> parseMessageTable(std::string_view aCsvText) {
-    csv::CSVFormat format;
-    format.delimiter(',').variable_columns(csv::VariableColumnPolicy::KEEP);
+    static constexpr std::array<std::string_view, 3> kColumns{"key", "en", "sl"};
 
-    // Not csv::parse: it reads aCsvText.data() up to a zero byte and ignores the view's size.
-    std::stringstream stream{std::string{aCsvText}};
-    csv::CSVReader reader{stream, format};
+    const CsvTable table = readCsvText(aCsvText, ',', kColumns);
 
-    if (reader.get_col_names() != std::vector<std::string>{"key", "en", "sl"})
+    if (table.mFault)
+    {
+        throw std::logic_error{messageTableFaultText(*table.mFault)};
+    }
+
+    if (table.mHeader != std::vector<std::string>{"key", "en", "sl"})
     {
         throw std::logic_error{"The message table header must be key,en,sl"};
     }
 
-    std::vector<MessageTableRow> rows;
+    std::vector<MessageTableRow> rows(table.mRows.size());
 
-    for (const csv::CSVRow& row : reader)
-    {
-        if (row.size() != 3)
-        {
-            throw std::logic_error{"A message table row must have 3 fields"};
-        }
-
-        rows.push_back(MessageTableRow{
-            .mKey = row[0].get<std::string>(),
-            .mEnglish = row[1].get<std::string>(),
-            .mSlovenian = row[2].get<std::string>(),
-        });
-    }
+    std::transform(table.mRows.begin(), table.mRows.end(), rows.begin(), [](const CsvRow& aRow) {
+        return MessageTableRow{
+            .mKey = aRow.mFields[0],
+            .mEnglish = aRow.mFields[1],
+            .mSlovenian = aRow.mFields[2],
+        };
+    });
 
     return rows;
 }
