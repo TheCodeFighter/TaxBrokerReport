@@ -746,14 +746,14 @@ with the licence notice; processing must work offline without the other project 
 tree.
 
 Entries associate exact instrument identifiers with legal payer name, address, tax/registration
-identifier when available and residence country. Instrument kind, effective dates and fund/share
-class identity for ETFs are kept where a source has them; the imported rows have none of them. Store
+identifier when available and residence country. Instrument kind and a verification date are kept
+where a source has them (the imported rows have neither); the ISIN identifies an ETF share class. Store
 verified source-country and treaty references separately, with their own sources and effective
 dates. Match exact identifiers; names, exchange location, trading currency, broker country and an
 ISIN prefix alone do not prove payer residence or tax treatment.
-Conflicting entries, entries with a verification date that does not cover the payment date, or
-absent entries require `income_details_required` when needed report facts cannot be established
-from other reliable sources. An entry without dates is a suggestion that the user confirms.
+Conflicting or absent entries require `income_details_required` when needed report facts cannot
+be established from other reliable sources. An entry is a suggestion that the user confirms; it has
+no validity dates, and a payer whose facts change is a new entry that conflicts with the old one.
 A catalogue entry may prefill verified metadata, but never overrides contradictory payment evidence.
 
 For dividends and other interest, distinguish foreign tax from Slovenian final withholding.

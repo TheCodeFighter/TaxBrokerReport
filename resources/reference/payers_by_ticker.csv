@@ -1,139 +1,140 @@
-ticker,isin,name,tax_number,address,country,source,source_revision
-1234,,China Lilang Ltd,,Rm 3402 34/F LIPPO CTR TWR ONE 89 QUEENSWAY Admiralty Hong Kong,HK,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-1616500,,Shangri-La Asia Limited,197101000484,"28/F, Kerry Centre, 683 King’s Road, Quarry Bay, Hong Kong",HK,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-33222415,,iShares MSCI Japan UCITS ETF,IE8227552C,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-45998497,,iShares Core MSCI Europe UCITS ETF EUR,IE8227552C,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-601899,,Zijin Mining Group Company Limited,91350000157987632G,"No. 1, Zijin Avenue, Shanghang County, Longyan, Fujian, 364200",CN,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ABBV,,Abbvie Inc.,320375147,"1 North Waukegan Road, North Chicago, IL 60064",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AC,,Accor Group,FR0000120404,"82, rue Henri Farman - 92130 Issy-les-Moulineaux - France.",FR,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ACN,,Accenture Plc,980627530,"1 Grand Canal Square, Grand Canal Harbour, Dublin L2, D2",IE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ADM,,Archer-daniels-midland Co,410129150,"77 W. Wacker Dr., Chicago, IL 60601",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AIG,,American International Group Inc,132592361,"175 Water Street, New York, NY 10038",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ALLY,,Ally Financial Inc,380572512,Ally Detroit Center 500 Woodward Ave. Floor 10 Detroit Michigan 48226,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AMGN,,"Amgen, Inc.",953540776,"One Amgen Center Drive, Thousand Oaks, CA 91320",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AMT,,American Tower Corp,650723837,"116 Huntington Ave, Boston, MA 02116",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-APA,,Apache Corp,410747868,"2000 Post Oak Blvd, Ste 100, Houston, TX 77056-4400",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-APAM,,Artisan Partners Asset Management Inc,450969585,875 E. Wisconsin Avenue Suite 800 Milwaukee Wisconsin 53202,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AQN,,Algonquin Power & Utilities Corp,980406902,"2845 Bristol Circle, Oakville, A6 L6H 7H7",CA,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AQNU,,Algonquin Power and Utilities Units,980406902,2845 Bristol Circle Oakville A6 L6H 7H7,CA,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AVB,,Avalonbay Communities Inc,770404318,"671 N. Glebe Road, Suite 800, Arlington, VA 22203",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AVGO,,Broadcom Inc.,352617337,"1320 Ridder Park Drive, San Jose, CA 95131",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AWR,,American States Water Co,954676679,"630 E Foothill Blvd, San Dimas, CA 91773-9016",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BBY,,Best Buy Co Inc,410907483,7601 Penn Ave South Richfield Minnesota 55423,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BEId,,BEIERSDORF AG,DE118513961,Beiersdorf AG Unnastrasse 48 20245 Hamburg Germany.,DE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BGS,,"B&G Foods, Inc.",133918742,"Four Gatehall Drive Suite 110 Parsippany, NJ 07054",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BLK,,Blackrock Inc.,320174431,55 East 52nd Street New York New York 10055,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BND,,Vanguard Total Bond Market ETF,9219378356,"P.O. Box 1110, Valley Forge, 19482-1110",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BNDX,,Vanguard Total International Bond ETF,92203J4076,"P.O. Box 1110, Valley Forge, 19482-1110",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BNS,,Bank Of Nova Scotia,134941099,"44 King Street West, Scotia Plaza 8th Fl., Toronto, A6 M5H 1H1",CA,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BTI,,British American Tobacco p.l.c.,239136950,"REGENTS PARK ROAD, MILLBROOK, SOUTHAMPTON, SO15 8TL",GB,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-BTU,,PEABODY ENERGY CORP,134004153,"515 Lowell St, Peabody, MA 01960, US",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-C,,Citigroup Inc,521568099,388 Greenwich Street New York New York 10013,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CCI,,Crown Castle International Corp,760470458,"1220 Augusta Drive, Suite 600, Houston, TX 77057",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CEG,,Constellation Energy Corporation,871210716,"1310 Point Street, Baltimore, MD 21231-3380",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CI,,Cigna Corp,824991898,"900 Cottage Grove Road, Bloomfield, CT 06002",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CIM,,Chimera Investment Corp,260630461,"520 Madison Avenue, 32nd Floor, New York, NY 10022",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CLX,,Clorox Co,310595760,"1221 Broadway Oakland, CA 94612-1888",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CM,,Canadian Imperial Bank Of Commerce,131942440,"425 Lexington Avenue, 425 Lexington Avenue, New York, NY 10017",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-COST,,Costco Wholesale Corporation,911223280,"999 Lake Dr, ISSAQUAH WA 98027-United States",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CP,,Canadian Pacific Railway Ltd/cn,98-0355078,"7550 Ogden Dale Road S.e., Calgary Alberta, A0",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CPB,,Campbell Soup Co,210419870,"Campbell Pl, Camden, NJ 08103",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CSCO,,Cisco Systems Inc,770059951,"170 West Tasman Drive, San Jose, CA 95134",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CVS,,CVS Health Corporation,05-0494040,"One CVS Drive, Woonsocket, RI 02895",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CVX,,Chevron Corp,940890210,"6001 Bollinger Canyon Road, San Ramon, CA 94583",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-DIS,,The Walt Disney Company,830940635,"500 South Buena Vista Street, Burbank, California",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-DLR,,"Digital Realty Trust, Inc.",260081711,"Four Embarcadero Center, Suite 3200, San Francisco, CA 94111",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ED,,Consolidated Edison Inc,133965100,"4 Irving Place, New York, NY 10003",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ENB,,Enbridge Energy Partners Lp,391715850,"5400 Westheimer Court, Houston, TX 77056",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ESS,,"Essex Property Trust, Inc.",770369576,"1100 Park Place, Suite 200, San Mateo, CA 94403",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ET,,Energy Transfer Lp,300108820,"8111 Westchester Drive, Suite 600, Dallas, TX 75225",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-EURN,,Euronav NV,0546943111,"De Gerlachekaai 20, 2000 Antwerpen, Belgija",BE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-FL,,"Foot Locker, Inc.",133513936,"Foot Locker, Inc., 330 West 34th Street, New York, NY 10001",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-FRT,,Federal Realty Investment Trust,520782497,"1626 East Jefferson Street, Rockville, MD 20852-4041",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-FRT.OLD,,Federal Realty Investment Trust,520782497,"1626 East Jefferson Street, Rockville, MD 20852-4041",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-GILD,,Gilead Sciences Inc,94-3047598,"333 Lakeside Dr, Foster City, CA 94404",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-GOOG,,Alphabet Inc.,61-1767919,"1600 Amphitheatre Parkway, Mountain View, CA 94043",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-GTN,,"Gray Television, Inc.",580285030,"4370 Peachtree Road, NE, Suite 400, Atlanta, GA 30319",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-HD,,"Home Depot, Inc.",953261426,"2455 Paces Ferry Road, Atlanta, GA 30339-4024",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-HPE,,Hewlett Packard Enterprise Co,473298624,"6280 America Center Drive, San Jose, CA 95002",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-IBKR,,"Interactive Brokers Group, Inc.",300390693,"1 Pickwick Plz, GREENWICH CT, 06830",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-IBM,,International Business Machines Corp,130871985,"1 New Orchard Road, Armonk, NY 10504",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-INRG,,ISHARES GLOBAL CLEAN ENERGY,8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-INTU,,INTUIT,770034661,"2700 Coast Avenue Mountain View, CA 94043",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-IRT,,"Independence Realty Trust, Inc.",264567130,"1835 Market Street, Suite 2601, Philadelphia, PA 19103",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-IVZ,,Invesco Ltd.,980557567,"1555 Peachtree Street Ne, Suite 1800, Atlanta, GA 30309",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-JPM,,Jpmorgan Chase & Co,132624428,"383 Madison Avenue, New York, NY 10017",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-KMB,,Kimberly Clark Corp,390394230,"351 Phelps Drive, Irving, TX 75038",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-KMI,,"Kinder Morgan, Inc.",260238387,"1001 Louisiana Street, Suite 1000, Houston, TX 77002",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-KRK,,Krka d. d.,SI82646716,"Šmarješka cesta 6, 8501 Novo mesto",SI,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-LEA,,Lear Corporation,133386776,"21557 Telegraph Road, Southfield, MI 48033",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-LLY,,Eli Lilly and Company,136032849,"Lilly Corporate Center, Indianapolis, IN 46285",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-LOB,,LIVE OAK BANCSHARES INC,264596286,"1741 Tiburon Dr Wilmington, NC, 28403-6244 United State",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-MA,,MASTERCARD,134172551,"2000 Purchase Street, Purchase, NY 10577",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-MAC,,Macerich Co,954448705,"401 Wilshire Blvd, Ste 700, Santa Monica, CA 90401",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-MO,,Altria Group Inc,133260245,"6601 West Broad Street, Richmond, VA 23230",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-MPC,,Marathon Petroleum Corp,271284632,"539 South Main Street, Findlay, OH 45840-3229",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-MPW,,"Medical Properties Trust, Llc",341985135,"1000 Urban Center Drive, Suite 501, Birmingham, AL 35242",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NEE,,Nextera Energy Inc,592449419,"700 Universe Blvd, Juno Beach, FL 33408",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NLB,,NLB d.d.,SI91132550,"Trg republike 2, 1000 Ljubljana",SI,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NTAP,,"NetApp, Inc.",770307520,"1395 Crossman Ave, Sunnyvale, CA 94089",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NTDOY,,Nintendo Of America Inc.,133024042,"4600 150th Avenue Ne, Redmond, Washington, 98052",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NVDA,,NVIDIA,943177549,"2788 San Tomas Expy, Santa Clara, CA 95051, United States",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NYMT,,New York Mortgage Trust Inc,470934168,"90 Park Avenue, New York, NY 10016",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-OHI,,Omega Healthcare Investors Inc,383041398,"303 International Circle,, Suite 200, Hunt Valley, MD 21030",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-OMC,,Omnicom Group Inc.,131514814,"437 Madison Ave, New York, NY 10022",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-OMV,,OMV,ATU14189108,Trabrennstraße 6-8 1020 Dunaj,AT,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ORCL,,Oracle Corp,542185193,"500 Oracle Parkway, Mail Stop 5 Op 7, Redwood City, CA 94065",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-PG,,Procter & Gamble Co,310411980,"One Procter & Gamble Plaza, Cincinnati, OH 45202",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-PNW,,Pinnacle West Capital Corporation,860512431,"400 North Fifth Street, Ms8695, Phoenix, AZ 85004",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-PRMW,,Primo Water Corporation,980154711,"4221 W. Boy Scout Blvd., Suite 400, Tampa, FL 33607",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-QCOM,,"QUALCOMM, Inc.",453157787,"5775 Morehouse Drive, San Diego, CA 92121",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-RDN,,Radian Group,232691170,"1500 Market Street, Philadelphia, PA 19102",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-RDS A,,Royal Dutch Shell,522074528,"Carel van Bylandtlaan 16, 2596 HR The Hague",NL,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-RPT PRD,,Rpt Realty,136908486,"19 W 44th Street, Suite 1002, New York, NY 10036",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-RTX,,Raytheon Co,951778500,"870 Winter Street, Waltham, MA 02451-1449",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SBUX,,Starbucks Corp,911325671,"P O Box 34067, Seattle, Washington",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SLG,,Sl Green Realty Corp,133956775,"420 Lexington Avenue, New York, NY 10170",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SO,,Southern Co,580690070,"30 Ivan Allen Jr. Blvd., N.w., Atlanta, GA 30308",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SPG,,Simon Property Group Inc,046268599,"225 West Washington Street, Indianapolis, IN 46204-3438",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SPGI,,S and P Global Inc.,13-1026995,"55 Water Street, New York, New York",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SRC,,"Spirit Realty Capital, Inc.",201676382,"2727 North Harwood Street, Suite 300, Dallas, TX 75201",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SRE,,Sempra Energy,330732627,"488 8th Avenue, P O Box 129400, San Diego, CA 92101",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-STM,,STMicroelectronics N.V.,CHE785414310,"Plan-les-Ouates, Geneva, Switzerland",CH,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-STOR,,Store Capital Corp,452280254,"8377 East Hartford Drive, Suite 100, Scottsdale, AZ 85255",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-STX,,Seagate Technology Plc,980648577,"38/39 Fitzwilliam Square, Dublin 2, L2",IE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SWCH,,Switch Inc,821883953,"7135 South Decatur Boulevard, Las Vegas, NV 89118",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SWK,,"Stanley Black & Decker, Inc.",060548860,1000 Stanley Dr New Britain Connecticut 06053,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SWKS,,"Skyworks Solutions, Inc.",042302115,"20 Sylvan Road, Woburn, MA 01801",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-SWX,,Southwest Gas Holdings Inc,813881866,"C/o Southwest Gas Corporation, 5241 Spring Mountain Road, Las Vegas, NV 89150-0002",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-T,,At&t Inc.,431301883,"208 S. Akard St, Attn : James Lacy, Dallas, TX 75202",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TD,,Toronto Dominion Bank,135640479,"66 Wellington Street West, 12th Floor, Td Tower, Toronto, Ontario, A6 M5K 1A2",CA,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TDS,,"Telephone and Data Systems, Inc.",363930160,"30 North LaSalle Street, Suite 4000, Chicago, IL 60602",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TMO,,Thermo Fisher Scientific Inc,042209186,168 Third Avenue Waltham Massachusetts 02451,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TOT,,Total SE,9542051180,"Tour Coupole - 2, place Jean Millier - 92078 Paris La Défense Cedex – France",FR,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TROW,,Price T Rowe Group Inc,522264646,100 East Pratt Street Baltimore Maryland 21289-0320,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TSM,,Taiwan Semiconductor Manufacturing Company Limited,22099131,"Hsinchu Science Park No. 8, Li-Hsin Road 6 Hsinchu 300-78",TW,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TTE,,TotalEnergies SE,9542051180,"Tour Coupole - 2, place Jean Millier - 92078 Paris La Défense Cedex – France",FR,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-TXT,,Textron Inc.,050315468,"40 Westminster St, Providence, RI 02903",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-UBA,,Urstadt Biddle Properties Inc,042458042,"321 Railroad Avenue, Greenwich, CT 06830",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-UGI,,UGI Corporation,232668356,"460 N Gulph Rd, P O Box 858, King Of Prussia, PA 19406",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-UL,,UNILEVER PLC,243359756,PO BOX 68 ATTENTION VAT TEAM ROTTERDAM LONDON EC4P 4BQ,GB,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-UNM,,Unum Group,621598430,"1 Fountain Square, Chattanooga, TN 37402",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-UNP,,Union Pacific Corp,13-2626465,"1400 Douglas Street, Omaha, Nebraska",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-V,,Visa Inc.,260267673,P.o. Box 8999 San Francisco California 94128-8999,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VEU,,Vanguard FTSE All-World ex-US ETF,9220427754,"P.O. Box 1110, Valley Forge, 19482-1110",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VICI,,Vici Properties Inc.,814177147,"535 Madison Avenue, 20th Floor, New York",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VLO,,Valero Energy Corp,741244795,"530 Mccullough Ave, San Antonio, TX 78215",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VOE,,Voestalpine AG,ATU 36905408,Voestalpine-Straße 3 4020 Linz,AT,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VTI,,Vanguard Total Stock Market ETF,9229087690,"P.O. Box 1110, Valley Forge, 19482-1110",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VTRS,,Viatris Inc,83436429,"1000 Mylan Blvd Canonsburg, PA 15317",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VWRD,,Vanguard FTSE All-World UCITS ETF,00B3RBWM25,70 Sir John Rogerson's Quay Dublin 2 Ireland,IE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-VXUS,,Vanguard Total International Stock ETF,9219097683,"P.O. Box 1110, Valley Forge, 19482-1110",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-WD,,WALKER DUNLOP INC,800312140,"7501 WISCONSIN AVENUE SUITE 1200E, BETHESDA, Maryland, 20814, United States",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-WELL,,Welltower Inc.,341096634,"4500 Dorr Street, Toledo, OH 43615",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-WFC,,Wells Fargo & Company,410449260,"420 Montgomery Street, San Francisco, CA 94163",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-WHR,,Whirlpool Corporation,381490038,Whirlpool Cntr 2000 M 63 Benton Harbor Michigan 49022-2692,US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-WPC,,W. P. Carey Inc.,133912578,"50 Rockefeller Plaza, New York, NY 10020",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-WRK,,Westrock Co,371880617,"1000 Abernathy Road Ne, Atlanta, GA 30328",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-XOM,,Exxon Mobil Corp,135409005,"5959 Las Colinas Blvd, Irving, TX 75039-2298",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-ZIM,,ZIM Integrated Shipping Services Ltd.,520015041,"9 Andrei Sakharov St., P.O. Box 15067, Haifa 3190500, Israel",IL,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ticker,isin,name,tax_number,address,country,instrument_kind,verified_on,source,source_revision
+1234,,China Lilang Ltd,,Rm 3402 34/F LIPPO CTR TWR ONE 89 QUEENSWAY Admiralty Hong Kong,HK,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+1616500,,Shangri-La Asia Limited,197101000484,"28/F, Kerry Centre, 683 King’s Road, Quarry Bay, Hong Kong",HK,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+33222415,,iShares MSCI Japan UCITS ETF,IE8227552C,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+45998497,,iShares Core MSCI Europe UCITS ETF EUR,IE8227552C,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+601899,,Zijin Mining Group Company Limited,91350000157987632G,"No. 1, Zijin Avenue, Shanghang County, Longyan, Fujian, 364200",CN,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ABBV,,Abbvie Inc.,320375147,"1 North Waukegan Road, North Chicago, IL 60064",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AC,,Accor Group,FR0000120404,"82, rue Henri Farman - 92130 Issy-les-Moulineaux - France.",FR,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ACN,,Accenture Plc,980627530,"1 Grand Canal Square, Grand Canal Harbour, Dublin L2, D2",IE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ADM,,Archer-daniels-midland Co,410129150,"77 W. Wacker Dr., Chicago, IL 60601",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AIG,,American International Group Inc,132592361,"175 Water Street, New York, NY 10038",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ALLY,,Ally Financial Inc,380572512,Ally Detroit Center 500 Woodward Ave. Floor 10 Detroit Michigan 48226,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AMGN,,"Amgen, Inc.",953540776,"One Amgen Center Drive, Thousand Oaks, CA 91320",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AMT,,American Tower Corp,650723837,"116 Huntington Ave, Boston, MA 02116",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+APA,,Apache Corp,410747868,"2000 Post Oak Blvd, Ste 100, Houston, TX 77056-4400",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+APAM,,Artisan Partners Asset Management Inc,450969585,875 E. Wisconsin Avenue Suite 800 Milwaukee Wisconsin 53202,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AQN,,Algonquin Power & Utilities Corp,980406902,"2845 Bristol Circle, Oakville, A6 L6H 7H7",CA,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AQNU,,Algonquin Power and Utilities Units,980406902,2845 Bristol Circle Oakville A6 L6H 7H7,CA,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AVB,,Avalonbay Communities Inc,770404318,"671 N. Glebe Road, Suite 800, Arlington, VA 22203",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AVGO,,Broadcom Inc.,352617337,"1320 Ridder Park Drive, San Jose, CA 95131",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AWR,,American States Water Co,954676679,"630 E Foothill Blvd, San Dimas, CA 91773-9016",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BBY,,Best Buy Co Inc,410907483,7601 Penn Ave South Richfield Minnesota 55423,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BEId,,BEIERSDORF AG,DE118513961,Beiersdorf AG Unnastrasse 48 20245 Hamburg Germany.,DE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BGS,,"B&G Foods, Inc.",133918742,"Four Gatehall Drive Suite 110 Parsippany, NJ 07054",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BLK,,Blackrock Inc.,320174431,55 East 52nd Street New York New York 10055,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BND,,Vanguard Total Bond Market ETF,9219378356,"P.O. Box 1110, Valley Forge, 19482-1110",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BNDX,,Vanguard Total International Bond ETF,92203J4076,"P.O. Box 1110, Valley Forge, 19482-1110",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BNS,,Bank Of Nova Scotia,134941099,"44 King Street West, Scotia Plaza 8th Fl., Toronto, A6 M5H 1H1",CA,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BTI,,British American Tobacco p.l.c.,239136950,"REGENTS PARK ROAD, MILLBROOK, SOUTHAMPTON, SO15 8TL",GB,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BTU,,PEABODY ENERGY CORP,134004153,"515 Lowell St, Peabody, MA 01960, US",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+C,,Citigroup Inc,521568099,388 Greenwich Street New York New York 10013,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CCI,,Crown Castle International Corp,760470458,"1220 Augusta Drive, Suite 600, Houston, TX 77057",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CEG,,Constellation Energy Corporation,871210716,"1310 Point Street, Baltimore, MD 21231-3380",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CI,,Cigna Corp,824991898,"900 Cottage Grove Road, Bloomfield, CT 06002",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CIM,,Chimera Investment Corp,260630461,"520 Madison Avenue, 32nd Floor, New York, NY 10022",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CLX,,Clorox Co,310595760,"1221 Broadway Oakland, CA 94612-1888",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CM,,Canadian Imperial Bank Of Commerce,131942440,"425 Lexington Avenue, 425 Lexington Avenue, New York, NY 10017",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+COST,,Costco Wholesale Corporation,911223280,"999 Lake Dr, ISSAQUAH WA 98027-United States",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CP,,Canadian Pacific Railway Ltd/cn,98-0355078,"7550 Ogden Dale Road S.e., Calgary Alberta, A0",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CPB,,Campbell Soup Co,210419870,"Campbell Pl, Camden, NJ 08103",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CSCO,,Cisco Systems Inc,770059951,"170 West Tasman Drive, San Jose, CA 95134",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CVS,,CVS Health Corporation,05-0494040,"One CVS Drive, Woonsocket, RI 02895",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CVX,,Chevron Corp,940890210,"6001 Bollinger Canyon Road, San Ramon, CA 94583",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+DIS,,The Walt Disney Company,830940635,"500 South Buena Vista Street, Burbank, California",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+DLR,,"Digital Realty Trust, Inc.",260081711,"Four Embarcadero Center, Suite 3200, San Francisco, CA 94111",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ED,,Consolidated Edison Inc,133965100,"4 Irving Place, New York, NY 10003",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ENB,,Enbridge Energy Partners Lp,391715850,"5400 Westheimer Court, Houston, TX 77056",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ESS,,"Essex Property Trust, Inc.",770369576,"1100 Park Place, Suite 200, San Mateo, CA 94403",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ET,,Energy Transfer Lp,300108820,"8111 Westchester Drive, Suite 600, Dallas, TX 75225",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EURN,,Euronav NV,0546943111,"De Gerlachekaai 20, 2000 Antwerpen, Belgija",BE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FL,,"Foot Locker, Inc.",133513936,"Foot Locker, Inc., 330 West 34th Street, New York, NY 10001",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FRT,,Federal Realty Investment Trust,520782497,"1626 East Jefferson Street, Rockville, MD 20852-4041",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FRT.OLD,,Federal Realty Investment Trust,520782497,"1626 East Jefferson Street, Rockville, MD 20852-4041",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GILD,,Gilead Sciences Inc,94-3047598,"333 Lakeside Dr, Foster City, CA 94404",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GOOG,,Alphabet Inc.,61-1767919,"1600 Amphitheatre Parkway, Mountain View, CA 94043",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GTN,,"Gray Television, Inc.",580285030,"4370 Peachtree Road, NE, Suite 400, Atlanta, GA 30319",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+HD,,"Home Depot, Inc.",953261426,"2455 Paces Ferry Road, Atlanta, GA 30339-4024",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+HPE,,Hewlett Packard Enterprise Co,473298624,"6280 America Center Drive, San Jose, CA 95002",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBKR,,"Interactive Brokers Group, Inc.",300390693,"1 Pickwick Plz, GREENWICH CT, 06830",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBM,,International Business Machines Corp,130871985,"1 New Orchard Road, Armonk, NY 10504",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+INRG,,ISHARES GLOBAL CLEAN ENERGY,8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+INTU,,INTUIT,770034661,"2700 Coast Avenue Mountain View, CA 94043",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IRT,,"Independence Realty Trust, Inc.",264567130,"1835 Market Street, Suite 2601, Philadelphia, PA 19103",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IVZ,,Invesco Ltd.,980557567,"1555 Peachtree Street Ne, Suite 1800, Atlanta, GA 30309",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+JPM,,Jpmorgan Chase & Co,132624428,"383 Madison Avenue, New York, NY 10017",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+KMB,,Kimberly Clark Corp,390394230,"351 Phelps Drive, Irving, TX 75038",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+KMI,,"Kinder Morgan, Inc.",260238387,"1001 Louisiana Street, Suite 1000, Houston, TX 77002",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+KRK,,Krka d. d.,SI82646716,"Šmarješka cesta 6, 8501 Novo mesto",SI,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+LEA,,Lear Corporation,133386776,"21557 Telegraph Road, Southfield, MI 48033",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+LLY,,Eli Lilly and Company,136032849,"Lilly Corporate Center, Indianapolis, IN 46285",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+LOB,,LIVE OAK BANCSHARES INC,264596286,"1741 Tiburon Dr Wilmington, NC, 28403-6244 United State",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+MA,,MASTERCARD,134172551,"2000 Purchase Street, Purchase, NY 10577",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+MAC,,Macerich Co,954448705,"401 Wilshire Blvd, Ste 700, Santa Monica, CA 90401",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+MO,,Altria Group Inc,133260245,"6601 West Broad Street, Richmond, VA 23230",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+MPC,,Marathon Petroleum Corp,271284632,"539 South Main Street, Findlay, OH 45840-3229",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+MPW,,"Medical Properties Trust, Llc",341985135,"1000 Urban Center Drive, Suite 501, Birmingham, AL 35242",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NAKA,,"Kindly MD, Inc.",,"801 Bradbury Drive SE, Albuquerque, NM",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NEE,,Nextera Energy Inc,592449419,"700 Universe Blvd, Juno Beach, FL 33408",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NLB,,NLB d.d.,SI91132550,"Trg republike 2, 1000 Ljubljana",SI,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NTAP,,"NetApp, Inc.",770307520,"1395 Crossman Ave, Sunnyvale, CA 94089",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NTDOY,,Nintendo Of America Inc.,133024042,"4600 150th Avenue Ne, Redmond, Washington, 98052",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NVDA,,NVIDIA,943177549,"2788 San Tomas Expy, Santa Clara, CA 95051, United States",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NYMT,,New York Mortgage Trust Inc,470934168,"90 Park Avenue, New York, NY 10016",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+OHI,,Omega Healthcare Investors Inc,383041398,"303 International Circle,, Suite 200, Hunt Valley, MD 21030",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+OMC,,Omnicom Group Inc.,131514814,"437 Madison Ave, New York, NY 10022",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+OMV,,OMV,ATU14189108,Trabrennstraße 6-8 1020 Dunaj,AT,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ORCL,,Oracle Corp,542185193,"500 Oracle Parkway, Mail Stop 5 Op 7, Redwood City, CA 94065",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+PG,,Procter & Gamble Co,310411980,"One Procter & Gamble Plaza, Cincinnati, OH 45202",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+PNW,,Pinnacle West Capital Corporation,860512431,"400 North Fifth Street, Ms8695, Phoenix, AZ 85004",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+PRMW,,Primo Water Corporation,980154711,"4221 W. Boy Scout Blvd., Suite 400, Tampa, FL 33607",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+QCOM,,"QUALCOMM, Inc.",453157787,"5775 Morehouse Drive, San Diego, CA 92121",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RDN,,Radian Group,232691170,"1500 Market Street, Philadelphia, PA 19102",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RDS A,,Royal Dutch Shell,522074528,"Carel van Bylandtlaan 16, 2596 HR The Hague",NL,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RPT PRD,,Rpt Realty,136908486,"19 W 44th Street, Suite 1002, New York, NY 10036",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RTX,,Raytheon Co,951778500,"870 Winter Street, Waltham, MA 02451-1449",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SBUX,,Starbucks Corp,911325671,"P O Box 34067, Seattle, Washington",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SLG,,Sl Green Realty Corp,133956775,"420 Lexington Avenue, New York, NY 10170",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SO,,Southern Co,580690070,"30 Ivan Allen Jr. Blvd., N.w., Atlanta, GA 30308",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SPG,,Simon Property Group Inc,046268599,"225 West Washington Street, Indianapolis, IN 46204-3438",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SPGI,,S and P Global Inc.,13-1026995,"55 Water Street, New York, New York",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SRC,,"Spirit Realty Capital, Inc.",201676382,"2727 North Harwood Street, Suite 300, Dallas, TX 75201",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SRE,,Sempra Energy,330732627,"488 8th Avenue, P O Box 129400, San Diego, CA 92101",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+STM,,STMicroelectronics N.V.,CHE785414310,"Plan-les-Ouates, Geneva, Switzerland",CH,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+STOR,,Store Capital Corp,452280254,"8377 East Hartford Drive, Suite 100, Scottsdale, AZ 85255",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+STX,,Seagate Technology Plc,980648577,"38/39 Fitzwilliam Square, Dublin 2, L2",IE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SWCH,,Switch Inc,821883953,"7135 South Decatur Boulevard, Las Vegas, NV 89118",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SWK,,"Stanley Black & Decker, Inc.",060548860,1000 Stanley Dr New Britain Connecticut 06053,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SWKS,,"Skyworks Solutions, Inc.",042302115,"20 Sylvan Road, Woburn, MA 01801",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SWX,,Southwest Gas Holdings Inc,813881866,"C/o Southwest Gas Corporation, 5241 Spring Mountain Road, Las Vegas, NV 89150-0002",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+T,,At&t Inc.,431301883,"208 S. Akard St, Attn : James Lacy, Dallas, TX 75202",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TD,,Toronto Dominion Bank,135640479,"66 Wellington Street West, 12th Floor, Td Tower, Toronto, Ontario, A6 M5K 1A2",CA,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TDS,,"Telephone and Data Systems, Inc.",363930160,"30 North LaSalle Street, Suite 4000, Chicago, IL 60602",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TMO,,Thermo Fisher Scientific Inc,042209186,168 Third Avenue Waltham Massachusetts 02451,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TOT,,Total SE,9542051180,"Tour Coupole - 2, place Jean Millier - 92078 Paris La Défense Cedex – France",FR,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TROW,,Price T Rowe Group Inc,522264646,100 East Pratt Street Baltimore Maryland 21289-0320,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TSM,,Taiwan Semiconductor Manufacturing Company Limited,22099131,"Hsinchu Science Park No. 8, Li-Hsin Road 6 Hsinchu 300-78",TW,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TTE,,TotalEnergies SE,9542051180,"Tour Coupole - 2, place Jean Millier - 92078 Paris La Défense Cedex – France",FR,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TXT,,Textron Inc.,050315468,"40 Westminster St, Providence, RI 02903",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+UBA,,Urstadt Biddle Properties Inc,042458042,"321 Railroad Avenue, Greenwich, CT 06830",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+UGI,,UGI Corporation,232668356,"460 N Gulph Rd, P O Box 858, King Of Prussia, PA 19406",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+UL,,UNILEVER PLC,243359756,PO BOX 68 ATTENTION VAT TEAM ROTTERDAM LONDON EC4P 4BQ,GB,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+UNM,,Unum Group,621598430,"1 Fountain Square, Chattanooga, TN 37402",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+UNP,,Union Pacific Corp,13-2626465,"1400 Douglas Street, Omaha, Nebraska",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+V,,Visa Inc.,260267673,P.o. Box 8999 San Francisco California 94128-8999,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VEU,,Vanguard FTSE All-World ex-US ETF,9220427754,"P.O. Box 1110, Valley Forge, 19482-1110",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VICI,,Vici Properties Inc.,814177147,"535 Madison Avenue, 20th Floor, New York",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VLO,,Valero Energy Corp,741244795,"530 Mccullough Ave, San Antonio, TX 78215",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VOE,,Voestalpine AG,ATU 36905408,Voestalpine-Straße 3 4020 Linz,AT,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VTI,,Vanguard Total Stock Market ETF,9229087690,"P.O. Box 1110, Valley Forge, 19482-1110",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VTRS,,Viatris Inc,83436429,"1000 Mylan Blvd Canonsburg, PA 15317",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VWRD,,Vanguard FTSE All-World UCITS ETF,00B3RBWM25,70 Sir John Rogerson's Quay Dublin 2 Ireland,IE,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VXUS,,Vanguard Total International Stock ETF,9219097683,"P.O. Box 1110, Valley Forge, 19482-1110",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WD,,WALKER DUNLOP INC,800312140,"7501 WISCONSIN AVENUE SUITE 1200E, BETHESDA, Maryland, 20814, United States",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WELL,,Welltower Inc.,341096634,"4500 Dorr Street, Toledo, OH 43615",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WFC,,Wells Fargo & Company,410449260,"420 Montgomery Street, San Francisco, CA 94163",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WHR,,Whirlpool Corporation,381490038,Whirlpool Cntr 2000 M 63 Benton Harbor Michigan 49022-2692,US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WPC,,W. P. Carey Inc.,133912578,"50 Rockefeller Plaza, New York, NY 10020",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WRK,,Westrock Co,371880617,"1000 Abernathy Road Ne, Atlanta, GA 30328",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+XOM,,Exxon Mobil Corp,135409005,"5959 Las Colinas Blvd, Irving, TX 75039-2298",US,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ZIM,,ZIM Integrated Shipping Services Ltd.,520015041,"9 Andrei Sakharov St., P.O. Box 15067, Haifa 3190500, Israel",IL,,,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c

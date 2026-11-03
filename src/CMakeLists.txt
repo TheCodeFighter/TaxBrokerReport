@@ -1,22 +1,34 @@
-# The diagnostic message table is embedded in the library, so the application needs no file at run
-# time. A change to the CSV re-runs CMake and rebuilds the generated source. The table is written as
-# a byte array ('\x6b','\x65',...), not a string literal: MSVC limits a string literal to about
-# 16 KB, and a byte array has no such limit on any compiler.
-set(DIAGNOSTIC_MESSAGES_CSV_FILE ${CMAKE_SOURCE_DIR}/resources/i18n/diagnostic_messages.csv)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DIAGNOSTIC_MESSAGES_CSV_FILE})
-file(READ ${DIAGNOSTIC_MESSAGES_CSV_FILE} DIAGNOSTIC_MESSAGES_CSV_HEX HEX)
-string(REGEX REPLACE "([0-9a-f][0-9a-f])" "'\\\\x\\1'," DIAGNOSTIC_MESSAGES_CSV_BYTES
-    "${DIAGNOSTIC_MESSAGES_CSV_HEX}"
-)
-configure_file(utils/diagnostic_messages_table.cpp.in
-    ${CMAKE_CURRENT_BINARY_DIR}/diagnostic_messages_table.cpp
-    @ONLY
-)
+# Text files are embedded in the library, so the application needs no file at run time. A change to
+# a file re-runs CMake and rebuilds its generated source. The text is written as a byte array
+# ('\x6b','\x65',...), not a string literal: MSVC limits a string literal to about 16 KB, and a byte
+# array has no such limit on any compiler.
+# embed_text_file(<file> <function> <header declaring it> <generated source>)
+function(embed_text_file aFile aFunction aHeader aOutput)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${aFile})
+    file(READ ${aFile} EMBED_HEX HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "'\\\\x\\1'," EMBED_BYTES "${EMBED_HEX}")
+    file(RELATIVE_PATH EMBED_FILE_NAME ${CMAKE_SOURCE_DIR} ${aFile})
+    set(EMBED_FUNCTION ${aFunction})
+    set(EMBED_HEADER ${aHeader})
+    configure_file(utils/embedded_text.cpp.in ${aOutput} @ONLY)
+endfunction()
+
+set(EMBEDDED_DIR ${CMAKE_CURRENT_BINARY_DIR}/embedded)
+set(RESOURCES_DIR ${CMAKE_SOURCE_DIR}/resources)
+embed_text_file(${RESOURCES_DIR}/i18n/diagnostic_messages.csv diagnosticMessagesCsv
+    taxbroker/diagnostic_messages.hpp ${EMBEDDED_DIR}/diagnostic_messages_table.cpp)
+embed_text_file(${RESOURCES_DIR}/reference/payers.csv embeddedPayersCsv
+    taxbroker/reference_catalogue.hpp ${EMBEDDED_DIR}/payers_csv.cpp)
+embed_text_file(${RESOURCES_DIR}/reference/relief_statements.csv embeddedReliefStatementsCsv
+    taxbroker/reference_catalogue.hpp ${EMBEDDED_DIR}/relief_statements_csv.cpp)
+embed_text_file(${RESOURCES_DIR}/reference/broker_payers.csv embeddedBrokerPayersCsv
+    taxbroker/reference_catalogue.hpp ${EMBEDDED_DIR}/broker_payers_csv.cpp)
 
 # Define the core library
 add_library(taxbroker_core STATIC
     parsers/ecb_rate_file.cpp
     parsers/ibkr_parser.cpp
+    parsers/reference_catalogue.cpp
     parsers/traderepublic_parser.cpp
     processors/application_result.cpp
     processors/capital_failure_resolution.cpp
@@ -34,7 +46,10 @@ add_library(taxbroker_core STATIC
     processors/tax_classifier.cpp
     processors/tax_processor.cpp
     processors/trade_conversion.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/diagnostic_messages_table.cpp
+    ${EMBEDDED_DIR}/broker_payers_csv.cpp
+    ${EMBEDDED_DIR}/diagnostic_messages_table.cpp
+    ${EMBEDDED_DIR}/payers_csv.cpp
+    ${EMBEDDED_DIR}/relief_statements_csv.cpp
     utils/csv_text_reader.cpp
     utils/currency.cpp
     utils/date_utils.cpp

@@ -1,7 +1,7 @@
 TaxBrokerReport: third-party notices
 
-The taxbroker and taxbroker_server executables are linked statically, so they contain code from
-the components below. Each component keeps its own licence; its full text follows.
+The taxbroker and taxbroker_server executables are linked statically, so they contain code and
+data from the components below. Each component keeps its own licence; its full text follows.
 
 - spdlog 1.15.3, MIT, https://github.com/gabime/spdlog
 - {fmt} 11.2.0 (bundled with spdlog), MIT, https://github.com/fmtlib/fmt
@@ -11,6 +11,8 @@ the components below. Each component keeps its own licence; its full text follow
   - Grisu2 number formatting by Florian Loitsch (inside nlohmann/json), MIT
   - UTF-8 decoder by Björn Hoehrmann (inside nlohmann/json), MIT
 - pugixml 1.16, MIT, https://github.com/zeux/pugixml
+- ib-edavki reference data (payers, relief statements, broker payers; revision
+  22220f546378b638c129ffe4bd6f2c9a3139809c), MIT, https://github.com/ib-edavki/ib-edavki
 - Boost 1.84.0 (header-only libraries), BSL-1.0, https://www.boost.org
 - musl libc 1.2.6, MIT (details in its notice), https://musl.libc.org
 - GCC 15.2.0 runtime libraries (libstdc++, libgcc, libgcc_eh, libssp_nonshared, crtbegin,
@@ -234,6 +236,32 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+ib-edavki reference data (revision 22220f546378b638c129ffe4bd6f2c9a3139809c)
+================================================================================
+
+MIT License
+
+Copyright (c) 2020 Primož Sečnik Kolman
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ================================================================================
 Boost 1.84.0
