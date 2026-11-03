@@ -103,7 +103,7 @@ calculateCapitalGains(const std::vector<ParseResult>& aParsed,
     auto fifo = FifoMatcher::match(statement, ledger);
     auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions, aOpenQuestions);
     const auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
-    auto gates = CapitalReportGates::check(statement, ledger, fifo, loss, built);
+    auto gates = CapitalReportGates::check(statement, ledger, fifo, loss, built, {});
     const bool hasGateError =
         std::any_of(gates.begin(), gates.end(), [](const ProcessingDiagnostic& aDiagnostic) {
             return aDiagnostic.mSeverity == DiagnosticSeverity::Error;

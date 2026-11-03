@@ -995,6 +995,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "OfficialRateFromNearbyDate";
     case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
         return "OfficialRateFileIncomplete";
+    case ProcessingDiagnosticCode::OfficialRateFilesRequired:
+        return "OfficialRateFilesRequired";
     case ProcessingDiagnosticCode::QuantityRoundingReconciled:
         return "QuantityRoundingReconciled";
     case ProcessingDiagnosticCode::SourceQuantityCorrected:

@@ -46,8 +46,8 @@ constexpr std::array kTypeAndCategory{
     MessageParamDefinition{"type", MessageParamKind::Text},
     MessageParamDefinition{"category", MessageParamKind::Text},
 };
-constexpr std::array kCurrency{
-    MessageParamDefinition{"currency", MessageParamKind::Text},
+constexpr std::array kYears{
+    MessageParamDefinition{"years", MessageParamKind::Text},
 };
 constexpr std::array kRequestId{
     MessageParamDefinition{"requestId", MessageParamKind::Text},
@@ -221,8 +221,7 @@ constexpr std::array kDefinitions{
         MessageKey::TaxCategoryNotReportedCrypto, "tax_category_not_reported.crypto", {}},
     MessageDefinition{
         MessageKey::TaxCategoryNotReportedUserChoice, "tax_category_not_reported.user_choice", {}},
-    MessageDefinition{
-        MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", kCurrency},
+    MessageDefinition{MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", {}},
     MessageDefinition{MessageKey::LossEligibilityUnresolvedConfirmationRequired,
                       "loss_eligibility_unresolved.confirmation_required",
                       {}},
@@ -347,6 +346,12 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::OfficialRateFileIncompleteEndsEarly,
                       "official_rate_file_incomplete.ends_early",
                       kYearAndLastDate},
+    MessageDefinition{MessageKey::OfficialRateFilesRequiredNotLoaded,
+                      "official_rate_files_required.not_loaded",
+                      kYears},
+    MessageDefinition{MessageKey::OfficialRateFilesRequiredEndsEarly,
+                      "official_rate_files_required.ends_early",
+                      kYears},
     MessageDefinition{MessageKey::QuantityRoundingReconciled, "quantity_rounding_reconciled", {}},
     MessageDefinition{MessageKey::SourceQuantityCorrected, "source_quantity_corrected", {}},
     MessageDefinition{MessageKey::IncompleteHistoryCorrectionRequired,

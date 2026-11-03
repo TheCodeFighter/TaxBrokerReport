@@ -74,7 +74,8 @@ void orderChronologically(MergedStatement& aStatement) {
 
 /// Prepares the real reporting-year ledger, runs the matcher, the loss rule (no answers) and the
 /// builder, then the gates.
-std::vector<ProcessingDiagnostic> checkYear(StatementMergeResult& aMerged, int aYear) {
+std::vector<ProcessingDiagnostic>
+checkYear(StatementMergeResult& aMerged, int aYear, const OfficialRateSelection& aRates = {}) {
     orderChronologically(aMerged.mStatement);
 
     const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
@@ -84,7 +85,13 @@ std::vector<ProcessingDiagnostic> checkYear(StatementMergeResult& aMerged, int a
     const auto loss = LossEligibilityChecker::check(aMerged.mStatement, ledger, fifo, decisions);
     const auto built = CapitalGainsReportBuilder::build(aMerged.mStatement, ledger, fifo, loss, {});
 
-    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
+    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built, aRates);
+}
+
+/// The selection that the conversion stage makes when no rate file is loaded: one error for each
+/// currency and tax date of the needs.
+OfficialRateSelection selectionWithoutRateFiles(const std::vector<RateNeed>& aNeeds) {
+    return selectOfficialRates(aNeeds, OfficialRateTable{});
 }
 
 /// Like checkYear, for instruments that the classification stage left out of capital gains
@@ -103,7 +110,7 @@ checkYearWithLeftOut(StatementMergeResult& aMerged, int aYear, const std::set<Is
     const auto loss = LossEligibilityChecker::check(aMerged.mStatement, ledger, fifo, decisions);
     const auto built = CapitalGainsReportBuilder::build(aMerged.mStatement, ledger, fifo, loss, {});
 
-    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
+    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built, {});
 }
 
 /// Like checkYear, with confirmed corporate actions that the matcher applies.
@@ -120,7 +127,7 @@ checkYearWithActions(StatementMergeResult& aMerged,
     const auto loss = LossEligibilityChecker::check(aMerged.mStatement, ledger, fifo, decisions);
     const auto built = CapitalGainsReportBuilder::build(aMerged.mStatement, ledger, fifo, loss, {});
 
-    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
+    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built, {});
 }
 
 TEST(CapitalReportGatesTest, StockAndFundSalesPassTheClassificationGate) {
@@ -529,26 +536,342 @@ TEST(CapitalReportGatesTest, NonEurPurchaseGivesMissingExchangeRate) {
             },
     }};
 
-    const auto diagnostics = checkYear(merged, 2024);
+    // No ECB file is loaded, so the USD rate of 2023-01-10 is missing; the sale in EUR needs none.
+    const auto rates = selectionWithoutRateFiles({{.mCurrency = Currency::USD,
+                                                   .mTaxDate = day("2023-01-10"),
+                                                   .mUse = RateUse::PurchasePrice,
+                                                   .mReport = ReportType::CapitalGains,
+                                                   .mSources = {source(2, "synthetic-buy-1")}}});
+    const auto diagnostics = checkYear(merged, 2024, rates);
 
-    ASSERT_EQ(diagnostics.size(), 1U);
+    // The error of the investment, then the warning that lists the file to load.
+    ASSERT_EQ(diagnostics.size(), 2U);
 
     const auto& diagnostic = diagnostics.at(0);
 
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::MissingExchangeRate);
-    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::MissingExchangeRateTrade);
-    EXPECT_EQ(diagnostic.mMessageParams, (std::vector<MessageParam>{textParam("currency", "USD")}));
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::MissingExchangeRateNoRateFile);
+    EXPECT_EQ(diagnostic.mMessageParams,
+              (std::vector<MessageParam>{textParam("currency", "USD"),
+                                         textParam("date", "2023-01-10"),
+                                         numberParam("year", 2023)}));
     EXPECT_EQ(diagnostic.mMessage,
-              "A trade of this investment is in USD, not in EUR. Conversion with the official "
-              "exchange rate is not supported yet, so its sales cannot be reported. No Doh-KDVP "
-              "file was written.");
+              "There is no official exchange rate for USD on 2023-01-10, and the ECB rate file "
+              "for 2023 is not loaded. Load that file. The reports that need this rate cannot be "
+              "created yet.");
     EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::FifoTax);
+    EXPECT_EQ(diagnostic.mContext.mAffectedReports,
+              (std::vector<ReportType>{ReportType::CapitalGains}));
+    EXPECT_EQ(diagnostic.mContext.mInstrumentName, "Synthetic Share");
     EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
     // The date and source of the USD purchase, where the pool stopped.
     EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2023-01-10"));
     EXPECT_EQ(diagnostic.mContext.mSources,
               (std::vector<SourceReference>{source(2, "synthetic-buy-1")}));
+
+    const auto& warning = diagnostics.at(1);
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, ProcessingDiagnosticCode::OfficialRateFilesRequired);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::OfficialRateFilesRequiredNotLoaded);
+    EXPECT_EQ(warning.mMessageParams, (std::vector<MessageParam>{textParam("years", "2023")}));
+}
+
+TEST(CapitalReportGatesTest, EveryMissingYearOfASoldInvestmentIsListedOnce) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            .mName = "Synthetic Share A",
+            .mIsin = "XX0000000001",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2023-06-12"),
+                                   .mSources = {source(2, "synthetic-buy-a1")}},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // USD 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::USD},
+                    {.mMetadata = {.mTaxDate = day("2024-06-10"),
+                                   .mSources = {source(3, "synthetic-buy-a2")}},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // USD 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::USD},
+                    {.mMetadata = {.mTaxDate = day("2025-03-10"),
+                                   .mSources = {source(4, "synthetic-sell-a")}},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 2'000'000'000, // EUR 20
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Share B",
+            .mIsin = "XX0000000002",
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-02-12"),
+                                   .mSources = {source(5, "synthetic-buy-b")}},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // USD 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::USD},
+                    {.mMetadata = {.mTaxDate = day("2025-04-10"),
+                                   .mSources = {source(6, "synthetic-sell-b")}},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 2'000'000'000, // EUR 20
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    // No ECB file is loaded: the purchases of 2023 and 2024 need the files of those years.
+    const auto rates = selectionWithoutRateFiles({
+        {.mCurrency = Currency::USD,
+         .mTaxDate = day("2023-06-12"),
+         .mUse = RateUse::PurchasePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(2, "synthetic-buy-a1")}},
+        {.mCurrency = Currency::USD,
+         .mTaxDate = day("2024-06-10"),
+         .mUse = RateUse::PurchasePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(3, "synthetic-buy-a2")}},
+        {.mCurrency = Currency::USD,
+         .mTaxDate = day("2024-02-12"),
+         .mUse = RateUse::PurchasePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(5, "synthetic-buy-b")}},
+    });
+    const auto diagnostics = checkYear(merged, 2025, rates);
+
+    // Two errors, each naming the first purchase of its investment, and one warning for both.
+    ASSERT_EQ(diagnostics.size(), 3U);
+    EXPECT_EQ(diagnostics.at(0).mMessageParams.at(2), numberParam("year", 2023));
+    EXPECT_EQ(diagnostics.at(1).mMessageParams.at(2), numberParam("year", 2024));
+
+    const auto& warning = diagnostics.at(2);
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, ProcessingDiagnosticCode::OfficialRateFilesRequired);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::OfficialRateFilesRequiredNotLoaded);
+    EXPECT_EQ(warning.mMessageParams,
+              (std::vector<MessageParam>{textParam("years", "2023, 2024")}));
+    EXPECT_EQ(warning.mMessage,
+              "The ECB rate files for 2023, 2024 are not loaded, but investments sold in the year "
+              "have trades that need rates from them. Load these files too and run again.");
+    EXPECT_EQ(warning.mContext.mStage, PipelineStage::FifoTax);
+    EXPECT_EQ(warning.mContext.mAffectedReports,
+              (std::vector<ReportType>{ReportType::CapitalGains}));
+    EXPECT_FALSE(warning.mContext.mIsin.has_value());
+    EXPECT_FALSE(warning.mContext.mTaxDate.has_value());
+    // The three purchases behind the two years, in source order.
+    EXPECT_EQ(warning.mContext.mSources,
+              (std::vector<SourceReference>{source(2, "synthetic-buy-a1"),
+                                            source(3, "synthetic-buy-a2"),
+                                            source(5, "synthetic-buy-b")}));
+}
+
+TEST(CapitalReportGatesTest, AnInvestmentWithoutASaleInTheYearAddsNoYear) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share C",
+        .mIsin = "XX0000000003",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2022-05-10"),
+                               .mSources = {source(2, "synthetic-buy-c")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // USD 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::USD},
+            },
+    }};
+
+    const auto rates = selectionWithoutRateFiles({{.mCurrency = Currency::USD,
+                                                   .mTaxDate = day("2022-05-10"),
+                                                   .mUse = RateUse::PurchasePrice,
+                                                   .mReport = ReportType::CapitalGains,
+                                                   .mSources = {source(2, "synthetic-buy-c")}}});
+    const auto diagnostics = checkYear(merged, 2025, rates);
+
+    // Nothing is sold in 2025, so the missing file of 2022 blocks nothing.
+    EXPECT_TRUE(diagnostics.empty());
+}
+
+TEST(CapitalReportGatesTest, FilesNotLoadedAndFilesThatEndEarlyGiveTwoWarnings) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // USD 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::USD},
+                {.mMetadata = {.mTaxDate = day("2025-09-10"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // USD 20
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::USD},
+            },
+    }};
+
+    // The file of 2024 is not loaded; the file of 2025 ends on 2025-06-30.
+    OfficialRateTable table;
+
+    table.mFiles.push_back(OfficialRateFile{.mYear = 2025,
+                                            .mFirstDate = day("2025-01-02"),
+                                            .mLastDate = day("2025-06-30")});
+
+    const auto rates = selectOfficialRates({{.mCurrency = Currency::USD,
+                                             .mTaxDate = day("2024-06-10"),
+                                             .mUse = RateUse::PurchasePrice,
+                                             .mReport = ReportType::CapitalGains,
+                                             .mSources = {source(2, "synthetic-buy-1")}},
+                                            {.mCurrency = Currency::USD,
+                                             .mTaxDate = day("2025-09-10"),
+                                             .mUse = RateUse::SalePrice,
+                                             .mReport = ReportType::CapitalGains,
+                                             .mSources = {source(3, "synthetic-sell-1")}}},
+                                           table);
+    const auto diagnostics = checkYear(merged, 2025, rates);
+
+    // One error (the pool stops at the first purchase), then the two warnings: not loaded first.
+    ASSERT_EQ(diagnostics.size(), 3U);
+    EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
+    EXPECT_EQ(diagnostics.at(1).mMessageKey, MessageKey::OfficialRateFilesRequiredNotLoaded);
+    EXPECT_EQ(diagnostics.at(1).mMessageParams,
+              (std::vector<MessageParam>{textParam("years", "2024")}));
+    EXPECT_EQ(diagnostics.at(1).mContext.mSources,
+              (std::vector<SourceReference>{source(2, "synthetic-buy-1")}));
+    EXPECT_EQ(diagnostics.at(2).mMessageKey, MessageKey::OfficialRateFilesRequiredEndsEarly);
+    EXPECT_EQ(diagnostics.at(2).mMessageParams,
+              (std::vector<MessageParam>{textParam("years", "2025")}));
+    EXPECT_EQ(diagnostics.at(2).mContext.mSources,
+              (std::vector<SourceReference>{source(3, "synthetic-sell-1")}));
+}
+
+TEST(CapitalReportGatesTest, AMissingRateOnTheDateGivesNoFileWarning) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-10"),
+                               .mSources = {source(2, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // USD 20
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::USD},
+            },
+    }};
+
+    // The file of 2025 is loaded and has a GBP rate on this day, but none for USD: no file helps.
+    OfficialRateTable table;
+
+    table.mFiles.push_back(OfficialRateFile{.mYear = 2025,
+                                            .mFirstDate = day("2025-01-02"),
+                                            .mLastDate = day("2025-12-31")});
+    table.mRates[{"GBP", day("2025-03-10")}] =
+        OfficialRate{.mCurrencyCode = "GBP",
+                     .mObservationDate = day("2025-03-10"),
+                     .mValue = 85'000'000,
+                     .mSourceFile = SourceFilename::fromPath("exr_synthetic.csv"),
+                     .mSourceRow = 2};
+
+    const auto rates = selectOfficialRates({{.mCurrency = Currency::USD,
+                                             .mTaxDate = day("2025-03-10"),
+                                             .mUse = RateUse::SalePrice,
+                                             .mReport = ReportType::CapitalGains,
+                                             .mSources = {source(2, "synthetic-sell-1")}}},
+                                           table);
+    const auto diagnostics = checkYear(merged, 2025, rates);
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+    EXPECT_EQ(diagnostics.at(0).mMessageKey, MessageKey::MissingExchangeRateNoRateOnDate);
+}
+
+TEST(CapitalReportGatesTest, ATradeAfterTheYearAddsNoYear) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-03-10"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // EUR 20
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2026-01-05"),
+                               .mSources = {source(4, "synthetic-buy-2")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // USD 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::USD},
+            },
+    }};
+
+    // The selection has a missing file for the USD purchase of 2026, but it is after the year.
+    const auto rates = selectionWithoutRateFiles({{.mCurrency = Currency::USD,
+                                                   .mTaxDate = day("2026-01-05"),
+                                                   .mUse = RateUse::PurchasePrice,
+                                                   .mReport = ReportType::CapitalGains,
+                                                   .mSources = {source(4, "synthetic-buy-2")}}});
+    const auto diagnostics = checkYear(merged, 2025, rates);
+
+    EXPECT_TRUE(diagnostics.empty());
+}
+
+TEST(CapitalReportGatesTest, ForeignTradeWithoutAMissingRateGivesNoGateError) {
+    // The price of the USD purchase could not be converted: the conversion stage gave that error
+    // already and left the trade in USD. The selection has no missing rate for it.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // USD 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::USD},
+                {.mMetadata = {.mTaxDate = day("2024-03-10"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 2'000'000'000, // EUR 20
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto diagnostics = checkYear(merged, 2024);
+
+    EXPECT_TRUE(diagnostics.empty());
 }
 
 TEST(CapitalReportGatesTest, GbpChfAndJpyTradesNameTheirCurrency) {
@@ -598,19 +921,38 @@ TEST(CapitalReportGatesTest, GbpChfAndJpyTradesNameTheirCurrency) {
         },
     };
 
-    const auto diagnostics = checkYear(merged, 2024);
+    const auto rates = selectionWithoutRateFiles({
+        {.mCurrency = Currency::GBP,
+         .mTaxDate = day("2024-03-10"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(2, "synthetic-sell-1")}},
+        {.mCurrency = Currency::CHF,
+         .mTaxDate = day("2024-03-11"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(3, "synthetic-sell-2")}},
+        {.mCurrency = Currency::JPY,
+         .mTaxDate = day("2024-03-12"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(4, "synthetic-sell-3")}},
+    });
+    const auto diagnostics = checkYear(merged, 2024, rates);
 
-    // FIFO stops each pool at its foreign sale before it looks at the units.
-    ASSERT_EQ(diagnostics.size(), 3U);
+    // FIFO stops each pool at its foreign sale before it looks at the units. The warning for the
+    // file of 2024 comes after the three errors.
+    ASSERT_EQ(diagnostics.size(), 4U);
     EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
-    EXPECT_EQ(diagnostics.at(0).mMessageParams,
-              (std::vector<MessageParam>{textParam("currency", "GBP")}));
+    EXPECT_EQ(diagnostics.at(0).mMessageParams.at(0), textParam("currency", "GBP"));
+    EXPECT_EQ(diagnostics.at(0).mContext.mIsin, "XX0000000001");
     EXPECT_EQ(diagnostics.at(1).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
-    EXPECT_EQ(diagnostics.at(1).mMessageParams,
-              (std::vector<MessageParam>{textParam("currency", "CHF")}));
+    EXPECT_EQ(diagnostics.at(1).mMessageParams.at(0), textParam("currency", "CHF"));
+    EXPECT_EQ(diagnostics.at(1).mContext.mIsin, "XX0000000002");
     EXPECT_EQ(diagnostics.at(2).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
-    EXPECT_EQ(diagnostics.at(2).mMessageParams,
-              (std::vector<MessageParam>{textParam("currency", "JPY")}));
+    EXPECT_EQ(diagnostics.at(2).mMessageParams.at(0), textParam("currency", "JPY"));
+    EXPECT_EQ(diagnostics.at(2).mContext.mIsin, "XX0000000003");
+    EXPECT_EQ(diagnostics.at(3).mCode, ProcessingDiagnosticCode::OfficialRateFilesRequired);
 }
 
 TEST(CapitalReportGatesTest, NokTradeNamesItsCurrency) {
@@ -632,15 +974,20 @@ TEST(CapitalReportGatesTest, NokTradeNamesItsCurrency) {
         },
     };
 
-    const auto diagnostics = checkYear(merged, 2024);
+    const auto rates = selectionWithoutRateFiles({{.mCurrency = Currency::NOK,
+                                                   .mTaxDate = day("2024-03-10"),
+                                                   .mUse = RateUse::SalePrice,
+                                                   .mReport = ReportType::CapitalGains,
+                                                   .mSources = {source(2, "synthetic-sell-1")}}});
+    const auto diagnostics = checkYear(merged, 2024, rates);
 
-    ASSERT_EQ(diagnostics.size(), 1U);
+    ASSERT_EQ(diagnostics.size(), 2U);
     EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
-    EXPECT_EQ(diagnostics.at(0).mMessageParams,
-              (std::vector<MessageParam>{textParam("currency", "NOK")}));
+    EXPECT_EQ(diagnostics.at(0).mMessageParams.at(0), textParam("currency", "NOK"));
+    EXPECT_EQ(diagnostics.at(1).mCode, ProcessingDiagnosticCode::OfficialRateFilesRequired);
 }
 
-TEST(CapitalReportGatesTest, TradeWithoutACurrencyNamesTheCurrencyUnknown) {
+TEST(CapitalReportGatesTest, TradeWithoutACurrencyGivesTheTradeError) {
     // The parser rejects an unknown currency; a trade built without one keeps the default.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
@@ -665,8 +1012,15 @@ TEST(CapitalReportGatesTest, TradeWithoutACurrencyNamesTheCurrencyUnknown) {
     const auto& diagnostic = diagnostics.at(0);
 
     EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::MissingExchangeRate);
-    EXPECT_EQ(diagnostic.mMessageParams,
-              (std::vector<MessageParam>{textParam("currency", "unknown")}));
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::MissingExchangeRateTrade);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
+    EXPECT_EQ(diagnostic.mMessage,
+              "A trade of this investment has no known currency, so it cannot be converted to "
+              "EUR. No Doh-KDVP file was written.");
+    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-03-10"));
+    EXPECT_EQ(diagnostic.mContext.mSources,
+              (std::vector<SourceReference>{source(2, "synthetic-sell-1")}));
 }
 
 TEST(CapitalReportGatesTest, AnOpenLossQuestionGivesNoGateError) {
@@ -804,7 +1158,7 @@ TEST(CapitalReportGatesTest, ADecidedSaleInTheBlockedLossListGivesTheUnitsMismat
                               .mSales = {{StatementEventKind::Trade, 0, 2}}});
 
     const auto diagnostics =
-        CapitalReportGates::check(merged.mStatement, ledger, fifo, loss, built);
+        CapitalReportGates::check(merged.mStatement, ledger, fifo, loss, built, {});
 
     ASSERT_EQ(diagnostics.size(), 1U);
 

@@ -94,6 +94,138 @@ TEST(OfficialRateSelectionTest, UnknownCurrencyNeedIsAProgrammingError) {
     EXPECT_THROW((void)selectOfficialRates(needs, table), std::logic_error);
 }
 
+TEST(OfficialRateSelectionTest, AMissingPairKeepsItsErrorAndAFoundPairHasNone) {
+    OfficialRateTable table;
+    addFile(table, 2025);
+    addRate(table, "USD", "2025-03-03", 125'000'000);
+    const std::vector<RateNeed> needs{
+        {.mCurrency = Currency::USD,
+         .mTaxDate = date("2025-03-03"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(2, "a")}},
+        // No file of 2024 is loaded.
+        {.mCurrency = Currency::USD,
+         .mTaxDate = date("2024-03-04"),
+         .mUse = RateUse::PurchasePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(3, "b")}},
+    };
+
+    const auto selection = selectOfficialRates(needs, table);
+
+    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
+    EXPECT_EQ(selection.mMissing.size(), 1U);
+    EXPECT_EQ(selection.findMissing(Currency::USD, date("2025-03-03")), nullptr);
+
+    const auto* missing = selection.findMissing(Currency::USD, date("2024-03-04"));
+
+    ASSERT_NE(missing, nullptr);
+    EXPECT_EQ(missing->mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(missing->mCode, ProcessingDiagnosticCode::MissingExchangeRate);
+    EXPECT_EQ(missing->mMessage, selection.mDiagnostics.at(0).mMessage);
+    EXPECT_EQ(missing->mMessageKey, MessageKey::MissingExchangeRateNoRateFile);
+    EXPECT_EQ(selection.findMissing(Currency::EUR, date("2024-03-04")), nullptr);
+}
+
+TEST(OfficialRateSelectionTest, AMissingFileIsRecordedWithItsYear) {
+    OfficialRateTable table;
+    addFile(table, 2025);
+    addRate(table, "USD", "2025-03-03", 125'000'000);
+    const std::vector<RateNeed> needs{
+        {.mCurrency = Currency::USD,
+         .mTaxDate = date("2025-03-03"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(2, "a")}},
+        // No file of 2024 is loaded.
+        {.mCurrency = Currency::USD,
+         .mTaxDate = date("2024-06-10"),
+         .mUse = RateUse::PurchasePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(3, "b")}},
+    };
+
+    const auto selection = selectOfficialRates(needs, table);
+
+    EXPECT_EQ(selection.mMissingFiles.size(), 1U);
+    EXPECT_EQ(selection.findMissingFile(Currency::USD, date("2025-03-03")), nullptr);
+
+    const auto* need = selection.findMissingFile(Currency::USD, date("2024-06-10"));
+
+    ASSERT_NE(need, nullptr);
+    EXPECT_EQ(need->mYear, 2024);
+    EXPECT_EQ(need->mProblem, RateFileProblem::NotLoaded);
+    EXPECT_EQ(selection.findMissingFile(Currency::EUR, date("2024-06-10")), nullptr);
+}
+
+TEST(OfficialRateSelectionTest, ALookBackIntoAMissingYearNeedsThatYearsFile) {
+    OfficialRateTable table;
+    addFile(table, 2025);
+    const std::vector<RateNeed> needs{
+        {.mCurrency = Currency::USD,
+         .mTaxDate = date("2025-01-01"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(2, "a")}},
+    };
+
+    const auto selection = selectOfficialRates(needs, table);
+
+    // 2025-01-01 has no ECB rate, so the day before (2024-12-31) is needed: the file of 2024.
+    const auto* need = selection.findMissingFile(Currency::USD, date("2025-01-01"));
+
+    ASSERT_NE(need, nullptr);
+    EXPECT_EQ(need->mYear, 2024);
+    EXPECT_EQ(need->mProblem, RateFileProblem::NotLoaded);
+
+    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
+    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageKey, MessageKey::MissingExchangeRateNoRateFile);
+    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageParams.at(2), numberParam("year", 2024));
+}
+
+TEST(OfficialRateSelectionTest, AFileThatEndsEarlyIsRecorded) {
+    OfficialRateTable table;
+    addFile(table, 2025, "2025-06-30");
+    const std::vector<RateNeed> needs{
+        {.mCurrency = Currency::USD,
+         .mTaxDate = date("2025-09-10"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(2, "a")}},
+    };
+
+    const auto selection = selectOfficialRates(needs, table);
+
+    const auto* need = selection.findMissingFile(Currency::USD, date("2025-09-10"));
+
+    ASSERT_NE(need, nullptr);
+    EXPECT_EQ(need->mYear, 2025);
+    EXPECT_EQ(need->mProblem, RateFileProblem::EndsEarly);
+}
+
+TEST(OfficialRateSelectionTest, AMissingRateOnTheDateNeedsNoFile) {
+    OfficialRateTable table;
+    addFile(table, 2025);
+    addRate(table, "GBP", "2025-03-10", 85'000'000); // The ECB published on this day, but not USD.
+    const std::vector<RateNeed> needs{
+        {.mCurrency = Currency::USD,
+         .mTaxDate = date("2025-03-10"),
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {source(2, "a")}},
+    };
+
+    const auto selection = selectOfficialRates(needs, table);
+
+    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
+    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageKey,
+              MessageKey::MissingExchangeRateNoRateOnDate);
+    EXPECT_NE(selection.findMissing(Currency::USD, date("2025-03-10")), nullptr);
+    EXPECT_EQ(selection.findMissingFile(Currency::USD, date("2025-03-10")), nullptr);
+    EXPECT_TRUE(selection.mMissingFiles.empty());
+}
+
 TEST(OfficialRateSelectionTest, FindsTheRateOfTheExactDateWithItsProvenance) {
     OfficialRateTable table;
     addFile(table, 2025);

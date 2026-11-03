@@ -12,9 +12,12 @@
 #include "processors/loss_eligibility.hpp"
 #include "processors/tax_classifier.hpp"
 #include "processors/tax_processor.hpp"
+#include "processors/trade_conversion.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/decision_session.hpp"
+#include "taxbroker/official_rates.hpp"
+#include "utils/numeric_util.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <algorithm>
@@ -45,7 +48,7 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   --out DIR CSV [CSV ...]
+                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]
   taxbroker report --help
   taxbroker --help
 
@@ -58,7 +61,7 @@ Run 'taxbroker report --help' for the details.
 constexpr std::string_view kReportHelp =
     R"(Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   --out DIR CSV [CSV ...]
+                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]
 
 Writes the Doh-KDVP form (capital gains from selling shares and funds) for one year from
 Trade Republic CSV exports, and a readable summary. The XML can be imported into eDavki
@@ -70,6 +73,9 @@ Options:
   --self-report      Write a self-report (samoprijava) instead of an original return.
   --no-input         Ask no questions: an open question blocks the report (see
                      "Questions" below).
+  --ecb-rates FILE   An ECB reference-rate file (CSV from the ECB Data Portal, dataset EXR)
+                     for one calendar year. Repeat it for more years. Needed to convert a
+                     trade in a foreign currency to EUR; see "Foreign currencies" below.
   --out DIR          The folder for the output files. It is created if it is missing.
   -h, --help         Show this help.
   CSV                One or more Trade Republic exports. Give your whole history, not
@@ -140,6 +146,16 @@ Questions:
   lists them. The answers are used only in this run and are never saved, so the next run
   asks again.
 
+Foreign currencies:
+  The unit price of a trade in another currency is converted to EUR at the official rate of
+  the day of that trade: 1 EUR = rate units of the currency (the ECB reference rate, the
+  same as the Banka Slovenije rate). Give the ECB file of every year that has such a trade
+  up to 31 December of the tax year, also an earlier one: older purchases are part of FIFO.
+  A day without an ECB rate (a weekend or holiday) takes the last earlier rate, at most
+  4 days back, with a warning. The summary lists the rates used. Trades after the tax year
+  need no rate. When a file is missing or ends too early, the summary lists every year to
+  load, so one more run is enough.
+
 Left out by a tax rule (not in the XML, a warning and an entry under "Excluded items" in
 the summary):
   - Bonds: debt securities are no capital gain. Only their interest is reported (Doh-Obr,
@@ -156,7 +172,9 @@ The report is blocked (no XML) when an investment sold in the year:
   - has a corporate action without an answered ratio, or a merger, within 30 days after a
     sale at a loss in December;
   - has a split or reverse split that makes the value of one unit too large for the form;
-  - has a trade that is not in EUR;
+  - has a trade in a foreign currency that no loaded ECB rate file covers (no file for the
+    year, a file that ends before the day, no rate near the day, or a currency that the
+    euro replaced);
   - has a question that is open or was cancelled.
 It is also blocked when a file cannot be read, when a trade or corporate-action row of
 any file is rejected, when two files disagree about the same trade, when the asset class
@@ -196,10 +214,10 @@ struct ReportOptions {
     int mYear{};
     std::filesystem::path mTaxpayerPath;
     FilingType mFilingType{FilingType::Original};
-    /// False with --no-input: the open questions stay open.
-    bool mAskQuestions{true};
+    bool mAskQuestions{true}; ///< False with --no-input: the open questions stay open.
     std::filesystem::path mOutputDirectory;
     std::vector<std::filesystem::path> mCsvPaths;
+    std::vector<std::filesystem::path> mEcbRatePaths; ///< The --ecb-rates files, one per year.
 };
 
 /// A problem that stops the run before anything is written, with its text for stderr.
@@ -280,6 +298,17 @@ parseReportArguments(std::span<const std::string> aArguments) {
             }
 
             noInput = true;
+            continue;
+        }
+
+        if (argument == "--ecb-rates")
+        {
+            if (index + 1 == aArguments.size())
+            {
+                return UsageError{argument + " needs a value."};
+            }
+
+            options.mEcbRatePaths.emplace_back(aArguments[++index]);
             continue;
         }
 
@@ -368,6 +397,19 @@ std::optional<UsageError> checkInputFiles(const ReportOptions& aOptions) {
     if (missingCsv != aOptions.mCsvPaths.end())
     {
         return UsageError{"The CSV file " + fileNameOf(*missingCsv) +
+                          " does not exist or is not a file."};
+    }
+
+    const auto missingRates =
+        std::find_if(aOptions.mEcbRatePaths.begin(),
+                     aOptions.mEcbRatePaths.end(),
+                     [&error](const std::filesystem::path& aPath) {
+                         return !std::filesystem::is_regular_file(aPath, error);
+                     });
+
+    if (missingRates != aOptions.mEcbRatePaths.end())
+    {
+        return UsageError{"The ECB rate file " + fileNameOf(*missingRates) +
                           " does not exist or is not a file."};
     }
 
@@ -536,6 +578,7 @@ struct RunOutcome {
     /// The filing rows of the ISINs without a problem, also when the report is blocked.
     const CapitalGainsReportKDVP& mPreview;
     const ApplicationResult& mResult;
+    std::vector<UsedOfficialRate> mUsedRates; ///< Rates that converted a trade, by date, then code.
     bool mDeletedOldXml{};
 };
 
@@ -637,6 +680,33 @@ const std::vector<RequestInvestment>& excludedInvestments(const ApplicationResul
     return aResult.report(ReportType::CapitalGains).mExcludedInvestments;
 }
 
+/// The text of a text parameter of the diagnostic, or an empty string when it has none.
+std::string textParameter(const ApplicationDiagnostic& aDiagnostic, std::string_view aName) {
+    const auto found =
+        std::find_if(aDiagnostic.mMessageParams.begin(),
+                     aDiagnostic.mMessageParams.end(),
+                     [aName](const MessageParam& aParam) { return aParam.mName == aName; });
+
+    return found == aDiagnostic.mMessageParams.end() ? std::string{}
+                                                     : std::get<std::string>(found->mValue);
+}
+
+/// The years of the ECB rate files to load or to replace, from the structured warnings.
+void writeRateFileYears(std::ostream& aOut, const ApplicationResult& aResult) {
+    for (const auto& diagnostic : aResult.mDiagnostics)
+    {
+        if (diagnostic.mMessageKey == MessageKey::OfficialRateFilesRequiredNotLoaded)
+        {
+            aOut << "  ECB rate files to load: " << textParameter(diagnostic, "years") << '\n';
+        }
+        else if (diagnostic.mMessageKey == MessageKey::OfficialRateFilesRequiredEndsEarly)
+        {
+            aOut << "  ECB rate files to replace (they end too early): "
+                 << textParameter(diagnostic, "years") << '\n';
+        }
+    }
+}
+
 void writeCapitalStatus(std::ostream& aOut, const RunOutcome& aOutcome) {
     const int year = aOutcome.mOptions.mYear;
 
@@ -669,6 +739,8 @@ void writeCapitalStatus(std::ostream& aOut, const RunOutcome& aOutcome) {
         aOut << "blocked, no XML was written (see the errors below)\n";
         break;
     }
+
+    writeRateFileYears(aOut, aOutcome.mResult);
 
     if (aOutcome.mDeletedOldXml)
     {
@@ -931,6 +1003,36 @@ void writeAnswers(std::ostream& aOut, const ApplicationResult& aResult) {
     }
 }
 
+/// The official rates that converted a trade, so the user can check them. The date of the rate
+/// is named only when it is earlier than the trade's tax date.
+void writeUsedRates(std::ostream& aOut, const RunOutcome& aOutcome) {
+    if (aOutcome.mUsedRates.empty())
+    {
+        return;
+    }
+
+    aOut << "Official exchange rates used (ECB reference rates, 1 EUR = rate in the currency):\n";
+
+    for (const auto& used : aOutcome.mUsedRates)
+    {
+        const auto& rate = used.mRate;
+
+        const auto rateText = formatFixedPoint(rate.mValue, EXCHANGE_RATE_SCALE, 8);
+
+        aOut << "  " << rate.mCurrencyCode << ' ' << isoDate(used.mTaxDate) << ": 1 EUR = ";
+        aOut << rateText << ' ' << rate.mCurrencyCode;
+
+        if (rate.mObservationDate != used.mTaxDate)
+        {
+            aOut << " (rate of " << isoDate(rate.mObservationDate) << ")";
+        }
+
+        aOut << " (" << rate.mSourceFile.value() << " row " << rate.mSourceRow << ")\n";
+    }
+
+    aOut << '\n';
+}
+
 std::string summaryText(const RunOutcome& aOutcome) {
     std::ostringstream out;
     const auto& options = aOutcome.mOptions;
@@ -953,6 +1055,7 @@ std::string summaryText(const RunOutcome& aOutcome) {
     writeExcludedItems(out, aOutcome.mResult);
     writeLongHeld(out, aOutcome);
     out << '\n';
+    writeUsedRates(out, aOutcome);
     writePrivateMarketEvents(out, aOutcome);
 
     std::vector<const ApplicationDiagnostic*> errors;
@@ -1086,6 +1189,7 @@ struct CalculatedRun {
     CapitalGainsBuildResult mBuilt;
     /// The rows of the ISINs without a problem, when the builder made no report.
     std::optional<CapitalGainsReportKDVP> mPreviewWithoutBlocked;
+    std::vector<UsedOfficialRate> mUsedRates; ///< The rates that converted a trade.
 };
 
 /// One calculation from the merged files and the answers: FIFO, the corporate-action stage, the
@@ -1095,6 +1199,7 @@ struct CalculatedRun {
 ApplicationResultInput calculateReport(const ReportOptions& aOptions,
                                        const TaxpayerMetadata& aTaxpayer,
                                        const TaxProcessingResult& aPrepared,
+                                       const OfficialRateTable& aRates,
                                        RunDecisions& aDecisions,
                                        std::optional<CalculatedRun>& aCalculated) {
     // The year was checked with the options, so the ledger is always there. The classification
@@ -1106,16 +1211,21 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 
     ledger.mLeftOutIsins = classification.mLeftOutIsins;
 
-    auto pools = matchCapitalPools(statement, ledger, aDecisions);
+    // Foreign trades are converted to EUR before FIFO, so every later stage reads EUR prices.
+    auto conversion = convertCapitalTrades(statement, ledger, aRates);
+    const auto& convertedStatement = conversion.statement(statement);
+
+    auto pools = matchCapitalPools(convertedStatement, ledger, aDecisions);
     auto& fifo = pools.mFifo;
     auto& actions = pools.mActions;
     auto& quantities = pools.mQuantities;
 
     // The stages after the pools read the sale units after the quantity corrections.
-    const auto& capitalStatement = pools.statement(statement);
+    const auto& capitalStatement = pools.statement(convertedStatement);
     auto loss = LossEligibilityChecker::check(capitalStatement, ledger, fifo, aDecisions);
     auto built = CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, {});
-    auto gateDiagnostics = CapitalReportGates::check(capitalStatement, ledger, fifo, loss, built);
+    auto gateDiagnostics =
+        CapitalReportGates::check(capitalStatement, ledger, fifo, loss, built, conversion.mRates);
 
     // Copied, not moved: every calculation of the run starts from the same diagnostics.
     ApplicationResultInput input{
@@ -1126,6 +1236,9 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     auto& processing = input.mProcessingDiagnostics;
 
     appendClassification(input, std::move(classification));
+    std::move(conversion.mDiagnostics.begin(),
+              conversion.mDiagnostics.end(),
+              std::back_inserter(processing));
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
     appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
     appendStageOutput(input, std::move(quantities.mDiagnostics), std::move(quantities.mRequests));
@@ -1206,6 +1319,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     aCalculated = CalculatedRun{
         .mBuilt = std::move(built),
         .mPreviewWithoutBlocked = std::move(previewWithoutBlocked),
+        .mUsedRates = std::move(conversion.mUsedRates),
     };
 
     return input;
@@ -1215,6 +1329,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 /// questions, writes the output files and the summary, and returns the exit code.
 int runReport(const ReportOptions& aOptions,
               const TaxpayerMetadata& aTaxpayer,
+              const OfficialRateTable& aRates,
               std::istream& aIn,
               std::ostream& aOut,
               std::ostream& aErr) {
@@ -1237,7 +1352,7 @@ int runReport(const ReportOptions& aOptions,
     DecisionSession session;
 
     session.start([&](RunDecisions& aDecisions) {
-        return calculateReport(aOptions, aTaxpayer, prepared, aDecisions, calculated);
+        return calculateReport(aOptions, aTaxpayer, prepared, aRates, aDecisions, calculated);
     });
 
     if (aOptions.mAskQuestions)
@@ -1293,6 +1408,7 @@ int runReport(const ReportOptions& aOptions,
         .mBuilt = built,
         .mPreview = preview,
         .mResult = result,
+        .mUsedRates = calculated.value().mUsedRates,
         .mDeletedOldXml = deletesOldXml,
     };
     const auto summary = summaryText(outcome);
@@ -1387,7 +1503,27 @@ int runReportCommand(std::span<const std::string> aArguments,
         return kExitFailure;
     }
 
-    return runReport(options, std::get<TaxpayerMetadata>(taxpayer), aIn, aOut, aErr);
+    // The rate files are named by the user, so a file that is not valid fails the run: a gap
+    // would otherwise show up as a missing rate.
+    const auto rates = loadEcbRateFiles(options.mEcbRatePaths);
+
+    if (!rates.mDiagnostics.empty())
+    {
+        const auto& first = rates.mDiagnostics.front();
+
+        aErr << "taxbroker: the ECB rate file " << first.mSourceFile << " is not valid";
+
+        if (first.mRowIndex)
+        {
+            aErr << " (row " << *first.mRowIndex << ")";
+        }
+
+        aErr << ": " << first.mMessage << '\n' << kHelpHint;
+
+        return kExitFailure;
+    }
+
+    return runReport(options, std::get<TaxpayerMetadata>(taxpayer), rates.mTable, aIn, aOut, aErr);
 }
 
 } // namespace

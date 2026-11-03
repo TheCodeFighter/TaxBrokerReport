@@ -55,6 +55,7 @@ add_executable(taxbroker_unit_tests
     unit/tax_classifier_test.cpp
     unit/tax_processor_test.cpp
     unit/taxpayer_file_test.cpp
+    unit/trade_conversion_test.cpp
     unit/trade_republic_parser_checks_test.cpp
     unit/traderepublic_parser_test.cpp
     unit/numeric_util_test.cpp
