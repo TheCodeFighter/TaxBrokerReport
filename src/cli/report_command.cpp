@@ -893,6 +893,10 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         {
             return aQuestion.mName;
         }
+        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion>)
+        {
+            return aQuestion.mName;
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -1105,9 +1109,13 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     auto pools = matchCapitalPools(statement, ledger, aDecisions);
     auto& fifo = pools.mFifo;
     auto& actions = pools.mActions;
-    auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions);
-    auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
-    auto gateDiagnostics = CapitalReportGates::check(statement, ledger, fifo, loss, built);
+    auto& quantities = pools.mQuantities;
+
+    // The stages after the pools read the sale units after the quantity corrections.
+    const auto& capitalStatement = pools.statement(statement);
+    auto loss = LossEligibilityChecker::check(capitalStatement, ledger, fifo, aDecisions);
+    auto built = CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, {});
+    auto gateDiagnostics = CapitalReportGates::check(capitalStatement, ledger, fifo, loss, built);
 
     // Copied, not moved: every calculation of the run starts from the same diagnostics.
     ApplicationResultInput input{
@@ -1120,6 +1128,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     appendClassification(input, std::move(classification));
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
     appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
+    appendStageOutput(input, std::move(quantities.mDiagnostics), std::move(quantities.mRequests));
     appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));
 
     const auto firstGateDiagnostic = processing.size();
@@ -1131,7 +1140,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 
     if (!excluded.empty())
     {
-        built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, excluded);
+        built = CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, excluded);
     }
 
     std::optional<CapitalGainsReportKDVP> previewWithoutBlocked;
@@ -1143,7 +1152,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 
         leftOut.insert(leftOut.end(), blocked.begin(), blocked.end());
         previewWithoutBlocked =
-            CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, leftOut).mReport;
+            CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, leftOut).mReport;
     }
 
     // A gate error of an excluded investment was resolved and does not stop the XML.
@@ -1164,6 +1173,10 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     if (built.mReport && !hasGateError)
     {
         auto& capital = input.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
+        // The warnings of the rows that the XML lists; without XML there are none.
+        auto basisDifferences = basisDifferenceDiagnostics(capitalStatement, built);
+
+        std::move(basisDifferences.begin(), basisDifferences.end(), std::back_inserter(processing));
 
         if (built.mReport->mLists.empty())
         {

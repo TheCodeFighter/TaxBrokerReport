@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <numeric>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 
@@ -220,6 +221,42 @@ std::vector<PurchaseGroup> purchaseGroupsOf(const FifoIsinResult& aPool) {
     return groups;
 }
 
+/// Tells whether F4 times F3 of the group, rounded to four decimals, differs from the exact basis
+/// of the group rounded the same way. The group's value fits F4 because findBlock checked it.
+bool hasBasisDifference(const PurchaseGroup& aGroup) {
+    // 10^16 ticks per EUR: UnitPrice and Units both have eight decimals.
+    constexpr std::int64_t kTicksPerEuro = 10'000'000'000'000'000;
+    const auto filing = std::get<UnitPrice>(filingUnitPriceOf(aGroup.mUnitValue));
+    const auto reconstructed = std::get<ExactRational>(
+        ExactRational::create(WideInteger{filing} * aGroup.mUnits, WideInteger{kTicksPerEuro}));
+    const auto unitsInUnits = std::get<ExactRational>(
+        ExactRational::create(WideInteger{aGroup.mUnits}, WideInteger{UNITS_SCALE}));
+    const auto exact = multiplyExact(aGroup.mUnitValue, unitsInUnits);
+
+    return roundToScaled(reconstructed, MONEY_SCALE) !=
+           roundToScaled(std::get<ExactRational>(exact), MONEY_SCALE);
+}
+
+/// The purchase rows of the list of an ISIN that have a basis difference.
+std::vector<KdvpBasisDifference> basisDifferencesOf(const FifoIsinResult& aPool,
+                                                    std::size_t aInstrumentIndex) {
+    std::vector<KdvpBasisDifference> differences;
+
+    for (const auto& group : purchaseGroupsOf(aPool))
+    {
+        if (hasBasisDifference(group))
+        {
+            differences.push_back({
+                .mIsin = aPool.mIsin,
+                .mName = aPool.mName,
+                .mPurchase = {StatementEventKind::Trade, aInstrumentIndex, group.mPurchaseIndex},
+            });
+        }
+    }
+
+    return differences;
+}
+
 /// A run of listed sale units with one F10 value.
 struct SalePart {
     Units mUnits{};
@@ -346,10 +383,17 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
                                                          const std::vector<Isin>& aExcludedIsins) {
     CapitalGainsBuildResult result;
     CapitalGainsReportKDVP report;
+    std::vector<KdvpBasisDifference> basisDifferences;
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
     const auto yearSales = collectSelectedYearSales(instruments, aLedger);
 
-    // aFifo.mIsins and aLoss.mIsins follow the instruments, so an index is all three.
+    if (aLoss.mIsins.size() != instruments.size())
+    {
+        throw std::logic_error("The loss result has another count of ISINs than the instruments.");
+    }
+
+    // aFifo.mIsins and aLoss.mIsins follow the instruments, so an index is all three; the ISIN
+    // checks below make sure of it.
     for (std::size_t index = 0; index < instruments.size(); ++index)
     {
         // A tax rule or the user already left this instrument out; it is not an excluded ISIN.
@@ -358,8 +402,15 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
             continue;
         }
 
-        const auto& pool = aFifo.mIsins.at(index);
+        const auto& pool = fifoPoolAt(aFifo, instruments, index);
         const auto& loss = aLoss.mIsins.at(index);
+
+        if (loss.mIsin != pool.mIsin)
+        {
+            throw std::logic_error("The loss result has another ISIN at this place than the "
+                                   "instruments.");
+        }
+
         const bool leftOut = std::find(aExcludedIsins.begin(), aExcludedIsins.end(), pool.mIsin) !=
                              aExcludedIsins.end();
         auto blocked = findBlock(pool, loss, yearSales.at(index));
@@ -384,10 +435,12 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
 
         auto list = buildList(instruments, index, aLedger, pool, loss);
         const auto longHeld = collectLongHeldUnits(pool, yearSales.at(index));
+        const auto differences = basisDifferencesOf(pool, index);
 
         if (!list.mRows.empty())
         {
             report.mLists.push_back(std::move(list));
+            basisDifferences.insert(basisDifferences.end(), differences.begin(), differences.end());
         }
 
         result.mLongHeld.insert(result.mLongHeld.end(), longHeld.begin(), longHeld.end());
@@ -396,9 +449,43 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
     if (result.mBlocked.empty())
     {
         result.mReport = std::move(report);
+        result.mBasisDifferences = std::move(basisDifferences);
     }
 
     return result;
+}
+
+std::vector<ProcessingDiagnostic>
+basisDifferenceDiagnostics(const MergedStatement& aStatement,
+                           const CapitalGainsBuildResult& aBuilt) {
+    std::vector<ProcessingDiagnostic> diagnostics;
+
+    for (const auto& difference : aBuilt.mBasisDifferences)
+    {
+        const auto& purchase = aStatement.mPresentation.mTradeInstruments
+                                   .at(difference.mPurchase.mInstrumentIndex.value())
+                                   .mTransactions.at(difference.mPurchase.mEventIndex);
+        auto message = makeDiagnosticMessage(MessageKey::XmlBasisRoundingDifference);
+
+        diagnostics.push_back({
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = ProcessingDiagnosticCode::XmlBasisRoundingDifference,
+            .mContext =
+                {
+                    .mStage = PipelineStage::FifoTax,
+                    .mAffectedReports = {ReportType::CapitalGains},
+                    .mSources = purchase.mMetadata.mSources,
+                    .mTaxDate = purchase.mMetadata.mTaxDate,
+                    .mInstrumentName = difference.mName,
+                    .mIsin = difference.mIsin,
+                },
+            .mMessage = std::move(message.mEnglish),
+            .mMessageKey = message.mKey,
+            .mMessageParams = std::move(message.mParams),
+        });
+    }
+
+    return diagnostics;
 }
 
 } // namespace taxbroker

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "taxbroker/exact_arithmetic.hpp"
 #include "taxbroker/processing_diagnostics.hpp"
 #include "taxbroker/statement_merger.hpp"
 
@@ -123,8 +124,7 @@ struct KnownReplacement {
 /// One sale of the year whose loss units the known replacements do not block in full.
 struct LossSaleFacts {
     Date mSaleDate;
-    /// Broker and transaction ID of the sale.
-    std::optional<TransactionIdentity> mSaleTransaction;
+    std::optional<TransactionIdentity> mSaleTransaction; ///< Broker and transaction ID of the sale.
     Units mSaleUnits{};
     Units mLossUnits{};
     Date mWindowStart;
@@ -224,13 +224,34 @@ struct TaxClassificationQuestion {
     bool operator==(const TaxClassificationQuestion&) const = default;
 };
 
+/// The question data of `quantity_correction_required`: one sale that needs a little more units
+/// than the earlier purchases left (less than 0.00000100), without proof that it is rounding.
+struct QuantityCorrectionQuestion {
+    Isin mIsin;
+    std::string mName;
+    Date mSaleDate;
+    std::optional<TransactionIdentity> mSaleTransaction; ///< Broker and transaction ID of the sale.
+    Units mOriginalUnits{};
+    /// The units the earlier purchases left, always above 0 and below mOriginalUnits: the
+    /// proposed quantity.
+    Units mOpenUnits{};
+    /// EUR per unit that values the removed units: the higher of the sale price and the highest
+    /// exact value per unit of the open lots.
+    ExactRational mUnitValue;
+    /// The EUR impact that other roundings of the ISIN have used before this sale.
+    ExactRational mBudgetUsed;
+
+    bool operator==(const QuantityCorrectionQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
 using QuestionData = std::variant<std::monostate,
                                   FailureResolutionQuestion,
                                   LossEligibilityQuestion,
                                   CorporateActionRatioQuestion,
-                                  TaxClassificationQuestion>;
+                                  TaxClassificationQuestion,
+                                  QuantityCorrectionQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -302,6 +323,13 @@ struct ExcludeFromReportsAnswer {
     bool operator==(const ExcludeFromReportsAnswer&) const = default;
 };
 
+/// The sale units to use instead of the original ones, at most the open units of the question.
+struct QuantityCorrectionAnswer {
+    Units mCorrectedUnits{};
+
+    bool operator==(const QuantityCorrectionAnswer&) const = default;
+};
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
@@ -309,7 +337,8 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  SplitRatioAnswer,
                                  SeparateEventsAnswer,
                                  CapitalGainsAnswer,
-                                 ExcludeFromReportsAnswer>;
+                                 ExcludeFromReportsAnswer,
+                                 QuantityCorrectionAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {

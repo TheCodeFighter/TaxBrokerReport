@@ -871,7 +871,8 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
                           std::is_same_v<Answer, NoOtherActivityAnswer> ||
                           std::is_same_v<Answer, OtherActivityAnswer> ||
                           std::is_same_v<Answer, CapitalGainsAnswer> ||
-                          std::is_same_v<Answer, ExcludeFromReportsAnswer>);
+                          std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
+                          std::is_same_v<Answer, QuantityCorrectionAnswer>);
             // The session accepts only a ratio or a cancel for a ratio question.
             throw std::logic_error("Only a ratio or a cancel can answer a ratio question.");
         }
@@ -965,10 +966,10 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
     CorporateActionResult result;
 
-    // aFifo.mIsins follows the instruments, so an index is both.
+    // aFifo.mIsins follows the instruments, so an index is both; fifoPoolAt checks it.
     for (std::size_t index = 0; index < instruments.size(); ++index)
     {
-        const auto& pool = aFifo.mIsins.at(index);
+        const auto& pool = fifoPoolAt(aFifo, instruments, index);
 
         // A class that cannot reach Doh-KDVP has its own class error, so its actions are not
         // asked and give no error of their own.
@@ -1091,22 +1092,28 @@ CapitalPools matchCapitalPools(const MergedStatement& aStatement,
                                const ReportingYearLedger& aLedger,
                                RunDecisions& aDecisions) {
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
-    const std::size_t actionRows =
-        std::accumulate(instruments.begin(),
-                        instruments.end(),
-                        std::size_t{0},
-                        [](std::size_t aCount, const TradeInstrument& aInstrument) {
-                            return aCount + aInstrument.mCorporateActions.size();
-                        });
+    const std::size_t rows = std::accumulate(
+        instruments.begin(),
+        instruments.end(),
+        std::size_t{0},
+        [](std::size_t aCount, const TradeInstrument& aInstrument) {
+            return aCount + aInstrument.mCorporateActions.size() + aInstrument.mTransactions.size();
+        });
     std::vector<ConfirmedCorporateAction> confirmed;
+    std::vector<QuantityCorrection> corrections;
+    std::optional<MergedStatement> corrected;
 
-    // A round that confirms nothing new returns, and an action is confirmed once, so one round
-    // per action row and a last one are enough.
-    for (std::size_t round = 0; round <= actionRows; ++round)
+    // A round that confirms nothing new and corrects nothing returns. An action is confirmed once
+    // and a sale is corrected once, so one round per action row and sale and a last one are
+    // enough.
+    for (std::size_t round = 0; round <= rows; ++round)
     {
-        auto fifo = FifoMatcher::match(aStatement, aLedger, confirmed);
+        const auto& statement = corrected ? *corrected : aStatement;
+        auto fifo = FifoMatcher::match(statement, aLedger, confirmed, corrections);
         auto actions =
-            CorporateActionResolver::resolve(aStatement, aLedger, fifo, confirmed, aDecisions);
+            CorporateActionResolver::resolve(statement, aLedger, fifo, confirmed, aDecisions);
+        auto quantities =
+            QuantityReconciler::reconcile(statement, aLedger, fifo, corrections, aDecisions);
         const auto confirmedBefore = confirmed.size();
 
         for (const auto& action : actions.mActions)
@@ -1128,13 +1135,22 @@ CapitalPools matchCapitalPools(const MergedStatement& aStatement,
             }
         }
 
-        if (confirmed.size() == confirmedBefore)
+        if (confirmed.size() == confirmedBefore && quantities.mNewCorrections.empty())
         {
-            return CapitalPools{.mFifo = std::move(fifo), .mActions = std::move(actions)};
+            return CapitalPools{.mFifo = std::move(fifo),
+                                .mActions = std::move(actions),
+                                .mQuantities = std::move(quantities),
+                                .mCorrectedStatement = std::move(corrected)};
         }
+
+        corrections.insert(corrections.end(),
+                           quantities.mNewCorrections.begin(),
+                           quantities.mNewCorrections.end());
+        corrected = withQuantityCorrections(aStatement, corrections);
     }
 
-    throw std::logic_error("The corporate actions were still confirmed after one round per row.");
+    throw std::logic_error("The corporate actions or quantities were still changing after one "
+                           "round per row.");
 }
 
 } // namespace taxbroker

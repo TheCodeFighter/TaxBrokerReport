@@ -113,6 +113,15 @@ enum class MessageKey {
     OfficialRateFromNearbyDate,
     OfficialRateFileIncompleteStartsLate,
     OfficialRateFileIncompleteEndsEarly,
+    QuantityRoundingReconciled,
+    SourceQuantityCorrected,
+    IncompleteHistoryCorrectionRequired,
+    IncompleteHistoryCorrectionCancelled,
+    XmlBasisRoundingDifference,
+    AnswerRejectedCorrectionNotPositive,
+    AnswerRejectedCorrectionAboveOpenUnits,
+    AnswerRejectedCorrectionTooLarge,
+    AnswerRejectedCorrectionOverBudget,
 };
 
 enum class MessageParamKind {

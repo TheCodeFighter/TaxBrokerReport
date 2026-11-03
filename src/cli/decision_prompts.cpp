@@ -346,6 +346,58 @@ std::optional<std::int64_t> shareCount(std::string_view aText) {
     return parsed->mValue;
 }
 
+/// Writes the quantity question: the sale, its units and the units the earlier purchases left.
+void writeQuantityQuestion(std::ostream& aOut,
+                           const DecisionRequest& aRequest,
+                           const QuantityCorrectionQuestion& aQuestion) {
+    aOut
+        << "Question " << aRequest.mId << ": the sale of "
+        << investmentText(aQuestion.mIsin, aQuestion.mName) << " on "
+        << formatCalendarDate(aQuestion.mSaleDate) << " is " << unitsText(aQuestion.mOriginalUnits)
+        << " units, but your earlier purchases left only " << unitsText(aQuestion.mOpenUnits)
+        << " units.\n"
+        << "  The difference is below 0.00000100 units, but the files do not show that it is\n"
+           "  rounding. Enter the quantity of the sale to use (at most the units left, with up to\n"
+           "  8 decimals), press Enter for the units left, or cancel: no answer, and the\n"
+           "  investment is blocked.\n";
+}
+
+/// Reads a sale quantity with up to 8 decimals, Enter for the units left, or `cancel`; asks again
+/// on anything else. Absent when the input ends.
+std::optional<AnswerValue> readQuantityAnswer(const QuantityCorrectionQuestion& aQuestion,
+                                              std::istream& aIn,
+                                              std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (a quantity, Enter or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        if (lowerCase(*line) == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        if (line->empty())
+        {
+            return QuantityCorrectionAnswer{.mCorrectedUnits = aQuestion.mOpenUnits};
+        }
+
+        const auto units = shareCount(*line);
+
+        if (units)
+        {
+            return QuantityCorrectionAnswer{.mCorrectedUnits = *units};
+        }
+
+        aOut << "Enter a quantity above 0 with at most 8 decimals, press Enter or answer "
+                "cancel.\n";
+    }
+}
+
 /// `new : old`, `before -> after` or `cancel`. The share counts become the ratio after / before,
 /// as splitRatioFromShareCounts does.
 RatioInput parseRatioInput(const std::string& aLine) {
@@ -636,6 +688,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
             writeClassificationQuestion(aOut, aRequest, aQuestion);
             return readClassificationAnswer(aIn, aOut);
         }
+        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion>)
+        {
+            writeQuantityQuestion(aOut, aRequest, aQuestion);
+            return readQuantityAnswer(aQuestion, aIn, aOut);
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -692,6 +749,10 @@ std::string answerText(const AnswerValue& aAnswer) {
         {
             return "leave it out of the reports";
         }
+        else if constexpr (std::is_same_v<Value, QuantityCorrectionAnswer>)
+        {
+            return "sale quantity " + unitsText(aValue.mCorrectedUnits) + " units";
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -723,6 +784,10 @@ bool canAsk(const QuestionData& aData) {
             return true;
         }
         else if constexpr (std::is_same_v<Question, TaxClassificationQuestion>)
+        {
+            return true;
+        }
+        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion>)
         {
             return true;
         }
@@ -852,6 +917,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, TaxClassificationQuestion>)
         {
             return investmentText(aQuestion.mIsin, aQuestion.mName) + ", asset class";
+        }
+        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion>)
+        {
+            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", sale on " +
+                   formatCalendarDate(aQuestion.mSaleDate);
         }
         else
         {

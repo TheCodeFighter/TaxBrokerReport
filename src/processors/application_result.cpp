@@ -445,22 +445,33 @@ struct DraftDiagnostic {
 
 /// A failure-resolution type needs a list with at least one investment, a loss question at
 /// least one sale, each with open units, a ratio question a source, open units and a date
-/// range around its effective date, and a classification question an ISIN; every other type has
-/// no question data until its processor defines it.
+/// range around its effective date, a classification question an ISIN, and a quantity question
+/// an ISIN and open units below the sale units; every other type has no question data until its
+/// processor defines it.
 void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
     const auto* loss = std::get_if<LossEligibilityQuestion>(&aQuestion.mData);
     const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aQuestion.mData);
     const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
+    const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
+    const bool isQuantityType = aQuestion.mType == RequestType::QuantityCorrectionRequired;
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
-        (classification != nullptr) != isClassificationType)
+        (classification != nullptr) != isClassificationType ||
+        (quantity != nullptr) != isQuantityType)
     {
         throw std::invalid_argument("The question data does not fit the request type.");
+    }
+
+    if (quantity != nullptr && (quantity->mIsin.empty() || quantity->mOpenUnits <= 0 ||
+                                quantity->mOriginalUnits <= quantity->mOpenUnits))
+    {
+        throw std::invalid_argument("A quantity question needs an ISIN and open units below the "
+                                    "sale units.");
     }
 
     if (classification != nullptr && classification->mIsin.empty())

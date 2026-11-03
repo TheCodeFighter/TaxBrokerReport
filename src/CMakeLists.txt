@@ -29,6 +29,7 @@ add_library(taxbroker_core STATIC
     processors/loss_eligibility.cpp
     processors/official_rate_selection.cpp
     processors/processing_diagnostics.cpp
+    processors/quantity_reconciliation.cpp
     processors/statement_merger.cpp
     processors/tax_classifier.cpp
     processors/tax_processor.cpp

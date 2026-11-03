@@ -347,6 +347,27 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::OfficialRateFileIncompleteEndsEarly,
                       "official_rate_file_incomplete.ends_early",
                       kYearAndLastDate},
+    MessageDefinition{MessageKey::QuantityRoundingReconciled, "quantity_rounding_reconciled", {}},
+    MessageDefinition{MessageKey::SourceQuantityCorrected, "source_quantity_corrected", {}},
+    MessageDefinition{MessageKey::IncompleteHistoryCorrectionRequired,
+                      "incomplete_history.correction_required",
+                      {}},
+    MessageDefinition{MessageKey::IncompleteHistoryCorrectionCancelled,
+                      "incomplete_history.correction_cancelled",
+                      {}},
+    MessageDefinition{MessageKey::XmlBasisRoundingDifference, "xml_basis_rounding_difference", {}},
+    MessageDefinition{MessageKey::AnswerRejectedCorrectionNotPositive,
+                      "answer_rejected.correction_not_positive",
+                      kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedCorrectionAboveOpenUnits,
+                      "answer_rejected.correction_above_open_units",
+                      kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedCorrectionTooLarge,
+                      "answer_rejected.correction_too_large",
+                      kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedCorrectionOverBudget,
+                      "answer_rejected.correction_over_budget",
+                      kRequestId},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -363,7 +384,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::OfficialRateFileIncompleteEndsEarly) + 1,
+                  static_cast<std::size_t>(MessageKey::AnswerRejectedCorrectionOverBudget) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 8> kTermKeys{

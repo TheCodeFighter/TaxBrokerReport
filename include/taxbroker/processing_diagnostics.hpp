@@ -53,6 +53,10 @@ enum class ProcessingDiagnosticCode {
     OfficialRateFromNearbyDate,
     /// A warning: a rate file starts after the beginning or ends before the end of its year.
     OfficialRateFileIncomplete,
+    QuantityRoundingReconciled, ///< A warning: a sale was reduced to the open units (rounding).
+    SourceQuantityCorrected,    ///< A warning: a sale was reduced to a quantity the user confirmed.
+    /// A warning: the exact basis of a Doh-KDVP purchase row differs from its rounded F4 times F3.
+    XmlBasisRoundingDifference,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

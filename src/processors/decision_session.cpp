@@ -1,4 +1,5 @@
 #include "taxbroker/decision_session.hpp"
+#include "processors/fifo_matcher.hpp"
 #include "taxbroker/split_ratio.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/numbered_id.hpp"
@@ -17,9 +18,10 @@ namespace {
 
 /// A failure question takes a failure choice or a cancel, a loss question `no`, `yes` or a cancel,
 /// a classification question `capital_gains`, an exclusion or a cancel, and a ratio question a
-/// ratio or a cancel, or, when its rows are on different dates, that they are separate events. A
-/// question without question data takes no answer until its processor defines one, because all
-/// questions of its type would be the same question.
+/// ratio or a cancel, or, when its rows are on different dates, that they are separate events, and
+/// a quantity question a corrected quantity or a cancel. A question without question data takes
+/// no answer until its processor defines one, because all questions of its type would be the same
+/// question.
 [[nodiscard]] bool fitsQuestion(const QuestionData& aData, const AnswerValue& aAnswer) {
     const auto fits = [&aAnswer](const auto& aData) {
         using Data = std::decay_t<decltype(aData)>;
@@ -43,6 +45,11 @@ namespace {
         {
             return std::holds_alternative<CapitalGainsAnswer>(aAnswer) ||
                    std::holds_alternative<ExcludeFromReportsAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
+        else if constexpr (std::is_same_v<Data, QuantityCorrectionQuestion>)
+        {
+            return std::holds_alternative<QuantityCorrectionAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
         else
@@ -193,6 +200,54 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
     return std::nullopt;
 }
 
+/// Checks a corrected sale quantity: above 0, not above the open units, less than 0.00000100 below
+/// the sale, and with the removed units valued at the unit value of the question, within the
+/// EUR 0.01 budget together with the roundings that came before.
+[[nodiscard]] std::optional<RejectedAnswer> checkQuantityAnswer(
+    std::size_t aIndex, const DecisionRequest& aRequest, const QuantityCorrectionAnswer& aAnswer) {
+    const auto& question = std::get<QuantityCorrectionQuestion>(aRequest.mData);
+
+    if (aAnswer.mCorrectedUnits <= 0)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::CorrectionNotPositive,
+                              MessageKey::AnswerRejectedCorrectionNotPositive,
+                              aRequest.mId);
+    }
+
+    if (aAnswer.mCorrectedUnits > question.mOpenUnits)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::CorrectionAboveOpenUnits,
+                              MessageKey::AnswerRejectedCorrectionAboveOpenUnits,
+                              aRequest.mId);
+    }
+
+    // The question has open units below the sale units, so the difference is above 0.
+    const Units removed = question.mOriginalUnits - aAnswer.mCorrectedUnits;
+
+    if (removed >= kReconciliationLimitUnits)
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::CorrectionTooLarge,
+                              MessageKey::AnswerRejectedCorrectionTooLarge,
+                              aRequest.mId);
+    }
+
+    const auto total =
+        addExact(question.mBudgetUsed, removedUnitsImpact(removed, question.mUnitValue));
+
+    if (reachesAdjustmentBudget(std::get<ExactRational>(total)))
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::CorrectionOverBudget,
+                              MessageKey::AnswerRejectedCorrectionOverBudget,
+                              aRequest.mId);
+    }
+
+    return std::nullopt;
+}
+
 [[nodiscard]] RejectedAnswer rejectedDelete(std::size_t aIndex,
                                             AnswerRejection aReason,
                                             MessageKey aKey,
@@ -293,6 +348,14 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
         if (const auto* ratio = std::get_if<SplitRatioAnswer>(&given.mValue))
         {
             if (auto rejection = checkRatioAnswer(index, *request, *ratio))
+            {
+                rejections.push_back(std::move(*rejection));
+            }
+        }
+
+        if (const auto* quantity = std::get_if<QuantityCorrectionAnswer>(&given.mValue))
+        {
+            if (auto rejection = checkQuantityAnswer(index, *request, *quantity))
             {
                 rejections.push_back(std::move(*rejection));
             }
