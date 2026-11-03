@@ -486,7 +486,9 @@ actions use the same identity, ratio and multiple-source warning rules in the an
 Exact FIFO lot basis retains the complete product of the acquisition-date converted
 eight-decimal `UnitPrice` and imported Units. Proportional allocations remain exact rational
 values until their specified output boundary. Controlled quantity adjustments retain their
-original source values, apply through a run-local overlay and rebuild affected history. The
+original source values, apply through a run-local overlay and rebuild affected history: the
+pool stage repeats the FIFO run, the action questions and the quantity stage until nothing new is
+confirmed or corrected, and gives the later stages the corrected statement. The
 backend tracks the cumulative absolute EUR impact of inventory reconciliation per ISIN/run; details are in `calculations.md`
 and `fifo.md`. This additional processor state does not change parser diagnostics.
 

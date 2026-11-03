@@ -494,7 +494,12 @@ rules:
   (`answer_rejected.effective_date_without_units`), and when the units after the action do not
   cover a later sale of its range (`answer_rejected.later_sale_too_large`: the preview plus the
   range's lowest change after the action is below 0). The preview is the one of the units on the
-  answer's effective date. An accepted
+  answer's effective date. A quantity answer is rejected when its units are 0 or less
+  (`answer_rejected.correction_not_positive`), above the units left
+  (`answer_rejected.correction_above_open_units`), `0.00000100` units or more below the sale
+  (`answer_rejected.correction_too_large`), or when the EUR value of the removed units, with the
+  roundings of the ISIN before it, would reach EUR 0.01 (`answer_rejected.correction_over_budget`).
+  An accepted
   ratio is recorded reduced: `20 / 10` as `2 / 1`. The key tells the frontend which input to
   mark: `ratio_not_positive` the one named by `field` (the only key that can mean either
   number), `ratio_unchanged` both numbers, `ratio_out_of_range` the ratio, `preview_mismatch`
@@ -576,6 +581,16 @@ files gave it, `""` for a blank class, sorted without repeats). A recorded class
 lists the same `classificationCheck` and `"answer":"capital_gains"`,
 `"exclude_from_supported_reports"` or `"cancel"`.
 
+A quantity request has no `options` and `"quantityCheck"` with `name`, `isin`, `saleDate`,
+`transaction` (`broker` and `transactionId`, only when the sale has one), `originalUnits` (the
+units of the sale), `proposedUnits` (the units the earlier purchases left, eight decimals),
+`unitValueEur` (EUR per unit that values the removed units: the higher of the sale price and the
+highest exact value per unit of the open lots) and `budgetUsedEur` (the EUR impact that other
+roundings of the ISIN have used before this sale). The two EUR values are exact fractions with
+`numerator` and `denominator` as strings, because the values do not fit a JSON number. It is
+answered with `{"correctedUnits":"0.99999998"}` (eight decimals) or cancelled; a recorded answer
+lists the same `quantityCheck`.
+
 A request type whose processor does not define its question data yet cannot be answered, not even
 cancelled: without question data, all its questions would be the same question, and one answer
 would reach questions the user never saw. The builder rejects question data that does not fit the
@@ -586,7 +601,7 @@ request type, and a failure-resolution question without an investment.
 | `exchange_rates_required` | Missing currency/date pairs, usage and any verified event-specific fallback; answer with official pair rates or explicit fallback acknowledgements. |
 | `corporate_action_identity_required` | Candidate actions with ISIN, dates, types, ratios and all sources; answer with confirmed grouping, effective dates and order where needed. |
 | `corporate_action_ratio_required` | One request per ISIN, for the first action its pool reached: the ISIN, its name, the effective date, every source record of the action (broker, transaction ID, read-only quantity field; rows of different brokers on one date are one action) the open units of all brokers just before it, and the range of effective dates that keep them. Also asked for a split row after 31 December that a December loss window reaches, and for split rows of two brokers at most 10 days apart (`askSameEvent`, answer `separate_events` when they are two splits). Answer with positive, different whole-number new/old shares, the effective date from the announcement within the range and the confirmed previewed position, or cancel. The GUI and the CLI also accept the shares before and after and turn them into the two numbers; they warn about a reduced number above 1000. |
-| `quantity_correction_required` | Source event, original/proposed quantity, evidence, difference, resulting position and EUR impact/budget; answer with confirmed proposed quantity or a validated correction and supporting assertion. |
+| `quantity_correction_required` | One request for the first sale of an ISIN whose pool stopped for a shortage below `0.00000100` units that the discarded source digits do not prove to be rounding: the ISIN, its name, the sale (date, broker and transaction ID), its units, the units left (the proposed quantity), the unit value in EUR and the budget used. Answer with the corrected sale units (above 0, at most the units left, less than `0.00000100` below the sale, and with the roundings before it below EUR 0.01 in total) or cancel. |
 | `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units in the units of the sale) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | One request per trade investment whose asset class is missing, not recognized or conflicting: the ISIN, its name and the class labels of its rows (question data), with the options `capital_gains` and `exclude_from_supported_reports` and no preselected choice; answer with one of them or cancel. Income events and treatment-specific missing fields for them are not asked yet. |
 | `income_details_required` | Income items and missing or conflicting payer/catalogue, country, gross amount, withholding jurisdiction/status, payment evidence or requested treaty-claim facts, including external deposit interest; answer with validated details or explicit withdrawal of an optional exemption claim. |
@@ -741,8 +756,7 @@ The later stages use the codes defined by their rule documents. These include:
   warning that blocks no report, one per file and transaction ID, with that file's rows in its
   source references. The copies are merged into one event, as for copies across files, which add
   no warning;
-- `invalid_reporting_year`, `quantity_rounding_reconciled`, and `incomplete_history` for
-  historical validation;
+- `invalid_reporting_year` and `incomplete_history` for historical validation;
 - the `corporate_action_*` and `unsupported_corporate_action` codes in
   [`fifo.md`](fifo.md);
 - `invalid_exchange_rate`, `broker_exchange_rate_used`,
@@ -756,8 +770,10 @@ Additional codes and their default scope are:
 | --- | --- |
 | `corporate_action_sources_mismatch_possible` | Warning for capital gains; one per ISIN/year with action records from multiple sources used by the ledger or loss analysis, including relevant following-January actions. |
 | `corporate_action_quantity_rounded` | Warning for capital gains on one applied action: its units were rounded to eight decimals, and the rounding of the ISIN stays below EUR 0.01. No units or amounts in the message. |
-| `source_quantity_corrected` | Warning for reports using the corrected source; retain the original and corrected quantities. |
-| `xml_basis_rounding_difference` | Warning for capital gains; exact basis differs from reconstructed rounded XML value. |
+| `quantity_rounding_reconciled` | Warning for capital gains on one sale: its units were reduced to the units the earlier purchases left, because the discarded source digits show a rounding difference of less than `0.00000100` units. The original units stay in the unit evidence; no units or amounts in the message. |
+| `source_quantity_corrected` | Warning for capital gains on one sale: its units were reduced to a quantity the user confirmed, because the files do not prove rounding. The original units stay in the unit evidence; no units or amounts in the message. |
+| `incomplete_history` keys | Without a key: a sale needs more units than the purchases left. Key `.correction_required` for a sale short by less than `0.00000100` units while its quantity question is open (linked to it); key `.correction_cancelled` after a cancel (no request, so the exclusion question follows). |
+| `xml_basis_rounding_difference` | Warning for capital gains, one per purchase row of a Doh-KDVP list whose `F4` times `F3`, rounded to four decimals, differs from the exact basis of its units rounded the same way. Output only: no value changes and no budget is used. Its sources and date are those of the purchase. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value, now Doh-KDVP (capital gains): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
 | `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked; no request. Key `.units_mismatch` (stage `fifo_tax`, on the sale) is a safety check: a decided sale whose rule blocks more units than the sale has loss units within the holding period cannot be written as rows; it should never happen. |
 | `corporate_action_not_applied` | Error for capital gains: a corporate action whose result cannot be reported yet. Key `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one; `.loss_window` for a date after 31 December with a merger row inside a December loss window (a split row there has its ratio question or its own error instead). An action of a class that never reaches Doh-KDVP gets none: that class has its own error. |
@@ -775,7 +791,7 @@ Additional codes and their default scope are:
 | `income_details_missing` | Error for the affected income form, with a details request while resolvable. |
 | `deposit_interest_external_total_unchecked` | Warning for bank interest; remind the user of qualifying interest at other banks. |
 
-`quantity_rounding_reconciled` and `broker_exchange_rate_used` are also warnings. Other previously
+`broker_exchange_rate_used` is also a warning. Other previously
 listed codes are errors unless their rule explicitly says otherwise. Adapted parser diagnostics
 always keep their original severity. New application rules do not change the meaning of existing
 parser codes.

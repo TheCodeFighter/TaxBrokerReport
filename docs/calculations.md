@@ -555,7 +555,12 @@ not a control total for any FURS value, and nothing is repaired or reconciled.
 An ordinary XML reconstruction difference is not itself missing history. Preserve the exact lot
 basis and the correctly rounded XML unit value, and show `xml_basis_rounding_difference` when the
 reconstructed value differs at `Money` precision. Include the difference without changing a price
-or inventing a balancing event. This output-rounding notice is distinct from the EUR 0.01 budget
+or inventing a balancing event. The reconstructed value is `F4` times `F3` of a purchase row
+rounded to four decimals; it is compared with the exact basis of the row's units rounded the same
+way. Example: 10,000 units bought at EUR 1.01 and split 3 for 1 give 30,000 units and the basis
+EUR 10,100; `F4` is `0.33666667` and `F4` times `F3` is EUR `10100.0001`, so the row has the
+warning. One unit bought at EUR 10 and split 1 for 3 gives `F4` `30.0000003` and `F4` times `F3`
+EUR `10.0000`, the basis: no warning. This output-rounding notice is distinct from the EUR 0.01 budget
 for corrections to inventory quantities. Repeated notices do not authorize source corrections.
 
 ## FURS XML boundaries
