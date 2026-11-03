@@ -113,7 +113,7 @@ ApplicationResultInput calculateCapitalGains(const std::vector<ParseResult>& aPa
     auto& actions = pools.mActions;
     auto loss = LossEligibilityChecker::check(statement, ledger, fifo, aDecisions);
     const auto built = CapitalGainsReportBuilder::build(statement, ledger, fifo, loss, {});
-    auto gates = CapitalReportGates::check(statement, ledger, fifo, loss, built);
+    auto gates = CapitalReportGates::check(statement, ledger, fifo, loss, built, {});
 
     if (aStages != nullptr)
     {

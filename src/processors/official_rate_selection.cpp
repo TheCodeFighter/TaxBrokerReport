@@ -91,24 +91,32 @@ DiagnosticMessage noRateFileMessage(std::string_view aCode, Date aTaxDate, int a
                                   numberParam("year", static_cast<std::uint64_t>(aYear))});
 }
 
-/// Why the loaded files cannot tell whether this day had a rate, or nothing when they can.
-std::optional<DiagnosticMessage> uncoveredDayMessage(const OfficialRateTable& aTable,
-                                                     std::string_view aCode,
-                                                     Date aTaxDate,
-                                                     Date aDay) {
+/// Why the loaded files cannot tell whether a day had a rate, and which file would fix it.
+struct UncoveredDay {
+    DiagnosticMessage mMessage;
+    RateFileNeed mFileNeed;
+};
+
+/// The reason the loaded files cannot tell whether this day had a rate, or nothing when they can.
+/// The file needed is that of the year of aDay, which can be the year before the tax date.
+std::optional<UncoveredDay>
+uncoveredDay(const OfficialRateTable& aTable, std::string_view aCode, Date aTaxDate, Date aDay) {
     const auto* file = fileOfYear(aTable, yearOf(aDay));
 
     if (file == nullptr)
     {
-        return noRateFileMessage(aCode, aTaxDate, yearOf(aDay));
+        return UncoveredDay{noRateFileMessage(aCode, aTaxDate, yearOf(aDay)),
+                            {.mYear = yearOf(aDay), .mProblem = RateFileProblem::NotLoaded}};
     }
 
     if (aDay > coveredUntil(*file))
     {
-        return makeDiagnosticMessage(MessageKey::MissingExchangeRateRateFileEndsEarly,
-                                     {textParam("currency", std::string{aCode}),
-                                      textParam("date", formatCalendarDate(aTaxDate)),
-                                      textParam("lastDate", formatCalendarDate(file->mLastDate))});
+        return UncoveredDay{
+            makeDiagnosticMessage(MessageKey::MissingExchangeRateRateFileEndsEarly,
+                                  {textParam("currency", std::string{aCode}),
+                                   textParam("date", formatCalendarDate(aTaxDate)),
+                                   textParam("lastDate", formatCalendarDate(file->mLastDate))}),
+            {.mYear = yearOf(aDay), .mProblem = RateFileProblem::EndsEarly}};
     }
 
     return std::nullopt;
@@ -159,7 +167,8 @@ void addFileWarnings(const OfficialRateFile& aFile,
     }
 }
 
-/// Looks for the pair; returns the rate, or adds the error that says why there is none.
+/// Looks for the pair; returns the rate, or adds the error that says why there is none. When a
+/// rate file would fix it, the file is recorded in mMissingFiles.
 const OfficialRate* resolvePair(const OfficialRateTable& aTable,
                                 const std::set<Date>& aPublicationDays,
                                 const PairNeed& aPair,
@@ -168,6 +177,11 @@ const OfficialRate* resolvePair(const OfficialRateTable& aTable,
     const std::string code{currencyCode(aPair.mCurrency)};
     const auto currencyParam = textParam("currency", code);
     const auto dateParam = textParam("date", formatCalendarDate(aTaxDate));
+    const auto uncoveredError = [&](UncoveredDay aUncovered) {
+        aSelection.mDiagnostics.push_back(
+            missingRateError(std::move(aUncovered.mMessage), aPair, aTaxDate));
+        aSelection.mMissingFiles.emplace(std::make_pair(code, aTaxDate), aUncovered.mFileNeed);
+    };
     const auto noRateOnDate = [&]() {
         aSelection.mDiagnostics.push_back(
             missingRateError(makeDiagnosticMessage(MessageKey::MissingExchangeRateNoRateOnDate,
@@ -197,9 +211,9 @@ const OfficialRate* resolvePair(const OfficialRateTable& aTable,
     }
 
     // The files must vouch for the tax date itself before any earlier day is tried.
-    if (auto uncovered = uncoveredDayMessage(aTable, code, aTaxDate, aTaxDate))
+    if (auto uncovered = uncoveredDay(aTable, code, aTaxDate, aTaxDate))
     {
-        aSelection.mDiagnostics.push_back(missingRateError(std::move(*uncovered), aPair, aTaxDate));
+        uncoveredError(std::move(*uncovered));
 
         return nullptr;
     }
@@ -216,10 +230,9 @@ const OfficialRate* resolvePair(const OfficialRateTable& aTable,
     {
         const Date candidate = aTaxDate - DayDuration{daysBack};
 
-        if (auto uncovered = uncoveredDayMessage(aTable, code, aTaxDate, candidate))
+        if (auto uncovered = uncoveredDay(aTable, code, aTaxDate, candidate))
         {
-            aSelection.mDiagnostics.push_back(
-                missingRateError(std::move(*uncovered), aPair, aTaxDate));
+            uncoveredError(std::move(*uncovered));
 
             return nullptr;
         }
@@ -257,6 +270,20 @@ const OfficialRate* OfficialRateSelection::find(Currency aCurrency, Date aTaxDat
     const auto found = mSelected.find({std::string{currencyCode(aCurrency)}, aTaxDate});
 
     return found == mSelected.end() ? nullptr : &found->second;
+}
+
+const RateFileNeed* OfficialRateSelection::findMissingFile(Currency aCurrency,
+                                                           Date aTaxDate) const {
+    const auto found = mMissingFiles.find({std::string{currencyCode(aCurrency)}, aTaxDate});
+
+    return found == mMissingFiles.end() ? nullptr : &found->second;
+}
+
+const ProcessingDiagnostic* OfficialRateSelection::findMissing(Currency aCurrency,
+                                                               Date aTaxDate) const {
+    const auto found = mMissing.find({std::string{currencyCode(aCurrency)}, aTaxDate});
+
+    return found == mMissing.end() ? nullptr : &found->second;
 }
 
 OfficialRateSelection selectOfficialRates(const std::vector<RateNeed>& aNeeds,
@@ -301,6 +328,12 @@ OfficialRateSelection selectOfficialRates(const std::vector<RateNeed>& aNeeds,
         if (rate != nullptr)
         {
             selection.mSelected.emplace(std::make_pair(key.second, key.first), *rate);
+        }
+        else
+        {
+            // A pair without a rate has exactly one error, which resolvePair added last.
+            selection.mMissing.emplace(std::make_pair(key.second, key.first),
+                                       selection.mDiagnostics.back());
         }
 
         const auto* file = fileOfYear(aTable, yearOf(key.first));

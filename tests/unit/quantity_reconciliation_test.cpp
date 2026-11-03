@@ -1753,7 +1753,8 @@ TEST(QuantityReconciliationTest, TheUnitValueIsTheHigherOfTheSalePriceAndTheLotV
     EXPECT_EQ(correctionUnitValue(euroSale, lots), eur(36, 1));
     EXPECT_EQ(correctionUnitValue(cheapSale, lots), eur(30, 1));
 
-    // A sale in another currency has no official rate applied yet: the impact is unknown.
+    // A sale still in another currency (the conversion stage converts it before FIFO when a rate
+    // exists, see trade_conversion_test) has an unknown impact and never reconciles.
     EXPECT_EQ(correctionUnitValue(dollarSale, lots), std::nullopt);
 }
 

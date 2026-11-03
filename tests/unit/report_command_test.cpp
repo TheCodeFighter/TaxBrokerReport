@@ -125,7 +125,7 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   --out DIR CSV [CSV ...]
+                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]
   taxbroker report --help
   taxbroker --help
 
@@ -196,7 +196,8 @@ TEST(ReportCommandTest, ReportHelpStartsWithTheUsageAndEndsWithTheExample) {
     EXPECT_EQ(result.mOut.rfind("Usage:\n"
                                 "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                                 "[--no-input]\n"
-                                "                   --out DIR CSV [CSV ...]\n",
+                                "                   [--ecb-rates FILE ...] --out DIR CSV "
+                                "[CSV ...]\n",
                                 0),
               0U);
     EXPECT_TRUE(contains(result.mOut,
@@ -262,6 +263,13 @@ TEST(ReportCommandTest, OutputWithoutAValueFails) {
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr, "taxbroker: --out needs a value.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, EcbRatesWithoutAValueFails) {
+    const auto result = run({"report", "--year", "2024", "--ecb-rates"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr, "taxbroker: --ecb-rates needs a value.\n" + std::string{kUsageHint});
 }
 
 TEST(ReportCommandTest, OptionAfterAnOptionIsTakenAsItsValue) {
@@ -520,6 +528,33 @@ TEST(ReportCommandTest, CsvThatIsAFolderFails) {
     EXPECT_EQ(result.mErr,
               "taxbroker: The CSV file exports does not exist or is not a file.\n" +
                   std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, FirstMissingEcbRateFileIsNamed) {
+    // --ecb-rates may be given more than once; the first file that is missing is named.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    const auto rates2024 = folder.writeText("exr_2024.csv", "KEY\n");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates2024,
+                             "--ecb-rates",
+                             folder.path("exr_2025.csv"),
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The ECB rate file exr_2025.csv does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
 }
 
 TEST(ReportCommandTest, MissingTaxpayerFileFails) {

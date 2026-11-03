@@ -140,6 +140,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "official_rate_from_nearby_date";
     case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
         return "official_rate_file_incomplete";
+    case ProcessingDiagnosticCode::OfficialRateFilesRequired:
+        return "official_rate_files_required";
     case ProcessingDiagnosticCode::QuantityRoundingReconciled:
         return "quantity_rounding_reconciled";
     case ProcessingDiagnosticCode::SourceQuantityCorrected:

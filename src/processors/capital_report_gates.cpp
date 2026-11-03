@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -93,13 +94,6 @@ std::optional<std::string_view> unsupportedClassName(AssetClass aAssetClass) {
     return std::nullopt;
 }
 
-/// The currency code for a gate message, or "unknown" for Currency::Unknown.
-std::string_view gateCurrencyCode(Currency aCurrency) {
-    const auto code = currencyCode(aCurrency);
-
-    return code.empty() ? "unknown" : code;
-}
-
 /// One error for an ISIN with a sale of the year whose class has no capital treatment: a
 /// derivative or a private fund. The sources are those of all its sales of the year; the date is
 /// the first sale's. A bond or crypto instrument must already be left out by the classification
@@ -149,11 +143,14 @@ void checkClassification(const TradeInstrument& aInstrument,
                           aInstrument.mIsin));
 }
 
-/// The error for a blocked ISIN whose pool stopped at a non-EUR trade. A pool stopped for missing
+/// The error for a blocked ISIN whose pool stopped at a foreign trade: the error of its missing
+/// rate (aRates), made for this investment. A trade without a currency has its own error. A
+/// price that could not be converted already has its own error. A pool stopped for missing
 /// history or a numeric failure already has its FIFO diagnostic, and one stopped at a corporate
 /// action has its diagnostics from the corporate-action stage.
 void checkStoppedPool(const FifoIsinResult& aPool,
                       const std::vector<TradeInstrument>& aInstruments,
+                      const OfficialRateSelection& aRates,
                       std::vector<ProcessingDiagnostic>& aDiagnostics) {
     switch (aPool.mStatus)
     {
@@ -165,17 +162,35 @@ void checkStoppedPool(const FifoIsinResult& aPool,
     case FifoIsinStatus::NonEurTrade: {
         const auto& trade = tradeOf(aInstruments, aPool.mStoppedAt.value());
 
-        aDiagnostics.push_back(capitalDiagnostic(
-            DiagnosticSeverity::Error,
-            ProcessingDiagnosticCode::MissingExchangeRate,
-            PipelineStage::FifoTax,
-            makeDiagnosticMessage(
-                MessageKey::MissingExchangeRateTrade,
-                {textParam("currency", std::string{gateCurrencyCode(trade.mCurrency)})}),
-            trade.mMetadata.mSources,
-            trade.mMetadata.mTaxDate,
-            aPool.mName,
-            aPool.mIsin));
+        if (trade.mCurrency == Currency::Unknown)
+        {
+            aDiagnostics.push_back(
+                capitalDiagnostic(DiagnosticSeverity::Error,
+                                  ProcessingDiagnosticCode::MissingExchangeRate,
+                                  PipelineStage::FifoTax,
+                                  makeDiagnosticMessage(MessageKey::MissingExchangeRateTrade, {}),
+                                  trade.mMetadata.mSources,
+                                  trade.mMetadata.mTaxDate,
+                                  aPool.mName,
+                                  aPool.mIsin));
+
+            return;
+        }
+
+        const auto* missing = aRates.findMissing(trade.mCurrency, trade.mMetadata.mTaxDate);
+
+        if (missing == nullptr)
+        {
+            return;
+        }
+
+        // The error of the currency and date, for this investment and this trade.
+        auto diagnostic = *missing;
+
+        diagnostic.mContext.mSources = trade.mMetadata.mSources;
+        diagnostic.mContext.mInstrumentName = aPool.mName;
+        diagnostic.mContext.mIsin = aPool.mIsin;
+        aDiagnostics.push_back(std::move(diagnostic));
 
         return;
     }
@@ -281,6 +296,100 @@ void checkLossSales(const KdvpBlockedIsin& aBlocked,
     }
 }
 
+/// The years joined with ", " in ascending order, such as "2023, 2024".
+std::string yearsText(const std::set<int>& aYears) {
+    std::string text;
+
+    for (const auto year : aYears)
+    {
+        text += (text.empty() ? "" : ", ") + std::to_string(year);
+    }
+
+    return text;
+}
+
+/// One warning that lists the years of the rate files to load (or replace), with the sources of
+/// the trades that need them. Nothing when there are no years.
+void addRateFilesWarning(MessageKey aKey,
+                         const std::set<int>& aYears,
+                         const std::set<SourceReference, StableSourceOrder>& aSources,
+                         std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    if (aYears.empty())
+    {
+        return;
+    }
+
+    auto message = makeDiagnosticMessage(aKey, {textParam("years", yearsText(aYears))});
+
+    aDiagnostics.push_back(ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Warning,
+        .mCode = ProcessingDiagnosticCode::OfficialRateFilesRequired,
+        .mContext =
+            {
+                .mStage = PipelineStage::FifoTax,
+                .mAffectedReports = {ReportType::CapitalGains},
+                .mSources = {aSources.begin(), aSources.end()},
+            },
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    });
+}
+
+/// The years of the ECB rate files that the foreign trades of the investments sold in the year
+/// need, whatever stopped the pool first: up to two warnings, the files that are not loaded and
+/// those that end too early. A rate that no file can fix names no year.
+void checkRateFiles(const std::vector<TradeInstrument>& aInstruments,
+                    const ReportingYearLedger& aLedger,
+                    const std::vector<std::vector<StatementEventReference>>& aYearSales,
+                    const OfficialRateSelection& aRates,
+                    std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    std::set<int> notLoaded;
+    std::set<int> endsEarly;
+    std::set<SourceReference, StableSourceOrder> notLoadedSources;
+    std::set<SourceReference, StableSourceOrder> endsEarlySources;
+
+    for (std::size_t index = 0; index < aInstruments.size(); ++index)
+    {
+        if (aYearSales.at(index).empty() || aLedger.isLeftOut(aInstruments.at(index).mIsin))
+        {
+            continue;
+        }
+
+        for (const auto& trade : aInstruments.at(index).mTransactions)
+        {
+            if (trade.mCurrency == Currency::EUR || trade.mCurrency == Currency::Unknown ||
+                trade.mMetadata.mTaxDate > aLedger.mYearEnd)
+            {
+                continue;
+            }
+
+            const auto* need = aRates.findMissingFile(trade.mCurrency, trade.mMetadata.mTaxDate);
+
+            if (need == nullptr)
+            {
+                continue;
+            }
+
+            const bool isNotLoaded = need->mProblem == RateFileProblem::NotLoaded;
+            auto& years = isNotLoaded ? notLoaded : endsEarly;
+            auto& sources = isNotLoaded ? notLoadedSources : endsEarlySources;
+
+            years.insert(need->mYear);
+            sources.insert(trade.mMetadata.mSources.begin(), trade.mMetadata.mSources.end());
+        }
+    }
+
+    addRateFilesWarning(MessageKey::OfficialRateFilesRequiredNotLoaded,
+                        notLoaded,
+                        notLoadedSources,
+                        aDiagnostics);
+    addRateFilesWarning(MessageKey::OfficialRateFilesRequiredEndsEarly,
+                        endsEarly,
+                        endsEarlySources,
+                        aDiagnostics);
+}
+
 /// One warning for each private-market event of the selected year, in chronological order. Such
 /// an event has only a cash amount, no units or price, so it is skipped.
 void warnAboutPrivateMarketEvents(const MergedStatement& aStatement,
@@ -319,7 +428,8 @@ std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatemen
                                                             const ReportingYearLedger& aLedger,
                                                             const FifoMatchingResult& aFifo,
                                                             const LossEligibilityResult& aLoss,
-                                                            const CapitalGainsBuildResult& aBuilt) {
+                                                            const CapitalGainsBuildResult& aBuilt,
+                                                            const OfficialRateSelection& aRates) {
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
     const auto yearSales = selectedYearSales(instruments, aLedger);
     std::vector<ProcessingDiagnostic> diagnostics;
@@ -348,7 +458,7 @@ std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatemen
 
             if (pool != aFifo.mIsins.end())
             {
-                checkStoppedPool(*pool, instruments, diagnostics);
+                checkStoppedPool(*pool, instruments, aRates, diagnostics);
             }
 
             break;
@@ -386,6 +496,7 @@ std::vector<ProcessingDiagnostic> CapitalReportGates::check(const MergedStatemen
         }
     }
 
+    checkRateFiles(instruments, aLedger, yearSales, aRates, diagnostics);
     warnAboutPrivateMarketEvents(aStatement, aLedger, diagnostics);
 
     return diagnostics;

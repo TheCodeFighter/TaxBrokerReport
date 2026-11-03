@@ -105,8 +105,10 @@ using the affected prices; use the larger impact, not a signed difference that c
 Track the sum of absolute reconciliation impacts for the ISIN across all processed history in the
 current run, including rounded corporate-action quantities. It must remain strictly below EUR
 `0.01`. The impact of a correction is the removed units times the higher of the sale unit price
-and the highest exact value per unit of the open lots. A sale that is not in EUR has an unknown
-impact, which is never reconciled. Use exact integer/rational comparisons rather than rounding the impact down to cents.
+and the highest exact value per unit of the open lots. A sale that is not in EUR when the stage
+runs has an unknown impact, which is never reconciled; a foreign sale with an official rate is
+converted to EUR before FIFO, so its impact is known. Use exact integer/rational comparisons
+rather than rounding the impact down to cents.
 A difference of EUR `0.01` or more, an unknown impact, or an exhausted budget is not accepted as
 rounding reconciliation, even with user acknowledgement. Request missing rates or source correction
 as appropriate; otherwise use the normal incomplete-history or corporate-action error flow. Repeating a tiny adjustment does not reset the

@@ -11,7 +11,8 @@ synthetic_taxpayer="tests/test_data/cli/taxpayer.json"
 usage() {
     cat <<EOF
 Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.json]
-                 [--self-report] [--no-input] [--out runtime/dir] [--] [csv-path ...]
+                 [--self-report] [--no-input] [--ecb-rates path.csv ...]
+                 [--out runtime/dir] [--] [csv-path ...]
 
     Runs 'taxbroker report' inside Docker: Trade Republic CSVs in, the Doh-KDVP XML
     and summary_<year>.txt out. Paths are relative to the repository. The output can
@@ -28,6 +29,8 @@ Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.js
     --self-report   write a self-report instead of an original return
     --no-input      ask no questions: an open question blocks the report
                     (without it, the command asks in this terminal)
+    --ecb-rates     an ECB rate file (one calendar year, EXR csvdata); repeat it for more
+                    years. Needed for trades in a foreign currency
     --command-help  print 'taxbroker report --help' and stop
 
     Default year:   the previous calendar year (2024 with --synthetic)
@@ -43,6 +46,7 @@ year=""
 taxpayer=""
 output_dir=""
 cli_options=()
+ecb_inputs=()
 csv_inputs=()
 
 while [[ $# -gt 0 ]]; do
@@ -87,6 +91,15 @@ while [[ $# -gt 0 ]]; do
             fi
 
             taxpayer="$2"
+            shift 2
+            ;;
+        --ecb-rates)
+            if [[ $# -lt 2 ]]; then
+                echo "--ecb-rates requires a path." >&2
+                exit 2
+            fi
+
+            ecb_inputs+=("$2")
             shift 2
             ;;
         --out)
@@ -156,7 +169,7 @@ if [[ "$output_dir" != runtime/* || "$output_absolute" != "$runtime_absolute/"* 
     exit 2
 fi
 
-for input_path in "$taxpayer" "${csv_inputs[@]}"; do
+for input_path in "$taxpayer" "${csv_inputs[@]}" "${ecb_inputs[@]}"; do
     if [[ "$input_path" == /* || "$input_path" == -* || ! -f "$repo_root/$input_path" ]]; then
         echo "Input must be an existing repository-relative path: $input_path" >&2
         exit 2
@@ -167,6 +180,10 @@ csv_paths=()
 
 for csv_path in "${csv_inputs[@]}"; do
     csv_paths+=("/workspace/$csv_path")
+done
+
+for ecb_path in "${ecb_inputs[@]}"; do
+    cli_options+=(--ecb-rates "/workspace/$ecb_path")
 done
 
 mkdir -p "$repo_root/runtime/logs"

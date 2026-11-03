@@ -32,6 +32,18 @@ struct RateNeed {
     std::vector<SourceReference> mSources; ///< The events that hold the value.
 };
 
+/// Why a rate file cannot give a rate.
+enum class RateFileProblem {
+    NotLoaded, ///< No file of that year is loaded.
+    EndsEarly, ///< The file of that year ends before the day.
+};
+
+/// The rate file that a missing rate needs. Loading it may fix the rate.
+struct RateFileNeed {
+    int mYear{}; ///< The year of the file, which can be the year before the tax date.
+    RateFileProblem mProblem{RateFileProblem::NotLoaded};
+};
+
 /// The official rates found for the needs, and one diagnostic per currency and tax date that was
 /// not found exactly or not found at all.
 struct OfficialRateSelection {
@@ -41,8 +53,20 @@ struct OfficialRateSelection {
     /// error for a rate that was not found.
     std::vector<ProcessingDiagnostic> mDiagnostics;
 
+    /// The error of each currency and tax date without a rate (the same as in mDiagnostics).
+    std::map<std::pair<std::string, Date>, ProcessingDiagnostic> mMissing;
+
+    /// The file that would fix each missing pair, for the pairs a file can fix.
+    std::map<std::pair<std::string, Date>, RateFileNeed> mMissingFiles;
+
     /// The rate selected for this currency and tax date, or null. EUR has none.
     [[nodiscard]] const OfficialRate* find(Currency aCurrency, Date aTaxDate) const;
+
+    /// The rate file that would fix this missing pair, or null (no file can fix it, or no error).
+    [[nodiscard]] const RateFileNeed* findMissingFile(Currency aCurrency, Date aTaxDate) const;
+
+    /// The error for this currency and tax date without a rate, or null.
+    [[nodiscard]] const ProcessingDiagnostic* findMissing(Currency aCurrency, Date aTaxDate) const;
 };
 
 /**

@@ -607,10 +607,10 @@ The matcher reports two kinds of diagnostics, both for the capital report only:
   chooses to exclude the ISIN or to fail the report (`CapitalFailureResolution`).
 
 The ratio questions and the other corporate-action errors come from the corporate-action stage
-("Corporate-action contract"), the non-EUR errors from the capital report gates (see "CLI report
-command (walking skeleton)"). Currency conversion is later work. The 30-day loss rule follows the
-corporate-action stage ("Loss eligibility contract"). The Doh-KDVP filing rows are built from
-the matches as described in "Doh-KDVP report model contract".
+("Corporate-action contract"), the missing-rate errors of foreign trades from the capital report
+gates (see "CLI report command (walking skeleton)"). The trade prices are converted before FIFO.
+The 30-day loss rule follows the corporate-action stage ("Loss eligibility contract"). The
+Doh-KDVP filing rows are built from the matches as described in "Doh-KDVP report model contract".
 
 ### Corporate-action contract
 
@@ -633,9 +633,9 @@ from one broker.
   asked and give no error of their own.
   Its actions are listed, grouped by date, as far as the pool
   reached: the applied ones, the one the pool stopped at, and the later ones. A pool stopped for
-  another reason before an action (missing history, a non-EUR trade, an action that could not be
-  applied) lists no further action; its own error blocks it. A later action is never asked before
-  the earlier one is applied, because the position before it depends on that.
+  another reason before an action (missing history, a foreign trade without a rate, an action
+  that could not be applied) lists no further action; its own error blocks it. A later action
+  is never asked before the earlier one is applied, because the position before it depends on that.
 - **Result.** `CorporateActionResult` has one `ResolvedCorporateAction` per date (by ISIN, then by
   date): its events, effective date, state and, for `RatioConfirmed`, the reduced ratio and the
   effective date (`mConfirmedDate`) that the user supplied (never the broker); `mEffectiveDate`
@@ -879,7 +879,8 @@ makes every F1 to F11 optional. The eDavki draft imports are recorded separately
 ### CLI report command (walking skeleton)
 
 ```text
-taxbroker report --year YYYY --taxpayer taxpayer.json [--self-report] --out DIR CSV [CSV ...]
+taxbroker report --year YYYY --taxpayer taxpayer.json [--self-report] [--ecb-rates FILE ...]
+                 --out DIR CSV [CSV ...]
 ```
 
 The `taxbroker` executable (`src/cli/`) produces a real Doh-KDVP file for a bounded set of cases
@@ -891,9 +892,11 @@ orchestration moves into the application service once that service connects all 
 stages.
 
 **Pipeline.** Each CSV is read with the path-based Trade Republic parser, with its position on the
-command line as the source index. Then merge and reporting-year preparation, once. The rest runs
-as the calculation of a `DecisionSession`, once per revision: FIFO, the corporate-action
-stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
+command line as the source index. The `--ecb-rates` files are loaded with `loadEcbRateFiles`; a
+file that is not valid fails the run (exit 2) before anything is calculated. Then merge and
+reporting-year preparation, once. The rest runs as the calculation of a `DecisionSession`, once
+per revision: the classification, the conversion of foreign trades to EUR, FIFO, the
+corporate-action stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
 report gates, `CapitalFailureResolution` (after `exclude` the command builds the rows again without
 the investments the user left out) and the XML writer; the session builds the application result.
 A loss that the files decide in full is written as they decide it. A sale whose blocked units are
@@ -979,7 +982,7 @@ capital gains only and carry no units, amounts or prices:
 | Case | Code (stage) | One diagnostic per |
 | --- | --- | --- |
 | Class private fund or derivative | `unsupported_tax_treatment` error (`fifo_tax`), parameter `assetClass` | ISIN; sources of its sales of the year, date of the first |
-| Pool stopped at a non-EUR trade | `missing_exchange_rate` error (`fifo_tax`), parameter `currency` | ISIN; date and sources of that trade |
+| Pool stopped at a foreign trade without a rate | `missing_exchange_rate` error (`fifo_tax`), the key and parameters of the pair's reason (`.no_rate_file`, `.rate_file_ends_early`, `.no_rate_on_date`, `.replaced_by_eur`); `.trade` without parameters for a trade with no known currency | ISIN; date and sources of that trade |
 | Adjusted unit value that does not fit F4 (a `UnitPrice`) | `corporate_action_unrepresentable` error (`fifo_tax`), key `corporate_action_unrepresentable.unit_value` | ISIN; date and sources of its first sale that uses it |
 | Date after 31 December with a merger row inside the window of a December loss (a split row there has its ratio question or its own error instead) | `corporate_action_not_applied` error (`corporate_action`), key `corporate_action_not_applied.loss_window` | one per merger date, even when several sales share it; date and sources of the merger row |
 | Private-market event dated in the selected year | `unsupported_tax_treatment` **warning** (`fifo_tax`) | event |
@@ -1046,7 +1049,9 @@ year, and no rate data ships with the app. The result is an `OfficialRateTable` 
 - `selectOfficialRates` (`include/processors/official_rate_selection.hpp`) takes the rate needs
   of a run (currency, tax date, report, sources) and the table. It returns one rate per currency
   and tax date, takes the last earlier rate (at most 4 days back) with a warning, and gives one
-  blocking `missing_exchange_rate` error per pair it cannot fill. No processor calls it yet.
+  blocking `missing_exchange_rate` error per pair it cannot fill, also kept per pair in
+  `mMissing`. The conversion stage (`convertCapitalTrades`, `include/processors/trade_conversion.hpp`) calls it for
+  the foreign trades of the capital pools and gives the missing-pair errors to the gates.
 - Each `OfficialRate` keeps its value (foreign units per 1 EUR, eight decimals), observation date,
   series key, file checksum, display name and logical row.
 - A file is accepted whole or rejected whole. A rejected file adds no rate, and the other files

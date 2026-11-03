@@ -147,13 +147,14 @@ Rules:
 - A source price is a fact from the contract, so no extra digits are carried. Calculated values
   (lot basis, partial-sale allocations, adjusted unit values) stay exact until their output
   boundary.
-- Known limit: a foreign price is rounded to eight decimals at import and again after its
-  conversion to EUR. Compared with converting the exact source price, the result differs by at
-  most one step (EUR 0.00000001) per unit when the rate is at least 0.5 foreign units per EUR,
+- Known limit, accepted: a foreign price is rounded to eight decimals at import and again after
+  its conversion to EUR. The conversion starts from the imported eight-decimal price, not from
+  the exact source text. Compared with converting the exact source price, the result differs by
+  at most one step (EUR 0.00000001) per unit when the rate is at least 0.5 foreign units per EUR,
   which is EUR 0.01 on 1,000,000 units. A stronger currency can differ by more: at 0.33 KWD per
-  EUR, `1.0000000049` KWD becomes `3.03030303` EUR instead of `3.03030305` EUR, two steps.
-  Whether the conversion should start from the exact source text is decided together with
-  non-EUR FIFO support.
+  EUR, `1.0000000049` KWD becomes `3.03030303` EUR instead of `3.03030305` EUR, two steps. Prices
+  with more than eight decimals are rare, and the price is a fact the broker gave at that
+  precision.
 
 ## Official exchange-rate direction
 
@@ -215,7 +216,9 @@ Rules:
   The fixed conversion rates of the changeover are not used: no source for taking them has been
   confirmed.
 - EUR keeps its identity rate and never needs an official rate.
-- Trades in a currency other than EUR are still blocked in the first release.
+- A trade in a currency other than EUR is converted to EUR at the official rate of its own tax
+  date before FIFO (see "Foreign trades in FIFO"). Without a rate, only the ISIN of that trade is
+  blocked.
 
 ## Official ECB rate files
 
@@ -346,9 +349,48 @@ A rate from a loaded ECB file for the exact currency and date is used by default
 (see "Official ECB rate files"). Only a currency and date without such a rate is requested.
 
 After merging and deduplicating the input, the processor collects every foreign currency and date
-needed for a FURS report value. Older acquisition dates are included when those acquisitions are
-matched to a sale in the selected year. A currency and date needed only for an informational fee
-is not included and must never produce a rate prompt.
+needed for a FURS report value. For trades, every foreign trade up to 31 December of the selected
+year is included (see "Foreign trades in FIFO"). A currency and date needed only for an
+informational fee is not included and must never produce a rate prompt.
+
+### Foreign trades in FIFO
+
+The conversion stage (`convertCapitalTrades`) runs before FIFO and makes a copy of the merged
+statement in which each foreign trade has its unit price in EUR and the currency EUR. Every later
+stage (FIFO, quantity reconciliation, the loss rule, the report builder, the gates) reads that
+copy, so none of them converts or branches on the currency.
+
+- A trade needs a rate when its tax date is on or before 31 December of the selected year, its
+  currency is not EUR, and its ISIN is not left out of capital gains. Earlier purchases and sales
+  need one too: they form the opening inventory and feed the loss rule, so the user loads the ECB
+  file of each earlier year that has such a trade. A trade after 31 December contributes only its
+  units to the 30-day loss rule and needs no rate.
+- The rate date is the trade's tax date: the purchase date for a purchase, the sale date for a
+  sale. The price is divided by the rate and rounded once to eight decimals (`UnitPrice`).
+  The lot basis is then the exact product of that EUR price and the units, as for an EUR trade, so
+  a converted purchase without a split never gets `xml_basis_rounding_difference`: its `F4` is
+  the converted price and `F4` times `F3` is the basis.
+- A pair of currency and date without a rate gives the selection's error with its reason
+  (`.no_rate_file`, `.rate_file_ends_early`, `.no_rate_on_date`, `.replaced_by_eur`). The trade
+  stays foreign, so the FIFO pool of its ISIN stops there, and the gate reports that error for
+  the ISIN with the date and sources of the first such trade. The user can exclude the ISIN like
+  any other capital error. A price that cannot be converted (it does not fit) gives its own
+  numeric error in the same way.
+- A sale that stays foreign has an unknown value for a quantity correction, so a shortage of it is
+  never reconciled; once converted, its value is known and the EUR 0.01 budget applies as usual.
+- The summary lists each rate used (currency, tax date, rate, the file and its row), and the date
+  of the rate when it comes from an earlier day.
+- The per-ISIN error names only the first trade without a rate, because FIFO stops there. So the
+  gates also give one run-level warning per kind (`official_rate_files_required`) that lists every
+  year whose ECB file is needed, in one run: `.not_loaded` for files that are not loaded and
+  `.ends_early` for files that end before the day. Both take a `years` text parameter, such as
+  `2023, 2024`, and carry the sources of the trades behind the years. A year is the year of the
+  day whose rate is looked up, so a trade on 1 January (no ECB rate that day) can need the file of
+  the year before it. Only foreign trades up to 31 December of investments sold in the selected
+  year and not left out count. A rate that no file can fix (`.no_rate_on_date`, `.replaced_by_eur`)
+  adds no year. The warning never blocks, so the user can still exclude the investment; the years
+  are listed also then, because loading the files brings the investment back. The CLI prints them
+  under the capital status line.
 
 The application result returns one structured `exchange_rates_required` request containing the
 missing `(currency, tax date)` pairs. The frontend must not discover them from logs.

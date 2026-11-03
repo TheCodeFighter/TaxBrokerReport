@@ -242,9 +242,10 @@ transactions and unrelated instruments are not printed. TR's exported split quan
 as a verified ratio. The tool shows separate what-if previews for two readings of that field
 (added units or total units after the action), plus an imaginary 1 new / 2 old comparison. These
 previews do not change the inspected position or establish the real factor. Supply `--split-row` for a local preview; without it, the position after that
-action remains unresolved. Non-EUR trades also remain unresolved until verified conversion inputs
-are supported. This tool previews arithmetic; full action validation and tax reporting remain later
-processor work. Use `--output runtime/path.txt` to choose another local output file.
+action remains unresolved. A trade in a foreign currency also stops this tool: it passes no rate
+table, so it leaves the position unresolved. Only `taxbroker report` converts foreign trades.
+This tool previews arithmetic; full action validation and tax reporting remain later processor
+work. Use `--output runtime/path.txt` to choose another local output file.
 
 The Trade Republic parse/merge dumps also retain each quantity source text and discarded digits
 in their local text output.

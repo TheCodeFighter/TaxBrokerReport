@@ -114,7 +114,7 @@ std::vector<ProcessingDiagnostic> gatesOf(StatementMergeResult& aMerged, bool aL
     const auto loss = LossEligibilityChecker::check(aMerged.mStatement, ledger, fifo, decisions);
     const auto built = CapitalGainsReportBuilder::build(aMerged.mStatement, ledger, fifo, loss, {});
 
-    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built);
+    return CapitalReportGates::check(aMerged.mStatement, ledger, fifo, loss, built, {});
 }
 
 TEST(LeftOutInstrumentsTest, OnlyAnIsinInTheSetIsLeftOut) {

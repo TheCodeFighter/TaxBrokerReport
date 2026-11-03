@@ -113,6 +113,8 @@ enum class MessageKey {
     OfficialRateFromNearbyDate,
     OfficialRateFileIncompleteStartsLate,
     OfficialRateFileIncompleteEndsEarly,
+    OfficialRateFilesRequiredNotLoaded,
+    OfficialRateFilesRequiredEndsEarly,
     QuantityRoundingReconciled,
     SourceQuantityCorrected,
     IncompleteHistoryCorrectionRequired,

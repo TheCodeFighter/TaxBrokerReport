@@ -3048,7 +3048,280 @@ TEST(CliReportIntegrationTest, ALossBlockedByAJanuaryPurchaseIsWritten) {
     expectValidForKdvpSchemas(xml);
 }
 
-TEST(CliReportIntegrationTest, NonEurTradeBlocksTheReport) {
+/// An ECB rate file of 2025 with invented USD rates (1 EUR = rate USD), in the format of the ECB
+/// Data Portal: row 2 is 2025-01-02, row 3 is 2025-01-03, row 4 is 2025-01-06, row 5 is
+/// 2025-01-10, row 6 is 2025-03-10 and row 7 is 2025-12-31. The first and last days make the
+/// file count as a whole year.
+constexpr std::string_view kEcbUsd2025 =
+    R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-03,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-06,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-10,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-03-10,1.1,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-12-31,1.2,A
+)";
+
+TEST(CliReportIntegrationTest, ForeignTradesAreConvertedAtTheEcbRateOfTheirOwnDay) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", kEcbUsd2025);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             history});
+
+    // Purchase: USD 30 / 1.25 = EUR 24 per unit. Sale: USD 33 / 1.10 = EUR 30 per unit. The
+    // gain is 10 x (30 - 24) = EUR 60. F4 x F3 = 24 x 10 = 240 is the basis: no rounding warning.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(contains(result.mOut,
+                         "Official exchange rates used (ECB reference rates, 1 EUR = rate in the "
+                         "currency):\n"
+                         "  USD 2025-01-10: 1 EUR = 1.25000000 USD (rates.csv row 5)\n"
+                         "  USD 2025-03-10: 1 EUR = 1.10000000 USD (rates.csv row 6)\n"));
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 0\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml,
+                         "              <F1>2025-01-10</F1>\n"
+                         "              <F2>B</F2>\n"
+                         "              <F3>10.0000</F3>\n"
+                         "              <F4>24.0000</F4>\n"));
+    EXPECT_TRUE(contains(xml,
+                         "              <F6>2025-03-10</F6>\n"
+                         "              <F7>10.0000</F7>\n"
+                         "              <F9>30.0000</F9>\n"
+                         "              <F10>true</F10>\n"));
+    expectValidForKdvpSchemas(xml);
+
+    const auto fifoLists = fifoOverKdvpRows(xml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+    EXPECT_TRUE(fifoLists.at(0).mProblems.empty());
+    // 10 x 30 - 10 x 24 = 60.
+    EXPECT_EQ(fifoLists.at(0).mSaleGains, (std::vector<std::string>{"60"}));
+}
+
+TEST(CliReportIntegrationTest, ARateFromAnEarlierDayIsUsedWithAWarning) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", kEcbUsd2025);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            // 2025-01-11 is a Saturday: the last earlier ECB rate is the one of 2025-01-10.
+            R"(2025-01-11T09:00:00Z,2025-01-11,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "official_rate_from_nearby_date"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  USD 2025-01-11: 1 EUR = 1.25000000 USD (rate of 2025-01-10) "
+                         "(rates.csv row 5)\n"));
+    EXPECT_TRUE(contains(folder.readOutput("Doh-KDVP_2025.xml"), "<F4>24.0000</F4>"));
+}
+
+/// An ECB rate file of 2024 with invented USD rates: row 2 is 2024-01-02, row 3 is 2024-06-10 and
+/// row 4 is 2024-12-31. The first and last days make the file count as a whole year.
+constexpr std::string_view kEcbUsd2024 =
+    R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2024-01-02,1.2,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2024-06-10,1.2,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2024-12-31,1.2,A
+)";
+
+TEST(CliReportIntegrationTest, AnEarlierYearPurchaseUsesTheRateFileOfItsYear) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates2024 = folder.writeText("rates_2024.csv", kEcbUsd2024);
+    const auto rates2025 = folder.writeText("rates_2025.csv", kEcbUsd2025);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-06-10T09:00:00Z,2024-06-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates2024,
+                             "--ecb-rates",
+                             rates2025,
+                             history});
+
+    // Purchase: USD 30 / 1.20 (rate of 2024-06-10) = EUR 25 per unit. Sale: USD 33 / 1.10 (rate
+    // of 2025-03-10) = EUR 30 per unit. The gain is 10 x (30 - 25) = EUR 50.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(contains(result.mOut,
+                         "  USD 2024-06-10: 1 EUR = 1.20000000 USD (rates_2024.csv row 3)\n"
+                         "  USD 2025-03-10: 1 EUR = 1.10000000 USD (rates_2025.csv row 6)\n"));
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 0\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F4>25.0000</F4>"));
+    EXPECT_TRUE(contains(xml, "<F9>30.0000</F9>"));
+    expectValidForKdvpSchemas(xml);
+
+    const auto fifoLists = fifoOverKdvpRows(xml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+    EXPECT_TRUE(fifoLists.at(0).mProblems.empty());
+    EXPECT_EQ(fifoLists.at(0).mSaleGains, (std::vector<std::string>{"50"}));
+}
+
+TEST(CliReportIntegrationTest, AnEarlierYearPurchaseWithoutItsRateFileBlocksTheReport) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates2025 = folder.writeText("rates_2025.csv", kEcbUsd2025);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-06-10T09:00:00Z,2024-06-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates2025,
+                             history});
+
+    // The sale of 2025 has its rate, but the purchase of 2024 is part of FIFO and has none.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  diagnostic-0001 missing_exchange_rate, XX0000000001 Synthetic Share, "
+                         "2024-06-10, history.csv row 2\n"
+                         "    There is no official exchange rate for USD on 2024-06-10, and the "
+                         "ECB rate file for 2024 is not loaded."));
+    // The summary says which file to load, right under the status line.
+    EXPECT_TRUE(contains(result.mOut,
+                         "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
+                         "below)\n"
+                         "  ECB rate files to load: 2024\n"));
+}
+
+TEST(CliReportIntegrationTest, TheSummaryListsEveryMissingRateFileYearAtOnce) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates2025 = folder.writeText("rates_2025.csv", kEcbUsd2025);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-06-12T09:00:00Z,2023-06-12,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,30,-150,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-10T09:00:00Z,2024-06-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,30,-150,,,USD,,,,,synthetic-buy-2,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates2025,
+                             history});
+
+    // FIFO stops at the purchase of 2023, so the error names 2023 only. The summary lists both
+    // files that are not loaded, so one more run is enough.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
+                         "below)\n"
+                         "  ECB rate files to load: 2023, 2024\n"));
+    EXPECT_TRUE(contains(result.mOut, "ECB rate file for 2023 is not loaded."));
+    EXPECT_TRUE(contains(result.mOut, "official_rate_files_required"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "The ECB rate files for 2023, 2024 are not loaded, but investments sold "
+                         "in the year have trades that need rates from them."));
+}
+
+TEST(CliReportIntegrationTest, AnEurPurchaseAndAForeignSaleOfOneInvestmentShareOnePool) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", kEcbUsd2025);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,24,-240,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             history});
+
+    // Purchase in EUR: EUR 24 per unit, no rate. Sale: USD 33 / 1.10 = EUR 30 per unit.
+    // The gain is 10 x (30 - 24) = EUR 60.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(
+        contains(result.mOut, "  USD 2025-03-10: 1 EUR = 1.10000000 USD (rates.csv row 6)\n"));
+    EXPECT_FALSE(contains(result.mOut, "USD 2025-01-10"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F4>24.0000</F4>"));
+    EXPECT_TRUE(contains(xml, "<F9>30.0000</F9>"));
+    expectValidForKdvpSchemas(xml);
+
+    const auto fifoLists = fifoOverKdvpRows(xml);
+
+    ASSERT_EQ(fifoLists.size(), 1U);
+    EXPECT_EQ(fifoLists.at(0).mSaleGains, (std::vector<std::string>{"60"}));
+}
+
+TEST(CliReportIntegrationTest, ForeignTradeWithoutAnEcbFileBlocksTheReportWithTheReason) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -3071,15 +3344,191 @@ TEST(CliReportIntegrationTest, NonEurTradeBlocksTheReport) {
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
-                         "below)\n"));
+                         "below)\n"
+                         "  ECB rate files to load: 2025\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000001 Synthetic Share: blocked (missing_exchange_rate)\n"
                          "    sale 2025-03-10, history.csv row 3\n"));
-    // The error points at the USD purchase, where FIFO stopped.
+    // The error points at the USD purchase, where FIFO stopped. The sale in EUR needs no rate.
     EXPECT_TRUE(contains(result.mOut,
                          "  diagnostic-0001 missing_exchange_rate, XX0000000001 Synthetic Share, "
                          "2025-01-10, history.csv row 2\n"
-                         "    A trade of this investment is in USD, not in EUR."));
+                         "    There is no official exchange rate for USD on 2025-01-10, and the "
+                         "ECB rate file for 2025 is not loaded."));
+    EXPECT_FALSE(contains(result.mOut, "Official exchange rates used"));
+}
+
+TEST(CliReportIntegrationTest, ARateFileThatEndsBeforeTheTradeDayBlocksTheReport) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // The file ends on 2025-01-06, far from 31 December, so it does not vouch for 2025-01-10.
+    const auto rates = folder.writeText(
+        "rates.csv",
+        R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-06,1.25,A
+)");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "    There is no official exchange rate for USD on 2025-01-10: the "
+                         "loaded ECB rate file ends on 2025-01-06."));
+    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to replace (they end too early): 2025\n"));
+    EXPECT_FALSE(contains(result.mOut, "ECB rate files to load"));
+}
+
+TEST(CliReportIntegrationTest, AForeignInvestmentWithoutARateCanBeExcluded) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Other,XX0000000002,1,10,-10,,,USD,,,,,synthetic-buy-2,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Other,XX0000000002,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "exclude\n");
+
+    // The USD investment has no rate and is left out; the EUR investment is written. The file
+    // of 2025 is still listed: loading it brings the left-out investment back.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to load: 2025\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000002 Synthetic Other: excluded (missing_exchange_rate)\n"
+                         "    sale 2025-03-10, history.csv row 5\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<ISIN>XX0000000001</ISIN>"));
+    EXPECT_FALSE(contains(xml, "XX0000000002"));
+}
+
+TEST(CliReportIntegrationTest, AnEcbRateFileThatIsNotValidFailsTheRun) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // The columns after KEY and FREQ are missing.
+    const auto rates = folder.writeText("rates.csv", "KEY,FREQ\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_TRUE(result.mErr.starts_with("taxbroker: the ECB rate file rates.csv is not valid"));
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
+}
+
+TEST(CliReportIntegrationTest, AnEcbRateFileWithABadRowNamesTheRow) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // Row 3 has the status E (estimated) instead of A (normal value).
+    const auto rates = folder.writeText(
+        "rates.csv",
+        R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-03,1.25,E
+)");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_TRUE(result.mErr.starts_with("taxbroker: the ECB rate file rates.csv is not valid "
+                                        "(row 3): "));
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
+}
+
+TEST(CliReportIntegrationTest, ATinyShortageOfAForeignSaleIsReconciledAtTheConvertedPrice) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", kEcbUsd2025);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-02T09:00:00Z,2025-01-02,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.3333333340,30,-10,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2025-01-03T09:00:00Z,2025-01-03,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.3333333340,30,-10,,,USD,,,,,synthetic-buy-2,,,,)",
+            R"(2025-01-06T09:00:00Z,2025-01-06,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.3333333340,30,-10,,,USD,,,,,synthetic-buy-3,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1.0000000000,36,36,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             history});
+
+    // As in the EUR case: 3 x 0.333333334 = 1.000000002 units cover the sale of 1 unit, which is
+    // reduced to the 0.99999999 units that are open. The removed 0.00000001 units are worth
+    // 0.00000001 x EUR 32.72727273 (USD 36 / 1.10), far below EUR 0.01, so no question is asked.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(result.mOut, "Question request-"));
+    EXPECT_TRUE(contains(result.mOut, "quantity_rounding_reconciled"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F7>0.99999999</F7>"));
+    EXPECT_TRUE(contains(xml, "<F9>32.72727273</F9>"));
+    expectValidForKdvpSchemas(xml);
 }
 
 TEST(CliReportIntegrationTest, RejectedTradeRowBlocksTheReport) {
@@ -3270,6 +3719,7 @@ TEST(CliReportIntegrationTest, BlockedRunDeletesAnOldXmlOfTheSameYear) {
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"
+                         "  ECB rate files to load: 2025\n"
                          "Deleted the old Doh-KDVP_2025.xml of an earlier run.\n"));
 }
 
@@ -3731,13 +4181,18 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(general.mOut,
                          "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                          "[--no-input]\n"
-                         "                   --out DIR CSV [CSV ...]\n"));
+                         "                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]\n"));
 
     const auto report = run({"report", "--help"});
 
     EXPECT_EQ(report.mExitCode, kExitSuccess);
     EXPECT_TRUE(report.mErr.empty());
     EXPECT_TRUE(contains(report.mOut, "  --self-report      Write a self-report (samoprijava)"));
+    EXPECT_TRUE(contains(report.mOut, "  --ecb-rates FILE   An ECB reference-rate file"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "Foreign currencies:\n"
+                         "  The unit price of a trade in another currency is converted to EUR at "
+                         "the official rate of\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "  --no-input         Ask no questions: an open question blocks the "
                          "report (see\n"));
