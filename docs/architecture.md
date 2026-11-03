@@ -527,12 +527,13 @@ income or fails that form. Each report owns its exclusion list and failure choic
 other-interest choices never apply to each other. Preserve original evidence and unaffected income.
 Non-isolatable errors and final XML failures retain their normal scope, as defined in `diagnostics.md`.
 
-A standalone reference catalogue supplies verified Slovenian-company and imported company/ETF
-metadata with source, revision and effective-date provenance. It can prefill payer and treaty
-facts; payment evidence determines settled Slovenian withholding and actual foreign tax.
-Treaty exemptions require a separate applicable legal basis. The income result retains treatment
-decisions and filing-evidence requirements. Catalogue conflicts and missing facts use
-`income_details_required`; changing a referenced catalogue revision invalidates affected decisions.
+A standalone reference catalogue (`reference_data.md`) supplies Slovenian-company and imported
+payer metadata with source and revision provenance, as suggestions for the user to confirm. It
+can prefill payer and treaty facts; payment evidence determines settled Slovenian withholding and
+actual foreign tax. Treaty exemptions require a separate applicable legal basis. The income
+result retains treatment decisions and filing-evidence requirements. Catalogue conflicts and
+missing facts use `income_details_required`; changing a referenced catalogue revision
+invalidates affected decisions.
 
 The deposit allowance considers all imported and user-supplied qualifying bank interest. A
 below-threshold TR total retains its reminder about other banks. Slovenian retail government bonds
