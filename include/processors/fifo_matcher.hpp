@@ -56,6 +56,37 @@ enum class FifoIsinStatus {
     NumericFailure,
 };
 
+/// How a quantity correction was found.
+enum class QuantityCorrectionKind {
+    RoundingEvidence, ///< The discarded source digits prove a rounding difference.
+    UserConfirmed,    ///< The user confirmed the quantity.
+};
+
+/// A sale reduced to units the files can cover. The statement given to the matcher already holds
+/// the corrected units; the original ones are kept here and in the sale's unit evidence.
+struct QuantityCorrection {
+    StatementEventReference mSale;
+    Units mOriginalUnits{};
+    Units mCorrectedUnits{};
+    QuantityCorrectionKind mKind{QuantityCorrectionKind::RoundingEvidence};
+    /// EUR value of the removed units, above 0. It counts against the budget of the ISIN.
+    ExactRational mImpact;
+
+    bool operator==(const QuantityCorrection&) const = default;
+};
+
+/// Tells whether the sum of the absolute EUR impacts of the quantity roundings of one ISIN
+/// (action rounding and quantity corrections) has reached EUR 0.01, the limit for a rounding.
+[[nodiscard]] bool reachesAdjustmentBudget(const ExactRational& aTotalImpact);
+
+/// The EUR impact of removing aRemovedUnits from a sale, valued at aUnitValue EUR per unit.
+[[nodiscard]] ExactRational removedUnitsImpact(Units aRemovedUnits,
+                                               const ExactRational& aUnitValue);
+
+/// Quantity shortages below this many units (0.00000100) may be reconciled; a larger one is
+/// missing history.
+inline constexpr Units kReconciliationLimitUnits = 100;
+
 struct ConfirmedCorporateAction {
     /// Every action row of the action, one per broker, all of one ISIN.
     std::vector<StatementEventReference> mEvents;
@@ -95,6 +126,11 @@ struct FifoIsinResult {
     /// Matches of the sales before the selected year, in ledger order. Only the 30-day loss rule
     /// reads them: an earlier loss takes its replacement units first.
     std::vector<FifoMatch> mEarlierMatches;
+    /// Sum of the absolute EUR impacts of the action roundings and quantity corrections applied
+    /// so far. It stays below EUR 0.01 (reachesAdjustmentBudget).
+    ExactRational mAdjustmentImpact;
+    /// The quantity corrections applied to sales of this ISIN, in ledger order.
+    std::vector<QuantityCorrection> mCorrections;
     /// Open lots in FIFO order at 31 December, or just before the event a stopped pool stopped at.
     /// For CorporateAction: at the start of the action's day, without the trades of that day.
     std::vector<FifoLot> mOpenLots;
@@ -112,6 +148,12 @@ struct FifoMatchingResult {
 
 /// Tells whether the match uses units past the holding period, which are tax free.
 [[nodiscard]] bool isPastHoldingPeriod(const FifoMatch& aMatch);
+
+/// Returns the pool of the trade instrument at aIndex. aFifo must be built from aInstruments: a
+/// different count of pools or another ISIN at that place throws std::logic_error.
+[[nodiscard]] const FifoIsinResult& fifoPoolAt(const FifoMatchingResult& aFifo,
+                                               const std::vector<TradeInstrument>& aInstruments,
+                                               std::size_t aIndex);
 
 /// The incomplete_history error of a sale that needs more units than the pool holds. No units or
 /// amounts in the message.
@@ -141,11 +183,17 @@ class FifoMatcher final {
     /// action instead (mShortSale), because the split may have taken effect before the sale. That
     /// action may also be a row after 31 December in the loss-analysis view.
     ///
+    /// A sale in aCorrections is matched with the units of aStatement, which must already be
+    /// corrected. Its impact joins the budget of the ISIN first: a total of EUR 0.01 or more is
+    /// not a rounding, so the sale stops the pool as missing history. A correction gives one
+    /// warning.
+    ///
     /// aStatement must be the statement that aLedger was prepared from.
     [[nodiscard]] static FifoMatchingResult
     match(const MergedStatement& aStatement,
           const ReportingYearLedger& aLedger,
-          const std::vector<ConfirmedCorporateAction>& aConfirmedActions = {});
+          const std::vector<ConfirmedCorporateAction>& aConfirmedActions = {},
+          const std::vector<QuantityCorrection>& aCorrections = {});
 };
 
 } // namespace taxbroker

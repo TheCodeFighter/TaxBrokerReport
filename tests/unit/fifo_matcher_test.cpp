@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 
@@ -2852,6 +2853,50 @@ TEST(FifoMatcherTest, ASaleWithoutAnyOpenUnitBeforeASplitRowIsMissingHistory) {
     EXPECT_FALSE(isin.mShortSale.has_value());
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::IncompleteHistory);
+}
+
+// The pool of an instrument
+
+TEST(FifoMatcherTest, ThePoolAtAPlaceIsThePoolOfTheInstrumentAtThatPlace) {
+    const std::vector<TradeInstrument> instruments{
+        {.mName = "Synthetic Share A", .mIsin = "XX0000000001"},
+        {.mName = "Synthetic Share B", .mIsin = "XX0000000002"},
+    };
+    const FifoMatchingResult fifo{.mIsins = {
+                                      {.mIsin = "XX0000000001", .mName = "Synthetic Share A"},
+                                      {.mIsin = "XX0000000002", .mName = "Synthetic Share B"},
+                                  }};
+
+    EXPECT_EQ(&fifoPoolAt(fifo, instruments, 0), &fifo.mIsins.at(0));
+    EXPECT_EQ(&fifoPoolAt(fifo, instruments, 1), &fifo.mIsins.at(1));
+}
+
+TEST(FifoMatcherTest, APoolOfAnotherIsinAtThePlaceOfTheInstrumentIsAnInternalError) {
+    // The FIFO result lists B before A, so place 0 holds the pool of B and not of A.
+    const std::vector<TradeInstrument> instruments{
+        {.mName = "Synthetic Share A", .mIsin = "XX0000000001"},
+        {.mName = "Synthetic Share B", .mIsin = "XX0000000002"},
+    };
+    const FifoMatchingResult fifo{.mIsins = {
+                                      {.mIsin = "XX0000000002", .mName = "Synthetic Share B"},
+                                      {.mIsin = "XX0000000001", .mName = "Synthetic Share A"},
+                                  }};
+
+    EXPECT_THROW((void)fifoPoolAt(fifo, instruments, 0), std::logic_error);
+    EXPECT_THROW((void)fifoPoolAt(fifo, instruments, 1), std::logic_error);
+}
+
+TEST(FifoMatcherTest, AFifoResultWithAnotherCountOfPoolsIsAnInternalError) {
+    // Place 0 matches, but the FIFO result has no pool for B.
+    const std::vector<TradeInstrument> instruments{
+        {.mName = "Synthetic Share A", .mIsin = "XX0000000001"},
+        {.mName = "Synthetic Share B", .mIsin = "XX0000000002"},
+    };
+    const FifoMatchingResult fifo{.mIsins = {
+                                      {.mIsin = "XX0000000001", .mName = "Synthetic Share A"},
+                                  }};
+
+    EXPECT_THROW((void)fifoPoolAt(fifo, instruments, 0), std::logic_error);
 }
 
 } // namespace

@@ -1980,7 +1980,7 @@ TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {
     ApplicationResultInput withList{.mReportingYear = 2024};
     withList.mRequests = {
         RequestInput{.mQuestion = {
-                         .mType = RequestType::QuantityCorrectionRequired,
+                         .mType = RequestType::IncomeDetailsRequired,
                          .mAffectedReports = {kCapital},
                          .mData =
                              FailureResolutionQuestion{
@@ -2837,6 +2837,73 @@ TEST(ApplicationResultClassificationTest, ClassificationDataAndTheRequestTypeMus
     ApplicationResultInput withoutData{.mReportingYear = 2024};
     withoutData.mRequests = {RequestInput{.mQuestion = {
                                               .mType = RequestType::TaxClassificationRequired,
+                                              .mAffectedReports = {kCapital},
+                                          }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutData)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, AQuantityQuestionNeedsAnIsinAndOpenUnitsBelowTheSaleUnits) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::QuantityCorrectionRequired,
+                         .mAffectedReports = {kCapital},
+                         .mIsin = "XX0000000001",
+                         .mData = QuantityCorrectionQuestion{.mIsin = "XX0000000001",
+                                                             .mName = "Synthetic Share",
+                                                             .mOriginalUnits = 100'000'000,
+                                                             .mOpenUnits = 99'999'999},
+                     }}};
+
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(ApplicationResultInput{input}));
+
+    // Without an ISIN the question cannot be told from another one.
+    auto withoutIsin = input;
+
+    std::get<QuantityCorrectionQuestion>(withoutIsin.mRequests[0].mQuestion.mData).mIsin = "";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutIsin)),
+                 std::invalid_argument);
+
+    // Nothing is open: there is no sale left to correct.
+    auto nothingOpen = input;
+
+    std::get<QuantityCorrectionQuestion>(nothingOpen.mRequests[0].mQuestion.mData).mOpenUnits = 0;
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(nothingOpen)),
+                 std::invalid_argument);
+
+    // The open units are not below the sale units: nothing is short.
+    auto notShort = input;
+
+    std::get<QuantityCorrectionQuestion>(notShort.mRequests[0].mQuestion.mData).mOpenUnits =
+        100'000'000;
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(notShort)), std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, QuantityDataAndTheRequestTypeMustFitEachOther) {
+    // Quantity data on another type.
+    ApplicationResultInput onOtherType{.mReportingYear = 2024};
+    onOtherType.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData = QuantityCorrectionQuestion{.mIsin = "XX0000000001",
+                                                             .mName = "Synthetic Share",
+                                                             .mOriginalUnits = 100'000'000,
+                                                             .mOpenUnits = 99'999'999},
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(onOtherType)),
+                 std::invalid_argument);
+
+    // The quantity type without its data.
+    ApplicationResultInput withoutData{.mReportingYear = 2024};
+    withoutData.mRequests = {RequestInput{.mQuestion = {
+                                              .mType = RequestType::QuantityCorrectionRequired,
                                               .mAffectedReports = {kCapital},
                                           }}};
 

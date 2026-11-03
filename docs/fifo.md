@@ -78,16 +78,35 @@ processor applies the smallest possible adjustment to the documented source quan
 with the original value, adjusted value, difference, and supporting source. It must not create a
 purchase lot or cost basis.
 
+The adjusted quantity is the quantity of the sale that stops the pool: the sale is reduced to the
+units that the earlier purchases left. Reduced to the units left, the sale empties the position,
+so every open lot is used and the basis does not change; only the sale value does. A smaller
+quantity that the user confirms leaves the rest open. A purchase is never increased, because that
+would add basis.
+
+Discarded source digits are the proof a Trade Republic file can give. The exact source decimals of
+all trades of the ISIN, from every broker, up to the sale, must leave at least the exact units of
+the sale open, while the stored eight-decimal units do not. Example: three purchases of
+`0.333333334` units are stored as `0.33333333` each, `0.99999999` in all; the exact total
+`1.000000002` covers a sale of `1` unit. The digits prove nothing, and the user is asked instead,
+when a trade has no usable source decimal (more than 30 fractional digits count as unusable), or
+when a confirmed corporate action was applied before the sale, because the exact source sum is in
+the units before the action.
+
 If several rounded parts come from one known exact total, use the largest-remainder method so the
 parts add back to that total. A small difference without supporting evidence returns a
-`quantity_correction_required` request. Without a confirmed correction, or when the difference is
-`0.00000100` or greater, the shortage is `incomplete_history`.
+`quantity_correction_required` request (and the sale's `incomplete_history` error carries the key
+`.correction_required` while it is open). Without a confirmed correction, or when the difference
+is `0.00000100` or greater, the shortage is `incomplete_history` (key `.correction_cancelled`
+after a cancel). Only the first short sale of an ISIN is asked, as the pool stops there.
 
 For controlled reconciliation, bound the absolute EUR acquisition and disposal-value changes
 using the affected prices; use the larger impact, not a signed difference that can cancel out.
 Track the sum of absolute reconciliation impacts for the ISIN across all processed history in the
 current run, including rounded corporate-action quantities. It must remain strictly below EUR
-`0.01`. Use exact integer/rational comparisons rather than rounding the impact down to cents.
+`0.01`. The impact of a correction is the removed units times the higher of the sale unit price
+and the highest exact value per unit of the open lots. A sale that is not in EUR has an unknown
+impact, which is never reconciled. Use exact integer/rational comparisons rather than rounding the impact down to cents.
 A difference of EUR `0.01` or more, an unknown impact, or an exhausted budget is not accepted as
 rounding reconciliation, even with user acknowledgement. Request missing rates or source correction
 as appropriate; otherwise use the normal incomplete-history or corporate-action error flow. Repeating a tiny adjustment does not reset the
@@ -101,16 +120,24 @@ exceed the combined budget: the second is not accepted as rounding recovery.
 
 ### Confirming a source-quantity correction
 
-The request contains the ISIN, event source and tax date, original quantity and source text, proposed
-quantity, quantity difference, evidence if available, estimated EUR impact and current budget,
-and the resulting position. If impact is unknown, include its missing currency/date requirements
-instead of an invented EUR value. The user must confirm the proposed correction or supply a corrected
-quantity. Validation rejects non-positive, out-of-range, or more-than-eight-decimal quantities.
+The request contains the ISIN, event source and tax date, original quantity, the proposed
+quantity (the units left), the unit value that values the removed units and the budget already used. If
+impact is unknown, no request is made and the shortage stays `incomplete_history`. The user must
+confirm the proposed correction or supply a corrected quantity. Validation rejects non-positive
+quantities, quantities above the units left, quantities `0.00000100` or more below the sale, and
+quantities whose impact, with the roundings before it, would reach EUR `0.01`; a quantity has at
+most eight decimals.
 A correction of a documented source error larger than the reconciliation limit requires supporting
-broker data and is recorded as `source_quantity_corrected`, not as automatic rounding recovery.
+broker data and is recorded as `source_quantity_corrected`, not as automatic rounding recovery. A
+quantity that the user confirms for a shortage below the limit is recorded as
+`source_quantity_corrected` too, because it is the user's assertion and not proven rounding. No
+source gives broker data for a larger correction yet, so a shortage of `0.00000100` or more stays
+missing history.
 
-Preserve the original event and apply a run-local correction overlay. After confirmation, rebuild
-that ISIN from the complete input history and recalculate any loss checks. Do not patch only its
+Preserve the original event and apply a run-local correction overlay: a copy of the statement in
+which the corrected sale has its corrected units, while its unit evidence keeps the original
+source value. After confirmation, rebuild that ISIN from the complete input history and
+recalculate any loss checks; the loss rule, the report builder and the gates read the overlay. Do not patch only its
 closing balance or create a purchase lot. Record old and new quantities, evidence or the explicit
 user assertion, and whether the correction was automatic or user supplied. A changed input event
 invalidates its correction. Cancelling or rejecting a correction returns to the ordinary ISIN

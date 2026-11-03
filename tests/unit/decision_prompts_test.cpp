@@ -1425,4 +1425,123 @@ TEST(DecisionPromptsTest, TheAnswersOfAClassificationQuestionAreListedInTheSumma
               "XX0000000003 Synthetic Third, asset class: cancelled");
 }
 
+// The quantity question
+
+/// A sale of 1 unit on 1 March 2024 that the earlier purchases cover with 0.99999999 units.
+DecisionQuestion quantityQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::QuantityCorrectionRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mTaxDate = day(2024, 3, 1),
+        .mIsin = "XX0000000001",
+        .mData = QuantityCorrectionQuestion{.mIsin = "XX0000000001",
+                                            .mName = "Synthetic Share",
+                                            .mSaleDate = day(2024, 3, 1),
+                                            .mOriginalUnits = 100'000'000,
+                                            .mOpenUnits = 99'999'999,
+                                            .mUnitValue = ExactRational{WideInteger{36}}},
+    };
+}
+
+TEST(DecisionPromptsTest, AQuantityQuestionShowsTheSaleAndEnterTakesTheUnitsLeft) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({quantityQuestion()}));
+
+    const auto output = ask(session, "\n");
+
+    EXPECT_EQ(output,
+              "Question request-0001: the sale of XX0000000001 Synthetic Share on 2024-03-01 is "
+              "1.0000 units, but your earlier purchases left only 0.99999999 units.\n"
+              "  The difference is below 0.00000100 units, but the files do not show that it is\n"
+              "  rounding. Enter the quantity of the sale to use (at most the units left, with up "
+              "to\n"
+              "  8 decimals), press Enter for the units left, or cancel: no answer, and the\n"
+              "  investment is blocked.\n"
+              "Your answer (a quantity, Enter or cancel):\n"
+              "\n");
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{QuantityCorrectionAnswer{.mCorrectedUnits = 99'999'999}});
+}
+
+TEST(DecisionPromptsTest, ATypedQuantityWithADecimalCommaIsRecorded) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({quantityQuestion()}));
+
+    (void)ask(session, "0,99999998\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{QuantityCorrectionAnswer{.mCorrectedUnits = 99'999'998}});
+}
+
+TEST(DecisionPromptsTest, AnInvalidQuantityIsAskedAgain) {
+    // Not a number, zero and nine decimals are refused before the session sees them.
+    DecisionSession session;
+    session.start(asksUntilAnswered({quantityQuestion()}));
+
+    const auto output = ask(session, "abc\n0\n0.999999985\n\n");
+    const auto hint = std::string{"Enter a quantity above 0 with at most 8 decimals, press Enter "
+                                  "or answer cancel.\n"};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{QuantityCorrectionAnswer{.mCorrectedUnits = 99'999'999}});
+
+    std::size_t hints = 0;
+
+    for (auto position = output.find(hint); position != std::string::npos;
+         position = output.find(hint, position + 1))
+    {
+        ++hints;
+    }
+
+    EXPECT_EQ(hints, 3U); // one for each refused line
+}
+
+TEST(DecisionPromptsTest, ACancelledQuantityQuestionRecordsTheCancel) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({quantityQuestion()}));
+
+    (void)ask(session, "Cancel\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{CancelAnswer{}});
+}
+
+TEST(DecisionPromptsTest, AQuantityThatTheSessionRejectsIsAskedAgainWithItsReason) {
+    // 1 unit is more than the 0.99999999 units left.
+    DecisionSession session;
+    session.start(asksUntilAnswered({quantityQuestion()}));
+
+    const auto output = ask(session, "1\ncancel\n");
+
+    EXPECT_TRUE(contains(output,
+                         "The corrected quantity in the answer to request-0001 is above the "
+                         "units that the earlier purchases left."));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{CancelAnswer{}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheQuantityQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({quantityQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, TheAnswersOfAQuantityQuestionAreListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({quantityQuestion()}));
+
+    (void)ask(session, "0.99999998\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000001 Synthetic Share, sale on 2024-03-01: sale quantity 0.99999998 units");
+}
+
 } // namespace

@@ -2,6 +2,7 @@
 
 #include "processors/fifo_matcher.hpp"
 #include "processors/loss_eligibility.hpp"
+#include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/report_models.hpp"
 
 #include <optional>
@@ -59,6 +60,16 @@ struct KdvpLongHeldUnits {
     bool operator==(const KdvpLongHeldUnits&) const = default;
 };
 
+/// A purchase row whose exact basis differs from its F4 times its F3 once both are rounded to
+/// four decimals. Output only: the exact basis stays in the FIFO lot and nothing is repaired.
+struct KdvpBasisDifference {
+    Isin mIsin;
+    std::string mName;
+    StatementEventReference mPurchase; ///< The purchase of the row.
+
+    bool operator==(const KdvpBasisDifference&) const = default;
+};
+
 struct CapitalGainsBuildResult {
     /// Present only when every blocked ISIN is one the user agreed to leave out or there are no
     /// blocked ISINs.
@@ -71,7 +82,16 @@ struct CapitalGainsBuildResult {
     /// The units left out of the rows because they are past the holding period, for every ISIN
     /// that is not blocked, by ISIN and then in ledger order.
     std::vector<KdvpLongHeldUnits> mLongHeld;
+    /// The purchase rows of mReport's lists with a basis difference, by ISIN and row order. Empty
+    /// when there is no report.
+    std::vector<KdvpBasisDifference> mBasisDifferences;
 };
+
+/// One xml_basis_rounding_difference warning for each entry of aBuilt.mBasisDifferences. No
+/// units or amounts in the message.
+[[nodiscard]] std::vector<ProcessingDiagnostic>
+basisDifferenceDiagnostics(const MergedStatement& aStatement,
+                           const CapitalGainsBuildResult& aBuilt);
 
 class CapitalGainsReportBuilder final {
   public:

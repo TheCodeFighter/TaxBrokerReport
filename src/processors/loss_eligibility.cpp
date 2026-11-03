@@ -716,7 +716,8 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
                 static_assert(std::is_same_v<Answer, SplitRatioAnswer> ||
                               std::is_same_v<Answer, SeparateEventsAnswer> ||
                               std::is_same_v<Answer, CapitalGainsAnswer> ||
-                              std::is_same_v<Answer, ExcludeFromReportsAnswer>);
+                              std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
+                              std::is_same_v<Answer, QuantityCorrectionAnswer>);
                 throw std::logic_error("Another question's answer cannot answer a loss question.");
             }
         }
@@ -738,10 +739,10 @@ LossEligibilityResult LossEligibilityChecker::check(const MergedStatement& aStat
 
     result.mIsins.reserve(instruments.size());
 
-    // aFifo.mIsins follows the instruments, so an index is both.
+    // aFifo.mIsins follows the instruments, so an index is both; fifoPoolAt checks it.
     for (std::size_t index = 0; index < instruments.size(); ++index)
     {
-        const auto& pool = aFifo.mIsins.at(index);
+        const auto& pool = fifoPoolAt(aFifo, instruments, index);
         LossEligibilityIsin isin{.mIsin = pool.mIsin, .mName = pool.mName};
 
         if (pool.mStatus == FifoIsinStatus::Matched && !aLedger.isLeftOut(pool.mIsin) &&

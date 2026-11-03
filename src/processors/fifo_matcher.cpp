@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <iterator>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -32,6 +33,20 @@ ProcessingDiagnostic incompleteHistoryDiagnostic(const FifoIsinResult& aPool,
         .mMessageKey = message.mKey,
         .mMessageParams = std::move(message.mParams),
     };
+}
+
+bool reachesAdjustmentBudget(const ExactRational& aTotalImpact) {
+    constexpr std::int64_t kCentsPerEuro = 100;
+
+    return compareExact(aTotalImpact,
+                        std::get<ExactRational>(ExactRational::create(1, kCentsPerEuro))) >= 0;
+}
+
+ExactRational removedUnitsImpact(Units aRemovedUnits, const ExactRational& aUnitValue) {
+    // Units have eight decimals; the caller keeps the product far inside 256 bits.
+    const auto units = ExactRational::create(WideInteger{aRemovedUnits}, WideInteger{UNITS_SCALE});
+
+    return std::get<ExactRational>(multiplyExact(std::get<ExactRational>(units), aUnitValue));
 }
 
 namespace {
@@ -76,6 +91,33 @@ void stopForMissingHistory(FifoIsinResult& aPool,
     aDiagnostics.push_back(incompleteHistoryDiagnostic(aPool, aTrade));
 }
 
+/// The warning of an applied quantity correction. No units or amounts in the message.
+ProcessingDiagnostic correctionWarning(const FifoIsinResult& aPool,
+                                       const TradeTransaction& aSale,
+                                       const QuantityCorrection& aCorrection) {
+    const bool proven = aCorrection.mKind == QuantityCorrectionKind::RoundingEvidence;
+    auto message = makeDiagnosticMessage(proven ? MessageKey::QuantityRoundingReconciled
+                                                : MessageKey::SourceQuantityCorrected);
+
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Warning,
+        .mCode = proven ? ProcessingDiagnosticCode::QuantityRoundingReconciled
+                        : ProcessingDiagnosticCode::SourceQuantityCorrected,
+        .mContext =
+            {
+                .mStage = PipelineStage::HistoricalValidation,
+                .mAffectedReports = {ReportType::CapitalGains},
+                .mSources = aSale.mMetadata.mSources,
+                .mTaxDate = aSale.mMetadata.mTaxDate,
+                .mInstrumentName = aPool.mName,
+                .mIsin = aPool.mIsin,
+            },
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
+}
+
 /// Adds a lot with the exact basis of a purchase at the end of the FIFO queue.
 void applyPurchase(FifoIsinResult& aPool,
                    const StatementEventReference& aEvent,
@@ -96,12 +138,15 @@ void applyPurchase(FifoIsinResult& aPool,
 /// Matches a sale to the oldest open lots. Nothing changes unless the whole sale is matched, so a
 /// failing sale leaves the lots exactly as they were. The matches of an earlier sale are kept
 /// apart from those of the selected year. A sale with too few units stops the pool at
-/// aActionAfter when there is one and some units are open, else for missing history.
+/// aActionAfter when there is one and some units are open, else for missing history. A corrected
+/// sale (aCorrection, units already in aTrade) adds its impact to the budget of the pool, and the
+/// pool stops for missing history when the total reaches EUR 0.01.
 void applySale(FifoIsinResult& aPool,
                const StatementEventReference& aEvent,
                const TradeTransaction& aTrade,
                bool aInSelectedYear,
                const std::optional<StatementEventReference>& aActionAfter,
+               const QuantityCorrection* aCorrection,
                std::vector<ProcessingDiagnostic>& aDiagnostics) {
     if (aTrade.mUnits <= 0 || aTrade.mUnitPrice <= 0)
     {
@@ -141,6 +186,22 @@ void applySale(FifoIsinResult& aPool,
         stopForMissingHistory(aPool, aEvent, aTrade, available, aDiagnostics);
 
         return;
+    }
+
+    ExactRational adjustmentImpact = aPool.mAdjustmentImpact;
+
+    if (aCorrection != nullptr)
+    {
+        // A correction is far below EUR 0.01, so the sum stays inside 256 bits.
+        adjustmentImpact =
+            std::get<ExactRational>(addExact(adjustmentImpact, aCorrection->mImpact));
+
+        if (reachesAdjustmentBudget(adjustmentImpact))
+        {
+            stopForMissingHistory(aPool, aEvent, aTrade, available, aDiagnostics);
+
+            return;
+        }
     }
 
     // Work on copies and commit them only after the whole sale is matched.
@@ -198,6 +259,13 @@ void applySale(FifoIsinResult& aPool,
 
     lots.erase(lots.begin(), lots.begin() + static_cast<std::ptrdiff_t>(firstOpen));
     aPool.mOpenLots = std::move(lots);
+
+    if (aCorrection != nullptr)
+    {
+        aPool.mAdjustmentImpact = std::move(adjustmentImpact);
+        aPool.mCorrections.push_back(*aCorrection);
+        aDiagnostics.push_back(correctionWarning(aPool, aTrade, *aCorrection));
+    }
 
     auto& kept = aInSelectedYear ? aPool.mMatches : aPool.mEarlierMatches;
 
@@ -294,12 +362,10 @@ splitShortlyAfter(const TradeTransaction& aSale,
     return aFirstAction;
 }
 
-/// The confirmed actions of one pool that are not applied yet, in date order, and the EUR value
-/// that the rounding of its applied actions changed.
+/// The confirmed actions of one pool that are not applied yet, in date order.
 struct PendingActions {
     std::vector<const ConfirmedCorporateAction*> mActions;
     std::size_t mNext{};
-    ExactRational mRoundingImpact;
 };
 
 std::vector<PendingActions>
@@ -411,7 +477,6 @@ NumericResult<ExactRational> roundingImpact(const ExactRational& aResidualUnits,
 /// action can be applied; otherwise the pool stops at the action with an error.
 void applyAction(FifoIsinResult& aPool,
                  const ConfirmedCorporateAction& aAction,
-                 PendingActions& aPending,
                  const std::vector<TradeInstrument>& aInstruments,
                  std::vector<ProcessingDiagnostic>& aDiagnostics) {
     const auto fail = [&aPool, &aAction, &aDiagnostics](ProcessingDiagnostic aDiagnostic) {
@@ -451,7 +516,7 @@ void applyAction(FifoIsinResult& aPool,
     {
         const auto impact = roundingImpact(allocated.mResidual, lots);
         const auto total = std::holds_alternative<ExactRational>(impact)
-                               ? addExact(aPending.mRoundingImpact, std::get<ExactRational>(impact))
+                               ? addExact(aPool.mAdjustmentImpact, std::get<ExactRational>(impact))
                                : impact;
 
         if (const auto* error = std::get_if<NumericError>(&total))
@@ -462,10 +527,7 @@ void applyAction(FifoIsinResult& aPool,
         }
 
         // EUR 0.01 or more in total is not a rounding difference any more.
-        constexpr std::int64_t kCentsPerEuro = 100;
-
-        if (compareExact(std::get<ExactRational>(total),
-                         std::get<ExactRational>(ExactRational::create(1, kCentsPerEuro))) >= 0)
+        if (reachesAdjustmentBudget(std::get<ExactRational>(total)))
         {
             fail(actionDiagnostic(DiagnosticSeverity::Error,
                                   ProcessingDiagnosticCode::CorporateActionUnrepresentable,
@@ -475,7 +537,7 @@ void applyAction(FifoIsinResult& aPool,
             return;
         }
 
-        aPending.mRoundingImpact = std::get<ExactRational>(total);
+        aPool.mAdjustmentImpact = std::get<ExactRational>(total);
         aDiagnostics.push_back(
             actionDiagnostic(DiagnosticSeverity::Warning,
                              ProcessingDiagnosticCode::CorporateActionQuantityRounded,
@@ -498,11 +560,7 @@ void applyActionsUpTo(FifoIsinResult& aPool,
     while (aPool.mStatus == FifoIsinStatus::Matched && aPending.mNext < aPending.mActions.size() &&
            aPending.mActions[aPending.mNext]->mEffectiveDate <= aDate)
     {
-        applyAction(aPool,
-                    *aPending.mActions[aPending.mNext],
-                    aPending,
-                    aInstruments,
-                    aDiagnostics);
+        applyAction(aPool, *aPending.mActions[aPending.mNext], aInstruments, aDiagnostics);
         ++aPending.mNext;
     }
 }
@@ -531,10 +589,30 @@ bool isPastHoldingPeriod(const FifoMatch& aMatch) {
     return std::chrono::sys_days{aMatch.mSaleDate} > std::chrono::sys_days{anniversary};
 }
 
+const FifoIsinResult& fifoPoolAt(const FifoMatchingResult& aFifo,
+                                 const std::vector<TradeInstrument>& aInstruments,
+                                 std::size_t aIndex) {
+    if (aFifo.mIsins.size() != aInstruments.size())
+    {
+        throw std::logic_error("The FIFO result has another count of ISINs than the instruments.");
+    }
+
+    const auto& pool = aFifo.mIsins.at(aIndex);
+
+    if (pool.mIsin != aInstruments.at(aIndex).mIsin)
+    {
+        throw std::logic_error("The FIFO result has another ISIN at this place than the "
+                               "instruments.");
+    }
+
+    return pool;
+}
+
 FifoMatchingResult
 FifoMatcher::match(const MergedStatement& aStatement,
                    const ReportingYearLedger& aLedger,
-                   const std::vector<ConfirmedCorporateAction>& aConfirmedActions) {
+                   const std::vector<ConfirmedCorporateAction>& aConfirmedActions,
+                   const std::vector<QuantityCorrection>& aCorrections) {
     FifoMatchingResult result;
     const auto& instruments = aStatement.mPresentation.mTradeInstruments;
 
@@ -640,11 +718,17 @@ FifoMatcher::match(const MergedStatement& aStatement,
                     ? splitShortlyAfter(trade, firstAction, instruments.at(instrumentIndex))
                     : std::nullopt;
 
+            const auto correction = std::find_if(
+                aCorrections.begin(),
+                aCorrections.end(),
+                [&event](const QuantityCorrection& aEntry) { return aEntry.mSale == event; });
+
             applySale(pool,
                       event,
                       trade,
                       trade.mMetadata.mTaxDate >= aLedger.mYearStart,
                       actionAfter,
+                      correction == aCorrections.end() ? nullptr : &*correction,
                       result.mDiagnostics);
             break;
         }

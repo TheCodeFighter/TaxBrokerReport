@@ -1,6 +1,7 @@
 #pragma once
 
 #include "processors/fifo_matcher.hpp"
+#include "processors/quantity_reconciliation.hpp"
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/decision_session.hpp"
 
@@ -71,16 +72,27 @@ class CorporateActionResolver final {
             RunDecisions& aDecisions);
 };
 
-/// The FIFO pools with their corporate actions applied, and the corporate-action stage result.
+/// The FIFO pools with their corporate actions and quantity corrections applied, and the results
+/// of the corporate-action and quantity stages.
 struct CapitalPools {
     FifoMatchingResult mFifo;
     CorporateActionResult mActions;
+    QuantityReconciliationResult mQuantities;
+    /// The loss rule, the report builder and the gates must read this one, not the original.
+    std::optional<MergedStatement> mCorrectedStatement;
+
+    /// The statement the stages after the pools must use: the corrected one, or aOriginal.
+    [[nodiscard]] const MergedStatement& statement(const MergedStatement& aOriginal) const {
+        return mCorrectedStatement ? *mCorrectedStatement : aOriginal;
+    }
 };
 
-/// Matches the FIFO pools and resolves their corporate actions until no new answer is found: each
-/// confirmed action is applied, the pool continues, and the next action of the ISIN is asked with
-/// the position after the earlier one. The CLI and the debug tools use this: one FifoMatcher and
-/// one CorporateActionResolver call would leave a confirmed action unapplied.
+/// Matches the FIFO pools, resolves their corporate actions and reconciles tiny quantity
+/// shortages until no new answer or correction is found: each confirmed action is applied, the
+/// pool continues, and the next action of the ISIN is asked with the position after the earlier
+/// one; a sale with a tiny shortage is corrected and the pool continues. The CLI and the debug
+/// tools use this: one FifoMatcher and one CorporateActionResolver call would leave a confirmed
+/// action unapplied.
 [[nodiscard]] CapitalPools matchCapitalPools(const MergedStatement& aStatement,
                                              const ReportingYearLedger& aLedger,
                                              RunDecisions& aDecisions);

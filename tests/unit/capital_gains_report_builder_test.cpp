@@ -7,7 +7,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <stdexcept>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -3478,6 +3480,253 @@ TEST(CapitalGainsReportBuilderTest, ALossSaleBeforeAnAppliedSplitInItsWindowBloc
     EXPECT_EQ(result.mBlocked.at(0).mReason, KdvpBlockReason::LossNotReportable);
     EXPECT_EQ(result.mBlocked.at(0).mSales,
               (std::vector<StatementEventReference>{{StatementEventKind::Trade, 0, 1}}));
+}
+
+TEST(CapitalGainsReportBuilderTest, ARoundedUnitValueThatChangesTheRowBasisIsReported2024) {
+    // 10'000 units bought at EUR 1.01 (basis EUR 10'100), split 3 / 1: 30'000 units. The value of
+    // one unit is 10'100 / 30'000 = 0.336666666..., written as 0.33666667 (F4). F4 x F3 =
+    // 0.33666667 x 30'000 = EUR 10'100.0001, not the basis EUR 10'100.0000.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {
+            {
+                .mName = "Synthetic Share",
+                .mIsin = "XX0000000001",
+                .mTransactions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                                       .mSources = {SourceReference{
+                                           .mBroker = Broker::TradeRepublic,
+                                           .mFilename = SourceFilename::fromPath("history.csv"),
+                                           .mSourceRow = 2,
+                                           .mTransactionId = "synthetic-buy-1"}}},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 101'000'000,   // EUR 1.01
+                         .mUnits = 1'000'000'000'000, // 10'000 units
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-09-02")},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 120'000'000,   // EUR 1.20
+                         .mUnits = 3'000'000'000'000, // 30'000 units
+                         .mCurrency = Currency::EUR},
+                    },
+                .mCorporateActions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                         .mType = CorporateActionType::UnresolvedSplit},
+                    },
+            }};
+
+    const auto result =
+        buildYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 3, .mOldShares = 1},
+                               .mEffectiveDate = day("2024-06-03")}});
+
+    ASSERT_TRUE(result.mReport.has_value());
+    EXPECT_EQ(purchaseAt(result.mReport->mLists.at(0), 0).mUnitPrice, 33'666'667);
+    EXPECT_EQ(purchaseAt(result.mReport->mLists.at(0), 0).mUnits, 3'000'000'000'000);
+
+    ASSERT_EQ(result.mBasisDifferences.size(), 1U);
+    EXPECT_EQ(result.mBasisDifferences.at(0),
+              (KdvpBasisDifference{.mIsin = "XX0000000001",
+                                   .mName = "Synthetic Share",
+                                   .mPurchase = {StatementEventKind::Trade, 0, 0}}));
+
+    // One warning on the purchase, without units or amounts.
+    const auto diagnostics = basisDifferenceDiagnostics(merged.mStatement, result);
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+    EXPECT_EQ(diagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::XmlBasisRoundingDifference);
+    EXPECT_EQ(diagnostics.at(0).mMessageKey, MessageKey::XmlBasisRoundingDifference);
+    EXPECT_EQ(diagnostics.at(0).mContext.mTaxDate, day("2024-03-01"));
+    EXPECT_EQ(diagnostics.at(0).mContext.mIsin, "XX0000000001");
+    EXPECT_EQ(diagnostics.at(0).mContext.mInstrumentName, "Synthetic Share");
+    EXPECT_EQ(diagnostics.at(0).mContext.mAffectedReports,
+              (std::vector<ReportType>{ReportType::CapitalGains}));
+    ASSERT_EQ(diagnostics.at(0).mContext.mSources.size(), 1U);
+    EXPECT_EQ(diagnostics.at(0).mContext.mSources.at(0).mSourceRow, 2U);
+}
+
+TEST(CapitalGainsReportBuilderTest, AnExactUnitValueAfterASplitHasNoBasisDifference2024) {
+    // 1 unit bought at EUR 10, reverse split 1 / 3: 0.33333333 units at EUR 30.0000003 (F4).
+    // F4 x F3 = EUR 9.99999999999999..., which rounds to EUR 10.0000 like the basis.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-02")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 4'000'000'000, // EUR 40
+                 .mUnits = 33'333'333,        // 0.33333333 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const auto result =
+        buildYearWithActions(merged,
+                             2024,
+                             {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                               .mRatio = {.mNewShares = 1, .mOldShares = 3},
+                               .mEffectiveDate = day("2024-06-03")}});
+
+    ASSERT_TRUE(result.mReport.has_value());
+    EXPECT_EQ(purchaseAt(result.mReport->mLists.at(0), 0).mUnitPrice, 3'000'000'030);
+    EXPECT_TRUE(result.mBasisDifferences.empty());
+    EXPECT_TRUE(basisDifferenceDiagnostics(merged.mStatement, result).empty());
+}
+
+TEST(CapitalGainsReportBuilderTest, ABlockedBuildHasNoBasisDifferences) {
+    // The sale needs 2 units, the purchase left 1: no report and so no rows to compare.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-02")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 4'000'000'000, // EUR 40
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = buildYear(merged, 2024);
+
+    EXPECT_FALSE(result.mReport.has_value());
+    EXPECT_TRUE(result.mBasisDifferences.empty());
+}
+
+// The results of the earlier stages
+
+TEST(CapitalGainsReportBuilderTest, ALossResultOfTheIsinsInAnotherOrderIsAnInternalError) {
+    // The loss result lists B before A, so place 0 holds the sales of B and not of A.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            .mName = "Synthetic Share A",
+            .mIsin = "XX0000000001",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Share B",
+            .mIsin = "XX0000000002",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 2'000'000'000, // EUR 20
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 2'400'000'000, // EUR 24
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(merged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto fifo = FifoMatcher{}.match(merged.mStatement, prepared.mLedger.value());
+    RunDecisions decisions;
+    auto loss =
+        LossEligibilityChecker::check(merged.mStatement, prepared.mLedger.value(), fifo, decisions);
+
+    std::swap(loss.mIsins.at(0), loss.mIsins.at(1));
+
+    EXPECT_THROW((void)CapitalGainsReportBuilder{}
+                     .build(merged.mStatement, prepared.mLedger.value(), fifo, loss, {}),
+                 std::logic_error);
+}
+
+TEST(CapitalGainsReportBuilderTest, ALossResultWithAnotherCountOfIsinsIsAnInternalError) {
+    // The loss result has no entry for B.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            .mName = "Synthetic Share A",
+            .mIsin = "XX0000000001",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Share B",
+            .mIsin = "XX0000000002",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 2'000'000'000, // EUR 20
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 2'400'000'000, // EUR 24
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(merged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto fifo = FifoMatcher{}.match(merged.mStatement, prepared.mLedger.value());
+    RunDecisions decisions;
+    auto loss =
+        LossEligibilityChecker::check(merged.mStatement, prepared.mLedger.value(), fifo, decisions);
+
+    loss.mIsins.pop_back();
+
+    EXPECT_THROW((void)CapitalGainsReportBuilder{}
+                     .build(merged.mStatement, prepared.mLedger.value(), fifo, loss, {}),
+                 std::logic_error);
 }
 
 } // namespace

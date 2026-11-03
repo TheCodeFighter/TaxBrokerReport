@@ -140,6 +140,12 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "official_rate_from_nearby_date";
     case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
         return "official_rate_file_incomplete";
+    case ProcessingDiagnosticCode::QuantityRoundingReconciled:
+        return "quantity_rounding_reconciled";
+    case ProcessingDiagnosticCode::SourceQuantityCorrected:
+        return "source_quantity_corrected";
+    case ProcessingDiagnosticCode::XmlBasisRoundingDifference:
+        return "xml_basis_rounding_difference";
     }
 
     return "unrepresentable_value";
@@ -403,6 +409,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return "exclude_from_supported_reports";
         }
+        else if constexpr (std::is_same_v<Value, QuantityCorrectionAnswer>)
+        {
+            return Json{{"correctedUnits", unitsString(aValue.mCorrectedUnits)}};
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -526,6 +536,36 @@ Json classificationCheckToJson(const TaxClassificationQuestion& aQuestion) {
     };
 }
 
+/// An exact EUR amount as a fraction of two whole numbers in strings; the values do not fit a
+/// JSON number.
+Json eurFractionToJson(const ExactRational& aAmount) {
+    return Json{{"numerator", aAmount.numerator().str()},
+                {"denominator", aAmount.denominator().str()}};
+}
+
+/// The question data of a quantity question: the sale, the proposed quantity and what the EUR
+/// impact of a correction is valued with.
+Json quantityCheckToJson(const QuantityCorrectionQuestion& aQuestion) {
+    Json check{{"name", aQuestion.mName},
+               {"isin", aQuestion.mIsin},
+               {"saleDate", isoDate(aQuestion.mSaleDate)}};
+
+    if (aQuestion.mSaleTransaction)
+    {
+        check["transaction"] = Json{
+            {"broker", toString(aQuestion.mSaleTransaction->mBroker)},
+            {"transactionId", aQuestion.mSaleTransaction->mTransactionId},
+        };
+    }
+
+    check["originalUnits"] = unitsString(aQuestion.mOriginalUnits);
+    check["proposedUnits"] = unitsString(aQuestion.mOpenUnits);
+    check["unitValueEur"] = eurFractionToJson(aQuestion.mUnitValue);
+    check["budgetUsedEur"] = eurFractionToJson(aQuestion.mBudgetUsed);
+
+    return check;
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
     // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
@@ -560,6 +600,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
     {
         serialized["options"] = Json::array({"capital_gains", "exclude_from_supported_reports"});
         serialized["classificationCheck"] = classificationCheckToJson(*classification);
+    }
+
+    if (const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aRequest.mData))
+    {
+        serialized["quantityCheck"] = quantityCheckToJson(*quantity);
     }
 
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
@@ -688,6 +733,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aDecision.mData))
     {
         serialized["classificationCheck"] = classificationCheckToJson(*classification);
+    }
+
+    if (const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aDecision.mData))
+    {
+        serialized["quantityCheck"] = quantityCheckToJson(*quantity);
     }
 
     serialized["answer"] = answerToJson(aDecision.mAnswer);
