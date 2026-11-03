@@ -995,6 +995,12 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "OfficialRateFromNearbyDate";
     case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
         return "OfficialRateFileIncomplete";
+    case ProcessingDiagnosticCode::QuantityRoundingReconciled:
+        return "QuantityRoundingReconciled";
+    case ProcessingDiagnosticCode::SourceQuantityCorrected:
+        return "SourceQuantityCorrected";
+    case ProcessingDiagnosticCode::XmlBasisRoundingDifference:
+        return "XmlBasisRoundingDifference";
     }
 
     return "Unknown";
@@ -1056,7 +1062,36 @@ void writeFifoIsin(std::ostream& aOutput,
         writeFixedPoint(aOutput, *aIsin.mAvailableUnits, UNITS_SCALE);
     }
 
-    aOutput << "\n  matches: " << aIsin.mMatches.size() << '\n';
+    aOutput << '\n';
+
+    if (!aIsin.mCorrections.empty())
+    {
+        aOutput << "  quantity_corrections: " << aIsin.mCorrections.size() << '\n';
+
+        for (const auto& correction : aIsin.mCorrections)
+        {
+            // The impact is in EUR; the writer takes ticks of 10^-16 EUR.
+            constexpr std::int64_t kTicksPerEuro = 10'000'000'000'000'000;
+            const auto impactTicks = std::get<ExactRational>(
+                multiplyExact(correction.mImpact, ExactRational{WideInteger{kTicksPerEuro}}));
+
+            aOutput << "    - sale: ";
+            writeCapitalEvent(aOutput, aStatement, correction.mSale);
+            aOutput << "\n      kind: "
+                    << (correction.mKind == QuantityCorrectionKind::RoundingEvidence
+                            ? "rounding_evidence"
+                            : "user_confirmed")
+                    << "\n      original_units: ";
+            writeFixedPoint(aOutput, correction.mOriginalUnits, UNITS_SCALE);
+            aOutput << "\n      corrected_units: ";
+            writeFixedPoint(aOutput, correction.mCorrectedUnits, UNITS_SCALE);
+            aOutput << "\n      impact_eur: ";
+            writeTicksInEur(aOutput, impactTicks);
+            aOutput << '\n';
+        }
+    }
+
+    aOutput << "  matches: " << aIsin.mMatches.size() << '\n';
 
     for (const auto& match : aIsin.mMatches)
     {
@@ -1479,11 +1514,11 @@ int writeFifoResult(std::span<char*> aArguments) {
         return 1;
     }
 
-    const auto& statement = prepared.mMerged.mStatement;
     // No answers: a ratio question stays open, and the open loss units are treated as blocked,
     // like in the CLI without input.
     RunDecisions decisions;
-    const auto pools = matchCapitalPools(statement, *prepared.mLedger, decisions);
+    const auto pools = matchCapitalPools(prepared.mMerged.mStatement, *prepared.mLedger, decisions);
+    const auto& statement = pools.statement(prepared.mMerged.mStatement);
     const auto& fifo = pools.mFifo;
 
     std::size_t matchCount{};
@@ -1553,6 +1588,9 @@ int writeFifoResult(std::span<char*> aArguments) {
     auto diagnostics = prepared.mDiagnostics;
     diagnostics.insert(diagnostics.end(), fifo.mDiagnostics.begin(), fifo.mDiagnostics.end());
     diagnostics.insert(diagnostics.end(), actions.mDiagnostics.begin(), actions.mDiagnostics.end());
+    diagnostics.insert(diagnostics.end(),
+                       pools.mQuantities.mDiagnostics.begin(),
+                       pools.mQuantities.mDiagnostics.end());
     diagnostics.insert(diagnostics.end(), loss.mDiagnostics.begin(), loss.mDiagnostics.end());
     writeProcessingDiagnostics(output, diagnostics);
 
@@ -1601,10 +1639,11 @@ int writeKdvpXml(std::span<char*> aArguments) {
         return 1;
     }
 
-    const auto& statement = prepared.mMerged.mStatement;
     // No answers: the open loss units are treated as blocked, like in the CLI without input.
     RunDecisions decisions;
-    const auto fifo = matchCapitalPools(statement, *prepared.mLedger, decisions).mFifo;
+    const auto pools = matchCapitalPools(prepared.mMerged.mStatement, *prepared.mLedger, decisions);
+    const auto& statement = pools.statement(prepared.mMerged.mStatement);
+    const auto& fifo = pools.mFifo;
     const auto loss = LossEligibilityChecker::check(statement,
                                                     *prepared.mLedger,
                                                     fifo,

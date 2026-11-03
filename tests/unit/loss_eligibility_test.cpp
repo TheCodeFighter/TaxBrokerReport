@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <stdexcept>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -4163,6 +4164,25 @@ TEST(LossEligibilityTest, RatiosTooLargeWithoutALossSaleGiveNoError) {
 
     EXPECT_TRUE(result.mIsins.at(0).mSales.empty());
     EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(LossEligibilityTest, AFifoResultOfThePoolsInAnotherOrderIsAnInternalError) {
+    // The FIFO result lists B before A, so place 0 holds the pool of B and not of A.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {.mName = "Synthetic Share A", .mIsin = "XX0000000001"},
+        {.mName = "Synthetic Share B", .mIsin = "XX0000000002"},
+    };
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto& ledger = prepared.mLedger.value();
+    auto fifo = FifoMatcher::match(merged.mStatement, ledger);
+    RunDecisions decisions;
+
+    std::swap(fifo.mIsins.at(0), fifo.mIsins.at(1));
+
+    EXPECT_THROW((void)LossEligibilityChecker::check(merged.mStatement, ledger, fifo, decisions),
+                 std::logic_error);
 }
 
 } // namespace

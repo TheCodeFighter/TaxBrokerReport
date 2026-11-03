@@ -268,6 +268,27 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::OfficialRateFileIncompleteEndsEarly,
          "official_rate_file_incomplete.ends_early",
          {{"year", MessageParamKind::Number}, {"lastDate", MessageParamKind::Text}}},
+        {MessageKey::QuantityRoundingReconciled, "quantity_rounding_reconciled", {}},
+        {MessageKey::SourceQuantityCorrected, "source_quantity_corrected", {}},
+        {MessageKey::IncompleteHistoryCorrectionRequired,
+         "incomplete_history.correction_required",
+         {}},
+        {MessageKey::IncompleteHistoryCorrectionCancelled,
+         "incomplete_history.correction_cancelled",
+         {}},
+        {MessageKey::XmlBasisRoundingDifference, "xml_basis_rounding_difference", {}},
+        {MessageKey::AnswerRejectedCorrectionNotPositive,
+         "answer_rejected.correction_not_positive",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedCorrectionAboveOpenUnits,
+         "answer_rejected.correction_above_open_units",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedCorrectionTooLarge,
+         "answer_rejected.correction_too_large",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedCorrectionOverBudget,
+         "answer_rejected.correction_over_budget",
+         {{"requestId", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -329,8 +350,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 101U);
-    ASSERT_EQ(expectedMessages().size(), 101U);
+    ASSERT_EQ(definitions.size(), 110U);
+    ASSERT_EQ(expectedMessages().size(), 110U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -364,8 +385,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 101U);
-    EXPECT_EQ(keys.size(), 101U);
+    EXPECT_EQ(ids.size(), 110U);
+    EXPECT_EQ(keys.size(), 110U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -387,7 +408,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 109U); // 101 message keys and 8 terms.
+    ASSERT_EQ(table.size(), 118U); // 110 message keys and 8 terms.
 
     std::set<std::string> tableKeys;
 

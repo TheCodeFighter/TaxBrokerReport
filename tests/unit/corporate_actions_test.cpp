@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <stdexcept>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -4730,6 +4731,26 @@ TEST(CorporateActionResolverTest, CancellingTheJanuarySplitBeforeAJanuarySaleIsA
     EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2025-01-05"));
     EXPECT_EQ(diagnostic.mContext.mSources,
               (std::vector<SourceReference>{source(5, "synthetic-split-1")}));
+}
+
+TEST(CorporateActionResolverTest, AFifoResultOfThePoolsInAnotherOrderIsAnInternalError) {
+    // The FIFO result lists B before A, so place 0 holds the pool of B and not of A.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {.mName = "Synthetic Share A", .mIsin = "XX0000000001"},
+        {.mName = "Synthetic Share B", .mIsin = "XX0000000002"},
+    };
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto& ledger = prepared.mLedger.value();
+    auto fifo = FifoMatcher::match(merged.mStatement, ledger);
+    RunDecisions decisions;
+
+    std::swap(fifo.mIsins.at(0), fifo.mIsins.at(1));
+
+    EXPECT_THROW(
+        (void)CorporateActionResolver::resolve(merged.mStatement, ledger, fifo, {}, decisions),
+        std::logic_error);
 }
 
 } // namespace

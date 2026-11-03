@@ -893,6 +893,11 @@ TEST(ApplicationResultJsonTest, WritesEveryRequestTypeWithItsDateAndIsin) {
                     .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
                                          .time_since_epoch()},
                     .mIsin = "XX0000000001",
+                    .mData = QuantityCorrectionQuestion{.mIsin = "XX0000000001",
+                                                        .mName = "Synthetic Share",
+                                                        .mSaleDate = day("2024-11-30"),
+                                                        .mOriginalUnits = 100'000'000,
+                                                        .mOpenUnits = 99'999'999},
                 },
         },
         RequestInput{
@@ -1640,7 +1645,7 @@ TEST(ApplicationResultJsonTest, ARecordedRatioIsListedWithItsQuestion) {
 TEST(ApplicationResultJsonTest, ARequestWithoutQuestionDataHasNoOptions) {
     ApplicationResultInput input{.mReportingYear = 2024, .mRunRevision = 3};
     input.mRequests = {RequestInput{.mQuestion = {
-                                        .mType = RequestType::QuantityCorrectionRequired,
+                                        .mType = RequestType::IncomeDetailsRequired,
                                         .mAffectedReports = {kCapital},
                                     }}};
 
@@ -1768,6 +1773,88 @@ TEST(ApplicationResultJsonTest, RecordedClassificationAnswersAreWrittenAsTheirCh
     EXPECT_EQ(decisions[2].at("answer"), "cancel");
     EXPECT_EQ(decisions[0].at("classificationCheck").at("isin"), "XX0000000001");
     EXPECT_FALSE(decisions[0].contains("lossCheck"));
+}
+
+TEST(ApplicationResultJsonTest, AQuantityRequestHasItsSaleProposalAndExactEuroValues) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::QuantityCorrectionRequired,
+            .mAffectedReports = {kCapital},
+            .mTaxDate = day("2024-03-01"),
+            .mIsin = "XX0000000001",
+            .mData =
+                QuantityCorrectionQuestion{
+                    .mIsin = "XX0000000001",
+                    .mName = "Synthetic Share",
+                    .mSaleDate = day("2024-03-01"),
+                    .mSaleTransaction =
+                        TransactionIdentity{Broker::TradeRepublic, "synthetic-sell-1"},
+                    .mOriginalUnits = 100'000'000,
+                    .mOpenUnits = 99'999'999,
+                    // EUR 450'000 per unit; EUR 100'000 / 66'666'667 of the budget used.
+                    .mUnitValue = std::get<ExactRational>(ExactRational::create(450'000, 1)),
+                    .mBudgetUsed =
+                        std::get<ExactRational>(ExactRational::create(100'000, 66'666'667))},
+        }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "quantity_correction_required");
+    EXPECT_EQ(request.at("isin"), "XX0000000001");
+    EXPECT_FALSE(request.contains("options"));
+    EXPECT_EQ(
+        request.at("quantityCheck"),
+        (nlohmann::json{
+            {"name", "Synthetic Share"},
+            {"isin", "XX0000000001"},
+            {"saleDate", "2024-03-01"},
+            {"transaction", {{"broker", "trade_republic"}, {"transactionId", "synthetic-sell-1"}}},
+            {"originalUnits", "1.00000000"},
+            {"proposedUnits", "0.99999999"},
+            {"unitValueEur", {{"numerator", "450000"}, {"denominator", "1"}}},
+            {"budgetUsedEur", {{"numerator", "100000"}, {"denominator", "66666667"}}}}));
+}
+
+TEST(ApplicationResultJsonTest, AQuantityRequestOfASaleWithoutATransactionIdHasNoTransaction) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::QuantityCorrectionRequired,
+                         .mAffectedReports = {kCapital},
+                         .mIsin = "XX0000000001",
+                         .mData = QuantityCorrectionQuestion{.mIsin = "XX0000000001",
+                                                             .mName = "Synthetic Share",
+                                                             .mSaleDate = day("2024-03-01"),
+                                                             .mOriginalUnits = 100'000'000,
+                                                             .mOpenUnits = 99'999'999},
+                     }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+
+    EXPECT_FALSE(json.at("requests").at(0).at("quantityCheck").contains("transaction"));
+}
+
+TEST(ApplicationResultJsonTest, ARecordedQuantityAnswerIsWrittenWithItsQuestion) {
+    ApplicationResult result;
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::QuantityCorrectionRequired,
+                         .mData = QuantityCorrectionQuestion{.mIsin = "XX0000000001",
+                                                             .mName = "Synthetic Share",
+                                                             .mSaleDate = day("2024-03-01"),
+                                                             .mOriginalUnits = 100'000'000,
+                                                             .mOpenUnits = 99'999'999},
+                         .mAnswer = QuantityCorrectionAnswer{.mCorrectedUnits = 99'999'998}}};
+
+    const auto json = serialize(result);
+    const auto& decision = json.at("decisions").at(0);
+
+    EXPECT_EQ(decision.at("answer"), (nlohmann::json{{"correctedUnits", "0.99999998"}}));
+    EXPECT_EQ(decision.at("quantityCheck").at("isin"), "XX0000000001");
+    EXPECT_EQ(decision.at("quantityCheck").at("proposedUnits"), "0.99999999");
 }
 
 TEST(ApplicationResultJsonTest, ARunWithoutExcludedItemsHasAnEmptyList) {

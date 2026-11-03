@@ -412,19 +412,19 @@ TEST(DecisionSessionTest, TwoAnswersToOneRequestAreRejected) {
 }
 
 TEST(DecisionSessionTest, AQuestionWithoutQuestionDataCannotBeAnswered) {
-    // Quantity correction has no question data yet, so the questions for XX0000000001 and
+    // Income details have no question data yet, so the questions for XX0000000001 and
     // XX0000000002 would be the same question: one answer would reach both. No answer fits,
     // not even a cancel.
     SeenAnswers seenShare;
     SeenAnswers seenFund;
     const auto calculation = [&seenShare, &seenFund](RunDecisions& aDecisions) {
         const DecisionQuestion share{
-            .mType = RequestType::QuantityCorrectionRequired,
+            .mType = RequestType::IncomeDetailsRequired,
             .mAffectedReports = {kCapital},
             .mIsin = "XX0000000001",
         };
         const DecisionQuestion fund{
-            .mType = RequestType::QuantityCorrectionRequired,
+            .mType = RequestType::IncomeDetailsRequired,
             .mAffectedReports = {kCapital},
             .mIsin = "XX0000000002",
         };

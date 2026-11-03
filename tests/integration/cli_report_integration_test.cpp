@@ -1873,6 +1873,207 @@ TEST(CliReportIntegrationTest, ALossQuestionOfTwoSalesListsBothAndOneAnswerCover
         contains(result.mOut, "  XX0000000001 Synthetic Share: listed, 2 sales, 10.0000 units\n"));
 }
 
+// Quantity corrections
+
+TEST(CliReportIntegrationTest,
+     ADiscardedDigitShortageIsCorrectedAndTheSaleRowHasTheCorrectedUnits) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.3333333340,30,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-01-11T09:00:00Z,2025-01-11,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.3333333340,30,-10,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2025-01-12T09:00:00Z,2025-01-12,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.3333333340,30,-10,,,EUR,,,,,synthetic-buy-3,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1.0000000000,36,36,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history});
+
+    // The three purchases of 0.333333334 units are stored as 0.33333333 each. The exact units
+    // (1.000000002) cover the sale of 1 unit, so the sale is reduced to the 0.99999999 units that
+    // are open, with a warning and without a question.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(result.mOut, "Question request-"));
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "quantity_rounding_reconciled"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F7>0.99999999</F7>"));
+    EXPECT_FALSE(contains(xml, "<F7>1</F7>"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(CliReportIntegrationTest, AShortageWithoutProofAsksAndEnterTakesTheUnitsLeft) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.99999999,30,-30,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,36,36,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: the sale of XX0000000001 Synthetic Share on "
+                         "2025-03-10 is 1.0000 units, but your earlier purchases left only "
+                         "0.99999999 units.\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  XX0000000001 Synthetic Share, sale on 2025-03-10: sale quantity "
+                         "0.99999999 units\n"));
+    EXPECT_TRUE(contains(result.mOut, "source_quantity_corrected"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F7>0.99999999</F7>"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(CliReportIntegrationTest, AShortageWithoutProofAndNoInputBlocksAndListsTheQuestion) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.99999999,30,-30,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,36,36,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--no-input",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut, "Open questions: 1\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  request-0001 quantity_correction_required, XX0000000001 Synthetic "
+                         "Share\n"));
+    EXPECT_TRUE(contains(result.mOut, "incomplete_history"));
+}
+
+TEST(CliReportIntegrationTest, ACancelledQuantityQuestionBlocksTheReportAsMissingHistory) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.99999999,30,-30,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,36,36,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "cancel\n");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(
+        contains(result.mOut, "XX0000000001 Synthetic Share, sale on 2025-03-10: cancelled"));
+}
+
+TEST(CliReportIntegrationTest, ARowWhoseRoundedUnitValueChangesItsBasisGetsAWarning) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10000,1.01,-10100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,20000,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-30000,1.2,36000,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    // The ratio 3 : 1: 10'000 units become 30'000 and cost EUR 10'100 in all, EUR 0.33666667 each
+    // when rounded. 0.33666667 x 30'000 = EUR 10'100.0001, not EUR 10'100.0000.
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "3 : 1\n\nyes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 2\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "xml_basis_rounding_difference, XX0000000001 Synthetic Share, "
+                         "2022-01-10, history.csv row 2\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F3>30000.0000</F3>"));
+    EXPECT_TRUE(contains(xml, "<F4>0.33666667</F4>"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(CliReportIntegrationTest, ABasisDifferenceIsNotReportedWhenAGateErrorStopsTheXml) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-01-10T09:00:00Z,2022-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10000,1.01,-10100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2023-01-15T09:00:00Z,2023-01-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,20000,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000009,1,10,-10,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-30000,1.2,36000,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2025-03-11T09:00:00Z,2025-03-11,DEFAULT,TRADING,SELL,PRIVATE_FUND,Synthetic Private Fund,XX0000000009,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
+        });
+
+    // The share row has the basis difference of the test above (0.33666667 x 30'000 =
+    // EUR 10'100.0001). The private-fund sale has a gate error, and `fail` keeps it, so no XML is
+    // written and the share row is in no file.
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             history},
+                            "3 : 1\n\nyes\nfail\n");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  XX0000000009 Synthetic Private Fund: blocked "
+                         "(unsupported_tax_treatment)\n"));
+    EXPECT_FALSE(contains(result.mOut, "xml_basis_rounding_difference"));
+}
+
 TEST(CliReportIntegrationTest, ASplitRatioAnsweredClosesTheQuestion) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
