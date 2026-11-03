@@ -1,0 +1,6 @@
+broker,code,name,tax_number,address,country,source,source_revision
+IBKR,IB-UK,Interactive Brokers (U.K.) Ltd.,03958476,"Level 20 Heron Tower, 110 Bishopsgate, London EC2N 4AY",GB,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBKR,IB-CE,Interactive Brokers Central Europe Zrt.,01-10-141029,"Madach Imre ut 13-14, Floor 5, Budapest, 1075",HU,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBKR,IB-IE,Interactive Brokers Ireland Limited,657406,"10 Earlsfort Terrace, Dublin 2 D02 T380",IE,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBKR,IB-LUX,Interactive Brokers Luxembourg SARL,B229091,"4 rue Robert Stumper, L-2557 Luxembourg",LU,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBKR,IBLLC-US,Interactive Brokers LLC,133863700,"One Pickwick Plaza, Greenwich, CT 06830 USA",US,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c

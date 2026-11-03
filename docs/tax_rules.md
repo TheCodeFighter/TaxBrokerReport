@@ -737,21 +737,23 @@ empty result.
 
 ## Payer lists, settled Slovenian tax and foreign-tax relief
 
-Maintain a reference list of Slovenian companies and a company/ETF catalogue imported from the
-user-designated other project. Include every reusable entry from that catalogue, but do not claim
-that it covers every issuer or ETF in existence. Record the upstream project, revision, licence,
-original entry and verification date. The upstream URL/path must be identified before importing;
-no matching catalogue has been located in the current legacy tree. This is a data-import task,
-not a reason to infer missing tax facts. Ship a standalone, versioned resource with appropriate
-attribution; processing must work offline without the other project or the legacy tree.
+Maintain a reference list of Slovenian companies and a payer catalogue converted from the
+`ib-edavki` project (MIT licence; revision, files, formats and counts are in
+[`reference_data.md`](reference_data.md)). Do not claim that it covers every issuer or ETF in
+existence. Record the upstream project and revision for every row. The catalogue is a data
+resource, not a reason to infer missing tax facts. Ship it as a standalone, versioned resource
+with the licence notice; processing must work offline without the other project or the legacy
+tree.
 
 Entries associate exact instrument identifiers with legal payer name, address, tax/registration
-identifier when available, residence country, instrument kind and effective dates. Keep fund/share
-class identity for ETFs. Store verified source-country and treaty references separately, with their
-own sources and effective dates. Match exact identifiers; names, exchange location, trading
-currency, broker country and an ISIN prefix alone do not prove payer residence or tax treatment.
-Conflicting entries, entries not verified for the payment date, or absent entries require
-`income_details_required` when needed report facts cannot be established from other reliable sources.
+identifier when available and residence country. Instrument kind, effective dates and fund/share
+class identity for ETFs are kept where a source has them; the imported rows have none of them. Store
+verified source-country and treaty references separately, with their own sources and effective
+dates. Match exact identifiers; names, exchange location, trading currency, broker country and an
+ISIN prefix alone do not prove payer residence or tax treatment.
+Conflicting entries, entries with a verification date that does not cover the payment date, or
+absent entries require `income_details_required` when needed report facts cannot be established
+from other reliable sources. An entry without dates is a suggestion that the user confirms.
 A catalogue entry may prefill verified metadata, but never overrides contradictory payment evidence.
 
 For dividends and other interest, distinguish foreign tax from Slovenian final withholding.

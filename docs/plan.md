@@ -219,18 +219,20 @@ implementation and tests must state the rules explicitly.
 
 ### Payer reference data and income-tax relief
 
-Maintain a Slovenian-company reference list and import the company/ETF catalogue from the other
-project designated by the user. Before importing, identify its URL/path, revision and reuse licence;
-the current legacy tree has no identified matching catalogue. Package the reusable entries as
-standalone offline resources with provenance and effective dates. Missing entries use manual
-income details, so catalogue coverage never decides whether an income is taxable.
+Ship payer reference data as standalone offline resources: payers, relief statements and broker
+payers, converted from the MIT-licensed `ib-edavki` project into the CSV files described in
+[`reference_data.md`](reference_data.md), with provenance. A Slovenian-company list will be added
+next to them. The payers that upstream lists without an ISIN or `conid` wait in a separate
+file until their ISINs are found. Missing entries use manual income details, so catalogue
+coverage never decides whether an income is taxable.
 
 Use exact identifiers to prefill verified payer metadata and relevant treaty references. Verify
 payment-level Slovenian final withholding before excluding an income with `slovenian_tax_settled`.
 For foreign-tax relief, preserve gross income and actual foreign tax, distinguish a credit from
 a treaty exemption, and list the required filing evidence. A list match does not grant relief.
 Implement the missing/conflicting-information flow, source-revision invalidation and synthetic
-scenarios specified in `tax_rules.md`; catalogue import remains a tracked implementation task.
+scenarios specified in `tax_rules.md`; loading the files into the app remains a tracked
+implementation task.
 
 ## Final report models
 
