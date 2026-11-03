@@ -1229,6 +1229,38 @@ TEST(EcbRateFileLargeInputTest, RejectsARowLongerThanTheReaderLimitAndKeepsTheOt
               "The rate file could not be opened or read. No rates were loaded.");
 }
 
+TEST(EcbRateFileLargeInputTest, ReportsAnEarlierValueFaultBeforeAnUnreadableRow) {
+    TemporaryDirectory directory;
+
+    // Row 2 has OBS_STATUS "M" (not the normal "A"). Row 3 has a 21,000,000-character TITLE that
+    // the CSV reader cannot read. The value fault of row 2 comes first, as the rows are checked
+    // in order.
+    const std::string longTitle(21'000'000, 'x');
+    const auto path = directory.write(
+        "exr_2024.csv",
+        std::string{kHeader} + "\n" +
+            R"csv(EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2024-01-02,1.25,M,F,,,P1D,,A,,,,,,,99Q1=100,,,4,,4F0,,Synthetic currency/Euro ECB reference exchange rate,"ECB reference exchange rate, Synthetic currency/Euro, 2.15 pm (C.E.T.)",USD,0)csv" +
+            "\n" +
+            "EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2024-01-03,1.25,A,F,,,P1D,,A,,,,,,,99Q1=100,,,4,"
+            ","
+            "4F0,," +
+            longTitle +
+            R"csv(,"ECB reference exchange rate, Synthetic currency/Euro, 2.15 pm (C.E.T.)",USD,0)csv" +
+            "\n");
+
+    const auto result = loadEcbRateFiles({path});
+
+    EXPECT_TRUE(result.mTable.mRates.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(diagnostic.mSourceFile, "exr_2024.csv");
+    EXPECT_EQ(diagnostic.mRowIndex, std::optional<std::size_t>{2});
+    EXPECT_EQ(diagnostic.mField, std::optional<std::string>{"OBS_STATUS"});
+}
+
 TEST(EcbRateFileTest, RejectsAnEmptyPathWithoutAFileName) {
     // An empty path has no file name to show.
     const auto result = loadEcbRateFiles({std::filesystem::path{}});

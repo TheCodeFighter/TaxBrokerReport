@@ -58,6 +58,7 @@ add_executable(taxbroker_unit_tests
     unit/trade_conversion_test.cpp
     unit/trade_republic_parser_checks_test.cpp
     unit/traderepublic_parser_test.cpp
+    unit/csv_text_reader_test.cpp
     unit/numeric_util_test.cpp
     unit/obr_schema_test.cpp
     unit/split_ratio_test.cpp

@@ -202,7 +202,7 @@ struct MessageTableRow {
 [[nodiscard]] std::string_view diagnosticMessagesCsv();
 
 /// Reads a message table with the header `key,en,sl`. Throws std::logic_error when the header or a
-/// row does not have these three columns.
+/// row does not have these three columns, or when a quote is unclosed or a text holds a line break.
 [[nodiscard]] std::vector<MessageTableRow> parseMessageTable(std::string_view aCsvText);
 
 /// The embedded table, parsed once.

@@ -2,11 +2,10 @@
 
 #include "taxbroker/currency.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
+#include "utils/csv_text_reader.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/numeric_util.hpp"
 #include "utils/sha256.hpp"
-
-#include <csv.hpp>
 
 #include <algorithm>
 #include <array>
@@ -15,7 +14,6 @@
 #include <iterator>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <variant>
 
@@ -88,18 +86,52 @@ bool isCurrencyCode(std::string_view aValue) {
            });
 }
 
-/// An odd number of quote characters means a quoted field never closes, and the reader would
-/// merge the following records into it without any error.
-bool hasUnclosedQuote(std::string_view aContent) {
-    return std::count(aContent.begin(), aContent.end(), '"') % 2 != 0;
-}
+/// Maps the first fault of the reader to the rate-file diagnostic.
+ParseDiagnostic faultDiagnostic(const SourceFilename& aSourceFile, const CsvFault& aFault) {
+    switch (aFault.mKind)
+    {
+    case CsvFaultKind::UnclosedQuote:
+    case CsvFaultKind::LineBreakInField:
+        return rateDiagnostic(aSourceFile,
+                              DiagnosticCode::ParseError,
+                              makeDiagnosticMessage(MessageKey::ParseErrorUnclosedQuote),
+                              aFault.mRowNumber);
+    case CsvFaultKind::MissingColumns: {
+        std::string columns;
 
-/// A line break inside a field means a quote opened on one line and closed on a later one. The
-/// reader then merges the lines into one record, which can still have the right field count.
-bool hasLineBreakInsideField(const csv::CSVRow& aRow) {
-    return std::any_of(aRow.begin(), aRow.end(), [](const csv::CSVField& aField) {
-        return aField.get_sv().find_first_of("\r\n") != std::string_view::npos;
-    });
+        for (const std::string& column : aFault.mColumns)
+        {
+            columns += columns.empty() ? "" : ", ";
+            columns += column;
+        }
+
+        return rateDiagnostic(aSourceFile,
+                              DiagnosticCode::InvalidHeader,
+                              makeDiagnosticMessage(MessageKey::InvalidHeaderRateFileColumns,
+                                                    {numberParam("count", aFault.mColumns.size()),
+                                                     textParam("columns", columns)}));
+    }
+    case CsvFaultKind::RepeatedColumn:
+        return rateDiagnostic(
+            aSourceFile,
+            DiagnosticCode::InvalidHeader,
+            makeDiagnosticMessage(MessageKey::InvalidHeaderRateFileDuplicateColumn,
+                                  {textParam("column", aFault.mColumns.front())}));
+    case CsvFaultKind::Unreadable:
+        return rateDiagnostic(aSourceFile,
+                              DiagnosticCode::ParseError,
+                              makeDiagnosticMessage(MessageKey::ParseErrorUnreadableRateFile));
+    case CsvFaultKind::FieldCountMismatch:
+        return rateDiagnostic(
+            aSourceFile,
+            DiagnosticCode::FieldCountMismatch,
+            makeDiagnosticMessage(MessageKey::FieldCountMismatchRateFile,
+                                  {numberParam("expected", aFault.mExpectedFields),
+                                   numberParam("found", aFault.mFoundFields)}),
+            aFault.mRowNumber);
+    }
+
+    throw std::logic_error{"Unknown CSV fault kind"};
 }
 
 /// Reads one file into aParsed and returns no diagnostic, or returns the first fault. The checks
@@ -118,73 +150,41 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
 
     const std::string content{std::istreambuf_iterator<char>{input},
                               std::istreambuf_iterator<char>{}};
+    const CsvTable table = readCsvText(content, ',', kRequiredColumns);
 
-    if (hasUnclosedQuote(content))
+    // These faults come before any row; the others stop the rows and are mapped after the loop.
+    const bool headerFault = table.mFault && (table.mFault->mKind == CsvFaultKind::UnclosedQuote ||
+                                              table.mFault->mKind == CsvFaultKind::MissingColumns ||
+                                              table.mFault->mKind == CsvFaultKind::RepeatedColumn);
+
+    if (headerFault)
     {
-        return rateDiagnostic(aSourceFile,
-                              DiagnosticCode::ParseError,
-                              makeDiagnosticMessage(MessageKey::ParseErrorUnclosedQuote));
+        return faultDiagnostic(aSourceFile, *table.mFault);
     }
 
-    // KEEP delivers every record. The default silently drops records whose field count differs
-    // from the header.
-    csv::CSVFormat format;
+    const std::size_t keyColumn = table.columnIndex("KEY");
+    const std::size_t currencyColumn = table.columnIndex("CURRENCY");
+    const std::size_t dateColumn = table.columnIndex("TIME_PERIOD");
+    const std::size_t valueColumn = table.columnIndex("OBS_VALUE");
+    const std::size_t statusColumn = table.columnIndex("OBS_STATUS");
 
-    format.delimiter(',').variable_columns(csv::VariableColumnPolicy::KEEP);
+    // The index of each fixed column, in the order of kFixedColumns.
+    std::array<std::size_t, kFixedColumns.size()> fixedColumns{};
 
-    // Not csv::parse: its reader keeps a reference to a stream that ends when csv::parse returns,
-    // and reads it again after the first 10 MB chunk. This stream lives as long as the reader.
-    std::stringstream stream{content};
-    csv::CSVReader reader{stream, format};
-    const auto headerNames = reader.get_col_names();
-    std::string missingColumns;
-    std::size_t missingCount = 0;
-
-    for (const std::string_view column : kRequiredColumns)
-    {
-        if (std::find(headerNames.begin(), headerNames.end(), column) == headerNames.end())
-        {
-            missingColumns += missingCount == 0 ? "" : ", ";
-            missingColumns += column;
-            ++missingCount;
-        }
-    }
-
-    if (missingCount != 0)
-    {
-        return rateDiagnostic(aSourceFile,
-                              DiagnosticCode::InvalidHeader,
-                              makeDiagnosticMessage(MessageKey::InvalidHeaderRateFileColumns,
-                                                    {numberParam("count", missingCount),
-                                                     textParam("columns", missingColumns)}));
-    }
-
-    // Two columns with one name leave it unclear which one holds the value.
-    const auto repeatedColumn =
-        std::find_if(kRequiredColumns.begin(),
-                     kRequiredColumns.end(),
-                     [&headerNames](std::string_view aColumn) {
-                         return std::count(headerNames.begin(), headerNames.end(), aColumn) > 1;
-                     });
-
-    if (repeatedColumn != kRequiredColumns.end())
-    {
-        return rateDiagnostic(
-            aSourceFile,
-            DiagnosticCode::InvalidHeader,
-            makeDiagnosticMessage(MessageKey::InvalidHeaderRateFileDuplicateColumn,
-                                  {textParam("column", std::string{*repeatedColumn})}));
-    }
+    std::transform(
+        kFixedColumns.begin(),
+        kFixedColumns.end(),
+        fixedColumns.begin(),
+        [&table](const FixedColumn& aColumn) { return table.columnIndex(aColumn.mName); });
 
     aParsed.mInfo.mSourceFile = aSourceFile;
     aParsed.mInfo.mSha256 = sha256Hex(content);
 
     std::set<std::pair<std::string, Date>> seenPairs;
-    std::size_t rowIndex = 1;
 
-    for (const csv::CSVRow& row : reader)
+    for (const CsvRow& row : table.mRows)
     {
-        ++rowIndex;
+        const std::size_t rowIndex = row.mRowNumber;
 
         const auto reject =
             [&](DiagnosticCode aCode, DiagnosticMessage aMessage, std::string aField) {
@@ -195,30 +195,12 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
                                       std::move(aField));
             };
 
-        if (hasLineBreakInsideField(row))
-        {
-            return rateDiagnostic(aSourceFile,
-                                  DiagnosticCode::ParseError,
-                                  makeDiagnosticMessage(MessageKey::ParseErrorUnclosedQuote),
-                                  rowIndex);
-        }
-
-        if (row.size() != headerNames.size())
-        {
-            return rateDiagnostic(
-                aSourceFile,
-                DiagnosticCode::FieldCountMismatch,
-                makeDiagnosticMessage(MessageKey::FieldCountMismatchRateFile,
-                                      {numberParam("expected", headerNames.size()),
-                                       numberParam("found", row.size())}),
-                rowIndex);
-        }
-
         const auto wrongColumn =
             std::find_if(kFixedColumns.begin(),
                          kFixedColumns.end(),
-                         [&row](const FixedColumn& aColumn) {
-                             return row[std::string{aColumn.mName}].get_sv() != aColumn.mExpected;
+                         [&row, &fixedColumns](const FixedColumn& aColumn) {
+                             return row.mFields[fixedColumns[&aColumn - kFixedColumns.data()]] !=
+                                    aColumn.mExpected;
                          });
 
         if (wrongColumn != kFixedColumns.end())
@@ -231,7 +213,7 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
                 std::string{wrongColumn->mName});
         }
 
-        const std::string currency{row["CURRENCY"].get_sv()};
+        const std::string currency{row.mFields[currencyColumn]};
 
         if (!isCurrencyCode(currency))
         {
@@ -242,7 +224,7 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
 
         const std::string expectedKey = "EXR.D." + currency + ".EUR.SP00.A";
 
-        if (row["KEY"].get_sv() != expectedKey)
+        if (row.mFields[keyColumn] != expectedKey)
         {
             return reject(DiagnosticCode::InvalidValue,
                           makeDiagnosticMessage(
@@ -251,7 +233,7 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
                           "KEY");
         }
 
-        const auto observationDate = parseCalendarDate(row["TIME_PERIOD"].get_sv());
+        const auto observationDate = parseCalendarDate(row.mFields[dateColumn]);
 
         if (!observationDate)
         {
@@ -260,7 +242,7 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
                           "TIME_PERIOD");
         }
 
-        if (row["OBS_STATUS"].get_sv() != kNormalStatus)
+        if (row.mFields[statusColumn] != kNormalStatus)
         {
             return reject(
                 DiagnosticCode::InvalidValue,
@@ -270,7 +252,7 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
                 "OBS_STATUS");
         }
 
-        const std::string_view valueText = row["OBS_VALUE"].get_sv();
+        const std::string_view valueText = row.mFields[valueColumn];
 
         if (valueText.empty())
         {
@@ -290,7 +272,7 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
         }
 
         // The date was validated, so its first four characters are digits.
-        const int year = std::stoi(std::string{row["TIME_PERIOD"].get_sv().substr(0, 4)});
+        const int year = std::stoi(std::string{row.mFields[dateColumn].substr(0, 4)});
 
         if (aParsed.mRates.empty())
         {
@@ -327,6 +309,12 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
             .mSourceFile = aSourceFile,
             .mSourceRow = rowIndex,
         });
+    }
+
+    // A fault of a row stops the rows after it; the rows before it were checked above.
+    if (table.mFault)
+    {
+        return faultDiagnostic(aSourceFile, *table.mFault);
     }
 
     if (aParsed.mRates.empty())

@@ -1065,6 +1065,13 @@ year, and no rate data ships with the app. The result is an `OfficialRateTable` 
 - `scripts/dump_ecb_rates.sh <file...>` loads files with the same code and writes a summary of
   names, years, checksums and counts to `runtime/debug/`, for checking a real download.
 
+CSV files that are not broker exports (the ECB rate files and the diagnostic message table) are
+read by `readCsvText` (`include/utils/csv_text_reader.hpp`). It checks an unclosed quote, a
+missing or repeated required column, a line break inside a field and the field count of each row,
+and numbers the rows logically (header = 1). It returns the rows before the first fault and that
+fault; each caller maps the fault to its own message. The Trade Republic parser has its own
+reading.
+
 ## Parser diagnostics
 
 Parser diagnostics have three separate responsibilities:

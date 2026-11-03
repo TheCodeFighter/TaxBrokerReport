@@ -35,6 +35,7 @@ add_library(taxbroker_core STATIC
     processors/tax_processor.cpp
     processors/trade_conversion.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/diagnostic_messages_table.cpp
+    utils/csv_text_reader.cpp
     utils/currency.cpp
     utils/date_utils.cpp
     utils/diagnostic_messages.cpp

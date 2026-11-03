@@ -675,14 +675,68 @@ TEST(DiagnosticMessagesTest, ReadsAQuotedTableWithCommasInsideTheTexts) {
     EXPECT_EQ(rows[1].mSlovenian, "Navadno");
 }
 
+/// The text of the std::logic_error that parseMessageTable throws, or "" when it does not throw.
+std::string messageTableError(std::string_view aCsvText) {
+    try
+    { (void)parseMessageTable(aCsvText); } catch (const std::logic_error& error)
+    { return error.what(); }
+
+    return "";
+}
+
 TEST(DiagnosticMessagesTest, RejectsATableWithAnotherHeader) {
-    EXPECT_THROW((void)parseMessageTable("key,english,slovenian\nsample,One,Ena\n"),
-                 std::logic_error);
+    // "english,slovenian" are not the columns en and sl.
+    EXPECT_EQ(messageTableError("key,english,slovenian\nsample,One,Ena\n"),
+              "The message table is missing the columns en, sl");
+}
+
+TEST(DiagnosticMessagesTest, RejectsATableWithAReorderedHeader) {
+    // All three columns are there, but sl comes before en.
+    EXPECT_EQ(messageTableError("key,sl,en\nsample,Ena,One\n"),
+              "The message table header must be key,en,sl");
+}
+
+TEST(DiagnosticMessagesTest, RejectsAnEmptyTable) {
+    EXPECT_EQ(messageTableError(""), "The message table is missing the columns key, en, sl");
+}
+
+TEST(DiagnosticMessagesTest, RejectsATableWithARepeatedColumn) {
+    // The header has the column key twice.
+    EXPECT_EQ(messageTableError("key,en,sl,key\nsample,One,Ena,other\n"),
+              "The message table has the column key twice");
 }
 
 TEST(DiagnosticMessagesTest, RejectsATableRowWithTheWrongFieldCount) {
-    // The second row has 2 fields: the Slovenian text is missing.
-    EXPECT_THROW((void)parseMessageTable("key,en,sl\nsample,One\n"), std::logic_error);
+    // Row 3 has 2 fields: the Slovenian text is missing. Row 2 is fine.
+    EXPECT_EQ(messageTableError("key,en,sl\nsample,One,Ena\nother,One\n"),
+              "Message table row 3 has 2 fields instead of 3");
+}
+
+TEST(DiagnosticMessagesTest, RejectsATableWithAnUnclosedQuote) {
+    // The quote before "One" is never closed.
+    EXPECT_EQ(messageTableError("key,en,sl\nsample,\"One,Ena\n"),
+              "The message table has an unclosed quote");
+}
+
+TEST(DiagnosticMessagesTest, RejectsATableWithALineBreakInsideAText) {
+    // The quoted English text of row 2 holds a line break; the quotes are even.
+    EXPECT_EQ(messageTableError("key,en,sl\nsample,\"One\ntwo\",Ena\n"),
+              "Message table row 2 has a line break inside a text");
+}
+
+TEST(DiagnosticMessagesTest, RejectsATableWithAnExtraColumn) {
+    // The header has a fourth column, so it is not exactly key,en,sl.
+    EXPECT_EQ(messageTableError("key,en,sl,note\nsample,One,Ena,x\n"),
+              "The message table header must be key,en,sl");
+}
+
+// A *LargeInputTest suite takes minutes under Valgrind (`scripts/valgrind.sh --part large`).
+TEST(DiagnosticMessagesLargeInputTest, RejectsATableWithARowLongerThanTheReaderLimit) {
+    // The CSV reader cannot read a row longer than two 10 MB chunks. The English text of row 2
+    // has 21,000,000 characters.
+    const std::string text = "key,en,sl\nsample," + std::string(21'000'000, 'x') + ",Ena\n";
+
+    EXPECT_EQ(messageTableError(text), "The message table could not be read");
 }
 
 TEST(DiagnosticMessagesTest, ReadsOnlyTheTextInsideTheView) {
