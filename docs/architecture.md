@@ -533,7 +533,10 @@ can prefill payer and treaty facts; payment evidence determines settled Slovenia
 actual foreign tax. Treaty exemptions require a separate applicable legal basis. The income
 result retains treatment decisions and filing-evidence requirements. Catalogue conflicts and
 missing facts use `income_details_required`; changing a referenced catalogue revision
-invalidates affected decisions.
+invalidates affected decisions. The files are built into the program and read with the shared CSV
+reader into a `ReferenceCatalogue` (`include/taxbroker/reference_catalogue.hpp`). A lookup by exact
+ISIN or `conid` returns `Found`, `Conflict` or `NotFound`; a broken file stops the load with the
+file and logical row.
 
 The deposit allowance considers all imported and user-supplied qualifying bank interest. A
 below-threshold TR total retains its reminder about other banks. Slovenian retail government bonds
