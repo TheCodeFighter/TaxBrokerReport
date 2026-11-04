@@ -106,9 +106,7 @@ TEST(EcbRateFileTest, LoadsACoveredPairWithFullProvenance) {
     EXPECT_EQ(rate->mSourceFile.value(), "exr_2025.csv");
     EXPECT_EQ(rate->mSourceRow, 2U); // the header is row 1
     EXPECT_EQ(rate->mSource, OfficialRateSource::EcbReferenceRateFile);
-    EXPECT_EQ(rate->mFileSha256,
-              "477fc33becc38dd61cc8e9a98d20cfe222f93d6056f13394eb2eae9192498f9a"); // sha256sum of
-                                                                                   // the file
+    EXPECT_EQ(rate->mOrigin, OfficialRateOrigin::Supplied);
 
     // 10.0000 USD / 1.25 = 8.0000 EUR
     const auto converted =
@@ -119,8 +117,6 @@ TEST(EcbRateFileTest, LoadsACoveredPairWithFullProvenance) {
 
     ASSERT_EQ(result.mTable.mFiles.size(), 1U);
     EXPECT_EQ(result.mTable.mFiles[0].mSourceFile.value(), "exr_2025.csv");
-    EXPECT_EQ(result.mTable.mFiles[0].mSha256,
-              "477fc33becc38dd61cc8e9a98d20cfe222f93d6056f13394eb2eae9192498f9a");
     EXPECT_EQ(result.mTable.mFiles[0].mYear, 2025);
     EXPECT_EQ(result.mTable.mFiles[0].mFirstDate, date("2025-01-02"));
     EXPECT_EQ(result.mTable.mFiles[0].mLastDate, date("2025-01-02"));
@@ -191,9 +187,6 @@ TEST(EcbRateFileLargeInputTest, LoadsAFileLargerThanTheReaderChunk) {
     EXPECT_EQ(rate->mSourceRow, 12U);     // the header is row 1, USD is the 11th rate
 
     ASSERT_EQ(result.mTable.mFiles.size(), 1U);
-    EXPECT_EQ(result.mTable.mFiles[0].mSha256,
-              "0fa1571019a34cf119a81a668ba96dbecff03588178e5de85fdaf3703e0e9c7a"); // sha256sum of
-                                                                                   // the file
     EXPECT_EQ(result.mTable.mFiles[0].mRateCount, 11U);
 }
 
@@ -1140,6 +1133,24 @@ TEST(EcbRateFileTest, RejectsTwoRowsMergedByAQuoteThatClosesOnTheNextLine) {
               "rows were imported.");
 }
 
+TEST(EcbRateFileTest, RejectsAFolderInPlaceOfAFile) {
+    TemporaryDirectory directory;
+    const auto folder = directory.path() / "exr_2025.csv";
+
+    std::filesystem::create_directories(folder);
+
+    const auto result = loadEcbRateFiles({folder});
+
+    EXPECT_TRUE(result.mTable.mRates.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mSourceFile, "exr_2025.csv");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorUnreadableRateFile);
+}
+
 TEST(EcbRateFileTest, RejectsAFileThatDoesNotExist) {
     TemporaryDirectory directory;
 
@@ -1193,7 +1204,7 @@ TEST(EcbRateFileTest, RejectsADirectoryAndKeepsTheOtherFile) {
 TEST(EcbRateFileLargeInputTest, RejectsARowLongerThanTheReaderLimitAndKeepsTheOtherFile) {
     TemporaryDirectory directory;
 
-    // The CSV reader throws on a row longer than two 10 MB chunks. This row has a
+    // The CSV reader cannot read a row longer than two 10 MB chunks. This row has a
     // 21,000,000-character TITLE; the 2025 file still loads.
     const std::string longTitle(21'000'000, 'x');
     const auto badPath = directory.write(
@@ -1399,6 +1410,148 @@ TEST(EcbRateFileTest, LoadsNothingWithoutFiles) {
     EXPECT_TRUE(result.mTable.mRates.empty());
     EXPECT_TRUE(result.mTable.mFiles.empty());
     EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+// Built-in rate files: the compact form `currency,date,rate`.
+
+TEST(BuiltInRatesTest, ReadsTheRowsOfACompactFile) {
+    const BuiltInRateFile file{
+        .mYear = 2025,
+        .mName = "rates_2025.csv",
+        .mText = "currency,date,rate\n"
+                 "GBP,2025-01-02,0.8\n"
+                 "USD,2025-01-02,1.25\n"
+                 "USD,2025-01-03,1.2625\n",
+    };
+
+    const OfficialRateTable table = parseBuiltInRates(file);
+
+    ASSERT_EQ(table.mRates.size(), 3U);
+    ASSERT_EQ(table.mFiles.size(), 1U);
+    EXPECT_EQ(table.mFiles[0].mSourceFile.value(), "rates_2025.csv");
+    EXPECT_EQ(table.mFiles[0].mYear, 2025);
+    EXPECT_EQ(table.mFiles[0].mFirstDate, date("2025-01-02"));
+    EXPECT_EQ(table.mFiles[0].mLastDate, date("2025-01-03"));
+    EXPECT_EQ(table.mFiles[0].mRateCount, 3U);
+    EXPECT_EQ(table.mFiles[0].mOrigin, OfficialRateOrigin::BuiltIn);
+    EXPECT_FALSE(table.mFiles[0].mReplacesBuiltIn);
+
+    const OfficialRate* rate = table.find("USD", date("2025-01-03"));
+
+    ASSERT_NE(rate, nullptr);
+    EXPECT_EQ(rate->mValue, 126'250'000); // 1.2625 at 8 decimals
+    EXPECT_EQ(rate->mSeriesKey, "EXR.D.USD.EUR.SP00.A");
+    EXPECT_EQ(rate->mSourceRow, 4U); // header, GBP, USD, USD
+    EXPECT_EQ(rate->mOrigin, OfficialRateOrigin::BuiltIn);
+}
+
+/// Parses the text as the file rates_2025.csv and returns the error text, or "" if it is valid.
+std::string builtInFault(std::string_view aText) {
+    try
+    {
+        static_cast<void>(parseBuiltInRates(BuiltInRateFile{
+            .mYear = 2025,
+            .mName = "rates_2025.csv",
+            .mText = aText,
+        }));
+    } catch (const std::logic_error& error)
+    { return error.what(); }
+
+    return "";
+}
+
+TEST(BuiltInRatesTest, RejectsACurrencyThatIsNotACode) {
+    // "US" has two letters.
+    EXPECT_EQ(builtInFault("currency,date,rate\nUS,2025-01-02,1.25\n"),
+              "rates_2025.csv row 2: the currency is not a code");
+}
+
+TEST(BuiltInRatesTest, RejectsEuroAsACurrency) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nEUR,2025-01-02,1\n"),
+              "rates_2025.csv row 2: the currency is not a code");
+}
+
+TEST(BuiltInRatesTest, RejectsADateThatIsNotACalendarDate) {
+    // 2025 has no 30 February.
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-02-30,1.25\n"),
+              "rates_2025.csv row 2: the date is not a calendar date");
+}
+
+TEST(BuiltInRatesTest, RejectsADateOfAnotherYear) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2024-12-31,1.25\n"),
+              "rates_2025.csv row 2: the date is in another year");
+}
+
+TEST(BuiltInRatesTest, RejectsARateThatIsNotANumber) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,abc\n"),
+              "rates_2025.csv row 2: the rate is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsARateOfZero) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,0\n"),
+              "rates_2025.csv row 2: the rate is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsTheSameCurrencyAndDateTwice) {
+    EXPECT_EQ(builtInFault("currency,date,rate\n"
+                           "USD,2025-01-02,1.25\n"
+                           "USD,2025-01-02,1.26\n"),
+              "rates_2025.csv row 3: the currency and date are given twice");
+}
+
+TEST(BuiltInRatesTest, RejectsAFileWithoutRates) {
+    EXPECT_EQ(builtInFault("currency,date,rate\n"), "rates_2025.csv: the file has no rates");
+}
+
+TEST(BuiltInRatesTest, RejectsAHeaderWithAMissingColumn) {
+    EXPECT_EQ(builtInFault("currency,date\nUSD,2025-01-02\n"),
+              "rates_2025.csv: the header is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsAHeaderWithAnUnclosedQuote) {
+    // The quote before currency is never closed.
+    EXPECT_EQ(builtInFault("\"currency,date,rate\nUSD,2025-01-02,1.25\n"),
+              "rates_2025.csv: the header is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsAHeaderWithARepeatedColumn) {
+    // The column rate is in the header twice.
+    EXPECT_EQ(builtInFault("currency,date,rate,rate\nUSD,2025-01-02,1.25,1.25\n"),
+              "rates_2025.csv: the header is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsAFieldWithALineBreak) {
+    // The quote in row 2 closes on the next line, so one field holds a line break.
+    EXPECT_EQ(builtInFault("currency,date,rate\n\"US\nD\",2025-01-02,1.25\n"),
+              "rates_2025.csv row 2: the row is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsARowWithTooFewFields) {
+    // Row 2 has 2 fields, the header 3.
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02\n"),
+              "rates_2025.csv row 2: the row is not valid");
+}
+
+TEST(BuiltInRatesTest, ReportsTheFirstFaultOfAnEarlierRowBeforeALaterOne) {
+    // Row 2 is valid, row 3 has a bad rate, row 4 has a bad currency: row 3 is named.
+    EXPECT_EQ(builtInFault("currency,date,rate\n"
+                           "USD,2025-01-02,1.25\n"
+                           "USD,2025-01-03,x\n"
+                           "U,2025-01-06,1.25\n"),
+              "rates_2025.csv row 3: the rate is not valid");
+}
+
+TEST(BuiltInRatesTest, EmbeddedFilesAreOneForEachYearFrom2016To2025InOrder) {
+    const auto files = builtInEcbRateFiles();
+
+    ASSERT_EQ(files.size(), 10U);
+
+    for (std::size_t index = 0; index < files.size(); ++index)
+    {
+        EXPECT_EQ(files[index].mYear, 2016 + static_cast<int>(index));
+        EXPECT_EQ(files[index].mName, "rates_" + std::to_string(files[index].mYear) + ".csv");
+        EXPECT_EQ(files[index].mText.substr(0, 19), "currency,date,rate\n");
+    }
 }
 
 } // namespace

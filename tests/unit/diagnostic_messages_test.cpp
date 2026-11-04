@@ -293,6 +293,40 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::AnswerRejectedCorrectionOverBudget,
          "answer_rejected.correction_over_budget",
          {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::ReferenceFileUnknownName,
+         "reference_file.unknown_name",
+         {{"name", MessageParamKind::Text}}},
+        {MessageKey::ReferenceFileRepeatedName,
+         "reference_file.repeated_name",
+         {{"name", MessageParamKind::Text}}},
+        {MessageKey::ReferenceFileUnreadable, "reference_file.unreadable", {}},
+        {MessageKey::ReferenceFileUnclosedQuote, "reference_file.unclosed_quote", {}},
+        {MessageKey::ReferenceFileLineBreak, "reference_file.line_break", {}},
+        {MessageKey::ReferenceFileMissingColumns,
+         "reference_file.missing_columns",
+         {{"count", MessageParamKind::Number}, {"columns", MessageParamKind::Text}}},
+        {MessageKey::ReferenceFileRepeatedColumn,
+         "reference_file.repeated_column",
+         {{"column", MessageParamKind::Text}}},
+        {MessageKey::ReferenceFileFieldCount,
+         "reference_file.field_count",
+         {{"expected", MessageParamKind::Number}, {"found", MessageParamKind::Number}}},
+        {MessageKey::ReferenceFileEmptyField,
+         "reference_file.empty_field",
+         {{"field", MessageParamKind::Text}}},
+        {MessageKey::ReferenceFileNoIdentifier, "reference_file.no_identifier", {}},
+        {MessageKey::ReferenceFileInvalidIsin, "reference_file.invalid_isin", {}},
+        {MessageKey::ReferenceFileInvalidConid, "reference_file.invalid_conid", {}},
+        {MessageKey::ReferenceFileInvalidCountry, "reference_file.invalid_country", {}},
+        {MessageKey::ReferenceFileInvalidInstrumentKind,
+         "reference_file.invalid_instrument_kind",
+         {}},
+        {MessageKey::ReferenceFileInvalidVerifiedOn, "reference_file.invalid_verified_on", {}},
+        {MessageKey::ReferenceFileInvalidSource, "reference_file.invalid_source", {}},
+        {MessageKey::ReferenceFileMissingSourceRevision,
+         "reference_file.missing_source_revision",
+         {}},
+        {MessageKey::ReferenceFileDuplicateBrokerCode, "reference_file.duplicate_broker_code", {}},
     };
 
     return messages;
@@ -354,8 +388,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 112U);
-    ASSERT_EQ(expectedMessages().size(), 112U);
+    ASSERT_EQ(definitions.size(), 130U);
+    ASSERT_EQ(expectedMessages().size(), 130U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -389,8 +423,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 112U);
-    EXPECT_EQ(keys.size(), 112U);
+    EXPECT_EQ(ids.size(), 130U);
+    EXPECT_EQ(keys.size(), 130U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -412,7 +446,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 120U); // 112 message keys and 8 terms.
+    ASSERT_EQ(table.size(), 138U); // 130 message keys and 8 terms.
 
     std::set<std::string> tableKeys;
 

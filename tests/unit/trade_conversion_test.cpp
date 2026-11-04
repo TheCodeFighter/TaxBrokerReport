@@ -39,7 +39,9 @@ void addRate(OfficialRateTable& aTable,
                      .mObservationDate = date(aDate),
                      .mValue = aValue,
                      .mSourceFile = SourceFilename::fromPath("exr_2025.csv"),
-                     .mSourceRow = aRow};
+                     .mSourceRow = aRow,
+                     .mSource = OfficialRateSource::EcbReferenceRateFile,
+                     .mOrigin = OfficialRateOrigin::Supplied};
 }
 
 SourceReference source(std::size_t aRow, std::string aTransactionId) {

@@ -3312,6 +3312,28 @@ TEST(TradeRepublicParserTest, ReturnsAStructuredErrorWhenTheCsvCannotBeOpened) {
     EXPECT_EQ(diagnostic.mMessage.find(missingPath.parent_path().string()), std::string::npos);
 }
 
+TEST(TradeRepublicParserTest, ReturnsAStructuredErrorWhenTheCsvPathIsAFolder) {
+    const auto folderPath = std::filesystem::temp_directory_path() / "taxbroker_folder_as_csv";
+
+    std::filesystem::create_directories(folderPath);
+
+    tr::TradeRepublicParser parser;
+    const ParseResult parseResult = parser.parse(folderPath);
+
+    std::error_code ignored;
+
+    std::filesystem::remove_all(folderPath, ignored);
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorUnreadableFile);
+    EXPECT_EQ(diagnostic.mSourceFile, "taxbroker_folder_as_csv");
+}
+
 TEST(TradeRepublicParserTest, RejectsAHeaderOnlyFileSeparatedBySemicolons) {
     // The 23 Trade Republic column names, separated by semicolons: one column for the reader.
     const ParseResult parseResult = parseRawText(

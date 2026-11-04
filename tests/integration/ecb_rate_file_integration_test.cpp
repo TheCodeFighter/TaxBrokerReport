@@ -36,9 +36,6 @@ TEST(EcbRateFileIntegrationTest, LoadsTheSyntheticFixtureAndConvertsAtTheExactDa
     ASSERT_EQ(result.mTable.mRates.size(), 4U);
     ASSERT_EQ(result.mTable.mFiles.size(), 1U);
 
-    // sha256sum of the fixture file.
-    EXPECT_EQ(result.mTable.mFiles[0].mSha256,
-              "5b5c398aaf0782b132351874977d2278a6b6492d8daa2f1ed4aa16b3ff979a58");
     EXPECT_EQ(result.mTable.mFiles[0].mSourceFile.value(), "exr_2025_synthetic.csv");
     EXPECT_EQ(result.mTable.mFiles[0].mYear, 2025);
     EXPECT_EQ(result.mTable.mFiles[0].mRateCount, 4U);
@@ -490,6 +487,154 @@ TEST(EcbRateFileIntegrationTest, RejectsTwoFilesOfTheSameYearAndKeepsAnotherYear
 
     expectGood2024FileStillConverts(result.mTable);
     expectBlockedYear2025(result.mTable);
+}
+
+// Built-in rates. The built-in files are public ECB data; the literals below are values of the ECB
+// download of each year (USD per 1 EUR), checked against the downloaded file.
+
+TEST(EcbRateFileIntegrationTest, TheBuiltInRateFilesLoadWithoutErrors) {
+    const auto result = loadOfficialRates({});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mTable.mFiles.size(), 10U); // the years 2016 to 2025
+
+    for (std::size_t index = 0; index < result.mTable.mFiles.size(); ++index)
+    {
+        const auto& file = result.mTable.mFiles.at(index);
+
+        EXPECT_EQ(file.mYear, 2016 + static_cast<int>(index));
+        EXPECT_EQ(file.mSourceFile.value(), "rates_" + std::to_string(file.mYear) + ".csv");
+        EXPECT_EQ(file.mOrigin, OfficialRateOrigin::BuiltIn);
+        EXPECT_FALSE(file.mReplacesBuiltIn);
+    }
+
+    // 2016 starts on the first working day, 2016-01-04, and ends on 2016-12-30.
+    EXPECT_EQ(result.mTable.mFiles.front().mFirstDate, date("2016-01-04"));
+    EXPECT_EQ(result.mTable.mFiles.front().mLastDate, date("2016-12-30"));
+    EXPECT_EQ(result.mTable.mFiles.front().mRateCount, 8995U);
+
+    const auto& last = result.mTable.mFiles.back();
+
+    EXPECT_EQ(last.mFirstDate, date("2025-01-02"));
+    EXPECT_EQ(last.mLastDate, date("2025-12-31"));
+    EXPECT_EQ(last.mRateCount, 7650U);
+}
+
+TEST(EcbRateFileIntegrationTest, TheBuiltInRatesHaveTheEcbValuesAndTheirProvenance) {
+    const auto result = loadOfficialRates({});
+
+    const OfficialRate* first = result.mTable.find(Currency::USD, date("2025-01-02"));
+
+    ASSERT_NE(first, nullptr);
+    EXPECT_EQ(first->mValue, 103'210'000); // 1.0321 at 8 decimals
+    EXPECT_EQ(first->mSeriesKey, "EXR.D.USD.EUR.SP00.A");
+    EXPECT_EQ(first->mSourceFile.value(), "rates_2025.csv");
+    EXPECT_EQ(first->mSourceRow, 7142U); // the header is row 1
+    EXPECT_EQ(first->mOrigin, OfficialRateOrigin::BuiltIn);
+
+    const OfficialRate* lastDay = result.mTable.find(Currency::USD, date("2025-12-31"));
+
+    ASSERT_NE(lastDay, nullptr);
+    EXPECT_EQ(lastDay->mValue, 117'500'000); // 1.175 at 8 decimals
+
+    const OfficialRate* oldest = result.mTable.find(Currency::USD, date("2016-01-04"));
+
+    ASSERT_NE(oldest, nullptr);
+    EXPECT_EQ(oldest->mValue, 108'980'000); // 1.0898
+
+    // 2015 is not built in.
+    EXPECT_EQ(result.mTable.find(Currency::USD, date("2015-12-31")), nullptr);
+}
+
+TEST(EcbRateFileIntegrationTest, ASuppliedFileReplacesTheBuiltInFileOfItsYear) {
+    const auto result = loadOfficialRates({fixturePath("exr_2025_synthetic.csv")});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mTable.mFiles.size(), 10U);
+
+    // The supplied value wins over the built-in 1.0321, with no diagnostic.
+    const OfficialRate* supplied = result.mTable.find(Currency::USD, date("2025-01-02"));
+
+    ASSERT_NE(supplied, nullptr);
+    EXPECT_EQ(supplied->mValue, 125'000'000); // 1.25 of the synthetic file
+    EXPECT_EQ(supplied->mSourceFile.value(), "exr_2025_synthetic.csv");
+    EXPECT_EQ(supplied->mSourceRow, 4U); // header, GBP, GBP, USD
+    EXPECT_EQ(supplied->mOrigin, OfficialRateOrigin::Supplied);
+
+    // The synthetic file has no 2025-03-10, and the built-in 2025 is gone, not merged.
+    EXPECT_EQ(result.mTable.find(Currency::USD, date("2025-03-10")), nullptr);
+
+    // 2024 stays built in: USD 2024-12-31 is 1.0389.
+    const OfficialRate* earlier = result.mTable.find(Currency::USD, date("2024-12-31"));
+
+    ASSERT_NE(earlier, nullptr);
+    EXPECT_EQ(earlier->mValue, 103'890'000);
+    EXPECT_EQ(earlier->mOrigin, OfficialRateOrigin::BuiltIn);
+
+    const auto& file2025 = result.mTable.mFiles.back();
+
+    EXPECT_EQ(file2025.mYear, 2025);
+    EXPECT_EQ(file2025.mOrigin, OfficialRateOrigin::Supplied);
+    EXPECT_TRUE(file2025.mReplacesBuiltIn);
+    EXPECT_EQ(file2025.mRateCount, 4U);
+}
+
+TEST(EcbRateFileIntegrationTest, ASuppliedFileOfAnotherYearIsAdded) {
+    const auto result = loadOfficialRates({fixturePath("exr_2015_synthetic.csv")});
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mTable.mFiles.size(), 11U);
+
+    // The files are in year order, so 2015 is first.
+    const auto& file2015 = result.mTable.mFiles.front();
+
+    EXPECT_EQ(file2015.mYear, 2015);
+    EXPECT_EQ(file2015.mOrigin, OfficialRateOrigin::Supplied);
+    EXPECT_FALSE(file2015.mReplacesBuiltIn);
+
+    const OfficialRate* added = result.mTable.find(Currency::USD, date("2015-12-31"));
+
+    ASSERT_NE(added, nullptr);
+    EXPECT_EQ(added->mValue, 110'000'000); // 1.1 of the synthetic file
+
+    // The built-in 2016 is still there.
+    EXPECT_NE(result.mTable.find(Currency::USD, date("2016-01-04")), nullptr);
+}
+
+TEST(EcbRateFileIntegrationTest, ABrokenSuppliedFileIsAnErrorAndTheBuiltInYearStays) {
+    TemporaryDirectory directory;
+
+    // Row 2 has OBS_STATUS "E" (estimated), which is not accepted.
+    const auto badPath = directory.write(
+        "exr_2025_bad.csv",
+        std::string{kShortHeader} + "\n" +
+            R"csv(EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-02,1.25,E)csv" + "\n");
+    const auto result = loadOfficialRates({badPath});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSourceFile, "exr_2025_bad.csv");
+    EXPECT_EQ(result.mDiagnostics.at(0).mRowIndex, 2U);
+
+    // The built-in 2025 is still used for the run's data.
+    ASSERT_EQ(result.mTable.mFiles.size(), 10U);
+
+    const OfficialRate* builtIn = result.mTable.find(Currency::USD, date("2025-01-02"));
+
+    ASSERT_NE(builtIn, nullptr);
+    EXPECT_EQ(builtIn->mValue, 103'210'000); // 1.0321
+    EXPECT_EQ(builtIn->mOrigin, OfficialRateOrigin::BuiltIn);
+}
+
+TEST(EcbRateFileIntegrationTest, TwoSuppliedFilesOfOneYearAreBothRejectedAndTheBuiltInYearStays) {
+    const auto result = loadOfficialRates(
+        {fixturePath("exr_2025_synthetic.csv"), fixturePath("exr_2025_synthetic.csv")});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, DiagnosticCode::DuplicateRateYear);
+    EXPECT_EQ(result.mDiagnostics.at(1).mCode, DiagnosticCode::DuplicateRateYear);
+    ASSERT_EQ(result.mTable.mFiles.size(), 10U);
+    EXPECT_EQ(result.mTable.mFiles.back().mOrigin, OfficialRateOrigin::BuiltIn);
 }
 
 } // namespace

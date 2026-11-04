@@ -4,9 +4,16 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <vector>
 
 namespace {
 
@@ -425,6 +432,390 @@ TEST(ReferenceCatalogueTest, DoesNotPutAValueOfTheFileInAFaultMessage) {
         EXPECT_EQ(std::string{error.what()}.find("Secret Name"), std::string::npos);
         EXPECT_EQ(std::string{error.what()}.find("IRL"), std::string::npos);
     }
+}
+
+// --- Supplied files ---
+
+/// A path under the system temp directory that no other test of this run uses.
+std::filesystem::path uniqueFolderPath() {
+    static std::atomic<unsigned> counter{0};
+
+    return std::filesystem::temp_directory_path() /
+           ("taxbroker_reference_" +
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "_" +
+            std::to_string(counter++));
+}
+
+/// A new empty folder under the system temp directory, removed with the object.
+class TemporaryFolder {
+  public:
+    TemporaryFolder() : mPath{uniqueFolderPath()} {
+        std::filesystem::create_directories(mPath);
+    }
+
+    ~TemporaryFolder() {
+        std::error_code ignored;
+
+        std::filesystem::remove_all(mPath, ignored);
+    }
+
+    TemporaryFolder(const TemporaryFolder&) = delete;
+    TemporaryFolder& operator=(const TemporaryFolder&) = delete;
+
+    /// Writes the text as the file `aName` (in a subfolder when given) and returns its path.
+    [[nodiscard]] std::filesystem::path
+    write(std::string_view aName, std::string_view aText, std::string_view aSubfolder = {}) const {
+        const auto folder = mPath / aSubfolder;
+
+        std::filesystem::create_directories(folder);
+
+        const auto path = folder / aName;
+        std::ofstream output{path, std::ios::binary};
+
+        output << aText;
+
+        return path;
+    }
+
+    [[nodiscard]] std::filesystem::path path(std::string_view aName) const {
+        return mPath / aName;
+    }
+
+  private:
+    std::filesystem::path mPath;
+};
+
+/// A valid payers file with one row for the ISIN A.
+const std::string kSuppliedPayers =
+    std::string{kPayersHeader} + "XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n";
+
+/// Loads one supplied payers file with this text and returns the fault, which must be set.
+ReferenceFileFault payersFault(std::string_view aText) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData({folder.write("payers.csv", aText)});
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    EXPECT_TRUE(load.mFault.has_value());
+
+    return load.mFault.value_or(ReferenceFileFault{});
+}
+
+TEST(ReferenceDataTest, NoFilesGiveTheBuiltInData) {
+    const auto load = loadReferenceData({});
+
+    ASSERT_TRUE(load.mCatalogue.has_value());
+    EXPECT_FALSE(load.mFault.has_value());
+    EXPECT_EQ(load.mCatalogue->payers().size(), 299U);
+    EXPECT_EQ(load.mCatalogue->allReliefStatements().size(), 17U);
+    EXPECT_EQ(load.mOrigins[0], CatalogueOrigin::BuiltIn);
+    EXPECT_EQ(load.mOrigins[1], CatalogueOrigin::BuiltIn);
+    EXPECT_EQ(load.mOrigins[2], CatalogueOrigin::BuiltIn);
+    EXPECT_EQ(load.mCatalogue->payers().front().mSource.mOrigin, CatalogueOrigin::BuiltIn);
+}
+
+TEST(ReferenceDataTest, ASuppliedPayersFileReplacesTheBuiltInFileWhole) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData({folder.write("payers.csv", kSuppliedPayers)});
+
+    ASSERT_TRUE(load.mCatalogue.has_value());
+    EXPECT_EQ(load.mOrigins[0], CatalogueOrigin::Supplied);
+    EXPECT_EQ(load.mOrigins[1], CatalogueOrigin::BuiltIn);
+    EXPECT_EQ(load.mOrigins[2], CatalogueOrigin::BuiltIn);
+    ASSERT_EQ(load.mCatalogue->payers().size(), 1U); // the 299 built-in payers are gone
+
+    const auto found = load.mCatalogue->findPayer(PayerQuery{.mIsin = Isin{std::string{kIsinA}}});
+
+    ASSERT_EQ(found.mStatus, PayerLookupStatus::Found);
+    EXPECT_EQ(found.mEntries.front()->mName, "Payer A");
+    EXPECT_EQ(found.mEntries.front()->mSource.mOrigin, CatalogueOrigin::Supplied);
+    EXPECT_EQ(found.mEntries.front()->mSource.mFile, "payers.csv");
+    EXPECT_EQ(found.mEntries.front()->mSource.mRowNumber, 2U); // the header is row 1
+
+    // An ISIN of the built-in file is not found in the supplied one.
+    const auto& builtInPayers = referenceCatalogue().payers();
+    const auto withIsin =
+        std::find_if(builtInPayers.begin(), builtInPayers.end(), [](const PayerEntry& aPayer) {
+            return aPayer.mIsin.has_value();
+        });
+
+    ASSERT_NE(withIsin, builtInPayers.end());
+
+    const auto missing = load.mCatalogue->findPayer(PayerQuery{.mIsin = *withIsin->mIsin});
+
+    EXPECT_EQ(missing.mStatus, PayerLookupStatus::NotFound);
+
+    // The other two files stay built in.
+    EXPECT_EQ(load.mCatalogue->allReliefStatements().size(), 17U);
+    EXPECT_EQ(load.mCatalogue->allReliefStatements().front().mSource.mOrigin,
+              CatalogueOrigin::BuiltIn);
+}
+
+TEST(ReferenceDataTest, EachSuppliedFileReplacesOnlyTheFileOfItsName) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData(
+        {folder.write("relief_statements.csv",
+                      std::string{kReliefHeader} + "BE,Treaty text,manual,\n"),
+         folder.write("broker_payers.csv", std::string{kBrokerHeader} + std::string{kOneBroker})});
+
+    ASSERT_TRUE(load.mCatalogue.has_value());
+    EXPECT_EQ(load.mOrigins[0], CatalogueOrigin::BuiltIn);
+    EXPECT_EQ(load.mOrigins[1], CatalogueOrigin::Supplied);
+    EXPECT_EQ(load.mOrigins[2], CatalogueOrigin::Supplied);
+
+    EXPECT_EQ(load.mCatalogue->payers().size(), 299U);
+
+    ASSERT_EQ(load.mCatalogue->allReliefStatements().size(), 1U);
+    EXPECT_EQ(load.mCatalogue->allReliefStatements().front().mStatement, "Treaty text");
+
+    ASSERT_EQ(load.mCatalogue->brokerPayers().size(), 1U);
+    EXPECT_EQ(load.mCatalogue->brokerPayers().front().mCode, "IB-X");
+}
+
+TEST(ReferenceDataTest, AFileNameThatIsNotOneOfTheThreeIsAFault) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData({folder.write("payer.csv", kSuppliedPayers)});
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "payer.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnknownName);
+    EXPECT_EQ(load.mFault->mMessage.mParams,
+              (std::vector<MessageParam>{textParam("name", "payer.csv")}));
+}
+
+TEST(ReferenceDataTest, TheNameIsCheckedBeforeAnyFileIsRead) {
+    // payers.csv does not exist, but the wrong name of the second file is reported first.
+    TemporaryFolder folder;
+    const auto load =
+        loadReferenceData({folder.path("payers.csv"), folder.write("notes.txt", "x")});
+
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnknownName);
+    EXPECT_EQ(load.mFault->mFile, "notes.txt");
+}
+
+TEST(ReferenceDataTest, TheSameFileNameTwiceIsAFault) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData({folder.write("payers.csv", kSuppliedPayers, "first"),
+                                         folder.write("payers.csv", kSuppliedPayers, "second")});
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "payers.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileRepeatedName);
+}
+
+TEST(ReferenceDataTest, AFileThatCannotBeOpenedIsAFault) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData({folder.path("payers.csv")});
+
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "payers.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnreadable);
+}
+
+TEST(ReferenceDataTest, AFolderNamedPayersCsvIsAFault) {
+    TemporaryFolder folder;
+    const auto payersFolder = folder.path("payers.csv");
+
+    std::filesystem::create_directories(payersFolder);
+
+    const auto load = loadReferenceData({payersFolder});
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "payers.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnreadable);
+}
+
+TEST(ReferenceDataTest, FaultOfARowWithoutAnyIdentifier) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",,Payer A,,1 Main Street,IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mFile, "payers.csv");
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileNoIdentifier);
+    EXPECT_TRUE(fault.mMessage.mParams.empty());
+}
+
+TEST(ReferenceDataTest, FaultOfAnIsinWithAWrongCheckDigit) {
+    // XX0000000010 is valid; the check digit 1 is wrong.
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000011,,Payer A,,1 Main Street,IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidIsin);
+}
+
+TEST(ReferenceDataTest, FaultOfAConidWithLetters) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",12A,Payer A,,1 Main Street,IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidConid);
+}
+
+TEST(ReferenceDataTest, FaultOfAnEmptyNameNamesTheColumn) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,,,1 Main Street,IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileEmptyField);
+    EXPECT_EQ(fault.mMessage.mParams, (std::vector<MessageParam>{textParam("field", "name")}));
+}
+
+TEST(ReferenceDataTest, FaultOfAnEmptyAddressNamesTheColumn) {
+    const auto fault = payersFault(std::string{kPayersHeader} + ",7,Payer A,,,IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileEmptyField);
+    EXPECT_EQ(fault.mMessage.mParams, (std::vector<MessageParam>{textParam("field", "address")}));
+}
+
+TEST(ReferenceDataTest, FaultOfACountryWithThreeLetters) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IRL,,,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidCountry);
+}
+
+TEST(ReferenceDataTest, FaultOfAnInstrumentKindThatIsNotKnown) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,stock,,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidInstrumentKind);
+}
+
+TEST(ReferenceDataTest, FaultOfAVerifiedDateThatIsNotADate) {
+    // 2025-13-01 has no month 13.
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   ",7,Payer A,,1 Main Street,IE,,2025-13-01,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidVerifiedOn);
+}
+
+TEST(ReferenceDataTest, FaultOfASourceThatIsNotKnown) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,,,other,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidSource);
+}
+
+TEST(ReferenceDataTest, FaultOfAnIbEdavkiRowWithoutARevision) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,,,ib-edavki,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileMissingSourceRevision);
+}
+
+TEST(ReferenceDataTest, FaultOfARowWithAMissingField) {
+    // Row 2 has 9 fields, the header 10.
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,,,manual\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileFieldCount);
+    EXPECT_EQ(fault.mMessage.mParams,
+              (std::vector<MessageParam>{numberParam("expected", 10), numberParam("found", 9)}));
+}
+
+TEST(ReferenceDataTest, FaultOfAFieldWithALineBreak) {
+    // The address starts a quote on row 2 and closes it on the next line; the quotes are even.
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   ",7,Payer A,,\"Level 20\n1 Main Street\",IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileLineBreak);
+}
+
+TEST(ReferenceDataTest, FaultOfAnUnclosedQuoteHasNoRow) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,Payer A,,\"Level 20,IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mFile, "payers.csv");
+    EXPECT_EQ(fault.mRow, std::nullopt);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileUnclosedQuote);
+}
+
+TEST(ReferenceDataTest, FaultOfAHeaderWithMissingColumns) {
+    // The header lacks instrument_kind and verified_on.
+    const auto fault =
+        payersFault("isin,ibkr_conid,name,tax_number,address,country,source,source_revision\n");
+
+    EXPECT_EQ(fault.mRow, std::nullopt);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileMissingColumns);
+    EXPECT_EQ(fault.mMessage.mParams,
+              (std::vector<MessageParam>{numberParam("count", 2),
+                                         textParam("columns", "instrument_kind, verified_on")}));
+}
+
+TEST(ReferenceDataTest, FaultOfAHeaderWithARepeatedColumn) {
+    const auto fault = payersFault(
+        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "source_revision,name\n");
+
+    EXPECT_EQ(fault.mRow, std::nullopt);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileRepeatedColumn);
+    EXPECT_EQ(fault.mMessage.mParams, (std::vector<MessageParam>{textParam("column", "name")}));
+}
+
+TEST(ReferenceDataTest, FaultOfAnEmptyReliefStatementNamesItsFile) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData(
+        {folder.write("relief_statements.csv", std::string{kReliefHeader} + "BE,,manual,\n")});
+
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "relief_statements.csv");
+    EXPECT_EQ(load.mFault->mRow, 2U);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileEmptyField);
+    EXPECT_EQ(load.mFault->mMessage.mParams,
+              (std::vector<MessageParam>{textParam("field", "statement")}));
+}
+
+TEST(ReferenceDataTest, FaultOfARepeatedBrokerAndCode) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData({folder.write(
+        "broker_payers.csv",
+        std::string{kBrokerHeader} + "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n"
+                                     "IBKR,IB-X,Broker Y,456,2 Main Street,GB,manual,\n")});
+
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "broker_payers.csv");
+    EXPECT_EQ(load.mFault->mRow, 3U);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileDuplicateBrokerCode);
+}
+
+TEST(ReferenceDataTest, AFaultHasTheEnglishTextAndNoValueOfTheFile) {
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + ",7,Secret Name,,1 Main Street,IRL,,,manual,\n");
+
+    EXPECT_EQ(fault.mMessage.mEnglish,
+              "The country is not 2 uppercase letters. The reference data was not loaded.");
+    EXPECT_EQ(fault.mMessage.mEnglish.find("Secret Name"), std::string::npos);
+    EXPECT_EQ(fault.mMessage.mEnglish.find("IRL"), std::string::npos);
+}
+
+// A *LargeInputTest suite takes minutes under Valgrind. CI runs it on every push to main, and on a
+// pull request only when a related file changes (`scripts/valgrind.sh --part large`).
+TEST(ReferenceDataLargeInputTest, ARowLongerThanTheReaderLimitMakesTheFileUnreadable) {
+    // The CSV reader throws on a row longer than two 10 MB chunks. Row 2 has a name of
+    // 21,000,000 characters.
+    const std::string longName(21'000'000, 'x');
+    const auto fault = payersFault(std::string{kPayersHeader} + "XX0000000010,," + longName +
+                                   ",,1 Main Street,IE,,,manual,\n");
+
+    EXPECT_EQ(fault.mFile, "payers.csv");
+    EXPECT_EQ(fault.mRow, std::nullopt);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileUnreadable);
 }
 
 } // namespace

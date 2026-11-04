@@ -1,5 +1,6 @@
 #include "taxbroker/official_rates.hpp"
 #include "utils/date_utils.hpp"
+#include "utils/numeric_util.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -18,7 +19,7 @@ namespace {
 
 using namespace taxbroker;
 
-/// Writes one block per loaded file (name, year, checksum, counts, first and last date) and then
+/// Writes one block per loaded file (name, year, counts, first and last date) and then
 /// every diagnostic. Only file names are written, never paths.
 void writeSummary(std::ostream& aOutput, const OfficialRateLoadResult& aResult) {
     for (const auto& file : aResult.mTable.mFiles)
@@ -29,7 +30,7 @@ void writeSummary(std::ostream& aOutput, const OfficialRateLoadResult& aResult) 
 
         for (const auto& [key, rate] : aResult.mTable.mRates)
         {
-            if (rate.mSourceFile != file.mSourceFile || rate.mFileSha256 != file.mSha256)
+            if (rate.mSourceFile != file.mSourceFile)
             {
                 continue;
             }
@@ -43,7 +44,6 @@ void writeSummary(std::ostream& aOutput, const OfficialRateLoadResult& aResult) 
 
         aOutput << "file " << file.mSourceFile.value() << '\n'
                 << "  year " << file.mYear << '\n'
-                << "  sha256 " << file.mSha256 << '\n'
                 << "  rates " << file.mRateCount << '\n'
                 << "  currencies " << currencies.size() << '\n'
                 << "  first date " << formatCalendarDate(*firstDate) << '\n'
@@ -68,12 +68,45 @@ void writeSummary(std::ostream& aOutput, const OfficialRateLoadResult& aResult) 
     }
 }
 
+/// Writes `rates_<year>.csv` for each loaded file into the folder: the header `currency,date,rate`
+/// and one row per rate, sorted by currency and then date, with the rate as the file gave it
+/// (trailing zeros removed). This is the form of the files built into the program.
+void writeCompactFiles(const std::filesystem::path& aFolder, const OfficialRateTable& aTable) {
+    for (const auto& file : aTable.mFiles)
+    {
+        std::ofstream output{aFolder / ("rates_" + std::to_string(file.mYear) + ".csv"),
+                             std::ios::binary | std::ios::trunc};
+
+        output << "currency,date,rate\n";
+
+        for (const auto& [key, rate] : aTable.mRates)
+        {
+            if (rate.mSourceFile != file.mSourceFile)
+            {
+                continue;
+            }
+
+            output << rate.mCurrencyCode << ',' << formatCalendarDate(rate.mObservationDate) << ','
+                   << formatFixedPoint(rate.mValue, EXCHANGE_RATE_SCALE, 0) << '\n';
+        }
+    }
+}
+
 } // namespace
 
 int main(int aArgumentCount, char** aArguments) {
     if (aArgumentCount < 3)
     {
-        std::cerr << "Usage: taxbroker_ecb_dump <output-file> <ecb-csv>...\n";
+        std::cerr << "Usage: taxbroker_ecb_dump <output-file> <ecb-csv>...\n"
+                  << "       taxbroker_ecb_dump --compact <output-folder> <ecb-csv>...\n";
+        return 2;
+    }
+
+    const bool compact = std::string_view{aArguments[1]} == "--compact";
+
+    if (compact && aArgumentCount < 4)
+    {
+        std::cerr << "Usage: taxbroker_ecb_dump --compact <output-folder> <ecb-csv>...\n";
         return 2;
     }
 
@@ -81,12 +114,26 @@ int main(int aArgumentCount, char** aArguments) {
     {
         std::vector<std::filesystem::path> inputs;
 
-        for (int index = 2; index < aArgumentCount; ++index)
+        for (int index = compact ? 3 : 2; index < aArgumentCount; ++index)
         {
             inputs.emplace_back(aArguments[index]);
         }
 
         const auto result = loadEcbRateFiles(inputs);
+
+        if (compact)
+        {
+            // A rejected file writes nothing, so a half-converted set is never left behind.
+            if (result.mDiagnostics.empty())
+            {
+                writeCompactFiles(aArguments[2], result.mTable);
+                return 0;
+            }
+
+            writeSummary(std::cerr, result);
+            return 1;
+        }
+
         std::ofstream output{aArguments[1], std::ios::trunc};
 
         if (!output)

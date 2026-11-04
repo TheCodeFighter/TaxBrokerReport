@@ -790,7 +790,9 @@ TEST(CapitalReportGatesTest, AMissingRateOnTheDateGivesNoFileWarning) {
                      .mObservationDate = day("2025-03-10"),
                      .mValue = 85'000'000,
                      .mSourceFile = SourceFilename::fromPath("exr_synthetic.csv"),
-                     .mSourceRow = 2};
+                     .mSourceRow = 2,
+                     .mSource = OfficialRateSource::EcbReferenceRateFile,
+                     .mOrigin = OfficialRateOrigin::Supplied};
 
     const auto rates = selectOfficialRates({{.mCurrency = Currency::USD,
                                              .mTaxDate = day("2025-03-10"),
