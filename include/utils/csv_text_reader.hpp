@@ -47,8 +47,8 @@ struct CsvTable {
 /// Reads CSV text with a header row and returns its rows up to the first fault. The checks run in
 /// this order: unclosed quote, missing required columns, repeated required column, then for each
 /// row a line break inside a field and the field count. Input the CSV library cannot read on, such
-/// as a row longer than two 10 MB chunks, ends the rows with an Unreadable fault. A header the
-/// library cannot read throws its std::runtime_error.
+/// as a row longer than two 10 MB chunks, ends the rows with an Unreadable fault. A header row
+/// longer than one 10 MB chunk gives an empty header, so a MissingColumns fault.
 [[nodiscard]] CsvTable readCsvText(std::string_view aText,
                                    char aDelimiter,
                                    std::span<const std::string_view> aRequiredColumns);

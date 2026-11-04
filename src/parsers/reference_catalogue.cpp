@@ -6,11 +6,14 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -37,10 +40,44 @@ constexpr std::array<std::string_view, 4> kReliefStatementColumns{
 constexpr std::array<std::string_view, 8> kBrokerPayerColumns{
     "broker", "code", "name", "tax_number", "address", "country", "source", "source_revision"};
 
-/// Throws the fault text: the file, the logical row and what is wrong, never a value.
-[[noreturn]] void failRow(std::string_view aFile, std::size_t aRow, std::string_view aWhat) {
-    throw std::logic_error{std::string{aFile} + " row " + std::to_string(aRow) + ": " +
-                           std::string{aWhat}};
+/// A fault of a reference file. `what()` is the developer text (file, row, what is wrong); the
+/// fault carries the same fact as a message key for the user.
+class ReferenceFileError : public std::logic_error {
+  public:
+    ReferenceFileError(const std::string& aText, ReferenceFileFault aFault)
+        : std::logic_error(aText), mFault(std::move(aFault)) {}
+
+    [[nodiscard]] const ReferenceFileFault& fault() const {
+        return mFault;
+    }
+
+  private:
+    ReferenceFileFault mFault;
+};
+
+/// Throws the fault of a row: the file, the logical row and what is wrong, never a value.
+[[noreturn]] void failRow(std::string_view aFile,
+                          std::size_t aRow,
+                          std::string_view aWhat,
+                          MessageKey aKey,
+                          std::vector<MessageParam> aParams = {}) {
+    throw ReferenceFileError{
+        std::string{aFile} + " row " + std::to_string(aRow) + ": " + std::string{aWhat},
+        ReferenceFileFault{.mFile = std::string{aFile},
+                           .mRow = aRow,
+                           .mMessage = makeDiagnosticMessage(aKey, std::move(aParams))}};
+}
+
+/// Throws the fault of a whole file.
+[[noreturn]] void failFile(std::string_view aFile,
+                           std::string_view aWhat,
+                           MessageKey aKey,
+                           std::vector<MessageParam> aParams = {}) {
+    throw ReferenceFileError{
+        std::string{aFile} + ": " + std::string{aWhat},
+        ReferenceFileFault{.mFile = std::string{aFile},
+                           .mRow = std::nullopt,
+                           .mMessage = makeDiagnosticMessage(aKey, std::move(aParams))}};
 }
 
 std::string joinColumns(const std::vector<std::string>& aColumns) {
@@ -58,7 +95,7 @@ std::string joinColumns(const std::vector<std::string>& aColumns) {
 CsvTable readFile(std::string_view aFile,
                   std::string_view aText,
                   std::span<const std::string_view> aRequiredColumns) {
-    CsvTable table = readCsvText(aText, ',', aRequiredColumns);
+    const CsvTable table = readCsvText(aText, ',', aRequiredColumns);
 
     if (!table.mFault)
     {
@@ -66,30 +103,40 @@ CsvTable readFile(std::string_view aFile,
     }
 
     const CsvFault& fault = *table.mFault;
-    const std::string file{aFile};
 
     switch (fault.mKind)
     {
     case CsvFaultKind::UnclosedQuote:
-        throw std::logic_error{file + ": a quote is not closed"};
+        failFile(aFile, "a quote is not closed", MessageKey::ReferenceFileUnclosedQuote);
     case CsvFaultKind::MissingColumns:
-        throw std::logic_error{file + ": the header lacks the columns " +
-                               joinColumns(fault.mColumns)};
+        failFile(aFile,
+                 "the header lacks the columns " + joinColumns(fault.mColumns),
+                 MessageKey::ReferenceFileMissingColumns,
+                 {numberParam("count", fault.mColumns.size()),
+                  textParam("columns", joinColumns(fault.mColumns))});
     case CsvFaultKind::RepeatedColumn:
-        throw std::logic_error{file + ": the header has the column " + joinColumns(fault.mColumns) +
-                               " twice"};
+        failFile(aFile,
+                 "the header has the column " + joinColumns(fault.mColumns) + " twice",
+                 MessageKey::ReferenceFileRepeatedColumn,
+                 {textParam("column", joinColumns(fault.mColumns))});
     case CsvFaultKind::LineBreakInField:
-        failRow(aFile, fault.mRowNumber.value_or(0), "a field holds a line break");
+        failRow(aFile,
+                fault.mRowNumber.value_or(0),
+                "a field holds a line break",
+                MessageKey::ReferenceFileLineBreak);
     case CsvFaultKind::FieldCountMismatch:
         failRow(aFile,
                 fault.mRowNumber.value_or(0),
                 "the row has " + std::to_string(fault.mFoundFields) + " fields, the header " +
-                    std::to_string(fault.mExpectedFields));
+                    std::to_string(fault.mExpectedFields),
+                MessageKey::ReferenceFileFieldCount,
+                {numberParam("expected", fault.mExpectedFields),
+                 numberParam("found", fault.mFoundFields)});
     case CsvFaultKind::Unreadable:
-        throw std::logic_error{file + ": the file cannot be read"};
+        failFile(aFile, "the file cannot be read", MessageKey::ReferenceFileUnreadable);
     }
 
-    throw std::logic_error{file + ": unknown fault"};
+    failFile(aFile, "unknown fault", MessageKey::ReferenceFileUnreadable);
 }
 
 bool isUpperLetter(char aChar) {
@@ -168,41 +215,57 @@ std::optional<std::string> optionalText(const std::string& aValue) {
 CatalogueSource readSource(std::string_view aFile,
                            std::size_t aRow,
                            const std::string& aSource,
-                           const std::string& aSourceRevision) {
+                           const std::string& aSourceRevision,
+                           CatalogueOrigin aOrigin) {
     if (aSource != "ib-edavki" && aSource != "manual")
     {
-        failRow(aFile, aRow, "the source is not ib-edavki or manual");
+        failRow(aFile,
+                aRow,
+                "the source is not ib-edavki or manual",
+                MessageKey::ReferenceFileInvalidSource);
     }
 
     if (aSource == "ib-edavki" && aSourceRevision.empty())
     {
-        failRow(aFile, aRow, "an ib-edavki row has no source revision");
+        failRow(aFile,
+                aRow,
+                "an ib-edavki row has no source revision",
+                MessageKey::ReferenceFileMissingSourceRevision);
     }
 
     return CatalogueSource{.mSource = aSource,
                            .mSourceRevision = aSourceRevision,
                            .mFile = std::string{aFile},
-                           .mRowNumber = aRow};
+                           .mRowNumber = aRow,
+                           .mOrigin = aOrigin};
 }
 
+/// Fails when the value is empty; `aField` is the column name.
 void requireText(std::string_view aFile,
                  std::size_t aRow,
                  const std::string& aValue,
-                 std::string_view aWhat) {
+                 std::string_view aField) {
     if (aValue.empty())
     {
-        failRow(aFile, aRow, aWhat);
+        failRow(aFile,
+                aRow,
+                "the " + std::string{aField} + " is empty",
+                MessageKey::ReferenceFileEmptyField,
+                {textParam("field", std::string{aField})});
     }
 }
 
 void requireCountry(std::string_view aFile, std::size_t aRow, const std::string& aValue) {
     if (!isCountry(aValue))
     {
-        failRow(aFile, aRow, "the country is not 2 uppercase letters");
+        failRow(aFile,
+                aRow,
+                "the country is not 2 uppercase letters",
+                MessageKey::ReferenceFileInvalidCountry);
     }
 }
 
-std::vector<PayerEntry> readPayers(std::string_view aText) {
+std::vector<PayerEntry> readPayers(std::string_view aText, CatalogueOrigin aOrigin) {
     const CsvTable table = readFile(kPayersFile, aText, kPayerColumns);
     const std::size_t isinColumn = table.columnIndex("isin");
     const std::size_t conidColumn = table.columnIndex("ibkr_conid");
@@ -224,28 +287,40 @@ std::vector<PayerEntry> readPayers(std::string_view aText) {
 
         if (fields[isinColumn].empty() && fields[conidColumn].empty())
         {
-            failRow(kPayersFile, number, "the row has neither an ISIN nor a conid");
+            failRow(kPayersFile,
+                    number,
+                    "the row has neither an ISIN nor a conid",
+                    MessageKey::ReferenceFileNoIdentifier);
         }
 
         if (!fields[isinColumn].empty() && !isValidIsin(fields[isinColumn]))
         {
-            failRow(kPayersFile, number, "the ISIN is not valid");
+            failRow(kPayersFile,
+                    number,
+                    "the ISIN is not valid",
+                    MessageKey::ReferenceFileInvalidIsin);
         }
 
         if (!fields[conidColumn].empty() && !isDigitsOnly(fields[conidColumn]))
         {
-            failRow(kPayersFile, number, "the conid is not digits only");
+            failRow(kPayersFile,
+                    number,
+                    "the conid is not digits only",
+                    MessageKey::ReferenceFileInvalidConid);
         }
 
-        requireText(kPayersFile, number, fields[nameColumn], "the name is empty");
-        requireText(kPayersFile, number, fields[addressColumn], "the address is empty");
+        requireText(kPayersFile, number, fields[nameColumn], "name");
+        requireText(kPayersFile, number, fields[addressColumn], "address");
         requireCountry(kPayersFile, number, fields[countryColumn]);
 
         const std::string& kind = fields[kindColumn];
 
         if (!kind.empty() && kind != "share" && kind != "etf" && kind != "fund" && kind != "bond")
         {
-            failRow(kPayersFile, number, "the instrument kind is not share, etf, fund or bond");
+            failRow(kPayersFile,
+                    number,
+                    "the instrument kind is not share, etf, fund or bond",
+                    MessageKey::ReferenceFileInvalidInstrumentKind);
         }
 
         std::optional<Date> verifiedOn;
@@ -256,7 +331,10 @@ std::vector<PayerEntry> readPayers(std::string_view aText) {
 
             if (!verifiedOn)
             {
-                failRow(kPayersFile, number, "verified_on is not a date as YYYY-MM-DD");
+                failRow(kPayersFile,
+                        number,
+                        "verified_on is not a date as YYYY-MM-DD",
+                        MessageKey::ReferenceFileInvalidVerifiedOn);
             }
         }
 
@@ -269,15 +347,19 @@ std::vector<PayerEntry> readPayers(std::string_view aText) {
             .mCountry = fields[countryColumn],
             .mInstrumentKind = optionalText(kind),
             .mVerifiedOn = verifiedOn,
-            .mSource =
-                readSource(kPayersFile, number, fields[sourceColumn], fields[revisionColumn]),
+            .mSource = readSource(kPayersFile,
+                                  number,
+                                  fields[sourceColumn],
+                                  fields[revisionColumn],
+                                  aOrigin),
         });
     }
 
     return payers;
 }
 
-std::vector<ReliefStatementEntry> readReliefStatements(std::string_view aText) {
+std::vector<ReliefStatementEntry> readReliefStatements(std::string_view aText,
+                                                       CatalogueOrigin aOrigin) {
     const CsvTable table = readFile(kReliefStatementsFile, aText, kReliefStatementColumns);
     const std::size_t countryColumn = table.columnIndex("country");
     const std::size_t statementColumn = table.columnIndex("statement");
@@ -292,10 +374,7 @@ std::vector<ReliefStatementEntry> readReliefStatements(std::string_view aText) {
         const auto& fields = row.mFields;
 
         requireCountry(kReliefStatementsFile, number, fields[countryColumn]);
-        requireText(kReliefStatementsFile,
-                    number,
-                    fields[statementColumn],
-                    "the statement is empty");
+        requireText(kReliefStatementsFile, number, fields[statementColumn], "statement");
 
         statements.push_back(ReliefStatementEntry{
             .mCountry = fields[countryColumn],
@@ -303,14 +382,15 @@ std::vector<ReliefStatementEntry> readReliefStatements(std::string_view aText) {
             .mSource = readSource(kReliefStatementsFile,
                                   number,
                                   fields[sourceColumn],
-                                  fields[revisionColumn]),
+                                  fields[revisionColumn],
+                                  aOrigin),
         });
     }
 
     return statements;
 }
 
-std::vector<BrokerPayerEntry> readBrokerPayers(std::string_view aText) {
+std::vector<BrokerPayerEntry> readBrokerPayers(std::string_view aText, CatalogueOrigin aOrigin) {
     const CsvTable table = readFile(kBrokerPayersFile, aText, kBrokerPayerColumns);
     const std::size_t brokerColumn = table.columnIndex("broker");
     const std::size_t codeColumn = table.columnIndex("code");
@@ -328,10 +408,10 @@ std::vector<BrokerPayerEntry> readBrokerPayers(std::string_view aText) {
         const std::size_t number = row.mRowNumber;
         const auto& fields = row.mFields;
 
-        requireText(kBrokerPayersFile, number, fields[brokerColumn], "the broker is empty");
-        requireText(kBrokerPayersFile, number, fields[codeColumn], "the code is empty");
-        requireText(kBrokerPayersFile, number, fields[nameColumn], "the name is empty");
-        requireText(kBrokerPayersFile, number, fields[addressColumn], "the address is empty");
+        requireText(kBrokerPayersFile, number, fields[brokerColumn], "broker");
+        requireText(kBrokerPayersFile, number, fields[codeColumn], "code");
+        requireText(kBrokerPayersFile, number, fields[nameColumn], "name");
+        requireText(kBrokerPayersFile, number, fields[addressColumn], "address");
         requireCountry(kBrokerPayersFile, number, fields[countryColumn]);
 
         const bool repeated = std::any_of(brokerPayers.begin(),
@@ -343,7 +423,10 @@ std::vector<BrokerPayerEntry> readBrokerPayers(std::string_view aText) {
 
         if (repeated)
         {
-            failRow(kBrokerPayersFile, number, "the broker and code are already in the file");
+            failRow(kBrokerPayersFile,
+                    number,
+                    "the broker and code are already in the file",
+                    MessageKey::ReferenceFileDuplicateBrokerCode);
         }
 
         brokerPayers.push_back(BrokerPayerEntry{
@@ -353,8 +436,11 @@ std::vector<BrokerPayerEntry> readBrokerPayers(std::string_view aText) {
             .mTaxNumber = optionalText(fields[taxNumberColumn]),
             .mAddress = fields[addressColumn],
             .mCountry = fields[countryColumn],
-            .mSource =
-                readSource(kBrokerPayersFile, number, fields[sourceColumn], fields[revisionColumn]),
+            .mSource = readSource(kBrokerPayersFile,
+                                  number,
+                                  fields[sourceColumn],
+                                  fields[revisionColumn],
+                                  aOrigin),
         });
     }
 
@@ -448,9 +534,9 @@ const std::vector<BrokerPayerEntry>& ReferenceCatalogue::brokerPayers() const {
 ReferenceCatalogue parseReferenceCatalogue(std::string_view aPayersCsv,
                                            std::string_view aReliefStatementsCsv,
                                            std::string_view aBrokerPayersCsv) {
-    return ReferenceCatalogue{readPayers(aPayersCsv),
-                              readReliefStatements(aReliefStatementsCsv),
-                              readBrokerPayers(aBrokerPayersCsv)};
+    return ReferenceCatalogue{readPayers(aPayersCsv, CatalogueOrigin::BuiltIn),
+                              readReliefStatements(aReliefStatementsCsv, CatalogueOrigin::BuiltIn),
+                              readBrokerPayers(aBrokerPayersCsv, CatalogueOrigin::BuiltIn)};
 }
 
 const ReferenceCatalogue& referenceCatalogue() {
@@ -460,6 +546,95 @@ const ReferenceCatalogue& referenceCatalogue() {
                                 embeddedBrokerPayersCsv());
 
     return catalogue;
+}
+
+ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aFiles) {
+    constexpr std::array<std::string_view, 3> names{kPayersFile,
+                                                    kReliefStatementsFile,
+                                                    kBrokerPayersFile};
+
+    ReferenceDataLoad load;
+    std::array<std::optional<std::filesystem::path>, 3> suppliedPaths;
+
+    // The names come first, so a wrong list is reported before any file is read.
+    for (const auto& path : aFiles)
+    {
+        const std::string name = path.filename().string();
+        const auto found = std::find(names.begin(), names.end(), name);
+
+        if (found == names.end())
+        {
+            load.mFault = ReferenceFileFault{
+                .mFile = name,
+                .mRow = std::nullopt,
+                .mMessage = makeDiagnosticMessage(MessageKey::ReferenceFileUnknownName,
+                                                  {textParam("name", name)}),
+            };
+
+            return load;
+        }
+
+        auto& slot = suppliedPaths[static_cast<std::size_t>(found - names.begin())];
+
+        if (slot)
+        {
+            load.mFault = ReferenceFileFault{
+                .mFile = name,
+                .mRow = std::nullopt,
+                .mMessage = makeDiagnosticMessage(MessageKey::ReferenceFileRepeatedName,
+                                                  {textParam("name", name)}),
+            };
+
+            return load;
+        }
+
+        slot = path;
+    }
+
+    try
+    {
+        // The supplied texts must outlive the views of `texts`.
+        std::array<std::string, 3> suppliedTexts;
+        std::array<std::string_view, 3> texts{embeddedPayersCsv(),
+                                              embeddedReliefStatementsCsv(),
+                                              embeddedBrokerPayersCsv()};
+
+        for (std::size_t index = 0; index < names.size(); ++index)
+        {
+            if (!suppliedPaths[index])
+            {
+                continue;
+            }
+
+            // A folder opens on Linux and fails only while it is read, so it is checked first.
+            std::error_code error;
+            const bool regularFile = std::filesystem::is_regular_file(*suppliedPaths[index], error);
+            std::ifstream input{*suppliedPaths[index], std::ios::binary};
+
+            if (!regularFile || !input)
+            {
+                failFile(names[index],
+                         "the file cannot be read",
+                         MessageKey::ReferenceFileUnreadable);
+            }
+
+            suppliedTexts[index].assign(std::istreambuf_iterator<char>{input},
+                                        std::istreambuf_iterator<char>{});
+
+            texts[index] = suppliedTexts[index];
+            load.mOrigins[index] = CatalogueOrigin::Supplied;
+        }
+
+        load.mCatalogue = ReferenceCatalogue{readPayers(texts[0], load.mOrigins[0]),
+                                             readReliefStatements(texts[1], load.mOrigins[1]),
+                                             readBrokerPayers(texts[2], load.mOrigins[2])};
+    } catch (const ReferenceFileError& error)
+    {
+        load.mCatalogue.reset();
+        load.mFault = error.fault();
+    }
+
+    return load;
 }
 
 } // namespace taxbroker

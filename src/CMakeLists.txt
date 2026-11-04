@@ -24,6 +24,24 @@ embed_text_file(${RESOURCES_DIR}/reference/relief_statements.csv embeddedReliefS
 embed_text_file(${RESOURCES_DIR}/reference/broker_payers.csv embeddedBrokerPayersCsv
     taxbroker/reference_catalogue.hpp ${EMBEDDED_DIR}/broker_payers_csv.cpp)
 
+# The compact ECB rate files of the calendar years built into the application, one file
+# resources/ecb/rates_<year>.csv per year. A new year is a new file and a new entry here.
+set(BUILT_IN_ECB_YEARS 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025)
+set(ECB_ARRAYS "")
+set(ECB_TABLE "")
+list(LENGTH BUILT_IN_ECB_YEARS ECB_COUNT)
+foreach(ECB_YEAR ${BUILT_IN_ECB_YEARS})
+    set(ECB_FILE ${RESOURCES_DIR}/ecb/rates_${ECB_YEAR}.csv)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ECB_FILE})
+    file(READ ${ECB_FILE} ECB_HEX HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "'\\\\x\\1'," ECB_BYTES "${ECB_HEX}")
+    string(APPEND ECB_ARRAYS "constexpr char kRates${ECB_YEAR}[] = {${ECB_BYTES}};\n\n")
+    string(APPEND ECB_TABLE
+        "        BuiltInRateFile{${ECB_YEAR}, \"rates_${ECB_YEAR}.csv\", "
+        "{kRates${ECB_YEAR}, sizeof(kRates${ECB_YEAR})}},\n")
+endforeach()
+configure_file(utils/built_in_ecb_rates.cpp.in ${EMBEDDED_DIR}/built_in_ecb_rates.cpp @ONLY)
+
 # Define the core library
 add_library(taxbroker_core STATIC
     parsers/ecb_rate_file.cpp
@@ -47,6 +65,7 @@ add_library(taxbroker_core STATIC
     processors/tax_processor.cpp
     processors/trade_conversion.cpp
     ${EMBEDDED_DIR}/broker_payers_csv.cpp
+    ${EMBEDDED_DIR}/built_in_ecb_rates.cpp
     ${EMBEDDED_DIR}/diagnostic_messages_table.cpp
     ${EMBEDDED_DIR}/payers_csv.cpp
     ${EMBEDDED_DIR}/relief_statements_csv.cpp
@@ -57,7 +76,6 @@ add_library(taxbroker_core STATIC
     utils/exact_arithmetic.cpp
     utils/logger.cpp
     utils/numeric_util.cpp
-    utils/sha256.cpp
     utils/split_ratio.cpp
 )
 

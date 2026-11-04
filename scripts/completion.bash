@@ -7,8 +7,10 @@
 # Options and paths complete in any order. Keep the lists below in step with each usage().
 #
 # A spec is "--flag", "--option=kind" (one value per comma-separated kind) or "+--option=..."
-# for an option that can repeat. After "::" come the kinds of the positional arguments;
-# a last kind ending in "+" repeats. Kinds: csv, json, file, dir, year, none, "words:a b c".
+# for an option that can repeat. An option whose kind ends in "+" (--option=csv+) takes a list:
+# every word after it up to the next option is one of that kind. After "::" come the kinds of the
+# positional arguments; a last kind ending in "+" repeats. Kinds: csv, json, file, dir, year,
+# none, "words:a b c".
 
 # Prints the bash candidates of one kind for the word being completed.
 _tbr_candidates() {
@@ -73,6 +75,7 @@ _tbr_complete() {
     local index=1
     local position=0
     local after_separator=false
+    local list_kind=""
     local spec name word kind rest
 
     while [[ $# -gt 0 && "$1" != "::" ]]; do
@@ -89,10 +92,16 @@ _tbr_complete() {
         index=$(( index + 1 ))
 
         if [[ "$after_separator" == true || "$word" != -* ]]; then
-            position=$(( position + 1 ))
+            # A word of a file list is not a positional argument.
+            if [[ -z "$list_kind" ]]; then
+                position=$(( position + 1 ))
+            fi
+
             continue
         fi
 
+        # An option ends the list before it.
+        list_kind=""
         used+=("$word")
 
         for spec in "${specs[@]}"; do
@@ -101,6 +110,9 @@ _tbr_complete() {
 
             if [[ "$word" == "$name" && "$name" == "--" ]]; then
                 after_separator=true
+            elif [[ "$word" == "$name" && "$spec" == *=*+ ]]; then
+                list_kind="${spec#*=}"
+                list_kind="${list_kind%+}"
             elif [[ "$word" == "$name" && "$spec" == *=* ]]; then
                 value_kinds=()
                 rest="${spec#*=}"
@@ -122,6 +134,10 @@ _tbr_complete() {
             fi
         done
     done
+
+    if [[ "$current" != -* && -n "$list_kind" ]] && _tbr_reply "$list_kind" "$current"; then
+        return 0
+    fi
 
     if [[ "$current" != -* || "$after_separator" == true ]]; then
         kind=""
@@ -180,7 +196,8 @@ _tbr_dump_exact_arithmetic() {
 
 _tbr_report() {
     _tbr_complete --reuse-build --synthetic --year=year --taxpayer=json --self-report --no-input \
-        --out=dir --command-help --help -- :: csv+
+        --out=dir --trade-republic=csv+ --ecb-rates=csv+ --reference-files=csv+ \
+        --command-help --help
 }
 
 _tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse

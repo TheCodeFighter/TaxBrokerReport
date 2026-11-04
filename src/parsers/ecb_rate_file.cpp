@@ -5,7 +5,6 @@
 #include "utils/csv_text_reader.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/numeric_util.hpp"
-#include "utils/sha256.hpp"
 
 #include <algorithm>
 #include <array>
@@ -15,6 +14,8 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <system_error>
+#include <string>
 #include <variant>
 
 namespace taxbroker {
@@ -139,9 +140,12 @@ ParseDiagnostic faultDiagnostic(const SourceFilename& aSourceFile, const CsvFaul
 std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
                                             const SourceFilename& aSourceFile,
                                             ParsedRateFile& aParsed) {
+    // A folder opens on Linux and fails only while it is read, so it is checked first.
+    std::error_code fileError;
+    const bool regularFile = std::filesystem::is_regular_file(aPath, fileError);
     std::ifstream input{aPath, std::ios::binary};
 
-    if (!input)
+    if (!regularFile || !input)
     {
         return rateDiagnostic(aSourceFile,
                               DiagnosticCode::ParseError,
@@ -178,7 +182,7 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
         [&table](const FixedColumn& aColumn) { return table.columnIndex(aColumn.mName); });
 
     aParsed.mInfo.mSourceFile = aSourceFile;
-    aParsed.mInfo.mSha256 = sha256Hex(content);
+    aParsed.mInfo.mOrigin = OfficialRateOrigin::Supplied;
 
     std::set<std::pair<std::string, Date>> seenPairs;
 
@@ -305,9 +309,10 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
             .mObservationDate = *observationDate,
             .mValue = *rateValue,
             .mSeriesKey = expectedKey,
-            .mFileSha256 = aParsed.mInfo.mSha256,
             .mSourceFile = aSourceFile,
             .mSourceRow = rowIndex,
+            .mSource = OfficialRateSource::EcbReferenceRateFile,
+            .mOrigin = OfficialRateOrigin::Supplied,
         });
     }
 
@@ -329,7 +334,131 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
     return std::nullopt;
 }
 
+/// The columns of a compact built-in rate file.
+constexpr std::array<std::string_view, 3> kBuiltInColumns{"currency", "date", "rate"};
+
+/// Throws the build error of a built-in file: its name, the logical row and the reason.
+[[noreturn]] void
+failBuiltIn(std::string_view aFile, std::optional<std::size_t> aRow, std::string_view aReason) {
+    std::string text{aFile};
+
+    if (aRow)
+    {
+        text += " row " + std::to_string(*aRow);
+    }
+
+    throw std::logic_error{text + ": " + std::string{aReason}};
+}
+
+/// The built-in files, parsed once. A fault is a build error, so this throws on the first use.
+const std::vector<OfficialRateTable>& builtInTables() {
+    static const std::vector<OfficialRateTable> tables = [] {
+        std::vector<OfficialRateTable> parsed;
+        const auto files = builtInEcbRateFiles();
+
+        std::transform(files.begin(),
+                       files.end(),
+                       std::back_inserter(parsed),
+                       [](const BuiltInRateFile& aFile) { return parseBuiltInRates(aFile); });
+
+        return parsed;
+    }();
+
+    return tables;
+}
+
 } // namespace
+
+OfficialRateTable parseBuiltInRates(const BuiltInRateFile& aFile) {
+    const CsvTable table = readCsvText(aFile.mText, ',', kBuiltInColumns);
+
+    if (table.mFault && (table.mFault->mKind == CsvFaultKind::UnclosedQuote ||
+                         table.mFault->mKind == CsvFaultKind::MissingColumns ||
+                         table.mFault->mKind == CsvFaultKind::RepeatedColumn))
+    {
+        failBuiltIn(aFile.mName, std::nullopt, "the header is not valid");
+    }
+
+    const std::size_t currencyColumn = table.columnIndex("currency");
+    const std::size_t dateColumn = table.columnIndex("date");
+    const std::size_t rateColumn = table.columnIndex("rate");
+
+    OfficialRateTable result;
+    OfficialRateFile info;
+
+    info.mSourceFile = SourceFilename::fromPath(aFile.mName);
+    info.mYear = aFile.mYear;
+    info.mOrigin = OfficialRateOrigin::BuiltIn;
+
+    for (const CsvRow& row : table.mRows)
+    {
+        const std::string& currency = row.mFields[currencyColumn];
+
+        if (!isCurrencyCode(currency))
+        {
+            failBuiltIn(aFile.mName, row.mRowNumber, "the currency is not a code");
+        }
+
+        const auto observationDate = parseCalendarDate(row.mFields[dateColumn]);
+
+        if (!observationDate)
+        {
+            failBuiltIn(aFile.mName, row.mRowNumber, "the date is not a calendar date");
+        }
+
+        // The date was validated, so its first four characters are digits.
+        if (std::stoi(row.mFields[dateColumn].substr(0, 4)) != aFile.mYear)
+        {
+            failBuiltIn(aFile.mName, row.mRowNumber, "the date is in another year");
+        }
+
+        const auto value = importExchangeRate(row.mFields[rateColumn]);
+        const auto* rateValue = std::get_if<ExchangeRate>(&value);
+
+        if (rateValue == nullptr)
+        {
+            failBuiltIn(aFile.mName, row.mRowNumber, "the rate is not valid");
+        }
+
+        const bool first = result.mRates.empty();
+
+        const auto inserted =
+            result.mRates.emplace(std::make_pair(currency, *observationDate),
+                                  OfficialRate{
+                                      .mCurrencyCode = currency,
+                                      .mObservationDate = *observationDate,
+                                      .mValue = *rateValue,
+                                      .mSeriesKey = "EXR.D." + currency + ".EUR.SP00.A",
+                                      .mSourceFile = info.mSourceFile,
+                                      .mSourceRow = row.mRowNumber,
+                                      .mSource = OfficialRateSource::EcbReferenceRateFile,
+                                      .mOrigin = OfficialRateOrigin::BuiltIn,
+                                  });
+
+        if (!inserted.second)
+        {
+            failBuiltIn(aFile.mName, row.mRowNumber, "the currency and date are given twice");
+        }
+
+        info.mFirstDate = first ? *observationDate : std::min(info.mFirstDate, *observationDate);
+        info.mLastDate = first ? *observationDate : std::max(info.mLastDate, *observationDate);
+    }
+
+    if (table.mFault)
+    {
+        failBuiltIn(aFile.mName, table.mFault->mRowNumber, "the row is not valid");
+    }
+
+    if (result.mRates.empty())
+    {
+        failBuiltIn(aFile.mName, std::nullopt, "the file has no rates");
+    }
+
+    info.mRateCount = result.mRates.size();
+    result.mFiles.push_back(std::move(info));
+
+    return result;
+}
 
 const OfficialRate* OfficialRateTable::find(std::string_view aCurrencyCode, Date aDate) const {
     const auto found = mRates.find({std::string{aCurrencyCode}, aDate});
@@ -355,17 +484,7 @@ OfficialRateLoadResult loadEcbRateFiles(const std::vector<std::filesystem::path>
     {
         const SourceFilename sourceFile = displayName(path);
         ParsedRateFile parsed;
-        std::optional<ParseDiagnostic> fault;
-
-        // The CSV reader throws on input it cannot read, such as a row longer than two 10 MB
-        // chunks. That rejects only this file.
-        try
-        { fault = readRateFile(path, sourceFile, parsed); } catch (const std::runtime_error&)
-        {
-            fault = rateDiagnostic(sourceFile,
-                                   DiagnosticCode::ParseError,
-                                   makeDiagnosticMessage(MessageKey::ParseErrorUnreadableRateFile));
-        }
+        std::optional<ParseDiagnostic> fault = readRateFile(path, sourceFile, parsed);
 
         if (fault)
         {
@@ -404,6 +523,45 @@ OfficialRateLoadResult loadEcbRateFiles(const std::vector<std::filesystem::path>
 
         result.mTable.mFiles.push_back(std::move(file.mInfo));
     }
+
+    return result;
+}
+
+OfficialRateLoadResult loadOfficialRates(const std::vector<std::filesystem::path>& aSuppliedPaths) {
+    OfficialRateLoadResult result = loadEcbRateFiles(aSuppliedPaths);
+
+    std::set<int> suppliedYears;
+
+    for (const OfficialRateFile& file : result.mTable.mFiles)
+    {
+        suppliedYears.insert(file.mYear);
+    }
+
+    for (const OfficialRateTable& builtIn : builtInTables())
+    {
+        const OfficialRateFile& file = builtIn.mFiles.front();
+
+        if (suppliedYears.contains(file.mYear))
+        {
+            auto replaced = std::find_if(result.mTable.mFiles.begin(),
+                                         result.mTable.mFiles.end(),
+                                         [&file](const OfficialRateFile& aSupplied) {
+                                             return aSupplied.mYear == file.mYear;
+                                         });
+
+            replaced->mReplacesBuiltIn = true;
+            continue;
+        }
+
+        result.mTable.mRates.insert(builtIn.mRates.begin(), builtIn.mRates.end());
+        result.mTable.mFiles.push_back(file);
+    }
+
+    std::sort(result.mTable.mFiles.begin(),
+              result.mTable.mFiles.end(),
+              [](const OfficialRateFile& aLeft, const OfficialRateFile& aRight) {
+                  return aLeft.mYear < aRight.mYear;
+              });
 
     return result;
 }

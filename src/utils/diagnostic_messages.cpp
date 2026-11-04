@@ -90,6 +90,9 @@ constexpr std::array kFirstAndFoundYear{
 constexpr std::array kColumn{
     MessageParamDefinition{"column", MessageParamKind::Text},
 };
+constexpr std::array kName{
+    MessageParamDefinition{"name", MessageParamKind::Text},
+};
 constexpr std::array kYear{
     MessageParamDefinition{"year", MessageParamKind::Number},
 };
@@ -373,6 +376,35 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::AnswerRejectedCorrectionOverBudget,
                       "answer_rejected.correction_over_budget",
                       kRequestId},
+    MessageDefinition{MessageKey::ReferenceFileUnknownName, "reference_file.unknown_name", kName},
+    MessageDefinition{MessageKey::ReferenceFileRepeatedName, "reference_file.repeated_name", kName},
+    MessageDefinition{MessageKey::ReferenceFileUnreadable, "reference_file.unreadable", {}},
+    MessageDefinition{MessageKey::ReferenceFileUnclosedQuote, "reference_file.unclosed_quote", {}},
+    MessageDefinition{MessageKey::ReferenceFileLineBreak, "reference_file.line_break", {}},
+    MessageDefinition{MessageKey::ReferenceFileMissingColumns,
+                      "reference_file.missing_columns",
+                      kCountAndColumns},
+    MessageDefinition{
+        MessageKey::ReferenceFileRepeatedColumn, "reference_file.repeated_column", kColumn},
+    MessageDefinition{
+        MessageKey::ReferenceFileFieldCount, "reference_file.field_count", kExpectedAndFound},
+    MessageDefinition{MessageKey::ReferenceFileEmptyField, "reference_file.empty_field", kField},
+    MessageDefinition{MessageKey::ReferenceFileNoIdentifier, "reference_file.no_identifier", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidIsin, "reference_file.invalid_isin", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidConid, "reference_file.invalid_conid", {}},
+    MessageDefinition{
+        MessageKey::ReferenceFileInvalidCountry, "reference_file.invalid_country", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidInstrumentKind,
+                      "reference_file.invalid_instrument_kind",
+                      {}},
+    MessageDefinition{
+        MessageKey::ReferenceFileInvalidVerifiedOn, "reference_file.invalid_verified_on", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidSource, "reference_file.invalid_source", {}},
+    MessageDefinition{MessageKey::ReferenceFileMissingSourceRevision,
+                      "reference_file.missing_source_revision",
+                      {}},
+    MessageDefinition{
+        MessageKey::ReferenceFileDuplicateBrokerCode, "reference_file.duplicate_broker_code", {}},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -389,7 +421,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::AnswerRejectedCorrectionOverBudget) + 1,
+                  static_cast<std::size_t>(MessageKey::ReferenceFileDuplicateBrokerCode) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 8> kTermKeys{
