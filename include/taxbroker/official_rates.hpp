@@ -3,10 +3,12 @@
 #include "taxbroker/diagnostics.hpp"
 #include "taxbroker/types.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <span>
 #include <string>
@@ -50,7 +52,20 @@ struct OfficialRateFile {
     bool mReplacesBuiltIn{};      ///< A supplied file whose year is also built in; it replaces it.
 };
 
-struct BuiltInRateYear;
+class BuiltInRateYear;
+
+/// The days on which a table has a rate for any currency. It asks the built-in years only about
+/// the days that fall in their own year, so a year is parsed only when a run needs it.
+class PublicationDays {
+  public:
+    [[nodiscard]] bool contains(Date aDate) const;
+
+  private:
+    friend struct OfficialRateTable;
+
+    std::set<Date> mOwn; ///< The days of the rates the table owns.
+    std::vector<std::shared_ptr<const BuiltInRateYear>> mBuiltInYears;
+};
 
 /// The loaded official rates, found only by an exact currency and date.
 struct OfficialRateTable {
@@ -58,7 +73,8 @@ struct OfficialRateTable {
     /// the built-in years in use are not copied here; they are in mBuiltInYears.
     std::map<std::pair<std::string, Date>, OfficialRate> mRates;
     std::vector<OfficialRateFile> mFiles;
-    /// The built-in years in use, shared read-only by every table.
+    /// The built-in years in use, shared read-only by every table. Each is parsed once per run
+    /// of the program, and only when a run looks for a rate in its year.
     std::vector<std::shared_ptr<const BuiltInRateYear>> mBuiltInYears;
 
     /// The rate for exactly this currency code and date, or null. It never returns a nearby date.
@@ -68,27 +84,64 @@ struct OfficialRateTable {
     [[nodiscard]] const OfficialRate* find(Currency aCurrency, Date aDate) const;
 
     /// The days on which the table has a rate for any currency, own rates and built-in years.
-    [[nodiscard]] std::set<Date> publicationDays() const;
-};
-
-/// One built-in year: its table (one file, no built-in years of its own) and its publication
-/// days, both made once.
-struct BuiltInRateYear {
-    OfficialRateTable mTable;
-    std::set<Date> mPublicationDays;
-};
-
-struct OfficialRateLoadResult {
-    OfficialRateTable mTable;
-    /// Errors only. A file with an error adds no rate; other files still load.
-    std::vector<ParseDiagnostic> mDiagnostics;
+    [[nodiscard]] PublicationDays publicationDays() const;
 };
 
 /// The rates of one calendar year.
 struct BuiltInRateFile {
     int mYear{};
     std::string_view mName;
-    std::string_view mText; ///< The text: a header `currency,date,rate` and one row per rate.
+    std::string_view mText; ///< The text: the header `currency,date,rate` and one row per rate.
+};
+
+/**
+ * One built-in year. Its file name, year, first and last date and rate count come from a cheap
+ * scan when it is made; the rates are parsed once, on the first lookup in the year. The file is
+ * part of the program, so a fault is a build error: the scan throws std::logic_error for a wrong
+ * header, a row without three fields or a file without rates, and the parse throws it for any
+ * other fault (see `parseBuiltInRates`).
+ */
+class BuiltInRateYear {
+  public:
+    explicit BuiltInRateYear(const BuiltInRateFile& aFile);
+
+    BuiltInRateYear(const BuiltInRateYear&) = delete;
+    BuiltInRateYear& operator=(const BuiltInRateYear&) = delete;
+
+    /// The file as the scan found it; it matches the parsed file.
+    [[nodiscard]] const OfficialRateFile& info() const {
+        return mInfo;
+    }
+
+    /// Whether the rates were parsed already.
+    [[nodiscard]] bool isParsed() const {
+        return mIsParsed.load();
+    }
+
+    /// The rate for this key, or null. Parses the year on the first call.
+    [[nodiscard]] const OfficialRate* find(const std::pair<std::string, Date>& aKey) const;
+
+    /// Whether the year has a rate for any currency on this day. Parses the year on the first call.
+    [[nodiscard]] bool hasPublicationDay(Date aDate) const;
+
+    /// The parsed table of the year (one file, no built-in years of its own).
+    [[nodiscard]] const OfficialRateTable& table() const;
+
+  private:
+    void parseOnce() const;
+
+    BuiltInRateFile mFile;
+    OfficialRateFile mInfo;
+    mutable std::mutex mParseMutex; ///< Not std::call_once: on musl an exception aborts it.
+    mutable std::atomic<bool> mIsParsed{false};
+    mutable OfficialRateTable mTable;
+    mutable std::set<Date> mDays;
+};
+
+struct OfficialRateLoadResult {
+    OfficialRateTable mTable;
+    /// Errors only. A file with an error adds no rate; other files still load.
+    std::vector<ParseDiagnostic> mDiagnostics;
 };
 
 /// The embedded rate files, one per year, in year order.

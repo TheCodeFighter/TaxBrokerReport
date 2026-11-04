@@ -335,8 +335,9 @@ std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
     return std::nullopt;
 }
 
-/// The columns of a compact built-in rate file.
-constexpr std::array<std::string_view, 3> kBuiltInColumns{"currency", "date", "rate"};
+/// The header line of a compact built-in rate file. The files are written by
+/// `dump_ecb_rates.sh --compact`, so the header is exactly this.
+constexpr std::string_view kBuiltInHeader = "currency,date,rate";
 
 /// Throws the build error of a built-in file: its name, the logical row and the reason.
 [[noreturn]] void
@@ -351,26 +352,120 @@ failBuiltIn(std::string_view aFile, std::optional<std::size_t> aRow, std::string
     throw std::logic_error{text + ": " + std::string{aReason}};
 }
 
-/// The built-in files, parsed once. A fault is a build error, so this throws on the first use.
-const std::vector<std::shared_ptr<const BuiltInRateYear>>& builtInYears() {
-    static const std::vector<std::shared_ptr<const BuiltInRateYear>> years = [] {
-        std::vector<std::shared_ptr<const BuiltInRateYear>> parsed;
+/// The text after the header line of a built-in file; throws when the header is not exact.
+std::string_view builtInBody(const BuiltInRateFile& aFile) {
+    const std::size_t headerEnd = aFile.mText.find('\n');
 
-        for (const BuiltInRateFile& file : builtInEcbRateFiles())
+    if (aFile.mText.substr(0, headerEnd) != kBuiltInHeader)
+    {
+        failBuiltIn(aFile.mName, std::nullopt, "the header is not valid");
+    }
+
+    return headerEnd == std::string_view::npos ? std::string_view{}
+                                               : aFile.mText.substr(headerEnd + 1);
+}
+
+/// Takes the next line off the front of aRest, without its line break.
+std::string_view takeLine(std::string_view& aRest) {
+    const std::size_t lineEnd = aRest.find('\n');
+    const std::string_view line = aRest.substr(0, lineEnd);
+
+    aRest = lineEnd == std::string_view::npos ? std::string_view{} : aRest.substr(lineEnd + 1);
+
+    return line;
+}
+
+/// The three fields of a row `currency,date,rate`. A quote, a missing or an extra comma makes the
+/// row not valid: the files are written without quotes.
+struct BuiltInRow {
+    std::string_view mCurrency;
+    std::string_view mDate;
+    std::string_view mRate;
+};
+
+BuiltInRow splitBuiltInRow(const BuiltInRateFile& aFile, std::size_t aRow, std::string_view aLine) {
+    const std::size_t firstComma = aLine.find(',');
+    const std::size_t secondComma =
+        firstComma == std::string_view::npos ? firstComma : aLine.find(',', firstComma + 1);
+
+    if (secondComma == std::string_view::npos ||
+        aLine.find(',', secondComma + 1) != std::string_view::npos ||
+        aLine.find('"') != std::string_view::npos)
+    {
+        failBuiltIn(aFile.mName, aRow, "the row is not valid");
+    }
+
+    return BuiltInRow{
+        .mCurrency = aLine.substr(0, firstComma),
+        .mDate = aLine.substr(firstComma + 1, secondComma - firstComma - 1),
+        .mRate = aLine.substr(secondComma + 1),
+    };
+}
+
+/// A built-in file as a cheap scan sees it: the year, the first and last date and the row count.
+/// The rows are checked only as far as the scan needs; `parseBuiltInRates` checks every value.
+OfficialRateFile scanBuiltInFile(const BuiltInRateFile& aFile) {
+    std::string_view rest = builtInBody(aFile);
+    std::string_view first;
+    std::string_view last;
+    std::size_t count = 0;
+
+    while (!rest.empty())
+    {
+        const std::size_t row = count + 2; // the header is row 1
+        const BuiltInRow fields = splitBuiltInRow(aFile, row, takeLine(rest));
+
+        if (fields.mDate.size() != 10)
         {
-            auto year = std::make_shared<BuiltInRateYear>();
-
-            year->mTable = parseBuiltInRates(file);
-
-            for (const auto& entry : year->mTable.mRates)
-            {
-                year->mPublicationDays.insert(entry.first.second);
-            }
-
-            parsed.push_back(std::move(year));
+            failBuiltIn(aFile.mName, row, "the date is not a calendar date");
         }
 
-        return parsed;
+        // The dates are written as YYYY-MM-DD, so the text compares like the dates.
+        first = count == 0 ? fields.mDate : std::min(first, fields.mDate);
+        last = count == 0 ? fields.mDate : std::max(last, fields.mDate);
+        ++count;
+    }
+
+    if (count == 0)
+    {
+        failBuiltIn(aFile.mName, std::nullopt, "the file has no rates");
+    }
+
+    const auto firstDate = parseCalendarDate(first);
+    const auto lastDate = parseCalendarDate(last);
+
+    if (!firstDate || !lastDate)
+    {
+        failBuiltIn(aFile.mName, std::nullopt, "the date is not a calendar date");
+    }
+
+    OfficialRateFile info;
+
+    info.mSourceFile = SourceFilename::fromPath(aFile.mName);
+    info.mYear = aFile.mYear;
+    info.mFirstDate = *firstDate;
+    info.mLastDate = *lastDate;
+    info.mRateCount = count;
+    info.mOrigin = OfficialRateOrigin::BuiltIn;
+
+    return info;
+}
+
+/// The built-in years, made once. Making one only scans its file; a fault there is a build error,
+/// so this throws on the first use.
+const std::vector<std::shared_ptr<const BuiltInRateYear>>& builtInYears() {
+    static const std::vector<std::shared_ptr<const BuiltInRateYear>> years = [] {
+        const auto files = builtInEcbRateFiles();
+        std::vector<std::shared_ptr<const BuiltInRateYear>> made;
+
+        std::transform(files.begin(),
+                       files.end(),
+                       std::back_inserter(made),
+                       [](const BuiltInRateFile& aFile) {
+                           return std::make_shared<const BuiltInRateYear>(aFile);
+                       });
+
+        return made;
     }();
 
     return years;
@@ -379,83 +474,73 @@ const std::vector<std::shared_ptr<const BuiltInRateYear>>& builtInYears() {
 } // namespace
 
 OfficialRateTable parseBuiltInRates(const BuiltInRateFile& aFile) {
-    const CsvTable table = readCsvText(aFile.mText, ',', kBuiltInColumns);
-
-    if (table.mFault && (table.mFault->mKind == CsvFaultKind::UnclosedQuote ||
-                         table.mFault->mKind == CsvFaultKind::MissingColumns ||
-                         table.mFault->mKind == CsvFaultKind::RepeatedColumn))
-    {
-        failBuiltIn(aFile.mName, std::nullopt, "the header is not valid");
-    }
-
-    const std::size_t currencyColumn = table.columnIndex("currency");
-    const std::size_t dateColumn = table.columnIndex("date");
-    const std::size_t rateColumn = table.columnIndex("rate");
+    std::string_view rest = builtInBody(aFile);
 
     OfficialRateTable result;
     OfficialRateFile info;
+    std::size_t row = 1; // the header is row 1
 
     info.mSourceFile = SourceFilename::fromPath(aFile.mName);
     info.mYear = aFile.mYear;
     info.mOrigin = OfficialRateOrigin::BuiltIn;
 
-    for (const CsvRow& row : table.mRows)
+    while (!rest.empty())
     {
-        const std::string& currency = row.mFields[currencyColumn];
+        ++row;
+
+        const BuiltInRow fields = splitBuiltInRow(aFile, row, takeLine(rest));
+        const std::string currency{fields.mCurrency};
 
         if (!isCurrencyCode(currency))
         {
-            failBuiltIn(aFile.mName, row.mRowNumber, "the currency is not a code");
+            failBuiltIn(aFile.mName, row, "the currency is not a code");
         }
 
-        const auto observationDate = parseCalendarDate(row.mFields[dateColumn]);
+        const auto observationDate = parseCalendarDate(fields.mDate);
 
         if (!observationDate)
         {
-            failBuiltIn(aFile.mName, row.mRowNumber, "the date is not a calendar date");
+            failBuiltIn(aFile.mName, row, "the date is not a calendar date");
         }
 
         // The date was validated, so its first four characters are digits.
-        if (std::stoi(row.mFields[dateColumn].substr(0, 4)) != aFile.mYear)
+        if (std::stoi(std::string{fields.mDate.substr(0, 4)}) != aFile.mYear)
         {
-            failBuiltIn(aFile.mName, row.mRowNumber, "the date is in another year");
+            failBuiltIn(aFile.mName, row, "the date is in another year");
         }
 
-        const auto value = importExchangeRate(row.mFields[rateColumn]);
+        const auto value = importExchangeRate(fields.mRate);
         const auto* rateValue = std::get_if<ExchangeRate>(&value);
 
         if (rateValue == nullptr)
         {
-            failBuiltIn(aFile.mName, row.mRowNumber, "the rate is not valid");
+            failBuiltIn(aFile.mName, row, "the rate is not valid");
         }
 
         const bool first = result.mRates.empty();
+        const std::size_t sizeBefore = result.mRates.size();
 
-        const auto inserted =
-            result.mRates.emplace(std::make_pair(currency, *observationDate),
-                                  OfficialRate{
-                                      .mCurrencyCode = currency,
-                                      .mObservationDate = *observationDate,
-                                      .mValue = *rateValue,
-                                      .mSeriesKey = "EXR.D." + currency + ".EUR.SP00.A",
-                                      .mSourceFile = info.mSourceFile,
-                                      .mSourceRow = row.mRowNumber,
-                                      .mSource = OfficialRateSource::EcbReferenceRateFile,
-                                      .mOrigin = OfficialRateOrigin::BuiltIn,
-                                  });
+        // The rows are sorted, so a new rate nearly always goes to the end.
+        result.mRates.emplace_hint(result.mRates.end(),
+                                   std::make_pair(currency, *observationDate),
+                                   OfficialRate{
+                                       .mCurrencyCode = currency,
+                                       .mObservationDate = *observationDate,
+                                       .mValue = *rateValue,
+                                       .mSeriesKey = "EXR.D." + currency + ".EUR.SP00.A",
+                                       .mSourceFile = info.mSourceFile,
+                                       .mSourceRow = row,
+                                       .mSource = OfficialRateSource::EcbReferenceRateFile,
+                                       .mOrigin = OfficialRateOrigin::BuiltIn,
+                                   });
 
-        if (!inserted.second)
+        if (result.mRates.size() == sizeBefore)
         {
-            failBuiltIn(aFile.mName, row.mRowNumber, "the currency and date are given twice");
+            failBuiltIn(aFile.mName, row, "the currency and date are given twice");
         }
 
         info.mFirstDate = first ? *observationDate : std::min(info.mFirstDate, *observationDate);
         info.mLastDate = first ? *observationDate : std::max(info.mLastDate, *observationDate);
-    }
-
-    if (table.mFault)
-    {
-        failBuiltIn(aFile.mName, table.mFault->mRowNumber, "the row is not valid");
     }
 
     if (result.mRates.empty())
@@ -469,6 +554,71 @@ OfficialRateTable parseBuiltInRates(const BuiltInRateFile& aFile) {
     return result;
 }
 
+BuiltInRateYear::BuiltInRateYear(const BuiltInRateFile& aFile)
+    : mFile{aFile}, mInfo{scanBuiltInFile(aFile)} {}
+
+void BuiltInRateYear::parseOnce() const {
+    if (mIsParsed.load())
+    {
+        return;
+    }
+
+    const std::lock_guard lock{mParseMutex};
+
+    if (mIsParsed.load())
+    {
+        return;
+    }
+
+    // A fault throws and leaves the year unparsed, so the next lookup throws it again.
+    OfficialRateTable parsed = parseBuiltInRates(mFile);
+
+    for (const auto& entry : parsed.mRates)
+    {
+        mDays.insert(entry.first.second);
+    }
+
+    mTable = std::move(parsed);
+    mIsParsed.store(true);
+}
+
+const OfficialRate* BuiltInRateYear::find(const std::pair<std::string, Date>& aKey) const {
+    parseOnce();
+
+    const auto found = mTable.mRates.find(aKey);
+
+    return found == mTable.mRates.end() ? nullptr : &found->second;
+}
+
+bool BuiltInRateYear::hasPublicationDay(Date aDate) const {
+    parseOnce();
+
+    return mDays.contains(aDate);
+}
+
+const OfficialRateTable& BuiltInRateYear::table() const {
+    parseOnce();
+
+    return mTable;
+}
+
+namespace {
+
+/// The built-in year whose file covers the date, or null.
+const BuiltInRateYear*
+builtInYearOf(const std::vector<std::shared_ptr<const BuiltInRateYear>>& aYears, Date aDate) {
+    const auto found = std::find_if(aYears.begin(),
+                                    aYears.end(),
+                                    [aDate](const std::shared_ptr<const BuiltInRateYear>& aYear) {
+                                        return aDate >= aYear->info().mFirstDate &&
+                                               aDate <= aYear->info().mLastDate;
+                                    });
+
+    return found == aYears.end() ? nullptr : found->get();
+}
+
+} // namespace
+
 const OfficialRate* OfficialRateTable::find(std::string_view aCurrencyCode, Date aDate) const {
     const std::pair<std::string, Date> key{std::string{aCurrencyCode}, aDate};
     const auto found = mRates.find(key);
@@ -479,35 +629,33 @@ const OfficialRate* OfficialRateTable::find(std::string_view aCurrencyCode, Date
     }
 
     // A built-in year holds only the days of its own file.
-    for (const auto& year : mBuiltInYears)
-    {
-        const OfficialRateFile& file = year->mTable.mFiles.front();
+    const BuiltInRateYear* year = builtInYearOf(mBuiltInYears, aDate);
 
-        if (aDate >= file.mFirstDate && aDate <= file.mLastDate)
-        {
-            const auto builtIn = year->mTable.mRates.find(key);
-
-            return builtIn == year->mTable.mRates.end() ? nullptr : &builtIn->second;
-        }
-    }
-
-    return nullptr;
+    return year == nullptr ? nullptr : year->find(key);
 }
 
-std::set<Date> OfficialRateTable::publicationDays() const {
-    std::set<Date> days;
+PublicationDays OfficialRateTable::publicationDays() const {
+    PublicationDays days;
 
     for (const auto& entry : mRates)
     {
-        days.insert(entry.first.second);
+        days.mOwn.insert(entry.first.second);
     }
 
-    for (const auto& year : mBuiltInYears)
-    {
-        days.insert(year->mPublicationDays.begin(), year->mPublicationDays.end());
-    }
+    days.mBuiltInYears = mBuiltInYears;
 
     return days;
+}
+
+bool PublicationDays::contains(Date aDate) const {
+    if (mOwn.contains(aDate))
+    {
+        return true;
+    }
+
+    const BuiltInRateYear* year = builtInYearOf(mBuiltInYears, aDate);
+
+    return year != nullptr && year->hasPublicationDay(aDate);
 }
 
 const OfficialRate* OfficialRateTable::find(Currency aCurrency, Date aDate) const {
@@ -583,7 +731,7 @@ OfficialRateLoadResult loadOfficialRates(const std::vector<std::filesystem::path
 
     for (const auto& builtIn : builtInYears())
     {
-        const OfficialRateFile& file = builtIn->mTable.mFiles.front();
+        const OfficialRateFile& file = builtIn->info();
 
         if (suppliedYears.contains(file.mYear))
         {

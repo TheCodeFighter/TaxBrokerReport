@@ -285,7 +285,8 @@ beside it still loads. A file of another year is not affected.
 (`resources/ecb/rates_<year>.csv`). Each has the header `currency,date,rate` and one row per
 currency and day, sorted by currency and then date. The rate is written exactly as the ECB gives
 it, without extra zeros, and the other columns of the ECB file are left out. A compact file is
-read with the same rules as an ECB file for these columns: a currency code that is not `EUR`, a
+read with its own small reader (exact header, three fields, no quotes) and the same rules as an
+ECB file for these columns: a currency code that is not `EUR`, a
 real calendar date in the year of the file, a positive rate with at most eight decimals, no
 currency and date twice, and at least one row. A fault is a build error, never a user error.
 Only complete years are built in, so the first and last day of each year fit the rule for a whole

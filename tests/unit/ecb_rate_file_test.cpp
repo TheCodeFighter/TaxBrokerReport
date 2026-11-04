@@ -1541,6 +1541,126 @@ TEST(BuiltInRatesTest, ReportsTheFirstFaultOfAnEarlierRowBeforeALaterOne) {
               "rates_2025.csv row 3: the rate is not valid");
 }
 
+TEST(BuiltInRatesTest, RejectsAHeaderWithAnotherColumnOrder) {
+    // The files are written with exactly this header: currency,date,rate.
+    EXPECT_EQ(builtInFault("date,currency,rate\n2025-01-02,USD,1.25\n"),
+              "rates_2025.csv: the header is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsARowWithAnExtraField) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,1.25,9\n"),
+              "rates_2025.csv row 2: the row is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsABlankRow) {
+    EXPECT_EQ(builtInFault("currency,date,rate\n"
+                           "USD,2025-01-02,1.25\n"
+                           "\n"
+                           "USD,2025-01-03,1.26\n"),
+              "rates_2025.csv row 3: the row is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsAQuoteInARow) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,\"2025-01-02\",1.25\n"),
+              "rates_2025.csv row 2: the row is not valid");
+}
+
+TEST(BuiltInRatesTest, ReadsAFileWithoutALineBreakAtTheEnd) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,1.25"), "");
+}
+
+// A built-in year: scanned when made, parsed on the first lookup.
+
+constexpr std::string_view kYearText = "currency,date,rate\n"
+                                       "GBP,2025-01-02,0.8\n"
+                                       "USD,2025-01-03,1.2625\n"
+                                       "USD,2025-01-02,1.25\n";
+
+BuiltInRateFile yearFile(std::string_view aText) {
+    return BuiltInRateFile{.mYear = 2025, .mName = "rates_2025.csv", .mText = aText};
+}
+
+TEST(BuiltInRateYearTest, ScansTheFileWithoutParsingTheRates) {
+    const BuiltInRateYear year{yearFile(kYearText)};
+
+    EXPECT_FALSE(year.isParsed());
+    EXPECT_EQ(year.info().mSourceFile.value(), "rates_2025.csv");
+    EXPECT_EQ(year.info().mYear, 2025);
+    EXPECT_EQ(year.info().mFirstDate, date("2025-01-02"));
+    EXPECT_EQ(year.info().mLastDate, date("2025-01-03")); // the rows are not in date order
+    EXPECT_EQ(year.info().mRateCount, 3U);
+    EXPECT_EQ(year.info().mOrigin, OfficialRateOrigin::BuiltIn);
+    EXPECT_FALSE(year.isParsed());
+}
+
+TEST(BuiltInRateYearTest, ParsesTheRatesOnTheFirstLookup) {
+    const BuiltInRateYear year{yearFile(kYearText)};
+
+    const OfficialRate* rate = year.find({"USD", date("2025-01-03")});
+
+    EXPECT_TRUE(year.isParsed());
+    ASSERT_NE(rate, nullptr);
+    EXPECT_EQ(rate->mValue, 126'250'000);
+    EXPECT_EQ(year.find({"USD", date("2025-01-04")}), nullptr);
+    EXPECT_EQ(year.find({"CHF", date("2025-01-03")}), nullptr);
+}
+
+TEST(BuiltInRateYearTest, ParsesTheRatesWhenAskedForAPublicationDay) {
+    const BuiltInRateYear year{yearFile(kYearText)};
+
+    EXPECT_TRUE(year.hasPublicationDay(date("2025-01-02")));
+    EXPECT_TRUE(year.isParsed());
+    EXPECT_FALSE(year.hasPublicationDay(date("2025-01-04")));
+}
+
+TEST(BuiltInRateYearTest, RejectsAFileWithAWrongHeaderWhenMade) {
+    EXPECT_THROW(BuiltInRateYear{yearFile("currency,rate\nUSD,1.25\n")}, std::logic_error);
+}
+
+TEST(BuiltInRateYearTest, RejectsAFileWithoutRatesWhenMade) {
+    EXPECT_THROW(BuiltInRateYear{yearFile("currency,date,rate\n")}, std::logic_error);
+}
+
+TEST(BuiltInRateYearTest, RejectsARowWithTooFewFieldsWhenMade) {
+    EXPECT_THROW(BuiltInRateYear{yearFile("currency,date,rate\nUSD,2025-01-02\n")},
+                 std::logic_error);
+}
+
+TEST(BuiltInRateYearTest, RejectsADateOfTheWrongLengthWhenMade) {
+    EXPECT_THROW(BuiltInRateYear{yearFile("currency,date,rate\nUSD,2025-1-2,1.25\n")},
+                 std::logic_error);
+}
+
+TEST(BuiltInRateYearTest, RejectsADateThatIsNotACalendarDateWhenMade) {
+    // 2025 has no 30 February; the scan finds it as the first date.
+    EXPECT_THROW(BuiltInRateYear{yearFile("currency,date,rate\nUSD,2025-02-30,1.25\n")},
+                 std::logic_error);
+}
+
+TEST(BuiltInRateYearTest, RejectsAValueFaultOnTheFirstLookup) {
+    // The scan does not read the rate; the parse does.
+    const BuiltInRateYear year{yearFile("currency,date,rate\nUSD,2025-01-02,abc\n")};
+
+    EXPECT_THROW(static_cast<void>(year.find({"USD", date("2025-01-02")})), std::logic_error);
+}
+
+TEST(BuiltInRateYearTest, TheScanOfEveryEmbeddedFileMatchesItsFullParse) {
+    // This also parses every embedded file, so a fault in one of them fails the tests.
+    for (const BuiltInRateFile& file : builtInEcbRateFiles())
+    {
+        const BuiltInRateYear year{file};
+        const OfficialRateTable parsed = parseBuiltInRates(file);
+        const OfficialRateFile& expected = parsed.mFiles.at(0);
+
+        EXPECT_EQ(year.info().mSourceFile, expected.mSourceFile) << file.mName;
+        EXPECT_EQ(year.info().mYear, expected.mYear) << file.mName;
+        EXPECT_EQ(year.info().mFirstDate, expected.mFirstDate) << file.mName;
+        EXPECT_EQ(year.info().mLastDate, expected.mLastDate) << file.mName;
+        EXPECT_EQ(year.info().mRateCount, expected.mRateCount) << file.mName;
+        EXPECT_EQ(year.info().mRateCount, parsed.mRates.size()) << file.mName;
+    }
+}
+
 TEST(BuiltInRatesTest, EmbeddedFilesAreOneForEachYearFrom2016To2025InOrder) {
     const auto files = builtInEcbRateFiles();
 

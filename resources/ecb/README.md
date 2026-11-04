@@ -14,6 +14,8 @@ columns the program reads.
 `currency,date,rate`, then one row per currency and day, sorted by currency and then date.
 `currency` is the ISO 4217 code, `date` is `YYYY-MM-DD`, and `rate` is foreign units per 1 EUR
 exactly as the ECB gives it, with no extra zeros. Every date is in the year of the file name.
+The header is exactly that text, and a row has three fields and no quotes: the program reads the
+files with its own small reader, not with the general CSV reader.
 
 ## How the files were made
 
