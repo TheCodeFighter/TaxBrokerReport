@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -351,20 +352,28 @@ failBuiltIn(std::string_view aFile, std::optional<std::size_t> aRow, std::string
 }
 
 /// The built-in files, parsed once. A fault is a build error, so this throws on the first use.
-const std::vector<OfficialRateTable>& builtInTables() {
-    static const std::vector<OfficialRateTable> tables = [] {
-        std::vector<OfficialRateTable> parsed;
-        const auto files = builtInEcbRateFiles();
+const std::vector<std::shared_ptr<const BuiltInRateYear>>& builtInYears() {
+    static const std::vector<std::shared_ptr<const BuiltInRateYear>> years = [] {
+        std::vector<std::shared_ptr<const BuiltInRateYear>> parsed;
 
-        std::transform(files.begin(),
-                       files.end(),
-                       std::back_inserter(parsed),
-                       [](const BuiltInRateFile& aFile) { return parseBuiltInRates(aFile); });
+        for (const BuiltInRateFile& file : builtInEcbRateFiles())
+        {
+            auto year = std::make_shared<BuiltInRateYear>();
+
+            year->mTable = parseBuiltInRates(file);
+
+            for (const auto& entry : year->mTable.mRates)
+            {
+                year->mPublicationDays.insert(entry.first.second);
+            }
+
+            parsed.push_back(std::move(year));
+        }
 
         return parsed;
     }();
 
-    return tables;
+    return years;
 }
 
 } // namespace
@@ -461,9 +470,44 @@ OfficialRateTable parseBuiltInRates(const BuiltInRateFile& aFile) {
 }
 
 const OfficialRate* OfficialRateTable::find(std::string_view aCurrencyCode, Date aDate) const {
-    const auto found = mRates.find({std::string{aCurrencyCode}, aDate});
+    const std::pair<std::string, Date> key{std::string{aCurrencyCode}, aDate};
+    const auto found = mRates.find(key);
 
-    return found == mRates.end() ? nullptr : &found->second;
+    if (found != mRates.end())
+    {
+        return &found->second;
+    }
+
+    // A built-in year holds only the days of its own file.
+    for (const auto& year : mBuiltInYears)
+    {
+        const OfficialRateFile& file = year->mTable.mFiles.front();
+
+        if (aDate >= file.mFirstDate && aDate <= file.mLastDate)
+        {
+            const auto builtIn = year->mTable.mRates.find(key);
+
+            return builtIn == year->mTable.mRates.end() ? nullptr : &builtIn->second;
+        }
+    }
+
+    return nullptr;
+}
+
+std::set<Date> OfficialRateTable::publicationDays() const {
+    std::set<Date> days;
+
+    for (const auto& entry : mRates)
+    {
+        days.insert(entry.first.second);
+    }
+
+    for (const auto& year : mBuiltInYears)
+    {
+        days.insert(year->mPublicationDays.begin(), year->mPublicationDays.end());
+    }
+
+    return days;
 }
 
 const OfficialRate* OfficialRateTable::find(Currency aCurrency, Date aDate) const {
@@ -537,9 +581,9 @@ OfficialRateLoadResult loadOfficialRates(const std::vector<std::filesystem::path
         suppliedYears.insert(file.mYear);
     }
 
-    for (const OfficialRateTable& builtIn : builtInTables())
+    for (const auto& builtIn : builtInYears())
     {
-        const OfficialRateFile& file = builtIn.mFiles.front();
+        const OfficialRateFile& file = builtIn->mTable.mFiles.front();
 
         if (suppliedYears.contains(file.mYear))
         {
@@ -553,7 +597,7 @@ OfficialRateLoadResult loadOfficialRates(const std::vector<std::filesystem::path
             continue;
         }
 
-        result.mTable.mRates.insert(builtIn.mRates.begin(), builtIn.mRates.end());
+        result.mTable.mBuiltInYears.push_back(builtIn);
         result.mTable.mFiles.push_back(file);
     }
 

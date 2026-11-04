@@ -83,16 +83,26 @@ test discovered by CTest. With `scripts/valgrind.sh --reuse-build` it runs the e
 as it is and compiles nothing.
 
 Unit test suites named `*LargeInputTest` read inputs of several megabytes (today an 11 MB and a
-21 MB ECB rate file) and take minutes under Valgrind (about 5 locally, 9 on a CI runner).
-`scripts/valgrind.sh --part regular` leaves them out, `--part large` runs only them, and
-`--part all` (the default) runs both. A test with such an input goes into a `*LargeInputTest`
-suite.
+21 MB ECB rate file) and take minutes under Valgrind. Each belongs to one part of
+`scripts/valgrind.sh`:
+
+| Part | Suite | Related files (besides the shared ones) |
+| --- | --- | --- |
+| `csv` | `CsvTextReaderLargeInputTest` | `tests/unit/csv_text_reader_test.cpp` |
+| `ecb` | `EcbRateFileLargeInputTest` | the ECB rate loader and its header, `resources/ecb/`, the message table, `tests/unit/ecb_rate_file_test.cpp` |
+| `reference` | `ReferenceDataLargeInputTest` | the reference loader and its header, `resources/reference/`, the message table, `tests/unit/reference_catalogue_test.cpp` |
+| `messages` | `DiagnosticMessagesLargeInputTest` | the message table, `resources/i18n/`, `tests/unit/diagnostic_messages_test.cpp` |
+
+`--part regular` runs everything except every `*LargeInputTest` suite, so a new large test cannot
+slip into it. `--part csv|ecb|reference|messages` runs only that suite, and `--part all` (the
+default) runs all of it. A test with a large input goes into a `*LargeInputTest` suite and into
+one part in `large_suite_of_part` of the script.
 
 The `Valgrind` job of the `CI` workflow runs `--part regular` for pull requests and after changes
-reach `main`, on the build that the `Development build` job made. The `Valgrind (large inputs)`
-job runs `--part large` on every push to `main`, and on a pull request only when it changes the
-ECB rate loader, the reference file loader, their tests, a `CMakeLists.txt`, `docker/`, the Valgrind script
-or the CI workflow. It is not a required check.
+reach `main`, on the build that the `Development build` job made. The `Valgrind (<part>)` jobs
+run one large-input part each on every push to `main`. A pull request runs a part only when it
+changes a file of that part, the CSV reader, a `CMakeLists.txt`, `docker/`, the Valgrind script
+or the CI workflow. These jobs are not required checks.
 
 ## Test suites
 

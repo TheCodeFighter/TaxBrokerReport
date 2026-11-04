@@ -176,7 +176,9 @@ _tbr_complete() {
 _tbr_build() { _tbr_complete --help :: "words:dev image docker-build prod"; }
 _tbr_coverage() { _tbr_complete --help; }
 _tbr_cppcheck() { _tbr_complete --reuse-build --help; }
-_tbr_valgrind() { _tbr_complete --reuse-build --help; }
+_tbr_valgrind() {
+    _tbr_complete --reuse-build "--part=words:regular csv ecb reference messages all" --help
+}
 _tbr_fuzz() { _tbr_complete --seconds=none --replay=file --help; }
 _tbr_format() { _tbr_complete --check --help; }
 _tbr_test() { _tbr_complete --reuse-build "--suite=words:unit integration" --help :: none; }

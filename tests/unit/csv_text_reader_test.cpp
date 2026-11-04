@@ -140,7 +140,7 @@ TEST(CsvTextReaderTest, FindsAColumnByName) {
     EXPECT_THROW((void)table.columnIndex("z"), std::logic_error);
 }
 
-// A *LargeInputTest suite takes minutes under Valgrind (`scripts/valgrind.sh --part large`).
+// A *LargeInputTest suite takes minutes under Valgrind (`scripts/valgrind.sh --part csv`).
 TEST(CsvTextReaderLargeInputTest, KeepsTheRowsBeforeAnUnreadableRow) {
     // The library cannot read a row longer than two 10 MB chunks. Row 3 has a 21,000,000
     // character field; row 2 is read before it.

@@ -637,4 +637,65 @@ TEST(EcbRateFileIntegrationTest, TwoSuppliedFilesOfOneYearAreBothRejectedAndTheB
     EXPECT_EQ(result.mTable.mFiles.back().mOrigin, OfficialRateOrigin::BuiltIn);
 }
 
+TEST(EcbRateFileIntegrationTest, TheBuiltInYearsAreSharedByEveryLoadAndNotCopiedIntoTheTable) {
+    const auto first = loadOfficialRates({});
+    const auto second = loadOfficialRates({});
+
+    // The table owns no rate; the ten years are shared read-only.
+    EXPECT_TRUE(first.mTable.mRates.empty());
+    EXPECT_EQ(first.mTable.mBuiltInYears.size(), 10U);
+
+    const OfficialRate* fromFirst = first.mTable.find(Currency::USD, date("2025-01-02"));
+    const OfficialRate* fromSecond = second.mTable.find(Currency::USD, date("2025-01-02"));
+
+    ASSERT_NE(fromFirst, nullptr);
+    EXPECT_EQ(fromFirst, fromSecond); // the same object, not a copy
+}
+
+TEST(EcbRateFileIntegrationTest, ASuppliedFileOwnsItsRatesAndTheOtherYearsStayShared) {
+    const auto result = loadOfficialRates({fixturePath("exr_2025_synthetic.csv")});
+
+    EXPECT_EQ(result.mTable.mRates.size(), 4U);        // only the four rates of the supplied file
+    EXPECT_EQ(result.mTable.mBuiltInYears.size(), 9U); // 2016 to 2024
+}
+
+TEST(EcbRateFileIntegrationTest, ThePublicationDaysOfTheBuiltInYearsAreTheDaysOfTheFiles) {
+    const auto days = loadOfficialRates({}).mTable.publicationDays();
+
+    EXPECT_TRUE(days.contains(date("2016-01-04")));
+    EXPECT_TRUE(days.contains(date("2022-03-10"))); // AUD 1.5109 on that day
+    EXPECT_TRUE(days.contains(date("2025-12-31")));
+    EXPECT_FALSE(days.contains(date("2025-01-01"))); // a holiday
+    EXPECT_FALSE(days.contains(date("2025-01-04"))); // a Saturday
+    EXPECT_FALSE(days.contains(date("2015-12-31"))); // not built in
+}
+
+TEST(EcbRateFileIntegrationTest, ASuppliedFileTakesTheBuiltInPublicationDaysOfItsYearAway) {
+    const auto days =
+        loadOfficialRates({fixturePath("exr_2025_synthetic.csv")}).mTable.publicationDays();
+
+    EXPECT_TRUE(days.contains(date("2025-01-02")));  // supplied
+    EXPECT_TRUE(days.contains(date("2025-01-03")));  // supplied
+    EXPECT_FALSE(days.contains(date("2025-03-10"))); // built in 2025 is replaced
+    EXPECT_TRUE(days.contains(date("2024-12-31")));  // 2024 stays built in
+}
+
+TEST(EcbRateFileIntegrationTest, ACurrencyTheEcbStoppedHasNoRateOnADayItsOtherRatesExist) {
+    const auto result = loadOfficialRates({});
+    const std::vector<RateNeed> needs{
+        {.mCurrency = Currency::RUB,
+         .mTaxDate = date("2022-03-10"), // the ECB's last RUB rate is 2022-03-01
+         .mUse = RateUse::SalePrice,
+         .mReport = ReportType::CapitalGains,
+         .mSources = {}},
+    };
+
+    const auto selection = selectOfficialRates(needs, result.mTable);
+
+    EXPECT_EQ(selection.find(Currency::RUB, date("2022-03-10")), nullptr);
+    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
+    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageKey,
+              MessageKey::MissingExchangeRateNoRateOnDate);
+}
+
 } // namespace

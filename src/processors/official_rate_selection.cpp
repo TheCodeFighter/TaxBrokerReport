@@ -311,12 +311,7 @@ OfficialRateSelection selectOfficialRates(const std::vector<RateNeed>& aNeeds,
     }
 
     // The days on which the ECB published any rate.
-    std::set<Date> publicationDays;
-
-    for (const auto& entry : aTable.mRates)
-    {
-        publicationDays.insert(entry.first.second);
-    }
+    const std::set<Date> publicationDays = aTable.publicationDays();
 
     OfficialRateSelection selection;
     std::map<int, FileUse> fileUses;

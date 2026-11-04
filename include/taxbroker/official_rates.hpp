@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <filesystem>
 #include <map>
+#include <memory>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -48,16 +50,32 @@ struct OfficialRateFile {
     bool mReplacesBuiltIn{};      ///< A supplied file whose year is also built in; it replaces it.
 };
 
+struct BuiltInRateYear;
+
 /// The loaded official rates, found only by an exact currency and date.
 struct OfficialRateTable {
+    /// The rates this table owns: the supplied files, or the one file just parsed. The rates of
+    /// the built-in years in use are not copied here; they are in mBuiltInYears.
     std::map<std::pair<std::string, Date>, OfficialRate> mRates;
     std::vector<OfficialRateFile> mFiles;
+    /// The built-in years in use, shared read-only by every table.
+    std::vector<std::shared_ptr<const BuiltInRateYear>> mBuiltInYears;
 
     /// The rate for exactly this currency code and date, or null. It never returns a nearby date.
     [[nodiscard]] const OfficialRate* find(std::string_view aCurrencyCode, Date aDate) const;
 
     /// Like the code lookup. EUR and Unknown have no official rate and return null.
     [[nodiscard]] const OfficialRate* find(Currency aCurrency, Date aDate) const;
+
+    /// The days on which the table has a rate for any currency, own rates and built-in years.
+    [[nodiscard]] std::set<Date> publicationDays() const;
+};
+
+/// One built-in year: its table (one file, no built-in years of its own) and its publication
+/// days, both made once.
+struct BuiltInRateYear {
+    OfficialRateTable mTable;
+    std::set<Date> mPublicationDays;
 };
 
 struct OfficialRateLoadResult {

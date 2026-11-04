@@ -764,7 +764,7 @@ TEST(DiagnosticMessagesTest, RejectsATableWithAnExtraColumn) {
               "The message table header must be key,en,sl");
 }
 
-// A *LargeInputTest suite takes minutes under Valgrind (`scripts/valgrind.sh --part large`).
+// A *LargeInputTest suite takes minutes under Valgrind (`scripts/valgrind.sh --part messages`).
 TEST(DiagnosticMessagesLargeInputTest, RejectsATableWithARowLongerThanTheReaderLimit) {
     // The CSV reader cannot read a row longer than two 10 MB chunks. The English text of row 2
     // has 21,000,000 characters.

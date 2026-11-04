@@ -1063,7 +1063,10 @@ The program also contains the rates of the years 2016 to 2025 as compact files
 (`resources/ecb/rates_<year>.csv`, columns `currency,date,rate`, embedded by `src/CMakeLists.txt`
 into `builtInEcbRateFiles()`). `parseBuiltInRates` reads one of them; a fault there throws
 `std::logic_error`, as it is a build error. `loadOfficialRates` returns the supplied files and,
-for each year that no accepted supplied file covers, the built-in file of that year. Every
+for each year that no accepted supplied file covers, the built-in file of that year. The built-in
+years are parsed once per process and shared read-only (`mBuiltInYears`, with their publication
+days); `mRates` holds only the rates of the supplied files, and `find` and `publicationDays()`
+look in both. Every
 `OfficialRate` and `OfficialRateFile` has an origin (`BuiltIn` or `Supplied`), and a supplied file
 that replaced a built-in year has `mReplacesBuiltIn`.
 

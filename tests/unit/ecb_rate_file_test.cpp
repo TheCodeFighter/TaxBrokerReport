@@ -124,7 +124,7 @@ TEST(EcbRateFileTest, LoadsACoveredPairWithFullProvenance) {
 }
 
 // A *LargeInputTest suite takes minutes under Valgrind. CI runs it on every push to main, and on a
-// pull request only when a related file changes (`scripts/valgrind.sh --part large`).
+// pull request only when a related file changes (`scripts/valgrind.sh --part ecb`).
 TEST(EcbRateFileLargeInputTest, LoadsAFileLargerThanTheReaderChunk) {
     TemporaryDirectory directory;
 

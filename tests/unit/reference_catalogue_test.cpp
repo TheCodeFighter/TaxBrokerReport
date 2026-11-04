@@ -805,7 +805,7 @@ TEST(ReferenceDataTest, AFaultHasTheEnglishTextAndNoValueOfTheFile) {
 }
 
 // A *LargeInputTest suite takes minutes under Valgrind. CI runs it on every push to main, and on a
-// pull request only when a related file changes (`scripts/valgrind.sh --part large`).
+// pull request only when a related file changes (`scripts/valgrind.sh --part reference`).
 TEST(ReferenceDataLargeInputTest, ARowLongerThanTheReaderLimitMakesTheFileUnreadable) {
     // The CSV reader throws on a row longer than two 10 MB chunks. Row 2 has a name of
     // 21,000,000 characters.
