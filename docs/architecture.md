@@ -883,9 +883,17 @@ makes every F1 to F11 optional. The eDavki draft imports are recorded separately
 ### CLI report command (walking skeleton)
 
 ```text
-taxbroker report --year YYYY --taxpayer taxpayer.json [--self-report] [--ecb-rates FILE ...]
-                 --out DIR CSV [CSV ...]
+taxbroker report --year YYYY --taxpayer taxpayer.json [--self-report] [--no-input]
+                 [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
+                 --trade-republic FILE...
 ```
+
+Every input file comes after its own option, as a list: the files after `--trade-republic`,
+`--ecb-rates` or `--reference-files` up to the next argument that starts with `-` (or the end).
+The same option may be given again and adds to its list. A list option without a file is an
+error, and so is a file outside a list or `--`; a file whose name starts with `-` is given as
+`./-name.csv`. The broker comes from the option (`--trade-republic` now, an IBKR option later),
+never from guessing the file.
 
 The `taxbroker` executable (`src/cli/`) produces a real Doh-KDVP file for a bounded set of cases
 and blocks every other case with a structured error; it never guesses. `taxbroker --help` and
@@ -895,9 +903,12 @@ and what is supported, blocked and skipped. The whole command is in the `taxbrok
 orchestration moves into the application service once that service connects all processing
 stages.
 
-**Pipeline.** Each CSV is read with the path-based Trade Republic parser, with its position on the
-command line as the source index. The `--ecb-rates` files are loaded with `loadEcbRateFiles`; a
-file that is not valid fails the run (exit 2) before anything is calculated. Then merge and
+**Pipeline.** Each `--trade-republic` CSV is read with the path-based Trade Republic parser, with its position
+on the command line as the source index. The rates are loaded with `loadOfficialRates` (the
+built-in years and the `--ecb-rates` files; a supplied file replaces the built-in year it covers)
+and the reference data with `loadReferenceData` (the built-in files and the `--reference-files`
+files, each replacing the built-in file of its name). A supplied file that is not valid fails the
+run (exit 2) before anything is calculated. The summary says where the data came from. Then merge and
 reporting-year preparation, once. The rest runs as the calculation of a `DecisionSession`, once
 per revision: the classification, the conversion of foreign trades to EUR, FIFO, the
 corporate-action stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
@@ -1046,8 +1057,15 @@ problem with file names only, never a folder.
 `loadEcbRateFiles` (`include/taxbroker/official_rates.hpp`, `src/parsers/ecb_rate_file.cpp`) reads
 the ECB Data Portal `csvdata` files described in [`calculations.md`](calculations.md), "Official
 ECB rate files". Rate files are a separate input next to the broker exports, one file per calendar
-year, and no rate data ships with the app. The result is an `OfficialRateTable` and a list of
-`ParseDiagnostic` errors.
+year. The result is an `OfficialRateTable` and a list of `ParseDiagnostic` errors.
+
+The program also contains the rates of the years 2016 to 2025 as compact files
+(`resources/ecb/rates_<year>.csv`, columns `currency,date,rate`, embedded by `src/CMakeLists.txt`
+into `builtInEcbRateFiles()`). `parseBuiltInRates` reads one of them; a fault there throws
+`std::logic_error`, as it is a build error. `loadOfficialRates` returns the supplied files and,
+for each year that no accepted supplied file covers, the built-in file of that year. Every
+`OfficialRate` and `OfficialRateFile` has an origin (`BuiltIn` or `Supplied`), and a supplied file
+that replaced a built-in year has `mReplacesBuiltIn`.
 
 - The table is found by exact currency code and date (`find`); there is no nearby-date lookup.
 - `selectOfficialRates` (`include/processors/official_rate_selection.hpp`) takes the rate needs
@@ -1057,19 +1075,23 @@ year, and no rate data ships with the app. The result is an `OfficialRateTable` 
   `mMissing`. The conversion stage (`convertCapitalTrades`, `include/processors/trade_conversion.hpp`) calls it for
   the foreign trades of the capital pools and gives the missing-pair errors to the gates.
 - Each `OfficialRate` keeps its value (foreign units per 1 EUR, eight decimals), observation date,
-  series key, file checksum, display name and logical row.
+  series key, origin, display name and logical row.
 - A file is accepted whole or rejected whole. A rejected file adds no rate, and the other files
   still load. Two files for the same year that both pass the checks are both rejected. The caller
   decides whether any rate file error stops the run.
-- The checksum is SHA-256 (`utils/sha256.hpp`, own implementation, tested with the NIST vectors),
-  computed on the bytes that are parsed.
 - Domain code does not read the files; a caller passes the paths. We will use CLI options and add file picker functionality. The processor's use of the table, the missing-rate request and the broker
   fallback are also in plan to do it.
 - `scripts/dump_ecb_rates.sh <file...>` loads files with the same code and writes a summary of
-  names, years, checksums and counts to `runtime/debug/`, for checking a real download.
+  names, years and counts to `runtime/debug/`, for checking a real download. With
+  `--compact FOLDER` it writes instead the compact `rates_<year>.csv` files that are built in.
 
-CSV files that are not broker exports (the ECB rate files and the diagnostic message table) are
-read by `readCsvText` (`include/utils/csv_text_reader.hpp`). It checks an unclosed quote, a
+The reference files (`include/taxbroker/reference_catalogue.hpp`) work the same way:
+`loadReferenceData` takes the `--reference-files` and returns the catalogue, the origin of each
+of the three files, or the first fault of a file as a message key with its parameters (file name,
+logical row, no value of the file). `docs/reference_data.md` describes the files.
+
+CSV files that are not broker exports (the ECB rate files, the reference files and the diagnostic
+message table) are read by `readCsvText` (`include/utils/csv_text_reader.hpp`). It checks an unclosed quote, a
 missing or repeated required column, a line break inside a field and the field count of each row,
 and numbers the rows logically (header = 1). It returns the rows before the first fault and that
 fault; each caller maps the fault to its own message. The Trade Republic parser has its own
@@ -1170,7 +1192,9 @@ the file is not a complete return; the tool says so.
 
 Running `scripts/report.sh` runs `taxbroker report` in Docker and writes to
 `runtime/report/<year>/`; with `--synthetic` it reads `tests/test_data/cli/report_fixture.csv` and
-`tests/test_data/cli/taxpayer.json`. A real taxpayer file stays below `runtime/`.
+`tests/test_data/cli/taxpayer.json`. A real taxpayer file stays below `runtime/`. The script takes
+the same file options (`--trade-republic`, `--ecb-rates`, `--reference-files`) with the same
+list rule.
 
 Parser logs may later be shared for support, so they follow a stricter boundary: source index, CSV
 row, and diagnostic reason are allowed; paths, transaction IDs, and raw financial values are not.

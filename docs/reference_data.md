@@ -23,7 +23,7 @@ the revision, so a later upstream update is a separate change that records its o
 the changes in counts.
 
 The app never downloads these files and works offline. Upstream's own tool downloads them at run
-time; this app does not.
+time; this app does not. A newer copy is supplied by the user with `--reference-files`, see "How the app loads the files".
 
 ## Files
 
@@ -150,9 +150,17 @@ with a correct check digit in every row that has one, and a 2-letter `country` i
 ## How the app loads the files
 
 The three files that the app reads (`payers.csv`, `relief_statements.csv`, `broker_payers.csv`) are
-built into the program as text. The app never reads them from disk and never downloads them. The
-shared CSV reader reads each file and the loader checks every row; a fault stops the load with the
-file name and the logical row (header = 1), never with a value of the file:
+built into the program as text. The app never downloads them. A newer copy comes from the user:
+`--reference-files FILE...` names files, and each file whose name is one of the three replaces the
+built-in file of that name whole. The other names keep the built-in file. The supplied file is the
+source of truth: where it disagrees with the built-in data, it wins, with no warning and no
+comparison of versions, because a mistake in a built-in file is fixed by publishing a corrected
+file. A file with another name, or the same name twice, is an error before any file is read. A
+supplied file goes through the same checks as a built-in one. The summary of a run shows which
+files were supplied. The shared CSV reader reads each file and the loader checks every row; a fault
+stops the load with the file name and the logical row (header = 1), never with a value of the
+file, and carries a message key (`reference_file.*`) with named parameters, so the screen can
+translate it:
 
 - `payers.csv`: an ISIN or a `conid`; an ISIN of 2 letters, 9 letters or digits and a correct
   check digit; a `conid` of digits only; a non-empty `name` and `address`; a `country` of 2

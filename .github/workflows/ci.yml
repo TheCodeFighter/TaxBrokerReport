@@ -196,11 +196,12 @@ jobs:
           fi
 
           watched='^(src/parsers/ecb_rate_file\.cpp|include/taxbroker/official_rates\.hpp'
-          watched+='|src/utils/sha256\.cpp|include/utils/sha256\.hpp'
           watched+='|src/utils/csv_text_reader\.cpp|include/utils/csv_text_reader\.hpp'
           watched+='|src/utils/diagnostic_messages\.cpp|tests/unit/diagnostic_messages_test\.cpp'
           watched+='|tests/unit/csv_text_reader_test\.cpp'
           watched+='|tests/unit/ecb_rate_file_test\.cpp'
+          watched+='|src/parsers/reference_catalogue\.cpp|include/taxbroker/reference_catalogue\.hpp'
+          watched+='|tests/unit/reference_catalogue_test\.cpp'
           watched+='|(.*/)?CMakeLists\.txt|docker/.*|scripts/valgrind\.sh|scripts/lib\.sh'
           watched+='|\.github/workflows/ci\.yml)$'
 

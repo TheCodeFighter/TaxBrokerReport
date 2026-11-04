@@ -41,8 +41,9 @@ A script that needs the image stops with a hint when it is missing. `test.sh`, `
 `cppcheck.sh` accept `--reuse-build`, which uses the existing `build/dev` as it is and fails clearly
 when it is missing. CI uses the same flag in the jobs that follow the build job.
 
-Options and paths can come in any order, so `scripts/report.sh runtime/export.csv --self-report`
-works. For Tab completion of the script options, years and paths in bash or zsh, add this line to
+Options can come in any order, so `scripts/report.sh --trade-republic runtime/export.csv
+--self-report` works: a file option (`--trade-republic`, `--ecb-rates`, `--reference-files`) takes
+the paths after it up to the next option. For Tab completion of the script options, years and paths in bash or zsh, add this line to
 `~/.bashrc` or `~/.zshrc` (in zsh after `compinit`):
 
 ```sh
@@ -90,7 +91,7 @@ suite.
 The `Valgrind` job of the `CI` workflow runs `--part regular` for pull requests and after changes
 reach `main`, on the build that the `Development build` job made. The `Valgrind (large inputs)`
 job runs `--part large` on every push to `main`, and on a pull request only when it changes the
-ECB rate loader, SHA-256, the ECB loader tests, a `CMakeLists.txt`, `docker/`, the Valgrind script
+ECB rate loader, the reference file loader, their tests, a `CMakeLists.txt`, `docker/`, the Valgrind script
 or the CI workflow. It is not a required check.
 
 ## Test suites
