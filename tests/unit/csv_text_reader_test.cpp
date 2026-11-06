@@ -86,6 +86,25 @@ TEST(CsvTextReaderTest, RejectsALineBreakInsideAField) {
     EXPECT_TRUE(table.mRows.empty());
 }
 
+TEST(CsvTextReaderTest, ReportsALineBreakBeforeAWrongFieldCountInTheSameRow) {
+    // Row 2 has 3 fields instead of 2, and one of them holds a line break: the line break wins.
+    const auto table = readCsvText("a,b\n1,\"x\ny\",z\n", ',', kAB);
+
+    ASSERT_TRUE(table.mFault.has_value());
+    EXPECT_EQ(table.mFault->mKind, CsvFaultKind::LineBreakInField);
+    EXPECT_EQ(table.mFault->mRowNumber, std::optional<std::size_t>{2});
+}
+
+TEST(CsvTextReaderTest, KeepsTheRowsBeforeALineBreakInsideAField) {
+    const auto table = readCsvText("a,b\n1,2\n3,\"x\ny\"\n", ',', kAB);
+
+    ASSERT_TRUE(table.mFault.has_value());
+    EXPECT_EQ(table.mFault->mKind, CsvFaultKind::LineBreakInField);
+    EXPECT_EQ(table.mFault->mRowNumber, std::optional<std::size_t>{3});
+    ASSERT_EQ(table.mRows.size(), 1U);
+    EXPECT_EQ(table.mRows.at(0).mFields, (std::vector<std::string>{"1", "2"}));
+}
+
 TEST(CsvTextReaderTest, ReportsMissingColumnsInRequiredOrder) {
     constexpr std::array<std::string_view, 4> columns{"a", "b", "c", "d"};
 

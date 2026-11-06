@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <functional>
+#include <map>
 #include <stdexcept>
 #include <utility>
 
@@ -650,24 +652,49 @@ std::vector<MessageTableRow> parseMessageTable(std::string_view aCsvText) {
     return rows;
 }
 
-const std::vector<MessageTableRow>& messageTable() {
-    static const std::vector<MessageTableRow> table = parseMessageTable(diagnosticMessagesCsv());
+namespace {
 
-    return table;
+/// The message table, with the position of each key (the first row of a key), made once.
+struct MessageIndex {
+    std::vector<MessageTableRow> mRows;
+    std::map<std::string, std::size_t, std::less<>> mPositionOfKey;
+};
+
+const MessageIndex& messageIndex() {
+    static const MessageIndex index = [] {
+        MessageIndex made;
+
+        made.mRows = parseMessageTable(diagnosticMessagesCsv());
+
+        for (std::size_t position = 0; position < made.mRows.size(); ++position)
+        {
+            made.mPositionOfKey.emplace(made.mRows[position].mKey, position);
+        }
+
+        return made;
+    }();
+
+    return index;
+}
+
+} // namespace
+
+const std::vector<MessageTableRow>& messageTable() {
+    return messageIndex().mRows;
 }
 
 const std::string& messageText(std::string_view aId, MessageLanguage aLanguage) {
-    const auto& table = messageTable();
-    const auto row = std::find_if(table.begin(), table.end(), [aId](const MessageTableRow& aRow) {
-        return aRow.mKey == aId;
-    });
+    const MessageIndex& index = messageIndex();
+    const auto position = index.mPositionOfKey.find(aId);
 
-    if (row == table.end())
+    if (position == index.mPositionOfKey.end())
     {
         throw std::logic_error{"The message table has no row for " + std::string{aId}};
     }
 
-    return aLanguage == MessageLanguage::English ? row->mEnglish : row->mSlovenian;
+    const MessageTableRow& row = index.mRows[position->second];
+
+    return aLanguage == MessageLanguage::English ? row.mEnglish : row.mSlovenian;
 }
 
 std::string renderMessage(MessageKey aKey,

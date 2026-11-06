@@ -2,13 +2,17 @@
 #include "taxbroker/diagnostic_messages.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <iterator>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <set>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace {
 using namespace taxbroker;
@@ -1378,15 +1382,31 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
 
     buildChronologicalOrder(result.mStatement);
 
-    std::stable_sort(mergeDiagnostics.begin(),
-                     mergeDiagnostics.end(),
-                     [](const MergeDiagnostic& aLeft, const MergeDiagnostic& aRight) {
-                         return mergeDiagnosticKey(aLeft) < mergeDiagnosticKey(aRight);
+    // Each key is made once; a key holds an ISIN, so making it in every comparison copies it.
+    using MergeDiagnosticKey = decltype(mergeDiagnosticKey(std::declval<const MergeDiagnostic&>()));
+    std::vector<MergeDiagnosticKey> diagnosticKeys;
+    std::vector<std::size_t> diagnosticOrder(mergeDiagnostics.size());
+
+    diagnosticKeys.reserve(mergeDiagnostics.size());
+    std::iota(diagnosticOrder.begin(), diagnosticOrder.end(), std::size_t{0});
+
+    std::transform(
+        mergeDiagnostics.begin(),
+        mergeDiagnostics.end(),
+        std::back_inserter(diagnosticKeys),
+        [](const MergeDiagnostic& aDiagnostic) { return mergeDiagnosticKey(aDiagnostic); });
+
+    std::stable_sort(diagnosticOrder.begin(),
+                     diagnosticOrder.end(),
+                     [&diagnosticKeys](std::size_t aLeft, std::size_t aRight) {
+                         return diagnosticKeys[aLeft] < diagnosticKeys[aRight];
                      });
 
-    for (auto& diagnostic : mergeDiagnostics)
+    result.mDiagnostics.reserve(result.mDiagnostics.size() + mergeDiagnostics.size());
+
+    for (const std::size_t index : diagnosticOrder)
     {
-        result.mDiagnostics.emplace_back(std::move(diagnostic));
+        result.mDiagnostics.emplace_back(std::move(mergeDiagnostics[index]));
     }
 
     return result;

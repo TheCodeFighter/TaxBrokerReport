@@ -7,6 +7,9 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
+#include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -60,6 +63,24 @@ struct BrokerPayerEntry {
     CatalogueSource mSource;               ///< Provenance of the row.
 };
 
+/// The payers of a file, with an index from the ISIN and from the conid to the entries that have
+/// it. The positions in an index are in file order. Made once; lists are shared read-only.
+struct PayerList {
+    std::vector<PayerEntry> mEntries;
+    std::map<std::string, std::vector<std::size_t>, std::less<>> mByIsin;
+    std::map<std::string, std::vector<std::size_t>, std::less<>> mByConid;
+
+    explicit PayerList(std::vector<PayerEntry> aEntries);
+};
+
+/// The broker payers of a file, with an index from the broker and the code to the first entry.
+struct BrokerPayerList {
+    std::vector<BrokerPayerEntry> mEntries;
+    std::map<std::pair<std::string, std::string>, std::size_t, std::less<>> mByBrokerAndCode;
+
+    explicit BrokerPayerList(std::vector<BrokerPayerEntry> aEntries);
+};
+
 /// What a payer lookup found.
 enum class PayerLookupStatus {
     Found,    ///< One entry, or several with the same facts. A suggestion the user confirms.
@@ -79,12 +100,19 @@ struct PayerQuery {
     std::optional<std::string> mIbkrConid; ///< Only for an Interactive Brokers event.
 };
 
-/// The payer reference data: payers, relief statements and broker payers.
+/// The payer reference data: payers, relief statements and broker payers. The three lists are
+/// shared and read-only, so a copy of the catalogue copies no entry and a built-in list is shared
+/// by every catalogue that uses it.
 class ReferenceCatalogue {
   public:
     ReferenceCatalogue(std::vector<PayerEntry> aPayers,
                        std::vector<ReliefStatementEntry> aReliefStatements,
                        std::vector<BrokerPayerEntry> aBrokerPayers);
+
+    /// Takes shared lists; none may be null.
+    ReferenceCatalogue(std::shared_ptr<const PayerList> aPayers,
+                       std::shared_ptr<const std::vector<ReliefStatementEntry>> aReliefStatements,
+                       std::shared_ptr<const BrokerPayerList> aBrokerPayers);
 
     /// Finds the entries with the exact ISIN or the exact `conid` of the query, in file order. An
     /// entry found by both counts once. Several entries with the same facts (name, tax number,
@@ -104,9 +132,9 @@ class ReferenceCatalogue {
     [[nodiscard]] const std::vector<BrokerPayerEntry>& brokerPayers() const;
 
   private:
-    std::vector<PayerEntry> mPayers;
-    std::vector<ReliefStatementEntry> mReliefStatements;
-    std::vector<BrokerPayerEntry> mBrokerPayers;
+    std::shared_ptr<const PayerList> mPayers;
+    std::shared_ptr<const std::vector<ReliefStatementEntry>> mReliefStatements;
+    std::shared_ptr<const BrokerPayerList> mBrokerPayers;
 };
 
 /// The text of `resources/reference/payers.csv`, embedded at build time.
@@ -124,7 +152,7 @@ class ReferenceCatalogue {
                                                          std::string_view aReliefStatementsCsv,
                                                          std::string_view aBrokerPayersCsv);
 
-/// The embedded files, parsed once.
+/// The embedded files, parsed once per process.
 [[nodiscard]] const ReferenceCatalogue& referenceCatalogue();
 
 /// The first fault of a reference file, with no value of the file in it.

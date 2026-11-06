@@ -189,18 +189,21 @@ jobs:
           - part: ecb
             paths: >-
               src/parsers/ecb_rate_file\.cpp|include/taxbroker/official_rates\.hpp
+              |src/utils/date_utils\.cpp|src/utils/numeric_util\.cpp
               |resources/ecb/.*|src/utils/built_in_ecb_rates\.cpp\.in
               |src/utils/diagnostic_messages\.cpp|include/taxbroker/diagnostic_messages\.hpp
               |resources/i18n/.*|tests/unit/ecb_rate_file_test\.cpp
           - part: reference
             paths: >-
               src/parsers/reference_catalogue\.cpp|include/taxbroker/reference_catalogue\.hpp
-              |resources/reference/.*|src/utils/diagnostic_messages\.cpp
+              |resources/reference/.*|src/utils/embedded_text\.cpp\.in
+              |src/utils/diagnostic_messages\.cpp
               |include/taxbroker/diagnostic_messages\.hpp|resources/i18n/.*
               |tests/unit/reference_catalogue_test\.cpp
           - part: messages
             paths: >-
               src/utils/diagnostic_messages\.cpp|include/taxbroker/diagnostic_messages\.hpp
+              |src/utils/embedded_text\.cpp\.in
               |resources/i18n/.*|tests/unit/diagnostic_messages_test\.cpp
 
     steps:

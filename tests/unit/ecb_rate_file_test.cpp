@@ -1644,7 +1644,9 @@ TEST(BuiltInRateYearTest, RejectsAValueFaultOnTheFirstLookup) {
     EXPECT_THROW(static_cast<void>(year.find({"USD", date("2025-01-02")})), std::logic_error);
 }
 
-TEST(BuiltInRateYearTest, TheScanOfEveryEmbeddedFileMatchesItsFullParse) {
+// A *LargeInputTest suite takes minutes under Valgrind (`scripts/valgrind.sh --part ecb`): this
+// test parses all 1.9 MB of embedded rate files. It still runs in every normal test run.
+TEST(EcbRateFileLargeInputTest, TheScanOfEveryEmbeddedFileMatchesItsFullParse) {
     // This also parses every embedded file, so a fault in one of them fails the tests.
     for (const BuiltInRateFile& file : builtInEcbRateFiles())
     {

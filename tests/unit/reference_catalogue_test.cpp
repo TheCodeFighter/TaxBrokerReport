@@ -9,6 +9,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -216,6 +217,20 @@ TEST(ReferenceCatalogueTest, ReadsAQuotedAddressWithAComma) {
 
     ASSERT_EQ(lookup.mEntries.size(), 1U);
     EXPECT_EQ(lookup.mEntries[0]->mAddress, "Level 20, 1 Main Street");
+}
+
+TEST(ReferenceCatalogueTest, ListsTheMatchesOfIsinAndConidInFileOrder) {
+    // The row with the conid is first in the file, the row with the ISIN second.
+    const auto catalogue = parse(",7,Payer Y,,2 Main Street,IE,,,manual,\n"
+                                 "XX0000000010,,Payer X,,1 Main Street,IE,,,manual,\n");
+
+    const PayerLookup lookup =
+        catalogue.findPayer({.mIsin = std::string{kIsinA}, .mIbkrConid = std::string{"7"}});
+
+    EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Conflict);
+    ASSERT_EQ(lookup.mEntries.size(), 2U);
+    EXPECT_EQ(lookup.mEntries[0]->mSource.mRowNumber, 2U); // the conid row, first in the file
+    EXPECT_EQ(lookup.mEntries[1]->mSource.mRowNumber, 3U);
 }
 
 TEST(ReferenceCatalogueTest, FindsABrokerPayerByBrokerAndCode) {
@@ -569,6 +584,48 @@ TEST(ReferenceDataTest, EachSuppliedFileReplacesOnlyTheFileOfItsName) {
 
     ASSERT_EQ(load.mCatalogue->brokerPayers().size(), 1U);
     EXPECT_EQ(load.mCatalogue->brokerPayers().front().mCode, "IB-X");
+}
+
+TEST(ReferenceDataTest, TheBuiltInListsAreSharedByEveryLoadAndByTheEmbeddedCatalogue) {
+    const auto first = loadReferenceData({});
+    const auto second = loadReferenceData({});
+
+    ASSERT_TRUE(first.mCatalogue.has_value());
+    ASSERT_TRUE(second.mCatalogue.has_value());
+
+    // The same list objects, not copies of them.
+    EXPECT_EQ(&first.mCatalogue->payers(), &second.mCatalogue->payers());
+    EXPECT_EQ(&first.mCatalogue->payers(), &referenceCatalogue().payers());
+    EXPECT_EQ(&first.mCatalogue->allReliefStatements(),
+              &referenceCatalogue().allReliefStatements());
+    EXPECT_EQ(&first.mCatalogue->brokerPayers(), &referenceCatalogue().brokerPayers());
+}
+
+TEST(ReferenceDataTest, ASuppliedFileSharesTheOtherTwoBuiltInLists) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData({folder.write("payers.csv", kSuppliedPayers)});
+
+    ASSERT_TRUE(load.mCatalogue.has_value());
+
+    // The supplied payers are a new list; the other two lists are the shared built-in ones.
+    EXPECT_NE(&load.mCatalogue->payers(), &referenceCatalogue().payers());
+    EXPECT_EQ(&load.mCatalogue->allReliefStatements(), &referenceCatalogue().allReliefStatements());
+    EXPECT_EQ(&load.mCatalogue->brokerPayers(), &referenceCatalogue().brokerPayers());
+}
+
+TEST(ReferenceDataTest, ACopyOfACatalogueSharesItsLists) {
+    const ReferenceCatalogue copy = referenceCatalogue();
+
+    EXPECT_EQ(&copy.payers(), &referenceCatalogue().payers());
+    EXPECT_EQ(copy.payers().size(), 299U);
+}
+
+TEST(ReferenceDataTest, ACatalogueWithoutAListIsABuildError) {
+    EXPECT_THROW(ReferenceCatalogue(
+                     nullptr,
+                     std::make_shared<const std::vector<ReliefStatementEntry>>(),
+                     std::make_shared<const BrokerPayerList>(std::vector<BrokerPayerEntry>{})),
+                 std::logic_error);
 }
 
 TEST(ReferenceDataTest, AFileNameThatIsNotOneOfTheThreeIsAFault) {
