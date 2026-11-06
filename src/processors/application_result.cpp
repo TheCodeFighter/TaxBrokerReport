@@ -828,11 +828,23 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
     // Sort first, then assign IDs.
     std::vector<std::size_t> diagnosticOrder(drafts.size());
     std::iota(diagnosticOrder.begin(), diagnosticOrder.end(), std::size_t{0});
+
+    // Each key is made once; a key holds an ISIN string, so making it in every comparison is slow.
+    using DiagnosticSortKey =
+        decltype(sortKey(std::declval<const ApplicationDiagnostic&>(), std::size_t{}));
+    std::vector<DiagnosticSortKey> diagnosticKeys;
+
+    diagnosticKeys.reserve(drafts.size());
+
+    for (std::size_t index = 0; index < drafts.size(); ++index)
+    {
+        diagnosticKeys.push_back(sortKey(drafts[index].mDiagnostic, index));
+    }
+
     std::stable_sort(diagnosticOrder.begin(),
                      diagnosticOrder.end(),
-                     [&drafts](std::size_t aLeft, std::size_t aRight) {
-                         return sortKey(drafts[aLeft].mDiagnostic, aLeft) <
-                                sortKey(drafts[aRight].mDiagnostic, aRight);
+                     [&diagnosticKeys](std::size_t aLeft, std::size_t aRight) {
+                         return diagnosticKeys[aLeft] < diagnosticKeys[aRight];
                      });
 
     ApplicationResult result;
@@ -888,12 +900,21 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
                                aIndex);
     };
 
+    std::vector<decltype(requestKey(std::size_t{}))> requestKeys;
+
+    requestKeys.reserve(requests.size());
+
+    for (std::size_t index = 0; index < requests.size(); ++index)
+    {
+        requestKeys.push_back(requestKey(index));
+    }
+
     std::vector<std::size_t> requestOrder(requests.size());
     std::iota(requestOrder.begin(), requestOrder.end(), std::size_t{0});
     std::stable_sort(requestOrder.begin(),
                      requestOrder.end(),
-                     [&requestKey](std::size_t aLeft, std::size_t aRight) {
-                         return requestKey(aLeft) < requestKey(aRight);
+                     [&requestKeys](std::size_t aLeft, std::size_t aRight) {
+                         return requestKeys[aLeft] < requestKeys[aRight];
                      });
 
     // The requests linked to each diagnostic, by position in result.mRequests.

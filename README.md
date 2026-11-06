@@ -65,7 +65,7 @@ For your own report, put your Trade Republic exports and a taxpayer file below t
 `runtime/` folder, then run:
 
 ```sh
-scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json runtime/export.csv
+scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json --trade-republic runtime/export.csv
 ```
 
 Give your whole history, not only the tax year. The XML and a readable summary are written to

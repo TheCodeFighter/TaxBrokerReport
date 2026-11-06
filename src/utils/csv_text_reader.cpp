@@ -20,10 +20,8 @@ bool hasUnclosedQuote(std::string_view aText) {
 
 /// A line break inside a field means a quote opened on one line and closed on a later one. The
 /// reader then merges the lines into one record, which can still have the right field count.
-bool hasLineBreakInsideField(const csv::CSVRow& aRow) {
-    return std::any_of(aRow.begin(), aRow.end(), [](const csv::CSVField& aField) {
-        return aField.get_sv().find_first_of("\r\n") != std::string_view::npos;
-    });
+bool hasLineBreak(std::string_view aField) {
+    return aField.find_first_of("\r\n") != std::string_view::npos;
 }
 
 } // namespace
@@ -111,7 +109,22 @@ CsvTable readCsvText(std::string_view aText,
         {
             ++rowNumber;
 
-            if (hasLineBreakInsideField(row))
+            // One walk over the fields: copy them and look for a line break at the same time.
+            CsvRow parsed{.mRowNumber = rowNumber};
+            bool lineBreak = false;
+
+            parsed.mFields.reserve(row.size());
+
+            for (const csv::CSVField& field : row)
+            {
+                const std::string_view text = field.get_sv();
+
+                lineBreak = lineBreak || hasLineBreak(text);
+                parsed.mFields.emplace_back(text);
+            }
+
+            // The line break is reported before the field count, as it always was.
+            if (lineBreak)
             {
                 table.mFault =
                     CsvFault{.mKind = CsvFaultKind::LineBreakInField, .mRowNumber = rowNumber};
@@ -127,13 +140,6 @@ CsvTable readCsvText(std::string_view aText,
                                         .mFoundFields = row.size()};
 
                 return table;
-            }
-
-            CsvRow parsed{.mRowNumber = rowNumber};
-
-            for (const csv::CSVField& field : row)
-            {
-                parsed.mFields.emplace_back(field.get_sv());
             }
 
             table.mRows.push_back(std::move(parsed));

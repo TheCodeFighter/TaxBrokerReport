@@ -222,9 +222,10 @@ Rules:
 
 ## Official ECB rate files
 
-The app ships no rate data. The user loads one file per calendar year, so new rates need no new
-app version, and every conversion stays offline and reproducible. The source is the ECB reference
-rate table, which *Banka Slovenije* republishes as its daily rates.
+The app ships the ECB rates of the calendar years 2016 to 2025 (see "Built-in rates" below). The
+user can load one file per calendar year to add a year or to replace a built-in year, so new rates
+need no new app version, and every conversion stays offline and reproducible. The source is the
+ECB reference rate table, which *Banka Slovenije* republishes as its daily rates.
 
 Evidence that the two tables are the same (checked 2026-11-01, public data only):
 
@@ -280,6 +281,30 @@ files for the same year that both pass the checks, even byte-identical ones, are
 are rejected. A file rejected for its own fault does not count, so a good file of the same year
 beside it still loads. A file of another year is not affected.
 
+**Built-in rates.** The program contains one compact file per calendar year, 2016 to 2025
+(`resources/ecb/rates_<year>.csv`). Each has the header `currency,date,rate` and one row per
+currency and day, sorted by currency and then date. The rate is written exactly as the ECB gives
+it, without extra zeros, and the other columns of the ECB file are left out. A compact file is
+read with its own small reader (exact header, three fields, no quotes) and the same rules as an
+ECB file for these columns: a currency code that is not `EUR`, a
+real calendar date in the year of the file, a positive rate with at most eight decimals, no
+currency and date twice, and at least one row. A fault is a build error, never a user error.
+Only complete years are built in, so the first and last day of each year fit the rule for a whole
+year below.
+
+- A rate file that the user supplies for a year replaces the whole built-in file of that year
+  (there is no merge by day), with no warning and no comparison of the values. The supplied data
+  is the source of truth: a wrong built-in value is fixed by publishing a corrected file, which
+  must win. A year without a supplied file keeps its built-in file, and a supplied year that is
+  not built in is added. A supplied file that is rejected adds nothing and leaves the built-in
+  year as it is, and the run stops with the file error.
+- The summary names the years in use: for example `built-in 2016 to 2024; supplied: rates.csv
+  (2025, replaces the built-in year)`. Each rate used shows its file and row, and `built-in` when
+  it is from the program.
+- To add a year: download the ECB file (the URL above), convert it with
+  `scripts/dump_ecb_rates.sh --compact`, and add the year to the list in `src/CMakeLists.txt`.
+  `resources/ecb/README.md` records the download date and the counts of each year.
+
 **Lookup.** A rate is found by its exact currency code and date. The ECB publishes no rate on
 weekends and TARGET holidays, and a suspended or unpublished currency has no rows, so those dates
 and currencies have no rate of their own. For such a date the app takes the **last earlier ECB
@@ -323,17 +348,16 @@ year, even if no rate is missing:
 One error covers one currency and date, with every event and report that needs it. What happens
 next (a typed rate, or the broker fallback below) is decided by the exchange-rate request.
 
-**Provenance.** Each rate keeps the value, the observation date, the ECB series key, the SHA-256 of
-the file bytes, the file's display name and the row. A file rate is an official rate and is labelled
-so; a broker rate never is. The checksum is the checksum of the file as the user loaded it. The
-maintainer publishes the unmodified download of each year as a release asset with its SHA-256, the
-query URL and the download date, and anyone can download the same query from the ECB and compare:
-three downloads of the 2025 query, about 30 minutes apart, were byte-identical. The app does not
-require the published copy.
+**Provenance.** Each rate keeps the value, the observation date, the ECB series key, whether it is
+built in or supplied, the file's display name and the row. A file rate is an official rate and is
+labelled so; a broker rate never is. There is no checksum: the program needs the data, and anyone
+can download the same query from the ECB and compare the values.
 
 **Attribution.** The ECB allows free reuse of its statistics "on the condition that the source is
-quoted". Any report or screen that shows these rates says "Source: ECB statistics." See the ECB
-statistics reuse policy (`ecb.europa.eu`, "Usage policy of ECB statistics").
+quoted" and that the statistics, including metadata, "are not modified". Any report or screen that
+shows these rates says "Source: ECB statistics." See the ECB statistics reuse policy
+(`ecb.europa.eu`, "Policy regarding the reuse of ESCB statistics"). The built-in files keep every
+value unchanged and drop the columns the program does not read. `THIRD_PARTY_NOTICES.txt` says so.
 
 Any download is explicit and opt-in. The app works with no network access.
 
@@ -362,8 +386,8 @@ copy, so none of them converts or branches on the currency.
 
 - A trade needs a rate when its tax date is on or before 31 December of the selected year, its
   currency is not EUR, and its ISIN is not left out of capital gains. Earlier purchases and sales
-  need one too: they form the opening inventory and feed the loss rule, so the user loads the ECB
-  file of each earlier year that has such a trade. A trade after 31 December contributes only its
+  need one too: they form the opening inventory and feed the loss rule, so the ECB
+  file of each earlier year that has such a trade is needed (built in from 2016). A trade after 31 December contributes only its
   units to the 30-day loss rule and needs no rate.
 - The rate date is the trade's tax date: the purchase date for a purchase, the sale date for a
   sale. The price is divided by the rate and rounded once to eight decimals (`UnitPrice`).

@@ -6,19 +6,33 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/lib.sh"
 
 # Unit test suites whose inputs are megabytes long. Valgrind runs them for minutes, so CI checks
-# them in their own job, and only when a related file changes.
+# each part in its own job, and only when a related file changes. A new large test goes into a
+# *LargeInputTest suite of one part; the regular part leaves out every *LargeInputTest suite.
 large_input_filter='*LargeInputTest.*'
+large_parts=(csv ecb reference messages)
+
+large_suite_of_part() {
+    case "$1" in
+        csv) echo 'CsvTextReaderLargeInputTest.*' ;;
+        ecb) echo 'EcbRateFileLargeInputTest.*' ;;
+        reference) echo 'ReferenceDataLargeInputTest.*' ;;
+        messages) echo 'DiagnosticMessagesLargeInputTest.*' ;;
+    esac
+}
 
 usage() {
     cat <<'EOF'
-Usage: valgrind.sh [--reuse-build] [--part regular|large|all]
+Usage: valgrind.sh [--reuse-build] [--part regular|csv|ecb|reference|messages|all]
 
   Builds build/dev from scratch, then runs each C++ executable under Valgrind
   inside the development container. The dump tools use synthetic test data.
   --reuse-build runs the existing build/dev as it is and compiles nothing.
-  --part regular  every executable, without the *LargeInputTest unit test suites
-  --part large    only the *LargeInputTest unit test suites (minutes under Valgrind)
-  --part all      both (the default)
+  --part regular    every executable, without the *LargeInputTest unit test suites
+  --part csv        the large-input suite of the CSV reader (minutes under Valgrind)
+  --part ecb        the large-input suite of the ECB rate files
+  --part reference  the large-input suite of the reference files
+  --part messages   the large-input suite of the diagnostic message table
+  --part all        regular and every large-input part (the default)
 EOF
 }
 
@@ -43,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             fi
 
             case "$2" in
-                regular | large | all)
+                regular | csv | ecb | reference | messages | all)
                     part="$2"
                     ;;
                 *)
@@ -82,25 +96,23 @@ run_valgrind() {
         "$@"
 }
 
-if [[ "$part" == large ]]; then
+run_large_part() {
     run_valgrind \
         /workspace/build/dev/tests/taxbroker_unit_tests \
         --gtest_brief=1 \
         --gtest_fail_if_no_test_selected \
-        "--gtest_filter=$large_input_filter"
+        "--gtest_filter=$(large_suite_of_part "$1")"
+}
+
+if [[ "$part" != regular && "$part" != all ]]; then
+    run_large_part "$part"
     exit 0
 fi
 
-if [[ "$part" == regular ]]; then
-    run_valgrind \
-        /workspace/build/dev/tests/taxbroker_unit_tests \
-        --gtest_brief=1 \
-        "--gtest_filter=-$large_input_filter"
-else
-    run_valgrind \
-        /workspace/build/dev/tests/taxbroker_unit_tests \
-        --gtest_brief=1
-fi
+run_valgrind \
+    /workspace/build/dev/tests/taxbroker_unit_tests \
+    --gtest_brief=1 \
+    "--gtest_filter=-$large_input_filter"
 
 run_valgrind \
     /workspace/build/dev/tests/taxbroker_integration_tests \
@@ -114,6 +126,7 @@ run_valgrind \
     --year 2024 \
     --taxpayer /workspace/tests/test_data/cli/taxpayer.json \
     --out /tmp/taxbroker-cli-report \
+    --trade-republic \
     /workspace/tests/test_data/cli/report_fixture.csv
 
 run_valgrind \
@@ -126,3 +139,9 @@ run_valgrind \
     /workspace/build/dev/tools/taxbroker_exact_dump \
     /workspace/tests/test_data/csv/traderepublic_parser_supported_fixture.csv \
     /tmp/taxbroker-exact-arithmetic.txt
+
+if [[ "$part" == all ]]; then
+    for large_part in "${large_parts[@]}"; do
+        run_large_part "$large_part"
+    done
+fi

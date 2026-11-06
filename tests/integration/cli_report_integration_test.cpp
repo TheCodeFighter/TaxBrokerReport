@@ -157,6 +157,7 @@ TEST(CliReportIntegrationTest, TwoFilesWriteTheGoldenXmlAndSummary2024) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              purchases,
                              sales});
 
@@ -167,6 +168,8 @@ TEST(CliReportIntegrationTest, TwoFilesWriteTheGoldenXmlAndSummary2024) {
 Input files: 2
   source-0001 purchases.csv
   source-0002 sales.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
 
@@ -303,6 +306,7 @@ TEST(CliReportIntegrationTest, SelfReportWritesWorkflowCodeI) {
                              "--self-report",
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -339,6 +343,7 @@ TEST(CliReportIntegrationTest, SaleOfOldAndNewUnitsListsOnlyTheNewUnitAndSummari
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -346,6 +351,8 @@ TEST(CliReportIntegrationTest, SaleOfOldAndNewUnitsListsOnlyTheNewUnitAndSummari
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml
 
@@ -456,6 +463,7 @@ TEST(CliReportIntegrationTest, NoSaleInTheYearGivesNoDataAndNoXml) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -463,6 +471,8 @@ TEST(CliReportIntegrationTest, NoSaleInTheYearGivesNoDataAndNoXml) {
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): no data, no sale in 2025 needs a Doh-KDVP form
 
@@ -498,6 +508,7 @@ TEST(CliReportIntegrationTest, PrivateMarketEventsAreSkippedWithAWarning) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The private-market sale does not block: the share is reported, the fund is skipped.
@@ -507,6 +518,8 @@ TEST(CliReportIntegrationTest, PrivateMarketEventsAreSkippedWithAWarning) {
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
 
@@ -547,6 +560,7 @@ TEST(CliReportIntegrationTest, ASavebackDoesNotChangeAPurchase) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The purchase is 0.1 units at EUR 15.00 (EUR 1.50). The saveback of EUR 1.50 is not
@@ -585,12 +599,15 @@ TEST(CliReportIntegrationTest, ABonusIsNotASkippedPrivateMarketEvent) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
 
@@ -627,6 +644,7 @@ TEST(CliReportIntegrationTest, ABondMaturityIsInformationOnlyAndKeepsTheReport) 
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history,
                              bondFixture.string()});
 
@@ -658,6 +676,7 @@ TEST(CliReportIntegrationTest, APrivateMarketBuyWithSharesGetsAnExtraWarning) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // Still no block: the fund is skipped, with the parser warning and the year warning.
@@ -666,6 +685,8 @@ TEST(CliReportIntegrationTest, APrivateMarketBuyWithSharesGetsAnExtraWarning) {
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
 
@@ -708,6 +729,7 @@ TEST(CliReportIntegrationTest, PrivateMarketSaleWithoutAnIsinIsListedByItsName) 
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -742,6 +764,7 @@ TEST(CliReportIntegrationTest, WarningOnlyRunStillGeneratesTheXml) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -783,6 +806,7 @@ TEST(CliReportIntegrationTest, CryptoSaleIsLeftOutByATaxRule) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // Nothing is left to report, which is not an error: the crypto sale is not a Doh-KDVP sale.
@@ -820,6 +844,7 @@ TEST(CliReportIntegrationTest, PrivateFundTradeSaleBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -858,6 +883,7 @@ TEST(CliReportIntegrationTest, BlankAssetClassBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The class is unknown: the question is open, so nothing is written (no answer was given).
@@ -907,6 +933,7 @@ TEST(CliReportIntegrationTest, ConflictingClassAcrossFilesBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              purchases,
                              sales});
 
@@ -951,6 +978,7 @@ TEST(CliReportIntegrationTest, SplitBeforeTheSaleBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -987,6 +1015,7 @@ TEST(CliReportIntegrationTest, SplitAfterTheSaleInTheSameYearBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // Without an answer the split blocks, also one after the sale: the input ends at once.
@@ -1022,6 +1051,7 @@ TEST(CliReportIntegrationTest, ASplitAnsweredAfterTheSaleOfTheYearGivesTheReport
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nyes\n");
 
@@ -1080,6 +1110,7 @@ TEST(CliReportIntegrationTest, ADateWithoutUnitsIsRejectedAndAskedAgain) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n2024-04-01\ncancel\n");
 
@@ -1115,6 +1146,7 @@ TEST(CliReportIntegrationTest, ARatioThatLeavesTooFewUnitsForALaterSaleIsAskedAg
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "1 : 10\n2024-03-01\nyes\ncancel\n");
 
@@ -1149,6 +1181,7 @@ TEST(CliReportIntegrationTest, ASaleWithTooFewUnitsBeforeASplitRowAsksForTheSpli
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n2024-05-30\nyes\n");
 
@@ -1190,6 +1223,7 @@ TEST(CliReportIntegrationTest, ASaleWithTooFewUnitsBeforeASplitRowBlocksWithoutI
                              "--no-input",
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The question stays open; its error names the sale and the 10 days.
@@ -1221,6 +1255,7 @@ TEST(CliReportIntegrationTest, ACancelledQuestionBeforeASaleWithTooFewUnitsGives
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "cancel\n");
 
@@ -1265,6 +1300,7 @@ TEST(CliReportIntegrationTest, SaleWithoutEnoughPurchasesBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // 2 units sold, 1 bought.
@@ -1301,6 +1337,7 @@ TEST(CliReportIntegrationTest, ALossQuestionAnsweredNoWritesTheLossAsDeductible)
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "no\n");
 
@@ -1321,6 +1358,8 @@ Your answer (yes, no or cancel):
 TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml
 
@@ -1365,6 +1404,7 @@ TEST(CliReportIntegrationTest, ALossQuestionAnsweredYesWritesTheLossAsBlocked) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "YES\n");
 
@@ -1410,6 +1450,7 @@ TEST(CliReportIntegrationTest, AJanuarySplitInADecemberLossWindowIsAskedThenTheL
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nyes\nyes\n");
 
@@ -1454,6 +1495,7 @@ TEST(CliReportIntegrationTest, AJanuarySaleWithTooFewUnitsBeforeTheJanuarySplitI
                              "--no-input",
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -1487,6 +1529,7 @@ TEST(CliReportIntegrationTest, AJanuarySaleWithTooFewUnitsLongBeforeTheJanuarySp
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -1530,6 +1573,7 @@ TEST(CliReportIntegrationTest, TwoJanuarySplitsInADecemberLossWindowAreAskedInDa
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nyes\n2 : 1\n\nyes\nyes\n");
 
@@ -1595,6 +1639,7 @@ TEST(CliReportIntegrationTest, AJanuarySplitWithAnOpenLossAnsweredNoGivesTwoSale
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nyes\nno\n");
 
@@ -1654,6 +1699,7 @@ TEST(CliReportIntegrationTest, AnInvalidLossAnswerIsAskedAgain) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "maybe\n\ny\n  no  \n");
 
@@ -1693,6 +1739,7 @@ TEST(CliReportIntegrationTest, ALossQuestionWithNoInputBlocksAndListsTheRequest)
                              "--no-input",
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "no\n");
 
@@ -1701,6 +1748,8 @@ TEST(CliReportIntegrationTest, ALossQuestionWithNoInputBlocksAndListsTheRequest)
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
 
@@ -1743,6 +1792,7 @@ TEST(CliReportIntegrationTest, ALossQuestionAtTheEndOfTheInputStaysOpen) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "");
 
@@ -1777,6 +1827,7 @@ TEST(CliReportIntegrationTest, ACancelledLossQuestionBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "cancel\n");
 
@@ -1820,6 +1871,7 @@ TEST(CliReportIntegrationTest, ALossQuestionWithAKnownPurchaseListsIt) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "yes\n");
 
@@ -1855,6 +1907,7 @@ TEST(CliReportIntegrationTest, ALossQuestionOfTwoSalesListsBothAndOneAnswerCover
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "no\n");
 
@@ -1895,6 +1948,7 @@ TEST(CliReportIntegrationTest,
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The three purchases of 0.333333334 units are stored as 0.33333333 each. The exact units
@@ -1929,6 +1983,7 @@ TEST(CliReportIntegrationTest, AShortageWithoutProofAsksAndEnterTakesTheUnitsLef
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "\n");
 
@@ -1967,6 +2022,7 @@ TEST(CliReportIntegrationTest, AShortageWithoutProofAndNoInputBlocksAndListsTheQ
                              "--out",
                              folder.outputDirectory(),
                              "--no-input",
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -1995,6 +2051,7 @@ TEST(CliReportIntegrationTest, ACancelledQuantityQuestionBlocksTheReportAsMissin
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "cancel\n");
 
@@ -2024,6 +2081,7 @@ TEST(CliReportIntegrationTest, ARowWhoseRoundedUnitValueChangesItsBasisGetsAWarn
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "3 : 1\n\nyes\n");
 
@@ -2063,6 +2121,7 @@ TEST(CliReportIntegrationTest, ABasisDifferenceIsNotReportedWhenAGateErrorStopsT
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "3 : 1\n\nyes\nfail\n");
 
@@ -2093,6 +2152,7 @@ TEST(CliReportIntegrationTest, ASplitRatioAnsweredClosesTheQuestion) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nyes\n");
 
@@ -2120,6 +2180,8 @@ Is this right? (yes or no):
 TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2025.xml
 
@@ -2196,6 +2258,7 @@ TEST(CliReportIntegrationTest, ASplitRatioFromTheSharesBeforeAndAfterIsTheSameRa
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "1 -> 2.00\n2023-01-15\nyes\n");
 
@@ -2226,6 +2289,7 @@ TEST(CliReportIntegrationTest, AReverseSplitFromTheSharesBeforeAndAfterGivesItsR
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "10 -> 1\n\nyes\n");
 
@@ -2254,6 +2318,7 @@ TEST(CliReportIntegrationTest, AnUnchangedRatioIsRejectedAndAskedAgain) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "5 : 5\n2 : 1\n\nyes\n");
 
@@ -2291,6 +2356,7 @@ TEST(CliReportIntegrationTest, AZeroInARatioIsRejectedAndAskedAgain) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "0 : 1\n1 : 0\n2 : 1\n\nyes\n");
 
@@ -2323,6 +2389,7 @@ TEST(CliReportIntegrationTest, ARatioWhosePositionDoesNotFitIsRejectedAndAskedAg
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "1000000000000 : 1\n\n2 : 1\n\nyes\n");
 
@@ -2353,6 +2420,7 @@ TEST(CliReportIntegrationTest, ARatioNotConfirmedIsAskedAgain) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nok\nno\n3 : 1\n\nyes\n");
 
@@ -2391,6 +2459,7 @@ TEST(CliReportIntegrationTest, AnEffectiveDateOutsideTheRangeIsRejectedAndAskedA
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n15.01.2023\n2025-03-11\n2 : 1\n2025-03-10\nyes\n");
 
@@ -2431,6 +2500,7 @@ TEST(CliReportIntegrationTest, AnUnreadableRatioIsAskedAgainWithoutAnAnswer) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "ten\n2.5 : 1\n-2 : 1\n+2 : 1\n: 1\n2 : one\none -> 2\n"
                             "1 -> 2.000000001\n2 : 1\n\nyes\n");
@@ -2482,6 +2552,7 @@ TEST(CliReportIntegrationTest, ShareCountsOfZeroOrBelowAreAskedAgainWithoutAnAns
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "0 -> 5\n-1 -> 2\n1 -> 0\n1 -> 2\n\nyes\n");
 
@@ -2524,6 +2595,7 @@ TEST(CliReportIntegrationTest, ShareCountsWithADecimalCommaGiveTheirRatio) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "0,52 -> 5,2\n\nyes\n");
 
@@ -2556,6 +2628,7 @@ TEST(CliReportIntegrationTest, AShareCountWithACommaAndAPointIsAskedAgain) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "1.000,5 -> 2\n2 : 1\n\nyes\n");
 
@@ -2588,6 +2661,7 @@ TEST(CliReportIntegrationTest, AnUnusualRatioIsWarnedAboutBeforeThePreview) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "1001 : 1\n\nyes\n");
 
@@ -2617,6 +2691,7 @@ TEST(CliReportIntegrationTest, ACancelledRatioQuestionBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "Cancel\n");
 
@@ -2657,6 +2732,7 @@ TEST(CliReportIntegrationTest, ASplitWithNoInputBlocksAndListsTheQuestion) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nyes\n");
 
@@ -2692,6 +2768,7 @@ TEST(CliReportIntegrationTest, AnInputEndingInTheMiddleOfARatioLeavesTheQuestion
                                  taxpayer,
                                  "--out",
                                  folder.outputDirectory(),
+                                 "--trade-republic",
                                  history},
                                 "2 : 1\n");
     const auto afterDate = run({"report",
@@ -2701,6 +2778,7 @@ TEST(CliReportIntegrationTest, AnInputEndingInTheMiddleOfARatioLeavesTheQuestion
                                 taxpayer,
                                 "--out",
                                 folder.outputDirectory(),
+                                "--trade-republic",
                                 history},
                                "2 : 1\n\n");
     const auto beforeAnything = run({"report",
@@ -2710,6 +2788,7 @@ TEST(CliReportIntegrationTest, AnInputEndingInTheMiddleOfARatioLeavesTheQuestion
                                      taxpayer,
                                      "--out",
                                      folder.outputDirectory(),
+                                     "--trade-republic",
                                      history},
                                     "");
 
@@ -2752,6 +2831,7 @@ TEST(CliReportIntegrationTest, TwoQuestionsAreAskedInRequestOrder) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "2 : 1\n\nyes\nno\n");
 
@@ -2796,6 +2876,7 @@ TEST(CliReportIntegrationTest, NoAnswerIsSavedAndTheNextRunAsksAgain) {
                                taxpayer,
                                "--out",
                                folder.outputDirectory(),
+                               "--trade-republic",
                                history},
                               "no\n");
 
@@ -2814,6 +2895,7 @@ TEST(CliReportIntegrationTest, NoAnswerIsSavedAndTheNextRunAsksAgain) {
                             "--no-input",
                             "--out",
                             folder.outputDirectory(),
+                            "--trade-republic",
                             history});
 
     // The second run knows nothing of the first answer: the question is open again, the report
@@ -2846,6 +2928,7 @@ TEST(CliReportIntegrationTest, NoSplitAnswerIsSavedAndTheNextRunAsksAgain) {
                                taxpayer,
                                "--out",
                                folder.outputDirectory(),
+                               "--trade-republic",
                                history},
                               "2 : 1\n\nyes\n");
 
@@ -2864,6 +2947,7 @@ TEST(CliReportIntegrationTest, NoSplitAnswerIsSavedAndTheNextRunAsksAgain) {
                             "--no-input",
                             "--out",
                             folder.outputDirectory(),
+                            "--trade-republic",
                             history});
 
     // The second run knows nothing of the first answer: the question is open again, the report
@@ -2894,6 +2978,7 @@ TEST(CliReportIntegrationTest, ARunWithoutQuestionsAsksNothing) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "no\n");
 
@@ -2923,6 +3008,7 @@ TEST(CliReportIntegrationTest, ProfitableSaleWithABlockedLossMakingPortionIsTwoS
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "yes\n");
 
@@ -2996,6 +3082,7 @@ TEST(CliReportIntegrationTest, AnAdjustedUnitValueThatDoesNotFitBlocksTheReport)
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "1 : 2\n\nyes\nfail\nno\n");
 
@@ -3033,6 +3120,7 @@ TEST(CliReportIntegrationTest, ALossBlockedByAJanuaryPurchaseIsWritten) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -3062,6 +3150,18 @@ EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-03-10,1.1,A
 EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-12-31,1.2,A
 )";
 
+/// The same invented rates for the year 2015, which has no built-in rates: row 2 is 2015-01-02,
+/// row 5 is 2015-01-10 and row 6 is 2015-03-10 (1.25, 1.25 and 1.1), the last row is 2015-12-31.
+constexpr std::string_view kEcbUsd2015 =
+    R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2015-01-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2015-01-03,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2015-01-06,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2015-01-10,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2015-03-10,1.1,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2015-12-31,1.2,A
+)";
+
 TEST(CliReportIntegrationTest, ForeignTradesAreConvertedAtTheEcbRateOfTheirOwnDay) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -3082,6 +3182,7 @@ TEST(CliReportIntegrationTest, ForeignTradesAreConvertedAtTheEcbRateOfTheirOwnDa
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates,
+                             "--trade-republic",
                              history});
 
     // Purchase: USD 30 / 1.25 = EUR 24 per unit. Sale: USD 33 / 1.10 = EUR 30 per unit. The
@@ -3093,6 +3194,9 @@ TEST(CliReportIntegrationTest, ForeignTradesAreConvertedAtTheEcbRateOfTheirOwnDa
                          "currency):\n"
                          "  USD 2025-01-10: 1 EUR = 1.25000000 USD (rates.csv row 5)\n"
                          "  USD 2025-03-10: 1 EUR = 1.10000000 USD (rates.csv row 6)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "ECB rate files: built-in 2016 to 2024; supplied: rates.csv (2025, "
+                         "replaces the built-in year)\n"));
     EXPECT_TRUE(contains(result.mOut, "Warnings: 0\n"));
 
     const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
@@ -3117,6 +3221,249 @@ TEST(CliReportIntegrationTest, ForeignTradesAreConvertedAtTheEcbRateOfTheirOwnDa
     EXPECT_EQ(fifoLists.at(0).mSaleGains, (std::vector<std::string>{"60"}));
 }
 
+TEST(CliReportIntegrationTest, AForeignTradeUsesTheBuiltInRateWhenNoRateFileIsGiven) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    // ECB rates (USD per 1 EUR): 2025-01-10 is 1.0304 (row 7148 of the built-in file) and
+    // 2025-03-10 is 1.0845 (row 7189). Purchase: USD 30 / 1.0304 = EUR 29.11490683 per unit.
+    // Sale: USD 33 / 1.0845 = EUR 30.42876902 per unit (both rounded to 8 decimals).
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(contains(result.mOut, "ECB rate files: built-in 2016 to 2025\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Official exchange rates used (ECB reference rates, 1 EUR = rate in the "
+                         "currency):\n"
+                         "  USD 2025-01-10: 1 EUR = 1.03040000 USD (rates_2025.csv row 7148, "
+                         "built-in)\n"
+                         "  USD 2025-03-10: 1 EUR = 1.08450000 USD (rates_2025.csv row 7189, "
+                         "built-in)\n"));
+    EXPECT_TRUE(contains(result.mOut, "Warnings: 0\n"));
+
+    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+
+    EXPECT_TRUE(contains(xml, "<F4>29.11490683</F4>"));
+    EXPECT_TRUE(contains(xml, "<F9>30.42876902</F9>"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(CliReportIntegrationTest, ASuppliedFileOfAnotherYearIsListedAsSupplied) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates_2015.csv", kEcbUsd2015);
+    const auto history = folder.writeCsv("history.csv", {});
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    // 2015 is not built in, so the file is added and replaces nothing.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "ECB rate files: built-in 2016 to 2025; supplied: rates_2015.csv "
+                         "(2015)\n"));
+}
+
+TEST(CliReportIntegrationTest, ASuppliedFileInTheMiddleOfTheBuiltInYearsSplitsTheirRange) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText(
+        "rates_2020.csv",
+        R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2020-01-02,1.1,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2020-12-31,1.2,A
+)");
+    const auto history = folder.writeCsv("history.csv", {});
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    // The built-in 2020 is replaced, so the built-in years in use are 2016 to 2019 and 2021 to
+    // 2025.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "ECB rate files: built-in 2016 to 2019, 2021 to 2025; supplied: "
+                         "rates_2020.csv (2020, replaces the built-in year)\n"));
+}
+
+TEST(CliReportIntegrationTest, NoReferenceFilesUseTheBuiltInReferenceData) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut, "Reference data: built-in (ib-edavki 22220f5)\n"));
+}
+
+TEST(CliReportIntegrationTest, ASuppliedReferenceFileIsListedAsSupplied) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "source_revision\n"
+        "XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(contains(result.mOut,
+                         "Reference data: payers.csv supplied; relief_statements.csv, "
+                         "broker_payers.csv built-in\n"));
+}
+
+TEST(CliReportIntegrationTest, ThreeSuppliedReferenceFilesAreAllListedAsSupplied) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "source_revision\n"
+        "XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n");
+    const auto relief = folder.writeText("relief_statements.csv",
+                                         "country,statement,source,source_revision\n"
+                                         "BE,Treaty text,manual,\n");
+    const auto broker =
+        folder.writeText("broker_payers.csv",
+                         "broker,code,name,tax_number,address,country,source,source_revision\n"
+                         "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n");
+
+    const auto result = run({"report",
+                             "--reference-files",
+                             payers,
+                             relief,
+                             broker,
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(
+        result.mOut,
+        "Reference data: payers.csv, relief_statements.csv, broker_payers.csv supplied\n"));
+}
+
+TEST(CliReportIntegrationTest, ABrokenReferenceFileFailsTheRunAndNamesFileAndRow) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    // Row 2 has an ISIN with a wrong check digit (XX0000000010 is the valid one).
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "source_revision\n"
+        "XX0000000011,,Payer A,,1 Main Street,IE,,,manual,\n");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_EQ(result.mErr,
+              "taxbroker: the reference file payers.csv is not valid (row 2): The ISIN is not "
+              "valid (format or check digit). The reference data was not loaded.\n"
+              "Run 'taxbroker report --help' for the usage.\n");
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
+}
+
+TEST(CliReportIntegrationTest, AReferenceFileWithAnotherNameFailsTheRun) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    const auto payers = folder.writeText("payer.csv", "isin\n");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The reference file "
+              "payer.csv is not named payers.csv, relief_statements.csv or broker_payers.csv. "
+              "The reference data was not loaded.\n"
+              "Run 'taxbroker report --help' for the usage.\n");
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
+}
+
 TEST(CliReportIntegrationTest, ARateFromAnEarlierDayIsUsedWithAWarning) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -3138,6 +3485,7 @@ TEST(CliReportIntegrationTest, ARateFromAnEarlierDayIsUsedWithAWarning) {
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates,
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -3181,6 +3529,7 @@ TEST(CliReportIntegrationTest, AnEarlierYearPurchaseUsesTheRateFileOfItsYear) {
                              rates2024,
                              "--ecb-rates",
                              rates2025,
+                             "--trade-republic",
                              history});
 
     // Purchase: USD 30 / 1.20 (rate of 2024-06-10) = EUR 25 per unit. Sale: USD 33 / 1.10 (rate
@@ -3208,75 +3557,77 @@ TEST(CliReportIntegrationTest, AnEarlierYearPurchaseUsesTheRateFileOfItsYear) {
 TEST(CliReportIntegrationTest, AnEarlierYearPurchaseWithoutItsRateFileBlocksTheReport) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
-    const auto rates2025 = folder.writeText("rates_2025.csv", kEcbUsd2025);
+    const auto rates2015 = folder.writeText("rates_2015.csv", kEcbUsd2015);
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2024-06-10T09:00:00Z,2024-06-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
-            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+            R"(2014-06-10T09:00:00Z,2014-06-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2015-03-10T09:00:00Z,2015-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
         });
 
     const auto result = run({"report",
                              "--year",
-                             "2025",
+                             "2015",
                              "--taxpayer",
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
                              "--ecb-rates",
-                             rates2025,
+                             rates2015,
+                             "--trade-republic",
                              history});
 
-    // The sale of 2025 has its rate, but the purchase of 2024 is part of FIFO and has none.
+    // The sale of 2015 has its rate, but the purchase of 2014 is part of FIFO and has none.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2015.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "  diagnostic-0001 missing_exchange_rate, XX0000000001 Synthetic Share, "
-                         "2024-06-10, history.csv row 2\n"
-                         "    There is no official exchange rate for USD on 2024-06-10, and the "
-                         "ECB rate file for 2024 is not loaded."));
+                         "2014-06-10, history.csv row 2\n"
+                         "    There is no official exchange rate for USD on 2014-06-10, and the "
+                         "ECB rate file for 2014 is not loaded."));
     // The summary says which file to load, right under the status line.
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"
-                         "  ECB rate files to load: 2024\n"));
+                         "  ECB rate files to load: 2014\n"));
 }
 
 TEST(CliReportIntegrationTest, TheSummaryListsEveryMissingRateFileYearAtOnce) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
-    const auto rates2025 = folder.writeText("rates_2025.csv", kEcbUsd2025);
+    const auto rates2015 = folder.writeText("rates_2015.csv", kEcbUsd2015);
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2023-06-12T09:00:00Z,2023-06-12,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,30,-150,,,USD,,,,,synthetic-buy-1,,,,)",
-            R"(2024-06-10T09:00:00Z,2024-06-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,30,-150,,,USD,,,,,synthetic-buy-2,,,,)",
-            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
+            R"(2013-06-12T09:00:00Z,2013-06-12,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,30,-150,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2014-06-10T09:00:00Z,2014-06-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,5,30,-150,,,USD,,,,,synthetic-buy-2,,,,)",
+            R"(2015-03-10T09:00:00Z,2015-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,33,330,,,USD,,,,,synthetic-sell-1,,,,)",
         });
 
     const auto result = run({"report",
                              "--year",
-                             "2025",
+                             "2015",
                              "--taxpayer",
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
                              "--ecb-rates",
-                             rates2025,
+                             rates2015,
+                             "--trade-republic",
                              history});
 
-    // FIFO stops at the purchase of 2023, so the error names 2023 only. The summary lists both
+    // FIFO stops at the purchase of 2013, so the error names 2013 only. The summary lists both
     // files that are not loaded, so one more run is enough.
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2015.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"
-                         "  ECB rate files to load: 2023, 2024\n"));
-    EXPECT_TRUE(contains(result.mOut, "ECB rate file for 2023 is not loaded."));
+                         "  ECB rate files to load: 2013, 2014\n"));
+    EXPECT_TRUE(contains(result.mOut, "ECB rate file for 2013 is not loaded."));
     EXPECT_TRUE(contains(result.mOut, "official_rate_files_required"));
     EXPECT_TRUE(contains(result.mOut,
-                         "The ECB rate files for 2023, 2024 are not loaded, but investments sold "
+                         "The ECB rate files for 2013, 2014 are not loaded, but investments sold "
                          "in the year have trades that need rates from them."));
 }
 
@@ -3300,6 +3651,7 @@ TEST(CliReportIntegrationTest, AnEurPurchaseAndAForeignSaleOfOneInvestmentShareO
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates,
+                             "--trade-republic",
                              history});
 
     // Purchase in EUR: EUR 24 per unit, no rate. Sale: USD 33 / 1.10 = EUR 30 per unit.
@@ -3327,34 +3679,35 @@ TEST(CliReportIntegrationTest, ForeignTradeWithoutAnEcbFileBlocksTheReportWithTh
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,USD,,,,,synthetic-buy-1,,,,)",
-            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2015-01-10T09:00:00Z,2015-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2015-03-10T09:00:00Z,2015-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
 
     const auto result = run({"report",
                              "--year",
-                             "2025",
+                             "2015",
                              "--taxpayer",
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2015.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"
-                         "  ECB rate files to load: 2025\n"));
+                         "  ECB rate files to load: 2015\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000001 Synthetic Share: blocked (missing_exchange_rate)\n"
-                         "    sale 2025-03-10, history.csv row 3\n"));
+                         "    sale 2015-03-10, history.csv row 3\n"));
     // The error points at the USD purchase, where FIFO stopped. The sale in EUR needs no rate.
     EXPECT_TRUE(contains(result.mOut,
                          "  diagnostic-0001 missing_exchange_rate, XX0000000001 Synthetic Share, "
-                         "2025-01-10, history.csv row 2\n"
-                         "    There is no official exchange rate for USD on 2025-01-10, and the "
-                         "ECB rate file for 2025 is not loaded."));
+                         "2015-01-10, history.csv row 2\n"
+                         "    There is no official exchange rate for USD on 2015-01-10, and the "
+                         "ECB rate file for 2015 is not loaded."));
     EXPECT_FALSE(contains(result.mOut, "Official exchange rates used"));
 }
 
@@ -3384,6 +3737,7 @@ EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-06,1.25,A
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates,
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -3401,31 +3755,32 @@ TEST(CliReportIntegrationTest, AForeignInvestmentWithoutARateCanBeExcluded) {
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
-            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
-            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Other,XX0000000002,1,10,-10,,,USD,,,,,synthetic-buy-2,,,,)",
-            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Other,XX0000000002,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
+            R"(2015-01-10T09:00:00Z,2015-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2015-03-10T09:00:00Z,2015-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2015-01-10T09:00:00Z,2015-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Other,XX0000000002,1,10,-10,,,USD,,,,,synthetic-buy-2,,,,)",
+            R"(2015-03-10T09:00:00Z,2015-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Other,XX0000000002,-1,30,30,,,EUR,,,,,synthetic-sell-2,,,,)",
         });
 
     const auto result = run({"report",
                              "--year",
-                             "2025",
+                             "2015",
                              "--taxpayer",
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "exclude\n");
 
     // The USD investment has no rate and is left out; the EUR investment is written. The file
-    // of 2025 is still listed: loading it brings the left-out investment back.
+    // of 2015 is still listed: loading it brings the left-out investment back.
     EXPECT_EQ(result.mExitCode, kExitSuccess);
-    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to load: 2025\n"));
+    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to load: 2015\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000002 Synthetic Other: excluded (missing_exchange_rate)\n"
-                         "    sale 2025-03-10, history.csv row 5\n"));
+                         "    sale 2015-03-10, history.csv row 5\n"));
 
-    const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
+    const auto xml = folder.readOutput("Doh-KDVP_2015.xml");
 
     EXPECT_TRUE(contains(xml, "<ISIN>XX0000000001</ISIN>"));
     EXPECT_FALSE(contains(xml, "XX0000000002"));
@@ -3451,6 +3806,7 @@ TEST(CliReportIntegrationTest, AnEcbRateFileThatIsNotValidFailsTheRun) {
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates,
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -3484,6 +3840,7 @@ EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2025-01-03,1.25,E
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates,
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -3515,6 +3872,7 @@ TEST(CliReportIntegrationTest, ATinyShortageOfAForeignSaleIsReconciledAtTheConve
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates,
+                             "--trade-republic",
                              history});
 
     // As in the EUR case: 3 x 0.333333334 = 1.000000002 units cover the sale of 1 unit, which is
@@ -3551,6 +3909,7 @@ TEST(CliReportIntegrationTest, RejectedTradeRowBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -3590,6 +3949,7 @@ TEST(CliReportIntegrationTest, ConflictingDuplicateBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              first,
                              second});
 
@@ -3627,6 +3987,7 @@ TEST(CliReportIntegrationTest, RejectedPrivateMarketRowIsListedApartAndDoesNotBl
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -3636,6 +3997,8 @@ TEST(CliReportIntegrationTest, RejectedPrivateMarketRowIsListedApartAndDoesNotBl
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
 
@@ -3676,6 +4039,7 @@ TEST(CliReportIntegrationTest, TaxpayerValueTheFormDoesNotAcceptBlocksTheReport)
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -3699,28 +4063,29 @@ TEST(CliReportIntegrationTest, BlockedRunDeletesAnOldXmlOfTheSameYear) {
     const auto history = folder.writeCsv(
         "history.csv",
         {
-            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
-            R"(2025-03-10T09:00:00Z,2025-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2015-01-10T09:00:00Z,2015-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,30,-300,,,USD,,,,,synthetic-buy-1,,,,)",
+            R"(2015-03-10T09:00:00Z,2015-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,20,200,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
     std::filesystem::create_directory(folder.outputDirectory());
-    (void)folder.writeText("out/Doh-KDVP_2025.xml", "an old file of an earlier run");
+    (void)folder.writeText("out/Doh-KDVP_2015.xml", "an old file of an earlier run");
 
     const auto result = run({"report",
                              "--year",
-                             "2025",
+                             "2015",
                              "--taxpayer",
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2015.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
                          "below)\n"
-                         "  ECB rate files to load: 2025\n"
-                         "Deleted the old Doh-KDVP_2025.xml of an earlier run.\n"));
+                         "  ECB rate files to load: 2015\n"
+                         "Deleted the old Doh-KDVP_2015.xml of an earlier run.\n"));
 }
 
 TEST(CliReportIntegrationTest, YearWithoutDataDeletesAnOldXmlOfTheSameYear) {
@@ -3742,6 +4107,7 @@ TEST(CliReportIntegrationTest, YearWithoutDataDeletesAnOldXmlOfTheSameYear) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -3774,6 +4140,7 @@ TEST(CliReportIntegrationTest, GeneratedRunReplacesTheFilesOfAnEarlierRunAndKeep
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -3813,6 +4180,7 @@ TEST(CliReportIntegrationTest, TransactionInTwoOverlappingFilesIsCountedOnce) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              first,
                              second});
 
@@ -3822,6 +4190,8 @@ TEST(CliReportIntegrationTest, TransactionInTwoOverlappingFilesIsCountedOnce) {
 Input files: 2
   source-0001 first.csv
   source-0002 second.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
 
@@ -3863,6 +4233,7 @@ TEST(CliReportIntegrationTest, FileThatIsNotATradeRepublicExportBlocksTheReport)
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history,
                              other});
 
@@ -3873,6 +4244,8 @@ TEST(CliReportIntegrationTest, FileThatIsNotATradeRepublicExportBlocksTheReport)
 Input files: 2
   source-0001 history.csv
   source-0002 other.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): blocked, no XML was written (see the errors below)
 
@@ -3911,6 +4284,7 @@ TEST(CliReportIntegrationTest, EmptyFileBlocksTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history,
                              empty});
 
@@ -3946,6 +4320,7 @@ TEST(CliReportIntegrationTest, SaleOn31DecemberIsInTheYearAndSaleOn1JanuaryIsNot
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -3982,6 +4357,7 @@ TEST(CliReportIntegrationTest, SplitAfter31DecemberDoesNotBlockTheReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // Only corporate actions up to 31 December of the year block.
@@ -4013,6 +4389,7 @@ TEST(CliReportIntegrationTest, SaleOfAnEarlierYearUsesTheOldestPurchasesAndDoesN
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -4058,6 +4435,7 @@ TEST(CliReportIntegrationTest, ShareAndFundSalesGiveOneItemEach) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -4117,6 +4495,7 @@ TEST(CliReportIntegrationTest, TwoPartlyBlockedSalesAreWrittenInFourSaleRows) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "yes\n");
 
@@ -4181,14 +4560,19 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(general.mOut,
                          "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                          "[--no-input]\n"
-                         "                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]\n"));
+                         "                   [--ecb-rates FILE...] [--reference-files FILE...] "
+                         "--out DIR\n"
+                         "                   --trade-republic FILE...\n"));
 
     const auto report = run({"report", "--help"});
 
     EXPECT_EQ(report.mExitCode, kExitSuccess);
     EXPECT_TRUE(report.mErr.empty());
     EXPECT_TRUE(contains(report.mOut, "  --self-report      Write a self-report (samoprijava)"));
-    EXPECT_TRUE(contains(report.mOut, "  --ecb-rates FILE   An ECB reference-rate file"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "  --ecb-rates FILE...\n                     ECB reference-rate files"));
+    EXPECT_TRUE(contains(report.mOut, "  --trade-republic FILE...\n"));
+    EXPECT_TRUE(contains(report.mOut, "  --reference-files FILE...\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "Foreign currencies:\n"
                          "  The unit price of a trade in another currency is converted to EUR at "
@@ -4307,6 +4691,7 @@ TEST(CliReportIntegrationTest, HelpAfterOtherOptionsPrintsTheReportHelpAndRunsNo
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history,
                              "--help"});
 
@@ -4338,8 +4723,13 @@ TEST(CliReportIntegrationTest, MissingYearFails) {
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
 
-    const auto result =
-        run({"report", "--taxpayer", taxpayer, "--out", folder.outputDirectory(), history});
+    const auto result = run({"report",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_TRUE(result.mOut.empty());
@@ -4360,6 +4750,7 @@ TEST(CliReportIntegrationTest, YearBefore2000Fails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4382,6 +4773,7 @@ TEST(CliReportIntegrationTest, YearGivenTwiceFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4398,7 +4790,7 @@ TEST(CliReportIntegrationTest, OptionWithoutValueFails) {
 }
 
 TEST(CliReportIntegrationTest, UnknownOptionFails) {
-    const auto result = run({"report", "--yaer", "2024"});
+    const auto result = run({"report", "--yaer", "--trade-republic", "2024"});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
@@ -4419,8 +4811,13 @@ TEST(CliReportIntegrationTest, MissingTaxpayerOptionFails) {
     const TemporaryCliFolder folder;
     const auto history = folder.writeCsv("history.csv", {});
 
-    const auto result =
-        run({"report", "--year", "2024", "--out", folder.outputDirectory(), history});
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
@@ -4432,7 +4829,8 @@ TEST(CliReportIntegrationTest, MissingOutputOptionFails) {
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
 
-    const auto result = run({"report", "--year", "2024", "--taxpayer", taxpayer, history});
+    const auto result =
+        run({"report", "--year", "2024", "--taxpayer", taxpayer, "--trade-republic", history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
@@ -4448,7 +4846,7 @@ TEST(CliReportIntegrationTest, NoCsvFails) {
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
-              "taxbroker: Give at least one Trade Republic CSV file.\n"
+              "taxbroker: Give at least one Trade Republic CSV file with --trade-republic.\n"
               "Run 'taxbroker report --help' for the usage.\n");
 }
 
@@ -4463,6 +4861,7 @@ TEST(CliReportIntegrationTest, CsvThatDoesNotExistFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              folder.outputDirectory() + "/../missing.csv"});
 
     // Only the file name is printed, never the folder.
@@ -4484,6 +4883,7 @@ TEST(CliReportIntegrationTest, TaxpayerFileThatDoesNotExistFails) {
                              folder.outputDirectory() + "/../taxpayer.json",
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4506,6 +4906,7 @@ TEST(CliReportIntegrationTest, InvalidTaxpayerFileFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4522,8 +4923,15 @@ TEST(CliReportIntegrationTest, OutputPathThatIsAFileFails) {
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
 
-    const auto result =
-        run({"report", "--year", "2024", "--taxpayer", taxpayer, "--out", history, history});
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             history,
+                             "--trade-republic",
+                             history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
@@ -4543,6 +4951,7 @@ TEST(CliReportIntegrationTest, YearWithAPlusSignFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4563,6 +4972,7 @@ TEST(CliReportIntegrationTest, YearWithLettersAfterTheDigitsFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4583,6 +4993,7 @@ TEST(CliReportIntegrationTest, YearAfter9999Fails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4603,6 +5014,7 @@ TEST(CliReportIntegrationTest, Year2000IsAcceptedAndAFileWithOnlyTheHeaderGivesN
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -4611,6 +5023,8 @@ TEST(CliReportIntegrationTest, Year2000IsAcceptedAndAFileWithOnlyTheHeaderGivesN
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2000 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): no data, no sale in 2000 needs a Doh-KDVP form
 
@@ -4638,6 +5052,7 @@ TEST(CliReportIntegrationTest, Year9999IsAccepted) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -4662,6 +5077,7 @@ TEST(CliReportIntegrationTest, TaxpayerGivenTwiceFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4684,6 +5100,7 @@ TEST(CliReportIntegrationTest, OutputGivenTwiceFails) {
                              folder.outputDirectory(),
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4705,6 +5122,7 @@ TEST(CliReportIntegrationTest, CsvPathThatIsAFolderFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              folder.outputDirectory()});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4726,6 +5144,7 @@ TEST(CliReportIntegrationTest, TaxpayerPathThatIsAFolderFails) {
                              folder.outputDirectory(),
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4745,6 +5164,7 @@ TEST(CliReportIntegrationTest, OptionsMayFollowTheCsvPath) {
         });
 
     const auto result = run({"report",
+                             "--trade-republic",
                              history,
                              "--out",
                              folder.outputDirectory(),
@@ -4781,6 +5201,7 @@ TEST(CliReportIntegrationTest, MissingOutputFolderIsCreatedWithItsParentFolders)
                              taxpayer,
                              "--out",
                              folder.outputDirectory() + "/2024/report",
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -4806,6 +5227,7 @@ TEST(CliReportIntegrationTest, SaleOfOnlyLongHeldUnitsGivesNoDataAndListsThem) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -4813,6 +5235,8 @@ TEST(CliReportIntegrationTest, SaleOfOnlyLongHeldUnitsGivesNoDataAndListsThem) {
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2025 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): no data, no sale in 2025 needs a Doh-KDVP form
 
@@ -4849,6 +5273,7 @@ TEST(CliReportIntegrationTest, DividendErrorIsListedApartAndDoesNotBlock) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The error affects Doh-Div only, so Doh-KDVP is still generated.
@@ -4880,6 +5305,7 @@ TEST(CliReportIntegrationTest, DividendWarningIsListedApartWithItsSeverity) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The warning affects Doh-Div only; the mixed list names its severity.
@@ -4892,7 +5318,7 @@ TEST(CliReportIntegrationTest, DividendWarningIsListedApartWithItsSeverity) {
                          "  diagnostic-0001 warning missing_field, history.csv row 4\n"));
 }
 
-TEST(CliReportIntegrationTest, DoubleDashEndsTheOptions) {
+TEST(CliReportIntegrationTest, AnOptionEndsAFileListAndIsReadAsAnOption) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
@@ -4904,15 +5330,14 @@ TEST(CliReportIntegrationTest, DoubleDashEndsTheOptions) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
-                             "--",
+                             "--trade-republic",
                              history,
                              "--self-report"});
 
-    // After "--", "--self-report" is a CSV path, not the option.
-    EXPECT_EQ(result.mExitCode, kExitFailure);
-    EXPECT_EQ(result.mErr,
-              "taxbroker: The CSV file --self-report does not exist or is not a file.\n"
-              "Run 'taxbroker report --help' for the usage.\n");
+    // "--self-report" ends the list of history.csv, so it is the option and not a CSV path.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_EQ(result.mOut.rfind("TaxBrokerReport: Doh-KDVP 2024 (self-report)\n", 0), 0U);
 }
 
 TEST(CliReportIntegrationTest, SelfReportGivenTwiceFails) {
@@ -4930,8 +5355,15 @@ TEST(CliReportIntegrationTest, OutputFolderThatCannotBeCreatedFails) {
     const auto history = folder.writeCsv("history.csv", {});
 
     // The output folder would be inside a file.
-    const auto result = run(
-        {"report", "--year", "2024", "--taxpayer", taxpayer, "--out", taxpayer + "/out", history});
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             taxpayer + "/out",
+                             "--trade-republic",
+                             history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_TRUE(result.mOut.empty());
@@ -4957,6 +5389,7 @@ TEST(CliReportIntegrationTest, XmlThatCannotBeWrittenFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -4984,6 +5417,7 @@ TEST(CliReportIntegrationTest, OldXmlThatCannotBeDeletedFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -5009,6 +5443,7 @@ TEST(CliReportIntegrationTest, SummaryThatCannotBeWrittenFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -5035,6 +5470,7 @@ TEST(CliReportIntegrationTest, SummaryThatCannotBeWrittenInAGeneratedYearWritesN
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The XML could be written, but exit 2 means nothing was written.
@@ -5069,6 +5505,7 @@ TEST(CliReportIntegrationTest, SummaryThatCannotBeWrittenKeepsTheOldXmlOfABlocke
                              "--no-input",
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // A blocked run deletes the old XML, but not when it fails with exit 2.
@@ -5100,6 +5537,7 @@ TEST(CliReportIntegrationTest, TemporarySummaryThatCannotBeWrittenChangesNothing
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -5133,6 +5571,7 @@ TEST(CliReportIntegrationTest, TemporaryXmlThatCannotBeWrittenChangesNothing) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -5170,6 +5609,7 @@ TEST(CliReportIntegrationTest, ExcludingAFailedInvestmentWritesTheRestWithoutIt)
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "exclude\n");
 
@@ -5187,6 +5627,8 @@ Your answer (exclude, fail or cancel):
 TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated without 1 excluded investment, written to Doh-KDVP_2024.xml
 
@@ -5258,6 +5700,7 @@ TEST(CliReportIntegrationTest, FailingTheReportWritesNoXml) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "fail\n");
 
@@ -5288,6 +5731,7 @@ TEST(CliReportIntegrationTest, CancellingTheExclusionQuestionWritesNoXml) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "cancel\n");
 
@@ -5314,6 +5758,7 @@ TEST(CliReportIntegrationTest, NoInputLeavesTheExclusionQuestionOpen) {
                              "--out",
                              folder.outputDirectory(),
                              "--no-input",
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -5338,6 +5783,7 @@ TEST(CliReportIntegrationTest, NoExclusionIsSavedAndTheNextRunAsksAgain) {
                                              taxpayer,
                                              "--out",
                                              folder.outputDirectory(),
+                                             "--trade-republic",
                                              history};
 
     EXPECT_EQ(run(arguments, "exclude\n").mExitCode, kExitSuccess);
@@ -5374,6 +5820,7 @@ TEST(CliReportIntegrationTest, ExcludingEveryInvestmentWithASaleGivesNoData) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "exclude\n");
 
@@ -5409,6 +5856,7 @@ TEST(CliReportIntegrationTest, AnExcludedInvestmentAndOnlyLongHeldUnitsGiveNoDat
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "exclude\n");
 
@@ -5450,6 +5898,7 @@ TEST(CliReportIntegrationTest, OnlyTheErrorOfTheExcludedInvestmentIsResolvedAmon
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "exclude\n");
 
@@ -5494,6 +5943,7 @@ TEST(CliReportIntegrationTest, ARetainedLossIsAskedBeforeTheExclusionQuestion) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "no\nexclude\n");
 
@@ -5543,6 +5993,7 @@ TEST(CliReportIntegrationTest, AnExcludedPrivateFundIsNeverAskedItsLossQuestion)
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "exclude\n");
 
@@ -5586,6 +6037,7 @@ TEST(CliReportIntegrationTest, AFileErrorSuppressesTheExclusionQuestion) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              purchases,
                              sales},
                             "exclude\n");
@@ -5616,6 +6068,7 @@ TEST(CliReportIntegrationTest, AnUnknownClassAnsweredCapitalWritesTheInvestment)
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "capital\n");
 
@@ -5651,6 +6104,7 @@ TEST(CliReportIntegrationTest, AnUnknownClassAnsweredExcludeLeavesItOutAsAUserCh
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "exclude\n");
 
@@ -5687,6 +6141,7 @@ TEST(CliReportIntegrationTest, ATradeWithoutAnIsinGetsNoClassificationQuestion) 
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -5717,6 +6172,7 @@ TEST(CliReportIntegrationTest, CancellingTheClassQuestionIsNotAnExclusion) {
                                 taxpayer,
                                 "--out",
                                 folder.outputDirectory(),
+                                "--trade-republic",
                                 history},
                                "cancel\n");
 
@@ -5735,6 +6191,7 @@ TEST(CliReportIntegrationTest, CancellingTheClassQuestionIsNotAnExclusion) {
                                taxpayer,
                                "--out",
                                folder.outputDirectory(),
+                               "--trade-republic",
                                history},
                               "cancel\nexclude\n");
 
@@ -5769,6 +6226,7 @@ TEST(CliReportIntegrationTest, ABondIsLeftOutWithItsUnitsAndMaturity) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -5804,6 +6262,7 @@ TEST(CliReportIntegrationTest, ACryptoSaleWithTooFewUnitsAndASplitRowIsNoErrorOr
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -5834,6 +6293,7 @@ TEST(CliReportIntegrationTest, ABuyOnlyCryptoYearStillHasNoSaleToReport) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);

@@ -170,7 +170,7 @@ void addFileWarnings(const OfficialRateFile& aFile,
 /// Looks for the pair; returns the rate, or adds the error that says why there is none. When a
 /// rate file would fix it, the file is recorded in mMissingFiles.
 const OfficialRate* resolvePair(const OfficialRateTable& aTable,
-                                const std::set<Date>& aPublicationDays,
+                                const PublicationDays& aPublicationDays,
                                 const PairNeed& aPair,
                                 Date aTaxDate,
                                 OfficialRateSelection& aSelection) {
@@ -311,12 +311,7 @@ OfficialRateSelection selectOfficialRates(const std::vector<RateNeed>& aNeeds,
     }
 
     // The days on which the ECB published any rate.
-    std::set<Date> publicationDays;
-
-    for (const auto& entry : aTable.mRates)
-    {
-        publicationDays.insert(entry.first.second);
-    }
+    const PublicationDays publicationDays = aTable.publicationDays();
 
     OfficialRateSelection selection;
     std::map<int, FileUse> fileUses;

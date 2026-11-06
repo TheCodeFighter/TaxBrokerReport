@@ -19,6 +19,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <system_error>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -233,8 +234,11 @@ taxbroker::ParseDiagnostic fileDiagnostic(taxbroker::DiagnosticSeverity aSeverit
 /// then merge the following records into that field without any error, so the file is rejected.
 /// An unreadable file returns false; the reader reports that case itself.
 bool hasUnclosedQuote(const std::filesystem::path& aCsvPath) {
+    std::error_code error;
+    const bool regularFile = std::filesystem::is_regular_file(aCsvPath, error);
     std::ifstream input{aCsvPath, std::ios::binary};
-    if (!input)
+
+    if (!regularFile || !input)
     {
         return false;
     }

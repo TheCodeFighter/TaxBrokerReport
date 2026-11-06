@@ -13,6 +13,10 @@ data from the components below. Each component keeps its own licence; its full t
 - pugixml 1.16, MIT, https://github.com/zeux/pugixml
 - ib-edavki reference data (payers, relief statements, broker payers; revision
   22220f546378b638c129ffe4bd6f2c9a3139809c), MIT, https://github.com/ib-edavki/ib-edavki
+- ECB euro foreign exchange reference rates, 2016 to 2025 (resources/ecb), https://www.ecb.europa.eu.
+  Source: ECB statistics. Reformatted to the columns currency, date and rate; the values are
+  unchanged. Reused under the ECB policy regarding the reuse of ESCB statistics: free reuse on the
+  condition that the source is quoted and that the statistics are not modified.
 - Boost 1.84.0 (header-only libraries), BSL-1.0, https://www.boost.org
 - musl libc 1.2.6, MIT (details in its notice), https://musl.libc.org
 - GCC 15.2.0 runtime libraries (libstdc++, libgcc, libgcc_eh, libssp_nonshared, crtbegin,

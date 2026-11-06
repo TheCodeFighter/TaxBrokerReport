@@ -16,6 +16,9 @@ endif()
 # Option to build legacy QT GUI
 option(BUILD_LEGACY_GUI "Build the legacy Qt-based GUI codebase" OFF)
 option(BUILD_DEBUG_TOOLS "Build local debugging tools" OFF)
+# The unit and integration tests. The production image turns them off: it ships only the two
+# executables, so it needs neither GoogleTest nor libxml2.
+option(TAXBROKER_BUILD_TESTS "Build the unit and integration tests" ON)
 # The libFuzzer targets (tests/fuzz) with AddressSanitizer and UndefinedBehaviorSanitizer on every
 # project target. Clang only. This build has no unit or integration tests; use scripts/fuzz.sh.
 option(TAXBROKER_BUILD_FUZZERS "Build the libFuzzer targets with sanitizers (Clang only)" OFF)
@@ -87,6 +90,6 @@ if(BUILD_DEBUG_TOOLS)
 endif()
 if(TAXBROKER_BUILD_FUZZERS)
     add_subdirectory(tests/fuzz)
-else()
+elseif(TAXBROKER_BUILD_TESTS)
     add_subdirectory(tests)
 endif()

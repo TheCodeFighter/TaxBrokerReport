@@ -17,10 +17,12 @@
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/decision_session.hpp"
 #include "taxbroker/official_rates.hpp"
+#include "taxbroker/reference_catalogue.hpp"
 #include "utils/numeric_util.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cstdio>
@@ -33,6 +35,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
@@ -48,7 +51,8 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]
+                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
+                   --trade-republic FILE...
   taxbroker report --help
   taxbroker --help
 
@@ -61,7 +65,8 @@ Run 'taxbroker report --help' for the details.
 constexpr std::string_view kReportHelp =
     R"(Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]
+                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
+                   --trade-republic FILE...
 
 Writes the Doh-KDVP form (capital gains from selling shares and funds) for one year from
 Trade Republic CSV exports, and a readable summary. The XML can be imported into eDavki
@@ -73,14 +78,26 @@ Options:
   --self-report      Write a self-report (samoprijava) instead of an original return.
   --no-input         Ask no questions: an open question blocks the report (see
                      "Questions" below).
-  --ecb-rates FILE   An ECB reference-rate file (CSV from the ECB Data Portal, dataset EXR)
-                     for one calendar year. Repeat it for more years. Needed to convert a
-                     trade in a foreign currency to EUR; see "Foreign currencies" below.
   --out DIR          The folder for the output files. It is created if it is missing.
   -h, --help         Show this help.
-  CSV                One or more Trade Republic exports. Give your whole history, not
+
+File options take one or more files. The list ends at the next option, so no other
+argument may stand alone. The same option may be given again; its files are added. A file
+whose name starts with "-" is given as ./-name.csv.
+  --trade-republic FILE...
+                     One or more Trade Republic exports. Give your whole history, not
                      only the tax year: FIFO needs the older purchases. Overlapping files
                      are fine; a transaction in two files is counted once.
+  --ecb-rates FILE...
+                     ECB reference-rate files (CSV from the ECB Data Portal, dataset EXR),
+                     one per calendar year. The years 2016 to 2025 are built in; a file for
+                     one of those years replaces the built-in year, and other years are
+                     added. Needed to convert a trade in a foreign currency to EUR; see
+                     "Foreign currencies" below.
+  --reference-files FILE...
+                     A newer payers.csv, relief_statements.csv or broker_payers.csv. Each
+                     replaces the built-in file of the same name. Another file name is an
+                     error.
 
 Taxpayer file (JSON):
   {
@@ -149,8 +166,10 @@ Questions:
 Foreign currencies:
   The unit price of a trade in another currency is converted to EUR at the official rate of
   the day of that trade: 1 EUR = rate units of the currency (the ECB reference rate, the
-  same as the Banka Slovenije rate). Give the ECB file of every year that has such a trade
-  up to 31 December of the tax year, also an earlier one: older purchases are part of FIFO.
+  same as the Banka Slovenije rate). The rates of 2016 to 2025 are built in. For a year
+  without built-in rates, or to use your own file, give the ECB file of that year with
+  --ecb-rates. Every year that has such a trade up to 31 December of the tax year counts,
+  also an earlier one: older purchases are part of FIFO.
   A day without an ECB rate (a weekend or holiday) takes the last earlier rate, at most
   4 days back, with a warning. The summary lists the rates used. Trades after the tax year
   need no rate. When a file is missing or ends too early, the summary lists every year to
@@ -172,9 +191,9 @@ The report is blocked (no XML) when an investment sold in the year:
   - has a corporate action without an answered ratio, or a merger, within 30 days after a
     sale at a loss in December;
   - has a split or reverse split that makes the value of one unit too large for the form;
-  - has a trade in a foreign currency that no loaded ECB rate file covers (no file for the
-    year, a file that ends before the day, no rate near the day, or a currency that the
-    euro replaced);
+  - has a trade in a foreign currency that no ECB rate file covers (no built-in or loaded
+    file for the year, a file that ends before the day, no rate near the day, or a
+    currency that the euro replaced);
   - has a question that is open or was cancelled.
 It is also blocked when a file cannot be read, when a trade or corporate-action row of
 any file is rejected, when two files disagree about the same trade, when the asset class
@@ -204,7 +223,7 @@ Exit codes:
      file or an output file that cannot be written. No output file was changed.
 
 Example:
-  taxbroker report --year 2025 --taxpayer taxpayer.json --out out export.csv
+  taxbroker report --year 2025 --taxpayer taxpayer.json --out out --trade-republic export.csv
 )";
 
 constexpr std::string_view kHelpHint = "Run 'taxbroker report --help' for the usage.\n";
@@ -216,8 +235,9 @@ struct ReportOptions {
     FilingType mFilingType{FilingType::Original};
     bool mAskQuestions{true}; ///< False with --no-input: the open questions stay open.
     std::filesystem::path mOutputDirectory;
-    std::vector<std::filesystem::path> mCsvPaths;
-    std::vector<std::filesystem::path> mEcbRatePaths; ///< The --ecb-rates files, one per year.
+    std::vector<std::filesystem::path> mTradeRepublicPaths; ///< The --trade-republic files.
+    std::vector<std::filesystem::path> mEcbRatePaths;       ///< The --ecb-rates files.
+    std::vector<std::filesystem::path> mReferencePaths;     ///< The --reference-files files.
 };
 
 /// A problem that stops the run before anything is written, with its text for stderr.
@@ -246,8 +266,8 @@ std::optional<int> parseYear(std::string_view aText) {
     return year;
 }
 
-/// Reads the options of `report`. Options and CSV paths may come in any order; `--` ends the
-/// options.
+/// Reads the options of `report`. The options come in any order. A file option takes the
+/// arguments after it up to the next option; any other argument is an error.
 std::variant<ReportOptions, UsageError, HelpRequested>
 parseReportArguments(std::span<const std::string> aArguments) {
     ReportOptions options;
@@ -256,27 +276,61 @@ parseReportArguments(std::span<const std::string> aArguments) {
     std::optional<std::string> outputText;
     bool selfReport = false;
     bool noInput = false;
-    bool onlyPaths = false;
+
+    // The list that takes the next plain arguments, its option and how many it has so far.
+    std::vector<std::filesystem::path>* list = nullptr;
+    std::string listOption;
+    std::size_t listFiles = 0;
 
     for (std::size_t index = 0; index < aArguments.size(); ++index)
     {
         const std::string& argument = aArguments[index];
 
-        if (onlyPaths || argument.empty() || argument.front() != '-')
+        if (argument.empty() || argument.front() != '-')
         {
-            options.mCsvPaths.emplace_back(argument);
-            continue;
-        }
+            if (list == nullptr)
+            {
+                return UsageError{
+                    (argument.empty() ? std::string{"An empty argument"} : fileNameOf(argument)) +
+                    " is not after a file option such as --trade-republic."};
+            }
 
-        if (argument == "--")
-        {
-            onlyPaths = true;
+            list->emplace_back(argument);
+            ++listFiles;
             continue;
         }
 
         if (argument == "-h" || argument == "--help")
         {
             return HelpRequested{};
+        }
+
+        // An option ends the list before it.
+        if (list != nullptr && listFiles == 0)
+        {
+            return UsageError{listOption + " needs at least one file."};
+        }
+
+        list = nullptr;
+
+        if (argument == "--trade-republic")
+        {
+            list = &options.mTradeRepublicPaths;
+        }
+        else if (argument == "--ecb-rates")
+        {
+            list = &options.mEcbRatePaths;
+        }
+        else if (argument == "--reference-files")
+        {
+            list = &options.mReferencePaths;
+        }
+
+        if (list != nullptr)
+        {
+            listOption = argument;
+            listFiles = 0;
+            continue;
         }
 
         if (argument == "--self-report")
@@ -298,17 +352,6 @@ parseReportArguments(std::span<const std::string> aArguments) {
             }
 
             noInput = true;
-            continue;
-        }
-
-        if (argument == "--ecb-rates")
-        {
-            if (index + 1 == aArguments.size())
-            {
-                return UsageError{argument + " needs a value."};
-            }
-
-            options.mEcbRatePaths.emplace_back(aArguments[++index]);
             continue;
         }
 
@@ -348,6 +391,11 @@ parseReportArguments(std::span<const std::string> aArguments) {
         *target = aArguments[++index];
     }
 
+    if (list != nullptr && listFiles == 0)
+    {
+        return UsageError{listOption + " needs at least one file."};
+    }
+
     if (!yearText)
     {
         return UsageError{"--year is missing."};
@@ -371,9 +419,9 @@ parseReportArguments(std::span<const std::string> aArguments) {
         return UsageError{"--out is missing."};
     }
 
-    if (options.mCsvPaths.empty())
+    if (options.mTradeRepublicPaths.empty())
     {
-        return UsageError{"Give at least one Trade Republic CSV file."};
+        return UsageError{"Give at least one Trade Republic CSV file with --trade-republic."};
     }
 
     options.mYear = *year;
@@ -388,13 +436,13 @@ parseReportArguments(std::span<const std::string> aArguments) {
 /// Checks the files the run needs before any processing.
 std::optional<UsageError> checkInputFiles(const ReportOptions& aOptions) {
     std::error_code error;
-    const auto missingCsv = std::find_if(aOptions.mCsvPaths.begin(),
-                                         aOptions.mCsvPaths.end(),
+    const auto missingCsv = std::find_if(aOptions.mTradeRepublicPaths.begin(),
+                                         aOptions.mTradeRepublicPaths.end(),
                                          [&error](const std::filesystem::path& aPath) {
                                              return !std::filesystem::is_regular_file(aPath, error);
                                          });
 
-    if (missingCsv != aOptions.mCsvPaths.end())
+    if (missingCsv != aOptions.mTradeRepublicPaths.end())
     {
         return UsageError{"The CSV file " + fileNameOf(*missingCsv) +
                           " does not exist or is not a file."};
@@ -410,6 +458,19 @@ std::optional<UsageError> checkInputFiles(const ReportOptions& aOptions) {
     if (missingRates != aOptions.mEcbRatePaths.end())
     {
         return UsageError{"The ECB rate file " + fileNameOf(*missingRates) +
+                          " does not exist or is not a file."};
+    }
+
+    const auto missingReference =
+        std::find_if(aOptions.mReferencePaths.begin(),
+                     aOptions.mReferencePaths.end(),
+                     [&error](const std::filesystem::path& aPath) {
+                         return !std::filesystem::is_regular_file(aPath, error);
+                     });
+
+    if (missingReference != aOptions.mReferencePaths.end())
+    {
+        return UsageError{"The reference file " + fileNameOf(*missingReference) +
                           " does not exist or is not a file."};
     }
 
@@ -579,6 +640,7 @@ struct RunOutcome {
     const CapitalGainsReportKDVP& mPreview;
     const ApplicationResult& mResult;
     std::vector<UsedOfficialRate> mUsedRates; ///< Rates that converted a trade, by date, then code.
+    std::string mDataSources; ///< The "Reference data" and "ECB rate files" lines, each with `\n`.
     bool mDeletedOldXml{};
 };
 
@@ -1027,7 +1089,8 @@ void writeUsedRates(std::ostream& aOut, const RunOutcome& aOutcome) {
             aOut << " (rate of " << isoDate(rate.mObservationDate) << ")";
         }
 
-        aOut << " (" << rate.mSourceFile.value() << " row " << rate.mSourceRow << ")\n";
+        aOut << " (" << rate.mSourceFile.value() << " row " << rate.mSourceRow
+             << (rate.mOrigin == OfficialRateOrigin::BuiltIn ? ", built-in" : "") << ")\n";
     }
 
     aOut << '\n';
@@ -1039,14 +1102,15 @@ std::string summaryText(const RunOutcome& aOutcome) {
 
     out << "TaxBrokerReport: Doh-KDVP " << options.mYear << " ("
         << (options.mFilingType == FilingType::Original ? "original return" : "self-report")
-        << ")\nInput files: " << options.mCsvPaths.size() << '\n';
+        << ")\nInput files: " << options.mTradeRepublicPaths.size() << '\n';
 
-    for (std::size_t index = 0; index < options.mCsvPaths.size(); ++index)
+    for (std::size_t index = 0; index < options.mTradeRepublicPaths.size(); ++index)
     {
-        out << "  " << sourceId(index) << ' ' << fileNameOf(options.mCsvPaths[index]) << '\n';
+        out << "  " << sourceId(index) << ' ' << fileNameOf(options.mTradeRepublicPaths[index])
+            << '\n';
     }
 
-    out << '\n';
+    out << aOutcome.mDataSources << '\n';
     writeCapitalStatus(out, aOutcome);
     out << '\n';
     writeInvestments(out, aOutcome);
@@ -1330,15 +1394,16 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 int runReport(const ReportOptions& aOptions,
               const TaxpayerMetadata& aTaxpayer,
               const OfficialRateTable& aRates,
+              const std::string& aDataSources,
               std::istream& aIn,
               std::ostream& aOut,
               std::ostream& aErr) {
     tr::TradeRepublicParser parser;
     std::vector<StatementMergeInput> inputs;
 
-    for (std::size_t index = 0; index < aOptions.mCsvPaths.size(); ++index)
+    for (std::size_t index = 0; index < aOptions.mTradeRepublicPaths.size(); ++index)
     {
-        inputs.push_back({index, parser.parse(aOptions.mCsvPaths[index], index)});
+        inputs.push_back({index, parser.parse(aOptions.mTradeRepublicPaths[index], index)});
     }
 
     // Parsing, merging and the year do not depend on an answer, so they run once.
@@ -1409,6 +1474,7 @@ int runReport(const ReportOptions& aOptions,
         .mPreview = preview,
         .mResult = result,
         .mUsedRates = calculated.value().mUsedRates,
+        .mDataSources = aDataSources,
         .mDeletedOldXml = deletesOldXml,
     };
     const auto summary = summaryText(outcome);
@@ -1467,6 +1533,102 @@ int runReport(const ReportOptions& aOptions,
     return kExitBlocked;
 }
 
+/// The years as ranges, such as "2016 to 2024, 2026".
+std::string yearRanges(const std::vector<int>& aYears) {
+    std::string text;
+
+    for (std::size_t index = 0; index < aYears.size();)
+    {
+        std::size_t last = index;
+
+        while (last + 1 < aYears.size() && aYears[last + 1] == aYears[last] + 1)
+        {
+            ++last;
+        }
+
+        text += text.empty() ? "" : ", ";
+        text += std::to_string(aYears[index]);
+
+        if (last > index)
+        {
+            text += " to " + std::to_string(aYears[last]);
+        }
+
+        index = last + 1;
+    }
+
+    return text;
+}
+
+/// The "Reference data" line: where each of the three files came from.
+std::string referenceDataLine(const ReferenceDataLoad& aLoad) {
+    constexpr std::array<std::string_view, 3> names{"payers.csv",
+                                                    "relief_statements.csv",
+                                                    "broker_payers.csv"};
+    std::string supplied;
+    std::string builtIn;
+
+    for (std::size_t index = 0; index < names.size(); ++index)
+    {
+        std::string& target =
+            aLoad.mOrigins[index] == CatalogueOrigin::Supplied ? supplied : builtIn;
+
+        target += target.empty() ? "" : ", ";
+        target += names[index];
+    }
+
+    if (supplied.empty())
+    {
+        // The revision of the upstream data, short like a commit name.
+        const auto& payers = referenceCatalogue().payers();
+        const auto upstream =
+            std::find_if(payers.begin(), payers.end(), [](const PayerEntry& aPayer) {
+                return aPayer.mSource.mSource == "ib-edavki";
+            });
+        const std::string revision =
+            upstream == payers.end() ? "" : upstream->mSource.mSourceRevision.substr(0, 7);
+
+        return "Reference data: built-in" +
+               (revision.empty() ? "" : " (ib-edavki " + revision + ")") + "\n";
+    }
+
+    return "Reference data: " + supplied + " supplied" +
+           (builtIn.empty() ? "" : "; " + builtIn + " built-in") + "\n";
+}
+
+/// The "ECB rate files" line: the built-in years in use and the supplied files.
+std::string rateFilesLine(const OfficialRateTable& aRates) {
+    std::vector<int> builtInYears;
+    std::string supplied;
+
+    for (const auto& file : aRates.mFiles)
+    {
+        if (file.mOrigin == OfficialRateOrigin::BuiltIn)
+        {
+            builtInYears.push_back(file.mYear);
+            continue;
+        }
+
+        supplied += supplied.empty() ? "" : ", ";
+        supplied += file.mSourceFile.value() + " (" + std::to_string(file.mYear) +
+                    (file.mReplacesBuiltIn ? ", replaces the built-in year" : "") + ")";
+    }
+
+    std::string line = "ECB rate files: ";
+
+    if (!builtInYears.empty())
+    {
+        line += "built-in " + yearRanges(builtInYears);
+    }
+
+    if (!supplied.empty())
+    {
+        line += std::string{builtInYears.empty() ? "" : "; "} + "supplied: " + supplied;
+    }
+
+    return line + "\n";
+}
+
 int runReportCommand(std::span<const std::string> aArguments,
                      std::istream& aIn,
                      std::ostream& aOut,
@@ -1505,7 +1667,7 @@ int runReportCommand(std::span<const std::string> aArguments,
 
     // The rate files are named by the user, so a file that is not valid fails the run: a gap
     // would otherwise show up as a missing rate.
-    const auto rates = loadEcbRateFiles(options.mEcbRatePaths);
+    const auto rates = loadOfficialRates(options.mEcbRatePaths);
 
     if (!rates.mDiagnostics.empty())
     {
@@ -1523,7 +1685,45 @@ int runReportCommand(std::span<const std::string> aArguments,
         return kExitFailure;
     }
 
-    return runReport(options, std::get<TaxpayerMetadata>(taxpayer), rates.mTable, aIn, aOut, aErr);
+    // The reference files are named by the user too: a file that is not valid fails the run.
+    const auto reference = loadReferenceData(options.mReferencePaths);
+
+    if (reference.mFault)
+    {
+        const auto& fault = *reference.mFault;
+
+        // The text of a wrong or repeated file name already names the file.
+        const bool nameFault = fault.mMessage.mKey == MessageKey::ReferenceFileUnknownName ||
+                               fault.mMessage.mKey == MessageKey::ReferenceFileRepeatedName;
+
+        if (nameFault)
+        {
+            aErr << "taxbroker: " << fault.mMessage.mEnglish << '\n' << kHelpHint;
+
+            return kExitFailure;
+        }
+
+        aErr << "taxbroker: the reference file " << fault.mFile << " is not valid";
+
+        if (fault.mRow)
+        {
+            aErr << " (row " << *fault.mRow << ")";
+        }
+
+        aErr << ": " << fault.mMessage.mEnglish << '\n' << kHelpHint;
+
+        return kExitFailure;
+    }
+
+    const std::string dataSources = referenceDataLine(reference) + rateFilesLine(rates.mTable);
+
+    return runReport(options,
+                     std::get<TaxpayerMetadata>(taxpayer),
+                     rates.mTable,
+                     dataSources,
+                     aIn,
+                     aOut,
+                     aErr);
 }
 
 } // namespace

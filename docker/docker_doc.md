@@ -46,8 +46,12 @@ production image instead:
 ./scripts/build.sh prod
 ```
 
-The production image is a Clang Release build with `TAXBROKER_STATIC=ON`: `taxbroker` (the CLI)
-and `taxbroker_server` are linked fully static and stripped, so they run on any x86-64 Linux and
+The production image is a Clang Release build with `TAXBROKER_STATIC=ON` and
+`TAXBROKER_BUILD_TESTS=OFF`. Its builder stage starts from plain Alpine with only the compile
+packages (no debuggers, Valgrind, Cppcheck, lcov or libxml2) and builds only the two executables.
+The downloaded dependencies are kept in a BuildKit cache folder, so a local rebuild does not
+download them again (a fresh CI runner has an empty cache). `taxbroker` (the CLI) and
+`taxbroker_server` are linked fully static and stripped, so they run on any x86-64 Linux and
 the image needs no runtime libraries. `prod` also copies both binaries to `build/static`. The
 image and the CI artifact ship `LICENSE` and `THIRD_PARTY_NOTICES.txt` (the licences of the
 code linked into the binaries) next to them.
@@ -108,8 +112,8 @@ run. Later jobs load them and compile nothing:
 ```text
 Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reuse-build)
            │                     ├─ Valgrind         (valgrind.sh --reuse-build --part regular)
-           │                     ├─ Valgrind (large inputs)  (--part large, only when related
-           │                     │                            files change, not required)
+           │                     ├─ Valgrind (csv|ecb|reference|messages)  (--part <part>, only
+           │                     │                   when related files change, not required)
            │                     └─ Cppcheck         (cppcheck.sh --reuse-build)
            ├─ format-check                  (pull requests only)
            ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 240 s, own sanitizer build)

@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <functional>
+#include <map>
 #include <string>
 #include <string_view>
 
@@ -43,24 +45,56 @@ inline void collectLibXml2Message(void* aMessages, const char* aFormat, ...) {
     static_cast<std::string*>(aMessages)->append(buffer.data());
 }
 
-/// The libxml2 errors of an XML document checked against a schema file below
-/// `resources/xml/schemas/`. Empty when the document is valid.
-inline std::string schemaErrors(const std::string& aXml, std::string_view aSchemaFile) {
+/// A schema file read once per test process: the schema, or the messages of why it was not read.
+struct CachedSchema {
+    xmlSchemaPtr mSchema = nullptr;
+    std::string mReadErrors;
+
+    CachedSchema() = default;
+    CachedSchema(const CachedSchema&) = delete;
+    CachedSchema& operator=(const CachedSchema&) = delete;
+
+    ~CachedSchema() {
+        xmlSchemaFree(mSchema);
+    }
+};
+
+/// Reads a schema file below `resources/xml/schemas/` the first time it is asked for. Parsing the
+/// schema files is the most expensive part of a check, and many tests check a document.
+inline const CachedSchema& cachedSchema(std::string_view aSchemaFile) {
+    static std::map<std::string, CachedSchema, std::less<>> schemas;
+
+    const auto found = schemas.find(aSchemaFile);
+
+    if (found != schemas.end())
+    {
+        return found->second;
+    }
+
+    CachedSchema& cached = schemas[std::string{aSchemaFile}];
     const std::string schemaPath =
         std::string{TAXBROKER_SCHEMA_DIR} + "/" + std::string{aSchemaFile};
-    std::string messages;
 
     xmlSchemaParserCtxtPtr parserContext = xmlSchemaNewParserCtxt(schemaPath.c_str());
     xmlSchemaSetParserErrors(parserContext,
                              collectLibXml2Message,
                              collectLibXml2Message,
-                             &messages);
-    xmlSchemaPtr schema = xmlSchemaParse(parserContext);
+                             &cached.mReadErrors);
+    cached.mSchema = xmlSchemaParse(parserContext);
     xmlSchemaFreeParserCtxt(parserContext);
 
-    if (schema == nullptr)
+    return cached;
+}
+
+/// The libxml2 errors of an XML document checked against a schema file below
+/// `resources/xml/schemas/`. Empty when the document is valid.
+inline std::string schemaErrors(const std::string& aXml, std::string_view aSchemaFile) {
+    const CachedSchema& cached = cachedSchema(aSchemaFile);
+    std::string messages;
+
+    if (cached.mSchema == nullptr)
     {
-        return "The schema could not be read: " + messages;
+        return "The schema could not be read: " + cached.mReadErrors;
     }
 
     xmlDocPtr document = xmlReadMemory(aXml.data(),
@@ -71,12 +105,10 @@ inline std::string schemaErrors(const std::string& aXml, std::string_view aSchem
 
     if (document == nullptr)
     {
-        xmlSchemaFree(schema);
-
         return "The document is not well-formed XML.";
     }
 
-    xmlSchemaValidCtxtPtr validationContext = xmlSchemaNewValidCtxt(schema);
+    xmlSchemaValidCtxtPtr validationContext = xmlSchemaNewValidCtxt(cached.mSchema);
     xmlSchemaSetValidErrors(validationContext,
                             collectLibXml2Message,
                             collectLibXml2Message,
@@ -85,7 +117,6 @@ inline std::string schemaErrors(const std::string& aXml, std::string_view aSchem
 
     xmlSchemaFreeValidCtxt(validationContext);
     xmlFreeDoc(document);
-    xmlSchemaFree(schema);
 
     if (result != 0 && messages.empty())
     {

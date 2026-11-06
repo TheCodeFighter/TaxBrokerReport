@@ -188,6 +188,18 @@ TEST(TaxpayerFileTest, ReadsTheFileFromDisk) {
     EXPECT_EQ(std::get<TaxpayerMetadata>(result).mTaxNumber, "12345678");
 }
 
+TEST(TaxpayerFileTest, FolderCannotBeRead) {
+    const auto folder = std::filesystem::temp_directory_path() / "taxbroker_taxpayer_folder.json";
+
+    std::filesystem::create_directories(folder);
+
+    const auto result = readTaxpayerFile(folder);
+
+    std::filesystem::remove(folder);
+
+    EXPECT_EQ(errorOf(result), "The taxpayer file cannot be read.");
+}
+
 TEST(TaxpayerFileTest, MissingFileCannotBeRead) {
     const auto result = readTaxpayerFile(std::filesystem::temp_directory_path() /
                                          "taxbroker_taxpayer_that_does_not_exist.json");

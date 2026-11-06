@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <functional>
+#include <map>
 #include <stdexcept>
 #include <utility>
 
@@ -89,6 +91,9 @@ constexpr std::array kFirstAndFoundYear{
 };
 constexpr std::array kColumn{
     MessageParamDefinition{"column", MessageParamKind::Text},
+};
+constexpr std::array kName{
+    MessageParamDefinition{"name", MessageParamKind::Text},
 };
 constexpr std::array kYear{
     MessageParamDefinition{"year", MessageParamKind::Number},
@@ -373,6 +378,35 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::AnswerRejectedCorrectionOverBudget,
                       "answer_rejected.correction_over_budget",
                       kRequestId},
+    MessageDefinition{MessageKey::ReferenceFileUnknownName, "reference_file.unknown_name", kName},
+    MessageDefinition{MessageKey::ReferenceFileRepeatedName, "reference_file.repeated_name", kName},
+    MessageDefinition{MessageKey::ReferenceFileUnreadable, "reference_file.unreadable", {}},
+    MessageDefinition{MessageKey::ReferenceFileUnclosedQuote, "reference_file.unclosed_quote", {}},
+    MessageDefinition{MessageKey::ReferenceFileLineBreak, "reference_file.line_break", {}},
+    MessageDefinition{MessageKey::ReferenceFileMissingColumns,
+                      "reference_file.missing_columns",
+                      kCountAndColumns},
+    MessageDefinition{
+        MessageKey::ReferenceFileRepeatedColumn, "reference_file.repeated_column", kColumn},
+    MessageDefinition{
+        MessageKey::ReferenceFileFieldCount, "reference_file.field_count", kExpectedAndFound},
+    MessageDefinition{MessageKey::ReferenceFileEmptyField, "reference_file.empty_field", kField},
+    MessageDefinition{MessageKey::ReferenceFileNoIdentifier, "reference_file.no_identifier", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidIsin, "reference_file.invalid_isin", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidConid, "reference_file.invalid_conid", {}},
+    MessageDefinition{
+        MessageKey::ReferenceFileInvalidCountry, "reference_file.invalid_country", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidInstrumentKind,
+                      "reference_file.invalid_instrument_kind",
+                      {}},
+    MessageDefinition{
+        MessageKey::ReferenceFileInvalidVerifiedOn, "reference_file.invalid_verified_on", {}},
+    MessageDefinition{MessageKey::ReferenceFileInvalidSource, "reference_file.invalid_source", {}},
+    MessageDefinition{MessageKey::ReferenceFileMissingSourceRevision,
+                      "reference_file.missing_source_revision",
+                      {}},
+    MessageDefinition{
+        MessageKey::ReferenceFileDuplicateBrokerCode, "reference_file.duplicate_broker_code", {}},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -389,7 +423,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::AnswerRejectedCorrectionOverBudget) + 1,
+                  static_cast<std::size_t>(MessageKey::ReferenceFileDuplicateBrokerCode) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 8> kTermKeys{
@@ -618,24 +652,49 @@ std::vector<MessageTableRow> parseMessageTable(std::string_view aCsvText) {
     return rows;
 }
 
-const std::vector<MessageTableRow>& messageTable() {
-    static const std::vector<MessageTableRow> table = parseMessageTable(diagnosticMessagesCsv());
+namespace {
 
-    return table;
+/// The message table, with the position of each key (the first row of a key), made once.
+struct MessageIndex {
+    std::vector<MessageTableRow> mRows;
+    std::map<std::string, std::size_t, std::less<>> mPositionOfKey;
+};
+
+const MessageIndex& messageIndex() {
+    static const MessageIndex index = [] {
+        MessageIndex made;
+
+        made.mRows = parseMessageTable(diagnosticMessagesCsv());
+
+        for (std::size_t position = 0; position < made.mRows.size(); ++position)
+        {
+            made.mPositionOfKey.emplace(made.mRows[position].mKey, position);
+        }
+
+        return made;
+    }();
+
+    return index;
+}
+
+} // namespace
+
+const std::vector<MessageTableRow>& messageTable() {
+    return messageIndex().mRows;
 }
 
 const std::string& messageText(std::string_view aId, MessageLanguage aLanguage) {
-    const auto& table = messageTable();
-    const auto row = std::find_if(table.begin(), table.end(), [aId](const MessageTableRow& aRow) {
-        return aRow.mKey == aId;
-    });
+    const MessageIndex& index = messageIndex();
+    const auto position = index.mPositionOfKey.find(aId);
 
-    if (row == table.end())
+    if (position == index.mPositionOfKey.end())
     {
         throw std::logic_error{"The message table has no row for " + std::string{aId}};
     }
 
-    return aLanguage == MessageLanguage::English ? row->mEnglish : row->mSlovenian;
+    const MessageTableRow& row = index.mRows[position->second];
+
+    return aLanguage == MessageLanguage::English ? row.mEnglish : row.mSlovenian;
 }
 
 std::string renderMessage(MessageKey aKey,

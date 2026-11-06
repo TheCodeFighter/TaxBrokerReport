@@ -7,7 +7,7 @@ execute_process(
         --year 2024
         --taxpayer "${FIXTURE_DIR}/taxpayer.json"
         --out "${OUTPUT_DIR}"
-        "${FIXTURE_DIR}/report_fixture.csv"
+        --trade-republic "${FIXTURE_DIR}/report_fixture.csv"
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE error)
@@ -39,7 +39,7 @@ execute_process(
         --year 2023
         --taxpayer "${FIXTURE_DIR}/taxpayer.json"
         --out "${OUTPUT_DIR}"
-        "${FIXTURE_DIR}/report_fixture.csv"
+        --trade-republic "${FIXTURE_DIR}/report_fixture.csv"
     RESULT_VARIABLE result
     OUTPUT_QUIET
     ERROR_QUIET)

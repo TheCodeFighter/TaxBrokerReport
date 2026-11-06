@@ -125,7 +125,8 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--ecb-rates FILE ...] --out DIR CSV [CSV ...]
+                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
+                   --trade-republic FILE...
   taxbroker report --help
   taxbroker --help
 
@@ -196,14 +197,26 @@ TEST(ReportCommandTest, ReportHelpStartsWithTheUsageAndEndsWithTheExample) {
     EXPECT_EQ(result.mOut.rfind("Usage:\n"
                                 "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                                 "[--no-input]\n"
-                                "                   [--ecb-rates FILE ...] --out DIR CSV "
-                                "[CSV ...]\n",
+                                "                   [--ecb-rates FILE...] [--reference-files "
+                                "FILE...] --out DIR\n"
+                                "                   --trade-republic FILE...\n",
                                 0),
               0U);
     EXPECT_TRUE(contains(result.mOut,
                          "Example:\n"
                          "  taxbroker report --year 2025 --taxpayer taxpayer.json --out out "
-                         "export.csv\n"));
+                         "--trade-republic export.csv\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  --trade-republic FILE...\n"
+                         "                     One or more Trade Republic exports."));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  --ecb-rates FILE...\n"
+                         "                     ECB reference-rate files"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  --reference-files FILE...\n"
+                         "                     A newer payers.csv, relief_statements.csv or "
+                         "broker_payers.csv."));
+    EXPECT_TRUE(contains(result.mOut, "The list ends at the next option"));
     EXPECT_TRUE(contains(result.mOut,
                          "  2  The command could not run: a wrong option, a missing file, an "
                          "invalid taxpayer\n"));
@@ -265,16 +278,146 @@ TEST(ReportCommandTest, OutputWithoutAValueFails) {
     EXPECT_EQ(result.mErr, "taxbroker: --out needs a value.\n" + std::string{kUsageHint});
 }
 
-TEST(ReportCommandTest, EcbRatesWithoutAValueFails) {
+TEST(ReportCommandTest, EcbRatesWithoutAFileFails) {
+    // The option is the last argument, so its list is empty.
     const auto result = run({"report", "--year", "2024", "--ecb-rates"});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
-    EXPECT_EQ(result.mErr, "taxbroker: --ecb-rates needs a value.\n" + std::string{kUsageHint});
+    EXPECT_EQ(result.mErr,
+              "taxbroker: --ecb-rates needs at least one file.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, TradeRepublicFollowedByAnOptionFails) {
+    // The next option ends the list before it has a file.
+    const auto result = run({"report", "--trade-republic", "--year", "2024"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: --trade-republic needs at least one file.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, ReferenceFilesWithoutAFileFails) {
+    const auto result = run({"report", "--reference-files", "--out", "out"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: --reference-files needs at least one file.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AFileListTakesEveryArgumentUpToTheNextOption) {
+    // Both lists have two files; the first missing file of the broker list is named, which
+    // proves that "a.csv" and "b.csv" were both read as broker files and "r1.csv" and "r2.csv"
+    // were not.
+    const auto result = run({"report",
+                             "--trade-republic",
+                             "a.csv",
+                             "b.csv",
+                             "--ecb-rates",
+                             "r1.csv",
+                             "r2.csv",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The CSV file a.csv does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, ASecondTradeRepublicOptionAddsToTheList) {
+    // "a.csv" exists; "c.csv" comes after another option in a second --trade-republic and is the
+    // first missing file, so the second list was added to the first.
+    const TemporaryFolder folder;
+    const auto first = folder.writeCsv("a.csv", {});
+
+    const auto result = run({"report",
+                             "--trade-republic",
+                             first,
+                             "--year",
+                             "2024",
+                             "--trade-republic",
+                             folder.path("c.csv"),
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The CSV file c.csv does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AFileWithoutAListOptionFails) {
+    const auto result = run({"report", "--year", "2024", "a.csv"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: a.csv is not after a file option such as --trade-republic.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AFileWithoutAListOptionPrintsOnlyItsLastPart) {
+    const auto result = run({"report", "/home/someone/exports/a.csv"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: a.csv is not after a file option such as --trade-republic.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AFileAfterAValueOptionIsNotInTheEarlierList) {
+    // --out takes "out"; the list of --trade-republic ended at --out, so "b.csv" has no list.
+    const auto result = run({"report", "--trade-republic", "a.csv", "--out", "out", "b.csv"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: b.csv is not after a file option such as --trade-republic.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, DoubleDashIsAnUnknownOption) {
+    const auto result = run({"report", "--year", "2024", "--"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr, "taxbroker: Unknown option --.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AFileNameThatStartsWithADashIsGivenWithADotSlash) {
+    // "./-odd.csv" does not start with "-", so it is a file of the list.
+    const auto result = run({"report",
+                             "--trade-republic",
+                             "./-odd.csv",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The CSV file -odd.csv does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AnEmptyArgumentWithoutAListOptionFails) {
+    const auto result = run({"report", ""});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: An empty argument is not after a file option such as "
+              "--trade-republic.\n" +
+                  std::string{kUsageHint});
 }
 
 TEST(ReportCommandTest, OptionAfterAnOptionIsTakenAsItsValue) {
     // "--out" is the value of --year, so the year is invalid.
-    const auto result = run({"report", "--year", "--out", "out"});
+    const auto result = run({"report", "--year", "--out"});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
@@ -316,9 +459,10 @@ TEST(ReportCommandTest, NoInputGivenTwiceFails) {
     EXPECT_EQ(result.mErr, "taxbroker: --no-input is given twice.\n" + std::string{kUsageHint});
 }
 
-TEST(ReportCommandTest, NoInputMayComeAfterTheCsvPath) {
-    // --no-input is read as an option, not as a CSV path, so the next check names the CSV file.
+TEST(ReportCommandTest, NoInputMayComeAfterTheTradeRepublicList) {
+    // --no-input ends the list and is read as an option, so the next check names the CSV file.
     const auto result = run({"report",
+                             "--trade-republic",
                              "missing.csv",
                              "--no-input",
                              "--year",
@@ -434,13 +578,21 @@ TEST(ReportCommandTest, NoCsvFails) {
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
-              "taxbroker: Give at least one Trade Republic CSV file.\n" + std::string{kUsageHint});
+              "taxbroker: Give at least one Trade Republic CSV file with --trade-republic.\n" +
+                  std::string{kUsageHint});
 }
 
-TEST(ReportCommandTest, CsvPathMayComeBeforeTheOptions) {
+TEST(ReportCommandTest, TheTradeRepublicListMayComeBeforeTheOtherOptions) {
     // All options are read, so the next check looks for the CSV file.
-    const auto result = run(
-        {"report", "missing.csv", "--year", "2024", "--taxpayer", "taxpayer.json", "--out", "out"});
+    const auto result = run({"report",
+                             "--trade-republic",
+                             "missing.csv",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out"});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
@@ -448,22 +600,13 @@ TEST(ReportCommandTest, CsvPathMayComeBeforeTheOptions) {
                   std::string{kUsageHint});
 }
 
-TEST(ReportCommandTest, HelpAfterDoubleDashIsACsvPath) {
-    const auto result = run({"report",
-                             "--year",
-                             "2024",
-                             "--taxpayer",
-                             "taxpayer.json",
-                             "--out",
-                             "out",
-                             "--",
-                             "--help"});
+TEST(ReportCommandTest, HelpAfterAFileOptionIsStillTheHelp) {
+    // "--help" is an option, so it ends the empty list and shows the help.
+    const auto result = run({"report", "--trade-republic", "--help"});
 
-    EXPECT_EQ(result.mExitCode, kExitFailure);
-    EXPECT_TRUE(result.mOut.empty());
-    EXPECT_EQ(result.mErr,
-              "taxbroker: The CSV file --help does not exist or is not a file.\n" +
-                  std::string{kUsageHint});
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(contains(result.mOut, "  -h, --help         Show this help.\n"));
 }
 
 // Input files
@@ -480,6 +623,7 @@ TEST(ReportCommandTest, FirstMissingCsvIsNamed) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history,
                              folder.path("first-missing.csv"),
                              folder.path("second-missing.csv")});
@@ -501,6 +645,7 @@ TEST(ReportCommandTest, CsvIsCheckedBeforeTheTaxpayerFile) {
                              folder.path("taxpayer.json"),
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              folder.path("history.csv")});
 
     // Neither file exists; the CSV is named.
@@ -522,6 +667,7 @@ TEST(ReportCommandTest, CsvThatIsAFolderFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              folder.path("exports")});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -531,7 +677,7 @@ TEST(ReportCommandTest, CsvThatIsAFolderFails) {
 }
 
 TEST(ReportCommandTest, FirstMissingEcbRateFileIsNamed) {
-    // --ecb-rates may be given more than once; the first file that is missing is named.
+    // --ecb-rates takes a list; the first file of it that is missing is named.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
@@ -546,13 +692,40 @@ TEST(ReportCommandTest, FirstMissingEcbRateFileIsNamed) {
                              folder.outputDirectory(),
                              "--ecb-rates",
                              rates2024,
-                             "--ecb-rates",
                              folder.path("exr_2025.csv"),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
               "taxbroker: The ECB rate file exr_2025.csv does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
+}
+
+TEST(ReportCommandTest, FirstMissingReferenceFileIsNamed) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    const auto payers = folder.writeText("payers.csv", "isin\n");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             folder.path("broker_payers.csv"),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The reference file broker_payers.csv does not exist or is not a "
+              "file.\n" +
                   std::string{kUsageHint});
     EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
 }
@@ -568,6 +741,7 @@ TEST(ReportCommandTest, MissingTaxpayerFileFails) {
                              folder.path("taxpayer.json"),
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -588,6 +762,7 @@ TEST(ReportCommandTest, TaxpayerFileThatIsAFolderFails) {
                              folder.path("taxpayer"),
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -602,8 +777,15 @@ TEST(ReportCommandTest, OutputThatIsAFileFails) {
     const auto history = folder.writeCsv("history.csv", {});
     const auto notAFolder = folder.writeText("out", "a file, not a folder");
 
-    const auto result =
-        run({"report", "--year", "2024", "--taxpayer", taxpayer, "--out", notAFolder, history});
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             notAFolder,
+                             "--trade-republic",
+                             history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
@@ -622,6 +804,7 @@ TEST(ReportCommandTest, TaxpayerFileThatIsNotJsonFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -652,6 +835,7 @@ TEST(ReportCommandTest, GeneratedYearWritesTheXmlAndTheSummary) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -659,6 +843,8 @@ TEST(ReportCommandTest, GeneratedYearWritesTheXmlAndTheSummary) {
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
 
@@ -693,6 +879,7 @@ TEST(ReportCommandTest, SelfReportIsNamedInTheSummaryTitle) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -713,6 +900,7 @@ TEST(ReportCommandTest, EachInputFileIsListedWithItsSourceIdAndFileName) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              first,
                              second,
                              third});
@@ -723,7 +911,9 @@ TEST(ReportCommandTest, EachInputFileIsListedWithItsSourceIdAndFileName) {
                          "Input files: 3\n"
                          "  source-0001 first.csv\n"
                          "  source-0002 second.csv\n"
-                         "  source-0003 third.csv\n\n"));
+                         "  source-0003 third.csv\n"
+                         "Reference data: built-in (ib-edavki 22220f5)\n"
+                         "ECB rate files: built-in 2016 to 2025\n\n"));
     EXPECT_FALSE(contains(result.mOut, folder.path("")));
 }
 
@@ -739,12 +929,15 @@ TEST(ReportCommandTest, YearWithoutDataWritesOnlyTheSummary) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
 Input files: 1
   source-0001 history.csv
+Reference data: built-in (ib-edavki 22220f5)
+ECB rate files: built-in 2016 to 2025
 
 Capital gains (Doh-KDVP): no data, no sale in 2024 needs a Doh-KDVP form
 
@@ -776,6 +969,7 @@ TEST(ReportCommandTest, YearWithoutDataDeletesAnOldXml) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -806,6 +1000,7 @@ TEST(ReportCommandTest, BlockedYearWithoutAnOldXmlDeletesNothing) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -839,6 +1034,7 @@ TEST(ReportCommandTest, UnitsAreWrittenWithFourToEightDecimals) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // 1.5 gets zeros up to 4 decimals; 0.12345678 keeps all 8; 2.12345 keeps its 5.
@@ -868,6 +1064,7 @@ TEST(ReportCommandTest, TwoSalesOfOneInvestmentAreCountedTogether) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // 4 + 3 = 7 units in two sale rows.
@@ -898,6 +1095,7 @@ TEST(ReportCommandTest, InvestmentWithoutAnErrorIsShownAsNoProblemWhenAnotherIsB
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history},
                             "yes\n");
 
@@ -931,6 +1129,7 @@ TEST(ReportCommandTest, LongHeldUnitsAreListedApart) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -958,6 +1157,7 @@ TEST(ReportCommandTest, InvestmentWithOnlyLongHeldUnitsIsNotInTheXml) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -985,6 +1185,7 @@ TEST(ReportCommandTest, PrivateMarketEventsAreListedWithAndWithoutAnIsin) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -1014,6 +1215,7 @@ TEST(ReportCommandTest, DiagnosticsOfOtherFormsShowTheirSeverity) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -1053,6 +1255,7 @@ TEST(ReportCommandTest, DiagnosticWithSeveralSourcesNamesTheFirstAndCountsTheOth
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              first,
                              second,
                              third});
@@ -1077,6 +1280,7 @@ TEST(ReportCommandTest, FileLevelErrorNamesOnlyTheFile) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              other});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -1103,6 +1307,7 @@ TEST(ReportCommandTest, DiagnosticWithoutASourceNamesOnlyItsCode) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -1129,6 +1334,7 @@ TEST(ReportCommandTest, BlockedInvestmentNamesEachCodeOnceAndEachSale) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
@@ -1151,6 +1357,7 @@ TEST(ReportCommandTest, OutputFolderIsCreatedWithItsParentFolders) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory() + "/2024/report",
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -1171,6 +1378,7 @@ TEST(ReportCommandTest, NewRunReplacesTheOldSummary) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
@@ -1184,8 +1392,15 @@ TEST(ReportCommandTest, OutputFolderInsideAFileCannotBeCreated) {
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
 
-    const auto result = run(
-        {"report", "--year", "2024", "--taxpayer", taxpayer, "--out", history + "/out", history});
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             history + "/out",
+                             "--trade-republic",
+                             history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_TRUE(result.mOut.empty());
@@ -1210,6 +1425,7 @@ TEST(ReportCommandTest, FolderAtTheXmlPathOfAGeneratedYearFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -1231,6 +1447,7 @@ TEST(ReportCommandTest, FolderAtTheXmlPathOfAYearWithoutDataFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // Even an empty folder there is not deleted: this run did not make it.
@@ -1254,6 +1471,7 @@ TEST(ReportCommandTest, FolderAtTheSummaryPathFails) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -1282,6 +1500,7 @@ TEST(ReportCommandTest, FolderAtTheTemporaryXmlPathKeepsTheOldFiles) {
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
@@ -1314,6 +1533,7 @@ TEST(ReportCommandTest, FolderAtTheTemporarySummaryPathDeletesTheNewTemporaryXml
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // The XML was written under its temporary name before the summary failed.
@@ -1339,6 +1559,7 @@ TEST(ReportCommandTest, FolderAtTheTemporarySummaryPathKeepsTheOldXmlOfAYearWith
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
+                             "--trade-republic",
                              history});
 
     // A year without data deletes the old XML, but not when the run fails with exit 2.

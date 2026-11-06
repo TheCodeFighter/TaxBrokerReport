@@ -44,19 +44,34 @@ WORKDIR /workspace
 
 CMD ["/bin/bash"]
 
-# Stage 2: Builder
-FROM dev AS builder
+# Stage 2: Builder. Only what the static release build needs.
+FROM alpine:3.24 AS builder
+
+RUN apk add --no-cache \
+    boost-dev \
+    ca-certificates \
+    clang \
+    cmake \
+    g++ \
+    git \
+    linux-headers \
+    ninja
+
+WORKDIR /workspace
 COPY . /workspace
 
-RUN for wait_seconds in 30 90 0; do \
+# The dependency downloads (FetchContent) go to a BuildKit cache folder, so a rebuild after a
+# source change does not download them again. COPY above changes with every source change.
+RUN --mount=type=cache,target=/deps \
+    for wait_seconds in 30 90 0; do \
         CC=clang CXX=clang++ cmake -B build -G Ninja -S . -DCMAKE_BUILD_TYPE=Release \
-            -DTAXBROKER_STATIC=ON && \
+            -DTAXBROKER_STATIC=ON -DTAXBROKER_BUILD_TESTS=OFF -DFETCHCONTENT_BASE_DIR=/deps && \
             break; \
         [ "$wait_seconds" -gt 0 ] || exit 1; \
         echo "Configure failed, maybe a dependency download. Retrying in $wait_seconds s..."; \
         sleep "$wait_seconds"; \
     done && \
-    cmake --build build -j$(nproc) && \
+    cmake --build build --target taxbroker taxbroker_server -j$(nproc) && \
     strip build/src/taxbroker build/src/taxbroker_server
 
 # Stage 3: Production
