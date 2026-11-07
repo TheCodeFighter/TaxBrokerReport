@@ -120,9 +120,8 @@ reference_file.missing_columns,The header lacks required columns: {count} ({colu
 reference_file.repeated_column,The column {column} appears more than once in the header. The reference data was not loaded.,Stolpec {column} se v glavi pojavi večkrat. Referenčni podatki niso bili naloženi.
 reference_file.field_count,"The row has a different number of fields than the header (expected {expected}, found {found}). The reference data was not loaded.","Vrstica ima drugačno število polj kot glava (pričakovano {expected}, najdeno {found}). Referenčni podatki niso bili naloženi."
 reference_file.empty_field,The field {field} is empty. The reference data was not loaded.,Polje {field} je prazno. Referenčni podatki niso bili naloženi.
-reference_file.no_identifier,The row has neither an ISIN nor a conid. The reference data was not loaded.,Vrstica nima ne ISIN ne conid. Referenčni podatki niso bili naloženi.
 reference_file.invalid_isin,The ISIN is not valid (format or check digit). The reference data was not loaded.,ISIN ni veljaven (oblika ali kontrolna števka). Referenčni podatki niso bili naloženi.
-reference_file.invalid_conid,The conid is not digits only. The reference data was not loaded.,Conid ne vsebuje samo števk. Referenčni podatki niso bili naloženi.
+reference_file.invalid_isin_source,"The ISIN source is not known (ib-edavki, wikidata, issuer, exchange or gleif). The reference data was not loaded.","Vir ISIN ni znan (ib-edavki, wikidata, issuer, exchange ali gleif). Referenčni podatki niso bili naloženi."
 reference_file.invalid_country,The country is not 2 uppercase letters. The reference data was not loaded.,Država ni sestavljena iz 2 velikih črk. Referenčni podatki niso bili naloženi.
 reference_file.invalid_instrument_kind,"The instrument kind is not share, etf, fund or bond. The reference data was not loaded.","Vrsta instrumenta ni share, etf, fund ali bond. Referenčni podatki niso bili naloženi."
 reference_file.invalid_verified_on,The date in verified_on is not a date as YYYY-MM-DD. The reference data was not loaded.,Datum v verified_on ni datum v obliki LLLL-MM-DD. Referenčni podatki niso bili naloženi.

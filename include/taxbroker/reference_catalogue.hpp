@@ -34,10 +34,10 @@ struct CatalogueSource {
     bool operator==(const CatalogueSource&) const = default;
 };
 
-/// A payer of dividends. At least one of `mIsin` and `mIbkrConid` is set.
+/// A payer of dividends, found by its ISIN.
 struct PayerEntry {
-    std::optional<Isin> mIsin;                  ///< Checked: format and check digit.
-    std::optional<std::string> mIbkrConid;      ///< Interactive Brokers contract number, digits.
+    Isin mIsin;                                 ///< Checked: format and check digit.
+    std::string mIsinSource;                    ///< From the web.
     std::string mName;                          ///< The legal name.
     std::optional<std::string> mTaxNumber;      ///< None when the field is empty.
     std::string mAddress;                       ///< One line, as the source gives it.
@@ -65,12 +65,11 @@ struct BrokerPayerEntry {
     CatalogueSource mSource;               ///< Provenance of the row.
 };
 
-/// The payers of a file, with an index from the ISIN and from the conid to the entries that have
-/// it. The positions in an index are in file order. Made once; lists are shared read-only.
+/// The payers of a file, with an index from the ISIN to the entries that have it. The positions
+/// in the index are in file order. Made once; lists are shared read-only.
 struct PayerList {
-    std::vector<PayerEntry> mEntries;
-    std::map<std::string, std::vector<std::size_t>, std::less<>> mByIsin;
-    std::map<std::string, std::vector<std::size_t>, std::less<>> mByConid;
+    std::vector<PayerEntry> mEntries;                                     ///< In file order.
+    std::map<std::string, std::vector<std::size_t>, std::less<>> mByIsin; ///< ISIN to positions.
 
     explicit PayerList(std::vector<PayerEntry> aEntries);
 };
@@ -96,12 +95,6 @@ struct PayerLookup {
     std::vector<const PayerEntry*> mEntries; ///< Found: the first entry; Conflict: all of them.
 };
 
-/// The identifiers of a payer lookup. A ticker, a name or a country never matches.
-struct PayerQuery {
-    std::optional<Isin> mIsin;             ///< Matches the exact ISIN of an entry.
-    std::optional<std::string> mIbkrConid; ///< Only for an Interactive Brokers event.
-};
-
 /// The payer reference data: payers, relief statements and broker payers. The three lists are
 /// shared and read-only, so a copy of the catalogue copies no entry and a built-in list is shared
 /// by every catalogue that uses it.
@@ -116,10 +109,10 @@ class ReferenceCatalogue {
                        std::shared_ptr<const std::vector<ReliefStatementEntry>> aReliefStatements,
                        std::shared_ptr<const BrokerPayerList> aBrokerPayers);
 
-    /// Finds the entries with the exact ISIN or the exact `conid` of the query, in file order. An
-    /// entry found by both counts once. Several entries with the same facts (name, tax number,
-    /// address, country, kind) are one Found; any difference is a Conflict.
-    [[nodiscard]] PayerLookup findPayer(const PayerQuery& aQuery) const;
+    /// Finds the entries with the exact ISIN, in file order. A ticker, a name or a country never
+    /// matches. Several entries with the same facts (name, tax number, address, country, kind)
+    /// are one Found; any difference is a Conflict.
+    [[nodiscard]] PayerLookup findPayer(std::string_view aIsin) const;
 
     /// Every relief statement of the country, in file order.
     [[nodiscard]] std::vector<const ReliefStatementEntry*>

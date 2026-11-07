@@ -27,13 +27,13 @@ constexpr std::string_view kReliefStatementsFile = "relief_statements.csv";
 constexpr std::string_view kBrokerPayersFile = "broker_payers.csv";
 
 constexpr std::array<std::string_view, 10> kPayerColumns{"isin",
-                                                         "ibkr_conid",
                                                          "name",
                                                          "tax_number",
                                                          "address",
                                                          "country",
                                                          "instrument_kind",
                                                          "verified_on",
+                                                         "isin_source",
                                                          "source",
                                                          "source_revision"};
 constexpr std::array<std::string_view, 4> kReliefStatementColumns{
@@ -199,10 +199,6 @@ bool isValidIsin(std::string_view aValue) {
     return sum % 10 == 0;
 }
 
-bool isDigitsOnly(std::string_view aValue) {
-    return !aValue.empty() && std::all_of(aValue.begin(), aValue.end(), isDigit);
-}
-
 std::optional<std::string> optionalText(const std::string& aValue) {
     if (aValue.empty())
     {
@@ -269,13 +265,13 @@ void requireCountry(std::string_view aFile, std::size_t aRow, const std::string&
 std::vector<PayerEntry> readPayers(std::string_view aText, CatalogueOrigin aOrigin) {
     const CsvTable table = readFile(kPayersFile, aText, kPayerColumns);
     const std::size_t isinColumn = table.columnIndex("isin");
-    const std::size_t conidColumn = table.columnIndex("ibkr_conid");
     const std::size_t nameColumn = table.columnIndex("name");
     const std::size_t taxNumberColumn = table.columnIndex("tax_number");
     const std::size_t addressColumn = table.columnIndex("address");
     const std::size_t countryColumn = table.columnIndex("country");
     const std::size_t kindColumn = table.columnIndex("instrument_kind");
     const std::size_t verifiedColumn = table.columnIndex("verified_on");
+    const std::size_t isinSourceColumn = table.columnIndex("isin_source");
     const std::size_t sourceColumn = table.columnIndex("source");
     const std::size_t revisionColumn = table.columnIndex("source_revision");
 
@@ -286,15 +282,9 @@ std::vector<PayerEntry> readPayers(std::string_view aText, CatalogueOrigin aOrig
         const std::size_t number = row.mRowNumber;
         const auto& fields = row.mFields;
 
-        if (fields[isinColumn].empty() && fields[conidColumn].empty())
-        {
-            failRow(kPayersFile,
-                    number,
-                    "the row has neither an ISIN nor a conid",
-                    MessageKey::ReferenceFileNoIdentifier);
-        }
+        requireText(kPayersFile, number, fields[isinColumn], "isin");
 
-        if (!fields[isinColumn].empty() && !isValidIsin(fields[isinColumn]))
+        if (!isValidIsin(fields[isinColumn]))
         {
             failRow(kPayersFile,
                     number,
@@ -302,12 +292,17 @@ std::vector<PayerEntry> readPayers(std::string_view aText, CatalogueOrigin aOrig
                     MessageKey::ReferenceFileInvalidIsin);
         }
 
-        if (!fields[conidColumn].empty() && !isDigitsOnly(fields[conidColumn]))
+        const std::string& isinSource = fields[isinSourceColumn];
+
+        requireText(kPayersFile, number, isinSource, "isin_source");
+
+        if (isinSource != "ib-edavki" && isinSource != "wikidata" && isinSource != "issuer" &&
+            isinSource != "exchange" && isinSource != "gleif")
         {
             failRow(kPayersFile,
                     number,
-                    "the conid is not digits only",
-                    MessageKey::ReferenceFileInvalidConid);
+                    "the ISIN source is not ib-edavki, wikidata, issuer, exchange or gleif",
+                    MessageKey::ReferenceFileInvalidIsinSource);
         }
 
         requireText(kPayersFile, number, fields[nameColumn], "name");
@@ -340,8 +335,8 @@ std::vector<PayerEntry> readPayers(std::string_view aText, CatalogueOrigin aOrig
         }
 
         payers.push_back(PayerEntry{
-            .mIsin = optionalText(fields[isinColumn]),
-            .mIbkrConid = optionalText(fields[conidColumn]),
+            .mIsin = fields[isinColumn],
+            .mIsinSource = isinSource,
             .mName = fields[nameColumn],
             .mTaxNumber = optionalText(fields[taxNumberColumn]),
             .mAddress = fields[addressColumn],
@@ -460,17 +455,7 @@ bool sameFacts(const PayerEntry& aLeft, const PayerEntry& aRight) {
 PayerList::PayerList(std::vector<PayerEntry> aEntries) : mEntries(std::move(aEntries)) {
     for (std::size_t position = 0; position < mEntries.size(); ++position)
     {
-        const PayerEntry& entry = mEntries[position];
-
-        if (entry.mIsin)
-        {
-            mByIsin[*entry.mIsin].push_back(position);
-        }
-
-        if (entry.mIbkrConid)
-        {
-            mByConid[*entry.mIbkrConid].push_back(position);
-        }
+        mByIsin[mEntries[position].mIsin].push_back(position);
     }
 }
 
@@ -505,44 +490,22 @@ ReferenceCatalogue::ReferenceCatalogue(
     }
 }
 
-PayerLookup ReferenceCatalogue::findPayer(const PayerQuery& aQuery) const {
-    // The positions of the entries with the ISIN or the conid, in file order, each once.
-    std::vector<std::size_t> positions;
+PayerLookup ReferenceCatalogue::findPayer(std::string_view aIsin) const {
+    const auto found = mPayers->mByIsin.find(aIsin);
 
-    if (aQuery.mIsin)
-    {
-        const auto found = mPayers->mByIsin.find(*aQuery.mIsin);
-
-        if (found != mPayers->mByIsin.end())
-        {
-            positions.insert(positions.end(), found->second.begin(), found->second.end());
-        }
-    }
-
-    if (aQuery.mIbkrConid)
-    {
-        const auto found = mPayers->mByConid.find(*aQuery.mIbkrConid);
-
-        if (found != mPayers->mByConid.end())
-        {
-            positions.insert(positions.end(), found->second.begin(), found->second.end());
-        }
-    }
-
-    std::sort(positions.begin(), positions.end());
-    positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
-
-    std::vector<const PayerEntry*> matches;
-
-    std::transform(positions.begin(),
-                   positions.end(),
-                   std::back_inserter(matches),
-                   [this](std::size_t aPosition) { return &mPayers->mEntries[aPosition]; });
-
-    if (matches.empty())
+    if (found == mPayers->mByIsin.end())
     {
         return PayerLookup{};
     }
+
+    // The index holds the positions in file order.
+    std::vector<const PayerEntry*> matches;
+
+    matches.reserve(found->second.size());
+    std::transform(found->second.begin(),
+                   found->second.end(),
+                   std::back_inserter(matches),
+                   [this](std::size_t aPosition) { return &mPayers->mEntries[aPosition]; });
 
     const bool allSame = std::all_of(matches.begin(), matches.end(), [&](const PayerEntry* aEntry) {
         return sameFacts(*matches.front(), *aEntry);

@@ -222,9 +222,9 @@ implementation and tests must state the rules explicitly.
 Ship payer reference data as standalone offline resources: payers, relief statements and broker
 payers, converted from the MIT-licensed `ib-edavki` project into the CSV files described in
 [`reference_data.md`](reference_data.md), with provenance. A Slovenian-company list will be added
-next to them. The payers that upstream lists without an ISIN or `conid` wait in a separate
-file until their ISINs are found. A missing entry gives an income row with empty payer facts
-and a warning, so catalogue coverage never decides whether an income is taxable.
+next to them. Every payer row has an ISIN, so one row serves every broker; the payers whose ISIN
+is not certain wait in a separate file that the app does not read. A missing entry gives an
+income row with empty payer facts and a warning, so catalogue coverage never decides whether an income is taxable.
 
 Use exact identifiers to prefill verified payer metadata and relevant treaty references. A
 dividend or other-interest payer with the residence country `SI` is a Slovenian company that

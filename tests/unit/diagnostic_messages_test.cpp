@@ -314,9 +314,8 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::ReferenceFileEmptyField,
          "reference_file.empty_field",
          {{"field", MessageParamKind::Text}}},
-        {MessageKey::ReferenceFileNoIdentifier, "reference_file.no_identifier", {}},
         {MessageKey::ReferenceFileInvalidIsin, "reference_file.invalid_isin", {}},
-        {MessageKey::ReferenceFileInvalidConid, "reference_file.invalid_conid", {}},
+        {MessageKey::ReferenceFileInvalidIsinSource, "reference_file.invalid_isin_source", {}},
         {MessageKey::ReferenceFileInvalidCountry, "reference_file.invalid_country", {}},
         {MessageKey::ReferenceFileInvalidInstrumentKind,
          "reference_file.invalid_instrument_kind",
@@ -388,8 +387,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 130U);
-    ASSERT_EQ(expectedMessages().size(), 130U);
+    ASSERT_EQ(definitions.size(), 129U);
+    ASSERT_EQ(expectedMessages().size(), 129U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -423,8 +422,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 130U);
-    EXPECT_EQ(keys.size(), 130U);
+    EXPECT_EQ(ids.size(), 129U);
+    EXPECT_EQ(keys.size(), 129U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -446,7 +445,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 138U); // 130 message keys and 8 terms.
+    ASSERT_EQ(table.size(), 137U); // 129 message keys and 8 terms.
 
     std::set<std::string> tableKeys;
 

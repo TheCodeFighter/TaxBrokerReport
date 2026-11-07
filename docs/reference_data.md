@@ -33,16 +33,18 @@ files are the source: a company that is added later is a new row with `source` s
 
 | File | Columns | Rows |
 | --- | --- | ---: |
-| `payers.csv` | `isin`, `ibkr_conid`, `name`, `tax_number`, `address`, `country`, `instrument_kind`, `verified_on`, `source`, `source_revision` | 299 |
-| `payers_by_ticker.csv` | `ticker`, `isin`, `name`, `tax_number`, `address`, `country`, `instrument_kind`, `verified_on`, `source`, `source_revision` | 139 |
+| `payers.csv` | `isin`, `name`, `tax_number`, `address`, `country`, `instrument_kind`, `verified_on`, `isin_source`, `source`, `source_revision` | 282 |
+| `payers_without_isin.csv` | `ticker`, `ibkr_conid`, `name`, `tax_number`, `address`, `country`, `note`, `source`, `source_revision` | 151 |
 | `relief_statements.csv` | `country`, `statement`, `source`, `source_revision` | 17 |
 | `broker_payers.csv` | `broker`, `code`, `name`, `tax_number`, `address`, `country`, `source`, `source_revision` | 5 |
 
-- `payers.csv`: a payer of dividends. At least one of `isin` and `ibkr_conid` is set (`ibkr_conid`
-  is the Interactive Brokers contract number, an exact identifier of one instrument at that
-  broker). 68 rows have an ISIN, 278 have a `conid` (digits only), 47 have both. `tax_number`
-  is empty in 10 rows. The ISIN identifies one instrument, so for an ETF it also identifies the
-  share class; there is no separate share class column.
+- `payers.csv`: a payer of dividends, found by its ISIN. Every row has an ISIN, so one row serves
+  every broker. `isin_source` says where the ISIN came from: `ib-edavki` (upstream gave it,
+  68 rows), `wikidata` (found as described in "How the ISINs were found", 214 rows), or, for a
+  later `manual` row, `issuer` (the issuer's own page or report), `exchange` (the exchange's page)
+  or `gleif` (the GLEIF ISIN-to-LEI data). `source` still names where the other facts came from.
+  `tax_number` is empty in 5 rows. The ISIN identifies one instrument, so for an ETF it also
+  identifies the share class; there is no separate share class column.
 - `instrument_kind` (empty or `share`, `etf`, `fund`, `bond`) and `verified_on` (empty or
   `YYYY-MM-DD`, the day a person checked the row) are filled only by a `manual` row. Every
   imported row leaves them empty. They are shown to the user and never compared with a payment
@@ -50,9 +52,13 @@ files are the source: a company that is added later is a new row with `source` s
   lookup reports the two rows as a conflict until the user decides.
 - A Slovenian company is a row of `payers.csv` with `country` `SI` and `source` `manual`. There
   is no separate file; no such row exists yet.
-- `payers_by_ticker.csv`: upstream payers that have no usable identifier: only a ticker, or an ISIN
-  that fails the check digit. `isin` is empty in every row and is to be filled later by looking
-  the ticker up. The app does not read this file until then.
+- `payers_without_isin.csv`: upstream payers whose ISIN is not certain, kept so that they are not
+  lost. `ticker` is upstream's symbol, `ibkr_conid` the Interactive Brokers contract number where
+  upstream gave one (a record of the upstream data, not a key). `note` says why the row is here:
+  `isin_not_found` (no source gave a confirmed ISIN), `ticker_ambiguous` (the ticker leads to
+  several instruments), `instrument_ended` (the ISIN found belongs to a later company, for example
+  after a move to another country, not to the company of the row) or `isin_check_digit` (upstream's
+  ISIN fails the check digit). The app does not read this file.
 - `relief_statements.csv`: the treaty text that upstream writes into the `ReliefStatement` field of
   Doh-Div, one per country. The text is Slovenian (a treaty citation).
 - `broker_payers.csv`: the Interactive Brokers companies that pay interest, for Doh-Obr.
@@ -61,32 +67,54 @@ files are the source: a company that is added later is a new row with `source` s
 
 Upstream's `companies.xml` has 438 entries. 132 have neither an ISIN nor a `conid`, only a ticker.
 6 more have a ticker (`INRG`, `INTU`, `LOB`, `MA`, `NVDA`, `WD`) in the `conid` field instead of
-a contract number. These 138 entries are not in `payers.csv`, because a ticker is not an exact
-identifier: the same ticker can name different instruments on different exchanges. One more entry
-(ticker `NAKA`) has an ISIN that fails the ISIN check digit and no `conid`, so it is left out too:
-the app checks every ISIN of `payers.csv`, and a wrong ISIN would never match. These 139 entries
-are kept in `payers_by_ticker.csv` so that they are not lost; each needs its ISIN found before it
-can move into `payers.csv`. Upstream's ticker column is copied only there.
+a contract number. A ticker is not an exact identifier: the same ticker can name different
+instruments on different exchanges. One more entry (ticker `NAKA`) has an ISIN that fails the
+ISIN check digit and no `conid`; the app checks every ISIN of `payers.csv`, and a wrong ISIN would
+never match. These 139 entries, like the upstream payers with only a `conid`, enter `payers.csv`
+only with an ISIN found as described in "How the ISINs were found".
 
 Upstream has no dates, no instrument kind, no ETF share class and no record of how a fact was
 checked. The imported rows leave `instrument_kind` and `verified_on` empty. They must not be
 invented when the files are loaded.
 
-## Missing ISINs (to do)
+## How the ISINs were found
 
-The 139 payers in `payers_by_ticker.csv` have no usable ISIN, so the app cannot use them yet. Their ISINs
-still have to be added:
+Upstream gave an ISIN for only 68 of its payers; most of the others had only the Interactive
+Brokers contract number (`conid`), which no other broker knows. The ISIN of each such payer was
+looked up once, from the payer's upstream ticker and name:
 
-1. Find the ISIN of each ticker from a source with a known licence. A ticker or a name alone is
-   not enough, because one ticker can name different instruments on different exchanges.
-2. Where the ISIN is certain, move the row into `payers.csv` with that ISIN. Record the lookup
-   source in `source`.
-3. A ticker that names several instruments, or whose ISIN cannot be confirmed, stays in
-   `payers_by_ticker.csv` with a note. Manual income details still cover it.
-4. Update the counts in this document after each move.
+1. **Proposal: Wikidata** (`https://www.wikidata.org`, CC0, no notice needed). An item counts
+   when it is listed under the row's ticker on an exchange (or found by the row's name) and its
+   name matches the row's name, ignoring legal-form words such as "Inc", "plc" or "AG". Its ISIN
+   is the proposal.
+2. **Confirmation: a second source.** The proposed ISIN must also be confirmed by GLEIF (the
+   global LEI registry, `https://www.gleif.org`; its ISIN-to-LEI data names the legal entity that
+   issued the ISIN) with the same legal name, or by OpenFIGI (`https://www.openfigi.com`, which
+   lists the tickers and names of an ISIN) with the same name, and with the row's ticker when the
+   item was found by name only. Nothing from these two sources is copied into the files; they only
+   confirm.
+3. **One ISIN.** When several confirmed ISINs remain, the one listed under the row's ticker is
+   kept. When that still leaves several, the row is left out (`ticker_ambiguous`).
+4. **The company of the row.** The ISIN must belong to the company the row describes. Where the
+   only ISIN found belongs to a later company with a new legal form or a new country (for
+   example "Ltd" that became "plc" in another country), the row is left out
+   (`instrument_ended`): its tax number and address may be those of the earlier company. An
+   older ISIN of the same company (for example from before a rename) is kept, because a dividend
+   of an earlier year may still be reported with it.
+5. A ticker or a name alone never decides, and the ISIN prefix is never a check of `country`.
 
-Until then, the app does not read `payers_by_ticker.csv`, and a payer found only here is treated
-as a missing row (manual income details).
+Result: 219 of the 370 payers without an ISIN got a confirmed one; 151 are in
+`payers_without_isin.csv` (146 `isin_not_found`, 3 `instrument_ended`, 1 `ticker_ambiguous`, 1
+`isin_check_digit`). 5 of the 219 were already in the file with the same facts (one company listed
+under two tickers), so only the first row was kept: 214 rows of `payers.csv` have `isin_source`
+`wikidata`. For 2 ISINs upstream has two rows with different facts (the name written another way,
+another address or address form, a tax number with and without its country prefix); both rows are
+kept, and the lookup reports a Conflict
+that the user decides. An income whose payer is not in `payers.csv` is still reported, with empty
+payer facts and a warning (rule 4 below).
+
+A later fix is a `manual` row in `payers.csv` with its own `isin_source`, or a row moved out of
+`payers_without_isin.csv` when its ISIN is confirmed the same way.
 
 ## Quality of the upstream data
 
@@ -106,9 +134,9 @@ ISIN prefix does not prove where the payer lives.
 
 ## How the app may use the files
 
-1. **Exact match only.** A payer is found by the exact ISIN, or by the exact `conid` for an
-   Interactive Brokers event. A ticker, a name, an ISIN prefix, an exchange, a currency or a
-   broker never matches.
+1. **Exact match only.** A payer is found by the exact ISIN, for every broker. A ticker, a name,
+   an ISIN prefix, an exchange, a currency, a broker or a broker's own number (such as a
+   `conid`) never matches.
 2. **A suggestion, not a fact.** A row prefills the income details. The user confirms them once;
    the confirmation is stored with the decision. Nothing from a reference file is written into an
    XML file without that confirmation.
@@ -134,20 +162,22 @@ The three upstream XML files were read once with an XML parser and written as th
 - Upstream order was kept.
 - For `broker_payers.csv`, `broker` is `IBKR` and `code` is upstream's `code`.
 - For `payers.csv`, the ticker (`symbol`) column was not copied, and the 138 entries with only a
-  ticker (6 of them in the `conid` field) went to `payers_by_ticker.csv` instead. So did the entry
-  with the ISIN that fails the check digit (its ISIN is not copied; its `isin` is empty).
+  ticker (6 of them in the `conid` field) were kept apart. So was the entry with the ISIN that
+  fails the check digit (its ISIN is not copied).
 - The columns `instrument_kind` and `verified_on` were added, empty in every row.
 - Upstream's `-` (meaning unknown) as the tax number of 3 payers became an empty field.
 - One value was corrected: the country `IRL` of one payer (Johnson Controls International Plc)
   became `IE`, the 2-letter code every other row uses.
 - Every row has `source` set to `ib-edavki` and `source_revision` set to the revision above.
 
-`payers_by_ticker.csv` holds the 139 entries in upstream order, with `symbol` as `ticker` and an
-empty `isin`. 299 + 139 = 438, the upstream count.
+After the ISIN lookup ("How the ISINs were found"), the `ibkr_conid` column was removed from
+`payers.csv` and the column `isin_source` added. The rows keep upstream order: first the 299
+payers that upstream gave an ISIN or a `conid`, then the 139 kept apart, each either in
+`payers.csv` or in `payers_without_isin.csv`. 282 + 151 + 5 (rows with the same ISIN and facts,
+dropped) = 438, the upstream count.
 
-The check after the conversion: every row has as many fields as the header; `payers.csv` has no
-duplicate ISIN, no duplicate `conid`, no row that has neither, only digits in `ibkr_conid`, an ISIN
-with a correct check digit in every row that has one, and a 2-letter `country` in every row.
+The check after the lookup: every row has as many fields as the header; every row of
+`payers.csv` has an ISIN with a correct check digit, an `isin_source` and a 2-letter `country`.
 
 ## How the app loads the files
 
@@ -164,8 +194,9 @@ stops the load with the file name and the logical row (header = 1), never with a
 file, and carries a message key (`reference_file.*`) with named parameters, so the screen can
 translate it:
 
-- `payers.csv`: an ISIN or a `conid`; an ISIN of 2 letters, 9 letters or digits and a correct
-  check digit; a `conid` of digits only; a non-empty `name` and `address`; a `country` of 2
+- `payers.csv`: an ISIN of 2 letters, 9 letters or digits and a correct check digit in every row;
+  an `isin_source` of `ib-edavki`, `wikidata`, `issuer`, `exchange` or `gleif`; a non-empty
+  `name` and `address`; a `country` of 2
   uppercase letters; an `instrument_kind` that is empty or one of the four kinds; a `verified_on`
   that is empty or a calendar date; `source` `ib-edavki` or `manual`, and a `source_revision` for
   `ib-edavki`.
@@ -173,13 +204,13 @@ translate it:
 - `broker_payers.csv`: a non-empty `broker`, `code`, `name` and `address`, a 2-letter `country`, a
   source, and no broker and code twice.
 
-A payer lookup takes an ISIN, a `conid` or both, and returns one of three results:
+A payer lookup takes an ISIN and returns one of three results:
 
 | Result | When |
 | --- | --- |
-| Found | One row has an identifier of the query, or several rows do and agree on `name`, `tax_number`, `address`, `country` and `instrument_kind`. A row found by both the ISIN and the `conid` counts once. The result is the first such row in file order. |
-| Conflict | Rows with an identifier of the query disagree on one of those facts. All rows are returned. |
-| NotFound | No row has an identifier of the query. |
+| Found | One row has the ISIN, or several rows do and agree on `name`, `tax_number`, `address`, `country` and `instrument_kind`. The result is the first such row in file order. |
+| Conflict | Rows with the ISIN disagree on one of those facts. All rows are returned, in file order. |
+| NotFound | No row has the ISIN. |
 
 A Conflict is a skippable question where the user picks one of the rows, and NotFound gives an
 income row without payer facts (rule 4). The lookup never matches a

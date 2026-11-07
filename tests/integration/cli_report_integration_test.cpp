@@ -3344,9 +3344,9 @@ TEST(CliReportIntegrationTest, ASuppliedReferenceFileIsListedAsSupplied) {
     const auto history = folder.writeCsv("history.csv", {});
     const auto payers = folder.writeText(
         "payers.csv",
-        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
         "source_revision\n"
-        "XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n");
+        "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n");
 
     const auto result = run({"report",
                              "--year",
@@ -3373,9 +3373,9 @@ TEST(CliReportIntegrationTest, ThreeSuppliedReferenceFilesAreAllListedAsSupplied
     const auto history = folder.writeCsv("history.csv", {});
     const auto payers = folder.writeText(
         "payers.csv",
-        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
         "source_revision\n"
-        "XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n");
+        "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n");
     const auto relief = folder.writeText("relief_statements.csv",
                                          "country,statement,source,source_revision\n"
                                          "BE,Treaty text,manual,\n");
@@ -3411,9 +3411,9 @@ TEST(CliReportIntegrationTest, ABrokenReferenceFileFailsTheRunAndNamesFileAndRow
     // Row 2 has an ISIN with a wrong check digit (XX0000000010 is the valid one).
     const auto payers = folder.writeText(
         "payers.csv",
-        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
         "source_revision\n"
-        "XX0000000011,,Payer A,,1 Main Street,IE,,,manual,\n");
+        "XX0000000011,Payer A,,1 Main Street,IE,,,issuer,manual,\n");
 
     const auto result = run({"report",
                              "--year",
