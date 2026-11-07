@@ -46,6 +46,7 @@ add_executable(taxbroker_unit_tests
     unit/diagnostic_messages_test.cpp
     unit/diagnostics_json_test.cpp
     unit/dividend_payments_test.cpp
+    unit/interest_payments_test.cpp
     unit/ecb_rate_file_test.cpp
     unit/official_rate_selection_test.cpp
     unit/quantity_reconciliation_test.cpp

@@ -3107,4 +3107,72 @@ TEST(ApplicationResultClassificationTest, ExcludedItemsAreSortedByIsinWithTheirD
     EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
+// --- The deposit interest question ---
+
+DecisionQuestion depositQuestion(Money aTotal) {
+    return DecisionQuestion{
+        .mType = RequestType::DepositInterestTotalRequired,
+        .mAffectedReports = {kBank},
+        .mData = DepositInterestTotalQuestion{.mYear = 2024, .mTotal = aTotal},
+    };
+}
+
+TEST(ApplicationResultRequestTest, AnOpenDepositQuestionMakesOnlyDohDhoNeedInput) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mReports[static_cast<std::size_t>(kBank)].mXml = "<deposit/>";
+    input.mReports[static_cast<std::size_t>(kOther)].mXml = "<other/>";
+    input.mRequests = {RequestInput{.mQuestion = depositQuestion(9'000'000)}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kBank).mStatus, ReportStatus::NeedsInput);
+    EXPECT_EQ(result.report(kOther).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.mStatus, OverallStatus::NeedsInput);
+}
+
+TEST(ApplicationResultRequestTest, ADepositQuestionNeedsATotalAboveZeroAndAtMostTheAllowance) {
+    // EUR 0.0001 and EUR 1,000.0000 are the edges; 4 decimals are stored.
+    ApplicationResultInput lowest{.mReportingYear = 2024};
+    lowest.mRequests = {RequestInput{.mQuestion = depositQuestion(1)}};
+
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(std::move(lowest)));
+
+    ApplicationResultInput highest{.mReportingYear = 2024};
+    highest.mRequests = {RequestInput{.mQuestion = depositQuestion(10'000'000)}};
+
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(std::move(highest)));
+
+    ApplicationResultInput zero{.mReportingYear = 2024};
+    zero.mRequests = {RequestInput{.mQuestion = depositQuestion(0)}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(zero)), std::invalid_argument);
+
+    ApplicationResultInput above{.mReportingYear = 2024};
+    above.mRequests = {RequestInput{.mQuestion = depositQuestion(10'000'001)}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(above)), std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, DepositDataAndTheRequestTypeMustFitEachOther) {
+    ApplicationResultInput onOtherType{.mReportingYear = 2024};
+    onOtherType.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mAffectedReports = {kBank},
+                         .mData = DepositInterestTotalQuestion{.mYear = 2024, .mTotal = 9'000'000},
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(onOtherType)),
+                 std::invalid_argument);
+
+    ApplicationResultInput withoutData{.mReportingYear = 2024};
+    withoutData.mRequests = {RequestInput{.mQuestion = {
+                                              .mType = RequestType::DepositInterestTotalRequired,
+                                              .mAffectedReports = {kBank},
+                                          }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutData)),
+                 std::invalid_argument);
+}
+
 } // namespace

@@ -2081,4 +2081,92 @@ TEST(ApplicationResultJsonTest, TheDividendDiagnosticCodesAreWrittenByName) {
     EXPECT_EQ(diagnostics[1].at("code"), "foreign_tax_evidence_required");
 }
 
+TEST(ApplicationResultJsonTest, ADepositInterestRequestListsTheYearTheTotalAndTheLimit) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::DepositInterestTotalRequired,
+                         .mAffectedReports = {ReportType::BankDepositInterest},
+                         .mData = DepositInterestTotalQuestion{.mYear = 2024, .mTotal = 9'000'000},
+                     }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "deposit_interest_total_required");
+    EXPECT_EQ(request.at("depositCheck"),
+              (nlohmann::json{{"year", 2024},
+                              {"importedInterestEur", "900.0000"},
+                              {"limitEur", "1000.0000"}}));
+}
+
+TEST(ApplicationResultJsonTest, RecordedDepositAnswersAreTwoStrings) {
+    ApplicationResult result;
+    const DepositInterestTotalQuestion question{.mYear = 2024, .mTotal = 9'000'000};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::DepositInterestTotalRequired,
+                         .mData = question,
+                         .mAnswer = DepositInterestTotalAnswer{.mAboveLimit = true}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::DepositInterestTotalRequired,
+                         .mData = question,
+                         .mAnswer = DepositInterestTotalAnswer{.mAboveLimit = false}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 2U);
+    EXPECT_EQ(decisions[0].at("answer"), "above_limit");
+    EXPECT_EQ(decisions[1].at("answer"), "not_above_limit");
+    EXPECT_EQ(decisions[0].at("depositCheck").at("importedInterestEur"), "900.0000");
+}
+
+TEST(ApplicationResultJsonTest, ASlovenianIssuerItemWritesItsInterestCategory) {
+    ApplicationResult result;
+
+    result.mExcludedItems = {
+        ExcludedItem{.mIsin = "XX0000000010",
+                     .mName = "Synthetic Bond SI",
+                     .mCategory = ExcludedCategory::Interest,
+                     .mReason = ExcludedReason::SlovenianTaxSettled,
+                     .mDiagnosticIds = {"diagnostic-0001"}},
+    };
+
+    const auto json = serialize(result);
+    const auto& item = json.at("excludedItems").at(0);
+
+    EXPECT_EQ(item.at("category"), "interest");
+    EXPECT_EQ(item.at("reason"), "slovenian_tax_settled");
+    EXPECT_EQ(item.at("basis"), "tax_rule");
+}
+
+TEST(ApplicationResultJsonTest, TheInterestDiagnosticCodesAreWrittenByName) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    const auto diagnostic = [](ProcessingDiagnosticCode aCode) {
+        return ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = aCode,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {ReportType::OtherInterest}},
+            .mMessage = "Synthetic warning.",
+        };
+    };
+
+    input.mProcessingDiagnostics = {
+        diagnostic(ProcessingDiagnosticCode::InterestPayerNotFound),
+        diagnostic(ProcessingDiagnosticCode::InterestPaymentNotPositive),
+        diagnostic(ProcessingDiagnosticCode::DepositInterestAddOtherBanks)};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& diagnostics = json.at("diagnostics");
+
+    ASSERT_EQ(diagnostics.size(), 3U);
+    EXPECT_EQ(diagnostics[0].at("code"), "interest_payer_not_found");
+    EXPECT_EQ(diagnostics[1].at("code"), "interest_payment_not_positive");
+    EXPECT_EQ(diagnostics[2].at("code"), "deposit_interest_add_other_banks");
+}
+
 } // namespace
