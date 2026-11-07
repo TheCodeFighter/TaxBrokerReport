@@ -59,6 +59,10 @@ enum class ProcessingDiagnosticCode {
     SourceQuantityCorrected,    ///< A warning: a sale was reduced to a quantity the user confirmed.
     /// A warning: the exact basis of a Doh-KDVP purchase row differs from its rounded F4 times F3.
     XmlBasisRoundingDifference,
+    /// A warning: no reference row gave the payer of a dividend, so its facts are empty.
+    DividendPayerNotFound,
+    /// A warning: foreign tax was paid, so the user attaches the evidence when filing in eDavki.
+    ForeignTaxEvidenceRequired,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

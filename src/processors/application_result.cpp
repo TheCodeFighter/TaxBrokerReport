@@ -454,15 +454,17 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aQuestion.mData);
     const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
     const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
+    const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
     const bool isQuantityType = aQuestion.mType == RequestType::QuantityCorrectionRequired;
+    const bool isIncomeDetailsType = aQuestion.mType == RequestType::IncomeDetailsRequired;
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
         (classification != nullptr) != isClassificationType ||
-        (quantity != nullptr) != isQuantityType)
+        (quantity != nullptr) != isQuantityType || (payer != nullptr && !isIncomeDetailsType))
     {
         throw std::invalid_argument("The question data does not fit the request type.");
     }
@@ -472,6 +474,12 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A quantity question needs an ISIN and open units below the "
                                     "sale units.");
+    }
+
+    if (payer != nullptr && (payer->mIsin.empty() || payer->mOptions.size() < 2))
+    {
+        throw std::invalid_argument("A payer choice question needs an ISIN and at least two "
+                                    "reference rows.");
     }
 
     if (classification != nullptr && classification->mIsin.empty())
@@ -720,6 +728,26 @@ QuestionData normalizedData(QuestionData aData) {
 
         std::sort(labels.begin(), labels.end());
         labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
+    }
+
+    if (auto* payer = std::get_if<PayerChoiceQuestion>(&aData))
+    {
+        std::sort(payer->mOptions.begin(),
+                  payer->mOptions.end(),
+                  [](const PayerChoiceOption& aLeft, const PayerChoiceOption& aRight) {
+                      return std::tie(aLeft.mName,
+                                      aLeft.mAddress,
+                                      aLeft.mCountry,
+                                      aLeft.mTaxNumber,
+                                      aLeft.mSource.mFile,
+                                      aLeft.mSource.mRowNumber) <
+                             std::tie(aRight.mName,
+                                      aRight.mAddress,
+                                      aRight.mCountry,
+                                      aRight.mTaxNumber,
+                                      aRight.mSource.mFile,
+                                      aRight.mSource.mRowNumber);
+                  });
     }
 
     if (auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aData))
@@ -989,11 +1017,17 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
                 hasUnresolvedBlocker = true;
             }
         }
+
+        bool hasBlockingRequest = false;
+
         for (const auto& request : result.mRequests)
         {
             if (affects(request.mAffectedReports, type))
             {
                 report.mRequestIds.push_back(request.mId);
+
+                // A payer choice is listed but never stops a form: a skip is a valid answer.
+                hasBlockingRequest |= !std::holds_alternative<PayerChoiceQuestion>(request.mData);
             }
         }
 
@@ -1001,7 +1035,7 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
         {
             report.mStatus = ReportStatus::Failed;
         }
-        else if (!report.mRequestIds.empty())
+        else if (hasBlockingRequest)
         {
             report.mStatus = ReportStatus::NeedsInput;
         }

@@ -892,7 +892,7 @@ the diagnostics and the rates it used.
   every reported payment, each in its own currency (`calculations.md`). Its warnings and its errors
   go on as they are; the error of a pair without a rate blocks Doh-Div, and the payments with that
   pair have no row. An amount that does not fit gives the numeric error of the payment, also without
-  a row. A blank tax is 0 with the blank flag and a `dividend_tax_blank` warning.
+  a row. A blank tax is 0 with the blank flag and no warning.
 - **Notice.** One `foreign_tax_evidence_required` warning per run when a row has a foreign tax above
   0. A treaty claim is never made.
 

@@ -793,9 +793,9 @@ attaches the evidence of the payment and the tax in eDavki
 
 For reportable foreign income, retain the gross payment and actual foreign tax separately, both in
 EUR at the official ECB rate of the receipt date. A blank source tax is a foreign tax of 0 (no tax
-paid); the row keeps that it was blank, and a dividend with a blank tax gets a warning that tax
-may have been withheld, which the user can enter in eDavki. Blank and explicit zero interest tax
-are the same and give no warning. A
+paid) and gives no warning; the row keeps that it was blank. Trade Republic writes no explicit
+`0` tax on a dividend, so a blank dividend tax means none was withheld. Blank and explicit zero
+interest tax are the same and give no warning. A
 company or ETF list helps prepare a foreign-tax relief claim; membership does not establish relief.
 Record the withholding country, amount/currency, payment evidence and any applicable verified
 treaty provision. Do not replace actual tax with a catalogue percentage, subtract it from gross
@@ -952,8 +952,7 @@ made, as for dividends. The payer of broker cash interest is the broker, whose f
 (`broker_payers.csv`).
 
 **Foreign tax.** A blank source tax means no tax was paid: the row gets `ForeignTax` `0`, without
-a question. A bond coupon with a blank tax gets the same warning as a dividend (tax may have been
-withheld); blank cash interest tax gives none. The form
+a question and without a warning, for a dividend, a bond coupon and cash interest alike. The form
 instructions require evidence for a foreign-tax deduction (amount, base, final and actually
 paid); the result lists it, and XML generation does not mean it was attached.
 
@@ -1049,7 +1048,7 @@ Tests based on this document must prove that:
 - a payer that is not found still gives an income row with empty payer facts and a warning;
 - a payer with several disagreeing entries offers a pick and a skip: a pick uses that entry's
   facts; a skip or no answer gives empty facts and the warning, and the report is still made;
-- a blank income tax gives a foreign tax of 0 (a warning for dividends and coupons only);
+- a blank income tax gives a foreign tax of 0, without a warning;
 - pre-licence TR interest and IBKR cash interest do not receive the deposit allowance;
 - bond coupons have their own fixtures and subtype within the shared Doh-Obr result;
 - bond-income errors safely isolated to ISINs offer explicit exclusion from Doh-Obr or failure of

@@ -2,6 +2,7 @@
 
 #include "taxbroker/exact_arithmetic.hpp"
 #include "taxbroker/processing_diagnostics.hpp"
+#include "taxbroker/reference_catalogue.hpp"
 #include "taxbroker/statement_merger.hpp"
 
 #include <array>
@@ -244,6 +245,29 @@ struct QuantityCorrectionQuestion {
     bool operator==(const QuantityCorrectionQuestion&) const = default;
 };
 
+/// One reference row of a payer, as a payer choice question offers it.
+struct PayerChoiceOption {
+    std::string mName;                     ///< The legal name.
+    std::string mAddress;                  ///< One line.
+    std::string mCountry;                  ///< Residence country, 2 uppercase letters.
+    std::optional<std::string> mTaxNumber; ///< None when the row has none.
+    CatalogueSource mSource;               ///< The row it came from.
+
+    bool operator==(const PayerChoiceOption&) const = default;
+};
+
+/// The question data of `income_details_required` for a dividend payer whose reference rows
+/// disagree. The user picks one row or skips. It never blocks: a skip, or no answer, gives a payer
+/// without facts, like a payer that is not found.
+struct PayerChoiceQuestion {
+    Isin mIsin;
+    std::string mName; ///< The name of the dividend payment's instrument.
+    /// The disagreeing rows, sorted by name, address, country, tax number and source row.
+    std::vector<PayerChoiceOption> mOptions;
+
+    bool operator==(const PayerChoiceQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
 using QuestionData = std::variant<std::monostate,
@@ -251,7 +275,8 @@ using QuestionData = std::variant<std::monostate,
                                   LossEligibilityQuestion,
                                   CorporateActionRatioQuestion,
                                   TaxClassificationQuestion,
-                                  QuantityCorrectionQuestion>;
+                                  QuantityCorrectionQuestion,
+                                  PayerChoiceQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -330,6 +355,14 @@ struct QuantityCorrectionAnswer {
     bool operator==(const QuantityCorrectionAnswer&) const = default;
 };
 
+/// The answer to a payer choice question: the position of the picked row in the question's
+/// options, or no position for a skip.
+struct PayerChoiceAnswer {
+    std::optional<std::size_t> mPickedOption;
+
+    bool operator==(const PayerChoiceAnswer&) const = default;
+};
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
@@ -338,7 +371,8 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  SeparateEventsAnswer,
                                  CapitalGainsAnswer,
                                  ExcludeFromReportsAnswer,
-                                 QuantityCorrectionAnswer>;
+                                 QuantityCorrectionAnswer,
+                                 PayerChoiceAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {
@@ -386,9 +420,10 @@ struct RecordedDecision {
 
 /// The category an excluded item belongs to.
 enum class ExcludedCategory {
-    Bond,    ///< An ordinary debt security; only its interest is taxable.
-    Crypto,  ///< A crypto asset; not part of the supported reports.
-    Unknown, ///< The class was missing, not recognized or conflicting, and the user left it out.
+    Bond,     ///< An ordinary debt security; only its interest is taxable.
+    Crypto,   ///< A crypto asset; not part of the supported reports.
+    Dividend, ///< The dividends of a Slovenian payer; the company deducts the tax itself.
+    Unknown,  ///< The class was missing, not recognized or conflicting, and the user left it out.
 };
 
 /// Why an item is left out.
@@ -396,6 +431,8 @@ enum class ExcludedReason {
     DebtSecurity,      ///< Debt-security sales and redemptions are no capital gain.
     CryptoNotReported, ///< Crypto is not part of Doh-KDVP.
     UserChoice,        ///< The user answered `exclude_from_supported_reports`.
+    /// A Slovenian payer deducts the final tax itself, so the payments are not reported.
+    SlovenianTaxSettled,
 };
 
 /// Units of an excluded bond in the selected year. Matured units are added up by sum, never by
@@ -509,10 +546,12 @@ class ApplicationResultBuilder final {
     /// Parser diagnostics keep their code,
     /// severity, key, parameters and message. A report is Failed when a blocking diagnostic
     /// affects it that no open request of that report resolves. XML is kept only for
-    /// Generated. Throws std::invalid_argument when a question has the question data of another
+    /// Generated. An open payer choice question is listed with its form but does not make it
+    /// `needs_input`. Throws std::invalid_argument when a question has the question data of another
     /// type, a failure-resolution question has no investment, a loss question has no sale or
-    /// a sale without open units, or a ratio question has no source, no open units or a date
-    /// range that does not contain its effective date.
+    /// a sale without open units, a ratio question has no source, no open units or a date
+    /// range that does not contain its effective date, or a payer choice question has no ISIN or
+    /// fewer than two rows.
     [[nodiscard]] static ApplicationResult build(ApplicationResultInput&& aInput);
 };
 

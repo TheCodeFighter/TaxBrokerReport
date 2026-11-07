@@ -669,9 +669,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
     const auto ask = [&aRequest, &aIn, &aOut](const auto& aQuestion) -> std::optional<AnswerValue> {
         using Question = std::decay_t<decltype(aQuestion)>;
 
-        if constexpr (std::is_same_v<Question, std::monostate>)
+        if constexpr (std::is_same_v<Question, std::monostate> ||
+                      std::is_same_v<Question, PayerChoiceQuestion>)
         {
-            throw std::logic_error("a question without question data cannot be asked");
+            // canAsk() keeps both out: a payer choice is not asked in the CLI yet.
+            throw std::logic_error("this question cannot be asked");
         }
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
@@ -753,6 +755,11 @@ std::string answerText(const AnswerValue& aAnswer) {
         {
             return "sale quantity " + unitsText(aValue.mCorrectedUnits) + " units";
         }
+        else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
+        {
+            return aValue.mPickedOption ? "payer row " + std::to_string(*aValue.mPickedOption + 1)
+                                        : std::string{"skipped, the payer is completed in eDavki"};
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -790,6 +797,11 @@ bool canAsk(const QuestionData& aData) {
         else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion>)
         {
             return true;
+        }
+        else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
+        {
+            // The CLI does not make dividend rows yet, so it has no prompt for this question.
+            return false;
         }
         else
         {
@@ -922,6 +934,10 @@ std::string answerLine(const RecordedDecision& aDecision) {
         {
             return investmentText(aQuestion.mIsin, aQuestion.mName) + ", sale on " +
                    formatCalendarDate(aQuestion.mSaleDate);
+        }
+        else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
+        {
+            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", dividend payer";
         }
         else
         {

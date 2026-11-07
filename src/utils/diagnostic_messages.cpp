@@ -407,6 +407,11 @@ constexpr std::array kDefinitions{
                       {}},
     MessageDefinition{
         MessageKey::ReferenceFileDuplicateBrokerCode, "reference_file.duplicate_broker_code", {}},
+    MessageDefinition{MessageKey::DividendPayerNotFound, "dividend_payer_not_found", {}},
+    MessageDefinition{MessageKey::ForeignTaxEvidenceRequired, "foreign_tax_evidence_required", {}},
+    MessageDefinition{MessageKey::TaxCategoryNotReportedSlovenianTaxSettled,
+                      "tax_category_not_reported.slovenian_tax_settled",
+                      {}},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -423,7 +428,8 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::ReferenceFileDuplicateBrokerCode) + 1,
+                  static_cast<std::size_t>(MessageKey::TaxCategoryNotReportedSlovenianTaxSettled) +
+                      1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 8> kTermKeys{
