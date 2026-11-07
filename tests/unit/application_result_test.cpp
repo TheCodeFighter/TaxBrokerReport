@@ -2911,6 +2911,137 @@ TEST(ApplicationResultRequestTest, QuantityDataAndTheRequestTypeMustFitEachOther
                  std::invalid_argument);
 }
 
+/// Two reference rows of one synthetic payer, as a payer choice question offers them.
+PayerChoiceQuestion payerQuestion() {
+    return PayerChoiceQuestion{
+        .mIsin = "XX0000000010",
+        .mName = "Synthetic Payer",
+        .mOptions = {
+            PayerChoiceOption{.mName = "Payer Y",
+                              .mAddress = "2 Main Street",
+                              .mCountry = "FR",
+                              .mTaxNumber = std::nullopt,
+                              .mSource = {.mSource = "manual",
+                                          .mSourceRevision = "",
+                                          .mFile = "payers.csv",
+                                          .mRowNumber = 2,
+                                          .mOrigin = CatalogueOrigin::BuiltIn}},
+            PayerChoiceOption{.mName = "Payer X",
+                              .mAddress = "1 Main Street",
+                              .mCountry = "DE",
+                              .mTaxNumber = std::optional<std::string>{"TAX-X"},
+                              .mSource = {.mSource = "manual",
+                                          .mSourceRevision = "",
+                                          .mFile = "payers.csv",
+                                          .mRowNumber = 3,
+                                          .mOrigin = CatalogueOrigin::BuiltIn}},
+        }};
+}
+
+TEST(ApplicationResultRequestTest, AnOpenPayerChoiceIsListedButDoesNotMakeTheFormNeedInput) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mReports[static_cast<std::size_t>(kDividends)].mXml = "<dividends/>";
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = RequestType::IncomeDetailsRequired,
+                                        .mAffectedReports = {kDividends},
+                                        .mIsin = "XX0000000010",
+                                        .mData = payerQuestion(),
+                                    }}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.report(kDividends).mRequestIds, std::vector<std::string>{"request-0001"});
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.mStatus, OverallStatus::Success);
+}
+
+TEST(ApplicationResultRequestTest, AnotherOpenRequestOfTheFormStillMakesItNeedInput) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mReports[static_cast<std::size_t>(kDividends)].mXml = "<dividends/>";
+    input.mRequests = {
+        RequestInput{.mQuestion =
+                         {
+                             .mType = RequestType::IncomeDetailsRequired,
+                             .mAffectedReports = {kDividends},
+                             .mIsin = "XX0000000010",
+                             .mData = payerQuestion(),
+                         }},
+        RequestInput{.mQuestion =
+                         {
+                             .mType = RequestType::TaxClassificationRequired,
+                             .mAffectedReports = {kDividends},
+                             .mIsin = "XX0000000028",
+                             .mData = TaxClassificationQuestion{.mIsin = "XX0000000028",
+                                                                .mName = "Synthetic Share",
+                                                                .mClassLabels = {"synthetic"}},
+                         }},
+    };
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::NeedsInput);
+    EXPECT_EQ(result.mStatus, OverallStatus::NeedsInput);
+}
+
+TEST(ApplicationResultRequestTest, ThePayerOptionsAreSortedByNameAndSource) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = RequestType::IncomeDetailsRequired,
+                                        .mAffectedReports = {kDividends},
+                                        .mIsin = "XX0000000010",
+                                        .mData = payerQuestion(),
+                                    }}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    // The question was given with "Payer Y" first.
+    const auto& question = std::get<PayerChoiceQuestion>(result.mRequests.at(0).mData);
+
+    ASSERT_EQ(question.mOptions.size(), 2U);
+    EXPECT_EQ(question.mOptions.at(0).mName, "Payer X");
+    EXPECT_EQ(question.mOptions.at(1).mName, "Payer Y");
+}
+
+TEST(ApplicationResultRequestTest, APayerQuestionNeedsAnIsinAndAtLeastTwoRows) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = RequestType::IncomeDetailsRequired,
+                                        .mAffectedReports = {kDividends},
+                                        .mIsin = "XX0000000010",
+                                        .mData = payerQuestion(),
+                                    }}};
+
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(ApplicationResultInput{input}));
+
+    auto withoutIsin = input;
+
+    std::get<PayerChoiceQuestion>(withoutIsin.mRequests[0].mQuestion.mData).mIsin = "";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutIsin)),
+                 std::invalid_argument);
+
+    // One row is not a choice.
+    auto oneRow = input;
+
+    std::get<PayerChoiceQuestion>(oneRow.mRequests[0].mQuestion.mData).mOptions.pop_back();
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(oneRow)), std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, PayerDataAndTheRequestTypeMustFitEachOther) {
+    ApplicationResultInput onOtherType{.mReportingYear = 2024};
+    onOtherType.mRequests = {RequestInput{.mQuestion = {
+                                              .mType = RequestType::TaxClassificationRequired,
+                                              .mAffectedReports = {kDividends},
+                                              .mIsin = "XX0000000010",
+                                              .mData = payerQuestion(),
+                                          }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(onOtherType)),
+                 std::invalid_argument);
+}
+
 TEST(ApplicationResultClassificationTest, ExcludedItemsAreSortedByIsinWithTheirDiagnosticIds) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mProcessingDiagnostics = {

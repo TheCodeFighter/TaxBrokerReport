@@ -1003,6 +1003,10 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "SourceQuantityCorrected";
     case ProcessingDiagnosticCode::XmlBasisRoundingDifference:
         return "XmlBasisRoundingDifference";
+    case ProcessingDiagnosticCode::DividendPayerNotFound:
+        return "DividendPayerNotFound";
+    case ProcessingDiagnosticCode::ForeignTaxEvidenceRequired:
+        return "ForeignTaxEvidenceRequired";
     }
 
     return "Unknown";
