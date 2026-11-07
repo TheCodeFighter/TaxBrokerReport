@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -1542,6 +1543,85 @@ TEST(DecisionPromptsTest, TheAnswersOfAQuantityQuestionAreListedInTheSummary) {
     ASSERT_EQ(session.result().mDecisions.size(), 1U);
     EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
               "XX0000000001 Synthetic Share, sale on 2024-03-01: sale quantity 0.99999998 units");
+}
+
+// The payer choice question (not asked in the CLI yet)
+
+/// Two reference rows of one synthetic payer.
+DecisionQuestion payerQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {ReportType::Dividends},
+        .mIsin = "XX0000000010",
+        .mData =
+            PayerChoiceQuestion{
+                .mIsin = "XX0000000010",
+                .mName = "Synthetic Payer",
+                .mOptions = {PayerChoiceOption{.mName = "Payer X",
+                                               .mAddress = "1 Main Street",
+                                               .mCountry = "DE",
+                                               .mTaxNumber = std::nullopt,
+                                               .mSource = {.mSource = "manual",
+                                                           .mSourceRevision = "",
+                                                           .mFile = "payers.csv",
+                                                           .mRowNumber = 2,
+                                                           .mOrigin = CatalogueOrigin::BuiltIn}},
+                             PayerChoiceOption{.mName = "Payer Y",
+                                               .mAddress = "2 Main Street",
+                                               .mCountry = "FR",
+                                               .mTaxNumber = std::nullopt,
+                                               .mSource = {.mSource = "manual",
+                                                           .mSourceRevision = "",
+                                                           .mFile = "payers.csv",
+                                                           .mRowNumber = 3,
+                                                           .mOrigin = CatalogueOrigin::BuiltIn}}},
+            },
+    };
+}
+
+TEST(DecisionPromptsTest, APayerChoiceQuestionIsNotAskedInTheTerminalYet) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerQuestion()}));
+
+    const auto output = ask(session, "1\n");
+
+    EXPECT_FALSE(cli::canAsk(payerQuestion().mData));
+    EXPECT_EQ(output, "");
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionPromptsTest, ThePayerAnswersAreListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerQuestion()}));
+
+    const auto picked = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = PayerChoiceAnswer{.mPickedOption = 1},
+    }});
+
+    ASSERT_TRUE(picked.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000010 Synthetic Payer, dividend payer: payer row 2");
+
+    // A new run with the pick deleted asks again; the skip is the second answer.
+    const auto deleted = session.deleteAllAnswers(session.result().mRunRevision);
+
+    ASSERT_TRUE(deleted.empty());
+
+    const auto skipped = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = PayerChoiceAnswer{.mPickedOption = std::nullopt},
+    }});
+
+    ASSERT_TRUE(skipped.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000010 Synthetic Payer, dividend payer: skipped, the payer is completed in "
+              "eDavki");
 }
 
 } // namespace

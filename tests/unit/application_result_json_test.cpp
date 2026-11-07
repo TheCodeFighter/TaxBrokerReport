@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -1920,6 +1921,164 @@ TEST(ApplicationResultJsonTest, ExcludedItemsWriteTheirCategoryReasonBasisAndBon
     EXPECT_EQ(items[2].at("classLabels"), nlohmann::json::array({"", "MYSTERY"}));
     // A bond without a maturity date writes no date.
     EXPECT_FALSE(items[2].at("bond").contains("maturityDate"));
+}
+
+TEST(ApplicationResultJsonTest, APayerChoiceRequestListsTheReferenceRowsWithTheirSource) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::IncomeDetailsRequired,
+            .mAffectedReports = {ReportType::Dividends},
+            .mIsin = "XX0000000010",
+            .mData = PayerChoiceQuestion{.mIsin = "XX0000000010",
+                                         .mName = "Synthetic Payer",
+                                         .mOptions = {PayerChoiceOption{
+                                                          .mName = "Payer X",
+                                                          .mAddress = "1 Main Street",
+                                                          .mCountry = "DE",
+                                                          .mTaxNumber =
+                                                              std::optional<std::string>{"TAX-X"},
+                                                          .mSource = {.mSource = "ib-edavki",
+                                                                      .mSourceRevision = "abc123",
+                                                                      .mFile = "payers.csv",
+                                                                      .mRowNumber = 2,
+                                                                      .mOrigin = CatalogueOrigin::
+                                                                          BuiltIn}},
+                                                      PayerChoiceOption{.mName = "Payer Y",
+                                                                        .mAddress = "2 Main Street",
+                                                                        .mCountry = "FR",
+                                                                        .mTaxNumber = std::nullopt,
+                                                                        .mSource =
+                                                                            {
+                                                                                .mSource = "manual",
+                                                                                .mSourceRevision = "",
+                                                                                .mFile = "payers."
+                                                                                         "csv",
+                                                                                .mRowNumber = 3,
+                                                                                .mOrigin =
+                                                                                    CatalogueOrigin::
+                                                                                        Supplied}}}},
+        }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "income_details_required");
+    EXPECT_EQ(request.at("isin"), "XX0000000010");
+    EXPECT_FALSE(request.contains("options"));
+    EXPECT_EQ(request.at("payerCheck"),
+              (nlohmann::json{{"name", "Synthetic Payer"},
+                              {"isin", "XX0000000010"},
+                              {"options",
+                               {{{"name", "Payer X"},
+                                 {"address", "1 Main Street"},
+                                 {"country", "DE"},
+                                 {"taxNumber", "TAX-X"},
+                                 {"source",
+                                  {{"source", "ib-edavki"},
+                                   {"sourceRevision", "abc123"},
+                                   {"file", "payers.csv"},
+                                   {"row", 2},
+                                   {"origin", "built_in"}}}},
+                                {{"name", "Payer Y"},
+                                 {"address", "2 Main Street"},
+                                 {"country", "FR"},
+                                 {"source",
+                                  {{"source", "manual"},
+                                   {"sourceRevision", ""},
+                                   {"file", "payers.csv"},
+                                   {"row", 3},
+                                   {"origin", "supplied"}}}}}}}));
+}
+
+TEST(ApplicationResultJsonTest, RecordedPayerAnswersAreAPositionOrASkip) {
+    ApplicationResult result;
+    const PayerChoiceQuestion question{
+        .mIsin = "XX0000000010",
+        .mName = "Synthetic Payer",
+        .mOptions = {PayerChoiceOption{.mName = "Payer X",
+                                       .mAddress = "1 Main Street",
+                                       .mCountry = "DE",
+                                       .mTaxNumber = std::nullopt,
+                                       .mSource = {.mSource = "manual",
+                                                   .mSourceRevision = "",
+                                                   .mFile = "payers.csv",
+                                                   .mRowNumber = 2,
+                                                   .mOrigin = CatalogueOrigin::BuiltIn}},
+                     PayerChoiceOption{.mName = "Payer Y",
+                                       .mAddress = "2 Main Street",
+                                       .mCountry = "FR",
+                                       .mTaxNumber = std::nullopt,
+                                       .mSource = {.mSource = "manual",
+                                                   .mSourceRevision = "",
+                                                   .mFile = "payers.csv",
+                                                   .mRowNumber = 3,
+                                                   .mOrigin = CatalogueOrigin::BuiltIn}}}};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = PayerChoiceAnswer{.mPickedOption = 1}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = PayerChoiceAnswer{.mPickedOption = std::nullopt}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 2U);
+    EXPECT_EQ(decisions[0].at("answer"), (nlohmann::json{{"option", 1}}));
+    EXPECT_EQ(decisions[1].at("answer"), "skip");
+    EXPECT_EQ(decisions[0].at("payerCheck").at("isin"), "XX0000000010");
+    EXPECT_EQ(decisions[0].at("payerCheck").at("options").size(), 2U);
+}
+
+TEST(ApplicationResultJsonTest, ASlovenianPayerItemWritesItsDividendCategoryAndTaxRuleBasis) {
+    ApplicationResult result;
+
+    result.mExcludedItems = {
+        ExcludedItem{.mIsin = "XX0000000010",
+                     .mName = "Synthetic Payer SI",
+                     .mCategory = ExcludedCategory::Dividend,
+                     .mReason = ExcludedReason::SlovenianTaxSettled,
+                     .mDiagnosticIds = {"diagnostic-0001"}},
+    };
+
+    const auto json = serialize(result);
+    const auto& item = json.at("excludedItems").at(0);
+
+    EXPECT_EQ(item.at("category"), "dividend");
+    EXPECT_EQ(item.at("reason"), "slovenian_tax_settled");
+    EXPECT_EQ(item.at("basis"), "tax_rule");
+    EXPECT_FALSE(item.contains("bond"));
+}
+
+TEST(ApplicationResultJsonTest, TheDividendDiagnosticCodesAreWrittenByName) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    const auto diagnostic = [](ProcessingDiagnosticCode aCode) {
+        return ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = aCode,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {ReportType::Dividends}},
+            .mMessage = "Synthetic warning.",
+        };
+    };
+
+    input.mProcessingDiagnostics = {
+        diagnostic(ProcessingDiagnosticCode::DividendPayerNotFound),
+        diagnostic(ProcessingDiagnosticCode::ForeignTaxEvidenceRequired)};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& diagnostics = json.at("diagnostics");
+
+    // Warnings of one report and no ISIN keep the order of the stage.
+    ASSERT_EQ(diagnostics.size(), 2U);
+    EXPECT_EQ(diagnostics[0].at("code"), "dividend_payer_not_found");
+    EXPECT_EQ(diagnostics[1].at("code"), "foreign_tax_evidence_required");
 }
 
 } // namespace

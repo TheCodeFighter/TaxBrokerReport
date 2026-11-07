@@ -148,6 +148,10 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "source_quantity_corrected";
     case ProcessingDiagnosticCode::XmlBasisRoundingDifference:
         return "xml_basis_rounding_difference";
+    case ProcessingDiagnosticCode::DividendPayerNotFound:
+        return "dividend_payer_not_found";
+    case ProcessingDiagnosticCode::ForeignTaxEvidenceRequired:
+        return "foreign_tax_evidence_required";
     }
 
     return "unrepresentable_value";
@@ -415,6 +419,16 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return Json{{"correctedUnits", unitsString(aValue.mCorrectedUnits)}};
         }
+        else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
+        {
+            // A skip is a string; a pick is the position of the row among the options.
+            if (!aValue.mPickedOption)
+            {
+                return "skip";
+            }
+
+            return Json{{"option", *aValue.mPickedOption}};
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -568,6 +582,46 @@ Json quantityCheckToJson(const QuantityCorrectionQuestion& aQuestion) {
     return check;
 }
 
+std::string_view toString(CatalogueOrigin aOrigin) {
+    switch (aOrigin)
+    {
+    case CatalogueOrigin::BuiltIn:
+        return "built_in";
+    case CatalogueOrigin::Supplied:
+        break;
+    }
+
+    return "supplied";
+}
+
+/// The question data of a payer choice question: the ISIN and the reference rows to pick from,
+/// each with the facts of the payer and the row it came from.
+Json payerCheckToJson(const PayerChoiceQuestion& aQuestion) {
+    Json options = Json::array();
+
+    for (const auto& option : aQuestion.mOptions)
+    {
+        Json serialized{{"name", option.mName},
+                        {"address", option.mAddress},
+                        {"country", option.mCountry},
+                        {"source",
+                         Json{{"source", option.mSource.mSource},
+                              {"sourceRevision", option.mSource.mSourceRevision},
+                              {"file", option.mSource.mFile},
+                              {"row", option.mSource.mRowNumber},
+                              {"origin", toString(option.mSource.mOrigin)}}}};
+
+        if (option.mTaxNumber)
+        {
+            serialized["taxNumber"] = *option.mTaxNumber;
+        }
+
+        options.push_back(std::move(serialized));
+    }
+
+    return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"options", options}};
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
     // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
@@ -609,6 +663,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["quantityCheck"] = quantityCheckToJson(*quantity);
     }
 
+    if (const auto* payer = std::get_if<PayerChoiceQuestion>(&aRequest.mData))
+    {
+        serialized["payerCheck"] = payerCheckToJson(*payer);
+    }
+
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
     {
         Json investments = Json::array();
@@ -640,6 +699,8 @@ std::string_view toString(ExcludedCategory aCategory) {
         return "bond";
     case ExcludedCategory::Crypto:
         return "crypto";
+    case ExcludedCategory::Dividend:
+        return "dividend";
     case ExcludedCategory::Unknown:
         break;
     }
@@ -656,6 +717,8 @@ std::string_view toString(ExcludedReason aReason) {
         return "crypto_not_reported";
     case ExcludedReason::UserChoice:
         return "user_choice";
+    case ExcludedReason::SlovenianTaxSettled:
+        return "slovenian_tax_settled";
     }
 
     return "user_choice";
@@ -740,6 +803,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aDecision.mData))
     {
         serialized["quantityCheck"] = quantityCheckToJson(*quantity);
+    }
+
+    if (const auto* payer = std::get_if<PayerChoiceQuestion>(&aDecision.mData))
+    {
+        serialized["payerCheck"] = payerCheckToJson(*payer);
     }
 
     serialized["answer"] = answerToJson(aDecision.mAnswer);

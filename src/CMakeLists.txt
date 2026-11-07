@@ -54,6 +54,7 @@ add_library(taxbroker_core STATIC
     processors/capital_report_gates.cpp
     processors/corporate_actions.cpp
     processors/decision_session.cpp
+    processors/dividend_payments.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
     processors/loss_eligibility.cpp

@@ -591,6 +591,17 @@ roundings of the ISIN have used before this sale). The two EUR values are exact 
 answered with `{"correctedUnits":"0.99999998"}` (eight decimals) or cancelled; a recorded answer
 lists the same `quantityCheck`.
 
+A payer request (`income_details_required` for a dividend payer whose reference rows disagree) has
+no `options` and `"payerCheck"` with `name`, `isin` and `options`: the reference rows, sorted by
+name, address, country, tax number and source row, each with `name`, `address`, `country`, `taxNumber`
+(only when the row has one) and `source` (`source`, `sourceRevision`, `file`, `row` and `origin`,
+`built_in` or `supplied`). It is answered with `{"option":1}`, the position of the picked row in
+`payerCheck.options` counted from 0, or `"skip"`; a position outside the options and a cancel are
+rejected with `answer_does_not_fit`. A skip, like no answer, gives empty payer facts and the same
+warning as a payer that is not found. The request is listed with its form (`requestIds`), but it
+never makes the form `needs_input` and never blocks. A recorded answer lists the same `payerCheck`.
+The question changes (a new question, a new answer) when a reference row changes.
+
 A request type whose processor does not define its question data yet cannot be answered, not even
 cancelled: without question data, all its questions would be the same question, and one answer
 would reach questions the user never saw. The builder rejects question data that does not fit the
@@ -633,9 +644,10 @@ ISIN and always present (`[]` when empty). It is distinct from the `excludedInve
 report, which lists failed investments the user chose to leave out of one form. An entry has:
 
 - `name`, `isin`, and `classLabels` (the class labels of its rows as the files gave them);
-- `category`: `bond`, `crypto` or `unknown` (an unknown class the user left out);
-- `reason`: `debt_security`, `crypto_not_reported` or `user_choice`, and `basis`: `tax_rule` or
-  `user_choice`;
+- `category`: `bond`, `crypto`, `unknown` (an unknown class the user left out) or `dividend` (the
+  dividends of a Slovenian payer);
+- `reason`: `debt_security`, `crypto_not_reported`, `slovenian_tax_settled` or `user_choice`, and
+  `basis`: `tax_rule` or `user_choice`;
 - for a bond only, `bond` with `boughtUnits`, `soldUnits` and `maturedUnits` in the selected year
   (units out minus units back, never added up by order) and the `maturityDate` of the first
   maturity row, when there is one. Units are exact decimal strings with eight decimals; amounts
@@ -797,7 +809,9 @@ Additional codes and their default scope are:
 | `unsupported_corporate_action` | Error for capital gains on one action that needs tax rules the app does not have; key `.merger` for a merger row. No question is asked. |
 | `tax_classification_unknown` | Error from the classification stage (never from the capital gates) for capital gains on an investment with an unknown asset class: key `.confirmation_required` while its classification request is open (linked to it), `.cancelled` after a cancel (no request). The parse and merge errors about the class of that investment stay errors but no longer block. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
-| `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion, one per excluded item of capital gains: key `.debt_security` (a bond), `.crypto`, or `.user_choice` (the user left an unknown-class investment out). Its sources and date are those of the rows that gave the entry: trade, corporate-action or maturity rows in the selected year, or for an unknown class every trade and action row up to 31 December. |
+| `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion, one per excluded item of capital gains: key `.debt_security` (a bond), `.crypto`, or `.user_choice` (the user left an unknown-class investment out). For Doh-Div it has key `.slovenian_tax_settled`: one per ISIN whose payer has the country `SI`, with the sources of its payments in the year. Its sources and date are those of the rows that gave the entry: trade, corporate-action or maturity rows in the selected year, or for an unknown class every trade and action row up to 31 December. |
+| `dividend_payer_not_found` | Warning for Doh-Div, once per ISIN: no reference row gave the payer, or several rows disagree and the user skipped them or has not answered. The rows of the ISIN are made without payer facts and the user completes them in eDavki. Its sources are those of all the ISIN's payments in the year; with an open payer request it is linked to it. |
+| `foreign_tax_evidence_required` | Warning for Doh-Div, once per run when a row has a foreign tax above 0: the user attaches the evidence of the payment and the tax in eDavki; the app attaches nothing. The sources are those of the payments with tax. |
 | `official_rate_files_required` | Warning for the capital gains report: the years of the ECB rate files that the missing rates of investments sold in the year need. Key `.not_loaded` (`years`: the files are not loaded) or `.ends_early` (`years`: the files end before a trade day); `years` is a text such as `2023, 2024`. No ISIN or date; the sources are those of the trades behind the years. Given once per key after the per-ISIN `missing_exchange_rate` errors, and not given for a rate that no file can fix. |
 | `missing_exchange_rate` | Error for every report that needs one currency and tax date for which no official rate was found, one error per pair with all its sources: key `.no_rate_file` (parameters `currency`, `date`, `year`: the rate file of that year is not loaded), `.rate_file_ends_early` (`currency`, `date`, `lastDate`: the file of that year ends before the date), `.no_rate_on_date` (`currency`, `date`: the loaded files have no rate for it within 4 days before the date, or the currency was stopped) or `.replaced_by_eur` (`currency`, `date`, `euroDate`). For the capital gains report the error is given per ISIN, not per pair: the first foreign trade of an ISIN that has no rate names its date and sources, and the ISIN can be excluded. A trade with no known currency has the key `.trade` (no parameters). |
 | `official_rate_from_nearby_date` | Warning for every report that needs one currency and tax date with no ECB rate of its own, one per pair: the last earlier ECB rate, at most 4 days before, was used. Parameters `currency`, `date` and `rateDate`. The rate is still official; the rule is unconfirmed by FURS. |

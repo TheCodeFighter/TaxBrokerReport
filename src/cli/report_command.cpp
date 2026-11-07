@@ -907,6 +907,8 @@ std::string_view categoryText(ExcludedCategory aCategory) {
         return "bond";
     case ExcludedCategory::Crypto:
         return "crypto";
+    case ExcludedCategory::Dividend:
+        return "dividend";
     case ExcludedCategory::Unknown:
         break;
     }
@@ -921,6 +923,8 @@ std::string_view reasonText(ExcludedReason aReason) {
         return "tax rule: debt security, only its interest is taxable";
     case ExcludedReason::CryptoNotReported:
         return "tax rule: crypto is not part of Doh-KDVP";
+    case ExcludedReason::SlovenianTaxSettled:
+        return "tax rule: a Slovenian payer deducts the tax itself";
     case ExcludedReason::UserChoice:
         break;
     }
@@ -1027,7 +1031,8 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         {
             return aQuestion.mName;
         }
-        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion>)
+        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion> ||
+                           std::is_same_v<Question, PayerChoiceQuestion>)
         {
             return aQuestion.mName;
         }

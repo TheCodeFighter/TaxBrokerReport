@@ -84,7 +84,7 @@ struct BrokerPayerList {
 
 /// What a payer lookup found.
 enum class PayerLookupStatus {
-    Found,    ///< One entry, or several with the same facts. A suggestion the user confirms.
+    Found,    ///< One entry, or several with the same facts. Used without a question.
     NotFound, ///< No entry has the identifier.
     Conflict, ///< Entries with different facts for the identifiers.
 };

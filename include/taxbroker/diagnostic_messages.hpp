@@ -141,6 +141,9 @@ enum class MessageKey {
     ReferenceFileInvalidSource,
     ReferenceFileMissingSourceRevision,
     ReferenceFileDuplicateBrokerCode,
+    DividendPayerNotFound,
+    ForeignTaxEvidenceRequired,
+    TaxCategoryNotReportedSlovenianTaxSettled,
 };
 
 enum class MessageParamKind {

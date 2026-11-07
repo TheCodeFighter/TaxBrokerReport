@@ -181,6 +181,15 @@ The official rate date is:
 - the disposal date for a sale unit price;
 - the income date for a dividend or interest amount and its foreign tax.
 
+A dividend is converted in two parts, each in its own currency. Trade Republic gives the gross in
+the original currency (`original_currency`) and the tax in the account currency (EUR). The gross
+is divided by the ECB rate of the receipt date and rounded once to four decimals (USD 10.00 at
+1.0880 is EUR 9.1912). The tax is taken as it is when it is in EUR, and converted the same way
+when it is in a foreign currency (USD 1.50 at 1.0880 is EUR 1.3787). The broker `fx_rate` is never
+used for a form value, so the EUR tax is not converted back to the gross currency. A payment whose
+payer is Slovenian needs no rate, because it is not reported (`tax_rules.md`, "Payer lists,
+settled Slovenian tax and foreign-tax relief").
+
 The user copies the rate that Banka Slovenije shows as valid for that currency and date. This also
 covers a date for which the site uses its applicable daily or monthly rate. The app must not
 interpolate rates or silently choose an average, annual or current rate. The only other rate it

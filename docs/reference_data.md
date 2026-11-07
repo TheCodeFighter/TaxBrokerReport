@@ -137,19 +137,21 @@ ISIN prefix does not prove where the payer lives.
 1. **Exact match only.** A payer is found by the exact ISIN, for every broker. A ticker, a name,
    an ISIN prefix, an exchange, a currency, a broker or a broker's own number (such as a
    `conid`) never matches.
-2. **A suggestion, not a fact.** A row prefills the income details. The user confirms them once;
-   the confirmation is stored with the decision. Nothing from a reference file is written into an
-   XML file without that confirmation.
+2. **A suggestion, not a fact.** One row, or several rows with the same facts, prefill the payer
+   facts of the income rows without a question. The result lists the row (file, row number and
+   source) with the facts, so the user can check them and complete or correct them in eDavki. Only
+   rows that disagree are put to the user (rule 4).
 3. **Payment evidence wins.** A payment that shows other facts than the row (for example another
    country) overrides it.
 4. **A missing or conflicting row** (no row, two rows with different facts for one identifier, or
-   a row changed by a new revision after the user confirmed it) leaves the payer facts empty. The
+   a row changed by a new revision after the user picked it) leaves the payer facts empty. The
    income row is still made, and a warning tells the user to complete them in eDavki. With two
    rows that disagree the user picks one of them or skips (a skip, or no answer, is like no row). A row with `country` `SI` makes
    the payment a Slovenian payment, which is not reported (the company deducts the tax).
 5. **The relief statement is not a claim.** A row in `relief_statements.csv` never means that the
-   user is entitled to relief. How its text may prefill the field is decided with the foreign-tax
-   relief rules; until then it is not used.
+   user is entitled to relief. The dividend rows do not use it: they make no treaty claim, and the
+   Doh-Div writer writes `ReliefStatement` `false`. How its text may fill a claim is decided
+   when treaty claims are supported.
 6. **Broker payers** are used only with the broker they name.
 7. **No coverage claim.** The files do not cover every issuer or ETF.
 
