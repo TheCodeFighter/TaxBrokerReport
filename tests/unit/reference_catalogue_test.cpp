@@ -28,7 +28,7 @@ constexpr std::string_view kIsinA = "XX0000000010";
 constexpr std::string_view kIsinB = "XX0000000028"; // same prefix as A, another instrument
 
 constexpr std::string_view kPayersHeader =
-    "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+    "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
     "source_revision\n";
 constexpr std::string_view kReliefHeader = "country,statement,source,source_revision\n";
 constexpr std::string_view kBrokerHeader =
@@ -54,7 +54,7 @@ parse(std::string_view aPayers, std::string_view aRelief = {}, std::string_view 
 TEST(ReferenceCatalogueTest, LoadsTheEmbeddedFiles) {
     const ReferenceCatalogue& catalogue = referenceCatalogue();
 
-    EXPECT_EQ(catalogue.payers().size(), 299U); // 300 upstream payers, one ISIN is not valid
+    EXPECT_EQ(catalogue.payers().size(), 282U); // 68 upstream ISINs + the ISINs found
     EXPECT_EQ(catalogue.allReliefStatements().size(), 17U);
     EXPECT_EQ(catalogue.brokerPayers().size(), 5U);
 }
@@ -71,13 +71,29 @@ TEST(ReferenceCatalogueTest, EmbeddedPayersHaveNoKindNoVerificationDateAndTheUps
     }
 }
 
+TEST(ReferenceCatalogueTest, EveryEmbeddedPayerHasAnIsinFromUpstreamOrWikidata) {
+    const ReferenceCatalogue& catalogue = referenceCatalogue();
+    std::size_t fromUpstream = 0;
+    std::size_t fromWikidata = 0;
+
+    for (const PayerEntry& entry : catalogue.payers())
+    {
+        EXPECT_EQ(entry.mIsin.size(), 12U);
+        fromUpstream += entry.mIsinSource == "ib-edavki" ? 1 : 0;
+        fromWikidata += entry.mIsinSource == "wikidata" ? 1 : 0;
+    }
+
+    EXPECT_EQ(fromUpstream, 68U);  // the payers that upstream gave an ISIN
+    EXPECT_EQ(fromWikidata, 214U); // the ISINs found by the lookup
+}
+
 // --- Lookup ---
 
 TEST(ReferenceCatalogueTest, FindsAPayerByExactIsin) {
     const auto catalogue =
-        parse("XX0000000010,,Payer A,TAX-A,1 Main Street,IE,etf,2026-01-15,manual,\n");
+        parse("XX0000000010,Payer A,TAX-A,1 Main Street,IE,etf,2026-01-15,issuer,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{kIsinA}});
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
 
     EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Found);
     ASSERT_EQ(lookup.mEntries.size(), 1U);
@@ -95,67 +111,20 @@ TEST(ReferenceCatalogueTest, FindsAPayerByExactIsin) {
     EXPECT_EQ(entry.mSource.mRowNumber, 2U); // the header is row 1
 }
 
-TEST(ReferenceCatalogueTest, FindsAPayerByExactConid) {
-    const auto catalogue = parse(",12345,Payer C,,2 Main Street,US,,,ib-edavki,abc123\n");
-
-    const PayerLookup lookup = catalogue.findPayer({.mIbkrConid = std::string{"12345"}});
-
-    EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Found);
-    ASSERT_EQ(lookup.mEntries.size(), 1U);
-    EXPECT_EQ(lookup.mEntries[0]->mName, "Payer C");
-    EXPECT_FALSE(lookup.mEntries[0]->mTaxNumber.has_value()); // the field is empty
-    EXPECT_EQ(lookup.mEntries[0]->mSource.mSourceRevision, "abc123");
-}
-
 TEST(ReferenceCatalogueTest, DoesNotMatchAnotherIsinWithTheSamePrefix) {
-    const auto catalogue = parse("XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n");
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{kIsinB}});
+    const PayerLookup lookup = catalogue.findPayer(kIsinB);
 
     EXPECT_EQ(lookup.mStatus, PayerLookupStatus::NotFound);
     EXPECT_TRUE(lookup.mEntries.empty());
 }
 
-TEST(ReferenceCatalogueTest, DoesNotMatchAPartOfAConid) {
-    const auto catalogue = parse(",12345,Payer C,,2 Main Street,US,,,manual,\n");
+TEST(ReferenceCatalogueTest, ReportsAConflictForTwoRowsOfOneIsinWithAnotherName) {
+    const auto catalogue = parse("XX0000000010,Payer X,,1 Main Street,IE,,,issuer,manual,\n"
+                                 "XX0000000010,Payer Y,,2 Main Street,IE,,,wikidata,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIbkrConid = std::string{"1234"}});
-
-    EXPECT_EQ(lookup.mStatus, PayerLookupStatus::NotFound);
-}
-
-TEST(ReferenceCatalogueTest, DoesNotMatchAConidAsAnIsin) {
-    const auto catalogue = parse(",12345,Payer C,,2 Main Street,US,,,manual,\n");
-
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{"12345"}});
-
-    EXPECT_EQ(lookup.mStatus, PayerLookupStatus::NotFound);
-}
-
-TEST(ReferenceCatalogueTest, ReturnsNotFoundForAQueryWithoutIdentifiers) {
-    const auto catalogue = parse("XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n");
-
-    const PayerLookup lookup = catalogue.findPayer({});
-
-    EXPECT_EQ(lookup.mStatus, PayerLookupStatus::NotFound);
-}
-
-TEST(ReferenceCatalogueTest, CountsARowFoundByIsinAndByConidOnce) {
-    const auto catalogue = parse("XX0000000010,7,Payer A,,1 Main Street,IE,,,manual,\n");
-
-    const PayerLookup lookup =
-        catalogue.findPayer({.mIsin = std::string{kIsinA}, .mIbkrConid = std::string{"7"}});
-
-    EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Found);
-    EXPECT_EQ(lookup.mEntries.size(), 1U);
-}
-
-TEST(ReferenceCatalogueTest, ReportsAConflictWhenIsinAndConidNameDifferentPayers) {
-    const auto catalogue = parse("XX0000000010,,Payer X,,1 Main Street,IE,,,manual,\n"
-                                 ",7,Payer Y,,2 Main Street,IE,,,manual,\n");
-
-    const PayerLookup lookup =
-        catalogue.findPayer({.mIsin = std::string{kIsinA}, .mIbkrConid = std::string{"7"}});
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
 
     EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Conflict);
     ASSERT_EQ(lookup.mEntries.size(), 2U);
@@ -164,10 +133,10 @@ TEST(ReferenceCatalogueTest, ReportsAConflictWhenIsinAndConidNameDifferentPayers
 }
 
 TEST(ReferenceCatalogueTest, ReportsAConflictForTwoRowsOfOneIsinWithAnotherCountry) {
-    const auto catalogue = parse("XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n"
-                                 "XX0000000010,,Payer A,,1 Main Street,LU,,,manual,\n");
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n"
+                                 "XX0000000010,Payer A,,1 Main Street,LU,,,issuer,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{kIsinA}});
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
 
     EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Conflict);
     EXPECT_EQ(lookup.mEntries.size(), 2U);
@@ -175,10 +144,10 @@ TEST(ReferenceCatalogueTest, ReportsAConflictForTwoRowsOfOneIsinWithAnotherCount
 
 TEST(ReferenceCatalogueTest, TreatsTwoRowsWithTheSameFactsAsOne) {
     const auto catalogue =
-        parse("XX0000000010,,Payer A,TAX-A,1 Main Street,IE,,,ib-edavki,abc123\n"
-              "XX0000000010,,Payer A,TAX-A,1 Main Street,IE,,2026-01-15,manual,\n");
+        parse("XX0000000010,Payer A,TAX-A,1 Main Street,IE,,,ib-edavki,ib-edavki,abc123\n"
+              "XX0000000010,Payer A,TAX-A,1 Main Street,IE,,2026-01-15,issuer,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{kIsinA}});
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
 
     EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Found);
     ASSERT_EQ(lookup.mEntries.size(), 1U);
@@ -187,9 +156,9 @@ TEST(ReferenceCatalogueTest, TreatsTwoRowsWithTheSameFactsAsOne) {
 
 TEST(ReferenceCatalogueTest, KeepsKindAndVerificationDateOfAManualRow) {
     const auto catalogue =
-        parse("XX0000000036,,Fund F,,3 Main Street,LU,fund,2026-01-15,manual,\n");
+        parse("XX0000000036,Fund F,,3 Main Street,LU,fund,2026-01-15,issuer,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{"XX0000000036"}});
+    const PayerLookup lookup = catalogue.findPayer("XX0000000036");
 
     ASSERT_EQ(lookup.mEntries.size(), 1U);
     EXPECT_EQ(lookup.mEntries[0]->mInstrumentKind, std::optional<std::string>{"fund"});
@@ -200,9 +169,9 @@ TEST(ReferenceCatalogueTest, FindsAnIsinWithALetterBeforeTheCheckDigit) {
     // XX00000000A -> 3333 00000000 10 (A counts as 10, two digits, which moves the doubling).
     // With the check digit last, the non-zero digits from the right are 1, 3 (doubled: 6), 3,
     // 3 (doubled: 6), 3: 1 + 6 + 3 + 6 + 3 = 19, so the check digit is 1 (sum 20).
-    const auto catalogue = parse("XX00000000A1,,Payer L,,4 Main Street,IE,,,manual,\n");
+    const auto catalogue = parse("XX00000000A1,Payer L,,4 Main Street,IE,,,issuer,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{"XX00000000A1"}});
+    const PayerLookup lookup = catalogue.findPayer("XX00000000A1");
 
     EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Found);
     ASSERT_EQ(lookup.mEntries.size(), 1U);
@@ -211,30 +180,58 @@ TEST(ReferenceCatalogueTest, FindsAnIsinWithALetterBeforeTheCheckDigit) {
 
 TEST(ReferenceCatalogueTest, ReadsAQuotedAddressWithAComma) {
     const auto catalogue =
-        parse("XX0000000010,,Payer A,,\"Level 20, 1 Main Street\",IE,,,manual,\n");
+        parse("XX0000000010,Payer A,,\"Level 20, 1 Main Street\",IE,,,issuer,manual,\n");
 
-    const PayerLookup lookup = catalogue.findPayer({.mIsin = std::string{kIsinA}});
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
 
     ASSERT_EQ(lookup.mEntries.size(), 1U);
     EXPECT_EQ(lookup.mEntries[0]->mAddress, "Level 20, 1 Main Street");
 }
 
-TEST(ReferenceCatalogueTest, ListsTheMatchesOfIsinAndConidInFileOrder) {
-    // The row with the conid is first in the file, the row with the ISIN second.
-    const auto catalogue = parse(",7,Payer Y,,2 Main Street,IE,,,manual,\n"
-                                 "XX0000000010,,Payer X,,1 Main Street,IE,,,manual,\n");
+TEST(ReferenceCatalogueTest, ListsTheConflictingRowsOfAnIsinInFileOrder) {
+    // Rows 2 and 4 have the ISIN A with other names; row 3 has the ISIN B.
+    const auto catalogue = parse("XX0000000010,Payer Y,,2 Main Street,IE,,,issuer,manual,\n"
+                                 "XX0000000028,Payer B,,3 Main Street,IE,,,issuer,manual,\n"
+                                 "XX0000000010,Payer X,,1 Main Street,IE,,,issuer,manual,\n");
 
-    const PayerLookup lookup =
-        catalogue.findPayer({.mIsin = std::string{kIsinA}, .mIbkrConid = std::string{"7"}});
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
 
     EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Conflict);
     ASSERT_EQ(lookup.mEntries.size(), 2U);
-    EXPECT_EQ(lookup.mEntries[0]->mSource.mRowNumber, 2U); // the conid row, first in the file
-    EXPECT_EQ(lookup.mEntries[1]->mSource.mRowNumber, 3U);
+    EXPECT_EQ(lookup.mEntries[0]->mName, "Payer Y"); // row 2, first in the file
+    EXPECT_EQ(lookup.mEntries[1]->mName, "Payer X"); // row 4
+    EXPECT_EQ(lookup.mEntries[1]->mSource.mRowNumber, 4U);
+}
+
+TEST(ReferenceCatalogueTest, KeepsTheIsinSourceOfTheRow) {
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,wikidata,manual,\n");
+
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
+
+    ASSERT_EQ(lookup.mEntries.size(), 1U);
+    EXPECT_EQ(lookup.mEntries[0]->mIsin, "XX0000000010");
+    EXPECT_EQ(lookup.mEntries[0]->mIsinSource, "wikidata");
+}
+
+TEST(ReferenceCatalogueTest, IgnoresAnExtraConidColumnOfAnOlderFile) {
+    // An older file still has the column ibkr_conid at the end; the reader ignores extra columns.
+    const std::string payers =
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision,ibkr_conid\n"
+        "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,,12345\n";
+    const auto catalogue =
+        parseReferenceCatalogue(payers,
+                                std::string{kReliefHeader} + std::string{kOneRelief},
+                                std::string{kBrokerHeader} + std::string{kOneBroker});
+
+    const PayerLookup lookup = catalogue.findPayer(kIsinA);
+
+    EXPECT_EQ(lookup.mStatus, PayerLookupStatus::Found);
+    EXPECT_EQ(catalogue.findPayer("12345").mStatus, PayerLookupStatus::NotFound); // not a key
 }
 
 TEST(ReferenceCatalogueTest, FindsABrokerPayerByBrokerAndCode) {
-    const auto catalogue = parse("XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n",
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                                  "BE,Treaty text,manual,\n",
                                  "IBKR,IB-UK,Broker UK,03958476,Level 20,GB,ib-edavki,abc123\n");
 
@@ -250,7 +247,7 @@ TEST(ReferenceCatalogueTest, FindsABrokerPayerByBrokerAndCode) {
 
 TEST(ReferenceCatalogueTest, ListsTheReliefStatementsOfACountryInFileOrder) {
     const auto catalogue =
-        parse("XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n",
+        parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
               "BE,Text one,manual,\nCA,Text two,manual,\nBE,Text three,manual,\n");
 
     const auto belgium = catalogue.reliefStatements("BE");
@@ -276,90 +273,114 @@ void expectFault(std::string_view aPayersRows,
     { EXPECT_EQ(std::string{error.what()}, std::string{aExpectedMessage}); }
 }
 
-TEST(ReferenceCatalogueTest, RejectsARowWithoutIsinAndConid) {
-    // Row 2 has no ISIN and no conid.
-    expectFault(",,Payer A,,1 Main Street,IE,,,manual,\n",
-                "payers.csv row 2: the row has neither an ISIN nor a conid");
+TEST(ReferenceCatalogueTest, RejectsARowWithoutIsin) {
+    // Row 2 has an empty isin.
+    expectFault(",Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+                "payers.csv row 2: the isin is empty");
+}
+
+TEST(ReferenceCatalogueTest, RejectsARowWithoutIsinSource) {
+    // Row 2 has an empty isin_source.
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,,manual,\n",
+                "payers.csv row 2: the isin_source is empty");
+}
+
+TEST(ReferenceCatalogueTest, RejectsAnUnknownIsinSource) {
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,openfigi,manual,\n",
+                "payers.csv row 2: the ISIN source is not ib-edavki, wikidata, issuer, exchange or "
+                "gleif");
+}
+
+TEST(ReferenceCatalogueTest, AcceptsEveryKnownIsinSource) {
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,ib-edavki,manual,\n"
+                                 "XX0000000028,Payer B,,2 Main Street,IE,,,wikidata,manual,\n"
+                                 "XX0000000036,Payer C,,3 Main Street,IE,,,issuer,manual,\n"
+                                 "XX0000000044,Payer D,,4 Main Street,IE,,,exchange,manual,\n"
+                                 "XX0000000051,Payer E,,5 Main Street,IE,,,gleif,manual,\n");
+
+    ASSERT_EQ(catalogue.payers().size(), 5U);
+    EXPECT_EQ(catalogue.payers()[0].mIsinSource, "ib-edavki");
+    EXPECT_EQ(catalogue.payers()[1].mIsinSource, "wikidata");
+    EXPECT_EQ(catalogue.payers()[2].mIsinSource, "issuer");
+    EXPECT_EQ(catalogue.payers()[3].mIsinSource, "exchange");
+    EXPECT_EQ(catalogue.payers()[4].mIsinSource, "gleif");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnIsinWithAWrongCheckDigit) {
     // XX0000000011: the check digit of XX000000001 is 0.
-    expectFault("XX0000000011,,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("XX0000000011,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "payers.csv row 2: the ISIN is not valid");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnIsinWithALetterAndAWrongCheckDigit) {
     // XX00000000A0: the check digit of XX00000000A is 1.
-    expectFault("XX00000000A0,,Payer L,,4 Main Street,IE,,,manual,\n",
+    expectFault("XX00000000A0,Payer L,,4 Main Street,IE,,,issuer,manual,\n",
                 "payers.csv row 2: the ISIN is not valid");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnIsinOfWrongLength) {
     // 11 characters.
-    expectFault("XX000000001,,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("XX000000001,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "payers.csv row 2: the ISIN is not valid");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnIsinWithALowercaseLetter) {
-    expectFault("xx0000000010,,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("xx0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "payers.csv row 2: the ISIN is not valid");
 }
 
-TEST(ReferenceCatalogueTest, RejectsAConidWithALetter) {
-    expectFault(",12A45,Payer A,,1 Main Street,IE,,,manual,\n",
-                "payers.csv row 2: the conid is not digits only");
-}
-
 TEST(ReferenceCatalogueTest, RejectsAThreeLetterCountry) {
-    expectFault(",7,Payer A,,1 Main Street,IRL,,,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IRL,,,issuer,manual,\n",
                 "payers.csv row 2: the country is not 2 uppercase letters");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnEmptyName) {
-    expectFault(",7,,,1 Main Street,IE,,,manual,\n", "payers.csv row 2: the name is empty");
+    expectFault("XX0000000010,,,1 Main Street,IE,,,issuer,manual,\n",
+                "payers.csv row 2: the name is empty");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnEmptyAddress) {
-    expectFault(",7,Payer A,,,IE,,,manual,\n", "payers.csv row 2: the address is empty");
+    expectFault("XX0000000010,Payer A,,,IE,,,issuer,manual,\n",
+                "payers.csv row 2: the address is empty");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnUnknownSource) {
-    expectFault(",7,Payer A,,1 Main Street,IE,,,other,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,other,\n",
                 "payers.csv row 2: the source is not ib-edavki or manual");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnUpstreamRowWithoutRevision) {
-    expectFault(",7,Payer A,,1 Main Street,IE,,,ib-edavki,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,ib-edavki,ib-edavki,\n",
                 "payers.csv row 2: an ib-edavki row has no source revision");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnInvalidVerificationDate) {
     // Month 13.
-    expectFault(",7,Payer A,,1 Main Street,IE,,2026-13-01,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,2026-13-01,issuer,manual,\n",
                 "payers.csv row 2: verified_on is not a date as YYYY-MM-DD");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnUnknownInstrumentKind) {
-    expectFault(",7,Payer A,,1 Main Street,IE,crypto,,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,crypto,,issuer,manual,\n",
                 "payers.csv row 2: the instrument kind is not share, etf, fund or bond");
 }
 
 TEST(ReferenceCatalogueTest, ReportsTheLogicalRowOfTheFault) {
     // Row 2 is valid; row 3 has no name.
-    expectFault(",7,Payer A,,1 Main Street,IE,,,manual,\n,8,,,2 Main Street,IE,,,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\nXX0000000028,,,2 Main "
+                "Street,IE,,,issuer,manual,\n",
                 "payers.csv row 3: the name is empty");
 }
 
 TEST(ReferenceCatalogueTest, RejectsARowWithTooFewFields) {
     // 9 fields: source_revision is missing.
-    expectFault(",7,Payer A,,1 Main Street,IE,,,manual\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual\n",
                 "payers.csv row 2: the row has 9 fields, the header 10");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAPayersFileWithoutAColumn) {
-    // The header lacks instrument_kind and verified_on.
-    const std::string payers =
-        "isin,ibkr_conid,name,tax_number,address,country,source,source_revision\n";
+    // The header lacks instrument_kind, verified_on and isin_source.
+    const std::string payers = "isin,name,tax_number,address,country,source,source_revision\n";
 
     try
     {
@@ -371,20 +392,21 @@ TEST(ReferenceCatalogueTest, RejectsAPayersFileWithoutAColumn) {
     } catch (const std::logic_error& error)
     {
         EXPECT_EQ(std::string{error.what()},
-                  "payers.csv: the header lacks the columns instrument_kind, verified_on");
+                  "payers.csv: the header lacks the columns instrument_kind, verified_on, "
+                  "isin_source");
     }
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnIsinWithASymbol) {
     // 12 characters, but the 7th is a hyphen.
-    expectFault("XX0000-00010,,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("XX0000-00010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "payers.csv row 2: the ISIN is not valid");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAPayersFileWithARepeatedColumn) {
     // The header has the column name twice.
     const std::string payers =
-        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
         "source_revision,name\n";
 
     try
@@ -400,30 +422,31 @@ TEST(ReferenceCatalogueTest, RejectsAPayersFileWithARepeatedColumn) {
 
 TEST(ReferenceCatalogueTest, RejectsAFieldWithALineBreak) {
     // The address starts a quote on row 2 and closes it on the next line; the quotes are even.
-    expectFault(",7,Payer A,,\"Level 20\n1 Main Street\",IE,,,manual,\n",
+    expectFault("XX0000000010,Payer A,,\"Level 20\n1 Main Street\",IE,,,issuer,manual,\n",
                 "payers.csv row 2: a field holds a line break");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAPayersFileWithAnUnclosedQuote) {
     // The quote before Level never closes.
-    expectFault(",7,Payer A,,\"Level 20,IE,,,manual,\n", "payers.csv: a quote is not closed");
+    expectFault("XX0000000010,Payer A,,\"Level 20,IE,,,issuer,manual,\n",
+                "payers.csv: a quote is not closed");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnEmptyReliefStatement) {
-    expectFault(",7,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "relief_statements.csv row 2: the statement is empty",
                 "BE,,manual,\n");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAReliefStatementWithAWrongCountry) {
-    expectFault(",7,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "relief_statements.csv row 2: the country is not 2 uppercase letters",
                 "Belgium,Treaty text,manual,\n");
 }
 
 TEST(ReferenceCatalogueTest, RejectsARepeatedBrokerPayer) {
     // Rows 2 and 3 have the broker IBKR and the code IB-X.
-    expectFault(",7,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "broker_payers.csv row 3: the broker and code are already in the file",
                 "BE,Treaty text,manual,\n",
                 "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n"
@@ -431,7 +454,7 @@ TEST(ReferenceCatalogueTest, RejectsARepeatedBrokerPayer) {
 }
 
 TEST(ReferenceCatalogueTest, RejectsABrokerPayerWithoutACode) {
-    expectFault(",7,Payer A,,1 Main Street,IE,,,manual,\n",
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "broker_payers.csv row 2: the code is empty",
                 "BE,Treaty text,manual,\n",
                 "IBKR,,Broker X,123,1 Main Street,GB,manual,\n");
@@ -440,7 +463,7 @@ TEST(ReferenceCatalogueTest, RejectsABrokerPayerWithoutACode) {
 TEST(ReferenceCatalogueTest, DoesNotPutAValueOfTheFileInAFaultMessage) {
     try
     {
-        static_cast<void>(parse(",7,Secret Name,,1 Main Street,IRL,,,manual,\n"));
+        static_cast<void>(parse("XX0000000010,Secret Name,,1 Main Street,IRL,,,issuer,manual,\n"));
         FAIL() << "No fault";
     } catch (const std::logic_error& error)
     {
@@ -502,7 +525,7 @@ class TemporaryFolder {
 
 /// A valid payers file with one row for the ISIN A.
 const std::string kSuppliedPayers =
-    std::string{kPayersHeader} + "XX0000000010,,Payer A,,1 Main Street,IE,,,manual,\n";
+    std::string{kPayersHeader} + "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n";
 
 /// Loads one supplied payers file with this text and returns the fault, which must be set.
 ReferenceFileFault payersFault(std::string_view aText) {
@@ -520,7 +543,7 @@ TEST(ReferenceDataTest, NoFilesGiveTheBuiltInData) {
 
     ASSERT_TRUE(load.mCatalogue.has_value());
     EXPECT_FALSE(load.mFault.has_value());
-    EXPECT_EQ(load.mCatalogue->payers().size(), 299U);
+    EXPECT_EQ(load.mCatalogue->payers().size(), 282U);
     EXPECT_EQ(load.mCatalogue->allReliefStatements().size(), 17U);
     EXPECT_EQ(load.mOrigins[0], CatalogueOrigin::BuiltIn);
     EXPECT_EQ(load.mOrigins[1], CatalogueOrigin::BuiltIn);
@@ -536,9 +559,9 @@ TEST(ReferenceDataTest, ASuppliedPayersFileReplacesTheBuiltInFileWhole) {
     EXPECT_EQ(load.mOrigins[0], CatalogueOrigin::Supplied);
     EXPECT_EQ(load.mOrigins[1], CatalogueOrigin::BuiltIn);
     EXPECT_EQ(load.mOrigins[2], CatalogueOrigin::BuiltIn);
-    ASSERT_EQ(load.mCatalogue->payers().size(), 1U); // the 299 built-in payers are gone
+    ASSERT_EQ(load.mCatalogue->payers().size(), 1U); // the 282 built-in payers are gone
 
-    const auto found = load.mCatalogue->findPayer(PayerQuery{.mIsin = Isin{std::string{kIsinA}}});
+    const auto found = load.mCatalogue->findPayer(kIsinA);
 
     ASSERT_EQ(found.mStatus, PayerLookupStatus::Found);
     EXPECT_EQ(found.mEntries.front()->mName, "Payer A");
@@ -548,14 +571,10 @@ TEST(ReferenceDataTest, ASuppliedPayersFileReplacesTheBuiltInFileWhole) {
 
     // An ISIN of the built-in file is not found in the supplied one.
     const auto& builtInPayers = referenceCatalogue().payers();
-    const auto withIsin =
-        std::find_if(builtInPayers.begin(), builtInPayers.end(), [](const PayerEntry& aPayer) {
-            return aPayer.mIsin.has_value();
-        });
 
-    ASSERT_NE(withIsin, builtInPayers.end());
+    ASSERT_FALSE(builtInPayers.empty());
 
-    const auto missing = load.mCatalogue->findPayer(PayerQuery{.mIsin = *withIsin->mIsin});
+    const auto missing = load.mCatalogue->findPayer(builtInPayers.front().mIsin);
 
     EXPECT_EQ(missing.mStatus, PayerLookupStatus::NotFound);
 
@@ -577,7 +596,7 @@ TEST(ReferenceDataTest, EachSuppliedFileReplacesOnlyTheFileOfItsName) {
     EXPECT_EQ(load.mOrigins[1], CatalogueOrigin::Supplied);
     EXPECT_EQ(load.mOrigins[2], CatalogueOrigin::Supplied);
 
-    EXPECT_EQ(load.mCatalogue->payers().size(), 299U);
+    EXPECT_EQ(load.mCatalogue->payers().size(), 282U);
 
     ASSERT_EQ(load.mCatalogue->allReliefStatements().size(), 1U);
     EXPECT_EQ(load.mCatalogue->allReliefStatements().front().mStatement, "Treaty text");
@@ -617,7 +636,7 @@ TEST(ReferenceDataTest, ACopyOfACatalogueSharesItsLists) {
     const ReferenceCatalogue copy = referenceCatalogue();
 
     EXPECT_EQ(&copy.payers(), &referenceCatalogue().payers());
-    EXPECT_EQ(copy.payers().size(), 299U);
+    EXPECT_EQ(copy.payers().size(), 282U);
 }
 
 TEST(ReferenceDataTest, ACatalogueWithoutAListIsABuildError) {
@@ -689,36 +708,37 @@ TEST(ReferenceDataTest, AFolderNamedPayersCsvIsAFault) {
     EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnreadable);
 }
 
-TEST(ReferenceDataTest, FaultOfARowWithoutAnyIdentifier) {
+TEST(ReferenceDataTest, FaultOfARowWithoutIsinNamesTheColumn) {
     const auto fault =
-        payersFault(std::string{kPayersHeader} + ",,Payer A,,1 Main Street,IE,,,manual,\n");
+        payersFault(std::string{kPayersHeader} + ",Payer A,,1 Main Street,IE,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mFile, "payers.csv");
     EXPECT_EQ(fault.mRow, 2U);
-    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileNoIdentifier);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileEmptyField);
+    EXPECT_EQ(fault.mMessage.mParams, (std::vector<MessageParam>{textParam("field", "isin")}));
+}
+
+TEST(ReferenceDataTest, FaultOfAnIsinSourceThatIsNotKnown) {
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000010,Payer A,,1 Main Street,IE,,,openfigi,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidIsinSource);
     EXPECT_TRUE(fault.mMessage.mParams.empty());
 }
 
 TEST(ReferenceDataTest, FaultOfAnIsinWithAWrongCheckDigit) {
     // XX0000000010 is valid; the check digit 1 is wrong.
     const auto fault = payersFault(std::string{kPayersHeader} +
-                                   "XX0000000011,,Payer A,,1 Main Street,IE,,,manual,\n");
+                                   "XX0000000011,Payer A,,1 Main Street,IE,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidIsin);
 }
 
-TEST(ReferenceDataTest, FaultOfAConidWithLetters) {
-    const auto fault =
-        payersFault(std::string{kPayersHeader} + ",12A,Payer A,,1 Main Street,IE,,,manual,\n");
-
-    EXPECT_EQ(fault.mRow, 2U);
-    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidConid);
-}
-
 TEST(ReferenceDataTest, FaultOfAnEmptyNameNamesTheColumn) {
-    const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,,,1 Main Street,IE,,,manual,\n");
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000010,,,1 Main Street,IE,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileEmptyField);
@@ -726,7 +746,8 @@ TEST(ReferenceDataTest, FaultOfAnEmptyNameNamesTheColumn) {
 }
 
 TEST(ReferenceDataTest, FaultOfAnEmptyAddressNamesTheColumn) {
-    const auto fault = payersFault(std::string{kPayersHeader} + ",7,Payer A,,,IE,,,manual,\n");
+    const auto fault =
+        payersFault(std::string{kPayersHeader} + "XX0000000010,Payer A,,,IE,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileEmptyField);
@@ -734,8 +755,8 @@ TEST(ReferenceDataTest, FaultOfAnEmptyAddressNamesTheColumn) {
 }
 
 TEST(ReferenceDataTest, FaultOfACountryWithThreeLetters) {
-    const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IRL,,,manual,\n");
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000010,Payer A,,1 Main Street,IRL,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidCountry);
@@ -743,7 +764,8 @@ TEST(ReferenceDataTest, FaultOfACountryWithThreeLetters) {
 
 TEST(ReferenceDataTest, FaultOfAnInstrumentKindThatIsNotKnown) {
     const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,stock,,manual,\n");
+        payersFault(std::string{kPayersHeader} +
+                    "XX0000000010,Payer A,,1 Main Street,IE,stock,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidInstrumentKind);
@@ -751,16 +773,17 @@ TEST(ReferenceDataTest, FaultOfAnInstrumentKindThatIsNotKnown) {
 
 TEST(ReferenceDataTest, FaultOfAVerifiedDateThatIsNotADate) {
     // 2025-13-01 has no month 13.
-    const auto fault = payersFault(std::string{kPayersHeader} +
-                                   ",7,Payer A,,1 Main Street,IE,,2025-13-01,manual,\n");
+    const auto fault =
+        payersFault(std::string{kPayersHeader} +
+                    "XX0000000010,Payer A,,1 Main Street,IE,,2025-13-01,issuer,manual,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidVerifiedOn);
 }
 
 TEST(ReferenceDataTest, FaultOfASourceThatIsNotKnown) {
-    const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,,,other,\n");
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,other,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidSource);
@@ -768,7 +791,8 @@ TEST(ReferenceDataTest, FaultOfASourceThatIsNotKnown) {
 
 TEST(ReferenceDataTest, FaultOfAnIbEdavkiRowWithoutARevision) {
     const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,,,ib-edavki,\n");
+        payersFault(std::string{kPayersHeader} +
+                    "XX0000000010,Payer A,,1 Main Street,IE,,,ib-edavki,ib-edavki,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileMissingSourceRevision);
@@ -776,8 +800,8 @@ TEST(ReferenceDataTest, FaultOfAnIbEdavkiRowWithoutARevision) {
 
 TEST(ReferenceDataTest, FaultOfARowWithAMissingField) {
     // Row 2 has 9 fields, the header 10.
-    const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,Payer A,,1 Main Street,IE,,,manual\n");
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileFieldCount);
@@ -787,16 +811,17 @@ TEST(ReferenceDataTest, FaultOfARowWithAMissingField) {
 
 TEST(ReferenceDataTest, FaultOfAFieldWithALineBreak) {
     // The address starts a quote on row 2 and closes it on the next line; the quotes are even.
-    const auto fault = payersFault(std::string{kPayersHeader} +
-                                   ",7,Payer A,,\"Level 20\n1 Main Street\",IE,,,manual,\n");
+    const auto fault =
+        payersFault(std::string{kPayersHeader} +
+                    "XX0000000010,Payer A,,\"Level 20\n1 Main Street\",IE,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mRow, 2U);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileLineBreak);
 }
 
 TEST(ReferenceDataTest, FaultOfAnUnclosedQuoteHasNoRow) {
-    const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,Payer A,,\"Level 20,IE,,,manual,\n");
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000010,Payer A,,\"Level 20,IE,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mFile, "payers.csv");
     EXPECT_EQ(fault.mRow, std::nullopt);
@@ -804,20 +829,20 @@ TEST(ReferenceDataTest, FaultOfAnUnclosedQuoteHasNoRow) {
 }
 
 TEST(ReferenceDataTest, FaultOfAHeaderWithMissingColumns) {
-    // The header lacks instrument_kind and verified_on.
-    const auto fault =
-        payersFault("isin,ibkr_conid,name,tax_number,address,country,source,source_revision\n");
+    // The header lacks instrument_kind, verified_on and isin_source.
+    const auto fault = payersFault("isin,name,tax_number,address,country,source,source_revision\n");
 
     EXPECT_EQ(fault.mRow, std::nullopt);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileMissingColumns);
     EXPECT_EQ(fault.mMessage.mParams,
-              (std::vector<MessageParam>{numberParam("count", 2),
-                                         textParam("columns", "instrument_kind, verified_on")}));
+              (std::vector<MessageParam>{
+                  numberParam("count", 3),
+                  textParam("columns", "instrument_kind, verified_on, isin_source")}));
 }
 
 TEST(ReferenceDataTest, FaultOfAHeaderWithARepeatedColumn) {
     const auto fault = payersFault(
-        "isin,ibkr_conid,name,tax_number,address,country,instrument_kind,verified_on,source,"
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
         "source_revision,name\n");
 
     EXPECT_EQ(fault.mRow, std::nullopt);
@@ -853,7 +878,8 @@ TEST(ReferenceDataTest, FaultOfARepeatedBrokerAndCode) {
 
 TEST(ReferenceDataTest, AFaultHasTheEnglishTextAndNoValueOfTheFile) {
     const auto fault =
-        payersFault(std::string{kPayersHeader} + ",7,Secret Name,,1 Main Street,IRL,,,manual,\n");
+        payersFault(std::string{kPayersHeader} +
+                    "XX0000000010,Secret Name,,1 Main Street,IRL,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mMessage.mEnglish,
               "The country is not 2 uppercase letters. The reference data was not loaded.");
@@ -867,8 +893,8 @@ TEST(ReferenceDataLargeInputTest, ARowLongerThanTheReaderLimitMakesTheFileUnread
     // The CSV reader throws on a row longer than two 10 MB chunks. Row 2 has a name of
     // 21,000,000 characters.
     const std::string longName(21'000'000, 'x');
-    const auto fault = payersFault(std::string{kPayersHeader} + "XX0000000010,," + longName +
-                                   ",,1 Main Street,IE,,,manual,\n");
+    const auto fault = payersFault(std::string{kPayersHeader} + "XX0000000010," + longName +
+                                   ",,1 Main Street,IE,,,issuer,manual,\n");
 
     EXPECT_EQ(fault.mFile, "payers.csv");
     EXPECT_EQ(fault.mRow, std::nullopt);

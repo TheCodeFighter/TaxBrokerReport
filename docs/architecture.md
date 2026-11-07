@@ -538,7 +538,7 @@ a payer with several rows is a skippable question where the user picks one row (
 report model contract"); the user completes missing facts in eDavki. Changing a referenced
 catalogue revision invalidates affected decisions. The files are built into the program and read with the shared CSV
 reader into a `ReferenceCatalogue` (`include/taxbroker/reference_catalogue.hpp`). A lookup by exact
-ISIN or `conid` returns `Found`, `Conflict` or `NotFound`; a broken file stops the load with the
+ISIN returns `Found`, `Conflict` or `NotFound`; a broken file stops the load with the
 file and logical row.
 
 The deposit allowance considers all imported qualifying bank interest. A TR total at or below

@@ -719,8 +719,8 @@ are `reference_file.unknown_name` and `reference_file.repeated_name` (parameter 
 before any file is read), `reference_file.unreadable`, `reference_file.unclosed_quote`,
 `reference_file.line_break`, `reference_file.missing_columns` (`count`, `columns`),
 `reference_file.repeated_column` (`column`), `reference_file.field_count` (`expected`, `found`),
-`reference_file.empty_field` (`field`), `reference_file.no_identifier`,
-`reference_file.invalid_isin`, `reference_file.invalid_conid`, `reference_file.invalid_country`,
+`reference_file.empty_field` (`field`), `reference_file.invalid_isin`,
+`reference_file.invalid_isin_source`, `reference_file.invalid_country`,
 `reference_file.invalid_instrument_kind`, `reference_file.invalid_verified_on`,
 `reference_file.invalid_source`, `reference_file.missing_source_revision` and
 `reference_file.duplicate_broker_code`. A message never holds a value of the file.

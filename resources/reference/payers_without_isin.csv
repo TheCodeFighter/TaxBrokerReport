@@ -1,0 +1,152 @@
+ticker,ibkr_conid,name,tax_number,address,country,note,source,source_revision
+005222141,389541685,"ALLIANZ GLOBAL INV (LU) ALLIANZ EURO CASH ""A"" (EUR) INC",DE815001893,State Street Bank International GmbH - Luxembourg Branch,LU,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+215,59754535,Hutchison Telecommunications HK Hld Ltd,50335275,"19/F, Hutchison Telecom Tower, 99 Cheung Fai Road, Tsing Yi",HK,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+2386,128356142,SINOPEC Engineering Group Co Ltd,,"Building 8, Shenggujiayuan, Shenggu Middle Road, Beijing, 100029",CN,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+5MVW,407387241,iShares MSCI WD Energy-USD D,IE00BJ5JP105,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+659,42446165,NWS Holdings Ltd,33582647,"21/F, NCB Innovation Centre, 888 Lai Chi Kok Road, Cheung Sha Wan, Kowloon",HK,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+9A4U,780702993,ESR-REIT,,"5 Temasek Boulevard, #12-09 Suntec Tower Five, Singapore 038985",SG,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+A7RU,96736993,Keppel Infrastructure Trust,200803959H,"1 HarbourFront Ave, Singapore 098632",SG,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AMD,32596680,Advanced Micro Devices,941692300,"2485 Augustine Drive, Santa Clara, CA 95054",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AOI,45743607,Africa Oil Corp,BC0443700,"666 Burrard St #2500, Vancouver, BC V6C 2X8",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AU,4656,AngloGold Ashanti Ltd,42008737424,"140 St Georges Terrace, Perth WA 6000",AU,instrument_ended,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AVD,6604203,AMERICAN VANGUARD CORP,952588080,"4695 MACARTHUR COURT, NEWPORT BEACH, CALIFORNIA 92660",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BMWd,14094,Bayerische Motoren Werke AG,DE129273398,"Petuelring 130, 80809 München",DE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CLF,764065,Cleveland-Cliffs Inc.,341464672,"200 Public Square, Suite 3300, Cleveland, OH 44114-2315",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CTBI,3655502,Community Bankers Trust Corp,20-2652949,"9954 Mayland Drive, Suite 2100, Richmond, VA 23233",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+DHT,110322264,DHT Holdings Inc,980497420,"Clarendon House, 2 Church Street, Hamilton HM 11",BM,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EPV,141973363,ProShares UltraShort FTSE Europe ETF,876284802,"7272 Wisconsin Avenue 21st Floor, Bethesda, Maryland 20814",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ERUS.ESC,579809677,iShares MSCI Russia ETF,8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EWI,253190540,ISHARES MSCI ITALY ETF,8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EWL,2586589,iShares MSCI Switzerland ETF,IE8227552C,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EWP,2586596,ISHARES MSCI SPAIN ETF,8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EXSAd,34029360,iShares STOXX Europe 600 UCITS ETF,0002635307,"BlackRock Asset Management Deutschland AG, Lenbachplatz 1, D-80333 München",DE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EXVM,74991935,BlackRock Asset Management Ireland Limited (iShares eb.rexx Government Germany 0-1yr UCITS ETF),8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+F34,47990698,Wilmar International Ltd,199904785Z,"56 Neil Rd, Singapore 088830",SG,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FRO,220580491,Frontline Ltd,980459426,"Par-la-Ville Place, 14 Par-la-Ville Road, Hamilton, HM 08, Bermuda",BM,instrument_ended,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FTCO,462304864,Fortitude Gold Corp,85-2602691,"2886 Carriage Manor Point, Colorado Springs, CO 80906",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FUSD,271826666,Fidelity US Quality Income-Inc,,"Fidelity International, Georges Quay House, 43 Townsend Street, Dublin 2, Ireland",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FXC,33222420,BlackRock Asset Management Ireland Limited (iSHARES CHINA LARGE CAP),8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GIS,7616,General Mills Inc,41-0274440,"Number One General Mills Blvd, Minneapolis, MN 55426",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GNE,95980853,Genie Energy Ltd.,45-2069276,"520 Broad Street, Newark, New Jersey",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GORO,40743577,Gold Resource Corp,84-1473173,"2886 Carriage Manor Point, Colorado Springs, CO 80906",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GTY,7855,Getty Realty Corp.,113412575,"292 Madison Avenue, 9th Floor, New York, NY 10017-6318, United States",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+HPQ,209411801,Hewlett Packard Enterprise Co,47-3298624,"1701 E Mossy Oaks Road, Spring, TX 77389",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+HYLD,202153350,BlackRock Asset Management Ireland Limited (ISHARES GLOBAL HY CORP-DISTR),227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBTM,68489974,BlackRock Asset Management Ireland Limited (ISHARES USD TREASURY 7-10Y),8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBZL,37036638,BlackRock Asset Management Ireland Limited (ISHARES MSCI BRAZIL),8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IGLE,385549212,BlackRock Asset Management Ireland Limited (ISHARES GLOBAL GOV BND-EURHD),227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IGO,42469783,IGO Ltd,46092786304,"85 South Perth Esplanade Suite 4, Level 5, S Shore Cent South Perth, WA 6151",AU,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IJPN,33222415,BlackRock Asset Management Ireland Limited (ISHARES MSCI JAPAN),8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IMEU,45998497,BlackRock Asset Management Ireland Limited (ISHARES CORE MSCI EUROPE),8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+J91U,117901244,ESR-Logos REIT,,"138 Market Street #26-03/04 CapitaGreen Singapore, 048946 Singapore",SG,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+JAG,441986553,Jaguar Mining Inc,980396253,"First Canadian Place, 100 King Street West, 56th Flr., Toronto, Ontario M5X 1C9",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+JAGGF,441986547,Jaguar Mining Inc,980396253,"First Canadian Place, 100 King Street West, 56th Flr., Toronto, Ontario M5X 1C9",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+JNKE,102048570,State Street Global Advisors Europe Ltd,49934,"78 SIR JOHN ROGERSONS QUAY, DUBLIN, D02 HD32, Ireland",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+JVA,34471161,Coffee Holding Co. Inc.,112238111,"3475 Victory Boulevard, Staten Island, New York 10314",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+K2LU,117901235,ARA LOGOS LOGISTICS TRUST,200919331H,"50 Collyer Quay, #05-05 OUE Bayfront, Singapore 049321",SG,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+KL,257775837,Kirkland Lake Gold Ltd,000000000,"200 Bay Street, Suite 3120, Toronto ON M5J 2J1, Canada",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+KNSL,242140470,KINSALE CAPITAL GROUP INC,980624968,"2035 Maywill Street, Suite 100, Richmond, VA 23230",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+LUMN,6180,CenturyLink Inc,720651161,"100 Centurylink Dr, Monroe LA",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+MDC,9462,"Mdc Holdings, Llc",26-4624724,"106 Staton Court, Greenville, North Carolina",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+MTN,2586162,Vail Resorts Inc,510291762,"390 Interlocken Crescent, Broomfield, CO 80021",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NHC,755810,National HealthCare Corporation,52-2057472,"100 Vine Street, Murfreesboro, Tennessee 37130",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NHI,10245,National Health Investors Inc,621470956,"222 Robert Rose Drive, Murfreesboro, TN 37129",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+OR,156955487,Osisko Gold Royalties Ltd,1170032933,"1100 Av. des Canadiens-de-Montréal, Montréal, QC H3B 2S2",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+PBR,10828168,Petroleo Brasileiro SA,33.000.167/0001-01,"Avenida República do Chile 65, 20031-912, Rio de Janeiro, RJ",BR,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+PDBC,320227565,Invesco Optimum Yield Diversified Commodity Strategy No K-1 ETF,326042243,3500 LACEY ROAD SUITE 700 DOWNERS GROVE IL 60515,US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+PRU,13865082,Prudential Financial Inc,22-3703799,"751 Broad St, Newark, NJ 07102",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+QDVX,279156979,iShares MSCI Europe Quality Dividend UCITS ETF,,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SAF,1322028,SAF-HOLLAND SE,DE332706484,"Hauptstraße 26, 63856 Bessenbach",DE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SAN,12442,Banco Santander SA,A39000013,"C. de Juan Ignacio Luca de Tena, 11, 28027 Madrid",ES,ticker_ambiguous,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SDIV,604409899,GLOBAL X SUPERDIVIDEND ETF,451988407,"605 THIRD AVENUE NEW YORK, NY 10158",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SGC,756607,"Superior Group Of Companies, Inc.",11-1385670,"10055 Seminole Blvd, Seminole, Florida",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DIR,703603880,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DIV,578803986,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DRH,666005248,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DRI,614215023,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DRS,760961438,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DRS,806536925,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DRT,722695122,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DVD,63151008,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DVO,596695682,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.DVR,647304314,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.RIG,684159894,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.RT,562595593,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL.RTS,544925226,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SHELL1.DI,830625049,Shell plc,GB 235 7632 55,"York Road Shell Centre London, SE1 7NA",GB,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SII,423920215,Sprott Inc.,820056216,"Royal Bank Plaza, South Tower, 200 Bay Street Suite 2600, Toronto, Ontario M5J 2J1",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SWBI,424737148,SMITH & WESSON BRANDS INC,87-0543688,"2100 Roosevelt Avenue Springfield, MA",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TAIT,6845274,Taitron Components Inc,95-4249240,"28040 West Harrison Parkway, Valencia, California",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TDGB,350073450,VanEck Asset Management BV,NL819977184B01,"Barbara Strozzilaan 310, 1083 HN Amsterdam",NL,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TEFDe,565113874,"Telefónica, S.A.",A28015865,"Gran Vía 28, 28013, Madrid",ES,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TFA,30314159,Telefonica SA,A28015865,"C/Ronda de la Comunicación SN, Edificio Central, planta 2ª, 28050, Madrid",ES,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TTCFQ,450564070,"Tattooed Chef, Inc.",825457906,"6305 Alondra Boulevard, Paramount, CA 90723",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ULH,33202307,Universal Logistics Holdings Inc,383640097,"12755 E. Nine Mile Road, Warren MI",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+USAC,120420959,Usa Compression Partners Lp,752771546,"111 Congress Avenue, Suite 2400, Austin TX 78701",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+USOI,318336,CREDIT SUISSE X-LINKS CRUDE OIL SHARES COVEREDCALL ETNS,050546650,"Eleven Madison Avenue, New York, NY 10010",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VFC,13440,V F Corp,23-1180120,"1551 Wewatta Street, Denver, CO, 80202",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VUSA,128884495,Vanguard S&P 500 UCITS ETF,00B3XXRP09,70 Sir John Rogerson's Quay Dublin 2 Ireland,IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WMT,13824,Walmart Inc,71-0415188,"702 Southwest 8th St, Bentonville, AR 72716",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WPM,274836867,Wheaton Precious Metals Corp.,980459455,"3500-1021 West Hastings Street, Vancouver",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+XDDX,119835414,DWS Investment SA,DE811248289,"Mainzer Landstraße 11-17, 60329 Frankfurt am Main",DE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+XES,413951493,SPDR S&P Oil & Gas Equipment & Services ETF,04-2456637,"One Lincoln Street, Boston, MA 02111",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+Z74,43626350,Singapore Communications Ltd,199201624D,"31 Exeter Rd, Singapore 239732",SG,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+1234,,China Lilang Ltd,,Rm 3402 34/F LIPPO CTR TWR ONE 89 QUEENSWAY Admiralty Hong Kong,HK,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+1616500,,Shangri-La Asia Limited,197101000484,"28/F, Kerry Centre, 683 King’s Road, Quarry Bay, Hong Kong",HK,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+33222415,,iShares MSCI Japan UCITS ETF,IE8227552C,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+45998497,,iShares Core MSCI Europe UCITS ETF EUR,IE8227552C,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+601899,,Zijin Mining Group Company Limited,91350000157987632G,"No. 1, Zijin Avenue, Shanghang County, Longyan, Fujian, 364200",CN,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ALLY,,Ally Financial Inc,380572512,Ally Detroit Center 500 Woodward Ave. Floor 10 Detroit Michigan 48226,US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+APA,,Apache Corp,410747868,"2000 Post Oak Blvd, Ste 100, Houston, TX 77056-4400",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+APAM,,Artisan Partners Asset Management Inc,450969585,875 E. Wisconsin Avenue Suite 800 Milwaukee Wisconsin 53202,US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AQN,,Algonquin Power & Utilities Corp,980406902,"2845 Bristol Circle, Oakville, A6 L6H 7H7",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AQNU,,Algonquin Power and Utilities Units,980406902,2845 Bristol Circle Oakville A6 L6H 7H7,CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BND,,Vanguard Total Bond Market ETF,9219378356,"P.O. Box 1110, Valley Forge, 19482-1110",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BNDX,,Vanguard Total International Bond ETF,92203J4076,"P.O. Box 1110, Valley Forge, 19482-1110",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BNS,,Bank Of Nova Scotia,134941099,"44 King Street West, Scotia Plaza 8th Fl., Toronto, A6 M5H 1H1",CA,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+BTU,,PEABODY ENERGY CORP,134004153,"515 Lowell St, Peabody, MA 01960, US",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CEG,,Constellation Energy Corporation,871210716,"1310 Point Street, Baltimore, MD 21231-3380",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CI,,Cigna Corp,824991898,"900 Cottage Grove Road, Bloomfield, CT 06002",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CIM,,Chimera Investment Corp,260630461,"520 Madison Avenue, 32nd Floor, New York, NY 10022",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CP,,Canadian Pacific Railway Ltd/cn,98-0355078,"7550 Ogden Dale Road S.e., Calgary Alberta, A0",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ENB,,Enbridge Energy Partners Lp,391715850,"5400 Westheimer Court, Houston, TX 77056",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+ET,,Energy Transfer Lp,300108820,"8111 Westchester Drive, Suite 600, Dallas, TX 75225",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+EURN,,Euronav NV,0546943111,"De Gerlachekaai 20, 2000 Antwerpen, Belgija",BE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FRT.OLD,,Federal Realty Investment Trust,520782497,"1626 East Jefferson Street, Rockville, MD 20852-4041",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GTN,,"Gray Television, Inc.",580285030,"4370 Peachtree Road, NE, Suite 400, Atlanta, GA 30319",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IBM,,International Business Machines Corp,130871985,"1 New Orchard Road, Armonk, NY 10504",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+INRG,,ISHARES GLOBAL CLEAN ENERGY,8227552,"2 Ballsbridge Park, Dublin 4, Dublin D04 YW83",IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IRT,,"Independence Realty Trust, Inc.",264567130,"1835 Market Street, Suite 2601, Philadelphia, PA 19103",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+KRK,,Krka d. d.,SI82646716,"Šmarješka cesta 6, 8501 Novo mesto",SI,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+LEA,,Lear Corporation,133386776,"21557 Telegraph Road, Southfield, MI 48033",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+LOB,,LIVE OAK BANCSHARES INC,264596286,"1741 Tiburon Dr Wilmington, NC, 28403-6244 United State",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NAKA,,"Kindly MD, Inc.",,"801 Bradbury Drive SE, Albuquerque, NM",US,isin_check_digit,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NEE,,Nextera Energy Inc,592449419,"700 Universe Blvd, Juno Beach, FL 33408",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NLB,,NLB d.d.,SI91132550,"Trg republike 2, 1000 Ljubljana",SI,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NTAP,,"NetApp, Inc.",770307520,"1395 Crossman Ave, Sunnyvale, CA 94089",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NTDOY,,Nintendo Of America Inc.,133024042,"4600 150th Avenue Ne, Redmond, Washington, 98052",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NYMT,,New York Mortgage Trust Inc,470934168,"90 Park Avenue, New York, NY 10016",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+OHI,,Omega Healthcare Investors Inc,383041398,"303 International Circle,, Suite 200, Hunt Valley, MD 21030",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+PRMW,,Primo Water Corporation,980154711,"4221 W. Boy Scout Blvd., Suite 400, Tampa, FL 33607",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RDN,,Radian Group,232691170,"1500 Market Street, Philadelphia, PA 19102",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RDS A,,Royal Dutch Shell,522074528,"Carel van Bylandtlaan 16, 2596 HR The Hague",NL,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RPT PRD,,Rpt Realty,136908486,"19 W 44th Street, Suite 1002, New York, NY 10036",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RTX,,Raytheon Co,951778500,"870 Winter Street, Waltham, MA 02451-1449",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SLG,,Sl Green Realty Corp,133956775,"420 Lexington Avenue, New York, NY 10170",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SRC,,"Spirit Realty Capital, Inc.",201676382,"2727 North Harwood Street, Suite 300, Dallas, TX 75201",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SRE,,Sempra Energy,330732627,"488 8th Avenue, P O Box 129400, San Diego, CA 92101",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+STOR,,Store Capital Corp,452280254,"8377 East Hartford Drive, Suite 100, Scottsdale, AZ 85255",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+STX,,Seagate Technology Plc,980648577,"38/39 Fitzwilliam Square, Dublin 2, L2",IE,instrument_ended,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+SWCH,,Switch Inc,821883953,"7135 South Decatur Boulevard, Las Vegas, NV 89118",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TDS,,"Telephone and Data Systems, Inc.",363930160,"30 North LaSalle Street, Suite 4000, Chicago, IL 60602",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TOT,,Total SE,9542051180,"Tour Coupole - 2, place Jean Millier - 92078 Paris La Défense Cedex – France",FR,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+TSM,,Taiwan Semiconductor Manufacturing Company Limited,22099131,"Hsinchu Science Park No. 8, Li-Hsin Road 6 Hsinchu 300-78",TW,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+UBA,,Urstadt Biddle Properties Inc,042458042,"321 Railroad Avenue, Greenwich, CT 06830",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VEU,,Vanguard FTSE All-World ex-US ETF,9220427754,"P.O. Box 1110, Valley Forge, 19482-1110",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VTI,,Vanguard Total Stock Market ETF,9229087690,"P.O. Box 1110, Valley Forge, 19482-1110",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VWRD,,Vanguard FTSE All-World UCITS ETF,00B3RBWM25,70 Sir John Rogerson's Quay Dublin 2 Ireland,IE,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+VXUS,,Vanguard Total International Stock ETF,9219097683,"P.O. Box 1110, Valley Forge, 19482-1110",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WD,,WALKER DUNLOP INC,800312140,"7501 WISCONSIN AVENUE SUITE 1200E, BETHESDA, Maryland, 20814, United States",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WHR,,Whirlpool Corporation,381490038,Whirlpool Cntr 2000 M 63 Benton Harbor Michigan 49022-2692,US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+WRK,,Westrock Co,371880617,"1000 Abernathy Road Ne, Atlanta, GA 30328",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+XOM,,Exxon Mobil Corp,135409005,"5959 Las Colinas Blvd, Irving, TX 75039-2298",US,isin_not_found,ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c

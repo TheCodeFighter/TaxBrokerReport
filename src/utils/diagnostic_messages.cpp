@@ -391,9 +391,9 @@ constexpr std::array kDefinitions{
     MessageDefinition{
         MessageKey::ReferenceFileFieldCount, "reference_file.field_count", kExpectedAndFound},
     MessageDefinition{MessageKey::ReferenceFileEmptyField, "reference_file.empty_field", kField},
-    MessageDefinition{MessageKey::ReferenceFileNoIdentifier, "reference_file.no_identifier", {}},
     MessageDefinition{MessageKey::ReferenceFileInvalidIsin, "reference_file.invalid_isin", {}},
-    MessageDefinition{MessageKey::ReferenceFileInvalidConid, "reference_file.invalid_conid", {}},
+    MessageDefinition{
+        MessageKey::ReferenceFileInvalidIsinSource, "reference_file.invalid_isin_source", {}},
     MessageDefinition{
         MessageKey::ReferenceFileInvalidCountry, "reference_file.invalid_country", {}},
     MessageDefinition{MessageKey::ReferenceFileInvalidInstrumentKind,
