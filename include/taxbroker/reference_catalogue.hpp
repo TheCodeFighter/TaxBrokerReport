@@ -30,6 +30,8 @@ struct CatalogueSource {
     std::string mFile;           ///< For example "payers.csv".
     std::size_t mRowNumber = 0;  ///< Logical row of the file, header = 1.
     CatalogueOrigin mOrigin{};   ///< Where the file came from.
+
+    bool operator==(const CatalogueSource&) const = default;
 };
 
 /// A payer of dividends. At least one of `mIsin` and `mIbkrConid` is set.

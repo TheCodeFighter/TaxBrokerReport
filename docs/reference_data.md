@@ -115,8 +115,10 @@ ISIN prefix does not prove where the payer lives.
 3. **Payment evidence wins.** A payment that shows other facts than the row (for example another
    country) overrides it.
 4. **A missing or conflicting row** (no row, two rows with different facts for one identifier, or
-   a row changed by a new revision after the user confirmed it) goes to the income details flow
-   (`income_details_required`). Manual entry always works.
+   a row changed by a new revision after the user confirmed it) leaves the payer facts empty. The
+   income row is still made, and a warning tells the user to complete them in eDavki. With two
+   rows that disagree the user picks one of them or skips (a skip, or no answer, is like no row). A row with `country` `SI` makes
+   the payment a Slovenian payment, which is not reported (the company deducts the tax).
 5. **The relief statement is not a claim.** A row in `relief_statements.csv` never means that the
    user is entitled to relief. How its text may prefill the field is decided with the foreign-tax
    relief rules; until then it is not used.
@@ -179,5 +181,6 @@ A payer lookup takes an ISIN, a `conid` or both, and returns one of three result
 | Conflict | Rows with an identifier of the query disagree on one of those facts. All rows are returned. |
 | NotFound | No row has an identifier of the query. |
 
-Both Conflict and NotFound lead to the income details flow (rule 4). The lookup never matches a
+A Conflict is a skippable question where the user picks one of the rows, and NotFound gives an
+income row without payer facts (rule 4). The lookup never matches a
 ticker, a name or a country.

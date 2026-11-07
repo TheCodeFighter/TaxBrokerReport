@@ -223,11 +223,13 @@ Ship payer reference data as standalone offline resources: payers, relief statem
 payers, converted from the MIT-licensed `ib-edavki` project into the CSV files described in
 [`reference_data.md`](reference_data.md), with provenance. A Slovenian-company list will be added
 next to them. The payers that upstream lists without an ISIN or `conid` wait in a separate
-file until their ISINs are found. Missing entries use manual income details, so catalogue
-coverage never decides whether an income is taxable.
+file until their ISINs are found. A missing entry gives an income row with empty payer facts
+and a warning, so catalogue coverage never decides whether an income is taxable.
 
-Use exact identifiers to prefill verified payer metadata and relevant treaty references. Verify
-payment-level Slovenian final withholding before excluding an income with `slovenian_tax_settled`.
+Use exact identifiers to prefill verified payer metadata and relevant treaty references. A
+dividend or other-interest payer with the residence country `SI` is a Slovenian company that
+deducts the final tax itself, so that income is excluded with `slovenian_tax_settled`, without
+payment evidence.
 For foreign-tax relief, preserve gross income and actual foreign tax, distinguish a credit from
 a treaty exemption, and list the required filing evidence. A list match does not grant relief.
 Implement the missing/conflicting-information flow, source-revision invalidation and synthetic
@@ -248,11 +250,11 @@ separate models for:
 These structures form the boundary between tax calculations and XML serialization. They must not
 contain CSV-specific or frontend-specific fields. Income models retain payer and source countries,
 gross income, foreign tax and form-specific grouping. Date-specific classification and the shared
-bank-interest allowance are applied before XML generation. Below-threshold TR totals retain the
-reminder about other banks; known external interest above the threshold requires complete details.
+bank-interest allowance are applied before XML generation. A total at or below the
+threshold asks one yes/no question about other banks; the user adds those banks in eDavki.
 
-Income models also retain withholding jurisdiction/status, applicable confirmed treaty claims,
-catalogue provenance and evidence references. Verified settled Slovenian income is visibly excluded
+Income models also retain the foreign tax, applicable confirmed treaty claims and catalogue
+provenance. Income of a Slovenian payer (it deducts the tax itself) is visibly excluded
 without removing capital trades in that issuer. XML exports include the required foreign-tax and
 claim fields; the download view explains which supporting evidence still needs attaching in eDavki.
 

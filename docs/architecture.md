@@ -102,7 +102,8 @@ Dividends, broker cash interest and bond interest share income validation. When
 `original_currency` is supplied, preserve `original_amount` in that currency; otherwise use
 `amount` and `currency`. Do not replace an invalid original amount with the local amount.
 Preserve the tax date, source timestamp and complete source reference alongside the income.
-Withholding remains separate in `currency`; blank tax is unknown, while explicit zero is known.
+Withholding remains separate in `currency`. A blank tax stays blank in the parsed event (absent) and
+counts as no tax paid when the income form is built; an explicit zero is a zero.
 
 An empty `fx_rate` never rejects otherwise valid foreign income. Store no broker rate, including
 when the foreign payment is supplied directly in `amount`/`currency`. Do not invent a unit rate
@@ -529,17 +530,19 @@ Non-isolatable errors and final XML failures retain their normal scope, as defin
 
 A standalone reference catalogue (`reference_data.md`) supplies Slovenian-company and imported
 payer metadata with source and revision provenance, as suggestions for the user to confirm. It
-can prefill payer and treaty facts; payment evidence determines settled Slovenian withholding and
-actual foreign tax. Treaty exemptions require a separate applicable legal basis. The income
-result retains treatment decisions and filing-evidence requirements. Catalogue conflicts and
-missing facts use `income_details_required`; changing a referenced catalogue revision
-invalidates affected decisions. The files are built into the program and read with the shared CSV
+can prefill payer and treaty facts; a dividend or other-interest payer with the residence country
+`SI` makes that income not reported, and payment evidence determines the actual foreign tax.
+Treaty exemptions require a separate applicable legal basis. The income result retains treatment
+decisions. A payer that is not found is reported with the payer facts left empty and a warning;
+a payer with several rows is a skippable question where the user picks one row (see "Income
+report model contract"); the user completes missing facts in eDavki. Changing a referenced
+catalogue revision invalidates affected decisions. The files are built into the program and read with the shared CSV
 reader into a `ReferenceCatalogue` (`include/taxbroker/reference_catalogue.hpp`). A lookup by exact
 ISIN or `conid` returns `Found`, `Conflict` or `NotFound`; a broken file stops the load with the
 file and logical row.
 
-The deposit allowance considers all imported and user-supplied qualifying bank interest. A
-below-threshold TR total retains its reminder about other banks. Slovenian retail government bonds
+The deposit allowance considers all imported qualifying bank interest. A TR total at or below
+the threshold asks one yes/no question about other banks. Slovenian retail government bonds
 are outside the current TR/IBKR import scope; their special treatment is not part of this workflow.
 
 The complete application diagnostic model, revision-bound decisions, deterministic ordering,
@@ -755,7 +758,7 @@ class is checked, because it may still be classified as a share or a fund.
 Tax processing produces broker-neutral report models, and the XML writers only format them. The
 models hold no CSV, JSON, HTTP, frontend or XML fields and need no XML library. This section
 covers shared metadata and the Doh-KDVP model (`include/taxbroker/report_models.hpp`); the income
-models (Doh-Div, Doh-DHO, Doh-Obr) follow with the income work.
+models (Doh-Div, Doh-DHO, Doh-Obr) are in "Income report model contract" below.
 
 **Shared metadata.** `ReportMetadata` holds the taxpayer (`TaxpayerMetadata`), the reporting year
 and the filing type (`Original` or `SelfReport`). It exists once for a run, and a form writer
@@ -827,6 +830,46 @@ into errors (see "CLI report command (walking skeleton)"), and the application r
 turns them into report statuses. `CapitalFailureResolution` (see "Choosing whether to exclude
 failed capital ISINs" in `diagnostics.md`) asks which of those ISINs to leave out and passes the
 answer to the builder.
+
+### Income report model contract
+
+The income models are in `include/taxbroker/income_report_models.hpp`. Like the Doh-KDVP model they
+are broker-neutral, hold no CSV, JSON, HTTP, frontend or XML fields and need no XML library. The
+taxpayer and the year are not repeated: a writer gets `ReportMetadata` beside the model of its form.
+The models only define the types; the processors that build them and the XML writers come later.
+
+- **Amounts.** Every amount is EUR `Money` at 4 decimals and is never rounded in the model; the
+  writer rounds once to 2 decimals. A foreign payment and its foreign tax are converted before
+  the model is built, at the official ECB rate of the receipt date (the built-in or supplied
+  files, as for trades). The broker `fx_rate` is never used for a form value.
+- **Rows.** Doh-Div (`DividendReportDiv`) and Doh-Obr (`OtherInterestReportObr`) have one row per
+  payment, with the source event. Doh-DHO (`DepositInterestReportDHO`) has one row per payer,
+  interest kind and source country: the exact sum of its imported payments, which the row lists.
+  There is no user-entered amount; the Doh-DHO question about other banks is a yes/no answer and
+  the user adds those banks in eDavki.
+- **Only resolved amounts.** A row exists only when its date, gross amount and withholding are
+  known. Its kind is a meaning (`DividendKind`, `DepositInterestKind`, and for Doh-Obr a variant
+  of `BrokerCashInterest` or `BondCoupon` that keeps the coupon's ISIN), never a form code: each
+  writer maps it to the code it verifies.
+- **Withholding.** `ForeignWithholding` is the EUR foreign tax of the payment (0 allowed) with a
+  flag that the export had no tax. A blank source tax is a foreign tax of 0 with the flag set,
+  never a question. A Doh-Div or Doh-Obr payment of a Slovenian payer is not a row: the company
+  deducts the tax
+  itself for a tax resident, so nothing is reported and the payment is an excluded item
+  (`slovenian_tax_settled`). Doh-DHO keeps one plain EUR foreign tax sum.
+- **Payer facts are optional.** `IncomePayer` holds the name, address, residence country, tax
+  number and identification number only as far as the app found them, plus the reference-file row
+  they came from (`CatalogueSource`). The same holds for the source country. An empty fact is
+  left out of the XML, and a warning tells the user to complete it in eDavki. When an ISIN has
+  several reference rows, the user picks the row to use or skips; a skip, or no answer, gives
+  empty facts, and the report is still made. The schemas allow
+  this (every element of Doh-Div and Doh-DHO is optional); that eDavki accepts such a file is
+  unverified (`verification.md`).
+- **Treaty claim.** `TreatyClaim` is present only when the user confirmed a claim, with the treaty
+  text and the reference row it came from. A reference row never creates a claim.
+- **Filing evidence.** The model holds no evidence list. The user attaches it in eDavki; the result
+  tells the user to do so when a row has a foreign tax above 0 or a treaty claim, derived from the
+  rows.
 
 ### Doh-KDVP XML writer
 

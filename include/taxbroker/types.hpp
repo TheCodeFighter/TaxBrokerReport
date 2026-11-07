@@ -237,7 +237,8 @@ struct TradeInstrument {
 struct DividendTransaction {
     EventMetadata mMetadata;
     Money mGrossAmount{};
-    /// Positive withholding in mTaxCurrency; absent means unknown, including blank source tax.
+    /// Positive withholding in mTaxCurrency; absent when the source tax is blank, which means no
+    /// tax was paid.
     std::optional<Money> mTaxPaid;
     /// Optional broker rate with its direction, separate from the official rate selected during
     /// processing.
@@ -256,7 +257,8 @@ struct DividendInstrument {
 struct InterestTransaction {
     EventMetadata mMetadata;
     Money mGrossAmount{};
-    /// Positive withholding in mTaxCurrency; absent means unknown, including blank source tax.
+    /// Positive withholding in mTaxCurrency; absent when the source tax is blank, which means no
+    /// tax was paid.
     std::optional<Money> mTaxPaid;
     /// Optional broker rate with its direction, separate from the official rate selected during
     /// processing.
