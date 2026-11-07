@@ -77,9 +77,10 @@ The core of this contract is implemented in `ApplicationResultBuilder`
 (`include/taxbroker/application_result.hpp`) and `serializeApplicationResultJson`: diagnostic
 adapters, report scope, deterministic order and IDs, report and overall status, and the JSON. The
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
-(`include/taxbroker/decision_session.hpp`); of the nine request types only the two
-failure-resolution types, the loss question, the ratio question and the classification question of
-a trade investment have question data and answers so far. The capital failure choice is applied
+(`include/taxbroker/decision_session.hpp`); of the ten request types only the two
+failure-resolution types, the loss question, the ratio question, the classification question of
+a trade investment, the payer choice and the deposit interest question have question data and
+answers so far. The capital failure choice is applied
 (`CapitalFailureResolution`, `include/processors/capital_failure_resolution.hpp`): see "Choosing
 whether to exclude failed capital ISINs". The classification of trade investments is applied
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
@@ -600,7 +601,19 @@ name, address, country, tax number and source row, each with `name`, `address`, 
 rejected with `answer_does_not_fit`. A skip, like no answer, gives empty payer facts and the same
 warning as a payer that is not found. The request is listed with its form (`requestIds`), but it
 never makes the form `needs_input` and never blocks. A recorded answer lists the same `payerCheck`.
-The question changes (a new question, a new answer) when a reference row changes.
+The question changes (a new question, a new answer) when a reference row changes. The same question
+is asked for the issuer of a bond coupon; it then affects Doh-Obr.
+
+A deposit interest request (`deposit_interest_total_required`) has no `options` and `"depositCheck"`
+with `year`, `importedInterestEur` (the exact total of the imported qualifying interest, four
+decimals) and `limitEur` (`"1000.0000"`). It is asked only when that total is above 0 and at most
+the limit, and it affects only Doh-DHO: unanswered, Doh-DHO is `needs_input` and the other forms are
+not affected. It is answered with `"above_limit"` (the total with the interest of the user's other
+Slovenian and EU banks is above EUR 1,000) or `"not_above_limit"`; a cancel is rejected with
+`answer_does_not_fit`. `above_limit` makes the Doh-DHO rows from the imported interest and adds the
+warning `deposit_interest_add_other_banks`; `not_above_limit` makes no rows and gives the form the
+reason `below_deposit_interest_threshold`. A different total is a different question. A recorded
+answer lists the same `depositCheck`.
 
 A request type whose processor does not define its question data yet cannot be answered, not even
 cancelled: without question data, all its questions would be the same question, and one answer
@@ -615,13 +628,14 @@ request type, and a failure-resolution question without an investment.
 | `quantity_correction_required` | One request for the first sale of an ISIN whose pool stopped for a shortage below `0.00000100` units that the discarded source digits do not prove to be rounding: the ISIN, its name, the sale (date, broker and transaction ID), its units, the units left (the proposed quantity), the unit value in EUR and the budget used. Answer with the corrected sale units (above 0, at most the units left, less than `0.00000100` below the sale, and with the roundings before it below EUR 0.01 in total) or cancel. |
 | `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units in the units of the sale) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | One request per trade investment whose asset class is missing, not recognized or conflicting: the ISIN, its name and the class labels of its rows (question data), with the options `capital_gains` and `exclude_from_supported_reports` and no preselected choice; answer with one of them or cancel. Income events and treatment-specific missing fields for them are not asked yet. |
+| `deposit_interest_total_required` | The year and the exact imported qualifying interest in EUR (above 0, at most 1,000); answer yes (`above_limit`) or no (`not_above_limit`). It is the only request with no default and no cancel. |
 | `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
 | `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 
-Confirmation controls have no default answer. Optional entry of other bank interest and acknowledgement
-of a potential corporate-action mismatch are frontend actions supported by structured result fields;
-a non-blocking reminder does not manufacture an unanswered blocking request.
+Confirmation controls have no default answer. Acknowledgement of a potential corporate-action
+mismatch is a frontend action supported by structured result fields; a non-blocking reminder does
+not manufacture an unanswered blocking request. The app takes no amount of other banks' interest.
 
 `excludedItems` entries contain the parsed item/instrument identity, established category, explicit
 exclusion reason, safe sources and diagnostic IDs. Record whether the exclusion follows a verified
@@ -644,8 +658,8 @@ ISIN and always present (`[]` when empty). It is distinct from the `excludedInve
 report, which lists failed investments the user chose to leave out of one form. An entry has:
 
 - `name`, `isin`, and `classLabels` (the class labels of its rows as the files gave them);
-- `category`: `bond`, `crypto`, `unknown` (an unknown class the user left out) or `dividend` (the
-  dividends of a Slovenian payer);
+- `category`: `bond`, `crypto`, `unknown` (an unknown class the user left out), `dividend` (the
+  dividends of a Slovenian payer) or `interest` (the coupons of a Slovenian issuer);
 - `reason`: `debt_security`, `crypto_not_reported`, `slovenian_tax_settled` or `user_choice`, and
   `basis`: `tax_rule` or `user_choice`;
 - for a bond only, `bond` with `boughtUnits`, `soldUnits` and `maturedUnits` in the selected year
@@ -809,7 +823,7 @@ Additional codes and their default scope are:
 | `unsupported_corporate_action` | Error for capital gains on one action that needs tax rules the app does not have; key `.merger` for a merger row. No question is asked. |
 | `tax_classification_unknown` | Error from the classification stage (never from the capital gates) for capital gains on an investment with an unknown asset class: key `.confirmation_required` while its classification request is open (linked to it), `.cancelled` after a cancel (no request). The parse and merge errors about the class of that investment stay errors but no longer block. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
-| `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion, one per excluded item of capital gains: key `.debt_security` (a bond), `.crypto`, or `.user_choice` (the user left an unknown-class investment out). For Doh-Div it has key `.slovenian_tax_settled`: one per ISIN whose payer has the country `SI`, with the sources of its payments in the year. Its sources and date are those of the rows that gave the entry: trade, corporate-action or maturity rows in the selected year, or for an unknown class every trade and action row up to 31 December. |
+| `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion, one per excluded item of capital gains: key `.debt_security` (a bond), `.crypto`, or `.user_choice` (the user left an unknown-class investment out). For Doh-Div it has key `.slovenian_tax_settled`: one per ISIN whose payer has the country `SI`, with the sources of its payments in the year. For Doh-Obr it has key `.slovenian_tax_settled_interest`: the same for the coupons of an issuer with the country `SI`. Its sources and date are those of the rows that gave the entry: trade, corporate-action or maturity rows in the selected year, or for an unknown class every trade and action row up to 31 December. |
 | `dividend_payer_not_found` | Warning for Doh-Div, once per ISIN: no reference row gave the payer, or several rows disagree and the user skipped them or has not answered. The rows of the ISIN are made without payer facts and the user completes them in eDavki. Its sources are those of all the ISIN's payments in the year; with an open payer request it is linked to it. |
 | `foreign_tax_evidence_required` | Warning for Doh-Div, once per run when a row has a foreign tax above 0: the user attaches the evidence of the payment and the tax in eDavki; the app attaches nothing. The sources are those of the payments with tax. |
 | `official_rate_files_required` | Warning for the capital gains report: the years of the ECB rate files that the missing rates of investments sold in the year need. Key `.not_loaded` (`years`: the files are not loaded) or `.ends_early` (`years`: the files end before a trade day); `years` is a text such as `2023, 2024`. No ISIN or date; the sources are those of the trades behind the years. Given once per key after the per-ISIN `missing_exchange_rate` errors, and not given for a rate that no file can fix. |
@@ -817,7 +831,9 @@ Additional codes and their default scope are:
 | `official_rate_from_nearby_date` | Warning for every report that needs one currency and tax date with no ECB rate of its own, one per pair: the last earlier ECB rate, at most 4 days before, was used. Parameters `currency`, `date` and `rateDate`. The rate is still official; the rule is unconfirmed by FURS. |
 | `official_rate_file_incomplete` | Warning, once per used rate file of a tax year that is not a whole year: key `.starts_late` (parameters `year`, `firstDate`: the file starts more than 4 days after 1 January) or `.ends_early` (`year`, `lastDate`: the file ends within 4 days before 31 December and a need after its end was accepted). Its reports and sources are those of the needs in that file's year (for `.ends_early`, those after its end). |
 | `income_details_missing` | Error for the affected income form, with a details request while resolvable. |
-| `deposit_interest_external_total_unchecked` | Not used since the yes/no question about other banks' interest replaced the reminder (`tax_rules.md`, "Interest forms and the annual deposit allowance"); the key is dropped when that question is implemented. |
+| `interest_payer_not_found` | Warning for Doh-Obr (and Doh-DHO when the payments are deposit interest), once per ISIN of a coupon or once per broker of cash interest: no reference row gave the payer, several rows disagree and the user skipped them or has not answered, or the broker has no single company in `broker_payers.csv`. The rows are made without payer facts and the user completes them in eDavki. |
+| `interest_payment_not_positive` | Warning for the form of the payment, one per payment: an interest payment of 0 or less, or one that rounds to 0.00, is not a row, is not netted against other payments and is not in the deposit total. |
+| `deposit_interest_add_other_banks` | Warning for Doh-DHO, once per run, after the answer `above_limit`: the form holds only the imported interest, and the user adds the interest of the other banks in eDavki. |
 
 `broker_exchange_rate_used` is also a warning. Other previously
 listed codes are errors unless their rule explicitly says otherwise. Adapted parser diagnostics

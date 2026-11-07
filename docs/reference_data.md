@@ -36,7 +36,7 @@ files are the source: a company that is added later is a new row with `source` s
 | `payers.csv` | `isin`, `name`, `tax_number`, `address`, `country`, `instrument_kind`, `verified_on`, `isin_source`, `source`, `source_revision` | 282 |
 | `payers_without_isin.csv` | `ticker`, `ibkr_conid`, `name`, `tax_number`, `address`, `country`, `note`, `source`, `source_revision` | 151 |
 | `relief_statements.csv` | `country`, `statement`, `source`, `source_revision` | 17 |
-| `broker_payers.csv` | `broker`, `code`, `name`, `tax_number`, `address`, `country`, `source`, `source_revision` | 5 |
+| `broker_payers.csv` | `broker`, `code`, `name`, `tax_number`, `address`, `country`, `source`, `source_revision` | 6 |
 
 - `payers.csv`: a payer of dividends, found by its ISIN. Every row has an ISIN, so one row serves
   every broker. `isin_source` says where the ISIN came from: `ib-edavki` (upstream gave it,
@@ -61,7 +61,9 @@ files are the source: a company that is added later is a new row with `source` s
   ISIN fails the check digit). The app does not read this file.
 - `relief_statements.csv`: the treaty text that upstream writes into the `ReliefStatement` field of
   Doh-Div, one per country. The text is Slovenian (a treaty citation).
-- `broker_payers.csv`: the Interactive Brokers companies that pay interest, for Doh-Obr.
+- `broker_payers.csv`: the broker companies that pay interest on the cash a broker holds, for
+  Doh-Obr and Doh-DHO: the five Interactive Brokers companies and Trade Republic Bank GmbH (`TR`,
+  `manual`, from its imprint: Brunnenstr. 19-21, 10119 Berlin, VAT ID `DE307510626`).
 
 ## What was left out
 
@@ -152,7 +154,10 @@ ISIN prefix does not prove where the payer lives.
    user is entitled to relief. The dividend rows do not use it: they make no treaty claim, and the
    Doh-Div writer writes `ReliefStatement` `false`. How its text may fill a claim is decided
    when treaty claims are supported.
-6. **Broker payers** are used only with the broker they name.
+6. **Broker payers** are used only with the broker they name. The payer of a broker's cash
+   interest is its only row; a broker with no row or several (such as Interactive Brokers, whose
+   export does not say which company holds the cash) has no known payer, and the payer facts stay
+   empty with a warning.
 7. **No coverage claim.** The files do not cover every issuer or ETF.
 
 ## How the files were made
