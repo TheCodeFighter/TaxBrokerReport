@@ -871,6 +871,34 @@ The models only define the types; the processors that build them and the XML wri
   tells the user to do so when a row has a foreign tax above 0 or a treaty claim, derived from the
   rows.
 
+### Dividend stage
+
+`prepareDividendPayments` (`include/processors/dividend_payments.hpp`) turns the dividends of the
+reporting year into the Doh-Div model. It is a stage of its own and is not wired into the tax
+processor or the CLI yet. It reads the merged statement in ledger order, the payer catalogue, the
+official rates and the recorded decisions, and returns the `DividendReportDiv` rows, the excluded items, the open payer questions,
+the diagnostics and the rates it used.
+
+- **Per ISIN, first.** The payments of the year are grouped by ISIN (one payer lookup each, in ISIN
+  order). The payer is found by `findPayer`: one entry gives the facts and the reference row;
+  nothing found gives empty facts and `dividend_payer_not_found`; entries that disagree ask a
+  `PayerChoiceQuestion` (`income_details_required`) and the answer picks one row or skips. A skip
+  and an open question both give empty facts and the same warning. The question never stops a form:
+  `ApplicationResultBuilder` lists it with Doh-Div but does not make the form `needs_input`.
+- **Slovenian payer.** A payer with the country `SI` has no row. One excluded item per ISIN
+  (`dividend`, `slovenian_tax_settled`) lists the sources of its payments, with its
+  `tax_category_not_reported.slovenian_tax_settled` warning. Its payments need no rate.
+- **Per payment, then.** One `selectOfficialRates` call covers the gross and the foreign tax of
+  every reported payment, each in its own currency (`calculations.md`). Its warnings and its errors
+  go on as they are; the error of a pair without a rate blocks Doh-Div, and the payments with that
+  pair have no row. An amount that does not fit gives the numeric error of the payment, also without
+  a row. A blank tax is 0 with the blank flag and a `dividend_tax_blank` warning.
+- **Notice.** One `foreign_tax_evidence_required` warning per run when a row has a foreign tax above
+  0. A treaty claim is never made.
+
+`appendDividendPayments` adds the diagnostics, requests and excluded items to an
+`ApplicationResultInput`, as `appendClassification` does for the classification stage.
+
 ### Doh-KDVP XML writer
 
 `KdvpXmlWriter::write` (`include/xml/kdvp_xml_writer.hpp`) turns `ReportMetadata` and

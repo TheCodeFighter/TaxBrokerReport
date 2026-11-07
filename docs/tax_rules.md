@@ -777,6 +777,20 @@ also remains available under its existing rules.
 This exception does not remove the payer's capital trades or
 replace the separate Doh-DHO deposit-interest threshold.
 
+A Doh-Div row needs only the ISIN and the gross amount of the payment. The payer's name, address,
+country and tax number are optional for making the row: the reference files fill them when they
+have the ISIN; otherwise they stay empty, the row is still made, and a warning tells the user to
+complete them in eDavki before filing. A missing payer never blocks Doh-Div and asks no question.
+
+A payer found by exact identifier, or several rows with the same facts, fills the payer facts of
+every dividend row of the ISIN without a question; the result lists the reference row. The source
+country of a Doh-Div row is the payer's country, and empty when the payer is not known. A Doh-Div
+row makes no treaty claim: `ReliefStatement` is written as `false` (the `true`/`false` format of
+the earlier app, which eDavki accepted with `true`; `false` is checked in a draft import,
+`verification.md`). When any row has a foreign tax above 0, the result warns once that the user
+attaches the evidence of the payment and the tax in eDavki
+(`foreign_tax_evidence_required`).
+
 For reportable foreign income, retain the gross payment and actual foreign tax separately, both in
 EUR at the official ECB rate of the receipt date. A blank source tax is a foreign tax of 0 (no tax
 paid); the row keeps that it was blank, and a dividend with a blank tax gets a warning that tax
