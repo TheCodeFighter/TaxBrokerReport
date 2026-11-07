@@ -1604,7 +1604,7 @@ TEST(DecisionPromptsTest, ThePayerAnswersAreListedInTheSummary) {
     ASSERT_TRUE(picked.empty());
     ASSERT_EQ(session.result().mDecisions.size(), 1U);
     EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
-              "XX0000000010 Synthetic Payer, dividend payer: payer row 2");
+              "XX0000000010 Synthetic Payer, payer: payer row 2");
 
     // A new run with the pick deleted asks again; the skip is the second answer.
     const auto deleted = session.deleteAllAnswers(session.result().mRunRevision);
@@ -1620,8 +1620,60 @@ TEST(DecisionPromptsTest, ThePayerAnswersAreListedInTheSummary) {
     ASSERT_TRUE(skipped.empty());
     ASSERT_EQ(session.result().mDecisions.size(), 1U);
     EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
-              "XX0000000010 Synthetic Payer, dividend payer: skipped, the payer is completed in "
+              "XX0000000010 Synthetic Payer, payer: skipped, the payer is completed in "
               "eDavki");
+}
+
+/// The imported EUR 900.00 of deposit interest of 2024.
+DecisionQuestion depositQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::DepositInterestTotalRequired,
+        .mAffectedReports = {ReportType::BankDepositInterest},
+        .mData = DepositInterestTotalQuestion{.mYear = 2024, .mTotal = 9'000'000},
+    };
+}
+
+TEST(DecisionPromptsTest, TheDepositInterestQuestionIsNotAskedInTheTerminalYet) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({depositQuestion()}));
+
+    const auto output = ask(session, "1\n");
+
+    EXPECT_FALSE(cli::canAsk(depositQuestion().mData));
+    EXPECT_EQ(output, "");
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionPromptsTest, TheDepositInterestAnswersAreListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({depositQuestion()}));
+
+    const auto yes = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = DepositInterestTotalAnswer{.mAboveLimit = true},
+    }});
+
+    ASSERT_TRUE(yes.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "bank-deposit interest 2024: above EUR 1,000 with the other banks");
+
+    const auto deleted = session.deleteAllAnswers(session.result().mRunRevision);
+
+    ASSERT_TRUE(deleted.empty());
+
+    const auto no = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = DepositInterestTotalAnswer{.mAboveLimit = false},
+    }});
+
+    ASSERT_TRUE(no.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "bank-deposit interest 2024: not above EUR 1,000 with the other banks");
 }
 
 } // namespace

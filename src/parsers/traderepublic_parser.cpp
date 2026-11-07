@@ -1186,6 +1186,19 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     });
 }
 
+namespace {
+
+/// Trade Republic holds the customer cash as a bank from 6 December 2023; the interest it pays
+/// from then on is deposit interest, and the interest before it is other interest.
+CashHolder tradeRepublicCashHolder(const Date aTaxDate) {
+    using namespace std::chrono;
+
+    return aTaxDate >= Date{sys_days{year{2023} / December / 6}} ? CashHolder::Bank
+                                                                 : CashHolder::Broker;
+}
+
+} // namespace
+
 void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                                            std::vector<InterestInstrument>& aInstruments,
                                            const InterestType aInterestType,
@@ -1243,6 +1256,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
     }
 
     auto metadata = aContext.metadata(income->mDate);
+    const auto taxDate = metadata.mTaxDate;
     std::vector<InstrumentSourceEvidence> evidence;
 
     if (isBond)
@@ -1258,6 +1272,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         .mCurrency = income->mCurrency,
         .mTaxCurrency = income->mTaxCurrency,
         .mInstrumentEvidence = std::move(evidence),
+        .mCashHolder = isBond ? std::nullopt : std::optional{tradeRepublicCashHolder(taxDate)},
     });
 }
 

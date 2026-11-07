@@ -909,6 +909,8 @@ std::string_view categoryText(ExcludedCategory aCategory) {
         return "crypto";
     case ExcludedCategory::Dividend:
         return "dividend";
+    case ExcludedCategory::Interest:
+        return "interest";
     case ExcludedCategory::Unknown:
         break;
     }
@@ -1035,6 +1037,10 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
                            std::is_same_v<Question, PayerChoiceQuestion>)
         {
             return aQuestion.mName;
+        }
+        else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
+        {
+            return "bank-deposit interest";
         }
         else
         {

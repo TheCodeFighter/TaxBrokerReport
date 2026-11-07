@@ -331,6 +331,12 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::TaxCategoryNotReportedSlovenianTaxSettled,
          "tax_category_not_reported.slovenian_tax_settled",
          {}},
+        {MessageKey::InterestPayerNotFound, "interest_payer_not_found", {}},
+        {MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
+        {MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
+        {MessageKey::TaxCategoryNotReportedSlovenianTaxSettledInterest,
+         "tax_category_not_reported.slovenian_tax_settled_interest",
+         {}},
     };
 
     return messages;
@@ -392,8 +398,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 132U);
-    ASSERT_EQ(expectedMessages().size(), 132U);
+    ASSERT_EQ(definitions.size(), 136U);
+    ASSERT_EQ(expectedMessages().size(), 136U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -427,8 +433,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 132U);
-    EXPECT_EQ(keys.size(), 132U);
+    EXPECT_EQ(ids.size(), 136U);
+    EXPECT_EQ(keys.size(), 136U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -450,7 +456,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 140U); // 132 message keys and 8 terms.
+    ASSERT_EQ(table.size(), 144U); // 136 message keys and 8 terms.
 
     std::set<std::string> tableKeys;
 

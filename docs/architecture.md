@@ -899,6 +899,36 @@ the diagnostics and the rates it used.
 `appendDividendPayments` adds the diagnostics, requests and excluded items to an
 `ApplicationResultInput`, as `appendClassification` does for the classification stage.
 
+### Interest stage
+
+`prepareInterestPayments` (`include/processors/interest_payments.hpp`) sorts the interest of the
+reporting year into the Doh-DHO and Doh-Obr models. Like the dividend stage it is not wired into the
+tax processor or the CLI yet; both share the payer, rate and exclusion helpers of
+`include/processors/income_payers.hpp`.
+
+- **Route by who holds the cash.** Each payment has one route. A bond coupon is a Doh-Obr row.
+  The parser sets `mCashHolder` on every payment of interest on cash (`CashHolder`, in the common
+  interest model): `Bank` means the cash is a bank deposit, so the interest is deposit interest
+  (Doh-DHO), and `Broker` means other interest (Doh-Obr cash interest). Trade Republic is a bank
+  from 6 December 2023 and a broker before it; Interactive Brokers is always a broker. The stage
+  names no broker and no date, and a cash payment without a holder is a programming error
+  (`std::logic_error`). A payment is never split, so a payment received after the date counts as
+  a whole.
+- **Not positive.** A payment of 0 or less, or a Doh-Obr row that rounds to 0.00, is no row, is not
+  in the total and gets `interest_payment_not_positive`.
+- **Payers.** A coupon's issuer is looked up by ISIN with the dividend rules (found, not found,
+  a skippable pick, a Slovenian issuer excluded as category `interest`). The payer of a broker's
+  cash interest is the only `broker_payers.csv` row of that broker (`brokerPayersOf`); with none or
+  several the facts stay empty and `interest_payer_not_found` is given once per broker.
+- **Doh-DHO.** The deposit payments of a broker are one row (payer, kind, source country) with the
+  exact sums of the interest and the foreign tax and the list of the payments. The total of all
+  deposit payments is compared with EUR 1,000 at four decimals. Above it the rows are made. At or
+  below it `deposit_interest_total_required` is asked: yes makes the rows and the warning
+  `deposit_interest_add_other_banks`, no gives no rows and the reason
+  `below_deposit_interest_threshold`, no answer leaves Doh-DHO `needs_input`. A payment without a
+  rate gives no total and no question; the rate error fails Doh-DHO.
+- **Doh-Obr.** One row per payment, in ledger order, with the payer facts and the foreign tax.
+
 ### Doh-KDVP XML writer
 
 `KdvpXmlWriter::write` (`include/xml/kdvp_xml_writer.hpp`) turns `ReportMetadata` and

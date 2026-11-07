@@ -152,6 +152,12 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "dividend_payer_not_found";
     case ProcessingDiagnosticCode::ForeignTaxEvidenceRequired:
         return "foreign_tax_evidence_required";
+    case ProcessingDiagnosticCode::InterestPayerNotFound:
+        return "interest_payer_not_found";
+    case ProcessingDiagnosticCode::InterestPaymentNotPositive:
+        return "interest_payment_not_positive";
+    case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
+        return "deposit_interest_add_other_banks";
     }
 
     return "unrepresentable_value";
@@ -178,6 +184,8 @@ std::string_view toString(RequestType aType) {
         return "capital_gains_failure_resolution_required";
     case RequestType::OtherInterestFailureResolutionRequired:
         return "other_interest_failure_resolution_required";
+    case RequestType::DepositInterestTotalRequired:
+        return "deposit_interest_total_required";
     }
 
     return "tax_classification_required";
@@ -419,6 +427,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return Json{{"correctedUnits", unitsString(aValue.mCorrectedUnits)}};
         }
+        else if constexpr (std::is_same_v<Value, DepositInterestTotalAnswer>)
+        {
+            return aValue.mAboveLimit ? "above_limit" : "not_above_limit";
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             // A skip is a string; a pick is the position of the row among the options.
@@ -622,6 +634,16 @@ Json payerCheckToJson(const PayerChoiceQuestion& aQuestion) {
     return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"options", options}};
 }
 
+/// The question data of a deposit interest total question: the year and the imported qualifying
+/// interest in EUR with four decimals.
+Json depositCheckToJson(const DepositInterestTotalQuestion& aQuestion) {
+    constexpr std::size_t kDecimals = 4;
+
+    return Json{{"year", aQuestion.mYear},
+                {"importedInterestEur", formatFixedPoint(aQuestion.mTotal, MONEY_SCALE, kDecimals)},
+                {"limitEur", formatFixedPoint(kDepositInterestAllowance, MONEY_SCALE, kDecimals)}};
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
     // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
@@ -668,6 +690,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["payerCheck"] = payerCheckToJson(*payer);
     }
 
+    if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aRequest.mData))
+    {
+        serialized["depositCheck"] = depositCheckToJson(*deposit);
+    }
+
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
     {
         Json investments = Json::array();
@@ -701,6 +728,8 @@ std::string_view toString(ExcludedCategory aCategory) {
         return "crypto";
     case ExcludedCategory::Dividend:
         return "dividend";
+    case ExcludedCategory::Interest:
+        return "interest";
     case ExcludedCategory::Unknown:
         break;
     }
@@ -808,6 +837,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* payer = std::get_if<PayerChoiceQuestion>(&aDecision.mData))
     {
         serialized["payerCheck"] = payerCheckToJson(*payer);
+    }
+
+    if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aDecision.mData))
+    {
+        serialized["depositCheck"] = depositCheckToJson(*deposit);
     }
 
     serialized["answer"] = answerToJson(aDecision.mAnswer);

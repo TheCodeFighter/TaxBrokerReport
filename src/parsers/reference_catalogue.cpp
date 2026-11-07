@@ -547,6 +547,40 @@ const BrokerPayerEntry* ReferenceCatalogue::brokerPayer(std::string_view aBroker
     return &mBrokerPayers->mEntries[found->second];
 }
 
+namespace {
+
+/// The `broker` text of `broker_payers.csv` for a broker; empty when the file has none for it.
+std::string_view brokerPayersKey(Broker aBroker) {
+    switch (aBroker)
+    {
+    case Broker::TradeRepublic:
+        return "TR";
+    case Broker::InteractiveBrokers:
+        return "IBKR";
+    case Broker::Unknown:
+        break;
+    }
+
+    return {};
+}
+
+} // namespace
+
+std::vector<const BrokerPayerEntry*> ReferenceCatalogue::brokerPayersOf(Broker aBroker) const {
+    std::vector<const BrokerPayerEntry*> entries;
+    const auto key = brokerPayersKey(aBroker);
+
+    for (const auto& entry : mBrokerPayers->mEntries)
+    {
+        if (!key.empty() && entry.mBroker == key)
+        {
+            entries.push_back(&entry);
+        }
+    }
+
+    return entries;
+}
+
 const std::vector<PayerEntry>& ReferenceCatalogue::payers() const {
     return mPayers->mEntries;
 }

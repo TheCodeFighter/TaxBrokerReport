@@ -181,6 +181,23 @@ std::string_view toString(InterestType aInterestType) {
     return "UnknownInterest";
 }
 
+std::string_view toString(const std::optional<CashHolder>& aCashHolder) {
+    if (!aCashHolder)
+    {
+        return "<none>";
+    }
+
+    switch (*aCashHolder)
+    {
+    case CashHolder::Broker:
+        return "Broker";
+    case CashHolder::Bank:
+        return "Bank";
+    }
+
+    return "<none>";
+}
+
 std::string_view toString(CorporateActionType aCorporateActionType) {
     switch (aCorporateActionType)
     {
@@ -574,7 +591,8 @@ void writeInterests(std::ostream& aOutput, const BrokerStatement& aStatement) {
             aOutput << "\n      exchange_rate: ";
             writeBrokerRate(aOutput, transaction.mExchangeRate);
             aOutput << "\n      currency: " << toString(transaction.mCurrency)
-                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency) << '\n';
+                    << "\n      tax_currency: " << toString(transaction.mTaxCurrency)
+                    << "\n      cash_holder: " << toString(transaction.mCashHolder) << '\n';
             writeInstrumentEvidence(aOutput, transaction.mInstrumentEvidence);
         }
 
@@ -1007,6 +1025,12 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "DividendPayerNotFound";
     case ProcessingDiagnosticCode::ForeignTaxEvidenceRequired:
         return "ForeignTaxEvidenceRequired";
+    case ProcessingDiagnosticCode::InterestPayerNotFound:
+        return "InterestPayerNotFound";
+    case ProcessingDiagnosticCode::InterestPaymentNotPositive:
+        return "InterestPaymentNotPositive";
+    case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
+        return "DepositInterestAddOtherBanks";
     }
 
     return "Unknown";

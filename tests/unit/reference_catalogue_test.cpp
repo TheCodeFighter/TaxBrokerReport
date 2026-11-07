@@ -56,7 +56,7 @@ TEST(ReferenceCatalogueTest, LoadsTheEmbeddedFiles) {
 
     EXPECT_EQ(catalogue.payers().size(), 282U); // 68 upstream ISINs + the ISINs found
     EXPECT_EQ(catalogue.allReliefStatements().size(), 17U);
-    EXPECT_EQ(catalogue.brokerPayers().size(), 5U);
+    EXPECT_EQ(catalogue.brokerPayers().size(), 6U);
 }
 
 TEST(ReferenceCatalogueTest, EmbeddedPayersHaveNoKindNoVerificationDateAndTheUpstreamSource) {
@@ -899,6 +899,36 @@ TEST(ReferenceDataLargeInputTest, ARowLongerThanTheReaderLimitMakesTheFileUnread
     EXPECT_EQ(fault.mFile, "payers.csv");
     EXPECT_EQ(fault.mRow, std::nullopt);
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileUnreadable);
+}
+
+TEST(ReferenceCatalogueTest, BrokerPayersOfABrokerAreItsRowsInFileOrder) {
+    const ReferenceCatalogue catalogue = parse("",
+                                               "",
+                                               "IBKR,IB-A,Broker A,111,1 Main Street,GB,manual,\n"
+                                               "TR,TR-A,Broker T,222,2 Main Street,DE,manual,\n"
+                                               "IBKR,IB-B,Broker B,333,3 Main Street,IE,manual,\n");
+
+    const auto interactive = catalogue.brokerPayersOf(Broker::InteractiveBrokers);
+
+    ASSERT_EQ(interactive.size(), 2U);
+    EXPECT_EQ(interactive.at(0)->mCode, "IB-A");
+    EXPECT_EQ(interactive.at(1)->mCode, "IB-B");
+
+    const auto tradeRepublic = catalogue.brokerPayersOf(Broker::TradeRepublic);
+
+    ASSERT_EQ(tradeRepublic.size(), 1U);
+    EXPECT_EQ(tradeRepublic.at(0)->mName, "Broker T");
+    EXPECT_TRUE(catalogue.brokerPayersOf(Broker::Unknown).empty());
+}
+
+TEST(ReferenceCatalogueTest, TheEmbeddedFileHasOneTradeRepublicCompany) {
+    const auto tradeRepublic = referenceCatalogue().brokerPayersOf(Broker::TradeRepublic);
+
+    ASSERT_EQ(tradeRepublic.size(), 1U);
+    EXPECT_EQ(tradeRepublic.at(0)->mName, "Trade Republic Bank GmbH");
+    EXPECT_EQ(tradeRepublic.at(0)->mTaxNumber, std::optional<std::string>{"DE307510626"});
+    EXPECT_EQ(tradeRepublic.at(0)->mAddress, "Brunnenstr. 19-21, 10119 Berlin");
+    EXPECT_EQ(tradeRepublic.at(0)->mCountry, "DE");
 }
 
 } // namespace

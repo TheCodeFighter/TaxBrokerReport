@@ -57,6 +57,8 @@ add_library(taxbroker_core STATIC
     processors/dividend_payments.cpp
     processors/fifo_basis.cpp
     processors/fifo_matcher.cpp
+    processors/income_payers.cpp
+    processors/interest_payments.cpp
     processors/loss_eligibility.cpp
     processors/official_rate_selection.cpp
     processors/processing_diagnostics.cpp

@@ -63,6 +63,12 @@ enum class ProcessingDiagnosticCode {
     DividendPayerNotFound,
     /// A warning: foreign tax was paid, so the user attaches the evidence when filing in eDavki.
     ForeignTaxEvidenceRequired,
+    /// A warning: no reference row gave the payer of an interest payment, so its facts are empty.
+    InterestPayerNotFound,
+    /// A warning: an interest payment of 0 or less, or that rounds to 0.00, is not reported.
+    InterestPaymentNotPositive,
+    /// A warning: the user adds the interest of the other banks in eDavki.
+    DepositInterestAddOtherBanks,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

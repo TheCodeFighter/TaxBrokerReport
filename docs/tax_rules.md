@@ -836,9 +836,21 @@ Missing identity, non-isolatable errors and final XML failures retain their norm
 FURS guidance treats IBKR cash interest as other interest. Trade Republic interest received from
 6 December 2023 is included in the qualifying bank-deposit total; earlier TR interest belongs in
 Doh-Obr. Mixed or unverified product data requires classification rather than a blanket broker-wide
-rule. When an export crosses the licence change and does not distinguish the relevant amounts,
-request the source breakdown instead of prorating it. The income receipt date determines the year;
-interest credited in January is not silently moved into December because it accrued then.
+rule. A payment is never prorated: the receipt date of each payment alone decides the form, so
+one payment received on or after 6 December 2023 is deposit interest as a whole, even if it covers
+days before it. When an export crosses the licence change inside one payment and shows the amounts,
+use the source breakdown. The income receipt date determines the year; interest credited in
+January is not silently moved into December because it accrued then.
+
+A payment of zero or less (for example debit interest), or one that rounds to EUR 0.00, is never a
+row, never counts for the allowance and is never netted against other payments; a warning lists it.
+
+The issuer of an ordinary coupon bond is the payer of its coupons, looked up by ISIN as for
+dividends. When the payer found has the residence country `SI`, FURS says that for interest on
+coupon bonds with the source in Slovenia the payer usually calculates the 25 % income tax and
+withholds it with the interest, so a return is not usually needed: the coupons are not reported and
+are an excluded item `slovenian_tax_settled`, as for dividends. Which payer a foreign coupon needs
+in Doh-Obr (the issuer or the paying broker) is unverified until a draft import.
 
 For years from 2022, the ordinary interest rate is 25%; for 2020 and 2021 it is 27.5%; earlier
 supported years use their verified rule. These rates explain treatment, not amounts deducted from
@@ -1045,6 +1057,9 @@ Tests based on this document must prove that:
 - an unresolved requested exemption needs input until supported or explicitly withdrawn;
 - exactly EUR 1,000 of qualifying interest does not require a return;
 - the answer "yes" to the question about other banks makes Doh-DHO from imported interest at or below EUR 1,000, "no" gives `no_data`, an unanswered question leaves `needs_input`, and a total above EUR 1,000 or equal to zero asks nothing;
+- the total is the exact four-decimal sum: EUR 500.0000 + EUR 500.0000 asks, EUR 500.0000 + EUR 500.0001 does not;
+- interest of 5 December 2023 (Trade Republic) is Doh-Obr and of 6 December 2023 is Doh-DHO;
+- a payment of zero or less is no row and not in the total;
 - a payer that is not found still gives an income row with empty payer facts and a warning;
 - a payer with several disagreeing entries offers a pick and a skip: a pick uses that entry's
   facts; a skip or no answer gives empty facts and the warning, and the report is still made;

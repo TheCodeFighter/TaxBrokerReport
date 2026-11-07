@@ -718,7 +718,8 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
                               std::is_same_v<Answer, CapitalGainsAnswer> ||
                               std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
                               std::is_same_v<Answer, QuantityCorrectionAnswer> ||
-                              std::is_same_v<Answer, PayerChoiceAnswer>);
+                              std::is_same_v<Answer, PayerChoiceAnswer> ||
+                              std::is_same_v<Answer, DepositInterestTotalAnswer>);
                 throw std::logic_error("Another question's answer cannot answer a loss question.");
             }
         }

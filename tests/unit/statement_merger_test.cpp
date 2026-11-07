@@ -573,6 +573,7 @@ StatementMergeInput makeDuplicateTestInput(std::size_t aSourceIndex, std::string
                                        RateDirectionVerification::VerifiedBySourceSamples},
             .mCurrency = Currency::GBP,
             .mTaxCurrency = Currency::EUR,
+            .mCashHolder = CashHolder::Bank,
         }},
     });
     input.mParseResult.mStatement.mBenefitEvents.push_back(BenefitEvent{
@@ -1462,7 +1463,7 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
-    const std::array<FieldChange<InterestInstrument>, 12> changes{{
+    const std::array<FieldChange<InterestInstrument>, 13> changes{{
         {"name without ISIN", [](InterestInstrument& aValue) { aValue.mName = "Other payer"; }},
         {"ISIN presence", [](InterestInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
         {"type",
@@ -1493,6 +1494,10 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
         {"tax currency",
          [](InterestInstrument& aValue) {
              aValue.mTransactions.front().mTaxCurrency = Currency::USD;
+         }},
+        {"cash holder",
+         [](InterestInstrument& aValue) {
+             aValue.mTransactions.front().mCashHolder = CashHolder::Broker;
          }},
     }};
 
@@ -2901,6 +2906,7 @@ TEST(DeterministicStatementMergerTest, UsesBrokerNeutralInterestIdentitiesAndOrd
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions = {InterestTransaction{
             .mMetadata = makeMetadata(0, 4, makeDate(2024, 5, 2)),
+            .mCashHolder = CashHolder::Bank,
         }},
     });
     instruments.push_back(InterestInstrument{
@@ -2916,6 +2922,7 @@ TEST(DeterministicStatementMergerTest, UsesBrokerNeutralInterestIdentitiesAndOrd
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions = {InterestTransaction{
             .mMetadata = makeMetadata(0, 2, makeDate(2024, 5, 1)),
+            .mCashHolder = CashHolder::Bank,
         }},
     });
     instruments.push_back(InterestInstrument{
@@ -3095,6 +3102,7 @@ TEST(DeterministicStatementMergerTest, RejectsEveryInputWithDuplicateSourceIndex
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions = {InterestTransaction{
             .mMetadata = makeMetadata(0, 5, makeDate(2024, 1, 6)),
+            .mCashHolder = CashHolder::Bank,
         }},
     });
     std::vector inputs{first, second};
@@ -3141,6 +3149,7 @@ TEST(DeterministicStatementMergerTest, RejectsOnlyEventsWithMissingOrMismatchedS
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions = {InterestTransaction{
             .mMetadata = makeMetadata(1, 4, makeDate(2024, 1, 6)),
+            .mCashHolder = CashHolder::Bank,
         }},
     });
 
@@ -3323,6 +3332,7 @@ TEST(DeterministicStatementMergerTest, BuildsChronologyAcrossEveryCollectionAndI
                                       Broker::InteractiveBrokers,
                                       "second.csv",
                                       makeTimestamp(2024, 1, 2, 7)),
+            .mCashHolder = CashHolder::Broker,
         }},
     }};
     second.mParseResult.mStatement.mPrivateMarketEvents = {PrivateMarketEvent{

@@ -2688,6 +2688,10 @@ TEST(TradeRepublicParserTest, GroupsBrokerInterestAndPreservesBondInterest) {
     EXPECT_EQ(brokerInterest->mTransactions[1].mCurrency, Currency::EUR);
     EXPECT_EQ(brokerInterest->mTransactions[1].mTaxCurrency, Currency::EUR);
 
+    // Both rows are dated in 2024, when Trade Republic holds the cash as a bank.
+    EXPECT_EQ(brokerInterest->mTransactions[0].mCashHolder, std::optional{CashHolder::Bank});
+    EXPECT_EQ(brokerInterest->mTransactions[1].mCashHolder, std::optional{CashHolder::Bank});
+
     const auto* bondInterest = findInterestInstrument(statement, InterestType::BondInterest);
     ASSERT_NE(bondInterest, nullptr);
     ASSERT_TRUE(bondInterest->mIsin.has_value());
@@ -2704,6 +2708,74 @@ TEST(TradeRepublicParserTest, GroupsBrokerInterestAndPreservesBondInterest) {
     EXPECT_EQ(transaction.mCurrency, Currency::USD);
     EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-bond-interest-001");
+
+    // A coupon has no cash holder.
+    EXPECT_EQ(transaction.mCashHolder, std::nullopt);
+}
+
+TEST(TradeRepublicParserTest, SetsTheCashHolderOfInterestByTheBankDate) {
+    const SyntheticCsvRow beforeBank{.mDatetime = "2023-12-05T10:00:00.000Z",
+                                     .mDate = "2023-12-05",
+                                     .mCategory = "CASH",
+                                     .mType = "INTEREST_PAYMENT",
+                                     .mAssetClass = "",
+                                     .mName = "",
+                                     .mSymbol = "",
+                                     .mShares = "",
+                                     .mPrice = "",
+                                     .mAmount = "10.00",
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "",
+                                     .mOriginalCurrency = "",
+                                     .mFxRate = "",
+                                     .mTransactionId = "synthetic-holder-001"};
+    const SyntheticCsvRow onBankDay{.mDatetime = "2023-12-06T10:00:00.000Z",
+                                    .mDate = "2023-12-06",
+                                    .mCategory = "CASH",
+                                    .mType = "INTEREST_PAYMENT",
+                                    .mAssetClass = "",
+                                    .mName = "",
+                                    .mSymbol = "",
+                                    .mShares = "",
+                                    .mPrice = "",
+                                    .mAmount = "10.00",
+                                    .mTax = "",
+                                    .mCurrency = "EUR",
+                                    .mOriginalAmount = "",
+                                    .mOriginalCurrency = "",
+                                    .mFxRate = "",
+                                    .mTransactionId = "synthetic-holder-002"};
+    const SyntheticCsvRow later{.mDatetime = "2024-01-01T10:00:00.000Z",
+                                .mDate = "2024-01-01",
+                                .mCategory = "CASH",
+                                .mType = "INTEREST_PAYMENT",
+                                .mAssetClass = "",
+                                .mName = "",
+                                .mSymbol = "",
+                                .mShares = "",
+                                .mPrice = "",
+                                .mAmount = "10.00",
+                                .mTax = "",
+                                .mCurrency = "EUR",
+                                .mOriginalAmount = "",
+                                .mOriginalCurrency = "",
+                                .mFxRate = "",
+                                .mTransactionId = "synthetic-holder-003"};
+
+    const auto result = parseRows({beforeBank, onBankDay, later});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& transactions = result.mStatement.mInterestInstruments.front().mTransactions;
+
+    ASSERT_EQ(transactions.size(), 3U);
+
+    // The day before 6 December 2023 the broker holds the cash; from that day the bank does.
+    EXPECT_EQ(transactions[0].mCashHolder, std::optional{CashHolder::Broker});
+    EXPECT_EQ(transactions[1].mCashHolder, std::optional{CashHolder::Bank});
+    EXPECT_EQ(transactions[2].mCashHolder, std::optional{CashHolder::Bank});
 }
 
 TEST(TradeRepublicParserTest, PreservesBothQuantitySignsWithoutInferringSplitDirection) {

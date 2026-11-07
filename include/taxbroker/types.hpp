@@ -254,6 +254,12 @@ struct DividendInstrument {
     std::vector<DividendTransaction> mTransactions;
 };
 
+/// Who holds the cash an interest payment is paid on.
+enum class CashHolder {
+    Broker, ///< A broker only: Doh-Obr.
+    Bank,   ///< A bank - the cash is a bank deposit: Doh-DHO.
+};
+
 struct InterestTransaction {
     EventMetadata mMetadata;
     Money mGrossAmount{};
@@ -266,6 +272,9 @@ struct InterestTransaction {
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
+    /// Who held the cash on the receipt date; absent for a bond coupon. Always set by the parser
+    /// for the interest on cash.
+    std::optional<CashHolder> mCashHolder;
 };
 
 struct InterestInstrument {

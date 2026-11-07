@@ -144,6 +144,10 @@ enum class MessageKey {
     DividendPayerNotFound,
     ForeignTaxEvidenceRequired,
     TaxCategoryNotReportedSlovenianTaxSettled,
+    InterestPayerNotFound,
+    InterestPaymentNotPositive,
+    DepositInterestAddOtherBanks,
+    TaxCategoryNotReportedSlovenianTaxSettledInterest,
 };
 
 enum class MessageParamKind {

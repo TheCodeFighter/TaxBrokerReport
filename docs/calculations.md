@@ -678,7 +678,10 @@ the rows and is not allowed.
 Grouping follows each form's instructions: Doh-DHO groups qualifying income by the required payer,
 interest type and source-country fields; sum stored values exactly before rounding each grouped
 row. Doh-Obr preserves the payment detail required by its form. Bank-interest threshold comparisons
-use the full four-decimal selected-year qualifying total before XML rounding. An ordinary-interest
+use the full four-decimal selected-year qualifying total before XML rounding, summed with checked
+arithmetic from the EUR amounts of the payments (each converted once at the rate of its receipt
+date). A Doh-DHO row is the exact sum of its payments, in ledger order, and its rows are sorted by
+payer name and source country. An ordinary-interest
 amount never enters that threshold. Tests must distinguish payment totals from emitted form rows.
 
 XML decimals use `.` as the decimal separator, contain no digit grouping or exponent, and use the
