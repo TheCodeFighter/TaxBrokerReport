@@ -551,7 +551,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mTaxPaid == aRight.mEvent.mTaxPaid &&
            aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
-           aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency;
+           aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency &&
+           aLeft.mEvent.mCashHolder == aRight.mEvent.mCashHolder;
 }
 
 [[nodiscard]] bool sameEventFacts(const BenefitEvent& aLeft, const BenefitEvent& aRight) {

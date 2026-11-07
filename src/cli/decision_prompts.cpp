@@ -670,9 +670,10 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
         using Question = std::decay_t<decltype(aQuestion)>;
 
         if constexpr (std::is_same_v<Question, std::monostate> ||
-                      std::is_same_v<Question, PayerChoiceQuestion>)
+                      std::is_same_v<Question, PayerChoiceQuestion> ||
+                      std::is_same_v<Question, DepositInterestTotalQuestion>)
         {
-            // canAsk() keeps both out: a payer choice is not asked in the CLI yet.
+            // canAsk() keeps them out: the CLI makes no income rows yet.
             throw std::logic_error("this question cannot be asked");
         }
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
@@ -755,6 +756,11 @@ std::string answerText(const AnswerValue& aAnswer) {
         {
             return "sale quantity " + unitsText(aValue.mCorrectedUnits) + " units";
         }
+        else if constexpr (std::is_same_v<Value, DepositInterestTotalAnswer>)
+        {
+            return aValue.mAboveLimit ? "above EUR 1,000 with the other banks"
+                                      : "not above EUR 1,000 with the other banks";
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             return aValue.mPickedOption ? "payer row " + std::to_string(*aValue.mPickedOption + 1)
@@ -798,9 +804,10 @@ bool canAsk(const QuestionData& aData) {
         {
             return true;
         }
-        else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
+        else if constexpr (std::is_same_v<Question, PayerChoiceQuestion> ||
+                           std::is_same_v<Question, DepositInterestTotalQuestion>)
         {
-            // The CLI does not make dividend rows yet, so it has no prompt for this question.
+            // The CLI does not make income rows yet, so it has no prompt for these questions.
             return false;
         }
         else
@@ -937,7 +944,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
         }
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
         {
-            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", dividend payer";
+            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", payer";
+        }
+        else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
+        {
+            return "bank-deposit interest " + std::to_string(aQuestion.mYear);
         }
         else
         {

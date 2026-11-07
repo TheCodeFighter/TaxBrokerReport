@@ -455,16 +455,19 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
     const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
     const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
+    const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
     const bool isQuantityType = aQuestion.mType == RequestType::QuantityCorrectionRequired;
     const bool isIncomeDetailsType = aQuestion.mType == RequestType::IncomeDetailsRequired;
+    const bool isDepositType = aQuestion.mType == RequestType::DepositInterestTotalRequired;
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
         (classification != nullptr) != isClassificationType ||
-        (quantity != nullptr) != isQuantityType || (payer != nullptr && !isIncomeDetailsType))
+        (quantity != nullptr) != isQuantityType || (payer != nullptr && !isIncomeDetailsType) ||
+        (deposit != nullptr) != isDepositType)
     {
         throw std::invalid_argument("The question data does not fit the request type.");
     }
@@ -480,6 +483,12 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A payer choice question needs an ISIN and at least two "
                                     "reference rows.");
+    }
+
+    if (deposit != nullptr && (deposit->mTotal <= 0 || deposit->mTotal > kDepositInterestAllowance))
+    {
+        throw std::invalid_argument("A deposit interest question needs a total above 0 and at "
+                                    "most EUR 1,000.");
     }
 
     if (classification != nullptr && classification->mIsin.empty())

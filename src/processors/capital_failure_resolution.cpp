@@ -102,7 +102,8 @@ std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
                           std::is_same_v<Answer, CapitalGainsAnswer> ||
                           std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
                           std::is_same_v<Answer, QuantityCorrectionAnswer> ||
-                          std::is_same_v<Answer, PayerChoiceAnswer>);
+                          std::is_same_v<Answer, PayerChoiceAnswer> ||
+                          std::is_same_v<Answer, DepositInterestTotalAnswer>);
             // The session accepts only a failure choice or a cancel for this question.
             throw std::logic_error("Only a failure choice or a cancel can answer this question.");
         }

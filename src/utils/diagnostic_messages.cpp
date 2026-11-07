@@ -412,6 +412,13 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::TaxCategoryNotReportedSlovenianTaxSettled,
                       "tax_category_not_reported.slovenian_tax_settled",
                       {}},
+    MessageDefinition{MessageKey::InterestPayerNotFound, "interest_payer_not_found", {}},
+    MessageDefinition{MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
+    MessageDefinition{
+        MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
+    MessageDefinition{MessageKey::TaxCategoryNotReportedSlovenianTaxSettledInterest,
+                      "tax_category_not_reported.slovenian_tax_settled_interest",
+                      {}},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -427,10 +434,10 @@ constexpr bool definitionsFollowKeyOrder() {
 }
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
-static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::TaxCategoryNotReportedSlovenianTaxSettled) +
-                      1,
-              "Every MessageKey needs one definition");
+static_assert(
+    kDefinitions.size() ==
+        static_cast<std::size_t>(MessageKey::TaxCategoryNotReportedSlovenianTaxSettledInterest) + 1,
+    "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 8> kTermKeys{
     taxbroker::term::kRowKindTrade,

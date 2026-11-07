@@ -47,6 +47,7 @@ enum class RequestType {
     IncomeDetailsRequired,
     CapitalGainsFailureResolutionRequired,
     OtherInterestFailureResolutionRequired,
+    DepositInterestTotalRequired,
 };
 
 /// The code of the stage that found the problem; the three enums have no value in common.
@@ -268,6 +269,20 @@ struct PayerChoiceQuestion {
     bool operator==(const PayerChoiceQuestion&) const = default;
 };
 
+/// The yearly bank-deposit interest allowance in EUR, across all qualifying banks. At or below it a
+/// return is not needed; above it all reportable amounts go in Doh-DHO.
+inline constexpr Money kDepositInterestAllowance = 1000 * MONEY_SCALE;
+
+/// The question data of `deposit_interest_total_required`: the imported qualifying interest of
+/// the year is above 0 and at most EUR 1,000, so only the interest of the user's other banks can
+/// make it filing. The user answers whether the total with that interest is above EUR 1,000.
+struct DepositInterestTotalQuestion {
+    int mYear{};    ///< The reporting year.
+    Money mTotal{}; ///< The imported qualifying interest in EUR, exact at 4 decimals.
+
+    bool operator==(const DepositInterestTotalQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
 using QuestionData = std::variant<std::monostate,
@@ -276,7 +291,8 @@ using QuestionData = std::variant<std::monostate,
                                   CorporateActionRatioQuestion,
                                   TaxClassificationQuestion,
                                   QuantityCorrectionQuestion,
-                                  PayerChoiceQuestion>;
+                                  PayerChoiceQuestion,
+                                  DepositInterestTotalQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -363,6 +379,14 @@ struct PayerChoiceAnswer {
     bool operator==(const PayerChoiceAnswer&) const = default;
 };
 
+/// The answer to a deposit interest total question: whether the year's total, with the interest
+/// of the user's other Slovenian and EU banks, is above EUR 1,000.
+struct DepositInterestTotalAnswer {
+    bool mAboveLimit{}; ///< True: make Doh-DHO from the imported interest.
+
+    bool operator==(const DepositInterestTotalAnswer&) const = default;
+};
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
@@ -372,7 +396,8 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CapitalGainsAnswer,
                                  ExcludeFromReportsAnswer,
                                  QuantityCorrectionAnswer,
-                                 PayerChoiceAnswer>;
+                                 PayerChoiceAnswer,
+                                 DepositInterestTotalAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {
@@ -423,6 +448,7 @@ enum class ExcludedCategory {
     Bond,     ///< An ordinary debt security; only its interest is taxable.
     Crypto,   ///< A crypto asset; not part of the supported reports.
     Dividend, ///< The dividends of a Slovenian payer; the company deducts the tax itself.
+    Interest, ///< The coupons of a Slovenian issuer; the payer deducts the tax itself.
     Unknown,  ///< The class was missing, not recognized or conflicting, and the user left it out.
 };
 

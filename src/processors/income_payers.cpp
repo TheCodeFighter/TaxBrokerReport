@@ -1,0 +1,300 @@
+#include "processors/income_payers.hpp"
+
+#include "taxbroker/currency.hpp"
+
+#include <algorithm>
+#include <variant>
+
+namespace taxbroker {
+namespace {
+
+constexpr std::string_view kSlovenia = "SI";
+
+/// The reference rows of a conflict as the options of a payer choice question, sorted.
+PayerChoiceQuestion
+questionOf(const Isin& aIsin, const IsinPayments& aPayments, const PayerLookup& aLookup) {
+    PayerChoiceQuestion question{.mIsin = aIsin, .mName = aPayments.mName, .mOptions = {}};
+
+    question.mOptions.reserve(aLookup.mEntries.size());
+
+    for (const auto* entry : aLookup.mEntries)
+    {
+        question.mOptions.push_back(PayerChoiceOption{.mName = entry->mName,
+                                                      .mAddress = entry->mAddress,
+                                                      .mCountry = entry->mCountry,
+                                                      .mTaxNumber = entry->mTaxNumber,
+                                                      .mSource = entry->mSource});
+    }
+
+    return std::get<PayerChoiceQuestion>(normalizedData(std::move(question)));
+}
+
+/// The payer of an ISIN whose reference rows disagree: the row the user picked, or no facts for a
+/// skip or an open question (which is asked and warned about).
+PayerOutcome askPayer(const PayerForm& aForm,
+                      const PayerSinks& aSinks,
+                      const Isin& aIsin,
+                      const IsinPayments& aPayments,
+                      const PayerLookup& aLookup,
+                      RunDecisions& aDecisions) {
+    auto data = questionOf(aIsin, aPayments, aLookup);
+    DecisionQuestion question{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {aForm.mReport},
+        .mSources = aPayments.mSources,
+        .mTaxDate = aPayments.mFirstDate,
+        .mIsin = aIsin,
+        .mData = data,
+    };
+    const auto* answer = aDecisions.find(question);
+
+    if (answer == nullptr)
+    {
+        aSinks.mRequests.push_back(
+            RequestInput{.mQuestion = std::move(question),
+                         .mProcessingDiagnostics = {aSinks.mDiagnostics.size()}});
+        addPayerNotFound(aForm, aSinks, aIsin, aPayments);
+
+        return {};
+    }
+
+    // The session accepts only a payer choice, and only a position among the options; std::get and
+    // at() throw for anything else.
+    const auto& choice = std::get<PayerChoiceAnswer>(*answer);
+
+    if (!choice.mPickedOption)
+    {
+        addPayerNotFound(aForm, aSinks, aIsin, aPayments);
+
+        return {};
+    }
+
+    const auto& picked = data.mOptions.at(*choice.mPickedOption);
+    const auto entry = std::find_if(
+        aLookup.mEntries.begin(),
+        aLookup.mEntries.end(),
+        [&picked](const PayerEntry* aEntry) { return aEntry->mSource == picked.mSource; });
+    const auto position = static_cast<std::size_t>(entry - aLookup.mEntries.begin());
+
+    return payerOutcomeOf(*aLookup.mEntries.at(position));
+}
+
+} // namespace
+
+ProcessingDiagnostic incomeDiagnostic(ReportType aReport,
+                                      DiagnosticSeverity aSeverity,
+                                      ProcessingDiagnosticCode aCode,
+                                      DiagnosticMessage aMessage,
+                                      std::vector<SourceReference> aSources,
+                                      std::optional<Date> aTaxDate,
+                                      std::optional<std::string> aName,
+                                      std::optional<Isin> aIsin) {
+    return ProcessingDiagnostic{
+        .mSeverity = aSeverity,
+        .mCode = aCode,
+        .mContext =
+            {
+                .mStage = PipelineStage::FifoTax,
+                .mAffectedReports = {aReport},
+                .mSources = std::move(aSources),
+                .mTaxDate = aTaxDate,
+                .mInstrumentName = std::move(aName),
+                .mIsin = std::move(aIsin),
+            },
+        .mMessage = std::move(aMessage.mEnglish),
+        .mMessageKey = aMessage.mKey,
+        .mMessageParams = std::move(aMessage.mParams),
+    };
+}
+
+PayerOutcome payerOutcomeOf(const PayerEntry& aEntry) {
+    PayerOutcome outcome;
+
+    outcome.mPayer = IncomePayer{.mName = aEntry.mName,
+                                 .mAddress = aEntry.mAddress,
+                                 .mCountry = aEntry.mCountry,
+                                 .mTaxNumber = std::nullopt,
+                                 .mIdentificationNumber = aEntry.mTaxNumber,
+                                 .mCatalogueRow = aEntry.mSource};
+    outcome.mIsSlovenian = aEntry.mCountry == kSlovenia;
+
+    return outcome;
+}
+
+PayerOutcome payerOutcomeOf(const BrokerPayerEntry& aEntry) {
+    PayerOutcome outcome;
+
+    outcome.mPayer = IncomePayer{.mName = aEntry.mName,
+                                 .mAddress = aEntry.mAddress,
+                                 .mCountry = aEntry.mCountry,
+                                 .mTaxNumber = std::nullopt,
+                                 .mIdentificationNumber = aEntry.mTaxNumber,
+                                 .mCatalogueRow = aEntry.mSource};
+    outcome.mIsSlovenian = aEntry.mCountry == kSlovenia;
+
+    return outcome;
+}
+
+void addPayerNotFound(const PayerForm& aForm,
+                      const PayerSinks& aSinks,
+                      const Isin& aIsin,
+                      const IsinPayments& aPayments) {
+    aSinks.mDiagnostics.push_back(incomeDiagnostic(aForm.mReport,
+                                                   DiagnosticSeverity::Warning,
+                                                   aForm.mNotFoundCode,
+                                                   makeDiagnosticMessage(aForm.mNotFoundKey),
+                                                   aPayments.mSources,
+                                                   aPayments.mFirstDate,
+                                                   aPayments.mName,
+                                                   aIsin));
+}
+
+PayerOutcome resolvePayer(const PayerForm& aForm,
+                          const PayerSinks& aSinks,
+                          const Isin& aIsin,
+                          const IsinPayments& aPayments,
+                          const ReferenceCatalogue& aCatalogue,
+                          RunDecisions& aDecisions) {
+    const auto lookup = aCatalogue.findPayer(aIsin);
+
+    switch (lookup.mStatus)
+    {
+    case PayerLookupStatus::Found:
+        return payerOutcomeOf(*lookup.mEntries.front());
+    case PayerLookupStatus::Conflict:
+        return askPayer(aForm, aSinks, aIsin, aPayments, lookup, aDecisions);
+    case PayerLookupStatus::NotFound:
+        break;
+    }
+
+    addPayerNotFound(aForm, aSinks, aIsin, aPayments);
+
+    return {};
+}
+
+void addSlovenianExclusion(const PayerForm& aForm,
+                           const PayerSinks& aSinks,
+                           const Isin& aIsin,
+                           const IsinPayments& aPayments) {
+    const auto position = aSinks.mDiagnostics.size();
+
+    aSinks.mDiagnostics.push_back(incomeDiagnostic(aForm.mReport,
+                                                   DiagnosticSeverity::Warning,
+                                                   ProcessingDiagnosticCode::TaxCategoryNotReported,
+                                                   makeDiagnosticMessage(aForm.mSlovenianKey),
+                                                   aPayments.mSources,
+                                                   aPayments.mFirstDate,
+                                                   aPayments.mName,
+                                                   aIsin));
+    aSinks.mExcludedItems.push_back(ExcludedItemInput{
+        .mItem = ExcludedItem{.mIsin = aIsin,
+                              .mName = aPayments.mName,
+                              .mCategory = aForm.mCategory,
+                              .mReason = ExcludedReason::SlovenianTaxSettled},
+        .mSources = aPayments.mSources,
+        .mProcessingDiagnostics = {position},
+    });
+}
+
+void addIncomeRateNeeds(std::vector<RateNeed>& aNeeds,
+                        ReportType aReport,
+                        const EventMetadata& aMetadata,
+                        Currency aGrossCurrency,
+                        const std::optional<Money>& aTax,
+                        Currency aTaxCurrency) {
+    if (aGrossCurrency != Currency::EUR)
+    {
+        aNeeds.push_back({.mCurrency = aGrossCurrency,
+                          .mTaxDate = aMetadata.mTaxDate,
+                          .mUse = RateUse::IncomeGross,
+                          .mReport = aReport,
+                          .mSources = aMetadata.mSources});
+    }
+
+    // A tax of 0 is 0 in every currency and needs no rate.
+    if (aTax && *aTax != 0 && aTaxCurrency != Currency::EUR)
+    {
+        aNeeds.push_back({.mCurrency = aTaxCurrency,
+                          .mTaxDate = aMetadata.mTaxDate,
+                          .mUse = RateUse::ForeignTax,
+                          .mReport = aReport,
+                          .mSources = aMetadata.mSources});
+    }
+}
+
+IncomeEurConverter::IncomeEurConverter(const OfficialRateSelection& aRates,
+                                       std::vector<ProcessingDiagnostic>& aDiagnostics)
+    : mRates{aRates}, mDiagnostics{aDiagnostics} {}
+
+std::optional<Money> IncomeEurConverter::toEur(ReportType aReport,
+                                               const EventMetadata& aMetadata,
+                                               const std::string& aName,
+                                               const std::optional<Isin>& aIsin,
+                                               Money aAmount,
+                                               Currency aCurrency,
+                                               const char* aField) {
+    if (aCurrency == Currency::EUR)
+    {
+        return aAmount;
+    }
+
+    const auto* rate = mRates.find(aCurrency, aMetadata.mTaxDate);
+
+    // The selection holds the error of a pair without a rate.
+    if (rate == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    const auto converted = convertOfficialMoney(aAmount, *rate);
+
+    if (const auto* error = std::get_if<NumericError>(&converted))
+    {
+        mDiagnostics.push_back(numericDiagnostic(*error,
+                                                 {.mStage = PipelineStage::FifoTax,
+                                                  .mAffectedReports = {aReport},
+                                                  .mSources = aMetadata.mSources,
+                                                  .mTaxDate = aMetadata.mTaxDate,
+                                                  .mField = aField,
+                                                  .mInstrumentName = aName,
+                                                  .mIsin = aIsin}));
+
+        return std::nullopt;
+    }
+
+    mUsed.emplace(
+        std::make_pair(aMetadata.mTaxDate, std::string{currencyCode(aCurrency)}),
+        UsedOfficialRate{.mCurrency = aCurrency, .mTaxDate = aMetadata.mTaxDate, .mRate = *rate});
+
+    return std::get<Money>(converted);
+}
+
+std::vector<UsedOfficialRate> IncomeEurConverter::usedRates() const {
+    std::vector<UsedOfficialRate> rates;
+
+    rates.reserve(mUsed.size());
+
+    for (const auto& [key, rate] : mUsed)
+    {
+        rates.push_back(rate);
+    }
+
+    return rates;
+}
+
+void appendExcludedItems(ApplicationResultInput& aInput,
+                         std::vector<ExcludedItemInput>&& aItems,
+                         std::size_t aDiagnosticOffset) {
+    for (auto& item : aItems)
+    {
+        std::transform(
+            item.mProcessingDiagnostics.begin(),
+            item.mProcessingDiagnostics.end(),
+            item.mProcessingDiagnostics.begin(),
+            [aDiagnosticOffset](std::size_t aPosition) { return aPosition + aDiagnosticOffset; });
+
+        aInput.mExcludedItems.push_back(std::move(item));
+    }
+}
+
+} // namespace taxbroker
