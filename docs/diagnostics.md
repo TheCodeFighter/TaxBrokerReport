@@ -604,7 +604,7 @@ request type, and a failure-resolution question without an investment.
 | `quantity_correction_required` | One request for the first sale of an ISIN whose pool stopped for a shortage below `0.00000100` units that the discarded source digits do not prove to be rounding: the ISIN, its name, the sale (date, broker and transaction ID), its units, the units left (the proposed quantity), the unit value in EUR and the budget used. Answer with the corrected sale units (above 0, at most the units left, less than `0.00000100` below the sale, and with the roundings before it below EUR 0.01 in total) or cancel. |
 | `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units in the units of the sale) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | One request per trade investment whose asset class is missing, not recognized or conflicting: the ISIN, its name and the class labels of its rows (question data), with the options `capital_gains` and `exclude_from_supported_reports` and no preselected choice; answer with one of them or cancel. Income events and treatment-specific missing fields for them are not asked yet. |
-| `income_details_required` | Income items and missing or conflicting payer/catalogue, country, gross amount, withholding jurisdiction/status, payment evidence or requested treaty-claim facts, including external deposit interest; answer with validated details or explicit withdrawal of an optional exemption claim. |
+| `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
 | `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 
@@ -614,8 +614,8 @@ a non-blocking reminder does not manufacture an unanswered blocking request.
 
 `excludedItems` entries contain the parsed item/instrument identity, established category, explicit
 exclusion reason, safe sources and diagnostic IDs. Record whether the exclusion follows a verified
-tax rule or an explicit user choice. Reason `slovenian_tax_settled` requires payment-specific
-evidence; company-list membership alone cannot establish it. Capital and other-interest failure
+tax rule or an explicit user choice. Reason `slovenian_tax_settled` follows from a payer with the
+residence country `SI` (a Slovenian company deducts the tax itself); an ISIN prefix alone cannot establish it. Capital and other-interest failure
 exclusions use each report's own `excludedInvestments`. A classification request does not override malformed source rows, missing
 instrument identity or undocumented tax calculations. A known unsupported category can be shown
 without blocking unrelated reports; an unknown category cannot be silently assigned no scope.
@@ -803,7 +803,7 @@ Additional codes and their default scope are:
 | `official_rate_from_nearby_date` | Warning for every report that needs one currency and tax date with no ECB rate of its own, one per pair: the last earlier ECB rate, at most 4 days before, was used. Parameters `currency`, `date` and `rateDate`. The rate is still official; the rule is unconfirmed by FURS. |
 | `official_rate_file_incomplete` | Warning, once per used rate file of a tax year that is not a whole year: key `.starts_late` (parameters `year`, `firstDate`: the file starts more than 4 days after 1 January) or `.ends_early` (`year`, `lastDate`: the file ends within 4 days before 31 December and a need after its end was accepted). Its reports and sources are those of the needs in that file's year (for `.ends_early`, those after its end). |
 | `income_details_missing` | Error for the affected income form, with a details request while resolvable. |
-| `deposit_interest_external_total_unchecked` | Warning for bank interest; remind the user of qualifying interest at other banks. |
+| `deposit_interest_external_total_unchecked` | Not used since the yes/no question about other banks' interest replaced the reminder (`tax_rules.md`, "Interest forms and the annual deposit allowance"); the key is dropped when that question is implemented. |
 
 `broker_exchange_rate_used` is also a warning. Other previously
 listed codes are errors unless their rule explicitly says otherwise. Adapted parser diagnostics
@@ -1180,8 +1180,9 @@ Application-service, API, and integration tests based on this document must prov
 - diagnostics and IDs are identical across different parser completion orders;
 - excluding an ISIN preserves replacement evidence needed by retained losses, and unresolved
   dependencies keep capital gains `needs_input` until resolved or explicitly excluded in turn;
-- settled Slovenian income is visibly excluded only with evidence, and unresolved withholding or
-  requested treaty claims produce an income-details request for the affected form;
+- income of a payer with the residence country `SI` is visibly excluded, several payer rows give a
+  skippable pick request that never blocks, and requested treaty claims produce an income-details request for the
+  affected form;
 - supporting-document requirements remain visible alongside generated income XML;
 - conflicts retain all source references in deterministic order;
 - POSIX and Windows input paths serialize only their filename;

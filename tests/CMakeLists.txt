@@ -33,6 +33,7 @@ add_executable(taxbroker_unit_tests
     unit/event_metadata_test.cpp
     unit/exact_arithmetic_test.cpp
     unit/import_fixed_point_test.cpp
+    unit/income_report_models_test.cpp
     unit/fifo_basis_property_test.cpp
     unit/fifo_basis_test.cpp
     unit/fifo_matcher_property_test.cpp

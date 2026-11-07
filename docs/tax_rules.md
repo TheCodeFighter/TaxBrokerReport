@@ -719,9 +719,11 @@ parse or merge error still blocks.
 
 The missing-field list is specific to the selected treatment: for capital it includes an ISIN,
 acquisition/disposal dates, units and unit values/currencies; for income it includes gross income,
-receipt date, foreign tax and its currency, payer identity and country, and source country. A known
-zero foreign tax is valid; an unknown tax amount is not silently set to zero. Bond treatment also
-requires issuer/instrument identity and coupon-versus-discount information. Unsupported required
+receipt date, the amount and its currency, and the foreign tax and its currency. The payer
+identity, payer country and source country are wanted but optional: when the app cannot find
+them the report is still made and the user completes them in eDavki (see "Payer lists" below). A
+blank tax is not missing: it means no foreign tax was paid (0). Bond treatment also requires
+issuer/instrument identity and coupon-versus-discount information. Unsupported required
 fields or calculations remain visible even after classification.
 
 Apply classification to the complete instrument history only when the confirmed treatment is the
@@ -751,24 +753,35 @@ where a source has them (the imported rows have neither); the ISIN identifies an
 verified source-country and treaty references separately, with their own sources and effective
 dates. Match exact identifiers; names, exchange location, trading currency, broker country and an
 ISIN prefix alone do not prove payer residence or tax treatment.
-Conflicting or absent entries require `income_details_required` when needed report facts cannot
-be established from other reliable sources. An entry is a suggestion that the user confirms; it has
+When no entry is found for the ISIN, the income row keeps the amount and the ISIN, leaves the
+payer facts and the source country empty, and the result warns the user to complete them in eDavki
+(the report is not blocked). When the ISIN has several entries that disagree, the app never
+guesses between them: it offers the user the entries, listed with their facts, and a skip choice
+for each payer. The facts of the picked entry are used. A skipped or unanswered payer (for
+example with `--no-input`) gives the same row as "not found": the report is still made, with a
+warning, and the user completes the payer in eDavki. The question never blocks and never makes
+the form `needs_input`. The pick is a recorded decision for that ISIN and that set of entries; a
+changed set is a new question. Payer facts the payment evidence gives are used. An entry is a suggestion that the user confirms; it has
 no validity dates, and a payer whose facts change is a new entry that conflicts with the old one.
 A catalogue entry may prefill verified metadata, but never overrides contradictory payment evidence.
 
 For dividends and other interest, distinguish foreign tax from Slovenian final withholding.
-When payment evidence establishes that a Slovenian withholding agent has settled the final
-Slovenian tax and no recipient return is required under the applicable rule, omit that payment
-from Doh-Div or Doh-Obr. Retain it in `excludedItems` with reason `slovenian_tax_settled`, its
-evidence, and `tax_category_not_reported`. A Slovenian-company list match alone is insufficient.
-Unknown or contradictory withholding status produces `income_details_required` and `needs_input`
-for that income form. Cancellation does not resolve the missing facts; a safely isolated Doh-Obr
-ISIN may use the explicit other-interest exclusion/failure choice in `diagnostics.md`.
-Explicit classification exclusion also remains available under its existing rules.
+A Slovenian company deducts the final tax itself when it pays a tax resident, so such a payment
+needs no Doh-Div or Doh-Obr. A payment whose payer is found by exact identifier, or picked by the
+user, with the residence country `SI` is omitted from the form. Retain it in `excludedItems` with
+reason `slovenian_tax_settled`, its source and `tax_category_not_reported`. No payment evidence is
+needed. An ISIN prefix, a name or a currency alone never makes a payer Slovenian. A payer that is
+not found is reported as described above. A safely isolated Doh-Obr ISIN may use the explicit
+other-interest exclusion/failure choice in `diagnostics.md`. Explicit classification exclusion
+also remains available under its existing rules.
 This exception does not remove the payer's capital trades or
 replace the separate Doh-DHO deposit-interest threshold.
 
-For reportable foreign income, retain the gross payment and actual foreign tax separately. A
+For reportable foreign income, retain the gross payment and actual foreign tax separately, both in
+EUR at the official ECB rate of the receipt date. A blank source tax is a foreign tax of 0 (no tax
+paid); the row keeps that it was blank, and a dividend with a blank tax gets a warning that tax
+may have been withheld, which the user can enter in eDavki. Blank and explicit zero interest tax
+are the same and give no warning. A
 company or ETF list helps prepare a foreign-tax relief claim; membership does not establish relief.
 Record the withholding country, amount/currency, payment evidence and any applicable verified
 treaty provision. Do not replace actual tax with a catalogue percentage, subtract it from gross
@@ -820,21 +833,24 @@ the gross income in XML. FURS assesses the final tax.
 Aggregate all imported qualifying deposit interest for the selected year in EUR after the
 conversion rules in `calculations.md`. The allowance is EUR 1,000 across qualifying banks, not per
 broker, account, or payment. If the known qualifying total is at or below EUR 1,000, prepare no
-Doh-DHO from that data and return `no_data` with reason `below_deposit_interest_threshold`, retain
-the informational total, and show `deposit_interest_external_total_unchecked` until the user confirms
-whether there is additional qualifying interest elsewhere. This reminder does not block downloads.
+Doh-DHO from that data unless the user says that other banks bring the year's total above it. A
+total of zero asks nothing and gives `no_data`. A total above EUR 1,000 on its own generates
+Doh-DHO without a question. In between (above zero and at most EUR 1,000) the app asks one yes/no
+question: is the total, together with the interest from your other Slovenian or EU banks, above
+EUR 1,000? Yes: generate Doh-DHO from the imported interest and tell the user to add the other
+banks' interest in eDavki. No: return `no_data` with reason `below_deposit_interest_threshold`
+and say that Doh-DHO is not needed below EUR 1,000 of yearly interest. An unanswered question
+(for example `--no-input`) leaves Doh-DHO `needs_input`.
 
-The frontend explains: "Imported qualifying interest is EUR [amount]. Include qualifying interest
+The question explains: "Imported qualifying interest is EUR [amount]. Include qualifying interest
 from your other Slovenian/EU bank accounts when checking the EUR 1,000 annual limit. This imported
-total alone does not establish that you have no filing obligation." Offer entry of external
-interest or confirmation that there is none. A confirmed external amount is included
-once, with a manual-source reference and enough payer details for the return. If the known combined
-total exceeds EUR 1,000, generate Doh-DHO with all reportable qualifying amounts, not just the excess;
-FURS applies the allowance. Missing external payer details produce `income_details_required` and
-`needs_input`, rather than a complete-looking XML containing only imported interest.
+total alone does not establish that you have no filing obligation." The app does not take the
+amounts of other banks. When the total is above EUR 1,000, Doh-DHO holds all reportable
+imported amounts, not just the excess; FURS applies the allowance.
 
-Examples: TR EUR 900 with no other qualifying interest gives no Doh-DHO; TR EUR 900 plus another
-EU bank's EUR 200 requires a return reporting EUR 1,100; exactly EUR 1,000 does not require a return.
+Examples: TR EUR 900 and the user answers no: no Doh-DHO; TR EUR 900 and the user answers yes
+(another EU bank paid EUR 200): Doh-DHO with the TR EUR 900, and the user adds the other bank's
+EUR 200 in eDavki; exactly EUR 1,000 does not require a return.
 IBKR cash interest of EUR 20 belongs in Doh-Obr independently of those totals. Ordinary foreign
 bond coupons do not use the deposit allowance.
 
@@ -881,13 +897,13 @@ when more than five interest payments were received in the year.
 | `Type` | `4` (unconfirmed, see below) | `2` | Interest-type code, required. |
 | `Value` | Gross interest in EUR | Gross coupon in EUR | Two decimals, greater than zero, required. |
 | `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0` only when known to be zero), empty for a Slovenian payer. |
-| `Country2` | Payer's country | Country of the ISIN prefix | Source country, two letters, required. |
+| `Country2` | Payer's country | Payer's country | Source country, two letters; left out when not known. |
 | `ReliefStatement` | Left out | Left out | Optional, at most 100 characters; see below. |
 
 **Numbers.** `Value` and `ForeignTax` are `Decimal12_2Type`: digits only, at most 12 before the
 point and at most 2 after it, so `12.5`, `0` and `999999999999.99` pass and `-1.00`, `1.234` and
 `.5` fail. The schema accepts `0` for `Value`, but the instructions say the interest must be
-greater than zero. A foreign amount is converted at the *Banka Slovenije* rate of the receipt date
+greater than zero. A foreign amount is converted at the official ECB rate of the receipt date (the rate *Banka Slovenije* republishes)
 (`calculations.md`). There is no total in the XML.
 
 **Rows the form cannot hold.** One payment is one row. A payment that is zero or negative (for
@@ -908,19 +924,22 @@ The application writes only two:
   banks, which these brokers did not hold for the customer. Unconfirmed: ask FURS
   (`sd.fu@gov.si`) before the beta, and change the code if the answer differs.
 
-**Source country.** The instruction says the source country is visible from the ISIN. For a
-coupon the two-letter ISIN prefix fills `Country2` and is shown to the user. A prefix that is not
-a country (`XS`, `EU`) needs `income_details_required`. The prefix never fills the payer's
-country, residence or tax treatment (see "Payer lists, settled Slovenian tax and foreign-tax
-relief"). For cash interest `Country2` is the payer's country from the verified payer data.
+**Source country.** `Country2` is the country code of the verified payer data (the payer's
+country), for a coupon and for cash interest alike. The ISIN prefix is never used: it is not
+always a country (`XS`, `EU`) and does not prove the payer's country, residence or tax treatment
+(see "Payer lists, settled Slovenian tax and foreign-tax relief"). When the payer data has no
+country, the row is still made without `Country2`, and the result warns the user to complete it
+in eDavki.
 
-**Payer facts.** `Name`, `Address`, `Country` and `IdentificationNumber` are required for a
-foreign payer. They come from the verified payer resource or from the user, each with a source.
-A missing fact gives `income_details_required` for the form, not an empty element.
+**Payer facts.** `Name`, `Address`, `Country` and `IdentificationNumber` are required by the
+instructions for a foreign payer. They come from the verified payer resource. A missing fact is
+left out of the row and the result warns the user to complete it in eDavki; the form is still
+made, as for dividends. The payer of broker cash interest is the broker, whose facts are known
+(`broker_payers.csv`).
 
-**Foreign tax.** A blank source tax means unknown, so the row needs `ForeignTax` from the user:
-`income_details_required`. For broker interest the question is asked once per broker and year
-("no tax was withheld on this interest"), and a yes writes `0` on every row. The form
+**Foreign tax.** A blank source tax means no tax was paid: the row gets `ForeignTax` `0`, without
+a question. A bond coupon with a blank tax gets the same warning as a dividend (tax may have been
+withheld); blank cash interest tax gives none. The form
 instructions require evidence for a foreign-tax deduction (amount, base, final and actually
 paid); the result lists it, and XML generation does not mean it was attached.
 
@@ -1002,15 +1021,21 @@ Tests based on this document must prove that:
 - unresolved evidence from an excluded item keeps dependent losses awaiting input and updates the
   exclusion choice when the affected ISIN list changes;
 - supported income categories route to their documented forms and exclusions remain visible;
-- verified settled Slovenian withholding excludes only the relevant income payment, while a
-  company-list match without payment evidence does not establish settlement;
+- a payment of a payer with the residence country `SI` is left out of the form and listed in
+  `excludedItems` as `slovenian_tax_settled` without payment evidence, while its capital trades
+  stay, and an ISIN prefix `SI` alone does not make a payer Slovenian;
 - company/ETF catalogue matches prefill verified facts, preserve provenance and work offline;
-- missing, stale or conflicting catalogue facts use the income-details flow;
+- a catalogue revision that changes after the user picked or confirmed an entry invalidates that
+  decision;
 - foreign-tax claims preserve gross income and actual investor-level tax, require the relevant
   evidence, and never infer a treaty exemption from list membership;
 - an unresolved requested exemption needs input until supported or explicitly withdrawn;
 - exactly EUR 1,000 of qualifying interest does not require a return;
-- external deposit interest can move an imported total above the filing threshold;
+- the answer "yes" to the question about other banks makes Doh-DHO from imported interest at or below EUR 1,000, "no" gives `no_data`, an unanswered question leaves `needs_input`, and a total above EUR 1,000 or equal to zero asks nothing;
+- a payer that is not found still gives an income row with empty payer facts and a warning;
+- a payer with several disagreeing entries offers a pick and a skip: a pick uses that entry's
+  facts; a skip or no answer gives empty facts and the warning, and the report is still made;
+- a blank income tax gives a foreign tax of 0 (a warning for dividends and coupons only);
 - pre-licence TR interest and IBKR cash interest do not receive the deposit allowance;
 - bond coupons have their own fixtures and subtype within the shared Doh-Obr result;
 - bond-income errors safely isolated to ISINs offer explicit exclusion from Doh-Obr or failure of
