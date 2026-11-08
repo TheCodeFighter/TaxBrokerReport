@@ -148,7 +148,7 @@ TEST(TaxClassifierTest, SharesAndFundUnitsNeedNoQuestionAndStayInCapitalGains) {
     EXPECT_TRUE(run.mLast.mLeftOutIsins.empty());
 }
 
-TEST(TaxClassifierTest, BondTradesOfTheYearAreOneExcludedItemWithAWarning) {
+TEST(TaxClassifierTest, BondTradesOfTheYearAreOneExcludedItemWithoutAWarning) {
     MergedStatement statement;
 
     // 1000 units bought in 2024 (not the selected year), 400 bought and 250 sold in 2025.
@@ -184,11 +184,8 @@ TEST(TaxClassifierTest, BondTradesOfTheYearAreOneExcludedItemWithAWarning) {
     EXPECT_EQ(run.mLast.mLeftOutIsins, (std::set<Isin>{"XX0000000001"}));
     EXPECT_TRUE(run.mLast.mRequests.empty());
 
-    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::TaxCategoryNotReported);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey,
-              MessageKey::TaxCategoryNotReportedDebtSecurity);
+    // A tax rule leaves the bond out on purpose: no warning.
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 
     ASSERT_EQ(run.result().mExcludedItems.size(), 1U);
 
@@ -199,7 +196,7 @@ TEST(TaxClassifierTest, BondTradesOfTheYearAreOneExcludedItemWithAWarning) {
     EXPECT_EQ(item.mReason, ExcludedReason::DebtSecurity);
     EXPECT_TRUE(item.isTaxRule());
     EXPECT_EQ(item.mClassLabels, std::vector<std::string>{"BOND"});
-    EXPECT_EQ(item.mDiagnosticIds, std::vector<std::string>{"diagnostic-0001"});
+    EXPECT_TRUE(item.mDiagnosticIds.empty());
     EXPECT_EQ(item.mSources.size(), 2U); // the 2025 purchase and the 2025 sale only
 
     ASSERT_TRUE(item.mBond.has_value());
@@ -333,7 +330,7 @@ TEST(TaxClassifierTest, BondUnitsThatDoNotFitGiveAnItemWithoutUnitFacts) {
     EXPECT_FALSE(run.result().mExcludedItems.at(0).mBond.has_value());
 }
 
-TEST(TaxClassifierTest, CryptoTradesOfTheYearAreOneExcludedItemWithAWarning) {
+TEST(TaxClassifierTest, CryptoTradesOfTheYearAreOneExcludedItemWithoutAWarning) {
     MergedStatement statement;
 
     statement.mPresentation.mTradeInstruments = {{
@@ -361,9 +358,8 @@ TEST(TaxClassifierTest, CryptoTradesOfTheYearAreOneExcludedItemWithAWarning) {
 
     EXPECT_EQ(run.mLast.mLeftOutIsins, (std::set<Isin>{"XX0000000001"}));
 
-    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey, MessageKey::TaxCategoryNotReportedCrypto);
+    // A tax rule leaves the crypto asset out on purpose: no warning.
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 
     ASSERT_EQ(run.result().mExcludedItems.size(), 1U);
 
@@ -808,8 +804,7 @@ TEST(TaxClassifierTest, BondRowsOutsideTheYearAreNotCountedAndTheEarliestMaturit
     EXPECT_EQ(item.mBond->mMaturityDate, day("2025-08-14"));
     EXPECT_EQ(item.mSources.size(), 3U); // rows 3, 4 and 5
 
-    // The first date of the events is the warning's date: the purchase on 2025-02-03.
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mTaxDate, day("2025-02-03"));
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 }
 
 TEST(TaxClassifierTest, CryptoRowsOutsideTheYearGiveNoItem) {

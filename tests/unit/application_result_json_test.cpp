@@ -1878,8 +1878,7 @@ TEST(ApplicationResultJsonTest, ExcludedItemsWriteTheirCategoryReasonBasisAndBon
                      .mBond = BondExclusionFacts{.mBoughtUnits = 100'000'000'000, // 1000 units
                                                  .mSoldUnits = 25'000'000'000,    // 250 units
                                                  .mMaturedUnits = 75'000'000'000, // 750 units
-                                                 .mMaturityDate = day("2025-08-14")},
-                     .mDiagnosticIds = {"diagnostic-0004"}},
+                                                 .mMaturityDate = day("2025-08-14")}},
         ExcludedItem{.mIsin = "XX0000000005",
                      .mName = "Synthetic Coin",
                      .mCategory = ExcludedCategory::Crypto,
@@ -1890,7 +1889,8 @@ TEST(ApplicationResultJsonTest, ExcludedItemsWriteTheirCategoryReasonBasisAndBon
                      .mCategory = ExcludedCategory::Unknown,
                      .mReason = ExcludedReason::UserChoice,
                      .mClassLabels = {"", "MYSTERY"},
-                     .mBond = BondExclusionFacts{}},
+                     .mBond = BondExclusionFacts{},
+                     .mDiagnosticIds = {"diagnostic-0004"}},
     };
 
     const auto json = serialize(result);
@@ -1903,7 +1903,8 @@ TEST(ApplicationResultJsonTest, ExcludedItemsWriteTheirCategoryReasonBasisAndBon
     EXPECT_EQ(items[0].at("reason"), "debt_security");
     EXPECT_EQ(items[0].at("basis"), "tax_rule");
     EXPECT_EQ(items[0].at("classLabels"), nlohmann::json::array({"BOND"}));
-    EXPECT_EQ(items[0].at("diagnosticIds"), nlohmann::json::array({"diagnostic-0004"}));
+    // A tax-rule item has no warning, so its list is empty.
+    EXPECT_EQ(items[0].at("diagnosticIds"), nlohmann::json::array());
     EXPECT_EQ(items[0].at("bond"),
               (nlohmann::json{{"boughtUnits", "1000.00000000"},
                               {"soldUnits", "250.00000000"},
@@ -1919,6 +1920,7 @@ TEST(ApplicationResultJsonTest, ExcludedItemsWriteTheirCategoryReasonBasisAndBon
     EXPECT_EQ(items[2].at("reason"), "user_choice");
     EXPECT_EQ(items[2].at("basis"), "user_choice");
     EXPECT_EQ(items[2].at("classLabels"), nlohmann::json::array({"", "MYSTERY"}));
+    EXPECT_EQ(items[2].at("diagnosticIds"), nlohmann::json::array({"diagnostic-0004"}));
     // A bond without a maturity date writes no date.
     EXPECT_FALSE(items[2].at("bond").contains("maturityDate"));
 }

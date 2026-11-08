@@ -219,11 +219,6 @@ constexpr std::array kDefinitions{
                       {}},
     MessageDefinition{
         MessageKey::TaxClassificationUnknownCancelled, "tax_classification_unknown.cancelled", {}},
-    MessageDefinition{MessageKey::TaxCategoryNotReportedDebtSecurity,
-                      "tax_category_not_reported.debt_security",
-                      {}},
-    MessageDefinition{
-        MessageKey::TaxCategoryNotReportedCrypto, "tax_category_not_reported.crypto", {}},
     MessageDefinition{
         MessageKey::TaxCategoryNotReportedUserChoice, "tax_category_not_reported.user_choice", {}},
     MessageDefinition{MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", {}},
@@ -409,16 +404,10 @@ constexpr std::array kDefinitions{
         MessageKey::ReferenceFileDuplicateBrokerCode, "reference_file.duplicate_broker_code", {}},
     MessageDefinition{MessageKey::DividendPayerNotFound, "dividend_payer_not_found", {}},
     MessageDefinition{MessageKey::ForeignTaxEvidenceRequired, "foreign_tax_evidence_required", {}},
-    MessageDefinition{MessageKey::TaxCategoryNotReportedSlovenianTaxSettled,
-                      "tax_category_not_reported.slovenian_tax_settled",
-                      {}},
     MessageDefinition{MessageKey::InterestPayerNotFound, "interest_payer_not_found", {}},
     MessageDefinition{MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
     MessageDefinition{
         MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
-    MessageDefinition{MessageKey::TaxCategoryNotReportedSlovenianTaxSettledInterest,
-                      "tax_category_not_reported.slovenian_tax_settled_interest",
-                      {}},
     MessageDefinition{MessageKey::TaxClassificationUnknownIncomeConfirmationRequired,
                       "tax_classification_unknown.income_confirmation_required",
                       {}},

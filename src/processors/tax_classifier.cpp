@@ -248,7 +248,19 @@ bool addUnits(Units& aTotal, Units aDelta) {
     return true;
 }
 
-/// The warning and the excluded item of an instrument that a tax rule or the user left out.
+/// The excluded item of an instrument that a tax rule left out on purpose. It has no warning: the
+/// summary lists it as information.
+void addRuleExclusion(TaxClassificationResult& aResult,
+                      ExcludedItem aItem,
+                      const EventFacts& aFacts) {
+    aResult.mExcludedItems.push_back(ExcludedItemInput{
+        .mItem = std::move(aItem),
+        .mSources = aFacts.mSources,
+        .mProcessingDiagnostics = {},
+    });
+}
+
+/// The warning and the excluded item of an instrument that the user left out.
 void addExclusion(TaxClassificationResult& aResult,
                   ExcludedItem aItem,
                   MessageKey aKey,
@@ -471,7 +483,7 @@ TaxClassifier::classify(const MergedStatement& aStatement,
         case AssetClass::PrivateFund:
             break;
         case AssetClass::Bond:
-            // The bond list below has its warning and item.
+            // The bond list below has its item.
             result.mLeftOutIsins.insert(instrument.mIsin);
             break;
         case AssetClass::Crypto: {
@@ -481,14 +493,13 @@ TaxClassifier::classify(const MergedStatement& aStatement,
 
             if (!facts.empty())
             {
-                addExclusion(result,
-                             ExcludedItem{.mIsin = instrument.mIsin,
-                                          .mName = instrument.mName,
-                                          .mCategory = ExcludedCategory::Crypto,
-                                          .mReason = ExcludedReason::CryptoNotReported,
-                                          .mClassLabels = classLabelsOf(instrument)},
-                             MessageKey::TaxCategoryNotReportedCrypto,
-                             facts);
+                addRuleExclusion(result,
+                                 ExcludedItem{.mIsin = instrument.mIsin,
+                                              .mName = instrument.mName,
+                                              .mCategory = ExcludedCategory::Crypto,
+                                              .mReason = ExcludedReason::CryptoNotReported,
+                                              .mClassLabels = classLabelsOf(instrument)},
+                                 facts);
             }
             break;
         }
@@ -500,17 +511,16 @@ TaxClassifier::classify(const MergedStatement& aStatement,
 
     for (const auto& [isin, bond] : bondsOf(aStatement, aLedger))
     {
-        addExclusion(result,
-                     ExcludedItem{.mIsin = isin,
-                                  .mName = bond.mName,
-                                  .mCategory = ExcludedCategory::Bond,
-                                  .mReason = ExcludedReason::DebtSecurity,
-                                  .mClassLabels = bond.mClassLabels,
-                                  .mBond = bond.mOverflow
-                                               ? std::nullopt
-                                               : std::optional<BondExclusionFacts>{bond.mUnits}},
-                     MessageKey::TaxCategoryNotReportedDebtSecurity,
-                     bond.mFacts);
+        addRuleExclusion(
+            result,
+            ExcludedItem{.mIsin = isin,
+                         .mName = bond.mName,
+                         .mCategory = ExcludedCategory::Bond,
+                         .mReason = ExcludedReason::DebtSecurity,
+                         .mClassLabels = bond.mClassLabels,
+                         .mBond = bond.mOverflow ? std::nullopt
+                                                 : std::optional<BondExclusionFacts>{bond.mUnits}},
+            bond.mFacts);
     }
 
     return result;

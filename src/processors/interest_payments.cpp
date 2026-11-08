@@ -25,7 +25,6 @@ const PayerForm kCouponForm{
     .mNotFoundCode = ProcessingDiagnosticCode::InterestPayerNotFound,
     .mNotFoundKey = MessageKey::InterestPayerNotFound,
     .mCategory = ExcludedCategory::Interest,
-    .mSlovenianKey = MessageKey::TaxCategoryNotReportedSlovenianTaxSettledInterest,
 };
 
 /// Where a payment goes.

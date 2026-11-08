@@ -681,7 +681,10 @@ report, which lists failed investments the user chose to leave out of one form. 
   (units out minus units back, never added up by order) and the `maturityDate` of the first
   maturity row, when there is one. Units are exact decimal strings with eight decimals; amounts
   are not listed;
-- safe `sources` and the `diagnosticIds` of its `tax_category_not_reported` warning.
+- safe `sources` and the `diagnosticIds` of its `tax_category_not_reported` warning. An entry that
+  follows a tax rule (`basis` `tax_rule`: a bond, crypto, a Slovenian payer or issuer) has no
+  warning, because the exclusion is on purpose, and its `diagnosticIds` is `[]`. An entry of a user
+  choice has its warning.
 
 A bond with no trade or maturity row, or a crypto instrument with no trade or corporate-action
 row, in the selected year is left out of capital gains without an entry or a warning. For a bond whose units overflow, `bond` is left out. A bond that only has maturity rows (no file gave its class) has an empty `classLabels`.
@@ -703,7 +706,7 @@ row, in the selected year is left out of capital gains without an entry or a war
         "maturityDate": "2025-08-14"
       },
       "sources": [],
-      "diagnosticIds": ["diagnostic-0003"]
+      "diagnosticIds": []
     }
   ]
 }
@@ -715,7 +718,7 @@ Codes are stable API values. New behavior gets a new code; an existing code must
 a different meaning.
 
 The parsing stage keeps the existing codes `unknown_row_type`, `unsupported_row_type`,
-`unsupported_asset_class`, `missing_field`, `invalid_value`, `inconsistent_value`, and
+`unsupported_asset_class` (a warning for a private-fund trade row only; a crypto row has none, a tax rule leaves it out), `missing_field`, `invalid_value`, `inconsistent_value`, and
 `parse_error`. It adds `field_count_mismatch`: a CSV record has a different number of fields than
 the header, so the row is skipped and no field of it is trusted. The message gives only the
 expected and found counts. It also adds `localized_number_format`, a file-level warning without row
@@ -838,7 +841,7 @@ Additional codes and their default scope are:
 | `unsupported_corporate_action` | Error for capital gains on one action that needs tax rules the app does not have; key `.merger` for a merger row. No question is asked. |
 | `tax_classification_unknown` | Error from the classification stage (never from the capital gates) for capital gains on an investment with an unknown asset class: key `.confirmation_required` while its classification request is open (linked to it), `.cancelled` after a cancel (no request). The parse and merge errors about the class of that investment stay errors but no longer block. The same code, with the keys `.income_confirmation_required` and `.income_cancelled`, is the error for one interest or dividend payment of unknown type; it affects Doh-Div (only with an ISIN), Doh-DHO and Doh-Obr. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
-| `tax_category_not_reported` | Warning explaining an applicable documented exemption or explicit classification exclusion, one per excluded item of capital gains: key `.debt_security` (a bond), `.crypto`, or `.user_choice` (the user left an unknown-class investment out). For Doh-Div it has key `.slovenian_tax_settled`: one per ISIN whose payer has the country `SI`, with the sources of its payments in the year. For Doh-Obr it has key `.slovenian_tax_settled_interest`: the same for the coupons of an issuer with the country `SI`. Its sources and date are those of the rows that gave the entry: trade, corporate-action or maturity rows in the selected year, or for an unknown class every trade and action row up to 31 December. Key `.user_choice_income`: the user left an interest or dividend payment of unknown type out of every form; key `.user_choice_income_missing_isin`: the same for a payment of a share, fund or bond that has no ISIN. |
+| `tax_category_not_reported` | Warning for an explicit classification exclusion by the user, never for a tax-rule exclusion (a bond, crypto, a Slovenian payer or issuer: those are listed in `excludedItems` without a warning). Key `.user_choice`: the user left an unknown-class investment out, with the sources of the trade and action rows up to 31 December. Key `.user_choice_income`: the user left an interest or dividend payment of unknown type out of every form; key `.user_choice_income_missing_isin`: the same for a payment of a share, fund or bond that has no ISIN. |
 | `dividend_payer_not_found` | Warning for Doh-Div, once per ISIN: no reference row gave the payer, or several rows disagree and the user skipped them or has not answered. The rows of the ISIN are made without payer facts and the user completes them in eDavki. Its sources are those of all the ISIN's payments in the year; with an open payer request it is linked to it. |
 | `foreign_tax_evidence_required` | Warning for Doh-Div, once per run when a row has a foreign tax above 0: the user attaches the evidence of the payment and the tax in eDavki; the app attaches nothing. The sources are those of the payments with tax. |
 | `official_rate_files_required` | Warning for the capital gains report: the years of the ECB rate files that the missing rates of investments sold in the year need. Key `.not_loaded` (`years`: the files are not loaded) or `.ends_early` (`years`: the files end before a trade day); `years` is a text such as `2023, 2024`. No ISIN or date; the sources are those of the trades behind the years. Given once per key after the per-ISIN `missing_exchange_rate` errors, and not given for a rate that no file can fix. |

@@ -977,7 +977,7 @@ TEST(DividendPaymentsTest, ASlovenianPayerHasNoRowAndIsAnExcludedItem) {
     EXPECT_TRUE(run.mLast.mReport.mRows.empty());
     EXPECT_TRUE(run.mLast.mUsedRates.empty());
 
-    // One excluded item for the ISIN, with the sources of both payments and its warning.
+    // One excluded item for the ISIN, with the sources of both payments.
     ASSERT_EQ(run.mLast.mExcludedItems.size(), 1U);
 
     const auto& item = run.mLast.mExcludedItems.at(0).mItem;
@@ -989,16 +989,13 @@ TEST(DividendPaymentsTest, ASlovenianPayerHasNoRowAndIsAnExcludedItem) {
     EXPECT_TRUE(item.isTaxRule());
     EXPECT_EQ(run.mLast.mExcludedItems.at(0).mSources.size(), 2U);
 
-    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::TaxCategoryNotReported);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey,
-              std::optional<MessageKey>{MessageKey::TaxCategoryNotReportedSlovenianTaxSettled});
-    EXPECT_EQ(run.mLast.mExcludedItems.at(0).mProcessingDiagnostics, std::vector<std::size_t>{0});
+    // A tax rule leaves the payer out on purpose: no warning.
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+    EXPECT_TRUE(run.mLast.mExcludedItems.at(0).mProcessingDiagnostics.empty());
 
-    // In the result the item lists its warning, and Doh-Div has no data (no XML in the input).
+    // In the result the item has no diagnostic, and Doh-Div has no data (no XML in the input).
     ASSERT_EQ(run.result().mExcludedItems.size(), 1U);
-    EXPECT_EQ(run.result().mExcludedItems.at(0).mDiagnosticIds.size(), 1U);
+    EXPECT_TRUE(run.result().mExcludedItems.at(0).mDiagnosticIds.empty());
     EXPECT_EQ(dividendStatus(run.result()), ReportStatus::NoData);
 }
 

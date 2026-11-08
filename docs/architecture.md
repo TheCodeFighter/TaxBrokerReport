@@ -892,8 +892,8 @@ the diagnostics and the rates it used.
   and an open question both give empty facts and the same warning. The question never stops a form:
   `ApplicationResultBuilder` lists it with Doh-Div but does not make the form `needs_input`.
 - **Slovenian payer.** A payer with the country `SI` has no row. One excluded item per ISIN
-  (`dividend`, `slovenian_tax_settled`) lists the sources of its payments, with its
-  `tax_category_not_reported.slovenian_tax_settled` warning. Its payments need no rate.
+  (`dividend`, `slovenian_tax_settled`) lists the sources of its payments, without a warning
+  (a tax rule leaves it out on purpose). Its payments need no rate.
 - **Per payment, then.** One `selectOfficialRates` call covers the gross and the foreign tax of
   every reported payment, each in its own currency (`calculations.md`). Its warnings and its errors
   go on as they are; the error of a pair without a rate blocks Doh-Div, and the payments with that
@@ -1245,10 +1245,10 @@ must never parse log messages.
     {
       "severity": "warning",
       "code": "unsupported_asset_class",
-      "message": "Asset class 'CRYPTO' was preserved, but its tax treatment is not supported yet.",
+      "message": "Asset class 'PRIVATE_FUND' was preserved, but its tax treatment is not supported yet.",
       "messageKey": "unsupported_asset_class.tax_unsupported",
       "messageParams": {
-        "assetClass": "CRYPTO"
+        "assetClass": "PRIVATE_FUND"
       },
       "source": {
         "file": "TransactionExport.csv",

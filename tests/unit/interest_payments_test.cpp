@@ -1102,7 +1102,7 @@ TEST(InterestPaymentsTest, ASlovenianIssuerHasNoRowAndIsAnExcludedItem) {
     EXPECT_EQ(item.mCategory, ExcludedCategory::Interest);
     EXPECT_EQ(item.mReason, ExcludedReason::SlovenianTaxSettled);
     EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::TaxCategoryNotReported),
-              1U);
+              0U);
     EXPECT_EQ(run.result().mExcludedItems.size(), 1U);
 }
 

@@ -614,8 +614,8 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                                                      rowMeta.mParsedValues,
                                                      context);
                 const auto assetClass = parseAssetClass(rowMeta.mParsedValues.mAssetClass);
-                if (wasParsed &&
-                    (assetClass == AssetClass::PrivateFund || assetClass == AssetClass::Crypto))
+                // Crypto has no warning: a tax rule leaves it out on purpose.
+                if (wasParsed && assetClass == AssetClass::PrivateFund)
                 {
                     context.addDiagnostic(
                         DiagnosticSeverity::Warning,
