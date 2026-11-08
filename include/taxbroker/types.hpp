@@ -272,8 +272,8 @@ struct InterestTransaction {
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
-    /// Who held the cash on the receipt date; absent for a bond coupon. Always set by the parser
-    /// for the interest on cash.
+    /// Who held the cash on the receipt date; absent for a bond coupon and for a row of unknown
+    /// type. Always set by the parser for the interest on cash.
     std::optional<CashHolder> mCashHolder;
 };
 

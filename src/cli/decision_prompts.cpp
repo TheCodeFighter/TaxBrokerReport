@@ -73,20 +73,6 @@ readLine(std::istream& aIn, std::ostream& aOut, std::string_view aPrompt) {
     return trimmed(line);
 }
 
-std::string_view brokerText(Broker aBroker) {
-    switch (aBroker)
-    {
-    case Broker::TradeRepublic:
-        return "Trade Republic";
-    case Broker::InteractiveBrokers:
-        return "Interactive Brokers";
-    case Broker::Unknown:
-        break;
-    }
-
-    return "an unknown broker";
-}
-
 void writeLossQuestion(std::ostream& aOut,
                        const DecisionRequest& aRequest,
                        const LossEligibilityQuestion& aQuestion) {
@@ -261,7 +247,7 @@ void writeRatioQuestion(std::ostream& aOut,
 
     for (const auto& source : aQuestion.mSources)
     {
-        aOut << "  Source: " << brokerText(source.mBroker);
+        aOut << "  Source: " << brokerName(source.mBroker);
 
         if (aQuestion.mAskSameEvent)
         {
@@ -671,7 +657,8 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
 
         if constexpr (std::is_same_v<Question, std::monostate> ||
                       std::is_same_v<Question, PayerChoiceQuestion> ||
-                      std::is_same_v<Question, DepositInterestTotalQuestion>)
+                      std::is_same_v<Question, DepositInterestTotalQuestion> ||
+                      std::is_same_v<Question, IncomeClassificationQuestion>)
         {
             // canAsk() keeps them out: the CLI makes no income rows yet.
             throw std::logic_error("this question cannot be asked");
@@ -761,6 +748,22 @@ std::string answerText(const AnswerValue& aAnswer) {
             return aValue.mAboveLimit ? "above EUR 1,000 with the other banks"
                                       : "not above EUR 1,000 with the other banks";
         }
+        else if constexpr (std::is_same_v<Value, IncomeTreatmentAnswer>)
+        {
+            switch (aValue.mTreatment)
+            {
+            case IncomeTreatment::Dividends:
+                return "a dividend (Doh-Div)";
+            case IncomeTreatment::BankDepositInterest:
+                return "bank-deposit interest (Doh-DHO)";
+            case IncomeTreatment::BrokerCashInterest:
+                return "interest on broker cash (Doh-Obr)";
+            case IncomeTreatment::BondCoupon:
+                break;
+            }
+
+            return "a bond coupon (Doh-Obr)";
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             return aValue.mPickedOption ? "payer row " + std::to_string(*aValue.mPickedOption + 1)
@@ -805,7 +808,8 @@ bool canAsk(const QuestionData& aData) {
             return true;
         }
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion> ||
-                           std::is_same_v<Question, DepositInterestTotalQuestion>)
+                           std::is_same_v<Question, DepositInterestTotalQuestion> ||
+                           std::is_same_v<Question, IncomeClassificationQuestion>)
         {
             // The CLI does not make income rows yet, so it has no prompt for these questions.
             return false;
@@ -949,6 +953,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
         {
             return "bank-deposit interest " + std::to_string(aQuestion.mYear);
+        }
+        else if constexpr (std::is_same_v<Question, IncomeClassificationQuestion>)
+        {
+            return investmentText(aQuestion.mIsin.value_or(""), aQuestion.mName) + ", payment on " +
+                   formatCalendarDate(aQuestion.mDate);
         }
         else
         {

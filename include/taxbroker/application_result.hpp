@@ -226,6 +226,43 @@ struct TaxClassificationQuestion {
     bool operator==(const TaxClassificationQuestion&) const = default;
 };
 
+enum class IncomeEventKind {
+    Interest,
+    Dividend,
+};
+
+/// What the user can say an income payment of unknown type is. A payment is never capital gains.
+enum class IncomeTreatment {
+    Dividends,
+    BankDepositInterest,
+    BrokerCashInterest,
+    BondCoupon
+};
+
+/// The question data of `tax_classification_required` for an interest or dividend payment of
+/// unknown type. One question per payment: payments of one instrument can be different things.
+struct IncomeClassificationQuestion {
+    IncomeEventKind mEventKind{};
+    std::optional<TransactionIdentity> mTransaction;
+    Date mDate;
+    std::string mName; ///< Blank when the file gave none.
+    std::optional<Isin> mIsin;
+    /// The class label of each row as the file gave it, sorted without repeats.
+    std::vector<std::string> mClassLabels;
+    Money mGrossAmount{};
+    Currency mCurrency{Currency::Unknown}; ///< Always set by the creator.
+
+    bool operator==(const IncomeClassificationQuestion&) const = default;
+
+    /// Whether the treatment can be offered: a dividend row and a coupon need an ISIN.
+    [[nodiscard]] bool offers(IncomeTreatment aTreatment) const {
+        const bool needsIsin =
+            aTreatment == IncomeTreatment::Dividends || aTreatment == IncomeTreatment::BondCoupon;
+
+        return !needsIsin || mIsin.has_value();
+    }
+};
+
 /// The question data of `quantity_correction_required`: one sale that needs a little more units
 /// than the earlier purchases left (less than 0.00000100), without proof that it is rounding.
 struct QuantityCorrectionQuestion {
@@ -292,7 +329,8 @@ using QuestionData = std::variant<std::monostate,
                                   TaxClassificationQuestion,
                                   QuantityCorrectionQuestion,
                                   PayerChoiceQuestion,
-                                  DepositInterestTotalQuestion>;
+                                  DepositInterestTotalQuestion,
+                                  IncomeClassificationQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -387,6 +425,14 @@ struct DepositInterestTotalAnswer {
     bool operator==(const DepositInterestTotalAnswer&) const = default;
 };
 
+/// The answer to an income classification question: what the payment is. The session accepts only
+/// a treatment the question offers.
+struct IncomeTreatmentAnswer {
+    IncomeTreatment mTreatment{}; ///< Always set by the creator.
+
+    bool operator==(const IncomeTreatmentAnswer&) const = default;
+};
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
@@ -397,7 +443,8 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  ExcludeFromReportsAnswer,
                                  QuantityCorrectionAnswer,
                                  PayerChoiceAnswer,
-                                 DepositInterestTotalAnswer>;
+                                 DepositInterestTotalAnswer,
+                                 IncomeTreatmentAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {

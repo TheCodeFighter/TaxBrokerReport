@@ -167,6 +167,7 @@ struct InterestIdentity {
     InterestType mType{InterestType::UnknownInterest};
     std::optional<Isin> mIsin;
     std::string mNameWithoutIsin;
+    Broker mBrokerWithoutIsin{Broker::Unknown}; ///< Cash interest of two brokers stays apart.
 };
 
 [[nodiscard]] int interestTypeRank(InterestType aType) {
@@ -209,7 +210,12 @@ struct InterestIdentityOrder {
             return aLeft.mIsin < aRight.mIsin;
         }
 
-        return aLeft.mNameWithoutIsin < aRight.mNameWithoutIsin;
+        if (aLeft.mNameWithoutIsin != aRight.mNameWithoutIsin)
+        {
+            return aLeft.mNameWithoutIsin < aRight.mNameWithoutIsin;
+        }
+
+        return aLeft.mBrokerWithoutIsin < aRight.mBrokerWithoutIsin;
     }
 };
 
@@ -542,8 +548,11 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
 }
 
 [[nodiscard]] bool sameEventFacts(const InterestRecord& aLeft, const InterestRecord& aRight) {
-    const bool sameInstrument =
-        aLeft.mIsin ? aLeft.mIsin == aRight.mIsin : !aRight.mIsin && aLeft.mName == aRight.mName;
+    const bool sameInstrument = aLeft.mIsin
+                                    ? aLeft.mIsin == aRight.mIsin
+                                    : !aRight.mIsin && aLeft.mName == aRight.mName &&
+                                          primarySource(aLeft.mEvent.mMetadata).mBroker ==
+                                              primarySource(aRight.mEvent.mMetadata).mBroker;
 
     return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) && sameInstrument &&
            aLeft.mInterestType == aRight.mInterestType &&
@@ -984,6 +993,8 @@ template <typename Event>
         .mType = aRecord.mInterestType,
         .mIsin = aRecord.mIsin,
         .mNameWithoutIsin = aRecord.mIsin ? std::string{} : aRecord.mName,
+        .mBrokerWithoutIsin =
+            aRecord.mIsin ? Broker::Unknown : primarySource(aRecord.mEvent.mMetadata).mBroker,
     };
 }
 
@@ -1014,6 +1025,11 @@ template <typename Event>
 } // namespace
 
 namespace taxbroker {
+
+void rebuildChronologicalOrder(MergedStatement& aStatement) {
+    aStatement.mChronologicalOrder.clear();
+    buildChronologicalOrder(aStatement);
+}
 
 StatementMergeResult
 DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) const {
@@ -1106,9 +1122,15 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
         {
             for (auto& event : sourceInstrument.mTransactions)
             {
+                // Interest on cash has no instrument name; an error names the broker instead.
+                const auto diagnosticName =
+                    sourceInstrument.mName.empty()
+                        ? std::string{brokerName(primarySource(event.mMetadata).mBroker)}
+                        : sourceInstrument.mName;
+
                 if (!normalizeAndValidateEvent(event,
                                                input->mSourceIndex,
-                                               sourceInstrument.mName,
+                                               diagnosticName,
                                                sourceInstrument.mIsin,
                                                mergeDiagnostics))
                 {

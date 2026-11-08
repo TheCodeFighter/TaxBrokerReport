@@ -1034,7 +1034,8 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
             return aQuestion.mName;
         }
         else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion> ||
-                           std::is_same_v<Question, PayerChoiceQuestion>)
+                           std::is_same_v<Question, PayerChoiceQuestion> ||
+                           std::is_same_v<Question, IncomeClassificationQuestion>)
         {
             return aQuestion.mName;
         }

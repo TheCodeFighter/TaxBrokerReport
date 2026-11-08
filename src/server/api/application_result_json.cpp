@@ -1,6 +1,7 @@
 #include "taxbroker/api/application_result_json.hpp"
 #include "json_strings.hpp"
 #include "taxbroker/application_result.hpp"
+#include "taxbroker/currency.hpp"
 #include "utils/numbered_id.hpp"
 #include "utils/numeric_util.hpp"
 
@@ -389,6 +390,23 @@ std::string unitsString(Units aUnits) {
     return formatFixedPoint(aUnits, UNITS_SCALE, kDecimals);
 }
 
+/// The answer for a treatment: a string, or the choice `other_interest` with its subtype.
+Json incomeTreatmentToJson(IncomeTreatment aTreatment) {
+    switch (aTreatment)
+    {
+    case IncomeTreatment::Dividends:
+        return "dividends";
+    case IncomeTreatment::BankDepositInterest:
+        return "bank_deposit_interest";
+    case IncomeTreatment::BrokerCashInterest:
+        return Json{{"choice", "other_interest"}, {"subtype", "broker_cash"}};
+    case IncomeTreatment::BondCoupon:
+        break;
+    }
+
+    return Json{{"choice", "other_interest"}, {"subtype", "bond_coupon"}};
+}
+
 /// A choice is a string; a ratio is an object with its reduced numbers, its effective date and
 /// the confirmed position after the action.
 Json answerToJson(const AnswerValue& aAnswer) {
@@ -430,6 +448,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
         else if constexpr (std::is_same_v<Value, DepositInterestTotalAnswer>)
         {
             return aValue.mAboveLimit ? "above_limit" : "not_above_limit";
+        }
+        else if constexpr (std::is_same_v<Value, IncomeTreatmentAnswer>)
+        {
+            return incomeTreatmentToJson(aValue.mTreatment);
         }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
@@ -634,6 +656,60 @@ Json payerCheckToJson(const PayerChoiceQuestion& aQuestion) {
     return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"options", options}};
 }
 
+/// The options the question offers: no dividends and no bond coupon without an ISIN.
+Json incomeOptionsToJson(const IncomeClassificationQuestion& aQuestion) {
+    Json options = Json::array();
+
+    if (aQuestion.offers(IncomeTreatment::Dividends))
+    {
+        options.push_back("dividends");
+    }
+
+    options.push_back("bank_deposit_interest");
+    options.push_back("other_interest");
+    options.push_back("exclude_from_supported_reports");
+
+    return options;
+}
+
+/// The subtypes of the choice `other_interest` that the question offers.
+Json incomeSubtypesToJson(const IncomeClassificationQuestion& aQuestion) {
+    Json subtypes = Json::array({"broker_cash"});
+
+    if (aQuestion.offers(IncomeTreatment::BondCoupon))
+    {
+        subtypes.push_back("bond_coupon");
+    }
+
+    return subtypes;
+}
+
+/// The question data of an income classification question: the payment as the file gave it.
+Json incomeCheckToJson(const IncomeClassificationQuestion& aQuestion) {
+    constexpr std::size_t kDecimals = 4;
+    const auto kind = aQuestion.mEventKind == IncomeEventKind::Dividend ? "dividend" : "interest";
+    Json check{{"eventKind", kind},
+               {"receiptDate", isoDate(aQuestion.mDate)},
+               {"name", aQuestion.mName},
+               {"classLabels", aQuestion.mClassLabels},
+               {"grossAmount", formatFixedPoint(aQuestion.mGrossAmount, MONEY_SCALE, kDecimals)},
+               {"currency", std::string{currencyCode(aQuestion.mCurrency)}}};
+
+    if (aQuestion.mIsin)
+    {
+        check["isin"] = *aQuestion.mIsin;
+    }
+    if (aQuestion.mTransaction)
+    {
+        check["transaction"] = Json{
+            {"broker", toString(aQuestion.mTransaction->mBroker)},
+            {"transactionId", aQuestion.mTransaction->mTransactionId},
+        };
+    }
+
+    return check;
+}
+
 /// The question data of a deposit interest total question: the year and the imported qualifying
 /// interest in EUR with four decimals.
 Json depositCheckToJson(const DepositInterestTotalQuestion& aQuestion) {
@@ -693,6 +769,13 @@ Json requestToJson(const DecisionRequest& aRequest) {
     if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aRequest.mData))
     {
         serialized["depositCheck"] = depositCheckToJson(*deposit);
+    }
+
+    if (const auto* income = std::get_if<IncomeClassificationQuestion>(&aRequest.mData))
+    {
+        serialized["options"] = incomeOptionsToJson(*income);
+        serialized["otherInterestSubtypes"] = incomeSubtypesToJson(*income);
+        serialized["incomeCheck"] = incomeCheckToJson(*income);
     }
 
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
@@ -758,7 +841,6 @@ std::string_view toString(ExcludedReason aReason) {
 Json excludedItemToJson(const ExcludedItem& aItem) {
     Json serialized{
         {"name", aItem.mName},
-        {"isin", aItem.mIsin},
         {"category", toString(aItem.mCategory)},
         {"reason", toString(aItem.mReason)},
         {"basis", aItem.isTaxRule() ? "tax_rule" : "user_choice"},
@@ -766,6 +848,12 @@ Json excludedItemToJson(const ExcludedItem& aItem) {
         {"sources", sourcesToJson(aItem.mSources)},
         {"diagnosticIds", aItem.mDiagnosticIds},
     };
+
+    // A payment the file gave no ISIN for has no isin key.
+    if (!aItem.mIsin.empty())
+    {
+        serialized["isin"] = aItem.mIsin;
+    }
 
     if (aItem.mBond)
     {
@@ -842,6 +930,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aDecision.mData))
     {
         serialized["depositCheck"] = depositCheckToJson(*deposit);
+    }
+
+    if (const auto* income = std::get_if<IncomeClassificationQuestion>(&aDecision.mData))
+    {
+        serialized["incomeCheck"] = incomeCheckToJson(*income);
     }
 
     serialized["answer"] = answerToJson(aDecision.mAnswer);

@@ -874,7 +874,8 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
                           std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
                           std::is_same_v<Answer, QuantityCorrectionAnswer> ||
                           std::is_same_v<Answer, PayerChoiceAnswer> ||
-                          std::is_same_v<Answer, DepositInterestTotalAnswer>);
+                          std::is_same_v<Answer, DepositInterestTotalAnswer> ||
+                          std::is_same_v<Answer, IncomeTreatmentAnswer>);
             // The session accepts only a ratio or a cancel for a ratio question.
             throw std::logic_error("Only a ratio or a cancel can answer a ratio question.");
         }

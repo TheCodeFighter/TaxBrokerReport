@@ -33,6 +33,8 @@ struct ReportingYearLedger {
     std::vector<StatementEventReference> mCapitalEvents;
     /// The prefix before 1 January; older sales/actions must also establish opening inventory.
     std::size_t mHistoricalCapitalEventCount{};
+    /// Positions in the merged statement of the run; the income classification stage may rewrite
+    /// dividends and interest later, and then these positions no longer match its statement.
     std::vector<StatementEventReference> mSelectedYearEvents;
     std::vector<StatementEventReference> mLossAnalysisEvents;
     /// Source sales only. Classification and unresolved errors still control final no_data status.
