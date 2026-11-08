@@ -1923,6 +1923,26 @@ TEST(ApplicationResultJsonTest, ExcludedItemsWriteTheirCategoryReasonBasisAndBon
     EXPECT_FALSE(items[2].at("bond").contains("maturityDate"));
 }
 
+TEST(ApplicationResultJsonTest, AnExcludedItemWithoutAnIsinWritesNoIsinKey) {
+    ApplicationResult result;
+
+    result.mExcludedItems = {
+        ExcludedItem{.mIsin = "",
+                     .mName = "Synthetic Payer",
+                     .mCategory = ExcludedCategory::Unknown,
+                     .mReason = ExcludedReason::UserChoice,
+                     .mClassLabels = {"STOCK"}},
+    };
+
+    const auto json = serialize(result);
+    const auto& items = json.at("excludedItems");
+
+    ASSERT_EQ(items.size(), 1U);
+    EXPECT_FALSE(items[0].contains("isin"));
+    EXPECT_EQ(items[0].at("name"), "Synthetic Payer");
+    EXPECT_EQ(items[0].at("category"), "unknown");
+}
+
 TEST(ApplicationResultJsonTest, APayerChoiceRequestListsTheReferenceRowsWithTheirSource) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mRequests = {RequestInput{
@@ -2122,6 +2142,125 @@ TEST(ApplicationResultJsonTest, RecordedDepositAnswersAreTwoStrings) {
     EXPECT_EQ(decisions[0].at("answer"), "above_limit");
     EXPECT_EQ(decisions[1].at("answer"), "not_above_limit");
     EXPECT_EQ(decisions[0].at("depositCheck").at("importedInterestEur"), "900.0000");
+}
+
+TEST(ApplicationResultJsonTest, AnIncomeClassificationRequestWithAnIsinOffersEveryTreatment) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+    input.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::TaxClassificationRequired,
+            .mAffectedReports = {ReportType::Dividends,
+                                 ReportType::BankDepositInterest,
+                                 ReportType::OtherInterest},
+            .mTaxDate = day("2025-03-10"),
+            .mIsin = "XX0000000001",
+            .mData =
+                IncomeClassificationQuestion{
+                    .mEventKind = IncomeEventKind::Interest,
+                    .mTransaction = TransactionIdentity{.mBroker = Broker::TradeRepublic,
+                                                        .mTransactionId = "synthetic-int-1"},
+                    .mDate = day("2025-03-10"),
+                    .mName = "Synthetic Payer",
+                    .mIsin = "XX0000000001",
+                    .mClassLabels = {"STOCK", "FUND"},
+                    .mGrossAmount = 120'000, // EUR 12.00
+                    .mCurrency = Currency::EUR},
+        }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "tax_classification_required");
+    EXPECT_EQ(request.at("options"),
+              (nlohmann::json::array({"dividends",
+                                      "bank_deposit_interest",
+                                      "other_interest",
+                                      "exclude_from_supported_reports"})));
+    EXPECT_EQ(request.at("otherInterestSubtypes"),
+              (nlohmann::json::array({"broker_cash", "bond_coupon"})));
+    // The class labels are sorted without repeats.
+    EXPECT_EQ(
+        request.at("incomeCheck"),
+        (nlohmann::json{{"eventKind", "interest"},
+                        {"receiptDate", "2025-03-10"},
+                        {"name", "Synthetic Payer"},
+                        {"classLabels", nlohmann::json::array({"FUND", "STOCK"})},
+                        {"grossAmount", "12.0000"},
+                        {"currency", "EUR"},
+                        {"isin", "XX0000000001"},
+                        {"transaction",
+                         {{"broker", "trade_republic"}, {"transactionId", "synthetic-int-1"}}}}));
+}
+
+TEST(ApplicationResultJsonTest,
+     AnIncomeClassificationRequestWithoutAnIsinOffersNoDividendOrCoupon) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+    input.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::TaxClassificationRequired,
+            .mAffectedReports = {ReportType::BankDepositInterest, ReportType::OtherInterest},
+            .mTaxDate = day("2025-03-10"),
+            .mData = IncomeClassificationQuestion{.mEventKind = IncomeEventKind::Dividend,
+                                                  .mDate = day("2025-03-10"),
+                                                  .mName = "",
+                                                  .mClassLabels = {""},
+                                                  .mGrossAmount = 50'000, // EUR 5.00
+                                                  .mCurrency = Currency::USD},
+        }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("options"),
+              (nlohmann::json::array(
+                  {"bank_deposit_interest", "other_interest", "exclude_from_supported_reports"})));
+    EXPECT_EQ(request.at("otherInterestSubtypes"), nlohmann::json::array({"broker_cash"}));
+    EXPECT_EQ(request.at("incomeCheck").at("eventKind"), "dividend");
+    EXPECT_EQ(request.at("incomeCheck").at("currency"), "USD");
+    EXPECT_FALSE(request.at("incomeCheck").contains("isin"));
+    EXPECT_FALSE(request.at("incomeCheck").contains("transaction"));
+}
+
+TEST(ApplicationResultJsonTest, RecordedIncomeAnswersAreStringsOrAChoiceWithASubtype) {
+    ApplicationResult result;
+    const IncomeClassificationQuestion question{.mEventKind = IncomeEventKind::Interest,
+                                                .mDate = day("2025-03-10"),
+                                                .mName = "Synthetic Payer",
+                                                .mIsin = "XX0000000001",
+                                                .mClassLabels = {"STOCK"},
+                                                .mGrossAmount = 120'000, // EUR 12.00
+                                                .mCurrency = Currency::EUR};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mData = question,
+                         .mAnswer = IncomeTreatmentAnswer{IncomeTreatment::Dividends}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mData = question,
+                         .mAnswer = IncomeTreatmentAnswer{IncomeTreatment::BankDepositInterest}},
+        RecordedDecision{.mId = "decision-0003",
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mData = question,
+                         .mAnswer = IncomeTreatmentAnswer{IncomeTreatment::BrokerCashInterest}},
+        RecordedDecision{.mId = "decision-0004",
+                         .mType = RequestType::TaxClassificationRequired,
+                         .mData = question,
+                         .mAnswer = IncomeTreatmentAnswer{IncomeTreatment::BondCoupon}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 4U);
+    EXPECT_EQ(decisions[0].at("answer"), "dividends");
+    EXPECT_EQ(decisions[1].at("answer"), "bank_deposit_interest");
+    EXPECT_EQ(decisions[2].at("answer"),
+              (nlohmann::json{{"choice", "other_interest"}, {"subtype", "broker_cash"}}));
+    EXPECT_EQ(decisions[3].at("answer"),
+              (nlohmann::json{{"choice", "other_interest"}, {"subtype", "bond_coupon"}}));
+    EXPECT_EQ(decisions[0].at("incomeCheck").at("grossAmount"), "12.0000");
 }
 
 TEST(ApplicationResultJsonTest, ASlovenianIssuerItemWritesItsInterestCategory) {

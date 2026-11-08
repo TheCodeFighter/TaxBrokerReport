@@ -637,6 +637,44 @@ BondRedemptionEvent makeBondRedemption(std::size_t aSourceIndex,
     };
 }
 
+TEST(DeterministicStatementMergerTest, KeepsCashInterestOfTwoBrokersApart) {
+    const auto makeCashInterest = [](std::size_t aSourceIndex, Broker aBroker) {
+        StatementMergeInput input;
+        input.mSourceIndex = aSourceIndex;
+        input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+            .mName = "",
+            .mInterestType = InterestType::BrokerInterest,
+            .mTransactions = {InterestTransaction{
+                .mMetadata = makeMetadata(aSourceIndex,
+                                          0,
+                                          makeDate(2024, 1, 4),
+                                          aBroker,
+                                          "interest.csv",
+                                          std::nullopt,
+                                          "interest-id"),
+                .mGrossAmount = 6000,
+                .mTaxPaid = 0,
+                .mCurrency = Currency::EUR,
+                .mTaxCurrency = Currency::EUR,
+                .mCashHolder = CashHolder::Bank,
+            }},
+        });
+
+        return input;
+    };
+    std::vector inputs{makeCashInterest(0, Broker::TradeRepublic),
+                       makeCashInterest(1, Broker::InteractiveBrokers)};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    // Same day, same amount, no name: only the broker tells the two payments apart.
+    const auto& instruments = result.mStatement.mPresentation.mInterestInstruments;
+
+    ASSERT_EQ(instruments.size(), 2U);
+    EXPECT_EQ(instruments[0].mTransactions.size(), 1U);
+    EXPECT_EQ(instruments[1].mTransactions.size(), 1U);
+}
+
 TEST(DeterministicStatementMergerTest, MergesTheSameBondMaturityOfTwoFilesIntoOneEvent) {
     std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
                                             StatementMergeInput{.mSourceIndex = 1}};

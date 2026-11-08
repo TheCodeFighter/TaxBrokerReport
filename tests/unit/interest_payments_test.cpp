@@ -175,7 +175,7 @@ TEST(InterestPaymentsTest, DepositInterestBelowTheAllowanceAsksAndWaitsForTheAns
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -235,7 +235,7 @@ TEST(InterestPaymentsTest, AnswerYesMakesTheDepositRowFromTheImportedInterestWit
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -294,7 +294,7 @@ TEST(InterestPaymentsTest, AnswerNoGivesNoRowsAndTheBelowThresholdReason) {
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -330,7 +330,7 @@ TEST(InterestPaymentsTest, ExactlyTheAllowanceStillAsksTheQuestion) {
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -366,7 +366,7 @@ TEST(InterestPaymentsTest, OneUnitOfTheFourthDecimalAboveTheAllowanceMakesTheRow
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -407,7 +407,7 @@ TEST(InterestPaymentsTest, AnAnswerForOneTotalDoesNotAnswerAnotherTotal) {
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -449,7 +449,7 @@ TEST(InterestPaymentsTest, TheSessionTakesOnlyYesOrNoForTheDepositQuestion) {
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -481,7 +481,7 @@ TEST(InterestPaymentsTest, TheCashHolderOfEachPaymentDecidesBetweenDohObrAndDohD
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -522,7 +522,7 @@ TEST(InterestPaymentsTest, ACashInterestPaymentWithoutACashHolderIsAProgrammingE
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -550,7 +550,7 @@ TEST(InterestPaymentsTest, OnlyPaymentsOfTheReportingYearCount) {
     statement.mPresentation.mInterestInstruments =
         {
             {
-                .mName = "Trade Republic",
+                .mName = "",
                 .mIsin = std::nullopt,
                 .mInterestType = InterestType::BrokerInterest,
                 .mTransactions =
@@ -649,7 +649,7 @@ TEST(InterestPaymentsTest, DepositInterestAboveTheAllowanceAndOtherInterestAreSe
                 },
         },
         {
-            .mName = "Trade Republic",
+            .mName = "",
             .mIsin = std::nullopt,
             .mInterestType = InterestType::BrokerInterest,
             .mTransactions =
@@ -720,7 +720,7 @@ TEST(InterestPaymentsTest, CashInterestOfAnotherBrokerDoesNotCountForTheAllowanc
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {
         {
-            .mName = "Trade Republic",
+            .mName = "",
             .mIsin = std::nullopt,
             .mInterestType = InterestType::BrokerInterest,
             .mTransactions =
@@ -770,7 +770,7 @@ TEST(InterestPaymentsTest, DepositTaxIsSummedAndABlankTaxCountsZeroWithoutADiagn
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -843,7 +843,7 @@ TEST(InterestPaymentsTest, ADepositPaymentWithoutARateGivesNoTotalNoQuestionAndA
     OfficialRateTable rates; // no file of 2025
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -879,7 +879,7 @@ TEST(InterestPaymentsTest, ADepositTotalThatConvertsToZeroAsksNothing) {
     addFile2025(rates);
     addRate(rates, "JPY", "2025-03-14", 16'000'000'000, 2); // 1 EUR = 160.00000000 JPY
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =
@@ -911,7 +911,7 @@ TEST(InterestPaymentsTest, APaymentOfZeroOrLessIsNeverARowOrPartOfTheTotal) {
     statement.mPresentation.mInterestInstruments =
         {
             {
-                .mName = "Trade Republic",
+                .mName = "",
                 .mIsin = std::nullopt,
                 .mInterestType = InterestType::BrokerInterest,
                 .mTransactions =
@@ -961,6 +961,17 @@ TEST(InterestPaymentsTest, APaymentOfZeroOrLessIsNeverARowOrPartOfTheTotal) {
     ASSERT_EQ(run.mLast.mDepositReport.mRows.size(), 1U);
     EXPECT_EQ(run.mLast.mDepositReport.mRows.at(0).mPayments.size(), 1U);
     EXPECT_EQ(run.mLast.mDepositReport.mRows.at(0).mInterest, 12'000'000);
+
+    // Interest on cash has no instrument name, so the warning names the broker.
+    const auto warning = std::find_if(
+        run.mLast.mDiagnostics.begin(),
+        run.mLast.mDiagnostics.end(),
+        [](const ProcessingDiagnostic& aDiagnostic) {
+            return aDiagnostic.mCode == ProcessingDiagnosticCode::InterestPaymentNotPositive;
+        });
+
+    ASSERT_NE(warning, run.mLast.mDiagnostics.end());
+    EXPECT_EQ(warning->mContext.mInstrumentName, std::optional<std::string>{"Trade Republic"});
 }
 
 TEST(InterestPaymentsTest, ACouponThatRoundsToZeroCentsIsNotARow) {
@@ -1196,7 +1207,7 @@ TEST(InterestPaymentsTest, DepositRowsOfTwoBrokersAreSortedByPayerName) {
                 },
         },
         {
-            .mName = "Trade Republic",
+            .mName = "",
             .mIsin = std::nullopt,
             .mInterestType = InterestType::BrokerInterest,
             .mTransactions =
@@ -1233,7 +1244,7 @@ TEST(InterestPaymentsTest, ADepositTotalThatOverflowsGivesNoTotalNoQuestionAndAn
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
-        .mName = "Trade Republic",
+        .mName = "",
         .mIsin = std::nullopt,
         .mInterestType = InterestType::BrokerInterest,
         .mTransactions =

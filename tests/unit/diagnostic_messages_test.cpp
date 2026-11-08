@@ -337,6 +337,18 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::TaxCategoryNotReportedSlovenianTaxSettledInterest,
          "tax_category_not_reported.slovenian_tax_settled_interest",
          {}},
+        {MessageKey::TaxClassificationUnknownIncomeConfirmationRequired,
+         "tax_classification_unknown.income_confirmation_required",
+         {}},
+        {MessageKey::TaxClassificationUnknownIncomeCancelled,
+         "tax_classification_unknown.income_cancelled",
+         {}},
+        {MessageKey::TaxCategoryNotReportedUserChoiceIncome,
+         "tax_category_not_reported.user_choice_income",
+         {}},
+        {MessageKey::TaxCategoryNotReportedUserChoiceIncomeMissingIsin,
+         "tax_category_not_reported.user_choice_income_missing_isin",
+         {}},
     };
 
     return messages;
@@ -348,6 +360,7 @@ const std::vector<std::string_view>& expectedTerms() {
         "row_kind.dividend",
         "row_kind.bond_interest",
         "row_kind.broker_interest",
+        "row_kind.unknown_interest",
         "row_kind.corporate_action",
         "row_kind.benefit",
         "row_kind.private_market",
@@ -398,8 +411,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 136U);
-    ASSERT_EQ(expectedMessages().size(), 136U);
+    ASSERT_EQ(definitions.size(), 140U);
+    ASSERT_EQ(expectedMessages().size(), 140U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -433,8 +446,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 136U);
-    EXPECT_EQ(keys.size(), 136U);
+    EXPECT_EQ(ids.size(), 140U);
+    EXPECT_EQ(keys.size(), 140U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -447,6 +460,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
     EXPECT_EQ(term::kRowKindDividend, "row_kind.dividend");
     EXPECT_EQ(term::kRowKindBondInterest, "row_kind.bond_interest");
     EXPECT_EQ(term::kRowKindBrokerInterest, "row_kind.broker_interest");
+    EXPECT_EQ(term::kRowKindUnknownInterest, "row_kind.unknown_interest");
     EXPECT_EQ(term::kRowKindCorporateAction, "row_kind.corporate_action");
     EXPECT_EQ(term::kRowKindBenefit, "row_kind.benefit");
     EXPECT_EQ(term::kRowKindPrivateMarket, "row_kind.private_market");
@@ -456,7 +470,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 144U); // 136 message keys and 8 terms.
+    ASSERT_EQ(table.size(), 149U); // 140 message keys and 9 terms.
 
     std::set<std::string> tableKeys;
 

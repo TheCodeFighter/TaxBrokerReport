@@ -2677,7 +2677,7 @@ TEST(TradeRepublicParserTest, GroupsBrokerInterestAndPreservesBondInterest) {
 
     const auto* brokerInterest = findInterestInstrument(statement, InterestType::BrokerInterest);
     ASSERT_NE(brokerInterest, nullptr);
-    EXPECT_EQ(brokerInterest->mName, "Trade Republic");
+    EXPECT_EQ(brokerInterest->mName, "");
     EXPECT_FALSE(brokerInterest->mIsin.has_value());
     ASSERT_EQ(brokerInterest->mTransactions.size(), 2U);
     EXPECT_EQ(brokerInterest->mTransactions[0].mGrossAmount, 12'300);
@@ -12443,7 +12443,7 @@ TEST(TradeRepublicParserTest, PreservesNativeCouponIdentitySeparatelyFromCashInt
     const auto* deposit = findInterestInstrument(result.mStatement, InterestType::BrokerInterest);
 
     ASSERT_NE(deposit, nullptr);
-    EXPECT_EQ(deposit->mName, "Trade Republic");
+    EXPECT_EQ(deposit->mName, "");
     EXPECT_FALSE(deposit->mIsin.has_value());
     ASSERT_EQ(deposit->mTransactions.size(), 1U);
     EXPECT_EQ(transactionId(deposit->mTransactions[0].mMetadata), cash.mTransactionId);
@@ -12495,7 +12495,10 @@ TEST(TradeRepublicParserTest, DoesNotTreatUnverifiedInstrumentInterestAsBankInte
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
-    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    // The row is kept as an interest payment of unknown type; its error stays.
+    ASSERT_EQ(rejected.mStatement.mInterestInstruments.size(), 1U);
+    EXPECT_EQ(rejected.mStatement.mInterestInstruments.front().mInterestType,
+              InterestType::UnknownInterest);
     EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
     EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
     ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
@@ -15959,10 +15962,17 @@ TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyASymbolAsCashInterest)
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
-    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    // The row is kept as an interest payment of unknown type; its error stays.
+    ASSERT_EQ(rejected.mStatement.mInterestInstruments.size(), 1U);
+    EXPECT_EQ(rejected.mStatement.mInterestInstruments.front().mInterestType,
+              InterestType::UnknownInterest);
     EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
     EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
-    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+    // The unknown subtype error, then the warning that the kept row has no name.
+    ASSERT_EQ(rejected.mDiagnostics.size(), 2U);
+    EXPECT_EQ(rejected.mDiagnostics[1].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(rejected.mDiagnostics[1].mCode, DiagnosticCode::MissingField);
+    EXPECT_EQ(rejected.mDiagnostics[1].mField, "name");
 
     const auto& error = rejected.mDiagnostics.front();
 
@@ -16019,7 +16029,10 @@ TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyANameAsCashInterest) {
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
-    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
+    // The row is kept as an interest payment of unknown type; its error stays.
+    ASSERT_EQ(rejected.mStatement.mInterestInstruments.size(), 1U);
+    EXPECT_EQ(rejected.mStatement.mInterestInstruments.front().mInterestType,
+              InterestType::UnknownInterest);
     EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
     EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
     ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
@@ -21619,9 +21632,111 @@ TEST(TradeRepublicParserTest, ARejectedInterestRowOfUnknownSubtypeHasTheUnknownI
 
     const ParseResult result = parseRows({row});
 
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    // The unknown subtype error, then the amount that is not a number.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
 
     EXPECT_EQ(result.mDiagnostics[0].mRowKind, ParsedRowKind::UnknownInterest);
+    EXPECT_EQ(result.mDiagnostics[1].mRowKind, ParsedRowKind::UnknownInterest);
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+}
+
+TEST(TradeRepublicParserTest, KeepsAnInterestRowOfUnknownClassWithIsinAsAnEvent) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2025-03-10T10:00:00.000Z",
+        .mDate = "2025-03-10",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "STOCK", // a share pays no interest: the type of the row is unknown
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "12.00",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    // The error stays: the classification stage takes it over.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnsupportedAssetClass);
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments[0];
+
+    EXPECT_EQ(instrument.mInterestType, InterestType::UnknownInterest);
+    EXPECT_EQ(instrument.mName, "Synthetic Test Share");
+    ASSERT_TRUE(instrument.mIsin.has_value());
+    EXPECT_EQ(*instrument.mIsin, "XX9000000001");
+
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const auto& payment = instrument.mTransactions[0];
+
+    EXPECT_EQ(payment.mGrossAmount, 120'000); // EUR 12.00 at 4 decimals
+    EXPECT_FALSE(payment.mTaxPaid.has_value());
+    EXPECT_FALSE(payment.mCashHolder.has_value());
+
+    ASSERT_EQ(payment.mInstrumentEvidence.size(), 1U);
+
+    EXPECT_EQ(payment.mInstrumentEvidence[0].mAssetClass, AssetClass::Stock);
+    EXPECT_EQ(payment.mInstrumentEvidence[0].mAssetClassLabel, "STOCK");
+}
+
+TEST(TradeRepublicParserTest, KeepsAnInterestRowOfUnknownClassWithoutIsinAsAnEvent) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2025-03-10T10:00:00.000Z",
+        .mDate = "2025-03-10",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "FUND",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "5.00",
+        .mFee = "",
+        .mTax = "0",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mInterestInstruments[0];
+
+    EXPECT_EQ(instrument.mInterestType, InterestType::UnknownInterest);
+    EXPECT_FALSE(instrument.mIsin.has_value());
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+    EXPECT_EQ(instrument.mTransactions[0].mGrossAmount, 50'000); // EUR 5.00 at 4 decimals
+    ASSERT_TRUE(instrument.mTransactions[0].mTaxPaid.has_value());
+    EXPECT_EQ(*instrument.mTransactions[0].mTaxPaid, 0); // an explicit zero tax
 }
 
 TEST(TradeRepublicParserTest, ARowOfUnknownTypeHasNoRowKind) {
