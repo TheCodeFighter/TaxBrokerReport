@@ -1436,7 +1436,7 @@ TEST(StatementMergerIntegrationTest, IdenticalBlankIncomeFactsDeduplicateWithout
 
     EXPECT_EQ(deposit.mInterestType, InterestType::BrokerInterest);
     EXPECT_FALSE(deposit.mIsin.has_value());
-    EXPECT_EQ(deposit.mName, "Trade Republic");
+    EXPECT_EQ(deposit.mName, "");
     ASSERT_EQ(deposit.mTransactions.size(), 1U);
 
     const auto& cashInterest = deposit.mTransactions.front();
@@ -1887,7 +1887,7 @@ TEST(StatementMergerIntegrationTest, RetainsDepositInterestWithoutFxWhileInvalid
 
     const auto& instrument = result.mStatement.mPresentation.mInterestInstruments.front();
 
-    EXPECT_EQ(instrument.mName, "Trade Republic");
+    EXPECT_EQ(instrument.mName, "");
     EXPECT_EQ(instrument.mInterestType, InterestType::BrokerInterest);
     EXPECT_FALSE(instrument.mIsin.has_value());
     ASSERT_EQ(instrument.mTransactions.size(), 1U);

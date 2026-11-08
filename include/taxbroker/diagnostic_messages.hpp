@@ -148,6 +148,10 @@ enum class MessageKey {
     InterestPaymentNotPositive,
     DepositInterestAddOtherBanks,
     TaxCategoryNotReportedSlovenianTaxSettledInterest,
+    TaxClassificationUnknownIncomeConfirmationRequired,
+    TaxClassificationUnknownIncomeCancelled,
+    TaxCategoryNotReportedUserChoiceIncome,
+    TaxCategoryNotReportedUserChoiceIncomeMissingIsin,
 };
 
 enum class MessageParamKind {
@@ -168,6 +172,7 @@ inline constexpr std::string_view kRowKindTrade = "row_kind.trade";
 inline constexpr std::string_view kRowKindDividend = "row_kind.dividend";
 inline constexpr std::string_view kRowKindBondInterest = "row_kind.bond_interest";
 inline constexpr std::string_view kRowKindBrokerInterest = "row_kind.broker_interest";
+inline constexpr std::string_view kRowKindUnknownInterest = "row_kind.unknown_interest";
 inline constexpr std::string_view kRowKindCorporateAction = "row_kind.corporate_action";
 inline constexpr std::string_view kRowKindBenefit = "row_kind.benefit";
 inline constexpr std::string_view kRowKindPrivateMarket = "row_kind.private_market";

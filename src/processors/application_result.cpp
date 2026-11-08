@@ -456,6 +456,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
     const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
     const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aQuestion.mData);
+    const auto* income = std::get_if<IncomeClassificationQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
@@ -465,7 +466,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
-        (classification != nullptr) != isClassificationType ||
+        ((classification != nullptr || income != nullptr) != isClassificationType) ||
         (quantity != nullptr) != isQuantityType || (payer != nullptr && !isIncomeDetailsType) ||
         (deposit != nullptr) != isDepositType)
     {
@@ -489,6 +490,11 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A deposit interest question needs a total above 0 and at "
                                     "most EUR 1,000.");
+    }
+
+    if (income != nullptr && income->mIsin && income->mIsin->empty())
+    {
+        throw std::invalid_argument("An income classification question has no ISIN or a real one.");
     }
 
     if (classification != nullptr && classification->mIsin.empty())
@@ -734,6 +740,14 @@ QuestionData normalizedData(QuestionData aData) {
     if (auto* classification = std::get_if<TaxClassificationQuestion>(&aData))
     {
         auto& labels = classification->mClassLabels;
+
+        std::sort(labels.begin(), labels.end());
+        labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
+    }
+
+    if (auto* income = std::get_if<IncomeClassificationQuestion>(&aData))
+    {
+        auto& labels = income->mClassLabels;
 
         std::sort(labels.begin(), labels.end());
         labels.erase(std::unique(labels.begin(), labels.end()), labels.end());

@@ -99,6 +99,10 @@ diagnosticStage(const StatementMergeDiagnostic& aDiagnostic) noexcept {
                : StatementDiagnosticStage::Merging;
 }
 
+/// Builds the chronological order of the statement again from its events, for a stage that moves
+/// or removes events.
+void rebuildChronologicalOrder(MergedStatement& aStatement);
+
 struct StatementMergeResult {
     MergedStatement mStatement;
     std::vector<StatementMergeDiagnostic> mDiagnostics;

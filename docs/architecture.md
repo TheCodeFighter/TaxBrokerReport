@@ -105,6 +105,12 @@ Preserve the tax date, source timestamp and complete source reference alongside 
 Withholding remains separate in `currency`. A blank tax stays blank in the parsed event (absent) and
 counts as no tax paid when the income form is built; an explicit zero is a zero.
 
+An interest row that is neither cash interest (blank class, symbol and name) nor a `BOND` coupon is
+kept as an interest payment of unknown type (`InterestType::UnknownInterest`, the ISIN only when
+the `symbol` is filled, the class label as evidence, no cash holder) and keeps the error
+`unsupported_asset_class.interest_mapping`. The income classification stage asks what it is and
+moves it to the form of the answer (`tax_rules.md`).
+
 An empty `fx_rate` never rejects otherwise valid foreign income. Store no broker rate, including
 when the foreign payment is supplied directly in `amount`/`currency`. Do not invent a unit rate
 or infer a rate from the local and original amounts. Direct EUR income without broker FX keeps

@@ -58,6 +58,13 @@ Broker brokerOf(const Payment& aPayment) {
     return primarySource(aPayment.mTransaction->mMetadata).mBroker;
 }
 
+/// What a person sees for the payment: the instrument's name, or the broker for interest on cash.
+std::string nameOf(const Payment& aPayment) {
+    const auto& name = aPayment.mInstrument->mName;
+
+    return name.empty() ? std::string{brokerName(brokerOf(aPayment))} : name;
+}
+
 /// The route of a payment by who holds the cash, or none for an interest type nothing handles yet.
 /// A payment on cash without a holder is a parser bug.
 std::optional<Route> routeOf(const InterestInstrument& aInstrument,
@@ -131,7 +138,7 @@ ProcessingDiagnostic notPositiveWarning(const Payment& aPayment) {
                             makeDiagnosticMessage(MessageKey::InterestPaymentNotPositive),
                             metadata.mSources,
                             metadata.mTaxDate,
-                            aPayment.mInstrument->mName,
+                            nameOf(aPayment),
                             aPayment.mInstrument->mIsin);
 }
 
@@ -174,7 +181,7 @@ std::map<Isin, IsinPayments> couponsByIsin(const std::vector<Payment>& aPayments
 
         if (inserted)
         {
-            group.mName = payment.mInstrument->mName;
+            group.mName = nameOf(payment);
             group.mFirstDate = metadata.mTaxDate;
         }
 
@@ -232,7 +239,7 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
                                         makeDiagnosticMessage(MessageKey::InterestPayerNotFound),
                                         std::move(sources),
                                         first.mMetadata.mTaxDate,
-                                        payments.front()->mInstrument->mName,
+                                        nameOf(*payments.front()),
                                         std::nullopt);
 
         warning.mContext.mAffectedReports.assign(reports.begin(), reports.end());
@@ -279,7 +286,7 @@ struct Amounts {
 std::optional<Amounts> convert(IncomeEurConverter& aConverter, const Payment& aPayment) {
     const auto& transaction = *aPayment.mTransaction;
     const auto& metadata = transaction.mMetadata;
-    const auto& name = aPayment.mInstrument->mName;
+    const auto name = nameOf(aPayment);
     const auto report = reportOf(aPayment.mRoute);
     const auto gross = aConverter.toEur(report,
                                         metadata,
@@ -350,7 +357,7 @@ bool addChecked(Money& aSum,
                                .mSources = metadata.mSources,
                                .mTaxDate = metadata.mTaxDate,
                                .mField = "amount",
-                               .mInstrumentName = aPayment.mInstrument->mName,
+                               .mInstrumentName = nameOf(aPayment),
                                .mIsin = std::nullopt}));
 
         return false;

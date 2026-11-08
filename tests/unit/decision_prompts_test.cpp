@@ -1676,4 +1676,100 @@ TEST(DecisionPromptsTest, TheDepositInterestAnswersAreListedInTheSummary) {
               "bank-deposit interest 2024: not above EUR 1,000 with the other banks");
 }
 
+/// An interest payment of unknown type of EUR 12.00 on 2025-03-10.
+DecisionQuestion incomeQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::TaxClassificationRequired,
+        .mAffectedReports = {ReportType::Dividends,
+                             ReportType::BankDepositInterest,
+                             ReportType::OtherInterest},
+        .mIsin = "XX0000000001",
+        .mData = IncomeClassificationQuestion{.mEventKind = IncomeEventKind::Interest,
+                                              .mDate = day(2025, 3, 10),
+                                              .mName = "Synthetic Payer",
+                                              .mIsin = "XX0000000001",
+                                              .mClassLabels = {"STOCK"},
+                                              .mGrossAmount = 120'000, // EUR 12.00
+                                              .mCurrency = Currency::EUR},
+    };
+}
+
+TEST(DecisionPromptsTest, AnIncomeClassificationQuestionIsNotAskedInTheTerminalYet) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({incomeQuestion()}));
+
+    const auto output = ask(session, "1\n");
+
+    EXPECT_FALSE(cli::canAsk(incomeQuestion().mData));
+    EXPECT_EQ(output, "");
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionPromptsTest, ADividendAnswerIsListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({incomeQuestion()}));
+
+    const auto rejections = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = IncomeTreatmentAnswer{IncomeTreatment::Dividends},
+    }});
+
+    ASSERT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000001 Synthetic Payer, payment on 2025-03-10: a dividend (Doh-Div)");
+}
+
+TEST(DecisionPromptsTest, ABankDepositAnswerIsListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({incomeQuestion()}));
+
+    const auto rejections = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = IncomeTreatmentAnswer{IncomeTreatment::BankDepositInterest},
+    }});
+
+    ASSERT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(
+        cli::answerLine(session.result().mDecisions[0]),
+        "XX0000000001 Synthetic Payer, payment on 2025-03-10: bank-deposit interest (Doh-DHO)");
+}
+
+TEST(DecisionPromptsTest, ABrokerCashAnswerIsListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({incomeQuestion()}));
+
+    const auto rejections = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = IncomeTreatmentAnswer{IncomeTreatment::BrokerCashInterest},
+    }});
+
+    ASSERT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(
+        cli::answerLine(session.result().mDecisions[0]),
+        "XX0000000001 Synthetic Payer, payment on 2025-03-10: interest on broker cash (Doh-Obr)");
+}
+
+TEST(DecisionPromptsTest, ABondCouponAnswerIsListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({incomeQuestion()}));
+
+    const auto rejections = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = IncomeTreatmentAnswer{IncomeTreatment::BondCoupon},
+    }});
+
+    ASSERT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000001 Synthetic Payer, payment on 2025-03-10: a bond coupon (Doh-Obr)");
+}
+
 } // namespace

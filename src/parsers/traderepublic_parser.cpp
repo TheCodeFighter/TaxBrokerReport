@@ -1203,14 +1203,16 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                                            std::vector<InterestInstrument>& aInstruments,
                                            const InterestType aInterestType,
                                            const RowContext& aContext) {
-    if (aInterestType == InterestType::UnknownInterest)
+    const bool isUnknown = aInterestType == InterestType::UnknownInterest;
+
+    // The error stays; the classification stage takes it over and asks what the row is.
+    if (isUnknown)
     {
         aContext.addDiagnostic(
             DiagnosticSeverity::Error,
             DiagnosticCode::UnsupportedAssetClass,
             makeDiagnosticMessage(MessageKey::UnsupportedAssetClassInterestMapping),
             "asset_class");
-        return;
     }
     if (aInterestType == InterestType::OtherInterest)
     {
@@ -1222,9 +1224,16 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
     }
 
     const bool isBond = aInterestType == InterestType::BondInterest;
-    const auto name = isBond ? aCsvRow["name"].get<std::string>() : "Trade Republic";
-    const auto isin = isBond ? aCsvRow["symbol"].get<std::string>() : std::string{};
-    const auto rowKind = isBond ? term::kRowKindBondInterest : term::kRowKindBrokerInterest;
+    const bool hasInstrument = isBond || isUnknown;
+    const auto classLabel = aCsvRow["asset_class"].get<std::string>();
+    // Interest on cash has no instrument and so no name; the merger keeps it apart by broker.
+    const auto name = hasInstrument ? aCsvRow["name"].get<std::string>() : std::string{};
+    const auto symbol = hasInstrument ? aCsvRow["symbol"].get<std::string>() : std::string{};
+    // Cash interest has no instrument; an unknown row may have a name only.
+    const std::optional<Isin> isin = symbol.empty() ? std::nullopt : std::optional<Isin>{symbol};
+    const auto rowKind = isBond      ? term::kRowKindBondInterest
+                         : isUnknown ? term::kRowKindUnknownInterest
+                                     : term::kRowKindBrokerInterest;
 
     const auto income = parseIncome(aCsvRow, rowKind, isBond, aContext);
 
@@ -1233,20 +1242,18 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    auto instrument =
-        std::find_if(aInstruments.begin(),
-                     aInstruments.end(),
-                     [&](const InterestInstrument& aInstrument) {
-                         return aInstrument.mInterestType == aInterestType &&
-                                (isBond ? aInstrument.mIsin == isin : aInstrument.mName == name);
-                     });
+    auto instrument = std::find_if(aInstruments.begin(),
+                                   aInstruments.end(),
+                                   [&](const InterestInstrument& aInstrument) {
+                                       return aInstrument.mInterestType == aInterestType &&
+                                              aInstrument.mIsin == isin &&
+                                              (isin || aInstrument.mName == name);
+                                   });
 
     if (instrument == aInstruments.end())
     {
         aInstruments.emplace_back(
-            InterestInstrument{.mName = name,
-                               .mIsin = isBond ? std::optional<Isin>{isin} : std::nullopt,
-                               .mInterestType = aInterestType});
+            InterestInstrument{.mName = name, .mIsin = isin, .mInterestType = aInterestType});
         instrument = std::prev(aInstruments.end());
     }
 
@@ -1263,6 +1270,11 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
     {
         evidence = aContext.instrumentEvidence(metadata, name, AssetClass::Bond, "BOND");
     }
+    else if (isUnknown)
+    {
+        evidence =
+            aContext.instrumentEvidence(metadata, name, parseAssetClass(classLabel), classLabel);
+    }
 
     instrument->mTransactions.emplace_back(InterestTransaction{
         .mMetadata = std::move(metadata),
@@ -1272,7 +1284,8 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         .mCurrency = income->mCurrency,
         .mTaxCurrency = income->mTaxCurrency,
         .mInstrumentEvidence = std::move(evidence),
-        .mCashHolder = isBond ? std::nullopt : std::optional{tradeRepublicCashHolder(taxDate)},
+        .mCashHolder =
+            hasInstrument ? std::nullopt : std::optional{tradeRepublicCashHolder(taxDate)},
     });
 }
 

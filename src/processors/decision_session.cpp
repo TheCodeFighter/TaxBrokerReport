@@ -64,6 +64,14 @@ namespace {
         {
             return std::holds_alternative<DepositInterestTotalAnswer>(aAnswer);
         }
+        else if constexpr (std::is_same_v<Data, IncomeClassificationQuestion>)
+        {
+            const auto* answer = std::get_if<IncomeTreatmentAnswer>(&aAnswer);
+
+            return (answer != nullptr && aData.offers(answer->mTreatment)) ||
+                   std::holds_alternative<ExcludeFromReportsAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
         else
         {
             static_assert(std::is_same_v<Data, CorporateActionRatioQuestion>);

@@ -21,6 +21,22 @@ enum class Broker {
     InteractiveBrokers,
 };
 
+/// The broker's name for a person: used in questions and in diagnostics for data that has no
+/// instrument of its own, such as interest on cash.
+[[nodiscard]] constexpr std::string_view brokerName(const Broker aBroker) {
+    switch (aBroker)
+    {
+    case Broker::TradeRepublic:
+        return "Trade Republic";
+    case Broker::InteractiveBrokers:
+        return "Interactive Brokers";
+    case Broker::Unknown:
+        break;
+    }
+
+    return "an unknown broker";
+}
+
 // Broker-reported tax date; never derive it from the normalized timestamp.
 using DayDuration = std::chrono::duration<std::int64_t, std::ratio<86400>>;
 using Date = std::chrono::time_point<std::chrono::system_clock, DayDuration>;
