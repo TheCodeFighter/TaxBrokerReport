@@ -696,8 +696,8 @@ recognized or different between rows (or files) gets one question, with one opti
 is the ISIN, the name and the class labels of its rows as the files gave them (a blank label stays
 blank), sorted without repeats; another label set is another question. It is asked for every
 unknown investment with a trade or corporate action up to 31 December of the selected year, a sale
-or not, because its class error blocks capital gains either way. Income events have no question
-yet.
+or not, because its class error blocks capital gains either way. Income payments have their own
+question, below.
 
 - `capital_gains` keeps the investment in FIFO and Doh-KDVP as shares or fund units, and the answer
   is listed among the recorded decisions.
@@ -710,6 +710,34 @@ yet.
 - Until it is answered, the question's own blocking error (key `.confirmation_required`) is linked
   to it, so capital gains is `needs_input`, while the investment's loss and ratio questions are
   still asked.
+
+**Implemented for income payments.** An interest row that is neither a cash interest row nor a
+bond coupon (its class is a share, a fund or any other label) is kept as an interest payment of
+unknown type, and so is a dividend of an instrument with any row whose class is not a share or a
+fund (blank, not recognized, a bond, crypto, a derivative or a private fund; one such row makes
+every dividend of that instrument unknown, because the rows disagree or are not shares). Each such
+payment dated in the selected year gets its own question, because payments of one instrument can
+be different things; payments with the same date, amount and facts are one question. The question
+data is the receipt date, the name, the ISIN (none when the file gave none), the broker and
+transaction ID when known, the class labels as the files gave them, and the gross amount and
+currency; a changed fact is another question, so an old answer never applies to it. The options
+are `dividends`, `bank_deposit_interest`, `other_interest` (with the subtype `broker_cash` or
+`bond_coupon`) and `exclude_from_supported_reports`, with no preselected choice. Without an ISIN,
+`dividends` and `bond_coupon` are not offered, because a Doh-Div row and a coupon need the ISIN.
+Income is never capital gains. An answer sends the payment through the rules of its form
+(payer by ISIN, a Slovenian payer excluded, the deposit allowance); `exclude_from_supported_reports`
+lists it in `excludedItems` (one entry per payment, without `isin` when the file gave none) with
+the reason `user_choice` and a warning `tax_category_not_reported` (key `.user_choice_income`; key
+`.user_choice_income_missing_isin` when the payment is of a share, fund or bond, which should have
+an ISIN, so the user checks the export). Until it is answered the question's error
+(key `.income_confirmation_required`) blocks every form the payment can belong to (Doh-Div,
+Doh-DHO and Doh-Obr, or only the last two without an ISIN), so they are `needs_input`. A cancel is
+not an exclusion: the error with the key `.income_cancelled` stays without a request and those
+forms fail. The parse error about the interest type of such a row stays an error but no longer
+blocks by itself. The payer of a payment answered as deposit or broker-cash interest is the
+broker that holds the cash, as for any other cash interest of that broker. A payment outside the
+selected year is not asked. Whether the tax of an answered payment was blank or an explicit zero
+is kept, and both mean no foreign tax.
 
 The parse and merge errors about the class of such an investment (a missing, unrecognized or
 conflicting class on a row it was built from, and the merger's class conflict of its ISIN) stay in
