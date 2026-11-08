@@ -1385,6 +1385,128 @@ TEST(ReportCommandTest, NewRunReplacesTheOldSummary) {
     EXPECT_EQ(folder.readOutput("summary_2024.txt"), result.mOut);
 }
 
+// Excluded items
+
+TEST(ReportCommandTest, ACryptoPurchaseIsListedAsATaxRuleExclusionWithoutAWarning) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-02-10T09:00:00Z,2024-02-10,DEFAULT,TRADING,BUY,CRYPTO,Synthetic Coin,XX0000000005,1,50,-50,,,EUR,,,,,synthetic-buy-2,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    // The share sale is written; the crypto purchase is only listed.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000005"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
+                         "Doh-KDVP; check whether a separate crypto return applies to you\n"));
+    EXPECT_TRUE(contains(result.mOut, "Errors: 0\n\nWarnings: 0\n"));
+}
+
+TEST(ReportCommandTest, ABondBoughtAndSoldInTheYearListsItsUnitsWithoutAMaturityDate) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-02-03T09:00:00Z,2024-02-03,DEFAULT,TRADING,BUY,BOND,Synthetic Bond,XS0000000001,400,1,-400,,,EUR,,,,,synthetic-bond-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,BOND,Synthetic Bond,XS0000000001,-250,1,250,,,EUR,,,,,synthetic-bond-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    // 400 units bought and 250 sold, none matured: the line ends after the units, with no
+    // maturity date.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XS0000000001 Synthetic Bond: bond, tax rule: debt security, only its "
+                         "interest is taxable; bought 400.0000, sold 250.0000, matured 0.0000 "
+                         "units\n"));
+    EXPECT_TRUE(contains(result.mOut, "Errors: 0\n\nWarnings: 0\n"));
+}
+
+TEST(ReportCommandTest, AMaturedBondListsItsMaturityDate) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-02-03T09:00:00Z,2025-02-03,DEFAULT,TRADING,BUY,BOND,Synthetic Bond,XS0000000001,1000,1,-1000,,,EUR,,,,,synthetic-bond-buy-1,,,,)",
+            R"(2025-08-14T15:01:00.000Z,2025-08-14,DEFAULT,CORPORATE_ACTION,FINAL_MATURITY,BOND,Synthetic Bond,XS0000000001,-1000,,,,,,,,,FINAL_MATURITY XS0000000001,synthetic-bond-maturity-001,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XS0000000001 Synthetic Bond: bond, tax rule: debt security, only its "
+                         "interest is taxable; bought 1000.0000, sold 0.0000, matured 1000.0000 "
+                         "units, maturity 2025-08-14\n"));
+}
+
+TEST(ReportCommandTest, AnUnknownClassAnsweredExcludeIsListedAsYourChoice) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,,Synthetic Mystery,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,,Synthetic Mystery,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    // The class is unknown and the user chose to leave the investment out: no tax rule applies.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded items (left out of the reports, not in the XML): 1\n"
+                         "  XX0000000001 Synthetic Mystery: unknown class, your choice\n"));
+}
+
 // Output failures (exit 2: no output file changed, nothing printed on stdout)
 
 TEST(ReportCommandTest, OutputFolderInsideAFileCannotBeCreated) {
