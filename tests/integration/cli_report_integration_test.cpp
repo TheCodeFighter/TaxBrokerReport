@@ -744,8 +744,8 @@ TEST(CliReportIntegrationTest, PrivateMarketSaleWithoutAnIsinIsListedByItsName) 
                          "2024-05-02, history.csv row 4\n"));
 }
 
-TEST(CliReportIntegrationTest, WarningOnlyRunStillGeneratesTheXml) {
-    // A crypto purchase of the year is left out by a tax rule with a warning of its own; the
+TEST(CliReportIntegrationTest, ATaxRuleExclusionStillGeneratesTheXml) {
+    // A crypto purchase of the year is left out by a tax rule, listed without a warning; the
     // stock sale is still written.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -771,21 +771,14 @@ TEST(CliReportIntegrationTest, WarningOnlyRunStillGeneratesTheXml) {
     EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
     EXPECT_TRUE(contains(result.mOut,
                          "Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml\n"));
+    // The tax rule leaves the crypto purchase out on purpose: an excluded item, no warning.
     EXPECT_TRUE(contains(result.mOut,
                          "Excluded items (left out of the reports, not in the XML): 1\n"
                          "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
-                         "Doh-KDVP\n"));
-    // A parser diagnostic names the file and row, but no investment or tax date.
-    EXPECT_TRUE(contains(result.mOut,
-                         "Errors: 0\n\nWarnings: 2\n"
-                         "  diagnostic-0001 unsupported_asset_class, history.csv row 3\n"
-                         "    Asset class 'CRYPTO' was preserved, but its tax treatment is not "
-                         "supported yet.\n"
-                         "  diagnostic-0002 tax_category_not_reported, XX0000000005 Synthetic "
-                         "Coin, 2024-02-10, history.csv row 3\n"
-                         "    Crypto assets are not part of the Doh-KDVP report, so this "
-                         "investment is left out. Check whether a separate crypto return applies "
-                         "to you.\n"));
+                         "Doh-KDVP; check whether a separate crypto return applies to you\n"));
+    EXPECT_TRUE(contains(result.mOut, "Errors: 0\n\nWarnings: 0\n"));
+    EXPECT_FALSE(contains(result.mOut, "tax_category_not_reported"));
+    EXPECT_FALSE(contains(result.mOut, "unsupported_asset_class"));
     EXPECT_FALSE(contains(folder.readOutput("Doh-KDVP_2024.xml"), "XX0000000005"));
 }
 
@@ -817,14 +810,8 @@ TEST(CliReportIntegrationTest, CryptoSaleIsLeftOutByATaxRule) {
     EXPECT_TRUE(contains(result.mOut,
                          "Excluded items (left out of the reports, not in the XML): 1\n"
                          "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
-                         "Doh-KDVP\n"));
-    // The two parser warnings come first, then the one of the tax rule, with both rows.
-    EXPECT_TRUE(contains(result.mOut,
-                         "Errors: 0\n\nWarnings: 3\n"
-                         "  diagnostic-0001 unsupported_asset_class, history.csv row 2\n"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "  diagnostic-0003 tax_category_not_reported, XX0000000005 Synthetic "
-                         "Coin, 2024-01-10, history.csv row 2 (+1 more)\n"));
+                         "Doh-KDVP; check whether a separate crypto return applies to you\n"));
+    EXPECT_TRUE(contains(result.mOut, "Errors: 0\n\nWarnings: 0\n"));
 }
 
 TEST(CliReportIntegrationTest, PrivateFundTradeSaleBlocksTheReport) {
@@ -4603,17 +4590,18 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "    FINAL_MATURITY_CANCELLED and REDEMPTION rows) are information "
                          "only. Bond sales and\n"
                          "    maturities are in no form; the summary adds them up per bond.\n"));
-    EXPECT_TRUE(contains(report.mOut,
-                         "Left out by a tax rule (not in the XML, a warning and an entry under "
-                         "\"Excluded items\" in\n"
-                         "the summary):\n"
-                         "  - Bonds: debt securities are no capital gain. Only their interest is "
-                         "reported (Doh-Obr,\n"
-                         "    not made yet). The summary shows the units bought, sold and matured "
-                         "in the year.\n"
-                         "  - Crypto assets: they are not part of Doh-KDVP. Check whether a "
-                         "separate crypto return\n"
-                         "    applies to you.\n"));
+    EXPECT_TRUE(
+        contains(report.mOut,
+                 "Left out by a tax rule (not in the XML, listed under \"Excluded items\" in "
+                 "the summary,\n"
+                 "without a warning):\n"
+                 "  - Bonds: debt securities are no capital gain. Only their interest is "
+                 "reported (Doh-Obr,\n"
+                 "    not made yet). The summary shows the units bought, sold and matured "
+                 "in the year.\n"
+                 "  - Crypto assets: they are not part of Doh-KDVP. Check whether a "
+                 "separate crypto return\n"
+                 "    applies to you.\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "  - An asset class that is missing, not recognized or differs between "
                          "rows (the question\n"
@@ -6272,7 +6260,7 @@ TEST(CliReportIntegrationTest, ACryptoSaleWithTooFewUnitsAndASplitRowIsNoErrorOr
     EXPECT_FALSE(contains(result.mOut, "incomplete_history"));
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
-                         "Doh-KDVP\n"));
+                         "Doh-KDVP; check whether a separate crypto return applies to you\n"));
 }
 
 TEST(CliReportIntegrationTest, ABuyOnlyCryptoYearStillHasNoSaleToReport) {
@@ -6303,7 +6291,7 @@ TEST(CliReportIntegrationTest, ABuyOnlyCryptoYearStillHasNoSaleToReport) {
                          "form\n"));
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
-                         "Doh-KDVP\n"));
+                         "Doh-KDVP; check whether a separate crypto return applies to you\n"));
 }
 
 TEST(CliReportIntegrationTest, HelpExplainsTheExclusionQuestion) {

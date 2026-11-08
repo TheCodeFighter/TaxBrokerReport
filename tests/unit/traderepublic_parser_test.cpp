@@ -2578,17 +2578,8 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
         EXPECT_EQ(instrument->mAssetClass, expectedAssetClass) << expectedTransactionId;
     }
 
-    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 1U);
-    const auto diagnostic =
-        std::find_if(parseResult.mDiagnostics.begin(),
-                     parseResult.mDiagnostics.end(),
-                     [](const ParseDiagnostic& aDiagnostic) {
-                         return aDiagnostic.mCode == DiagnosticCode::UnsupportedAssetClass;
-                     });
-    ASSERT_NE(diagnostic, parseResult.mDiagnostics.end());
-    EXPECT_EQ(diagnostic->mSeverity, DiagnosticSeverity::Warning);
-    ASSERT_TRUE(diagnostic->mTransactionId.has_value());
-    EXPECT_EQ(*diagnostic->mTransactionId, "synthetic-crypto-001");
+    // Crypto is left out by a tax rule on purpose, so its row has no asset class warning.
+    EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 0U);
 }
 
 TEST(TradeRepublicParserTest, ParsesLocalAndForeignIncomeCurrenciesExactly) {
@@ -5122,13 +5113,38 @@ TEST(TradeRepublicParserTest, RetainsTradeClassificationConflictForTheSameIsin) 
 }
 
 TEST(TradeRepublicParserTest, WarnsAboutUnsupportedAssetsOnlyAfterAValidTradeIsPreserved) {
-    SyntheticCsvRow malformedCrypto;
-    malformedCrypto.mAssetClass = "CRYPTO";
-    malformedCrypto.mPrice = "not-a-number";
+    SyntheticCsvRow malformedFund;
+    malformedFund.mAssetClass = "PRIVATE_FUND";
+    malformedFund.mPrice = "not-a-number";
 
-    const ParseResult parseResult = parseRows({malformedCrypto});
+    const ParseResult parseResult = parseRows({malformedFund});
     expectNoParsedRecords(parseResult);
     EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 0U);
+}
+
+TEST(TradeRepublicParserTest, ACryptoTradeIsPreservedWithoutAnAssetClassWarning) {
+    SyntheticCsvRow crypto;
+    crypto.mAssetClass = "CRYPTO";
+
+    const ParseResult parseResult = parseRows({crypto});
+
+    // A tax rule leaves crypto out on purpose, so the row is kept and nothing warns.
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.front().mAssetClass, AssetClass::Crypto);
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, APrivateFundTradeKeepsItsAssetClassWarning) {
+    SyntheticCsvRow privateFund;
+    privateFund.mAssetClass = "PRIVATE_FUND";
+
+    const ParseResult parseResult = parseRows({privateFund});
+
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageKey,
+              MessageKey::UnsupportedAssetClassTaxUnsupported);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageParams,
+              (std::vector<MessageParam>{textParam("assetClass", "PRIVATE_FUND")}));
 }
 
 struct InvalidRowCase {

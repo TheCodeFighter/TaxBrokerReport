@@ -119,10 +119,6 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "tax_classification_unknown.confirmation_required",
          {}},
         {MessageKey::TaxClassificationUnknownCancelled, "tax_classification_unknown.cancelled", {}},
-        {MessageKey::TaxCategoryNotReportedDebtSecurity,
-         "tax_category_not_reported.debt_security",
-         {}},
-        {MessageKey::TaxCategoryNotReportedCrypto, "tax_category_not_reported.crypto", {}},
         {MessageKey::TaxCategoryNotReportedUserChoice, "tax_category_not_reported.user_choice", {}},
         {MessageKey::MissingExchangeRateTrade, "missing_exchange_rate.trade", {}},
         {MessageKey::LossEligibilityUnresolvedConfirmationRequired,
@@ -328,15 +324,9 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::ReferenceFileDuplicateBrokerCode, "reference_file.duplicate_broker_code", {}},
         {MessageKey::DividendPayerNotFound, "dividend_payer_not_found", {}},
         {MessageKey::ForeignTaxEvidenceRequired, "foreign_tax_evidence_required", {}},
-        {MessageKey::TaxCategoryNotReportedSlovenianTaxSettled,
-         "tax_category_not_reported.slovenian_tax_settled",
-         {}},
         {MessageKey::InterestPayerNotFound, "interest_payer_not_found", {}},
         {MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
         {MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
-        {MessageKey::TaxCategoryNotReportedSlovenianTaxSettledInterest,
-         "tax_category_not_reported.slovenian_tax_settled_interest",
-         {}},
         {MessageKey::TaxClassificationUnknownIncomeConfirmationRequired,
          "tax_classification_unknown.income_confirmation_required",
          {}},
@@ -411,8 +401,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 140U);
-    ASSERT_EQ(expectedMessages().size(), 140U);
+    ASSERT_EQ(definitions.size(), 136U);
+    ASSERT_EQ(expectedMessages().size(), 136U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -446,8 +436,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 140U);
-    EXPECT_EQ(keys.size(), 140U);
+    EXPECT_EQ(ids.size(), 136U);
+    EXPECT_EQ(keys.size(), 136U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -470,7 +460,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 149U); // 140 message keys and 9 terms.
+    ASSERT_EQ(table.size(), 145U); // 136 message keys and 9 terms.
 
     std::set<std::string> tableKeys;
 

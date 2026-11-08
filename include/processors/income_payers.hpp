@@ -34,7 +34,6 @@ struct PayerForm {
     ProcessingDiagnosticCode mNotFoundCode{}; ///< The warning for a payer without facts.
     MessageKey mNotFoundKey{};                ///< Its message.
     ExcludedCategory mCategory{};             ///< The category of a Slovenian payer's item.
-    MessageKey mSlovenianKey{};               ///< The warning of that item.
 };
 
 /// Where the payer helpers put what they find.

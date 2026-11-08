@@ -175,8 +175,8 @@ Foreign currencies:
   need no rate. When a file is missing or ends too early, the summary lists every year to
   load, so one more run is enough.
 
-Left out by a tax rule (not in the XML, a warning and an entry under "Excluded items" in
-the summary):
+Left out by a tax rule (not in the XML, listed under "Excluded items" in the summary,
+without a warning):
   - Bonds: debt securities are no capital gain. Only their interest is reported (Doh-Obr,
     not made yet). The summary shows the units bought, sold and matured in the year.
   - Crypto assets: they are not part of Doh-KDVP. Check whether a separate crypto return
@@ -918,15 +918,24 @@ std::string_view categoryText(ExcludedCategory aCategory) {
     return "unknown class";
 }
 
-std::string_view reasonText(ExcludedReason aReason) {
+std::string_view reasonText(ExcludedReason aReason, ExcludedCategory aCategory) {
     switch (aReason)
     {
     case ExcludedReason::DebtSecurity:
+        // Known gap until future task: interest of a discount or zero-coupon bond on a sale or
+        // maturity is not calculated yet, and no warning says so.
         return "tax rule: debt security, only its interest is taxable";
     case ExcludedReason::CryptoNotReported:
-        return "tax rule: crypto is not part of Doh-KDVP";
+        return "tax rule: crypto is not part of Doh-KDVP; check whether a separate crypto "
+               "return applies to you";
     case ExcludedReason::SlovenianTaxSettled:
-        return "tax rule: a Slovenian payer deducts the tax itself";
+        if (aCategory == ExcludedCategory::Interest)
+        {
+            return "tax rule: a Slovenian issuer deducts the tax itself";
+        }
+
+        return "tax rule: a Slovenian payer deducts the tax itself; sales of its shares stay in "
+               "Doh-KDVP";
     case ExcludedReason::UserChoice:
         break;
     }
@@ -947,7 +956,7 @@ void writeExcludedItems(std::ostream& aOut, const ApplicationResult& aResult) {
     for (const auto& item : aResult.mExcludedItems)
     {
         aOut << "  " << investmentText(item.mIsin, item.mName) << ": "
-             << categoryText(item.mCategory) << ", " << reasonText(item.mReason);
+             << categoryText(item.mCategory) << ", " << reasonText(item.mReason, item.mCategory);
 
         if (item.mBond)
         {

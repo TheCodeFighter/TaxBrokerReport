@@ -176,23 +176,14 @@ void addSlovenianExclusion(const PayerForm& aForm,
                            const PayerSinks& aSinks,
                            const Isin& aIsin,
                            const IsinPayments& aPayments) {
-    const auto position = aSinks.mDiagnostics.size();
-
-    aSinks.mDiagnostics.push_back(incomeDiagnostic(aForm.mReport,
-                                                   DiagnosticSeverity::Warning,
-                                                   ProcessingDiagnosticCode::TaxCategoryNotReported,
-                                                   makeDiagnosticMessage(aForm.mSlovenianKey),
-                                                   aPayments.mSources,
-                                                   aPayments.mFirstDate,
-                                                   aPayments.mName,
-                                                   aIsin));
+    // A tax rule leaves the payer out on purpose: an item for the summary, no warning.
     aSinks.mExcludedItems.push_back(ExcludedItemInput{
         .mItem = ExcludedItem{.mIsin = aIsin,
                               .mName = aPayments.mName,
                               .mCategory = aForm.mCategory,
                               .mReason = ExcludedReason::SlovenianTaxSettled},
         .mSources = aPayments.mSources,
-        .mProcessingDiagnostics = {position},
+        .mProcessingDiagnostics = {},
     });
 }
 
