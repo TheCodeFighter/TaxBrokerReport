@@ -118,7 +118,9 @@ target_link_libraries(taxbroker_api
 # Keeping XML in a separate target keeps pugixml out of
 # the parser and tax-processing core.
 add_library(taxbroker_xml STATIC
+    xml/div_xml_writer.cpp
     xml/kdvp_xml_writer.cpp
+    xml/xml_common.cpp
 )
 
 target_include_directories(taxbroker_xml

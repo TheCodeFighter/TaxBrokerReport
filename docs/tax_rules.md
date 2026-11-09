@@ -856,6 +856,57 @@ confirmed metadata and treatment decisions as recorded answers while the app is 
 `diagnostics.md`, "Structured user-decision contract"); a changed source fact or reference-data
 revision makes a different question that needs a new answer.
 
+## Doh-Div form contract
+
+Checked on 9 November 2026 against the schema and the instructions FURS publishes (see "Sources").
+Only the schema and the instructions were read; no eDavki import was done.
+
+**Schema.** `resources/xml/schemas/Doh_Div_3.xsd`, SHA-256
+`9a78d1e56f3b964498002d559878cc7cf3058e51c772d04070a9a5c12e245ac3`, namespace
+`http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd`. It imports `EDP-Common-1.xsd` next to it.
+Every element is optional and the text fields have no length limit; the app writes the elements
+below and checks what the form needs.
+
+**Document.** `Envelope` holds `edp:Header` (as for Doh-KDVP), `edp:Signatures` and `body`. `body`
+has no `edp:bodyContent`: it holds `Doh_Div`, then one `Dividend` per payment, as siblings.
+`Doh_Div` has, in this order: `Period` (the year), `EmailAddress` and `PhoneNumber` when known,
+`IsResident`, `SelfReport` (`true` for a self-report). `ResidentCountry`, `Locked`, `WfTypeU` and
+`Notes` are not written.
+
+**One `Dividend` row per payment, in model order:**
+
+| Field | Source | Rule |
+| --- | --- | --- |
+| `Date` | Receipt date | `xs:date`, inside the reporting year. |
+| `PayerTaxNumber` | Slovenian tax number of the payer | Left out when not known; eight digits. |
+| `PayerIdentificationNumber` | The payer's tax or other number | Left out when not known. Never the ISIN. |
+| `PayerName`, `PayerAddress` | Payer facts | Left out when not known. |
+| `PayerCountry` | Payer's residence country | Left out when not known; two capital letters. |
+| `Type` | Kind of payment | `1` for every payment (see below). |
+| `Value` | Gross dividend in EUR | Two decimals, greater than zero after rounding. |
+| `ForeignTax` | Foreign tax in EUR | Two decimals, `0.00` when none was withheld. |
+| `SourceCountry` | Payer's country | Left out when not known; two capital letters. |
+| `ReliefStatement` | Treaty claim | `true` with a confirmed claim, otherwise `false`. The treaty text is not written. |
+
+**Numbers.** `Value` and `ForeignTax` are `Amount_Type`: a decimal with two fraction digits and no
+limit on the digits before them. They are rounded once from the four-decimal EUR amount, halves
+away from zero, and never reduced by each other. The gross is not netted against the tax.
+
+**Type code.** The instructions list 1 dividend, 2 hidden profit distribution, 3 profit on
+profit-sharing debt securities and 4 income from a distribution of an investment fund (except as
+interest). The app writes `1` for every payment, as the earlier app did. Unconfirmed: whether a
+distribution of a foreign fund or ETF is `4`; the FURS chatbot could not say. Ask FURS before
+the beta.
+
+**Rows the form cannot hold.** The writer never repairs a value. A gross that rounds to `0.00` or
+less, a negative tax, a date outside the year, a country that is not two capital letters, a payer
+tax number that is not eight digits and text that is not valid XML each stop the file with
+`xml_value_out_of_range` for Doh-Div and its field; the other forms are not affected.
+
+**Still open.** The type code of a fund distribution; `ReliefStatement` `false` and `SelfReport`
+in a draft import; a row without payer facts; the treaty text (`ReliefStatement` instructions
+ask for the paragraph and article). All are listed in `verification.md`.
+
 ## Interest forms and the annual deposit allowance
 
 Generate one result per FURS form: Doh-KDVP, Doh-Div, Doh-DHO and Doh-Obr. The last two are

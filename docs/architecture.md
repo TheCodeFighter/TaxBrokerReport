@@ -848,7 +848,8 @@ answer to the builder.
 The income models are in `include/taxbroker/income_report_models.hpp`. Like the Doh-KDVP model they
 are broker-neutral, hold no CSV, JSON, HTTP, frontend or XML fields and need no XML library. The
 taxpayer and the year are not repeated: a writer gets `ReportMetadata` beside the model of its form.
-The models only define the types; the processors that build them and the XML writers come later.
+The processors build the models. The Doh-Div writer (`DivXmlWriter`) exists; the Doh-DHO and Doh-Obr
+writers come later.
 
 - **Amounts.** Every amount is EUR `Money` at 4 decimals and is never rounded in the model; the
   writer rounds once to 2 decimals. A foreign payment and its foreign tax are converted before
@@ -1002,10 +1003,10 @@ not fit the form, one `xml_value_out_of_range` error per field and no XML.
 - **An empty model** (no lists) gives a valid document without `KDVPItem`; the caller decides that
   the form has no data and writes no file.
 
-The FURS schemas are in `resources/xml/schemas/`: the official `Doh_KDVP_9.xsd`, `Doh_Obr_2.xsd`
-and `EDP-Common-1.xsd` as downloaded, and in `snapshot-2026-05-12/` the older copy that the legacy
-app used. The unit and integration tests check every document they write against both with
-libxml2. The application does not link libxml2 and does not check the schema at run time.
+The FURS schemas are in `resources/xml/schemas/`: the official `Doh_KDVP_9.xsd`, `Doh_Div_3.xsd`,
+`Doh_Obr_2.xsd` and `EDP-Common-1.xsd` as downloaded, and in `snapshot-2026-05-12/` the older copy
+that the legacy app used. The unit and integration tests check every document they write against
+both with libxml2. The application does not link libxml2 and does not check the schema at run time.
 
 The integration tests also read the rows of each document back and run their own FIFO over them
 (`tests/support/kdvp_row_fifo.hpp`, no production code), which must give the gains and `F8`
