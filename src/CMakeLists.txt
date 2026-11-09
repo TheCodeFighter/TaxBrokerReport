@@ -60,6 +60,7 @@ add_library(taxbroker_core STATIC
     processors/fifo_matcher.cpp
     processors/income_classifier.cpp
     processors/income_payers.cpp
+    processors/income_reports.cpp
     processors/interest_payments.cpp
     processors/loss_eligibility.cpp
     processors/official_rate_selection.cpp

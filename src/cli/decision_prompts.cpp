@@ -2,6 +2,7 @@
 
 #include "cli_text.hpp"
 #include "taxbroker/api/application_result_json.hpp"
+#include "taxbroker/currency.hpp"
 #include "taxbroker/split_ratio.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/numeric_util.hpp"
@@ -665,6 +666,237 @@ std::optional<AnswerValue> readRatioAnswer(const CorporateActionRatioQuestion& a
     }
 }
 
+/// The question about the type of a bond that was sold or matured in the year.
+void writeBondTypeQuestion(std::ostream& aOut,
+                           const DecisionRequest& aRequest,
+                           const BondTypeQuestion& aQuestion) {
+    aOut << "Question " << aRequest.mId << ": the type of the bond "
+         << investmentText(aQuestion.mIsin, aQuestion.mName) << ": sold "
+         << unitsText(aQuestion.mSoldUnits) << " and matured " << unitsText(aQuestion.mMaturedUnits)
+         << " units in the year";
+
+    if (aQuestion.mMaturityDate)
+    {
+        aOut << " (maturity " << formatCalendarDate(*aQuestion.mMaturityDate) << ")";
+    }
+
+    aOut << ".\n"
+            "  ordinary: pays coupons; they are Doh-Obr rows.\n"
+            "  discount: issued below its nominal value (discount or zero-coupon); its interest\n"
+            "  on the sale or maturity is not calculated yet, so Doh-Obr is blocked.\n"
+            "  cancel: no answer, and no Doh-Obr.\n";
+}
+
+std::optional<AnswerValue> readBondTypeAnswer(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (ordinary, discount or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "ordinary")
+        {
+            return BondTypeAnswer{BondType::Ordinary};
+        }
+
+        if (word == "discount")
+        {
+            return BondTypeAnswer{BondType::DiscountOrZeroCoupon};
+        }
+
+        if (word == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        aOut << "Answer ordinary, discount or cancel.\n";
+    }
+}
+
+/// The question whether the year's deposit interest, with the other banks, is above the allowance.
+void writeDepositQuestion(std::ostream& aOut,
+                          const DecisionRequest& aRequest,
+                          const DepositInterestTotalQuestion& aQuestion) {
+    aOut
+        << "Question " << aRequest.mId << ": the bank-deposit interest imported for "
+        << aQuestion.mYear << " is EUR " << formatFixedPoint(aQuestion.mTotal, MONEY_SCALE, 2)
+        << ", not above the EUR 1,000 allowance.\n"
+        << "  Is your bank-deposit interest from all Slovenian and EU banks, with the interest of\n"
+           "  your other banks, above it? yes: make Doh-DHO from the imported interest.\n"
+           "  no: no Doh-DHO.\n";
+}
+
+std::optional<AnswerValue> readDepositAnswer(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (yes or no):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "yes")
+        {
+            return DepositInterestTotalAnswer{.mAboveLimit = true};
+        }
+
+        if (word == "no")
+        {
+            return DepositInterestTotalAnswer{.mAboveLimit = false};
+        }
+
+        aOut << "Answer yes or no.\n";
+    }
+}
+
+/// The question which of several reference rows is the payer of a dividend.
+void writePayerQuestion(std::ostream& aOut,
+                        const DecisionRequest& aRequest,
+                        const PayerChoiceQuestion& aQuestion) {
+    aOut << "Question " << aRequest.mId << ": the payer of "
+         << investmentText(aQuestion.mIsin, aQuestion.mName)
+         << " has several reference rows that differ:\n";
+
+    for (std::size_t index = 0; index < aQuestion.mOptions.size(); ++index)
+    {
+        const auto& option = aQuestion.mOptions[index];
+
+        aOut << "  " << index + 1 << ": " << option.mName << ", "
+             << (option.mAddress.empty() ? "(no address)" : option.mAddress) << ", "
+             << option.mCountry << '\n';
+    }
+
+    aOut << "  Enter the number of the row, or skip: the payer facts stay empty and you complete\n"
+            "  them in eDavki. The report is made either way.\n";
+}
+
+std::optional<AnswerValue>
+readPayerAnswer(const PayerChoiceQuestion& aQuestion, std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (a row number or skip):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "skip")
+        {
+            return PayerChoiceAnswer{.mPickedOption = std::nullopt};
+        }
+
+        const auto number = wholeNumber(word);
+
+        if (number && *number >= 1 &&
+            *number <= static_cast<std::int64_t>(aQuestion.mOptions.size()))
+        {
+            return PayerChoiceAnswer{.mPickedOption = static_cast<std::size_t>(*number - 1)};
+        }
+
+        aOut << "Answer a row number from 1 to " << aQuestion.mOptions.size() << " or skip.\n";
+    }
+}
+
+/// The question what an income payment of unknown type is.
+void writeIncomeClassificationQuestion(std::ostream& aOut,
+                                       const DecisionRequest& aRequest,
+                                       const IncomeClassificationQuestion& aQuestion) {
+    std::string labels;
+
+    for (const auto& label : aQuestion.mClassLabels)
+    {
+        labels += (labels.empty() ? "" : ", ") + (label.empty() ? std::string{"(blank)"} : label);
+    }
+
+    aOut << "Question " << aRequest.mId << ": the "
+         << (aQuestion.mEventKind == IncomeEventKind::Dividend ? "dividend" : "interest")
+         << " payment of " << investmentText(aQuestion.mIsin.value_or(""), aQuestion.mName)
+         << " on " << formatCalendarDate(aQuestion.mDate) << ", "
+         << formatFixedPoint(aQuestion.mGrossAmount, MONEY_SCALE, 2) << ' '
+         << currencyCode(aQuestion.mCurrency) << ", has a type that is missing, not recognized or\n"
+         << "  differs between rows (class in the files: " << (labels.empty() ? "none" : labels)
+         << "). What is it?\n";
+
+    if (aQuestion.offers(IncomeTreatment::Dividends))
+    {
+        aOut << "  dividends: a dividend (Doh-Div).\n";
+    }
+
+    aOut << "  bank_deposit_interest: interest on a bank deposit (Doh-DHO).\n"
+            "  broker_cash_interest: interest on cash held by a broker (Doh-Obr).\n";
+
+    if (aQuestion.offers(IncomeTreatment::BondCoupon))
+    {
+        aOut << "  bond_coupon: a bond coupon (Doh-Obr).\n";
+    }
+
+    aOut << "  exclude: leave it out of the reports; the summary lists it, and you report it\n"
+            "  yourself if it is taxable.\n"
+            "  cancel: no answer, and the forms it may belong to are blocked.\n";
+}
+
+std::optional<AnswerValue> readIncomeClassificationAnswer(
+    const IncomeClassificationQuestion& aQuestion, std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (one of the words above):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        if (word == "exclude")
+        {
+            return ExcludeFromReportsAnswer{};
+        }
+
+        std::optional<IncomeTreatment> treatment;
+
+        if (word == "dividends")
+        {
+            treatment = IncomeTreatment::Dividends;
+        }
+        else if (word == "bank_deposit_interest")
+        {
+            treatment = IncomeTreatment::BankDepositInterest;
+        }
+        else if (word == "broker_cash_interest")
+        {
+            treatment = IncomeTreatment::BrokerCashInterest;
+        }
+        else if (word == "bond_coupon")
+        {
+            treatment = IncomeTreatment::BondCoupon;
+        }
+
+        if (treatment && aQuestion.offers(*treatment))
+        {
+            return IncomeTreatmentAnswer{.mTreatment = *treatment};
+        }
+
+        aOut << "Answer one of the words above.\n";
+    }
+}
+
 /// Shows one question and reads its answer. Empty when the input has ended. Throws
 /// `std::logic_error` for a question that canAsk() keeps out.
 std::optional<AnswerValue>
@@ -672,14 +904,30 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
     const auto ask = [&aRequest, &aIn, &aOut](const auto& aQuestion) -> std::optional<AnswerValue> {
         using Question = std::decay_t<decltype(aQuestion)>;
 
-        if constexpr (std::is_same_v<Question, std::monostate> ||
-                      std::is_same_v<Question, PayerChoiceQuestion> ||
-                      std::is_same_v<Question, DepositInterestTotalQuestion> ||
-                      std::is_same_v<Question, IncomeClassificationQuestion> ||
-                      std::is_same_v<Question, BondTypeQuestion>)
+        if constexpr (std::is_same_v<Question, std::monostate>)
         {
-            // canAsk() keeps them out: the CLI makes no income rows yet.
+            // canAsk() keeps it out: a question without data cannot be answered.
             throw std::logic_error("this question cannot be asked");
+        }
+        else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
+        {
+            writePayerQuestion(aOut, aRequest, aQuestion);
+            return readPayerAnswer(aQuestion, aIn, aOut);
+        }
+        else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
+        {
+            writeDepositQuestion(aOut, aRequest, aQuestion);
+            return readDepositAnswer(aIn, aOut);
+        }
+        else if constexpr (std::is_same_v<Question, IncomeClassificationQuestion>)
+        {
+            writeIncomeClassificationQuestion(aOut, aRequest, aQuestion);
+            return readIncomeClassificationAnswer(aQuestion, aIn, aOut);
+        }
+        else if constexpr (std::is_same_v<Question, BondTypeQuestion>)
+        {
+            writeBondTypeQuestion(aOut, aRequest, aQuestion);
+            return readBondTypeAnswer(aIn, aOut);
         }
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
@@ -836,8 +1084,7 @@ bool canAsk(const QuestionData& aData) {
                            std::is_same_v<Question, IncomeClassificationQuestion> ||
                            std::is_same_v<Question, BondTypeQuestion>)
         {
-            // The CLI does not make income rows yet, so it has no prompt for these questions.
-            return false;
+            return true;
         }
         else
         {

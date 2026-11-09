@@ -9,6 +9,7 @@
 #include "processors/capital_report_gates.hpp"
 #include "processors/corporate_actions.hpp"
 #include "processors/fifo_matcher.hpp"
+#include "processors/income_reports.hpp"
 #include "processors/loss_eligibility.hpp"
 #include "processors/tax_classifier.hpp"
 #include "processors/tax_processor.hpp"
@@ -76,7 +77,7 @@ Options:
   --year YYYY        The tax year, 2000 to 9999.
   --taxpayer FILE    Your details as JSON (see "Taxpayer file" below).
   --self-report      Write a self-report (samoprijava) instead of an original return.
-  --no-input         Ask no questions: an open question blocks the report (see
+  --no-input         Ask no questions: an open question blocks its form (see
                      "Questions" below).
   --out DIR          The folder for the output files. It is created if it is missing.
   -h, --help         Show this help.
@@ -157,9 +158,19 @@ Questions:
     Doh-KDVP. A problem with a file, a row, the year or the XML is not solved this way. It
     comes after the questions of other investments and before those of the listed ones,
     which exclude drops.
+  - Income questions (dividends, interest and bond coupons). The command also prepares the
+    income of the year for Doh-Div, Doh-DHO and Doh-Obr, but does not write those forms
+    yet, so these questions never change the Doh-KDVP file or the exit code. They are:
+    the type of a bond sold or matured in the year (ordinary, or discount for a discount or
+    zero-coupon bond); whether your bank-deposit interest with your other banks is above
+    EUR 1,000; which of several reference rows is the payer of a dividend (a number, or
+    skip: you complete the payer in eDavki); what an income payment of unknown type is;
+    and, as for Doh-KDVP, whether to leave out the dividend or coupon investments with a
+    problem (exclude, fail or cancel).
   An answer that does not fit is explained and the question is asked again. cancel closes
-  a question without an answer, and the report is blocked. With --no-input, or when the
-  input ends (Ctrl-D), the open questions stay open: the report is blocked and the summary
+  a question without an answer, and the form it is about is blocked. With --no-input, or when
+  the input ends (Ctrl-D), the open questions stay open: the forms they are about are blocked
+  (a payer choice blocks nothing) and the summary
   lists them. The answers are used only in this run and are never saved, so the next run
   asks again.
 
@@ -1280,6 +1291,7 @@ struct CalculatedRun {
 ApplicationResultInput calculateReport(const ReportOptions& aOptions,
                                        const TaxpayerMetadata& aTaxpayer,
                                        const TaxProcessingResult& aPrepared,
+                                       const ReferenceCatalogue& aCatalogue,
                                        const OfficialRateTable& aRates,
                                        RunDecisions& aDecisions,
                                        std::optional<CalculatedRun>& aCalculated) {
@@ -1397,6 +1409,11 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
         }
     }
 
+    // The income stages come last, so nothing in the capital output or its question order moves.
+    // The models are not written yet; the questions and diagnostics of the stages are.
+    static_cast<void>(
+        prepareIncomeReports(input, statement, ledger, aCatalogue, aRates, aDecisions));
+
     aCalculated = CalculatedRun{
         .mBuilt = std::move(built),
         .mPreviewWithoutBlocked = std::move(previewWithoutBlocked),
@@ -1410,6 +1427,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 /// questions, writes the output files and the summary, and returns the exit code.
 int runReport(const ReportOptions& aOptions,
               const TaxpayerMetadata& aTaxpayer,
+              const ReferenceCatalogue& aCatalogue,
               const OfficialRateTable& aRates,
               const std::string& aDataSources,
               std::istream& aIn,
@@ -1434,7 +1452,13 @@ int runReport(const ReportOptions& aOptions,
     DecisionSession session;
 
     session.start([&](RunDecisions& aDecisions) {
-        return calculateReport(aOptions, aTaxpayer, prepared, aRates, aDecisions, calculated);
+        return calculateReport(aOptions,
+                               aTaxpayer,
+                               prepared,
+                               aCatalogue,
+                               aRates,
+                               aDecisions,
+                               calculated);
     });
 
     if (aOptions.mAskQuestions)
@@ -1736,6 +1760,7 @@ int runReportCommand(std::span<const std::string> aArguments,
 
     return runReport(options,
                      std::get<TaxpayerMetadata>(taxpayer),
+                     reference.mCatalogue.value(),
                      rates.mTable,
                      dataSources,
                      aIn,

@@ -104,6 +104,7 @@ add_executable(taxbroker_integration_tests
     integration/ecb_rate_file_integration_test.cpp
     integration/fifo_matching_integration_test.cpp
     integration/historical_scenario_integration_test.cpp
+    integration/income_reports_integration_test.cpp
     integration/kdvp_xml_integration_test.cpp
     integration/loss_eligibility_integration_test.cpp
     integration/reporting_year_integration_test.cpp
