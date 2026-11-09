@@ -142,8 +142,25 @@ std::optional<AnswerValue> readLossAnswer(std::istream& aIn, std::ostream& aOut)
     }
 }
 
+/// The form that a failure question is about. Another request type throws std::logic_error.
+std::string_view failureFormName(RequestType aType) {
+    switch (aType)
+    {
+    case RequestType::CapitalGainsFailureResolutionRequired:
+        return "Doh-KDVP";
+    case RequestType::DividendsFailureResolutionRequired:
+        return "Doh-Div";
+    case RequestType::OtherInterestFailureResolutionRequired:
+        return "Doh-Obr";
+    default:
+        throw std::logic_error("Only a failure question names its form.");
+    }
+}
+
 void writeFailureQuestion(std::ostream& aOut, const DecisionRequest& aRequest) {
-    aOut << "Question " << aRequest.mId << ": Doh-KDVP cannot include "
+    const auto form = failureFormName(aRequest.mType);
+
+    aOut << "Question " << aRequest.mId << ": " << form << " cannot include "
          << countText(aRequest.mInvestments.size(), "investment", "investments") << ":\n";
 
     for (const auto& investment : aRequest.mInvestments)
@@ -152,10 +169,10 @@ void writeFailureQuestion(std::ostream& aOut, const DecisionRequest& aRequest) {
              << reasonCodesText(investment) << '\n';
     }
 
-    aOut
-        << "  exclude: write Doh-KDVP without every investment listed here; they are not in the\n"
-           "  XML, and the summary lists them. fail: write no Doh-KDVP. cancel: no answer, and no\n"
-           "  Doh-KDVP.\n";
+    aOut << "  exclude: write " << form
+         << " without every investment listed here; they are not in the\n"
+            "  XML, and the summary lists them. fail: write no "
+         << form << ". cancel: no answer, and no\n  " << form << ".\n";
 }
 
 std::optional<AnswerValue> readFailureAnswer(std::istream& aIn, std::ostream& aOut) {

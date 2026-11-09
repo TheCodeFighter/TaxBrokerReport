@@ -1326,4 +1326,118 @@ TEST(FailureResolutionStageTest, ARejectedCouponRowSuppressesTheOtherInterestQue
     EXPECT_EQ(session.result().report(kOtherInterest).mStatus, ReportStatus::Failed);
 }
 
+/// An error of one dividend payment: a missing rate of the ISIN, Doh-Div only.
+ProcessingDiagnostic dividendError(const Isin& aIsin, const std::string& aName) {
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {kDividends},
+                     .mInstrumentName = aName,
+                     .mIsin = aIsin},
+        .mMessage = "Synthetic dividend error.",
+    };
+}
+
+TEST(FailureResolutionStageTest, TheDividendFormListsOnlyItsOwnErrorsInItsOwnRequestType) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        input.mProcessingDiagnostics = {dividendError("XX0000000010", "Synthetic Payer A"),
+                                        couponError("XX0000000028", "Synthetic Bond B")};
+
+        return input;
+    };
+    DecisionSession session;
+    std::vector<Isin> excluded;
+
+    start(session, input, excluded, kDividendsFailure);
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRequests.at(0).mType,
+              RequestType::DividendsFailureResolutionRequired);
+    EXPECT_EQ(session.result().mRequests.at(0).mAffectedReports,
+              std::vector<ReportType>{kDividends});
+    ASSERT_EQ(session.result().mRequests.at(0).mInvestments.size(), 1U);
+    EXPECT_EQ(session.result().mRequests.at(0).mInvestments.at(0).mIsin, "XX0000000010");
+}
+
+TEST(FailureResolutionStageTest, ARejectedDividendRowSuppressesTheDividendQuestion) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        input.mProcessingDiagnostics = {dividendError("XX0000000010", "Synthetic Payer A")};
+        input.mMergeDiagnostics = {SourcedParseDiagnostic{
+            .mSourceIndex = 0,
+            .mBroker = Broker::TradeRepublic,
+            .mDiagnostic = {.mSeverity = DiagnosticSeverity::Error,
+                            .mCode = DiagnosticCode::InvalidValue,
+                            .mSourceFile = "history.csv",
+                            .mRowIndex = 3,
+                            .mMessage = "Synthetic parse error.",
+                            .mRowKind = ParsedRowKind::Dividend},
+        }};
+
+        return input;
+    };
+    DecisionSession session;
+    std::vector<Isin> excluded;
+
+    start(session, input, excluded, kDividendsFailure);
+
+    EXPECT_TRUE(excluded.empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_EQ(session.result().report(kDividends).mStatus, ReportStatus::Failed);
+}
+
+TEST(FailureResolutionStageTest, ExcludingOneIsinFromDividendsAndCapitalResolvesEachFormsOwnError) {
+    // One ISIN has an error in Doh-KDVP (diagnostic 1) and one in Doh-Div (diagnostic 2). Only the
+    // capital choice is made: the dividend question stays open.
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        input.mProcessingDiagnostics = {
+            ProcessingDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+                .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                             .mAffectedReports = {kCapital},
+                             .mInstrumentName = "Synthetic Payer A",
+                             .mIsin = "XX0000000010"},
+                .mMessage = "Synthetic capital error.",
+            },
+            dividendError("XX0000000010", "Synthetic Payer A"),
+        };
+        input.mReports[static_cast<std::size_t>(kCapital)].mXml = "<capital/>";
+
+        return input;
+    };
+    DecisionSession session;
+
+    session.start([&input](RunDecisions& aDecisions) {
+        auto result = input();
+
+        static_cast<void>(FailureResolutionStage::resolve(result, aDecisions, kCapitalFailure));
+        static_cast<void>(FailureResolutionStage::resolve(result, aDecisions, kDividendsFailure));
+
+        return result;
+    });
+
+    ASSERT_EQ(session.result().mRequests.size(), 2U);
+
+    const auto capitalRequest = session.result().mRequests.at(0).mId;
+
+    EXPECT_TRUE(
+        session.answer({{.mRequestId = capitalRequest, .mRunRevision = 1, .mValue = kExclude}})
+            .empty());
+
+    const auto& result = session.result();
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::NeedsInput);
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.mRequests.at(0).mType, RequestType::DividendsFailureResolutionRequired);
+    EXPECT_TRUE(result.report(kDividends).mExcludedInvestments.empty());
+}
+
 } // namespace

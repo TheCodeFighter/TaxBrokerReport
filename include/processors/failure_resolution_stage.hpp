@@ -19,6 +19,11 @@ inline constexpr FailureForm kCapitalFailure{
     .mRequest = RequestType::CapitalGainsFailureResolutionRequired,
 };
 
+inline constexpr FailureForm kDividendsFailure{
+    .mReport = ReportType::Dividends,
+    .mRequest = RequestType::DividendsFailureResolutionRequired,
+};
+
 /// Doh-Obr: `other_interest_failure_resolution_required`.
 inline constexpr FailureForm kOtherInterestFailure{
     .mReport = ReportType::OtherInterest,

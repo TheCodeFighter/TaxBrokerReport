@@ -108,14 +108,31 @@ std::vector<RateNeed> needsOf(const std::vector<Payment>& aPayments,
     return needs;
 }
 
-/// The row of a payment, or none when an amount cannot be converted (the reason is already in the
-/// diagnostics or in the rate selection).
-std::optional<DivDividendRow>
-buildRow(IncomeEurConverter& aConverter, const Payment& aPayment, const PayerOutcome& aPayer) {
+/// The row of a payment, or none when an amount cannot be converted: a missing rate or an amount
+/// that does not fit gives an error of this payment and its ISIN.
+std::optional<DivDividendRow> buildRow(IncomeEurConverter& aConverter,
+                                       const OfficialRateSelection& aRates,
+                                       std::vector<ProcessingDiagnostic>& aDiagnostics,
+                                       const Payment& aPayment,
+                                       const PayerOutcome& aPayer) {
     const auto& transaction = *aPayment.mTransaction;
     const auto& metadata = transaction.mMetadata;
     const auto& name = aPayment.mInstrument->mName;
     const std::optional<Isin> isin = aPayment.mInstrument->mIsin;
+
+    if (addPaymentMissingRateErrors(aRates,
+                                    ReportType::Dividends,
+                                    metadata,
+                                    name,
+                                    isin,
+                                    transaction.mCurrency,
+                                    transaction.mTaxPaid,
+                                    transaction.mTaxCurrency,
+                                    aDiagnostics))
+    {
+        return std::nullopt;
+    }
+
     const auto gross = aConverter.toEur(ReportType::Dividends,
                                         metadata,
                                         name,
@@ -186,17 +203,22 @@ DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement
         payers.emplace(isin, payer);
     }
 
-    // The rate needs of the payers that are reported. The selection's warnings and its errors,
-    // which block Doh-Div, go on as they are.
+    // The rate needs of the payers that are reported. Only the selection's warnings go on; the
+    // error of a missing rate is made for each payment, with its ISIN.
     const auto needs = needsOf(payments, payers);
     OfficialRateSelection selection;
 
     if (!needs.empty())
     {
         selection = selectOfficialRates(needs, aRates);
-        result.mDiagnostics.insert(result.mDiagnostics.end(),
-                                   selection.mDiagnostics.begin(),
-                                   selection.mDiagnostics.end());
+
+        for (const auto& diagnostic : selection.mDiagnostics)
+        {
+            if (diagnostic.mSeverity == DiagnosticSeverity::Warning)
+            {
+                result.mDiagnostics.push_back(diagnostic);
+            }
+        }
     }
 
     IncomeEurConverter converter{selection, result.mDiagnostics};
@@ -211,7 +233,7 @@ DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement
             continue;
         }
 
-        auto row = buildRow(converter, payment, payer);
+        auto row = buildRow(converter, selection, result.mDiagnostics, payment, payer);
 
         if (!row)
         {
@@ -245,6 +267,12 @@ DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement
     result.mUsedRates = converter.usedRates();
 
     return result;
+}
+
+void excludeDividends(DividendReportDiv& aReport, const std::vector<Isin>& aExcluded) {
+    std::erase_if(aReport.mRows, [&aExcluded](const DivDividendRow& aRow) {
+        return std::find(aExcluded.begin(), aExcluded.end(), aRow.mIsin) != aExcluded.end();
+    });
 }
 
 void appendDividendPayments(ApplicationResultInput& aInput, DividendPaymentsResult&& aResult) {

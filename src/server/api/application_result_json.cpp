@@ -185,6 +185,8 @@ std::string_view toString(RequestType aType) {
         return "income_details_required";
     case RequestType::CapitalGainsFailureResolutionRequired:
         return "capital_gains_failure_resolution_required";
+    case RequestType::DividendsFailureResolutionRequired:
+        return "dividends_failure_resolution_required";
     case RequestType::OtherInterestFailureResolutionRequired:
         return "other_interest_failure_resolution_required";
     case RequestType::DepositInterestTotalRequired:

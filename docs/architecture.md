@@ -530,9 +530,13 @@ classification exclusions remain visible in `excludedItems`, separate from each 
 
 A Doh-Obr error safely isolated to an ISIN produces
 `other_interest_failure_resolution_required`. The user excludes all listed failed ISINs' Doh-Obr
-income or fails that form; `FailureResolutionStage` serves both forms with the form and the
+income or fails that form; `FailureResolutionStage` serves all three forms with the form and the
 request type as parameters. Each report owns its exclusion list and failure choice; capital and
 other-interest choices never apply to each other. Preserve original evidence and unaffected income.
+Doh-Div has the same choice (`dividends_failure_resolution_required`): the dividend stage makes
+one missing-rate error for each payment, with its ISIN, so one ISIN's failure never fails the
+whole form; after the exclusion the caller removes the rows of the listed ISINs
+(`excludeDividends`).
 Non-isolatable errors and final XML failures retain their normal scope, as defined in `diagnostics.md`.
 
 A standalone reference catalogue (`reference_data.md`) supplies Slovenian-company and imported

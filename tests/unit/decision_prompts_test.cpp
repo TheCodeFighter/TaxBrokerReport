@@ -1048,6 +1048,54 @@ Your answer (exclude, fail or cancel):
               AnswerValue{FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments}});
 }
 
+TEST(DecisionPromptsTest, TheFailureQuestionOfDohDivNamesDohDiv) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::DividendsFailureResolutionRequired,
+        .mAffectedReports = {ReportType::Dividends},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {{.mIsin = "XX0000000010",
+                      .mName = "Synthetic Payer A",
+                      .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate}}}},
+    }}));
+
+    EXPECT_EQ(ask(session, "cancel\n"),
+              R"(Question request-0001: Doh-Div cannot include 1 investment:
+  XX0000000010 Synthetic Payer A: missing_exchange_rate
+  exclude: write Doh-Div without every investment listed here; they are not in the
+  XML, and the summary lists them. fail: write no Doh-Div. cancel: no answer, and no
+  Doh-Div.
+Your answer (exclude, fail or cancel):
+
+)");
+}
+
+TEST(DecisionPromptsTest, TheFailureQuestionOfDohObrNamesDohObr) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::OtherInterestFailureResolutionRequired,
+        .mAffectedReports = {ReportType::OtherInterest},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {{.mIsin = "XX0000000010",
+                      .mName = "Synthetic Bond A",
+                      .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate}}}},
+    }}));
+
+    EXPECT_EQ(ask(session, "cancel\n"),
+              R"(Question request-0001: Doh-Obr cannot include 1 investment:
+  XX0000000010 Synthetic Bond A: missing_exchange_rate
+  exclude: write Doh-Obr without every investment listed here; they are not in the
+  XML, and the summary lists them. fail: write no Doh-Obr. cancel: no answer, and no
+  Doh-Obr.
+Your answer (exclude, fail or cancel):
+
+)");
+}
+
 TEST(DecisionPromptsTest, TheFailureQuestionOfOneInvestmentTakesFail) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{

@@ -117,6 +117,10 @@ API returns both successful outputs and all diagnostics so the frontend can expl
 partial success. Doh-DHO and Doh-Obr have independent status and failure scope. Ordinary bond
 coupons and broker cash interest have separate subtypes but share the Doh-Obr output.
 
+Safely isolated Doh-Div ISIN errors (a dividend without a rate, an amount that does not fit) use a
+separate `dividends_failure_resolution_required` request with the same two choices and the same
+rules, for Doh-Div only.
+
 Safely isolated Doh-Obr ISIN errors use a separate
 `other_interest_failure_resolution_required` request: exclude all listed ISINs' income from
 Doh-Obr or fail that form. Before the answer it is `needs_input`; exclusion keeps valid remaining

@@ -77,15 +77,16 @@ The core of this contract is implemented in `ApplicationResultBuilder`
 (`include/taxbroker/application_result.hpp`) and `serializeApplicationResultJson`: diagnostic
 adapters, report scope, deterministic order and IDs, report and overall status, and the JSON. The
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
-(`include/taxbroker/decision_session.hpp`); of the ten request types only the two
+(`include/taxbroker/decision_session.hpp`); of the eleven request types only the three
 failure-resolution types, the loss question, the ratio question, the classification question of
 a trade investment, the payer choice, the deposit interest question and the bond type question
 have question data and answers so far. The capital failure choice is applied
 (`FailureResolutionStage`, `include/processors/failure_resolution_stage.hpp`): see "Choosing
 whether to exclude failed capital ISINs". The classification of trade investments is applied
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
-`excludedItems`". The other-interest failure choice uses the same stage, but the report command
-does not run the interest stage yet, so `taxbroker report` neither asks it nor the bond type.
+`excludedItems`". The dividend and other-interest failure choices use the same stage, but the
+report command does not run the dividend or interest stage yet, so `taxbroker report` asks
+neither these choices nor the bond type.
 Developer mode, the income summaries and XML failure isolation are not part of it yet; until they
 exist, `unsafe` is `false`.
 
@@ -136,8 +137,9 @@ incomplete history. Excluding an unsafe ISIN in normal mode does not make the re
 unsafe.
 
 `failureResolution` is either `exclude_failed_instruments` or `fail_report`. It is present only
-after the user answers that report's `capital_gains_failure_resolution_required` or
-`other_interest_failure_resolution_required`; otherwise it is omitted. Each report owns its own
+after the user answers that report's `capital_gains_failure_resolution_required`,
+`dividends_failure_resolution_required` or `other_interest_failure_resolution_required`; otherwise
+it is omitted. Each report owns its own
 `failureResolution` and `excludedInvestments`. A decision for one form never excludes an ISIN from
 another form. Other-interest output always has `unsafe: false`; it has no developer override.
 
@@ -287,7 +289,8 @@ The processor determines scope from the data that the failed operation could aff
 | Invalid shared taxpayer or filing metadata | Every non-empty report that needs that field. |
 | Missing capital acquisition history | Capital gains only, using the ISIN flow in `fifo.md`. |
 | A capital calculation error limited to one ISIN | Capital gains only, using the confirmed-exclusion flow when the rule allows it. |
-| A dividend calculation error | Dividends only. |
+| A Doh-Div error safely isolated to a complete ISIN (a missing rate or an amount that does not fit, of one payment) | Dividends only, with the exclusion/failure choice below. |
+| Another dividend calculation error | Dividends only. |
 | A Doh-Obr error safely isolated to a complete ISIN | Other interest only, with the exclusion/failure choice below. |
 | Another interest calculation error | Its established form; both interest forms when the subtype is unknown. |
 | XML serialization or schema failure | Only the XML file being generated. |
@@ -385,6 +388,24 @@ diagnostic IDs are every error the exclusion resolved, also the error of a dropp
 `cancel` closes the question: the errors stay blocking, capital gains is `failed` and no
 `failureResolution` is recorded.
 
+### Choosing whether to exclude failed dividend ISINs
+
+The same choice and the same stage as for other interest, for Doh-Div. Every dividend has an ISIN,
+so every error of one dividend payment belongs to it: the error of a missing official rate (one
+error for each payment that needs the rate, with its ISIN, not one for each currency and day) and
+an amount that does not fit. A parse or merge error never counts, even when it names an ISIN; one
+that blocks Doh-Div suppresses the question. The request is
+`dividends_failure_resolution_required` with `affectedReports: [dividends]`; its question data, the
+two choices (`exclude_failed_instruments`, `fail_report`, neither preselected), the cancel (the
+question is closed, the errors stay blocking, `dividends` is `failed`, no `failureResolution`) and
+the recorded answer for an unchanged list are the same as for other interest. On exclusion every
+dividend row of the listed ISINs is removed from Doh-Div across brokers, the other rows stay, the
+errors stay visible with `blocking: false`, and `dividends.excludedInvestments` lists the ISINs;
+`generated` when rows remain, otherwise `no_data`. The open payer choice of an excluded ISIN is
+dropped. The choice never resolves an error of another form, and another form's choice never
+resolves a Doh-Div error. The warnings of Doh-Div (payer not found, foreign tax evidence) are not
+errors and are not part of the choice.
+
 ### Choosing whether to exclude failed other-interest ISINs
 
 Collect all Doh-Obr errors that can be isolated safely to complete ISINs: the error of a coupon
@@ -405,7 +426,8 @@ Before an answer, `otherInterest` is `needs_input` and has no XML. The user may 
 the input. Cancelling the choice is not exclusion or permission to generate a partial return: as
 for capital gains, the question is closed, the errors stay blocking, `otherInterest` is `failed` and
 no `failureResolution` is recorded. A changed failed-ISIN list requires a new choice; the same list
-in a later run of the open app uses the recorded choice, as for capital gains.
+in a later run of the open app uses the recorded choice, as for capital gains. The open payer
+choice of an excluded ISIN is dropped, as no answer to it can change the report any more.
 
 On exclusion, rebuild Doh-Obr from the remaining valid income, including unaffected broker cash
 interest and bond coupons. Record `failureResolution: exclude_failed_instruments` and a deduplicated
@@ -668,6 +690,7 @@ request type, and a failure-resolution question without an investment.
 | `deposit_interest_total_required` | The year and the exact imported qualifying interest in EUR (above 0, at most 1,000); answer yes (`above_limit`) or no (`not_above_limit`). It is the only request with no default and no cancel. |
 | `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, the bond type of a bond with a sale or maturity in the year (`ordinary` or `discount_or_zero_coupon`, or a cancel), and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
+| `dividends_failure_resolution_required` | Exact complete failed Doh-Div ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 | `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 
 Confirmation controls have no default answer. Acknowledgement of a potential corporate-action

@@ -468,6 +468,7 @@ TEST(DividendPaymentsTest, AForeignPaymentWithoutARateFileHasNoRowAndABlockingEr
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey,
               std::optional<MessageKey>{MessageKey::MissingExchangeRateNoRateFile});
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mIsin, std::optional<Isin>{"XX0000000010"});
     EXPECT_EQ(dividendStatus(run.result()), ReportStatus::Failed);
 }
 
