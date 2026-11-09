@@ -18,26 +18,26 @@ struct InterestPaymentsResult {
     /// The year's imported qualifying interest in EUR, exact; none when no payment or a rate is
     /// missing.
     std::optional<Money> mQualifyingTotal;
-    OtherInterestReportObr mOtherReport;           ///< Rows in ledger order.
-    std::vector<ExcludedItemInput> mExcludedItems; ///< Slovenian coupon issuers, one per ISIN.
-    std::vector<RequestInput> mRequests;           ///< The deposit question and the payer choices.
+    OtherInterestReportObr mOtherReport; ///< Rows in ledger order.
+    /// The deposit question, the payer choices and the bond type questions.
+    std::vector<RequestInput> mRequests;
     std::vector<ProcessingDiagnostic> mDiagnostics;
     std::vector<UsedOfficialRate> mUsedRates; ///< One per currency and day, by date, then code.
 };
 
-/**
- * Sorts the interest of the reporting year into Doh-DHO (deposit interest) and Doh-Obr (cash
- * interest and bond coupons) by who held the cash on the receipt date, in EUR at the official rate
- * of that day. The deposit allowance of EUR 1,000 is compared with the exact total of the deposit
- * payments: above it the rows are made, at or below it the user is asked once whether the other
- * banks bring the total above it. A payment of 0 or less is never a row. Payers of coupons are
- * looked up by ISIN and Slovenian issuers are excluded; a payer without facts leaves them empty.
- */
+/// Sorts the reporting year's interest into Doh-DHO (deposit interest) and Doh-Obr (cash interest
+/// and bond coupons) in EUR at the official rate of the receipt date. Payments of 0 or less are not
+/// rows. A bond with a sale or maturity in the year asks its type; its coupons are not rows while
+/// the type is open, discount or cancelled. A missing rate is an error of its payment.
 [[nodiscard]] InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement,
                                                              const ReportingYearLedger& aLedger,
                                                              const ReferenceCatalogue& aCatalogue,
                                                              const OfficialRateTable& aRates,
                                                              RunDecisions& aDecisions);
+
+/// Removes the coupon rows of the listed ISINs from the report, in every broker. Broker cash
+/// interest and the coupons of other ISINs stay, in their order.
+void excludeCoupons(OtherInterestReportObr& aReport, const std::vector<Isin>& aIsins);
 
 /// Appends the diagnostics, the requests and the excluded items of the result to aInput, with
 /// their positions moved to the numbering of aInput. The report models stay with the caller.

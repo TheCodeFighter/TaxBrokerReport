@@ -20,9 +20,9 @@ namespace {
 /// a classification question `capital_gains`, an exclusion or a cancel, and a ratio question a
 /// ratio or a cancel, or, when its rows are on different dates, that they are separate events, and
 /// a quantity question a corrected quantity or a cancel. A payer choice question takes a row among
-/// its options or a skip, never a cancel, and a deposit interest total question yes or no. A
-/// question without question data takes no answer until its processor defines one, because all
-/// questions of its type would be the same question.
+/// its options or a skip, never a cancel, and a deposit interest total question yes or no, and a
+/// bond type question a bond type or a cancel. A question without question data takes no answer
+/// until its processor defines one, because all questions of its type would be the same question.
 [[nodiscard]] bool fitsQuestion(const QuestionData& aData, const AnswerValue& aAnswer) {
     const auto fits = [&aAnswer](const auto& aData) {
         using Data = std::decay_t<decltype(aData)>;
@@ -70,6 +70,11 @@ namespace {
 
             return (answer != nullptr && aData.offers(answer->mTreatment)) ||
                    std::holds_alternative<ExcludeFromReportsAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
+        else if constexpr (std::is_same_v<Data, BondTypeQuestion>)
+        {
+            return std::holds_alternative<BondTypeAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
         else

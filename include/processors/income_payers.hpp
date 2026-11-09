@@ -25,6 +25,8 @@ struct IsinPayments {
 /// The payer of an ISIN as the rows will carry it.
 struct PayerOutcome {
     IncomePayer mPayer; ///< Empty when the payer is not known.
+    /// The payer's country is SI. `resolvePayer` keeps it only for a form with a
+    /// `mSlovenianExclusion`, where such a payer settles the tax itself.
     bool mIsSlovenian{};
 };
 
@@ -33,7 +35,9 @@ struct PayerForm {
     ReportType mReport{};                     ///< The form the diagnostics and questions affect.
     ProcessingDiagnosticCode mNotFoundCode{}; ///< The warning for a payer without facts.
     MessageKey mNotFoundKey{};                ///< Its message.
-    ExcludedCategory mCategory{};             ///< The category of a Slovenian payer's item.
+    /// The category of the excluded item of a Slovenian payer. Empty when the form reports the
+    /// income of a Slovenian payer too, because no Slovenian payer settles the tax on it.
+    std::optional<ExcludedCategory> mSlovenianExclusion;
 };
 
 /// Where the payer helpers put what they find.
@@ -67,7 +71,8 @@ void addPayerNotFound(const PayerForm& aForm,
 
 /// The payer of an ISIN from the catalogue and the user's answer. A payer that is not found, or
 /// that the user skipped, has no facts and a warning; several rows are a question that never
-/// blocks.
+/// blocks. For a form that leaves a Slovenian payer out, a payer whose every row has the residence
+/// country SI is Slovenian without a question.
 [[nodiscard]] PayerOutcome resolvePayer(const PayerForm& aForm,
                                         const PayerSinks& aSinks,
                                         const Isin& aIsin,

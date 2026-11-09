@@ -58,7 +58,8 @@ Decision decisionOf(const AnswerValue& aAnswer) {
                           std::is_same_v<Answer, CapitalGainsAnswer> ||
                           std::is_same_v<Answer, QuantityCorrectionAnswer> ||
                           std::is_same_v<Answer, PayerChoiceAnswer> ||
-                          std::is_same_v<Answer, DepositInterestTotalAnswer>);
+                          std::is_same_v<Answer, DepositInterestTotalAnswer> ||
+                          std::is_same_v<Answer, BondTypeAnswer>);
             throw std::logic_error("Only an income treatment or a cancel can answer this.");
         }
     };

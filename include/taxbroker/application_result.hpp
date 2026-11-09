@@ -320,6 +320,25 @@ struct DepositInterestTotalQuestion {
     bool operator==(const DepositInterestTotalQuestion&) const = default;
 };
 
+/// What the user says a bond is. A discount or zero-coupon bond has interest on a sale or maturity.
+enum class BondType {
+    Ordinary,             ///< Pays coupons; the price paid at issue is the nominal value.
+    DiscountOrZeroCoupon, ///< Issued below its nominal value.
+};
+
+/// The question data of `income_details_required` for a bond with a sale or maturity in the
+/// reporting year: the interest of a discount or zero-coupon bond arises then, so its type must be
+/// known. One question per ISIN.
+struct BondTypeQuestion {
+    Isin mIsin;
+    std::string mName;
+    Units mSoldUnits{};    ///< The units sold in the year.
+    Units mMaturedUnits{}; ///< The units that matured in the year (units out minus units back).
+    std::optional<Date> mMaturityDate; ///< The first maturity of the year.
+
+    bool operator==(const BondTypeQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
 using QuestionData = std::variant<std::monostate,
@@ -330,7 +349,8 @@ using QuestionData = std::variant<std::monostate,
                                   QuantityCorrectionQuestion,
                                   PayerChoiceQuestion,
                                   DepositInterestTotalQuestion,
-                                  IncomeClassificationQuestion>;
+                                  IncomeClassificationQuestion,
+                                  BondTypeQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -433,6 +453,13 @@ struct IncomeTreatmentAnswer {
     bool operator==(const IncomeTreatmentAnswer&) const = default;
 };
 
+/// The answer to a bond type question: what the bond is.
+struct BondTypeAnswer {
+    BondType mType{}; ///< Always set by the creator.
+
+    bool operator==(const BondTypeAnswer&) const = default;
+};
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
@@ -444,7 +471,8 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  QuantityCorrectionAnswer,
                                  PayerChoiceAnswer,
                                  DepositInterestTotalAnswer,
-                                 IncomeTreatmentAnswer>;
+                                 IncomeTreatmentAnswer,
+                                 BondTypeAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {
@@ -495,7 +523,7 @@ enum class ExcludedCategory {
     Bond,     ///< An ordinary debt security; only its interest is taxable.
     Crypto,   ///< A crypto asset; not part of the supported reports.
     Dividend, ///< The dividends of a Slovenian payer; the company deducts the tax itself.
-    Interest, ///< The coupons of a Slovenian issuer; the payer deducts the tax itself.
+    Interest, ///< Kept for the contract; no stage makes it (Slovenian coupons are reported).
     Unknown,  ///< The class was missing, not recognized or conflicting, and the user left it out.
 };
 

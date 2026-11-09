@@ -1,4 +1,4 @@
-#include "processors/capital_failure_resolution.hpp"
+#include "processors/failure_resolution_stage.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -15,33 +15,33 @@
 namespace taxbroker {
 namespace {
 
-bool affectsCapital(const std::vector<ReportType>& aReports) {
-    return std::find(aReports.begin(), aReports.end(), ReportType::CapitalGains) != aReports.end();
+bool affects(const std::vector<ReportType>& aReports, ReportType aReport) {
+    return std::find(aReports.begin(), aReports.end(), aReport) != aReports.end();
 }
 
-/// A capital error that blocks the form, as the result builder decides it.
-bool isCapitalError(const ProcessingDiagnostic& aDiagnostic) {
+/// An error of the form that blocks it, as the result builder decides it.
+bool isFormError(const ProcessingDiagnostic& aDiagnostic, ReportType aReport) {
     return aDiagnostic.mSeverity == DiagnosticSeverity::Error &&
-           affectsCapital(aDiagnostic.mContext.mAffectedReports);
+           affects(aDiagnostic.mContext.mAffectedReports, aReport);
 }
 
-/// An error that only the capital form has and that names a complete ISIN: missing history, a
-/// corporate action, the FIFO or loss rule, or a gate. Leaving every row of that ISIN out is then
-/// safe. The XML writer finds its errors only in the final document, so they never are.
-bool belongsToOneInvestment(const ProcessingDiagnostic& aDiagnostic) {
+/// An error that only this form has and that names a complete ISIN: missing history, a corporate
+/// action, the FIFO or loss rule, a gate, or a rate of one payment. Leaving every row of that ISIN
+/// out is then safe. The XML writer finds its errors only in the final document, so they never are.
+bool belongsToOneInvestment(const ProcessingDiagnostic& aDiagnostic, ReportType aReport) {
     const auto& context = aDiagnostic.mContext;
 
     return context.mStage != PipelineStage::XmlGeneration && context.mIsin.has_value() &&
-           context.mAffectedReports == std::vector<ReportType>{ReportType::CapitalGains};
+           context.mAffectedReports == std::vector<ReportType>{aReport};
 }
 
-/// The positions of the diagnostics that an open capital question can resolve.
-std::set<std::size_t> linkedToCapitalQuestion(const ApplicationResultInput& aInput) {
+/// The positions of the diagnostics that an open question of the form can resolve.
+std::set<std::size_t> linkedToQuestion(const ApplicationResultInput& aInput, ReportType aReport) {
     std::set<std::size_t> linked;
 
     for (const auto& request : aInput.mRequests)
     {
-        if (affectsCapital(request.mQuestion.mAffectedReports))
+        if (affects(request.mQuestion.mAffectedReports, aReport))
         {
             linked.insert(request.mProcessingDiagnostics.begin(),
                           request.mProcessingDiagnostics.end());
@@ -104,7 +104,8 @@ std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
                           std::is_same_v<Answer, QuantityCorrectionAnswer> ||
                           std::is_same_v<Answer, PayerChoiceAnswer> ||
                           std::is_same_v<Answer, DepositInterestTotalAnswer> ||
-                          std::is_same_v<Answer, IncomeTreatmentAnswer>);
+                          std::is_same_v<Answer, IncomeTreatmentAnswer> ||
+                          std::is_same_v<Answer, BondTypeAnswer>);
             // The session accepts only a failure choice or a cancel for this question.
             throw std::logic_error("Only a failure choice or a cancel can answer this question.");
         }
@@ -116,14 +117,14 @@ std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
 /// Resolves the errors of the excluded ISINs and drops their open questions, as no answer to those
 /// can change the report any more. A question whose linked error stays unresolved (it also
 /// affects another form) stays open.
-void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded) {
+void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded, ReportType aReport) {
     const auto& diagnostics = aInput.mProcessingDiagnostics;
 
     for (std::size_t position = 0; position < diagnostics.size(); ++position)
     {
         const auto& diagnostic = diagnostics[position];
 
-        if (isCapitalError(diagnostic) && belongsToOneInvestment(diagnostic) &&
+        if (isFormError(diagnostic, aReport) && belongsToOneInvestment(diagnostic, aReport) &&
             aExcluded.contains(diagnostic.mContext.mIsin.value()))
         {
             aInput.mResolvedDiagnostics.push_back(position);
@@ -135,10 +136,10 @@ void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded) {
                          aInput.mResolvedDiagnostics.end(),
                          aPosition) != aInput.mResolvedDiagnostics.end();
     };
-    const auto isOfExcluded = [&aExcluded, &isResolved](const RequestInput& aRequest) {
+    const auto isOfExcluded = [&aExcluded, &isResolved, aReport](const RequestInput& aRequest) {
         const auto& question = aRequest.mQuestion;
 
-        return affectsCapital(question.mAffectedReports) && question.mIsin &&
+        return affects(question.mAffectedReports, aReport) && question.mIsin &&
                aExcluded.contains(*question.mIsin) &&
                std::all_of(aRequest.mProcessingDiagnostics.begin(),
                            aRequest.mProcessingDiagnostics.end(),
@@ -150,21 +151,22 @@ void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded) {
 
 } // namespace
 
-std::vector<Isin> CapitalFailureResolution::resolve(ApplicationResultInput& aInput,
-                                                    RunDecisions& aDecisions) {
+std::vector<Isin> FailureResolutionStage::resolve(ApplicationResultInput& aInput,
+                                                  RunDecisions& aDecisions,
+                                                  const FailureForm& aForm) {
     const auto& diagnostics = aInput.mProcessingDiagnostics;
-    const auto linked = linkedToCapitalQuestion(aInput);
+    const auto linked = linkedToQuestion(aInput, aForm.mReport);
     std::vector<std::size_t> listed;
 
     for (std::size_t position = 0; position < diagnostics.size(); ++position)
     {
-        if (!isCapitalError(diagnostics[position]) || linked.contains(position))
+        if (!isFormError(diagnostics[position], aForm.mReport) || linked.contains(position))
         {
             continue;
         }
 
         // An error that no investment owns cannot be solved by leaving investments out.
-        if (!belongsToOneInvestment(diagnostics[position]))
+        if (!belongsToOneInvestment(diagnostics[position], aForm.mReport))
         {
             return {};
         }
@@ -172,14 +174,14 @@ std::vector<Isin> CapitalFailureResolution::resolve(ApplicationResultInput& aInp
         listed.push_back(position);
     }
 
-    if (listed.empty() || hasSourceError(aInput, ReportType::CapitalGains))
+    if (listed.empty() || hasSourceError(aInput, aForm.mReport))
     {
         return {};
     }
 
     DecisionQuestion question{
-        .mType = RequestType::CapitalGainsFailureResolutionRequired,
-        .mAffectedReports = {ReportType::CapitalGains},
+        .mType = aForm.mRequest,
+        .mAffectedReports = {aForm.mReport},
         .mData = questionOf(diagnostics, listed),
     };
 
@@ -207,9 +209,9 @@ std::vector<Isin> CapitalFailureResolution::resolve(ApplicationResultInput& aInp
         return {};
     }
 
-    auto& capital = aInput.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
+    auto& report = aInput.mReports[static_cast<std::size_t>(aForm.mReport)];
 
-    capital.mFailureResolution = choice;
+    report.mFailureResolution = choice;
 
     if (choice == FailureResolution::FailReport)
     {
@@ -223,8 +225,8 @@ std::vector<Isin> CapitalFailureResolution::resolve(ApplicationResultInput& aInp
                    investments.end(),
                    std::inserter(excluded, excluded.end()),
                    [](const FailedInvestment& aInvestment) { return aInvestment.mIsin; });
-    capital.mExcludedInvestments = investments;
-    exclude(aInput, excluded);
+    report.mExcludedInvestments = investments;
+    exclude(aInput, excluded, aForm.mReport);
 
     return {excluded.begin(), excluded.end()};
 }

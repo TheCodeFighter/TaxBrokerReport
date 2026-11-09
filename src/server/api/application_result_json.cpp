@@ -157,6 +157,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "interest_payer_not_found";
     case ProcessingDiagnosticCode::InterestPaymentNotPositive:
         return "interest_payment_not_positive";
+    case ProcessingDiagnosticCode::SlovenianCouponTax:
+        return "slovenian_coupon_tax";
     case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
         return "deposit_interest_add_other_banks";
     }
@@ -453,6 +455,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return incomeTreatmentToJson(aValue.mTreatment);
         }
+        else if constexpr (std::is_same_v<Value, BondTypeAnswer>)
+        {
+            return aValue.mType == BondType::Ordinary ? "ordinary" : "discount_or_zero_coupon";
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             // A skip is a string; a pick is the position of the row among the options.
@@ -720,6 +726,21 @@ Json depositCheckToJson(const DepositInterestTotalQuestion& aQuestion) {
                 {"limitEur", formatFixedPoint(kDepositInterestAllowance, MONEY_SCALE, kDecimals)}};
 }
 
+/// The question data of a bond type question: the bond and its sales and maturities of the year.
+Json bondCheckToJson(const BondTypeQuestion& aQuestion) {
+    Json check{{"isin", aQuestion.mIsin},
+               {"name", aQuestion.mName},
+               {"soldUnits", unitsString(aQuestion.mSoldUnits)},
+               {"maturedUnits", unitsString(aQuestion.mMaturedUnits)}};
+
+    if (aQuestion.mMaturityDate)
+    {
+        check["maturityDate"] = isoDate(*aQuestion.mMaturityDate);
+    }
+
+    return check;
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
     // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
@@ -776,6 +797,12 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["options"] = incomeOptionsToJson(*income);
         serialized["otherInterestSubtypes"] = incomeSubtypesToJson(*income);
         serialized["incomeCheck"] = incomeCheckToJson(*income);
+    }
+
+    if (const auto* bond = std::get_if<BondTypeQuestion>(&aRequest.mData))
+    {
+        serialized["options"] = Json::array({"ordinary", "discount_or_zero_coupon"});
+        serialized["bondCheck"] = bondCheckToJson(*bond);
     }
 
     if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
@@ -935,6 +962,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* income = std::get_if<IncomeClassificationQuestion>(&aDecision.mData))
     {
         serialized["incomeCheck"] = incomeCheckToJson(*income);
+    }
+
+    if (const auto* bond = std::get_if<BondTypeQuestion>(&aDecision.mData))
+    {
+        serialized["bondCheck"] = bondCheckToJson(*bond);
     }
 
     serialized["answer"] = answerToJson(aDecision.mAnswer);
