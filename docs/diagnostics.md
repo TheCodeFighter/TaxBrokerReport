@@ -79,14 +79,15 @@ adapters, report scope, deterministic order and IDs, report and overall status, 
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
 (`include/taxbroker/decision_session.hpp`); of the ten request types only the two
 failure-resolution types, the loss question, the ratio question, the classification question of
-a trade investment, the payer choice and the deposit interest question have question data and
-answers so far. The capital failure choice is applied
-(`CapitalFailureResolution`, `include/processors/capital_failure_resolution.hpp`): see "Choosing
+a trade investment, the payer choice, the deposit interest question and the bond type question
+have question data and answers so far. The capital failure choice is applied
+(`FailureResolutionStage`, `include/processors/failure_resolution_stage.hpp`): see "Choosing
 whether to exclude failed capital ISINs". The classification of trade investments is applied
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
-`excludedItems`". The other-interest failure choice, developer mode, the income summaries and XML
-failure isolation are not part of it yet. Until they exist, `excludedInvestments` is an empty list
-for other interest, and `unsafe` is `false`.
+`excludedItems`". The other-interest failure choice uses the same stage, but the report command
+does not run the interest stage yet, so `taxbroker report` neither asks it nor the bond type.
+Developer mode, the income summaries and XML failure isolation are not part of it yet; until they
+exist, `unsafe` is `false`.
 
 ### Report result
 
@@ -386,9 +387,11 @@ diagnostic IDs are every error the exclusion resolved, also the error of a dropp
 
 ### Choosing whether to exclude failed other-interest ISINs
 
-Collect all Doh-Obr errors that can be isolated safely to complete ISINs, including bond-income
-parsing, duplicate-conflict and calculation errors whose form and instrument are established.
-Offer missing-data correction requests where the facts can be supplied. If the error remains or
+Collect all Doh-Obr errors that can be isolated safely to complete ISINs: the error of a coupon
+payment (a missing official rate, an amount that does not fit) and the bond type errors below. A
+parse or merge error never counts, even when it names an ISIN, because its ISIN can differ between
+duplicates; one that blocks Doh-Obr suppresses the question. Offer missing-data correction
+requests where the facts can be supplied. If the error remains or
 the user cannot supply the facts, return one `other_interest_failure_resolution_required` request
 with `affectedReports: [other_interest]`, the run revision, source references and all failed
 investments sorted by ISIN and then name. Each entry has its name, ISIN, reason codes and diagnostic
@@ -399,9 +402,10 @@ IDs. The request has two choices, with neither preselected:
 2. `fail_report`: produce no Doh-Obr XML for this run.
 
 Before an answer, `otherInterest` is `needs_input` and has no XML. The user may instead correct
-the input. Cancelling the choice is not exclusion or permission to generate a partial return: the
-question stays open. A changed failed-ISIN list requires a new choice; the same list in a later run
-of the open app uses the recorded choice, as for capital gains.
+the input. Cancelling the choice is not exclusion or permission to generate a partial return: as
+for capital gains, the question is closed, the errors stay blocking, `otherInterest` is `failed` and
+no `failureResolution` is recorded. A changed failed-ISIN list requires a new choice; the same list
+in a later run of the open app uses the recorded choice, as for capital gains.
 
 On exclusion, rebuild Doh-Obr from the remaining valid income, including unaffected broker cash
 interest and bond coupons. Record `failureResolution: exclude_failed_instruments` and a deduplicated
@@ -415,7 +419,9 @@ unless another report's status takes precedence.
 On `fail_report`, keep the errors blocking, set `otherInterest` to `failed`, record that choice,
 and leave its `excludedInvestments` empty. Both choices preserve source evidence and leave capital
 gains, dividends and bank interest unchanged. A capital exclusion does not authorize an income
-exclusion, or vice versa. When a source problem also affects another form, retain a separate scoped
+exclusion, or vice versa. An error that affects several forms is resolved only for the form whose
+choice was made; the entry of `excludedInvestments` of a form lists only the resolved errors that
+affect that form. When a source problem also affects another form, retain a separate scoped
 blocking diagnostic there; resolving Doh-Obr must not clear it.
 
 This choice requires known instrument identity and a safely separable Doh-Obr scope. It cannot
@@ -424,6 +430,27 @@ metadata errors, or final XML serialization/schema/range failures. Such problems
 normal correction request or report-failure behavior. An unresolved non-isolatable blocking error
 prevents offering an exclusion choice that could not produce a valid result. Developer mode cannot
 bypass any other-interest error. Classification exclusions remain a separate documented flow.
+
+**Implementation.** The interest stage makes the error of a missing official rate for each payment
+that needs it (with its form, rows, name and, for a coupon, its ISIN), not one error per currency
+and day, so a coupon's error belongs to its ISIN and a cash or deposit interest error never does.
+The failure stage is the same code as for capital gains with the form and the request type as
+parameters. After `exclude`, the coupon rows of the listed ISINs are removed from the Doh-Obr
+model; broker cash interest and other coupons stay.
+
+**Bond type.** A bond (a debt security) with a sale or a maturity in the reporting year asks one
+`income_details_required` question, because the interest of a discount or zero-coupon bond arises
+then and nothing calculates it yet. The question data has the ISIN, the name, the units sold, the
+units matured (units out minus units back) and the first maturity date. Answers: `ordinary` (the
+coupons go to Doh-Obr as usual) or `discount_or_zero_coupon`; neither is preselected. Without an
+answer Doh-Obr is `needs_input` and the coupons of the bond are not rows. `discount_or_zero_coupon`
+is a blocking `unsupported_tax_treatment` error of Doh-Obr with the bond's ISIN, and so is a
+cancel (with a message that the type was not given); the failure question above can then leave
+the bond out. A bond whose unit totals of the year do not fit is a blocking `arithmetic_overflow`
+error of Doh-Obr with its ISIN instead of a question, and its coupons are not rows either. A bond
+with coupons only and a bond sold or matured in another year ask nothing. The issuer does not
+matter: a Slovenian issuer's listed bond is asked and reported like any other, because its payer
+does not withhold the tax (`tax_rules.md`, "Interest forms and the annual deposit allowance").
 
 ### Normal incomplete-history result
 
@@ -639,7 +666,7 @@ request type, and a failure-resolution question without an investment.
 | `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units in the units of the sale) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | One request per trade investment whose asset class is missing, not recognized or conflicting: the ISIN, its name and the class labels of its rows (question data), with the options `capital_gains` and `exclude_from_supported_reports` and no preselected choice; answer with one of them or cancel. A second kind of question is for one interest or dividend payment of unknown type (`tax_rules.md`, "Supported tax categories and user classification"): the question data is the receipt date, name, ISIN, transaction, class labels, gross amount and currency; the options are `dividends`, `bank_deposit_interest`, `other_interest` (subtype `broker_cash` or `bond_coupon`) and `exclude_from_supported_reports`, without `dividends` and `bond_coupon` when there is no ISIN. |
 | `deposit_interest_total_required` | The year and the exact imported qualifying interest in EUR (above 0, at most 1,000); answer yes (`above_limit`) or no (`not_above_limit`). It is the only request with no default and no cancel. |
-| `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
+| `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, the bond type of a bond with a sale or maturity in the year (`ordinary` or `discount_or_zero_coupon`, or a cancel), and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
 | `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 
@@ -649,7 +676,7 @@ not manufacture an unanswered blocking request. The app takes no amount of other
 
 `excludedItems` entries contain the parsed item/instrument identity, established category, explicit
 exclusion reason, safe sources and diagnostic IDs. Record whether the exclusion follows a verified
-tax rule or an explicit user choice. Reason `slovenian_tax_settled` follows from a payer with the
+tax rule or an explicit user choice. Reason `slovenian_tax_settled` follows from a dividend payer with the
 residence country `SI` (a Slovenian company deducts the tax itself); an ISIN prefix alone cannot establish it. Capital and other-interest failure
 exclusions use each report's own `excludedInvestments`. A classification request does not override malformed source rows, missing
 instrument identity or undocumented tax calculations. A known unsupported category can be shown
@@ -674,7 +701,7 @@ report, which lists failed investments the user chose to leave out of one form. 
   `.user_choice_income_missing_isin` and tells the user to check the export; for any other class
   no ISIN is expected and the key is `.user_choice_income`;
 - `category`: `bond`, `crypto`, `unknown` (an unknown class the user left out), `dividend` (the
-  dividends of a Slovenian payer) or `interest` (the coupons of a Slovenian issuer);
+  dividends of a Slovenian payer) or `interest` (kept for the contract; no stage makes it today);
 - `reason`: `debt_security`, `crypto_not_reported`, `slovenian_tax_settled` or `user_choice`, and
   `basis`: `tax_rule` or `user_choice`;
 - for a bond only, `bond` with `boughtUnits`, `soldUnits` and `maturedUnits` in the selected year
@@ -682,7 +709,7 @@ report, which lists failed investments the user chose to leave out of one form. 
   maturity row, when there is one. Units are exact decimal strings with eight decimals; amounts
   are not listed;
 - safe `sources` and the `diagnosticIds` of its `tax_category_not_reported` warning. An entry that
-  follows a tax rule (`basis` `tax_rule`: a bond, crypto, a Slovenian payer or issuer) has no
+  follows a tax rule (`basis` `tax_rule`: a bond, crypto, a Slovenian dividend payer) has no
   warning, because the exclusion is on purpose, and its `diagnosticIds` is `[]`. An entry of a user
   choice has its warning.
 
@@ -841,7 +868,7 @@ Additional codes and their default scope are:
 | `unsupported_corporate_action` | Error for capital gains on one action that needs tax rules the app does not have; key `.merger` for a merger row. No question is asked. |
 | `tax_classification_unknown` | Error from the classification stage (never from the capital gates) for capital gains on an investment with an unknown asset class: key `.confirmation_required` while its classification request is open (linked to it), `.cancelled` after a cancel (no request). The parse and merge errors about the class of that investment stay errors but no longer block. The same code, with the keys `.income_confirmation_required` and `.income_cancelled`, is the error for one interest or dividend payment of unknown type; it affects Doh-Div (only with an ISIN), Doh-DHO and Doh-Obr. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
-| `tax_category_not_reported` | Warning for an explicit classification exclusion by the user, never for a tax-rule exclusion (a bond, crypto, a Slovenian payer or issuer: those are listed in `excludedItems` without a warning). Key `.user_choice`: the user left an unknown-class investment out, with the sources of the trade and action rows up to 31 December. Key `.user_choice_income`: the user left an interest or dividend payment of unknown type out of every form; key `.user_choice_income_missing_isin`: the same for a payment of a share, fund or bond that has no ISIN. |
+| `tax_category_not_reported` | Warning for an explicit classification exclusion by the user, never for a tax-rule exclusion (a bond, crypto, a Slovenian dividend payer: those are listed in `excludedItems` without a warning). Key `.user_choice`: the user left an unknown-class investment out, with the sources of the trade and action rows up to 31 December. Key `.user_choice_income`: the user left an interest or dividend payment of unknown type out of every form; key `.user_choice_income_missing_isin`: the same for a payment of a share, fund or bond that has no ISIN. |
 | `dividend_payer_not_found` | Warning for Doh-Div, once per ISIN: no reference row gave the payer, or several rows disagree and the user skipped them or has not answered. The rows of the ISIN are made without payer facts and the user completes them in eDavki. Its sources are those of all the ISIN's payments in the year; with an open payer request it is linked to it. |
 | `foreign_tax_evidence_required` | Warning for Doh-Div, once per run when a row has a foreign tax above 0: the user attaches the evidence of the payment and the tax in eDavki; the app attaches nothing. The sources are those of the payments with tax. |
 | `official_rate_files_required` | Warning for the capital gains report: the years of the ECB rate files that the missing rates of investments sold in the year need. Key `.not_loaded` (`years`: the files are not loaded) or `.ends_early` (`years`: the files end before a trade day); `years` is a text such as `2023, 2024`. No ISIN or date; the sources are those of the trades behind the years. Given once per key after the per-ISIN `missing_exchange_rate` errors, and not given for a rate that no file can fix. |
@@ -851,6 +878,7 @@ Additional codes and their default scope are:
 | `income_details_missing` | Error for the affected income form, with a details request while resolvable. |
 | `interest_payer_not_found` | Warning for Doh-Obr (and Doh-DHO when the payments are deposit interest), once per ISIN of a coupon or once per broker of cash interest: no reference row gave the payer, several rows disagree and the user skipped them or has not answered, or the broker has no single company in `broker_payers.csv`. The rows are made without payer facts and the user completes them in eDavki. |
 | `interest_payment_not_positive` | Warning for the form of the payment, one per payment: an interest payment of 0 or less, or one that rounds to 0.00, is not a row, is not netted against other payments and is not in the deposit total. |
+| `slovenian_coupon_tax` | Warning for Doh-Obr, one per coupon row whose payer has the residence country `SI` and whose export has a tax above 0. A Slovenian withholding is not foreign tax and gives no credit; if the payer already taxed the coupon, the user leaves it out in eDavki. The row is still made. |
 | `deposit_interest_add_other_banks` | Warning for Doh-DHO, once per run, after the answer `above_limit`: the form holds only the imported interest, and the user adds the interest of the other banks in eDavki. |
 
 `broker_exchange_rate_used` is also a warning. Other previously
@@ -1228,7 +1256,7 @@ Application-service, API, and integration tests based on this document must prov
 - diagnostics and IDs are identical across different parser completion orders;
 - excluding an ISIN preserves replacement evidence needed by retained losses, and unresolved
   dependencies keep capital gains `needs_input` until resolved or explicitly excluded in turn;
-- income of a payer with the residence country `SI` is visibly excluded, several payer rows give a
+- a dividend of a payer with the residence country `SI` is visibly excluded, several payer rows give a
   skippable pick request that never blocks, and requested treaty claims produce an income-details request for the
   affected form;
 - supporting-document requirements remain visible alongside generated income XML;

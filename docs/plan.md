@@ -227,9 +227,10 @@ is not certain wait in a separate file that the app does not read. A missing ent
 income row with empty payer facts and a warning, so catalogue coverage never decides whether an income is taxable.
 
 Use exact identifiers to prefill verified payer metadata and relevant treaty references. A
-dividend or other-interest payer with the residence country `SI` is a Slovenian company that
-deducts the final tax itself, so that income is excluded with `slovenian_tax_settled`, without
-payment evidence.
+dividend payer with the residence country `SI` is a Slovenian company that deducts the final
+tax itself, so that dividend is excluded with `slovenian_tax_settled`, without payment evidence.
+A coupon of such an issuer is reported in Doh-Obr, because the payer does not withhold on listed
+bonds.
 For foreign-tax relief, preserve gross income and actual foreign tax, distinguish a credit from
 a treaty exemption, and list the required filing evidence. A list match does not grant relief.
 Implement the missing/conflicting-information flow, source-revision invalidation and synthetic
@@ -254,7 +255,7 @@ bank-interest allowance are applied before XML generation. A total at or below t
 threshold asks one yes/no question about other banks; the user adds those banks in eDavki.
 
 Income models also retain the foreign tax, applicable confirmed treaty claims and catalogue
-provenance. Income of a Slovenian payer (it deducts the tax itself) is visibly excluded
+provenance. A dividend of a Slovenian payer (it deducts the tax itself) is visibly excluded
 without removing capital trades in that issuer. XML exports include the required foreign-tax and
 claim fields; the download view explains which supporting evidence still needs attaching in eDavki.
 
@@ -363,6 +364,11 @@ income collections does not justify synchronization and nondeterministic error h
 ## IBKR extension
 
 Add Interactive Brokers only after the Trade Republic application is complete.
+
+Interactive Brokers exports will contain derivatives (*izvedeni finančni instrumenti*: options,
+futures, CFDs, leveraged products), which Trade Republic does not. They are not supported yet: the
+parser maps them to the derivative class, the capital report blocks their sales with
+`unsupported_tax_treatment`, and the user is told that they are filed in Doh-IFI outside the app.
 
 The IBKR work consists of:
 

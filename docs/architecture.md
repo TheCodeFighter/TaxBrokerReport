@@ -530,14 +530,16 @@ classification exclusions remain visible in `excludedItems`, separate from each 
 
 A Doh-Obr error safely isolated to an ISIN produces
 `other_interest_failure_resolution_required`. The user excludes all listed failed ISINs' Doh-Obr
-income or fails that form. Each report owns its exclusion list and failure choice; capital and
+income or fails that form; `FailureResolutionStage` serves both forms with the form and the
+request type as parameters. Each report owns its exclusion list and failure choice; capital and
 other-interest choices never apply to each other. Preserve original evidence and unaffected income.
 Non-isolatable errors and final XML failures retain their normal scope, as defined in `diagnostics.md`.
 
 A standalone reference catalogue (`reference_data.md`) supplies Slovenian-company and imported
 payer metadata with source and revision provenance, as suggestions for the user to confirm. It
-can prefill payer and treaty facts; a dividend or other-interest payer with the residence country
-`SI` makes that income not reported, and payment evidence determines the actual foreign tax.
+can prefill payer and treaty facts; a dividend payer with the residence country `SI` makes that
+dividend not reported (a Slovenian bond's coupon is reported), and payment evidence determines the
+actual foreign tax.
 Treaty exemptions require a separate applicable legal basis. The income result retains treatment
 decisions. A payer that is not found is reported with the payer facts left empty and a warning;
 a payer with several rows is a skippable question where the user picks one row (see "Income
@@ -617,7 +619,7 @@ The matcher reports two kinds of diagnostics, both for the capital report only:
   transaction ID). It has no message parameters, so no unit count or amount is in the message.
   Only the first failing sale of an ISIN is reported, because the pool stops there;
   `mAvailableUnits` keeps the open units. The error blocks the capital report until the user
-  chooses to exclude the ISIN or to fail the report (`CapitalFailureResolution`).
+  chooses to exclude the ISIN or to fail the report (`FailureResolutionStage`).
 
 The ratio questions and the other corporate-action errors come from the corporate-action stage
 ("Corporate-action contract"), the missing-rate errors of foreign trades from the capital report
@@ -833,7 +835,7 @@ year:
 
 The builder adds no diagnostics and no message keys. The capital report gates turn `mBlocked`
 into errors (see "CLI report command (walking skeleton)"), and the application result
-turns them into report statuses. `CapitalFailureResolution` (see "Choosing whether to exclude
+turns them into report statuses. `FailureResolutionStage` (see "Choosing whether to exclude
 failed capital ISINs" in `diagnostics.md`) asks which of those ISINs to leave out and passes the
 answer to the builder.
 
@@ -859,10 +861,10 @@ The models only define the types; the processors that build them and the XML wri
   writer maps it to the code it verifies.
 - **Withholding.** `ForeignWithholding` is the EUR foreign tax of the payment (0 allowed) with a
   flag that the export had no tax. A blank source tax is a foreign tax of 0 with the flag set,
-  never a question. A Doh-Div or Doh-Obr payment of a Slovenian payer is not a row: the company
-  deducts the tax
-  itself for a tax resident, so nothing is reported and the payment is an excluded item
-  (`slovenian_tax_settled`). Doh-DHO keeps one plain EUR foreign tax sum.
+  never a question. A Doh-Div payment of a Slovenian payer is not a row: the company
+  deducts the tax itself for a tax resident, so nothing is reported and the payment is an excluded
+  item (`slovenian_tax_settled`). A Doh-Obr coupon of a Slovenian issuer is a row, because the payer
+  does not withhold on listed bonds. Doh-DHO keeps one plain EUR foreign tax sum.
 - **Payer facts are optional.** `IncomePayer` holds the name, address, residence country, tax
   number and identification number only as far as the app found them, plus the reference-file row
   they came from (`CatalogueSource`). The same holds for the source country. An empty fact is
@@ -891,7 +893,7 @@ the diagnostics and the rates it used.
   `PayerChoiceQuestion` (`income_details_required`) and the answer picks one row or skips. A skip
   and an open question both give empty facts and the same warning. The question never stops a form:
   `ApplicationResultBuilder` lists it with Doh-Div but does not make the form `needs_input`.
-- **Slovenian payer.** A payer with the country `SI` has no row. One excluded item per ISIN
+- **Slovenian payer.** A dividend payer with the country `SI` has no row. One excluded item per ISIN
   (`dividend`, `slovenian_tax_settled`) lists the sources of its payments, without a warning
   (a tax rule leaves it out on purpose). Its payments need no rate.
 - **Per payment, then.** One `selectOfficialRates` call covers the gross and the foreign tax of
@@ -923,7 +925,7 @@ tax processor or the CLI yet; both share the payer, rate and exclusion helpers o
 - **Not positive.** A payment of 0 or less, or a Doh-Obr row that rounds to 0.00, is no row, is not
   in the total and gets `interest_payment_not_positive`.
 - **Payers.** A coupon's issuer is looked up by ISIN with the dividend rules (found, not found,
-  a skippable pick, a Slovenian issuer excluded as category `interest`). The payer of a broker's
+  a skippable pick; a Slovenian issuer is not excluded). The payer of a broker's
   cash interest is the only `broker_payers.csv` row of that broker (`brokerPayersOf`); with none or
   several the facts stay empty and `interest_payer_not_found` is given once per broker.
 - **Doh-DHO.** The deposit payments of a broker are one row (payer, kind, source country) with the
@@ -1019,7 +1021,7 @@ run (exit 2) before anything is calculated. The summary says where the data came
 reporting-year preparation, once. The rest runs as the calculation of a `DecisionSession`, once
 per revision: the classification, the conversion of foreign trades to EUR, FIFO, the
 corporate-action stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
-report gates, `CapitalFailureResolution` (after `exclude` the command builds the rows again without
+report gates, `FailureResolutionStage` (after `exclude` the command builds the rows again without
 the investments the user left out) and the XML writer; the session builds the application result.
 A loss that the files decide in full is written as they decide it. A sale whose blocked units are
 only part of its listed units is written in several rows.

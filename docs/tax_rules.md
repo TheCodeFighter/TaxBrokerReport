@@ -651,6 +651,12 @@ For a 2024 report:
 ## Supported tax categories and user classification
 
 These rules cover a Slovenian-resident individual using ordinary TR or IBKR brokerage accounts.
+Only Slovenian tax residents are supported (the taxpayer file must say `isResident: true`). FURS
+asks a resident for Doh-KDVP and, above EUR 1,000, Doh-DHO. A nonresident is not obliged to file
+Doh-KDVP or Doh-DHO, may file Doh-KDVP only with every sale of the year, and files Doh-Div and
+Doh-Obr only for income paid by a payer that is not a Slovenian payer of tax. The app does not
+model source-of-income rules or treaty reductions for a nonresident (FURS public call for the 2025
+returns).
 Business activity, individual investment accounts (INR), and Slovenian retail government bonds
 are outside the current import scope. The latter are not part of the supported TR/IBKR workflow;
 do not add their special allowance or a dedicated input flow to this implementation. If such data
@@ -665,11 +671,11 @@ Classify the legal instrument and income, not just the broker name or its CSV ca
 | Dividends | Selected-year gross income and foreign tax in Doh-Div, subject to the settled Slovenian withholding rule below. |
 | Qualifying Slovenian/EU bank-deposit interest | Shared annual allowance and Doh-DHO when a return is required. |
 | IBKR cash interest | Other-interest category in Doh-Obr; no bank-deposit allowance. |
-| Ordinary bond coupons | Bond-interest category in Doh-Obr, subject to the settled Slovenian withholding rule below; separate from broker cash interest in the model and summary. |
+| Ordinary bond coupons | Bond-interest category in Doh-Obr, also for a Slovenian issuer (see "Interest forms and the annual deposit allowance": the payer does not withhold on a listed bond); separate from broker cash interest in the model and summary. |
 | Ordinary debt-security disposals | No taxable capital gain or deductible capital loss in Doh-KDVP; retain the source and explain the exclusion. A bond is a *rule exclusion*: every bond with a purchase, sale or maturity row in the selected year gets an entry in `excludedItems` (no warning: a tax rule leaves it out on purpose) with the units bought, sold and matured and the maturity date, and it is skipped by FIFO, the corporate-action stage, the loss rule and the Doh-KDVP builder. A Trade Republic bond maturity, its cancellation and its payout (also a corrected one) are parsed as information-only redemption events (units out or back, amount paid or taken back, tax) and are never a sale (`architecture.md`, "Trade Republic bond rows"). Matured units are added up by sum (units out minus units back), never by row order. Bonds are a separate category outside capital gains: the application lists every bond and reports only the bond interest (coupons), in Doh-Obr. |
-| Discount or zero-coupon debt | Interest may arise on disposal or redemption; require instrument terms and acquisition data. Until these calculations are implemented, return `unsupported_tax_treatment` rather than silently excluding possible interest. |
+| Discount or zero-coupon debt | Interest may arise on disposal or redemption; require instrument terms and acquisition data. Until these calculations are implemented, return `unsupported_tax_treatment` rather than silently excluding possible interest. A bond with a sale or maturity in the year asks its type (`ordinary`, or `discount_or_zero_coupon` meaning issued below its nominal value; the wording is unconfirmed against FURS): a discount or zero-coupon answer, or no answer, stops Doh-Obr for that bond (`diagnostics.md`, "Choosing whether to exclude failed other-interest ISINs"). |
 | Ordinary private crypto disposals | Left out of Doh-KDVP for every year: crypto never belongs in this form. Every crypto instrument with a trade or corporate-action row in the selected year gets an entry in `excludedItems` and no warning (a tax rule leaves it out on purpose; the summary tells the user to check whether a separate crypto return applies); it is skipped by every capital stage. The tax treatment of crypto disposals depends on the year and is unconfirmed here; confirm it against the official FURS guidance (below) before relying on it. Business activity and tokens qualifying as securities or derivatives are not covered by this exclusion. |
-| Derivatives | Different tax-return rules; `unsupported_tax_treatment` until a dedicated processor and form are implemented. |
+| Derivatives | *Izvedeni finančni instrumenti* (options, futures, CFDs, leveraged products) have their own return (Doh-IFI) and rules. Not supported yet: `unsupported_tax_treatment` blocks the sale as for any unsupported class, until a dedicated processor and form exist. Trade Republic has none of them in scope; Interactive Brokers exports will (see "IBKR extension" in `plan.md`), so the IBKR parser must map them to the derivative class and the user is told that they are not reported. A resident who sold derivatives files Doh-IFI themselves. |
 | Unknown instruments and private-market events | Ask for classification and required facts; cash movements alone do not establish a purchase quantity or cost basis. |
 | Broker benefits (saveback, stock perks, bonuses, referrals) | Information only: no units, lot, classification request or form. Purchase rows come only from trades (date, units, unit price); a benefit never lowers a purchase value. eDavki applies the standard costs (*normirani stroški*) itself, so the application never writes them. |
 
@@ -725,7 +731,7 @@ are `dividends`, `bank_deposit_interest`, `other_interest` (with the subtype `br
 `bond_coupon`) and `exclude_from_supported_reports`, with no preselected choice. Without an ISIN,
 `dividends` and `bond_coupon` are not offered, because a Doh-Div row and a coupon need the ISIN.
 Income is never capital gains. An answer sends the payment through the rules of its form
-(payer by ISIN, a Slovenian payer excluded, the deposit allowance); `exclude_from_supported_reports`
+(payer by ISIN, a Slovenian dividend payer excluded, the deposit allowance); `exclude_from_supported_reports`
 lists it in `excludedItems` (one entry per payment, without `isin` when the file gave none) with
 the reason `user_choice` and a warning `tax_category_not_reported` (key `.user_choice_income`; key
 `.user_choice_income_missing_isin` when the payment is of a share, fund or bond, which should have
@@ -783,8 +789,10 @@ dates. Match exact identifiers; names, exchange location, trading currency, brok
 ISIN prefix alone do not prove payer residence or tax treatment.
 When no entry is found for the ISIN, the income row keeps the amount and the ISIN, leaves the
 payer facts and the source country empty, and the result warns the user to complete them in eDavki
-(the report is not blocked). When the ISIN has several entries that disagree, the app never
-guesses between them: it offers the user the entries, listed with their facts, and a skip choice
+(the report is not blocked). When the ISIN has several entries and every one has the residence
+country `SI`, the payer of a dividend is a Slovenian company that deducts the tax itself: nothing is asked and
+the income is an excluded item, whichever entry is meant. When the entries disagree otherwise
+(for example `SI` and `FR`), the app never guesses between them: it offers the user the entries, listed with their facts, and a skip choice
 for each payer. The facts of the picked entry are used. A skipped or unanswered payer (for
 example with `--no-input`) gives the same row as "not found": the report is still made, with a
 warning, and the user completes the payer in eDavki. The question never blocks and never makes
@@ -793,10 +801,13 @@ changed set is a new question. Payer facts the payment evidence gives are used. 
 no validity dates, and a payer whose facts change is a new entry that conflicts with the old one.
 A catalogue entry may prefill verified metadata, but never overrides contradictory payment evidence.
 
-For dividends and other interest, distinguish foreign tax from Slovenian final withholding.
-A Slovenian company deducts the final tax itself when it pays a tax resident, so such a payment
-needs no Doh-Div or Doh-Obr. A payment whose payer is found by exact identifier, or picked by the
-user, with the residence country `SI` is omitted from the form. Retain it in `excludedItems` with
+For dividends, distinguish foreign tax from Slovenian final withholding.
+A Slovenian company deducts the final tax itself when it pays a dividend to a tax resident, so
+such a payment needs no Doh-Div. For a bond coupon this does not hold for a listed bond or a bond
+of the Republic of Slovenia (see "Interest forms and the annual deposit allowance"), so a coupon of
+a Slovenian issuer is reported like any other. A dividend whose payer is found by exact identifier, or picked by the
+user, with the residence country `SI`, or whose identifier has several entries that all have `SI`,
+is omitted from the form. Retain it in `excludedItems` with
 reason `slovenian_tax_settled` and its source, without a warning. No payment evidence is
 needed. An ISIN prefix, a name or a currency alone never makes a payer Slovenian. A payer that is
 not found is reported as described above. A safely isolated Doh-Obr ISIN may use the explicit
@@ -852,8 +863,9 @@ independent. Ordinary bond coupons and broker cash interest have distinct report
 but share one Doh-Obr document, using the appropriate interest-type codes. Do not create two
 independent ordinary-interest returns for the same taxpayer and year simply to separate subtypes.
 
-If a bond-income error can be isolated safely to a complete ISIN, prompt the user to exclude all
-listed failed ISINs from Doh-Obr or block Doh-Obr, following
+If a bond-income error can be isolated safely to a complete ISIN (a coupon without an official
+rate, or a bond that is a discount or zero-coupon bond or whose type was not given), prompt the
+user to exclude all listed failed ISINs from Doh-Obr or block Doh-Obr, following
 `other_interest_failure_resolution_required` in `diagnostics.md`. Before the answer, other interest
 is `needs_input`. Exclusion removes all selected-year Doh-Obr income for those ISINs across brokers,
 preserving valid income from other instruments and broker cash interest. Record the excluded names,
@@ -874,11 +886,21 @@ A payment of zero or less (for example debit interest), or one that rounds to EU
 row, never counts for the allowance and is never netted against other payments; a warning lists it.
 
 The issuer of an ordinary coupon bond is the payer of its coupons, looked up by ISIN as for
-dividends. When the payer found has the residence country `SI`, FURS says that for interest on
-coupon bonds with the source in Slovenia the payer usually calculates the 25 % income tax and
-withholds it with the interest, so a return is not usually needed: the coupons are not reported and
-are an excluded item `slovenian_tax_settled`, as for dividends. Which payer a foreign coupon needs
-in Doh-Obr (the issuer or the paying broker) is unverified until a draft import.
+dividends. FURS says that for interest on coupon bonds with the source in Slovenia the payer usually
+calculates the 25 % income tax and withholds it with the interest, so no return is needed. The
+exception is a bond of a company established in Slovenia that has no option to exchange it for
+shares and is admitted to an organised market or traded on a multilateral trading facility in an EU
+or OECD state, and a bond of the Republic of Slovenia issued under the public finance law: the
+payer does not withhold on these, and the resident files Doh-Obr (FURS public call for the 2025
+returns, and the FURS answer in the eDavki assistant). A bond bought through a broker is traded on a
+market or facility in practice, so the app does not leave a coupon out because its issuer has the
+residence country `SI`: it is a Doh-Obr row with the issuer's facts. A coupon of an unlisted
+Slovenian bond that the payer taxed already would be reported twice; the app has no listing data
+yet (a column of the reference file can carry it later), so the user checks it. A coupon of an `SI`
+issuer with a tax above 0 in the export gets the warning `slovenian_coupon_tax`: that tax is a
+Slovenian withholding, not foreign tax, so the user either leaves the coupon out or removes the tax
+in eDavki. Retail bonds of the Republic of Slovenia stay out of scope (above). Which payer a foreign coupon needs in Doh-Obr
+(the issuer or the paying broker) is unverified until a draft import.
 
 For years from 2022, the ordinary interest rate is 25%; for 2020 and 2021 it is 27.5%; earlier
 supported years use their verified rule. These rates explain treatment, not amounts deducted from
@@ -1074,9 +1096,10 @@ Tests based on this document must prove that:
 - unresolved evidence from an excluded item keeps dependent losses awaiting input and updates the
   exclusion choice when the affected ISIN list changes;
 - supported income categories route to their documented forms and exclusions remain visible;
-- a payment of a payer with the residence country `SI` is left out of the form and listed in
+- a dividend of a payer with the residence country `SI` is left out of Doh-Div and listed in
   `excludedItems` as `slovenian_tax_settled` without payment evidence, while its capital trades
   stay, and an ISIN prefix `SI` alone does not make a payer Slovenian;
+- a coupon of an issuer with the residence country `SI` is a Doh-Obr row like any other;
 - company/ETF catalogue matches prefill verified facts, preserve provenance and work offline;
 - a catalogue revision that changes after the user picked or confirmed an entry invalidates that
   decision;
