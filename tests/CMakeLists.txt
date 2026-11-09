@@ -45,6 +45,7 @@ add_executable(taxbroker_unit_tests
     unit/date_utils_test.cpp
     unit/diagnostic_messages_test.cpp
     unit/diagnostics_json_test.cpp
+    unit/dividend_failure_test.cpp
     unit/dividend_payments_test.cpp
     unit/income_classifier_test.cpp
     unit/interest_payments_test.cpp

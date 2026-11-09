@@ -440,6 +440,7 @@ struct DraftDiagnostic {
 
 [[nodiscard]] bool isFailureResolution(RequestType aType) {
     return aType == RequestType::CapitalGainsFailureResolutionRequired ||
+           aType == RequestType::DividendsFailureResolutionRequired ||
            aType == RequestType::OtherInterestFailureResolutionRequired;
 }
 

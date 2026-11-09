@@ -302,6 +302,53 @@ TEST(OtherInterestFailureTest, ExcludingTheIsinKeepsTheOtherCouponAndTheCashInte
     EXPECT_EQ(run.result().mStatus, OverallStatus::CompletedWithWarnings);
 }
 
+TEST(OtherInterestFailureTest, ExcludingTheIsinAlsoDropsItsOpenPayerChoice) {
+    // Two reference rows disagree on the issuer of Bond A: a payer choice, which never blocks.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,TAX-A,1 Main Street,FR,,,issuer,manual,\n"
+                    "XX0000000010,Issuer A2,TAX-A2,3 Main Street,DE,,,wikidata,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                                          .mSources = {source(2, "synthetic-int-1")}},
+                            .mGrossAmount = 100'000, // USD 10.00, no USD rate
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::USD,
+                            .mTaxCurrency = Currency::USD}}},
+    };
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    // The payer choice and the failure question are both open.
+    ASSERT_EQ(run.result().mRequests.size(), 2U);
+
+    const auto failureRequest = std::find_if(
+        run.result().mRequests.begin(),
+        run.result().mRequests.end(),
+        [](const DecisionRequest& aRequest) {
+            return aRequest.mType == RequestType::OtherInterestFailureResolutionRequired;
+        });
+
+    ASSERT_NE(failureRequest, run.result().mRequests.end());
+
+    const auto rejections = run.mSession.answer({DecisionAnswer{
+        .mRequestId = failureRequest->mId,
+        .mRunRevision = run.result().mRunRevision,
+        .mValue = kExclude,
+    }});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.result().mRequests.empty());
+    EXPECT_EQ(run.obrStatus(), ReportStatus::NoData);
+}
+
 TEST(OtherInterestFailureTest, ExcludingTheOnlyCouponLeavesNoDataAndNoXml) {
     const auto catalogue = catalogueOf(kFrenchIssuers);
     OfficialRateTable rates;

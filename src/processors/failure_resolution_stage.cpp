@@ -116,7 +116,8 @@ std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
 
 /// Resolves the errors of the excluded ISINs and drops their open questions, as no answer to those
 /// can change the report any more. A question whose linked error stays unresolved (it also
-/// affects another form) stays open.
+/// affects another form) stays open. A linked warning never keeps a question open: the payer choice
+/// of a dividend or coupon is linked to the warning that its payer is not found.
 void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded, ReportType aReport) {
     const auto& diagnostics = aInput.mProcessingDiagnostics;
 
@@ -132,7 +133,8 @@ void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded, Re
     }
 
     const auto isResolved = [&aInput](std::size_t aPosition) {
-        return std::find(aInput.mResolvedDiagnostics.begin(),
+        return aInput.mProcessingDiagnostics.at(aPosition).mSeverity != DiagnosticSeverity::Error ||
+               std::find(aInput.mResolvedDiagnostics.begin(),
                          aInput.mResolvedDiagnostics.end(),
                          aPosition) != aInput.mResolvedDiagnostics.end();
     };

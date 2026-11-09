@@ -36,6 +36,14 @@ DecisionQuestion capitalQuestion(std::vector<FailedInvestment> aInvestments) {
     };
 }
 
+DecisionQuestion dividendsQuestion(std::vector<FailedInvestment> aInvestments) {
+    return DecisionQuestion{
+        .mType = RequestType::DividendsFailureResolutionRequired,
+        .mAffectedReports = {kDividends},
+        .mData = FailureResolutionQuestion{.mInvestments = std::move(aInvestments)},
+    };
+}
+
 DecisionQuestion otherInterestQuestion(std::vector<FailedInvestment> aInvestments) {
     return DecisionQuestion{
         .mType = RequestType::OtherInterestFailureResolutionRequired,
@@ -1298,6 +1306,51 @@ TEST(DecisionSessionTest, AFailureChoiceDoesNotFitALossQuestion) {
     EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
     EXPECT_EQ(session.result().mRunRevision, 1U);
     EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionSessionTest, ADividendFailureQuestionTakesAFailureChoiceAndRejectsOtherAnswers) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = dividendsQuestion({{
+            .mIsin = "XX0000000001",
+            .mName = "Synthetic Payer",
+            .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+        }});
+        ApplicationResultInput input{.mReportingYear = 2024};
+        input.mProcessingDiagnostics = {ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kDividends},
+                         .mInstrumentName = "Synthetic Payer",
+                         .mIsin = "XX0000000001"},
+            .mMessage = "Synthetic dividend error.",
+        }};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question, .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto no = session.answer({{"request-0001", 1, kNoOtherActivity}});
+
+    ASSERT_EQ(no.size(), 1U);
+    EXPECT_EQ(no[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+
+    // A failure choice is accepted and starts a new run.
+    const auto accepted = session.answer({{"request-0001", 1, kFailReport}});
+
+    EXPECT_TRUE(accepted.empty());
+    EXPECT_EQ(session.result().mRunRevision, 2U);
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions.at(0).mType,
+              RequestType::DividendsFailureResolutionRequired);
 }
 
 TEST(DecisionSessionTest, ALossAnswerDoesNotFitAFailureQuestion) {

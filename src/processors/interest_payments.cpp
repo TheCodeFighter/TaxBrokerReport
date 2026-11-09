@@ -302,59 +302,21 @@ struct Amounts {
     Money mTax{};
 };
 
-/// Adds the error of each currency of the payment that has no official rate on its receipt date:
-/// the error of the selection, made for this payment (its form, rows, name and ISIN). Gross and
-/// tax in one currency give one error. Returns whether a rate is missing.
-bool addMissingRateErrors(const OfficialRateSelection& aRates,
-                          const Payment& aPayment,
-                          std::vector<ProcessingDiagnostic>& aDiagnostics) {
-    const auto& transaction = *aPayment.mTransaction;
-    const auto& metadata = transaction.mMetadata;
-    std::vector<Currency> currencies{transaction.mCurrency};
-
-    // A tax of 0 is 0 in every currency and needs no rate.
-    if (transaction.mTaxPaid && *transaction.mTaxPaid != 0 &&
-        transaction.mTaxCurrency != transaction.mCurrency)
-    {
-        currencies.push_back(transaction.mTaxCurrency);
-    }
-
-    bool missing = false;
-
-    for (const auto currency : currencies)
-    {
-        if (currency == Currency::EUR || aRates.find(currency, metadata.mTaxDate) != nullptr)
-        {
-            continue;
-        }
-
-        const auto* error = aRates.findMissing(currency, metadata.mTaxDate);
-
-        if (error == nullptr)
-        {
-            throw std::logic_error("A payment without a rate needs the error of its pair.");
-        }
-
-        auto diagnostic = *error;
-
-        diagnostic.mContext.mAffectedReports = {reportOf(aPayment.mRoute)};
-        diagnostic.mContext.mSources = metadata.mSources;
-        diagnostic.mContext.mInstrumentName = nameOf(aPayment);
-        diagnostic.mContext.mIsin = aPayment.mInstrument->mIsin;
-        aDiagnostics.push_back(std::move(diagnostic));
-        missing = true;
-    }
-
-    return missing;
-}
-
 /// The EUR gross and foreign tax of a payment, or none when one cannot be converted: a missing
 /// rate or an amount that does not fit gives an error of this payment.
 std::optional<Amounts> convert(IncomeEurConverter& aConverter,
                                const OfficialRateSelection& aRates,
                                const Payment& aPayment,
                                std::vector<ProcessingDiagnostic>& aDiagnostics) {
-    if (addMissingRateErrors(aRates, aPayment, aDiagnostics))
+    if (addPaymentMissingRateErrors(aRates,
+                                    reportOf(aPayment.mRoute),
+                                    aPayment.mTransaction->mMetadata,
+                                    nameOf(aPayment),
+                                    aPayment.mInstrument->mIsin,
+                                    aPayment.mTransaction->mCurrency,
+                                    aPayment.mTransaction->mTaxPaid,
+                                    aPayment.mTransaction->mTaxCurrency,
+                                    aDiagnostics))
     {
         return std::nullopt;
     }

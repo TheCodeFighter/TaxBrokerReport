@@ -46,6 +46,7 @@ enum class RequestType {
     TaxClassificationRequired,
     IncomeDetailsRequired,
     CapitalGainsFailureResolutionRequired,
+    DividendsFailureResolutionRequired,
     OtherInterestFailureResolutionRequired,
     DepositInterestTotalRequired,
 };
@@ -107,8 +108,9 @@ struct FailedInvestment {
     bool operator==(const FailedInvestment&) const = default;
 };
 
-/// The question data of `capital_gains_failure_resolution_required` and
-/// `other_interest_failure_resolution_required`: the complete list of failed investments.
+/// The question data of `capital_gains_failure_resolution_required`,
+/// `dividends_failure_resolution_required` and `other_interest_failure_resolution_required`: the
+/// complete list of failed investments.
 struct FailureResolutionQuestion {
     std::vector<FailedInvestment> mInvestments;
 

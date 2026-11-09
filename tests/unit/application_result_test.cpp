@@ -2006,6 +2006,36 @@ TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {
                  std::invalid_argument);
 }
 
+TEST(ApplicationResultRequestTest, ADividendsFailureQuestionNeedsAnInvestmentAndKeepsDohDivOpen) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = RequestType::DividendsFailureResolutionRequired,
+                                        .mAffectedReports = {kDividends},
+                                        .mData = FailureResolutionQuestion{.mInvestments = {}},
+                                    }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+
+    ApplicationResultInput withList{.mReportingYear = 2024};
+    withList.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::DividendsFailureResolutionRequired,
+            .mAffectedReports = {kDividends},
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {FailedInvestment{
+                        .mIsin = "XX0000000010",
+                        .mName = "Synthetic Payer A",
+                        .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+                    }}},
+        }}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(withList));
+
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::NeedsInput);
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::NoData);
+}
+
 TEST(ApplicationResultRequestTest, ALossQuestionNeedsSalesWithOpenUnits) {
     // Loss question data on another request type.
     ApplicationResultInput otherType{.mReportingYear = 2024};

@@ -1148,6 +1148,33 @@ TEST(ApplicationResultJsonTest, ARecordedAnswerIsListedWithoutSources) {
     EXPECT_EQ(json.at("decisions"), expected);
 }
 
+TEST(ApplicationResultJsonTest, WritesTheDividendsFailureQuestionWithItsInvestments) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::DividendsFailureResolutionRequired,
+                .mAffectedReports = {ReportType::Dividends},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000010",
+                            .mName = "Synthetic Payer A",
+                            .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+                        }}},
+            },
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "dividends_failure_resolution_required");
+    EXPECT_EQ(request.at("affectedReports"), nlohmann::json::array({"dividends"}));
+    EXPECT_EQ(request.at("investments").at(0).at("isin"), "XX0000000010");
+    EXPECT_EQ(request.at("investments").at(0).at("reasonCodes"),
+              nlohmann::json::array({"missing_exchange_rate"}));
+}
+
 TEST(ApplicationResultJsonTest, WritesEveryAnswer) {
     auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
     result.mDecisions = {

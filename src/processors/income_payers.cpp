@@ -3,6 +3,7 @@
 #include "taxbroker/currency.hpp"
 
 #include <algorithm>
+#include <stdexcept>
 #include <variant>
 
 namespace taxbroker {
@@ -305,6 +306,52 @@ void appendExcludedItems(ApplicationResultInput& aInput,
 
         aInput.mExcludedItems.push_back(std::move(item));
     }
+}
+
+bool addPaymentMissingRateErrors(const OfficialRateSelection& aRates,
+                                 ReportType aReport,
+                                 const EventMetadata& aMetadata,
+                                 const std::string& aName,
+                                 const std::optional<Isin>& aIsin,
+                                 Currency aGrossCurrency,
+                                 const std::optional<Money>& aTax,
+                                 Currency aTaxCurrency,
+                                 std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    std::vector<Currency> currencies{aGrossCurrency};
+
+    // A tax of 0 is 0 in every currency and needs no rate.
+    if (aTax && *aTax != 0 && aTaxCurrency != aGrossCurrency)
+    {
+        currencies.push_back(aTaxCurrency);
+    }
+
+    bool missing = false;
+
+    for (const auto currency : currencies)
+    {
+        if (currency == Currency::EUR || aRates.find(currency, aMetadata.mTaxDate) != nullptr)
+        {
+            continue;
+        }
+
+        const auto* error = aRates.findMissing(currency, aMetadata.mTaxDate);
+
+        if (error == nullptr)
+        {
+            throw std::logic_error("A payment without a rate needs the error of its pair.");
+        }
+
+        auto diagnostic = *error;
+
+        diagnostic.mContext.mAffectedReports = {aReport};
+        diagnostic.mContext.mSources = aMetadata.mSources;
+        diagnostic.mContext.mInstrumentName = aName;
+        diagnostic.mContext.mIsin = aIsin;
+        aDiagnostics.push_back(std::move(diagnostic));
+        missing = true;
+    }
+
+    return missing;
 }
 
 } // namespace taxbroker

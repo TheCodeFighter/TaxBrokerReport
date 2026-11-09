@@ -95,6 +95,17 @@ void addIncomeRateNeeds(std::vector<RateNeed>& aNeeds,
                         const std::optional<Money>& aTax,
                         Currency aTaxCurrency);
 
+/// Adds the error of each currency of one payment that has no official rate on its receipt date.
+bool addPaymentMissingRateErrors(const OfficialRateSelection& aRates,
+                                 ReportType aReport,
+                                 const EventMetadata& aMetadata,
+                                 const std::string& aName,
+                                 const std::optional<Isin>& aIsin,
+                                 Currency aGrossCurrency,
+                                 const std::optional<Money>& aTax,
+                                 Currency aTaxCurrency,
+                                 std::vector<ProcessingDiagnostic>& aDiagnostics);
+
 /// Converts income amounts to EUR with the selected official rates and keeps the rates it used.
 class IncomeEurConverter {
   public:
