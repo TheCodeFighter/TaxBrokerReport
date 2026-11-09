@@ -658,7 +658,8 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
         if constexpr (std::is_same_v<Question, std::monostate> ||
                       std::is_same_v<Question, PayerChoiceQuestion> ||
                       std::is_same_v<Question, DepositInterestTotalQuestion> ||
-                      std::is_same_v<Question, IncomeClassificationQuestion>)
+                      std::is_same_v<Question, IncomeClassificationQuestion> ||
+                      std::is_same_v<Question, BondTypeQuestion>)
         {
             // canAsk() keeps them out: the CLI makes no income rows yet.
             throw std::logic_error("this question cannot be asked");
@@ -764,6 +765,12 @@ std::string answerText(const AnswerValue& aAnswer) {
 
             return "a bond coupon (Doh-Obr)";
         }
+        else if constexpr (std::is_same_v<Value, BondTypeAnswer>)
+        {
+            return aValue.mType == BondType::Ordinary
+                       ? "an ordinary bond"
+                       : "a discount or zero-coupon bond (issued below its nominal value)";
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             return aValue.mPickedOption ? "payer row " + std::to_string(*aValue.mPickedOption + 1)
@@ -809,7 +816,8 @@ bool canAsk(const QuestionData& aData) {
         }
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion> ||
                            std::is_same_v<Question, DepositInterestTotalQuestion> ||
-                           std::is_same_v<Question, IncomeClassificationQuestion>)
+                           std::is_same_v<Question, IncomeClassificationQuestion> ||
+                           std::is_same_v<Question, BondTypeQuestion>)
         {
             // The CLI does not make income rows yet, so it has no prompt for these questions.
             return false;
@@ -958,6 +966,10 @@ std::string answerLine(const RecordedDecision& aDecision) {
         {
             return investmentText(aQuestion.mIsin.value_or(""), aQuestion.mName) + ", payment on " +
                    formatCalendarDate(aQuestion.mDate);
+        }
+        else if constexpr (std::is_same_v<Question, BondTypeQuestion>)
+        {
+            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", bond type";
         }
         else
         {

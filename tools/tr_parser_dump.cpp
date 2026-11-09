@@ -1029,6 +1029,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "InterestPayerNotFound";
     case ProcessingDiagnosticCode::InterestPaymentNotPositive:
         return "InterestPaymentNotPositive";
+    case ProcessingDiagnosticCode::SlovenianCouponTax:
+        return "SlovenianCouponTax";
     case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
         return "DepositInterestAddOtherBanks";
     }

@@ -186,7 +186,7 @@ the original currency (`original_currency`) and the tax in the account currency 
 is divided by the ECB rate of the receipt date and rounded once to four decimals (USD 10.00 at
 1.0880 is EUR 9.1912). The tax is taken as it is when it is in EUR, and converted the same way
 when it is in a foreign currency (USD 1.50 at 1.0880 is EUR 1.3787). The broker `fx_rate` is never
-used for a form value, so the EUR tax is not converted back to the gross currency. A payment whose
+used for a form value, so the EUR tax is not converted back to the gross currency. A dividend whose
 payer is Slovenian needs no rate, because it is not reported (`tax_rules.md`, "Payer lists,
 settled Slovenian tax and foreign-tax relief").
 

@@ -67,6 +67,8 @@ enum class ProcessingDiagnosticCode {
     InterestPayerNotFound,
     /// A warning: an interest payment of 0 or less, or that rounds to 0.00, is not reported.
     InterestPaymentNotPositive,
+    /// A warning: a coupon of a Slovenian issuer has tax, which is not foreign tax.
+    SlovenianCouponTax,
     /// A warning: the user adds the interest of the other banks in eDavki.
     DepositInterestAddOtherBanks,
 };

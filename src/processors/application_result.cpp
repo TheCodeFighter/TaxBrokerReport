@@ -445,9 +445,9 @@ struct DraftDiagnostic {
 
 /// A failure-resolution type needs a list with at least one investment, a loss question at
 /// least one sale, each with open units, a ratio question a source, open units and a date
-/// range around its effective date, a classification question an ISIN, and a quantity question
-/// an ISIN and open units below the sale units; every other type has no question data until its
-/// processor defines it.
+/// range around its effective date, a classification question an ISIN, a bond type question an ISIN
+/// and sold or matured units, and a quantity question an ISIN and open units below the sale units;
+/// every other type has no question data until its processor defines it.
 void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
     const auto* loss = std::get_if<LossEligibilityQuestion>(&aQuestion.mData);
@@ -457,6 +457,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
     const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aQuestion.mData);
     const auto* income = std::get_if<IncomeClassificationQuestion>(&aQuestion.mData);
+    const auto* bond = std::get_if<BondTypeQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
@@ -467,7 +468,8 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
         ((classification != nullptr || income != nullptr) != isClassificationType) ||
-        (quantity != nullptr) != isQuantityType || (payer != nullptr && !isIncomeDetailsType) ||
+        (quantity != nullptr) != isQuantityType ||
+        ((payer != nullptr || bond != nullptr) && !isIncomeDetailsType) ||
         (deposit != nullptr) != isDepositType)
     {
         throw std::invalid_argument("The question data does not fit the request type.");
@@ -490,6 +492,13 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A deposit interest question needs a total above 0 and at "
                                     "most EUR 1,000.");
+    }
+
+    if (bond != nullptr &&
+        (bond->mIsin.empty() || (bond->mSoldUnits <= 0 && bond->mMaturedUnits <= 0)))
+    {
+        throw std::invalid_argument("A bond type question needs an ISIN and sold or matured "
+                                    "units.");
     }
 
     if (income != nullptr && income->mIsin && income->mIsin->empty())
@@ -620,20 +629,26 @@ void checkFailureResolution(const ReportInput& aInput) {
 }
 
 /// The excluded investments of a form, sorted like the question, each with the IDs of the resolved
-/// diagnostics of its ISIN in diagnostic order.
+/// diagnostics of its ISIN that affect this form, in diagnostic order. An error of the same ISIN
+/// that only another form has belongs to that form's exclusion.
 [[nodiscard]] std::vector<RequestInvestment>
 excludedInvestmentsOf(const ReportInput& aInput,
+                      ReportType aType,
                       const std::vector<std::size_t>& aResolved,
                       const std::vector<std::size_t>& aProcessingToDiagnostic,
                       const std::vector<ApplicationDiagnostic>& aDiagnostics) {
     std::vector<std::size_t> resolvedPositions;
 
-    std::transform(aResolved.begin(),
-                   aResolved.end(),
-                   std::back_inserter(resolvedPositions),
-                   [&aProcessingToDiagnostic](std::size_t aIndex) {
-                       return aProcessingToDiagnostic.at(aIndex);
-                   });
+    for (const auto index : aResolved)
+    {
+        const auto position = aProcessingToDiagnostic.at(index);
+
+        if (affects(aDiagnostics[position].mAffectedReports, aType))
+        {
+            resolvedPositions.push_back(position);
+        }
+    }
+
     std::sort(resolvedPositions.begin(), resolvedPositions.end());
 
     return investmentsOf(normalizedData(FailureResolutionQuestion{aInput.mExcludedInvestments}),
@@ -1010,6 +1025,7 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
         checkFailureResolution(input);
         report.mFailureResolution = input.mFailureResolution;
         report.mExcludedInvestments = excludedInvestmentsOf(input,
+                                                            type,
                                                             aInput.mResolvedDiagnostics,
                                                             processingToDiagnostic,
                                                             result.mDiagnostics);

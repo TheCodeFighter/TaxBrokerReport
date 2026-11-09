@@ -1034,6 +1034,38 @@ TEST(DividendPaymentsTest, ASlovenianRowThatTheUserPicksIsExcludedToo) {
     EXPECT_TRUE(run.result().mRequests.empty());
 }
 
+TEST(DividendPaymentsTest, SeveralSlovenianPayerRowsAreExcludedWithoutAQuestion) {
+    // Two rows for one ISIN, both Slovenian: whichever row is meant, the company deducts the tax.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Payer S1,TAX-S1,1 Main Street,SI,,,issuer,manual,\n"
+                    "XX0000000010,Payer S2,TAX-S2,2 Main Street,SI,,,wikidata,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    // No payer choice, no row; the dividend is an excluded item and Doh-Div has no data.
+    EXPECT_TRUE(run.result().mRequests.empty());
+    EXPECT_TRUE(run.mLast.mReport.mRows.empty());
+    ASSERT_EQ(run.mLast.mExcludedItems.size(), 1U);
+    EXPECT_EQ(run.mLast.mExcludedItems.at(0).mItem.mReason, ExcludedReason::SlovenianTaxSettled);
+    EXPECT_EQ(dividendStatus(run.result()), ReportStatus::NoData);
+}
+
 TEST(DividendPaymentsTest, ASlovenianPayerKeepsTheDividendsOfOtherPayersInTheReport) {
     const auto catalogue =
         catalogueOf("XX0000000010,Payer SI,12345678,1 Main Street,SI,,,issuer,manual,\n"

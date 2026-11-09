@@ -1,5 +1,5 @@
 #include "parsers/traderepublic_parser.hpp"
-#include "processors/capital_failure_resolution.hpp"
+#include "processors/failure_resolution_stage.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
@@ -1079,7 +1079,7 @@ TEST(ApplicationResultIntegrationTest, AnAnsweredQuestionIsRecalculatedFromTheFu
         };
 
         // The real stage asks the failure question for the incomplete history until it is answered.
-        static_cast<void>(CapitalFailureResolution::resolve(input, aDecisions));
+        static_cast<void>(FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure));
 
         return input;
     };
@@ -1155,7 +1155,7 @@ TEST(ApplicationResultIntegrationTest, ANewRunOfTheSameFileUsesTheRecordedAnswer
         };
 
         // The real stage asks the failure question for the incomplete history until it is answered.
-        static_cast<void>(CapitalFailureResolution::resolve(input, aDecisions));
+        static_cast<void>(FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure));
 
         return input;
     };
@@ -1264,7 +1264,7 @@ TEST(ApplicationResultIntegrationTest, DeletingTheRecordedAnswerAsksTheQuestionA
         };
 
         // The real stage asks the failure question for the incomplete history until it is answered.
-        static_cast<void>(CapitalFailureResolution::resolve(input, aDecisions));
+        static_cast<void>(FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure));
 
         return input;
     };
@@ -1500,7 +1500,7 @@ TEST(ApplicationResultIntegrationTest, ExcludingAnInvestmentLeavesTheDividendErr
             .mProcessingDiagnostics = std::move(fifo.mDiagnostics),
         };
 
-        excluded = CapitalFailureResolution::resolve(input, aDecisions);
+        excluded = FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure);
 
         return input;
     };

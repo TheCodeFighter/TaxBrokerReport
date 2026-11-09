@@ -3107,6 +3107,72 @@ TEST(ApplicationResultClassificationTest, ExcludedItemsAreSortedByIsinWithTheirD
     EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
+// --- The bond type question ---
+
+DecisionQuestion bondQuestion(RequestType aType, const Isin& aIsin, Units aSold, Units aMatured) {
+    return DecisionQuestion{
+        .mType = aType,
+        .mAffectedReports = {kOther},
+        .mIsin = aIsin,
+        .mData = BondTypeQuestion{.mIsin = aIsin,
+                                  .mName = "Synthetic Bond A",
+                                  .mSoldUnits = aSold,
+                                  .mMaturedUnits = aMatured,
+                                  .mMaturityDate = std::nullopt},
+    };
+}
+
+TEST(ApplicationResultRequestTest, AnOpenBondTypeQuestionMakesOnlyDohObrNeedInput) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mReports[static_cast<std::size_t>(kBank)].mXml = "<deposit/>";
+    input.mReports[static_cast<std::size_t>(kOther)].mXml = "<other/>";
+    input.mRequests = {RequestInput{.mQuestion = bondQuestion(RequestType::IncomeDetailsRequired,
+                                                              "XX0000000010",
+                                                              40'000'000'000, // 400 units
+                                                              0)}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kBank).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(kOther).mStatus, ReportStatus::NeedsInput);
+}
+
+TEST(ApplicationResultRequestTest,
+     ABondTypeQuestionNeedsItsRequestTypeAnIsinAndSoldOrMaturedUnits) {
+    // The question data on another request type.
+    ApplicationResultInput otherType{.mReportingYear = 2024};
+    otherType.mRequests = {RequestInput{
+        .mQuestion =
+            bondQuestion(RequestType::TaxClassificationRequired, "XX0000000010", 100'000'000, 0)}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(otherType)),
+                 std::invalid_argument);
+
+    // Without an ISIN.
+    ApplicationResultInput withoutIsin{.mReportingYear = 2024};
+    withoutIsin.mRequests = {RequestInput{
+        .mQuestion = bondQuestion(RequestType::IncomeDetailsRequired, "", 100'000'000, 0)}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutIsin)),
+                 std::invalid_argument);
+
+    // With neither sold nor matured units.
+    ApplicationResultInput withoutUnits{.mReportingYear = 2024};
+    withoutUnits.mRequests = {RequestInput{
+        .mQuestion = bondQuestion(RequestType::IncomeDetailsRequired, "XX0000000010", 0, 0)}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutUnits)),
+                 std::invalid_argument);
+
+    // Matured units alone are enough.
+    ApplicationResultInput matured{.mReportingYear = 2024};
+    matured.mRequests = {RequestInput{
+        .mQuestion =
+            bondQuestion(RequestType::IncomeDetailsRequired, "XX0000000010", 0, 100'000'000)}};
+
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(std::move(matured)));
+}
+
 // --- The deposit interest question ---
 
 DecisionQuestion depositQuestion(Money aTotal) {

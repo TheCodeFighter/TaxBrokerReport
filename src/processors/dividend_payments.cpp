@@ -19,7 +19,7 @@ const PayerForm kForm{
     .mReport = ReportType::Dividends,
     .mNotFoundCode = ProcessingDiagnosticCode::DividendPayerNotFound,
     .mNotFoundKey = MessageKey::DividendPayerNotFound,
-    .mCategory = ExcludedCategory::Dividend,
+    .mSlovenianExclusion = ExcludedCategory::Dividend,
 };
 
 /// One dividend of the reporting year with its place in the statement.

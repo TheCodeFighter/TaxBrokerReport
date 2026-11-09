@@ -1,4 +1,4 @@
-#include "processors/capital_failure_resolution.hpp"
+#include "processors/failure_resolution_stage.hpp"
 
 #include <gtest/gtest.h>
 
@@ -16,6 +16,7 @@ using namespace taxbroker;
 
 constexpr auto kCapital = ReportType::CapitalGains;
 constexpr auto kDividends = ReportType::Dividends;
+constexpr auto kOtherInterest = ReportType::OtherInterest;
 
 const AnswerValue kExclude = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments};
 const AnswerValue kFailReport = FailureResolutionAnswer{FailureResolution::FailReport};
@@ -68,18 +69,21 @@ using InputFactory = std::function<ApplicationResultInput()>;
 
 /// Starts a session whose calculation runs the stage on a new input. aExcluded gets what the stage
 /// returned in the latest calculation.
-void start(DecisionSession& aSession, InputFactory aInput, std::vector<Isin>& aExcluded) {
+void start(DecisionSession& aSession,
+           InputFactory aInput,
+           std::vector<Isin>& aExcluded,
+           FailureForm aForm = kCapitalFailure) {
     // The session keeps the calculation, so the lambda owns the factory.
-    aSession.start([factory = std::move(aInput), &aExcluded](RunDecisions& aDecisions) {
+    aSession.start([factory = std::move(aInput), &aExcluded, aForm](RunDecisions& aDecisions) {
         auto input = factory();
 
-        aExcluded = CapitalFailureResolution::resolve(input, aDecisions);
+        aExcluded = FailureResolutionStage::resolve(input, aDecisions, aForm);
 
         return input;
     });
 }
 
-TEST(CapitalFailureResolutionTest, TwoFailedInvestmentsAreOneQuestionSortedByIsin) {
+TEST(FailureResolutionStageTest, TwoFailedInvestmentsAreOneQuestionSortedByIsin) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -158,7 +162,7 @@ TEST(CapitalFailureResolutionTest, TwoFailedInvestmentsAreOneQuestionSortedByIsi
     EXPECT_FALSE(result.report(kCapital).mXml.has_value());
 }
 
-TEST(CapitalFailureResolutionTest, AnInvestmentNameMissingFromAnErrorIsTakenFromAnother) {
+TEST(FailureResolutionStageTest, AnInvestmentNameMissingFromAnErrorIsTakenFromAnother) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -198,7 +202,7 @@ TEST(CapitalFailureResolutionTest, AnInvestmentNameMissingFromAnErrorIsTakenFrom
 
 // Errors that no investment owns.
 
-TEST(CapitalFailureResolutionTest, ARejectedTradeRowSuppressesTheQuestion) {
+TEST(FailureResolutionStageTest, ARejectedTradeRowSuppressesTheQuestion) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -250,7 +254,7 @@ TEST(CapitalFailureResolutionTest, ARejectedTradeRowSuppressesTheQuestion) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
 }
 
-TEST(CapitalFailureResolutionTest, AnErrorWithoutAnIsinSuppressesTheQuestion) {
+TEST(FailureResolutionStageTest, AnErrorWithoutAnIsinSuppressesTheQuestion) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -309,7 +313,7 @@ TEST(CapitalFailureResolutionTest, AnErrorWithoutAnIsinSuppressesTheQuestion) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
 }
 
-TEST(CapitalFailureResolutionTest, AnXmlErrorSuppressesTheQuestion) {
+TEST(FailureResolutionStageTest, AnXmlErrorSuppressesTheQuestion) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -368,7 +372,7 @@ TEST(CapitalFailureResolutionTest, AnXmlErrorSuppressesTheQuestion) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
 }
 
-TEST(CapitalFailureResolutionTest, AnErrorOfTheYearSuppressesTheQuestion) {
+TEST(FailureResolutionStageTest, AnErrorOfTheYearSuppressesTheQuestion) {
     // An invalid reporting year affects every form and names no investment.
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
@@ -430,7 +434,7 @@ TEST(CapitalFailureResolutionTest, AnErrorOfTheYearSuppressesTheQuestion) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
 }
 
-TEST(CapitalFailureResolutionTest, AnErrorThatAlsoAffectsAnotherFormSuppressesTheQuestion) {
+TEST(FailureResolutionStageTest, AnErrorThatAlsoAffectsAnotherFormSuppressesTheQuestion) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -490,7 +494,7 @@ TEST(CapitalFailureResolutionTest, AnErrorThatAlsoAffectsAnotherFormSuppressesTh
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
 }
 
-TEST(CapitalFailureResolutionTest, AnErrorOfAnotherFormIsNotListed) {
+TEST(FailureResolutionStageTest, AnErrorOfAnotherFormIsNotListed) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -518,7 +522,7 @@ TEST(CapitalFailureResolutionTest, AnErrorOfAnotherFormIsNotListed) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::NoData);
 }
 
-TEST(CapitalFailureResolutionTest, AWarningIsNotListed) {
+TEST(FailureResolutionStageTest, AWarningIsNotListed) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -544,7 +548,7 @@ TEST(CapitalFailureResolutionTest, AWarningIsNotListed) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::NoData);
 }
 
-TEST(CapitalFailureResolutionTest, AnErrorOfAnOpenQuestionIsNotListed) {
+TEST(FailureResolutionStageTest, AnErrorOfAnOpenQuestionIsNotListed) {
     // XX0000000001 waits for its loss answer (diagnostic 0 is linked to it), so only that
     // question is open.
     const auto input = []() {
@@ -576,7 +580,7 @@ TEST(CapitalFailureResolutionTest, AnErrorOfAnOpenQuestionIsNotListed) {
 
 // The answers.
 
-TEST(CapitalFailureResolutionTest, ExcludingLeavesOutEveryListedIsinAndResolvesItsErrors) {
+TEST(FailureResolutionStageTest, ExcludingLeavesOutEveryListedIsinAndResolvesItsErrors) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -652,7 +656,7 @@ TEST(CapitalFailureResolutionTest, ExcludingLeavesOutEveryListedIsinAndResolvesI
     EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
-TEST(CapitalFailureResolutionTest, FailingTheReportKeepsTheErrorsBlocking) {
+TEST(FailureResolutionStageTest, FailingTheReportKeepsTheErrorsBlocking) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -718,7 +722,7 @@ TEST(CapitalFailureResolutionTest, FailingTheReportKeepsTheErrorsBlocking) {
     EXPECT_EQ(result.mStatus, OverallStatus::PartialSuccess);
 }
 
-TEST(CapitalFailureResolutionTest, CancellingClosesTheQuestionWithoutAChoice) {
+TEST(FailureResolutionStageTest, CancellingClosesTheQuestionWithoutAChoice) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -784,7 +788,7 @@ TEST(CapitalFailureResolutionTest, CancellingClosesTheQuestionWithoutAChoice) {
     EXPECT_EQ(result.mDecisions.at(0).mAnswer, kCancel);
 }
 
-TEST(CapitalFailureResolutionTest, ExcludingDropsTheOpenQuestionsOfTheExcludedIsin) {
+TEST(FailureResolutionStageTest, ExcludingDropsTheOpenQuestionsOfTheExcludedIsin) {
     // XX0000000005 has an unsupported asset class and also waits for a loss answer (diagnostic 1
     // is linked to it).
     const auto input = []() {
@@ -855,7 +859,7 @@ TEST(CapitalFailureResolutionTest, ExcludingDropsTheOpenQuestionsOfTheExcludedIs
               (std::vector<std::string>{"diagnostic-0001", "diagnostic-0002"}));
 }
 
-TEST(CapitalFailureResolutionTest, ExcludingKeepsAQuestionWhoseErrorIsNotResolved) {
+TEST(FailureResolutionStageTest, ExcludingKeepsAQuestionWhoseErrorIsNotResolved) {
     // XX0000000005 has an unsupported asset class (diagnostic 0). It also waits for a loss answer
     // whose error (diagnostic 1) affects capital gains and dividends, so no exclusion of an
     // investment can resolve it: the question must stay open.
@@ -919,7 +923,7 @@ TEST(CapitalFailureResolutionTest, ExcludingKeepsAQuestionWhoseErrorIsNotResolve
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::NeedsInput);
 }
 
-TEST(CapitalFailureResolutionTest, ExcludingKeepsTheOpenQuestionOfAnotherIsin) {
+TEST(FailureResolutionStageTest, ExcludingKeepsTheOpenQuestionOfAnotherIsin) {
     // XX0000000002 has incomplete history. XX0000000001 waits for a loss answer (diagnostic 0 is
     // linked to it) and is not listed, so exclusion does not touch it.
     const auto input = []() {
@@ -983,7 +987,7 @@ TEST(CapitalFailureResolutionTest, ExcludingKeepsTheOpenQuestionOfAnotherIsin) {
     EXPECT_FALSE(result.mDiagnostics.at(1).mBlocking);
 }
 
-TEST(CapitalFailureResolutionTest, AnAnswerDoesNotCoverAChangedList) {
+TEST(FailureResolutionStageTest, AnAnswerDoesNotCoverAChangedList) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -1046,7 +1050,7 @@ TEST(CapitalFailureResolutionTest, AnAnswerDoesNotCoverAChangedList) {
                          .mIsin = "XX0000000002"},
             .mMessage = "Synthetic capital error.",
         }};
-        excluded = CapitalFailureResolution::resolve(input, aDecisions);
+        excluded = FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure);
 
         return input;
     });
@@ -1061,7 +1065,7 @@ TEST(CapitalFailureResolutionTest, AnAnswerDoesNotCoverAChangedList) {
     EXPECT_FALSE(second.mDecisions.at(0).mUsed);
 }
 
-TEST(CapitalFailureResolutionTest, TheSameListInALaterRunUsesTheRecordedAnswer) {
+TEST(FailureResolutionStageTest, TheSameListInALaterRunUsesTheRecordedAnswer) {
     const auto input = []() {
         ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -1118,6 +1122,208 @@ TEST(CapitalFailureResolutionTest, TheSameListInALaterRunUsesTheRecordedAnswer) 
     ASSERT_EQ(second.mDecisions.size(), 1U);
     EXPECT_TRUE(second.mDecisions.at(0).mFromEarlierRun);
     EXPECT_TRUE(second.mDecisions.at(0).mUsed);
+}
+
+// --- The Doh-Obr form ---
+
+/// An error of one coupon ISIN that only Doh-Obr has: a missing exchange rate.
+ProcessingDiagnostic couponError(const Isin& aIsin, const std::string& aName) {
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {kOtherInterest},
+                     .mInstrumentName = aName,
+                     .mIsin = aIsin},
+        .mMessage = "Synthetic coupon error.",
+    };
+}
+
+TEST(FailureResolutionStageTest, TheOtherInterestFormListsOnlyItsOwnErrorsInItsOwnRequestType) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        // XX0000000010: a Doh-Obr error and a Doh-KDVP error. XX0000000028: a Doh-Div error.
+        input.mProcessingDiagnostics = {
+            couponError("XX0000000010", "Synthetic Bond A"),
+            ProcessingDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+                .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                             .mAffectedReports = {kCapital},
+                             .mInstrumentName = "Synthetic Bond A",
+                             .mIsin = "XX0000000010"},
+                .mMessage = "Synthetic capital error.",
+            },
+            ProcessingDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+                .mContext = {.mStage = PipelineStage::FifoTax,
+                             .mAffectedReports = {kDividends},
+                             .mInstrumentName = "Synthetic Share",
+                             .mIsin = "XX0000000028"},
+                .mMessage = "Synthetic dividend error.",
+            },
+        };
+
+        return input;
+    };
+    DecisionSession session;
+    std::vector<Isin> excluded;
+
+    start(session, input, excluded, kOtherInterestFailure);
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+
+    const auto& request = session.result().mRequests.at(0);
+
+    EXPECT_EQ(request.mType, RequestType::OtherInterestFailureResolutionRequired);
+    EXPECT_EQ(request.mAffectedReports, std::vector<ReportType>{kOtherInterest});
+    ASSERT_EQ(request.mInvestments.size(), 1U);
+    EXPECT_EQ(request.mInvestments.at(0).mIsin, "XX0000000010");
+    EXPECT_EQ(
+        request.mInvestments.at(0).mReasonCodes,
+        std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::MissingExchangeRate});
+}
+
+TEST(FailureResolutionStageTest, ExcludingFromOtherInterestResolvesOnlyItsErrorsOfTheIsin) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        // The same ISIN has an error in Doh-Obr and one in Doh-Div. The user excludes it from
+        // Doh-Obr only.
+        input.mProcessingDiagnostics = {
+            couponError("XX0000000010", "Synthetic Bond A"),
+            ProcessingDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+                .mContext = {.mStage = PipelineStage::FifoTax,
+                             .mAffectedReports = {kDividends},
+                             .mInstrumentName = "Synthetic Bond A",
+                             .mIsin = "XX0000000010"},
+                .mMessage = "Synthetic dividend error.",
+            },
+        };
+        input.mReports[static_cast<std::size_t>(kOtherInterest)].mXml = "<obr/>";
+
+        return input;
+    };
+    DecisionSession session;
+    std::vector<Isin> excluded;
+
+    start(session, input, excluded, kOtherInterestFailure);
+
+    const auto rejections = session.answer({{.mRequestId = session.result().mRequests.at(0).mId,
+                                             .mRunRevision = 1,
+                                             .mValue = kExclude}});
+    const auto& result = session.result();
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_EQ(excluded, std::vector<Isin>{"XX0000000010"});
+
+    // The result orders the diagnostics by report: the Doh-Div error is diagnostic 1 and stays
+    // blocking, the Doh-Obr error is diagnostic 2 and is resolved.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+
+    const auto& obr = result.report(kOtherInterest);
+
+    EXPECT_EQ(obr.mStatus, ReportStatus::Generated);
+    ASSERT_EQ(obr.mExcludedInvestments.size(), 1U);
+    EXPECT_EQ(obr.mExcludedInvestments.at(0).mDiagnosticIds,
+              std::vector<std::string>{"diagnostic-0002"});
+
+    EXPECT_EQ(result.mDiagnostics.at(0).mAffectedReports, std::vector<ReportType>{kDividends});
+    EXPECT_TRUE(result.mDiagnostics.at(0).mBlocking);
+    EXPECT_EQ(result.mDiagnostics.at(1).mAffectedReports, std::vector<ReportType>{kOtherInterest});
+    EXPECT_FALSE(result.mDiagnostics.at(1).mBlocking);
+
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::Failed);
+    EXPECT_TRUE(result.report(kDividends).mExcludedInvestments.empty());
+}
+
+TEST(FailureResolutionStageTest, ExcludingOneIsinFromTwoFormsListsOnlyEachFormsOwnErrors) {
+    // One ISIN has an error in Doh-KDVP (diagnostic 1) and one in Doh-Obr (diagnostic 2).
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        input.mProcessingDiagnostics = {
+            ProcessingDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+                .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                             .mAffectedReports = {kCapital},
+                             .mInstrumentName = "Synthetic Bond A",
+                             .mIsin = "XX0000000010"},
+                .mMessage = "Synthetic capital error.",
+            },
+            couponError("XX0000000010", "Synthetic Bond A"),
+        };
+        input.mReports[static_cast<std::size_t>(kCapital)].mXml = "<capital/>";
+        input.mReports[static_cast<std::size_t>(kOtherInterest)].mXml = "<obr/>";
+
+        return input;
+    };
+    DecisionSession session;
+
+    session.start([&input](RunDecisions& aDecisions) {
+        auto result = input();
+
+        static_cast<void>(FailureResolutionStage::resolve(result, aDecisions, kCapitalFailure));
+        static_cast<void>(
+            FailureResolutionStage::resolve(result, aDecisions, kOtherInterestFailure));
+
+        return result;
+    });
+
+    ASSERT_EQ(session.result().mRequests.size(), 2U);
+
+    const auto capitalRequest = session.result().mRequests.at(0).mId;
+    const auto obrRequest = session.result().mRequests.at(1).mId;
+
+    EXPECT_TRUE(session
+                    .answer({{.mRequestId = capitalRequest, .mRunRevision = 1, .mValue = kExclude},
+                             {.mRequestId = obrRequest, .mRunRevision = 1, .mValue = kExclude}})
+                    .empty());
+
+    const auto& result = session.result();
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(kOtherInterest).mStatus, ReportStatus::Generated);
+
+    ASSERT_EQ(result.report(kCapital).mExcludedInvestments.size(), 1U);
+    EXPECT_EQ(result.report(kCapital).mExcludedInvestments.at(0).mDiagnosticIds,
+              std::vector<std::string>{"diagnostic-0001"});
+    ASSERT_EQ(result.report(kOtherInterest).mExcludedInvestments.size(), 1U);
+    EXPECT_EQ(result.report(kOtherInterest).mExcludedInvestments.at(0).mDiagnosticIds,
+              std::vector<std::string>{"diagnostic-0002"});
+}
+
+TEST(FailureResolutionStageTest, ARejectedCouponRowSuppressesTheOtherInterestQuestion) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        input.mProcessingDiagnostics = {couponError("XX0000000010", "Synthetic Bond A")};
+        input.mMergeDiagnostics = {SourcedParseDiagnostic{
+            .mSourceIndex = 0,
+            .mBroker = Broker::TradeRepublic,
+            .mDiagnostic = {.mSeverity = DiagnosticSeverity::Error,
+                            .mCode = DiagnosticCode::InvalidValue,
+                            .mSourceFile = "history.csv",
+                            .mRowIndex = 3,
+                            .mMessage = "Synthetic parse error.",
+                            .mRowKind = ParsedRowKind::BondInterest},
+        }};
+
+        return input;
+    };
+    DecisionSession session;
+    std::vector<Isin> excluded;
+
+    start(session, input, excluded, kOtherInterestFailure);
+
+    EXPECT_TRUE(excluded.empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_EQ(session.result().report(kOtherInterest).mStatus, ReportStatus::Failed);
 }
 
 } // namespace

@@ -1,5 +1,6 @@
 #include "processors/interest_payments.hpp"
 
+#include "processors/bond_years.hpp"
 #include "processors/income_payers.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 
@@ -9,6 +10,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -19,12 +21,16 @@ namespace {
 /// The smallest EUR amount that rounds to 0.01: half a cent.
 constexpr Money kHalfCent = MONEY_SCALE / 200;
 
-/// The coupon form's share of the payer helpers.
+/// The residence country of a Slovenian payer.
+constexpr std::string_view kSlovenia = "SI";
+
+/// The coupon form's share of the payer helpers. A Slovenian issuer is not left out: its listed
+/// bonds are not subject to the withholding of the payer, so the user reports the coupons.
 const PayerForm kCouponForm{
     .mReport = ReportType::OtherInterest,
     .mNotFoundCode = ProcessingDiagnosticCode::InterestPayerNotFound,
     .mNotFoundKey = MessageKey::InterestPayerNotFound,
-    .mCategory = ExcludedCategory::Interest,
+    .mSlovenianExclusion = std::nullopt,
 };
 
 /// Where a payment goes.
@@ -125,6 +131,21 @@ std::vector<Payment> paymentsOf(const MergedStatement& aStatement,
     }
 
     return payments;
+}
+
+/// The warning that a coupon of a Slovenian issuer has tax: a Slovenian withholding is no foreign
+/// tax, and a coupon the payer already taxed is not reported.
+ProcessingDiagnostic slovenianCouponTaxWarning(const Payment& aPayment) {
+    const auto& metadata = aPayment.mTransaction->mMetadata;
+
+    return incomeDiagnostic(ReportType::OtherInterest,
+                            DiagnosticSeverity::Warning,
+                            ProcessingDiagnosticCode::SlovenianCouponTax,
+                            makeDiagnosticMessage(MessageKey::SlovenianCouponTax),
+                            metadata.mSources,
+                            metadata.mTaxDate,
+                            nameOf(aPayment),
+                            aPayment.mInstrument->mIsin);
 }
 
 /// The warning that a payment is not reported because it is not above 0.
@@ -251,7 +272,7 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
 
 /// The rate needs of the payments that are reported.
 std::vector<RateNeed> needsOf(const std::vector<Payment>& aPayments,
-                              const std::map<Isin, PayerOutcome>& aCouponPayers) {
+                              const std::set<Isin>& aSkippedCoupons) {
     std::vector<RateNeed> needs;
 
     for (const auto& payment : aPayments)
@@ -259,7 +280,7 @@ std::vector<RateNeed> needsOf(const std::vector<Payment>& aPayments,
         const auto& transaction = *payment.mTransaction;
 
         if (payment.mRoute == Route::Coupon &&
-            aCouponPayers.at(payment.mInstrument->mIsin.value()).mIsSlovenian)
+            aSkippedCoupons.contains(payment.mInstrument->mIsin.value()))
         {
             continue;
         }
@@ -275,14 +296,69 @@ std::vector<RateNeed> needsOf(const std::vector<Payment>& aPayments,
     return needs;
 }
 
-/// The EUR gross and foreign tax of a payment, or none when one cannot be converted (the reason
-/// is already in the diagnostics or in the rate selection).
+/// The EUR gross and foreign tax of a payment.
 struct Amounts {
     Money mGross{};
     Money mTax{};
 };
 
-std::optional<Amounts> convert(IncomeEurConverter& aConverter, const Payment& aPayment) {
+/// Adds the error of each currency of the payment that has no official rate on its receipt date:
+/// the error of the selection, made for this payment (its form, rows, name and ISIN). Gross and
+/// tax in one currency give one error. Returns whether a rate is missing.
+bool addMissingRateErrors(const OfficialRateSelection& aRates,
+                          const Payment& aPayment,
+                          std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    const auto& transaction = *aPayment.mTransaction;
+    const auto& metadata = transaction.mMetadata;
+    std::vector<Currency> currencies{transaction.mCurrency};
+
+    // A tax of 0 is 0 in every currency and needs no rate.
+    if (transaction.mTaxPaid && *transaction.mTaxPaid != 0 &&
+        transaction.mTaxCurrency != transaction.mCurrency)
+    {
+        currencies.push_back(transaction.mTaxCurrency);
+    }
+
+    bool missing = false;
+
+    for (const auto currency : currencies)
+    {
+        if (currency == Currency::EUR || aRates.find(currency, metadata.mTaxDate) != nullptr)
+        {
+            continue;
+        }
+
+        const auto* error = aRates.findMissing(currency, metadata.mTaxDate);
+
+        if (error == nullptr)
+        {
+            throw std::logic_error("A payment without a rate needs the error of its pair.");
+        }
+
+        auto diagnostic = *error;
+
+        diagnostic.mContext.mAffectedReports = {reportOf(aPayment.mRoute)};
+        diagnostic.mContext.mSources = metadata.mSources;
+        diagnostic.mContext.mInstrumentName = nameOf(aPayment);
+        diagnostic.mContext.mIsin = aPayment.mInstrument->mIsin;
+        aDiagnostics.push_back(std::move(diagnostic));
+        missing = true;
+    }
+
+    return missing;
+}
+
+/// The EUR gross and foreign tax of a payment, or none when one cannot be converted: a missing
+/// rate or an amount that does not fit gives an error of this payment.
+std::optional<Amounts> convert(IncomeEurConverter& aConverter,
+                               const OfficialRateSelection& aRates,
+                               const Payment& aPayment,
+                               std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    if (addMissingRateErrors(aRates, aPayment, aDiagnostics))
+    {
+        return std::nullopt;
+    }
+
     const auto& transaction = *aPayment.mTransaction;
     const auto& metadata = transaction.mMetadata;
     const auto name = nameOf(aPayment);
@@ -467,6 +543,103 @@ void applyAllowance(InterestPaymentsResult& aResult,
                          std::nullopt));
 }
 
+/// The error that the income of a bond cannot go into Doh-Obr: its type is a discount or
+/// zero-coupon bond, whose interest nothing calculates yet, or its type was not given.
+ProcessingDiagnostic bondTypeError(const Isin& aIsin, const BondYear& aBond, MessageKey aKey) {
+    return incomeDiagnostic(ReportType::OtherInterest,
+                            DiagnosticSeverity::Error,
+                            ProcessingDiagnosticCode::UnsupportedTaxTreatment,
+                            makeDiagnosticMessage(aKey),
+                            aBond.mSources,
+                            aBond.mFirstDate,
+                            aBond.mName,
+                            aIsin);
+}
+
+/// Asks the bond type of each bond with a sale or maturity in the year, whatever its issuer. A bond
+/// whose units overflow is an error of the bond. Returns the ISINs whose coupons stay out of
+/// Doh-Obr: the answer is open, is a discount or zero-coupon bond (an error), or was cancelled (an
+/// error).
+std::set<Isin> askBondTypes(const MergedStatement& aStatement,
+                            const ReportingYearLedger& aLedger,
+                            RunDecisions& aDecisions,
+                            InterestPaymentsResult& aResult) {
+    std::set<Isin> heldBack;
+
+    for (const auto& [isin, bond] : bondYearsOf(aStatement, aLedger))
+    {
+        const auto& units = bond.mUnits;
+
+        // Units that do not add up cannot tell whether the bond was sold or matured, so its coupons
+        // stay out of Doh-Obr with an error of the bond.
+        if (bond.mOverflow)
+        {
+            aResult.mDiagnostics.push_back(
+                numericDiagnostic(NumericError::Overflow,
+                                  {.mStage = PipelineStage::FifoTax,
+                                   .mAffectedReports = {ReportType::OtherInterest},
+                                   .mSources = bond.mSources,
+                                   .mTaxDate = bond.mFirstDate,
+                                   .mField = "bond_units",
+                                   .mInstrumentName = bond.mName,
+                                   .mIsin = isin}));
+            heldBack.insert(isin);
+
+            continue;
+        }
+
+        // A bond only bought has no sale or maturity to ask about.
+        if (units.mSoldUnits <= 0 && units.mMaturedUnits <= 0)
+        {
+            continue;
+        }
+
+        DecisionQuestion question{
+            .mType = RequestType::IncomeDetailsRequired,
+            .mAffectedReports = {ReportType::OtherInterest},
+            .mSources = bond.mSources,
+            .mTaxDate = bond.mFirstDate,
+            .mIsin = isin,
+            .mData = BondTypeQuestion{.mIsin = isin,
+                                      .mName = bond.mName,
+                                      .mSoldUnits = units.mSoldUnits,
+                                      .mMaturedUnits = units.mMaturedUnits,
+                                      .mMaturityDate = units.mMaturityDate},
+        };
+        const auto* answer = aDecisions.find(question);
+
+        if (answer == nullptr)
+        {
+            heldBack.insert(isin);
+            aResult.mRequests.push_back(
+                RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = {}});
+
+            continue;
+        }
+
+        if (const auto* typed = std::get_if<BondTypeAnswer>(answer))
+        {
+            if (typed->mType == BondType::Ordinary)
+            {
+                continue;
+            }
+
+            aResult.mDiagnostics.push_back(
+                bondTypeError(isin, bond, MessageKey::UnsupportedTaxTreatmentDiscountBond));
+        }
+        else
+        {
+            // The session accepts only a bond type or a cancel for this question.
+            aResult.mDiagnostics.push_back(
+                bondTypeError(isin, bond, MessageKey::UnsupportedTaxTreatmentBondTypeNotGiven));
+        }
+
+        heldBack.insert(isin);
+    }
+
+    return heldBack;
+}
+
 } // namespace
 
 InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement,
@@ -477,39 +650,43 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
     InterestPaymentsResult result;
     const auto payments = positivePayments(paymentsOf(aStatement, aLedger), result.mDiagnostics);
 
+    // One payer per coupon ISIN, in ISIN order, and one per broker for the cash interest.
+    std::map<Isin, PayerOutcome> couponPayers;
+    std::vector<ExcludedItemInput> noExcludedItems; // The coupon form leaves no payer out.
+    const PayerSinks sinks{result.mDiagnostics, result.mRequests, noExcludedItems};
+
+    for (const auto& [isin, group] : couponsByIsin(payments))
+    {
+        couponPayers.emplace(isin,
+                             resolvePayer(kCouponForm, sinks, isin, group, aCatalogue, aDecisions));
+    }
+
+    // A bond with a sale or maturity is asked about even when it has no coupon in the year.
+    // Coupons stay out of Doh-Obr for a bond whose type is open or not supported.
+    const std::set<Isin> skippedCoupons = askBondTypes(aStatement, aLedger, aDecisions, result);
+
     if (payments.empty())
     {
         return result;
     }
 
-    // One payer per coupon ISIN, in ISIN order, and one per broker for the cash interest.
-    std::map<Isin, PayerOutcome> couponPayers;
-    const PayerSinks sinks{result.mDiagnostics, result.mRequests, result.mExcludedItems};
-
-    for (const auto& [isin, group] : couponsByIsin(payments))
-    {
-        const auto payer = resolvePayer(kCouponForm, sinks, isin, group, aCatalogue, aDecisions);
-
-        if (payer.mIsSlovenian)
-        {
-            addSlovenianExclusion(kCouponForm, sinks, isin, group);
-        }
-
-        couponPayers.emplace(isin, payer);
-    }
-
     const auto cashPayers = brokerPayers(payments, aCatalogue, result.mDiagnostics);
 
-    // The selection's warnings and its errors, which block the forms, go on as they are.
-    const auto needs = needsOf(payments, couponPayers);
+    // Only the selection's warnings go on; the error of a missing rate is made for each payment.
+    const auto needs = needsOf(payments, skippedCoupons);
     OfficialRateSelection selection;
 
     if (!needs.empty())
     {
         selection = selectOfficialRates(needs, aRates);
-        result.mDiagnostics.insert(result.mDiagnostics.end(),
-                                   selection.mDiagnostics.begin(),
-                                   selection.mDiagnostics.end());
+
+        for (const auto& diagnostic : selection.mDiagnostics)
+        {
+            if (diagnostic.mSeverity == DiagnosticSeverity::Warning)
+            {
+                result.mDiagnostics.push_back(diagnostic);
+            }
+        }
     }
 
     IncomeEurConverter converter{selection, result.mDiagnostics};
@@ -521,17 +698,15 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
     for (const auto& payment : payments)
     {
         const bool isCoupon = payment.mRoute == Route::Coupon;
-        const auto* couponPayer =
-            isCoupon ? &couponPayers.at(payment.mInstrument->mIsin.value()) : nullptr;
 
-        if (couponPayer != nullptr && couponPayer->mIsSlovenian)
+        if (isCoupon && skippedCoupons.contains(payment.mInstrument->mIsin.value()))
         {
             continue;
         }
 
         hasDeposit |= payment.mRoute == Route::Deposit;
 
-        const auto amounts = convert(converter, payment);
+        const auto amounts = convert(converter, selection, payment, result.mDiagnostics);
 
         if (!amounts)
         {
@@ -561,7 +736,14 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
             continue;
         }
 
-        const auto& payer = isCoupon ? *couponPayer : cashPayers.at(brokerOf(payment));
+        const auto& payer = isCoupon ? couponPayers.at(payment.mInstrument->mIsin.value())
+                                     : cashPayers.at(brokerOf(payment));
+
+        // The tax of a Slovenian issuer's coupon cannot be foreign tax; the user checks it.
+        if (isCoupon && payer.mPayer.mCountry == kSlovenia && amounts->mTax > 0)
+        {
+            result.mDiagnostics.push_back(slovenianCouponTaxWarning(payment));
+        }
 
         result.mOtherReport.mRows.push_back(obrRow(payment, *amounts, payer));
     }
@@ -582,10 +764,18 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
     return result;
 }
 
+void excludeCoupons(OtherInterestReportObr& aReport, const std::vector<Isin>& aIsins) {
+    const auto isListed = [&aIsins](const ObrInterestRow& aRow) {
+        const auto* coupon = std::get_if<BondCoupon>(&aRow.mKind);
+
+        return coupon != nullptr &&
+               std::find(aIsins.begin(), aIsins.end(), coupon->mIsin) != aIsins.end();
+    };
+
+    std::erase_if(aReport.mRows, isListed);
+}
+
 void appendInterestPayments(ApplicationResultInput& aInput, InterestPaymentsResult&& aResult) {
-    appendExcludedItems(aInput,
-                        std::move(aResult.mExcludedItems),
-                        aInput.mProcessingDiagnostics.size());
     appendStageOutput(aInput, std::move(aResult.mDiagnostics), std::move(aResult.mRequests));
 }
 

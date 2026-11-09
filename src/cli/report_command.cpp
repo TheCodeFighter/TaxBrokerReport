@@ -4,7 +4,7 @@
 #include "cli/taxpayer_file.hpp"
 #include "cli_text.hpp"
 #include "parsers/traderepublic_parser.hpp"
-#include "processors/capital_failure_resolution.hpp"
+#include "processors/failure_resolution_stage.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
 #include "processors/corporate_actions.hpp"
@@ -918,7 +918,7 @@ std::string_view categoryText(ExcludedCategory aCategory) {
     return "unknown class";
 }
 
-std::string_view reasonText(ExcludedReason aReason, ExcludedCategory aCategory) {
+std::string_view reasonText(ExcludedReason aReason) {
     switch (aReason)
     {
     case ExcludedReason::DebtSecurity:
@@ -929,11 +929,6 @@ std::string_view reasonText(ExcludedReason aReason, ExcludedCategory aCategory) 
         return "tax rule: crypto is not part of Doh-KDVP; check whether a separate crypto "
                "return applies to you";
     case ExcludedReason::SlovenianTaxSettled:
-        if (aCategory == ExcludedCategory::Interest)
-        {
-            return "tax rule: a Slovenian issuer deducts the tax itself";
-        }
-
         return "tax rule: a Slovenian payer deducts the tax itself; sales of its shares stay in "
                "Doh-KDVP";
     case ExcludedReason::UserChoice:
@@ -956,7 +951,7 @@ void writeExcludedItems(std::ostream& aOut, const ApplicationResult& aResult) {
     for (const auto& item : aResult.mExcludedItems)
     {
         aOut << "  " << investmentText(item.mIsin, item.mName) << ": "
-             << categoryText(item.mCategory) << ", " << reasonText(item.mReason, item.mCategory);
+             << categoryText(item.mCategory) << ", " << reasonText(item.mReason);
 
         if (item.mBond)
         {
@@ -1044,7 +1039,8 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         }
         else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion> ||
                            std::is_same_v<Question, PayerChoiceQuestion> ||
-                           std::is_same_v<Question, IncomeClassificationQuestion>)
+                           std::is_same_v<Question, IncomeClassificationQuestion> ||
+                           std::is_same_v<Question, BondTypeQuestion>)
         {
             return aQuestion.mName;
         }
@@ -1334,7 +1330,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     std::move(gateDiagnostics.begin(), gateDiagnostics.end(), std::back_inserter(processing));
 
     // The user may leave out every investment with an error of its own (or ask for no report).
-    const auto excluded = CapitalFailureResolution::resolve(input, aDecisions);
+    const auto excluded = FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure);
 
     if (!excluded.empty())
     {

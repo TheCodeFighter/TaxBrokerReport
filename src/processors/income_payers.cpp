@@ -79,6 +79,14 @@ PayerOutcome askPayer(const PayerForm& aForm,
     return payerOutcomeOf(*aLookup.mEntries.at(position));
 }
 
+/// Whether every reference row of the lookup has the residence country SI. Nothing found is not.
+bool isSlovenianLookup(const PayerLookup& aLookup) {
+    return !aLookup.mEntries.empty() &&
+           std::all_of(aLookup.mEntries.begin(),
+                       aLookup.mEntries.end(),
+                       [](const PayerEntry* aEntry) { return aEntry->mCountry == kSlovenia; });
+}
+
 } // namespace
 
 ProcessingDiagnostic incomeDiagnostic(ReportType aReport,
@@ -156,20 +164,31 @@ PayerOutcome resolvePayer(const PayerForm& aForm,
                           const ReferenceCatalogue& aCatalogue,
                           RunDecisions& aDecisions) {
     const auto lookup = aCatalogue.findPayer(aIsin);
+    PayerOutcome outcome;
 
     switch (lookup.mStatus)
     {
     case PayerLookupStatus::Found:
-        return payerOutcomeOf(*lookup.mEntries.front());
+        outcome = payerOutcomeOf(*lookup.mEntries.front());
+        break;
     case PayerLookupStatus::Conflict:
-        return askPayer(aForm, aSinks, aIsin, aPayments, lookup, aDecisions);
+        // Every row says SI: a Slovenian company settles the tax itself, whichever row is meant.
+        if (aForm.mSlovenianExclusion && isSlovenianLookup(lookup))
+        {
+            return PayerOutcome{.mPayer = {}, .mIsSlovenian = true};
+        }
+
+        outcome = askPayer(aForm, aSinks, aIsin, aPayments, lookup, aDecisions);
+        break;
     case PayerLookupStatus::NotFound:
+        addPayerNotFound(aForm, aSinks, aIsin, aPayments);
         break;
     }
 
-    addPayerNotFound(aForm, aSinks, aIsin, aPayments);
+    // A form that reports a Slovenian payer's income too treats the payer as any other.
+    outcome.mIsSlovenian = outcome.mIsSlovenian && aForm.mSlovenianExclusion.has_value();
 
-    return {};
+    return outcome;
 }
 
 void addSlovenianExclusion(const PayerForm& aForm,
@@ -180,7 +199,7 @@ void addSlovenianExclusion(const PayerForm& aForm,
     aSinks.mExcludedItems.push_back(ExcludedItemInput{
         .mItem = ExcludedItem{.mIsin = aIsin,
                               .mName = aPayments.mName,
-                              .mCategory = aForm.mCategory,
+                              .mCategory = aForm.mSlovenianExclusion.value(),
                               .mReason = ExcludedReason::SlovenianTaxSettled},
         .mSources = aPayments.mSources,
         .mProcessingDiagnostics = {},
