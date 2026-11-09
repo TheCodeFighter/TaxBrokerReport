@@ -2265,6 +2265,64 @@ TEST(ApplicationResultJsonTest, RecordedIncomeAnswersAreStringsOrAChoiceWithASub
     EXPECT_EQ(decisions[0].at("incomeCheck").at("grossAmount"), "12.0000");
 }
 
+TEST(ApplicationResultJsonTest, ABondTypeRequestOffersTwoTypesAndItsAnswerIsAString) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+    input.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mAffectedReports = {ReportType::OtherInterest},
+                         .mTaxDate = day("2025-09-30"),
+                         .mIsin = "XX0000000010",
+                         .mData = BondTypeQuestion{.mIsin = "XX0000000010",
+                                                   .mName = "Synthetic Bond A",
+                                                   .mSoldUnits = 40'000'000'000,     // 400 units
+                                                   .mMaturedUnits = 100'000'000'000, // 1000 units
+                                                   .mMaturityDate = day("2025-09-30")},
+                     }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "income_details_required");
+    EXPECT_EQ(request.at("options"),
+              (nlohmann::json::array({"ordinary", "discount_or_zero_coupon"})));
+    EXPECT_EQ(request.at("bondCheck"),
+              (nlohmann::json{{"isin", "XX0000000010"},
+                              {"name", "Synthetic Bond A"},
+                              {"soldUnits", "400.00000000"},
+                              {"maturedUnits", "1000.00000000"},
+                              {"maturityDate", "2025-09-30"}}));
+}
+
+TEST(ApplicationResultJsonTest, RecordedBondTypeAnswersAreStrings) {
+    ApplicationResult result;
+    const BondTypeQuestion question{.mIsin = "XX0000000010",
+                                    .mName = "Synthetic Bond A",
+                                    .mSoldUnits = 40'000'000'000, // 400 units
+                                    .mMaturedUnits = 0,
+                                    .mMaturityDate = std::nullopt};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = BondTypeAnswer{BondType::Ordinary}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = BondTypeAnswer{BondType::DiscountOrZeroCoupon}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 2U);
+    EXPECT_EQ(decisions[0].at("answer"), "ordinary");
+    EXPECT_EQ(decisions[1].at("answer"), "discount_or_zero_coupon");
+    EXPECT_EQ(decisions[0].at("bondCheck").at("soldUnits"), "400.00000000");
+    EXPECT_FALSE(decisions[0].at("bondCheck").contains("maturityDate"));
+}
+
 TEST(ApplicationResultJsonTest, ASlovenianIssuerItemWritesItsInterestCategory) {
     ApplicationResult result;
 
@@ -2299,15 +2357,17 @@ TEST(ApplicationResultJsonTest, TheInterestDiagnosticCodesAreWrittenByName) {
     input.mProcessingDiagnostics = {
         diagnostic(ProcessingDiagnosticCode::InterestPayerNotFound),
         diagnostic(ProcessingDiagnosticCode::InterestPaymentNotPositive),
+        diagnostic(ProcessingDiagnosticCode::SlovenianCouponTax),
         diagnostic(ProcessingDiagnosticCode::DepositInterestAddOtherBanks)};
 
     const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
     const auto& diagnostics = json.at("diagnostics");
 
-    ASSERT_EQ(diagnostics.size(), 3U);
+    ASSERT_EQ(diagnostics.size(), 4U);
     EXPECT_EQ(diagnostics[0].at("code"), "interest_payer_not_found");
     EXPECT_EQ(diagnostics[1].at("code"), "interest_payment_not_positive");
-    EXPECT_EQ(diagnostics[2].at("code"), "deposit_interest_add_other_banks");
+    EXPECT_EQ(diagnostics[2].at("code"), "slovenian_coupon_tax");
+    EXPECT_EQ(diagnostics[3].at("code"), "deposit_interest_add_other_banks");
 }
 
 } // namespace

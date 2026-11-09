@@ -1706,6 +1706,42 @@ TEST(DecisionPromptsTest, AnIncomeClassificationQuestionIsNotAskedInTheTerminalY
     EXPECT_TRUE(session.result().mDecisions.empty());
 }
 
+DecisionQuestion bondTypeQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {ReportType::OtherInterest},
+        .mIsin = "XX0000000010",
+        .mData = BondTypeQuestion{.mIsin = "XX0000000010",
+                                  .mName = "Synthetic Bond A",
+                                  .mSoldUnits = 40'000'000'000, // 400 units
+                                  .mMaturedUnits = 0,
+                                  .mMaturityDate = std::nullopt},
+    };
+}
+
+TEST(DecisionPromptsTest, ABondTypeQuestionIsNotAskedInTheTerminalYetAndItsAnswersAreListed) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({bondTypeQuestion()}));
+
+    const auto output = ask(session, "1\n");
+
+    EXPECT_FALSE(cli::canAsk(bondTypeQuestion().mData));
+    EXPECT_EQ(output, "");
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+
+    const auto rejections = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = BondTypeAnswer{BondType::DiscountOrZeroCoupon},
+    }});
+
+    ASSERT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000010 Synthetic Bond A, bond type: a discount or zero-coupon bond (issued "
+              "below its nominal value)");
+}
+
 TEST(DecisionPromptsTest, ADividendAnswerIsListedInTheSummary) {
     DecisionSession session;
     session.start(asksUntilAnswered({incomeQuestion()}));

@@ -1047,7 +1047,7 @@ TEST(InterestPaymentsTest, ACouponIssuerThatIsNotFoundIsReportedWithoutFactsAndO
     EXPECT_TRUE(run.result().mRequests.empty());
 }
 
-TEST(InterestPaymentsTest, ASlovenianIssuerHasNoRowAndIsAnExcludedItem) {
+TEST(InterestPaymentsTest, ASlovenianIssuerCouponIsARowWithTheIssuersFacts) {
     const auto catalogue =
         catalogueOf("XX0000000010,Issuer SI,TAX-S,1 Main Street,SI,,,issuer,manual,\n"
                     "XX0000000028,Issuer A,TAX-A,2 Main Street,FR,,,issuer,manual,\n");
@@ -1089,21 +1089,86 @@ TEST(InterestPaymentsTest, ASlovenianIssuerHasNoRowAndIsAnExcludedItem) {
     orderChronologically(statement);
     InterestRun run{statement, catalogue, rates};
 
-    // Only the coupon of the French issuer is a row.
-    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
-    EXPECT_EQ(std::get<BondCoupon>(run.mLast.mOtherReport.mRows.at(0).mKind).mIsin, "XX0000000028");
+    // Both coupons are rows, in ledger order. The payer does not withhold on a listed Slovenian
+    // bond, so the user reports it: nothing is left out.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
 
-    ASSERT_EQ(run.mLast.mExcludedItems.size(), 1U);
+    const auto& slovenian = run.mLast.mOtherReport.mRows.at(0);
 
-    const auto& item = run.mLast.mExcludedItems.at(0).mItem;
+    EXPECT_EQ(std::get<BondCoupon>(slovenian.mKind).mIsin, "XX0000000010");
+    EXPECT_EQ(slovenian.mGrossInterest, 250'000);
+    EXPECT_EQ(slovenian.mPayer.mName, "Issuer SI");
+    EXPECT_EQ(slovenian.mPayer.mCountry, "SI");
+    EXPECT_EQ(std::get<BondCoupon>(run.mLast.mOtherReport.mRows.at(1).mKind).mIsin, "XX0000000028");
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mGrossInterest, 300'000);
 
-    EXPECT_EQ(item.mIsin, "XX0000000010");
-    EXPECT_EQ(item.mName, "Synthetic Bond SI");
-    EXPECT_EQ(item.mCategory, ExcludedCategory::Interest);
-    EXPECT_EQ(item.mReason, ExcludedReason::SlovenianTaxSettled);
-    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::TaxCategoryNotReported),
-              0U);
-    EXPECT_EQ(run.result().mExcludedItems.size(), 1U);
+    // A tax of 0 needs no warning.
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::SlovenianCouponTax), 0U);
+    EXPECT_TRUE(run.result().mExcludedItems.empty());
+    EXPECT_TRUE(run.result().mRequests.empty());
+}
+
+TEST(InterestPaymentsTest, ATaxOnASlovenianIssuerCouponIsARowWithAWarning) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer SI,TAX-S,1 Main Street,SI,,,issuer,manual,\n"
+                    "XX0000000028,Issuer A,TAX-A,2 Main Street,FR,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {
+        {
+            .mName = "Synthetic Bond SI",
+            .mIsin = "XX0000000010",
+            .mInterestType = InterestType::BondInterest,
+            .mTransactions =
+                {
+                    {.mMetadata =
+                         {.mTaxDate = day("2025-03-14"),
+                          .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+                     .mGrossAmount = 250'000, // EUR 25.00
+                     .mTaxPaid = 62'500,      // EUR 6.25
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Bond A",
+            .mIsin = "XX0000000028",
+            .mInterestType = InterestType::BondInterest,
+            .mTransactions =
+                {
+                    {.mMetadata =
+                         {.mTaxDate = day("2025-03-15"),
+                          .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+                     .mGrossAmount = 300'000, // EUR 30.00
+                     .mTaxPaid = 75'000,      // EUR 7.50
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    // Both coupons are rows. Only the Slovenian issuer's coupon with tax gets the warning; the
+    // French issuer's tax is a normal foreign tax.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mWithholding.mForeignTax, 62'500);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mWithholding.mForeignTax, 75'000);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::SlovenianCouponTax), 1U);
+
+    const auto warning =
+        std::find_if(run.mLast.mDiagnostics.begin(),
+                     run.mLast.mDiagnostics.end(),
+                     [](const ProcessingDiagnostic& aDiagnostic) {
+                         return aDiagnostic.mCode == ProcessingDiagnosticCode::SlovenianCouponTax;
+                     });
+
+    ASSERT_NE(warning, run.mLast.mDiagnostics.end());
+    EXPECT_EQ(warning->mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning->mContext.mIsin, "XX0000000010");
+    EXPECT_EQ(warning->mContext.mAffectedReports,
+              std::vector<ReportType>{ReportType::OtherInterest});
 }
 
 TEST(InterestPaymentsTest, DisagreeingIssuerRowsAskAPayerChoiceThatDoesNotStopDohObr) {
@@ -1379,7 +1444,6 @@ TEST(InterestPaymentsTest, AStatementWithoutInterestGivesAnEmptyResult) {
     EXPECT_EQ(result.mQualifyingTotal, std::nullopt);
     EXPECT_TRUE(result.mDiagnostics.empty());
     EXPECT_TRUE(result.mRequests.empty());
-    EXPECT_TRUE(result.mExcludedItems.empty());
     EXPECT_TRUE(result.mUsedRates.empty());
 }
 

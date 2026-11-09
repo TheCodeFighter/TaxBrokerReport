@@ -1128,7 +1128,7 @@ TEST(IncomeClassifierTest, AnswerDepositCountsForTheAllowanceAndTheBrokerIsThePa
     EXPECT_EQ(row.mPayer.mName, std::optional<std::string>{"Broker T"});
 }
 
-TEST(IncomeClassifierTest, AnswerBondCouponOfASlovenianIssuerIsAnExcludedItem) {
+TEST(IncomeClassifierTest, AnswerBondCouponOfASlovenianIssuerIsADohObrRow) {
     MergedStatement statement;
     statement.mPresentation.mInterestInstruments = {{
         .mName = "Synthetic Issuer SI",
@@ -1154,15 +1154,11 @@ TEST(IncomeClassifierTest, AnswerBondCouponOfASlovenianIssuerIsAnExcludedItem) {
         catalogueOf("XX0000000010,Issuer SI,TAX-S,1 Main Street,SI,,,issuer,manual,\n");
     const auto payments = interestStageOf(run, catalogue);
 
-    // A Slovenian issuer deducts the tax itself: no Doh-Obr row, one excluded item.
-    EXPECT_TRUE(payments.mOtherReport.mRows.empty());
-    ASSERT_EQ(payments.mExcludedItems.size(), 1U);
-
-    const auto& item = payments.mExcludedItems.at(0).mItem;
-
-    EXPECT_EQ(item.mIsin, "XX0000000010");
-    EXPECT_EQ(item.mCategory, ExcludedCategory::Interest);
-    EXPECT_EQ(item.mReason, ExcludedReason::SlovenianTaxSettled);
+    // The payer does not withhold on a listed Slovenian bond: EUR 25.00 is a Doh-Obr row.
+    ASSERT_EQ(payments.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(std::get<BondCoupon>(payments.mOtherReport.mRows.at(0).mKind).mIsin, "XX0000000010");
+    EXPECT_EQ(payments.mOtherReport.mRows.at(0).mGrossInterest, 250'000);
+    EXPECT_EQ(payments.mOtherReport.mRows.at(0).mPayer.mCountry, "SI");
 }
 
 TEST(IncomeClassifierTest, TheParseErrorOfAnUnknownInterestRowOutsideTheYearIsTakenOverToo) {
