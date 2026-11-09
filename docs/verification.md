@@ -76,10 +76,13 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
 - **The original workflow `O` from the CLI.** eDavki imports an original return only from
   1 January to 28 February. A working self-report is expected to mean the original works too, but
   that is an expectation, not a check. Next window: 1 January to 28 February 2027, tax year 2026.
-- **Doh-Div `ReliefStatement` `false`.** The writer will put `false` on every row without a treaty
-  claim, in the `true`/`false` format of the earlier app. Only `true` was ever written and
-  imported; `false` is unconfirmed until a draft import accepts it.
-- **Doh-Div, Doh-DHO and Doh-Obr.** Their writers do not exist yet. For Doh-Obr, check in a
+- **Doh-Div as written by the app.** The writer puts `ReliefStatement` `false` on every row
+  without a treaty claim, in the `true`/`false` format of the earlier app. Only `true` was ever
+  written and imported; `false` is unconfirmed until a draft import accepts it. The same draft
+  import checks `SelfReport` (`false`, or `true` for a self-report), `Type` `1` for every row (a
+  foreign fund distribution may need `4`; FURS did not say), a row without payer facts and
+  without `SourceCountry`, and `ForeignTax` `0.00` on a row whose export had no tax.
+- **Doh-DHO and Doh-Obr.** Their writers do not exist yet. For Doh-Obr, check in a
   draft import of a file with one cash-interest row and one bond-coupon row: that eDavki accepts
   the interest-type code `4` for broker cash interest (FURS names no code), the self-report
   encoding, `ForeignTax` `0` on a foreign row, and a row without `ReliefStatement`

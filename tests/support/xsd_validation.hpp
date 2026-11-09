@@ -28,6 +28,9 @@ inline constexpr std::array<std::string_view, 2> kKdvpSchemaFiles{
 /// The Doh-Obr schema below `resources/xml/schemas/`; it imports `EDP-Common-1.xsd` next to it.
 inline constexpr std::string_view kObrSchemaFile = "Doh_Obr_2.xsd";
 
+/// The Doh-Div schema below `resources/xml/schemas/`; it imports `EDP-Common-1.xsd` next to it.
+inline constexpr std::string_view kDivSchemaFile = "Doh_Div_3.xsd";
+
 inline constexpr std::string_view kSkipWithoutLibXml2 =
     "libxml2 not found: XSD validation skipped, see CONTRIBUTING.md";
 
@@ -167,6 +170,24 @@ inline void expectValidForObrSchema([[maybe_unused]] const std::string& aXml) {
 inline void expectInvalidForObrSchema([[maybe_unused]] const std::string& aXml) {
 #ifdef TAXBROKER_HAS_LIBXML2
     EXPECT_NE(schemaErrors(aXml, kObrSchemaFile), "");
+#else
+    GTEST_SKIP() << kSkipWithoutLibXml2;
+#endif
+}
+
+/// Checks a document against the Doh-Div schema. Without libxml2 the test shows as skipped.
+inline void expectValidForDivSchema([[maybe_unused]] const std::string& aXml) {
+#ifdef TAXBROKER_HAS_LIBXML2
+    EXPECT_EQ(schemaErrors(aXml, kDivSchemaFile), "");
+#else
+    GTEST_SKIP() << kSkipWithoutLibXml2;
+#endif
+}
+
+/// Checks that the Doh-Div schema rejects a document. Without libxml2 the test shows as skipped.
+inline void expectInvalidForDivSchema([[maybe_unused]] const std::string& aXml) {
+#ifdef TAXBROKER_HAS_LIBXML2
+    EXPECT_NE(schemaErrors(aXml, kDivSchemaFile), "");
 #else
     GTEST_SKIP() << kSkipWithoutLibXml2;
 #endif
