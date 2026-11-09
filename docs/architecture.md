@@ -886,10 +886,10 @@ The models only define the types; the processors that build them and the XML wri
 ### Dividend stage
 
 `prepareDividendPayments` (`include/processors/dividend_payments.hpp`) turns the dividends of the
-reporting year into the Doh-Div model. It is a stage of its own and is not wired into the tax
-processor or the CLI yet. It reads the merged statement in ledger order, the payer catalogue, the
-official rates and the recorded decisions, and returns the `DividendReportDiv` rows, the excluded items, the open payer questions,
-the diagnostics and the rates it used.
+reporting year into the Doh-Div model. It is a stage of its own, run by the income reports stage
+below. It reads the merged statement in ledger order, the payer catalogue, the official rates and
+the recorded decisions, and returns the `DividendReportDiv` rows, the excluded items, the open
+payer questions, the diagnostics and the rates it used.
 
 - **Per ISIN, first.** The payments of the year are grouped by ISIN (one payer lookup each, in ISIN
   order). The payer is found by `findPayer`: one entry gives the facts and the reference row;
@@ -914,8 +914,8 @@ the diagnostics and the rates it used.
 ### Interest stage
 
 `prepareInterestPayments` (`include/processors/interest_payments.hpp`) sorts the interest of the
-reporting year into the Doh-DHO and Doh-Obr models. Like the dividend stage it is not wired into the
-tax processor or the CLI yet; both share the payer, rate and exclusion helpers of
+reporting year into the Doh-DHO and Doh-Obr models. Like the dividend stage it is run by the income
+reports stage below; both share the payer, rate and exclusion helpers of
 `include/processors/income_payers.hpp`.
 
 - **Route by who holds the cash.** Each payment has one route. A bond coupon is a Doh-Obr row.
@@ -940,6 +940,26 @@ tax processor or the CLI yet; both share the payer, rate and exclusion helpers o
   `below_deposit_interest_threshold`, no answer leaves Doh-DHO `needs_input`. A payment without a
   rate gives no total and no question; the rate error fails Doh-DHO.
 - **Doh-Obr.** One row per payment, in ledger order, with the payer facts and the foreign tax.
+
+### Income reports stage
+
+`prepareIncomeReports` (`include/processors/income_reports.hpp`) chains the income stages for the
+reporting year and returns the three models (`IncomeReports`: Doh-Div, Doh-DHO, and Doh-Obr with
+cash interest and coupons together) and the rates it used. It makes no XML. The order is fixed:
+
+1. `IncomeClassifier::classify` asks the type of each unclear interest or non-share dividend
+   payment. The next two stages read the statement it rewrote, when it rewrote one.
+2. `prepareDividendPayments`, then the Doh-Div failure choice (`kDividendsFailure`): the failed
+   ISINs the user leaves out are removed from the model with `excludeDividends`.
+3. `prepareInterestPayments`, then the Doh-Obr failure choice (`kOtherInterestFailure`) and
+   `excludeCoupons`. The answer to the deposit allowance question sets the Doh-DHO reason for
+   having no data.
+
+Each stage appends its diagnostics, requests and excluded items to the same
+`ApplicationResultInput`, so each form keeps its own status: a failed or open income form never
+changes another form. The `taxbroker report` command runs this stage after the Doh-KDVP stages, so
+the capital output and the order of its questions do not move; the income questions are asked in
+the terminal, and the income models are not written to files until the income XML writers exist.
 
 ### Doh-KDVP XML writer
 

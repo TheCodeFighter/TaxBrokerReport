@@ -4565,8 +4565,8 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "  The unit price of a trade in another currency is converted to EUR at "
                          "the official rate of\n"));
     EXPECT_TRUE(contains(report.mOut,
-                         "  --no-input         Ask no questions: an open question blocks the "
-                         "report (see\n"));
+                         "  --no-input         Ask no questions: an open question blocks its "
+                         "form (see\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "Questions:\n"
                          "  Some cases need your answer. The command asks in the terminal, one "
@@ -5302,8 +5302,12 @@ TEST(CliReportIntegrationTest, DividendWarningIsListedApartWithItsSeverity) {
     EXPECT_TRUE(contains(result.mOut,
                          "Errors: 0\n\nWarnings: 0\n\n"
                          "Not about Doh-KDVP (dividends, interest and skipped private-market "
-                         "rows): 1\n"
+                         "rows): 2\n"
                          "  diagnostic-0001 warning missing_field, history.csv row 4\n"));
+    // The dividend stage adds its own warning: XX0000000001 is not in the reference files.
+    EXPECT_TRUE(contains(result.mOut,
+                         "  diagnostic-0002 warning dividend_payer_not_found, XX0000000001, "
+                         "2024-04-01, history.csv row 4\n"));
 }
 
 TEST(CliReportIntegrationTest, AnOptionEndsAFileListAndIsReadAsAnOption) {
@@ -6312,6 +6316,203 @@ TEST(CliReportIntegrationTest, HelpExplainsTheExclusionQuestion) {
                          "    comes after the questions of other investments and before those of "
                          "the listed ones,\n"
                          "    which exclude drops.\n"));
+}
+
+TEST(CliReportIntegrationTest, TheTerminalAsksTheDohDivFailureQuestion) {
+    // The share sale makes Doh-KDVP. XX0000000001 pays a dividend in RUB, which has no official
+    // rate after March 2022 in the built-in rates; XX0000000002 pays EUR 10.00.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000009,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000009,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+            R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000001,,,9,,,EUR,1000,RUB,0.009000,,synthetic-dividend-1,,,,)",
+            R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share B,XX0000000002,,,10,,,EUR,,,,,synthetic-dividend-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    // Doh-Div has no XML yet, so the exit code and the file are about Doh-KDVP only.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: Doh-Div cannot include 1 investment:\n"
+                         "  XX0000000001 Synthetic Share A: "));
+    EXPECT_TRUE(contains(result.mOut, "Answered in this run: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "leave the failed investments out"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, TheTerminalAsksTheBondTypeOfAMaturedBond) {
+    // A bond bought on 2025-02-03 (1000 units) and matured on 2025-08-14.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-02-03T09:00:00Z,2025-02-03,DEFAULT,TRADING,BUY,BOND,Synthetic Bond,XS0000000001,1000,1,-1000,,,EUR,,,,,synthetic-bond-buy-1,,,,)",
+            R"(2025-08-14T15:01:00.000Z,2025-08-14,DEFAULT,CORPORATE_ACTION,FINAL_MATURITY,BOND,Synthetic Bond,XS0000000001,-1000,,,,,,,,,FINAL_MATURITY XS0000000001,synthetic-bond-maturity-001,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "ordinary\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: the type of the bond XS0000000001 Synthetic "
+                         "Bond: sold 0.0000 and matured 1000.0000 units in the year (maturity "
+                         "2025-08-14).\n"));
+    EXPECT_TRUE(contains(result.mOut, "Answered in this run: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "bond type: an ordinary bond"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, NoInputListsTheBondTypeQuestionOpenAndKeepsTheExitCode) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-02-03T09:00:00Z,2025-02-03,DEFAULT,TRADING,BUY,BOND,Synthetic Bond,XS0000000001,1000,1,-1000,,,EUR,,,,,synthetic-bond-buy-1,,,,)",
+            R"(2025-08-14T15:01:00.000Z,2025-08-14,DEFAULT,CORPORATE_ACTION,FINAL_MATURITY,BOND,Synthetic Bond,XS0000000001,-1000,,,,,,,,,FINAL_MATURITY XS0000000001,synthetic-bond-maturity-001,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--no-input",
+                             "--trade-republic",
+                             history});
+
+    // The open question is about Doh-Obr; the exit code is about Doh-KDVP only.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(result.mOut, "Question request-0001"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Open questions: 1\n"
+                         "  request-0001 income_details_required, XS0000000001 Synthetic Bond\n"));
+}
+
+TEST(CliReportIntegrationTest, TheTerminalAsksTheDepositInterestAllowance) {
+    // Trade Republic is a bank from 6 December 2023, so this EUR 2.00 is deposit interest.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-06-01T10:00:00Z,2024-06-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,2.00,,,EUR,,,,Synthetic interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "yes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: the bank-deposit interest imported for 2024 is "
+                         "EUR 2.00, not above the EUR 1,000 allowance.\n"));
+    EXPECT_TRUE(
+        contains(result.mOut, "bank-deposit interest 2024: above EUR 1,000 with the other banks"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, TheTerminalAsksWhichOfTwoReferenceRowsIsThePayer) {
+    // The supplied payers.csv has two rows with different facts for XX0000000010 (a reference ISIN
+    // needs a valid check digit).
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision\n"
+        "XX0000000010,Payer X,TAX-X,1 Main Street,DE,,,issuer,manual,\n"
+        "XX0000000010,Payer Y,TAX-Y,2 Main Street,FR,,,issuer,manual,\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000010,,,10,,,EUR,,,,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             "--trade-republic",
+                             history},
+                            "2\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: the payer of XX0000000010 Synthetic Share A has "
+                         "several reference rows that differ:\n"
+                         "  1: Payer X, 1 Main Street, DE\n"
+                         "  2: Payer Y, 2 Main Street, FR\n"));
+    EXPECT_TRUE(contains(result.mOut, "payer: payer row 2"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, TheTerminalAsksWhatAnInterestPaymentOfUnknownTypeIs) {
+    // An interest payment of an instrument with the class STOCK has an unclear type.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,CASH,INTEREST_PAYMENT,STOCK,Synthetic Payer,XX0000000001,,,12,,,EUR,,,,Synthetic interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "broker_cash_interest\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: the interest payment of XX0000000001 Synthetic "
+                         "Payer on 2024-03-10, 12.00 EUR, has a type that is missing, not "
+                         "recognized or\n"));
+    EXPECT_TRUE(contains(result.mOut, "interest on broker cash (Doh-Obr)"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
 }
 
 } // namespace

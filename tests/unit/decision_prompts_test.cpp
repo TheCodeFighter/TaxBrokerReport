@@ -58,6 +58,19 @@ bool contains(const std::string& aText, std::string_view aPart) {
     return aText.find(aPart) != std::string::npos;
 }
 
+/// How many times aPart is in aText, without overlaps.
+std::size_t countOf(const std::string& aText, std::string_view aPart) {
+    std::size_t count = 0;
+
+    for (auto position = aText.find(aPart); position != std::string::npos;
+         position = aText.find(aPart, position + aPart.size()))
+    {
+        ++count;
+    }
+
+    return count;
+}
+
 // No question
 
 TEST(DecisionPromptsTest, ARunWithoutQuestionsPrintsNothing) {
@@ -1593,7 +1606,7 @@ TEST(DecisionPromptsTest, TheAnswersOfAQuantityQuestionAreListedInTheSummary) {
               "XX0000000001 Synthetic Share, sale on 2024-03-01: sale quantity 0.99999998 units");
 }
 
-// The payer choice question (not asked in the CLI yet)
+// The payer choice question
 
 /// Two reference rows of one synthetic payer.
 DecisionQuestion payerQuestion() {
@@ -1627,16 +1640,72 @@ DecisionQuestion payerQuestion() {
     };
 }
 
-TEST(DecisionPromptsTest, APayerChoiceQuestionIsNotAskedInTheTerminalYet) {
+TEST(DecisionPromptsTest, APayerChoiceQuestionListsTheRowsAndTheNumberPicksOne) {
     DecisionSession session;
     session.start(asksUntilAnswered({payerQuestion()}));
 
+    const auto output = ask(session, "2\n");
+
+    EXPECT_TRUE(cli::canAsk(payerQuestion().mData));
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: the payer of XX0000000010 Synthetic Payer has "
+                         "several reference rows that differ:\n"
+                         "  1: Payer X, 1 Main Street, DE\n"
+                         "  2: Payer Y, 2 Main Street, FR\n"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerChoiceAnswer{.mPickedOption = 1}}); // row 2 is position 1
+}
+
+TEST(DecisionPromptsTest, APayerRowWithoutAnAddressIsShownWithAPlaceholder) {
+    auto question = payerQuestion();
+    auto& data = std::get<PayerChoiceQuestion>(question.mData);
+
+    data.mOptions[0].mAddress = "";
+
+    DecisionSession session;
+    session.start(asksUntilAnswered({question}));
+
     const auto output = ask(session, "1\n");
 
-    EXPECT_FALSE(cli::canAsk(payerQuestion().mData));
-    EXPECT_EQ(output, "");
+    EXPECT_TRUE(contains(output,
+                         "  1: Payer X, (no address), DE\n"
+                         "  2: Payer Y, 2 Main Street, FR\n"));
+}
+
+TEST(DecisionPromptsTest, ASkipAnswersAPayerChoiceQuestionWithNoRow) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerQuestion()}));
+
+    (void)ask(session, "SKIP\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerChoiceAnswer{.mPickedOption = std::nullopt}});
+}
+
+TEST(DecisionPromptsTest, ARowNumberOutsideThePayerRowsIsAskedAgain) {
+    // The question has 2 rows, so 0, 3 and a word are not answers.
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerQuestion()}));
+
+    const auto output = ask(session, "0\n3\nfirst\n1\n");
+
+    EXPECT_EQ(countOf(output, "Answer a row number from 1 to 2 or skip.\n"), 3U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerChoiceAnswer{.mPickedOption = 0}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtThePayerQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
     EXPECT_EQ(session.result().mRequests.size(), 1U);
-    EXPECT_TRUE(session.result().mDecisions.empty());
 }
 
 TEST(DecisionPromptsTest, ThePayerAnswersAreListedInTheSummary) {
@@ -1681,16 +1750,54 @@ DecisionQuestion depositQuestion() {
     };
 }
 
-TEST(DecisionPromptsTest, TheDepositInterestQuestionIsNotAskedInTheTerminalYet) {
+TEST(DecisionPromptsTest, TheDepositInterestQuestionNamesTheImportedTotalAndYesMakesDohDho) {
     DecisionSession session;
     session.start(asksUntilAnswered({depositQuestion()}));
 
-    const auto output = ask(session, "1\n");
+    const auto output = ask(session, "yes\n");
 
-    EXPECT_FALSE(cli::canAsk(depositQuestion().mData));
-    EXPECT_EQ(output, "");
+    EXPECT_TRUE(cli::canAsk(depositQuestion().mData));
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: the bank-deposit interest imported for 2024 is "
+                         "EUR 900.00, not above the EUR 1,000 allowance.\n"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{DepositInterestTotalAnswer{.mAboveLimit = true}});
+}
+
+TEST(DecisionPromptsTest, NoAnswersTheDepositInterestQuestionWithNoDohDho) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({depositQuestion()}));
+
+    (void)ask(session, "No\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{DepositInterestTotalAnswer{.mAboveLimit = false}});
+}
+
+TEST(DecisionPromptsTest, TheDepositInterestQuestionHasNoCancelAndAsksAgain) {
+    // The session accepts only yes or no here, so "cancel" is a wrong word.
+    DecisionSession session;
+    session.start(asksUntilAnswered({depositQuestion()}));
+
+    const auto output = ask(session, "cancel\nmaybe\nyes\n");
+
+    EXPECT_EQ(countOf(output, "Answer yes or no.\n"), 2U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{DepositInterestTotalAnswer{.mAboveLimit = true}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheDepositInterestQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({depositQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
     EXPECT_EQ(session.result().mRequests.size(), 1U);
-    EXPECT_TRUE(session.result().mDecisions.empty());
 }
 
 TEST(DecisionPromptsTest, TheDepositInterestAnswersAreListedInTheSummary) {
@@ -1742,16 +1849,97 @@ DecisionQuestion incomeQuestion() {
     };
 }
 
-TEST(DecisionPromptsTest, AnIncomeClassificationQuestionIsNotAskedInTheTerminalYet) {
+TEST(DecisionPromptsTest, AnIncomeClassificationQuestionShowsThePaymentAndTheWordsToAnswer) {
     DecisionSession session;
     session.start(asksUntilAnswered({incomeQuestion()}));
 
-    const auto output = ask(session, "1\n");
+    const auto output = ask(session, "broker_cash_interest\n");
 
-    EXPECT_FALSE(cli::canAsk(incomeQuestion().mData));
-    EXPECT_EQ(output, "");
+    EXPECT_TRUE(cli::canAsk(incomeQuestion().mData));
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: the interest payment of XX0000000001 Synthetic "
+                         "Payer on 2025-03-10, 12.00 EUR, has a type that is missing, not "
+                         "recognized or\n"
+                         "  differs between rows (class in the files: STOCK). What is it?\n"
+                         "  dividends: a dividend (Doh-Div).\n"
+                         "  bank_deposit_interest: interest on a bank deposit (Doh-DHO).\n"
+                         "  broker_cash_interest: interest on cash held by a broker (Doh-Obr).\n"
+                         "  bond_coupon: a bond coupon (Doh-Obr).\n"
+                         "  exclude: leave it out of the reports; the summary lists it, and you "
+                         "report it\n"
+                         "  yourself if it is taxable.\n"
+                         "  cancel: no answer, and the forms it may belong to are blocked.\n"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{IncomeTreatmentAnswer{IncomeTreatment::BrokerCashInterest}});
+}
+
+TEST(DecisionPromptsTest, EachIncomeWordGivesItsTreatmentAndCancelGivesNoTreatment) {
+    DecisionSession dividends;
+    DecisionSession deposit;
+    DecisionSession coupon;
+    DecisionSession cancelled;
+
+    dividends.start(asksUntilAnswered({incomeQuestion()}));
+    deposit.start(asksUntilAnswered({incomeQuestion()}));
+    coupon.start(asksUntilAnswered({incomeQuestion()}));
+    cancelled.start(asksUntilAnswered({incomeQuestion()}));
+
+    (void)ask(dividends, "Dividends\n");
+    (void)ask(deposit, "bank_deposit_interest\n");
+    (void)ask(coupon, "bond_coupon\n");
+    (void)ask(cancelled, "cancel\n");
+
+    EXPECT_EQ(dividends.result().mDecisions.at(0).mAnswer,
+              AnswerValue{IncomeTreatmentAnswer{IncomeTreatment::Dividends}});
+    EXPECT_EQ(deposit.result().mDecisions.at(0).mAnswer,
+              AnswerValue{IncomeTreatmentAnswer{IncomeTreatment::BankDepositInterest}});
+    EXPECT_EQ(coupon.result().mDecisions.at(0).mAnswer,
+              AnswerValue{IncomeTreatmentAnswer{IncomeTreatment::BondCoupon}});
+    EXPECT_EQ(cancelled.result().mDecisions.at(0).mAnswer, AnswerValue{CancelAnswer{}});
+}
+
+TEST(DecisionPromptsTest, ExcludeAnswersAnIncomeClassificationQuestionWithNoTreatment) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({incomeQuestion()}));
+
+    (void)ask(session, "EXCLUDE\n");
+
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{ExcludeFromReportsAnswer{}});
+}
+
+TEST(DecisionPromptsTest, APaymentWithoutAnIsinIsNotOfferedTheDividendOrCouponWords) {
+    // A dividend row and a coupon need an ISIN, so with none only the two interest words are
+    // offered and "dividends" is a wrong word.
+    auto question = incomeQuestion();
+    auto& data = std::get<IncomeClassificationQuestion>(question.mData);
+
+    data.mIsin = std::nullopt;
+    question.mIsin = std::nullopt;
+
+    DecisionSession session;
+    session.start(asksUntilAnswered({question}));
+
+    const auto output = ask(session, "dividends\nbond_coupon\nbank_deposit_interest\n");
+
+    EXPECT_FALSE(contains(output, "  dividends: a dividend (Doh-Div).\n"));
+    EXPECT_FALSE(contains(output, "  bond_coupon: a bond coupon (Doh-Obr).\n"));
+    EXPECT_EQ(countOf(output, "Answer one of the words above.\n"), 2U);
+    EXPECT_EQ(session.result().mDecisions.at(0).mAnswer,
+              AnswerValue{IncomeTreatmentAnswer{IncomeTreatment::BankDepositInterest}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheIncomeClassificationQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({incomeQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
     EXPECT_EQ(session.result().mRequests.size(), 1U);
-    EXPECT_TRUE(session.result().mDecisions.empty());
 }
 
 DecisionQuestion bondTypeQuestion() {
@@ -1767,15 +1955,69 @@ DecisionQuestion bondTypeQuestion() {
     };
 }
 
-TEST(DecisionPromptsTest, ABondTypeQuestionIsNotAskedInTheTerminalYetAndItsAnswersAreListed) {
+TEST(DecisionPromptsTest, ABondTypeQuestionShowsTheUnitsAndOrdinaryAnswersIt) {
     DecisionSession session;
     session.start(asksUntilAnswered({bondTypeQuestion()}));
 
-    const auto output = ask(session, "1\n");
+    const auto output = ask(session, "ordinary\n");
 
-    EXPECT_FALSE(cli::canAsk(bondTypeQuestion().mData));
-    EXPECT_EQ(output, "");
+    EXPECT_TRUE(cli::canAsk(bondTypeQuestion().mData));
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: the type of the bond XX0000000010 Synthetic Bond "
+                         "A: sold 400.0000 and matured 0.0000 units in the year.\n"
+                         "  ordinary: pays coupons; they are Doh-Obr rows.\n"));
+    EXPECT_FALSE(contains(output, "(maturity "));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{BondTypeAnswer{BondType::Ordinary}});
+}
+
+TEST(DecisionPromptsTest, TheMaturityDateOfABondIsShownWhenItHasOne) {
+    auto question = bondTypeQuestion();
+    auto& data = std::get<BondTypeQuestion>(question.mData);
+
+    data.mSoldUnits = 0;
+    data.mMaturedUnits = 100'000'000'000; // 1000 units
+    data.mMaturityDate = day(2025, 8, 14);
+
+    DecisionSession session;
+    session.start(asksUntilAnswered({question}));
+
+    const auto output = ask(session, "discount\n");
+
+    EXPECT_TRUE(contains(output,
+                         "sold 0.0000 and matured 1000.0000 units in the year (maturity "
+                         "2025-08-14).\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{BondTypeAnswer{BondType::DiscountOrZeroCoupon}});
+}
+
+TEST(DecisionPromptsTest, ACancelledBondTypeQuestionAndAWrongWord) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({bondTypeQuestion()}));
+
+    const auto output = ask(session, "zero\nCANCEL\n");
+
+    EXPECT_EQ(countOf(output, "Answer ordinary, discount or cancel.\n"), 1U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{CancelAnswer{}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheBondTypeQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({bondTypeQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
     EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, TheBondTypeAnswerIsListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({bondTypeQuestion()}));
 
     const auto rejections = session.answer({DecisionAnswer{
         .mRequestId = "request-0001",

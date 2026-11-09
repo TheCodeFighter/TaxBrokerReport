@@ -1196,7 +1196,8 @@ TEST(ReportCommandTest, PrivateMarketEventsAreListedWithAndWithoutAnIsin) {
 }
 
 TEST(ReportCommandTest, DiagnosticsOfOtherFormsShowTheirSeverity) {
-    // One dividend error and one dividend warning: both are listed apart with their severity.
+    // One dividend error, one parser warning and one stage warning (the payer is not in the
+    // reference files): all are listed apart with their severity.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -1222,10 +1223,14 @@ TEST(ReportCommandTest, DiagnosticsOfOtherFormsShowTheirSeverity) {
     EXPECT_TRUE(contains(result.mOut,
                          "Errors: 0\n\nWarnings: 0\n\n"
                          "Not about Doh-KDVP (dividends, interest and skipped private-market "
-                         "rows): 2\n"
+                         "rows): 3\n"
                          "  diagnostic-0001 error invalid_value, history.csv row 2\n"));
     EXPECT_TRUE(
         contains(result.mOut, "  diagnostic-0002 warning missing_field, history.csv row 3\n"));
+    // The second dividend (row 3, 2024-05-01) is the only one that became a payment.
+    EXPECT_TRUE(contains(result.mOut,
+                         "  diagnostic-0003 warning dividend_payer_not_found, XX0000000001, "
+                         "2024-05-01, history.csv row 3\n"));
 }
 
 TEST(ReportCommandTest, DiagnosticWithSeveralSourcesNamesTheFirstAndCountsTheOthers) {
