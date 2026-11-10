@@ -89,11 +89,13 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
   country names, `ForeignTaxPaid` `0.00` on a foreign row, the totals, `SelfReport` (`false`, or
   `true` for a self-report), and a row without payer facts. The writer exists; no draft was
   imported.
-- **Doh-Obr.** Its writer does not exist yet. Check in a
+- **Doh-Obr as written by the app.** The writer exists; no draft was imported. Check in a
   draft import of a file with one cash-interest row and one bond-coupon row: that eDavki accepts
   the interest-type code `4` for broker cash interest (FURS names no code), the self-report
-  encoding, `ForeignTax` `0` on a foreign row, and a row without `ReliefStatement`
-  (`tax_rules.md`, "Doh-Obr form contract").
+  encoding, `ForeignTax` `0.00` on a foreign row, a row without `ReliefStatement`, and the payer
+  fields of a coupon (the issuer's facts; unconfirmed). Also a coupon of a Slovenian issuer: its
+  `TaxNumber` (eight digits) and no `ForeignTax`, and whether a draft shows the interest as
+  expected (`tax_rules.md`, "Doh-Obr form contract").
 - **S5, a loss blocked by the 30-day rule (`F10` false)** (`tests/manual/edavki/README.md`, from
   following tasks): not imported yet.
 - **S6 to S8, the rows for split lots and partly blocked losses** (#267): not imported yet. The

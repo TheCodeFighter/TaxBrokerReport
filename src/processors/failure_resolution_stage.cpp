@@ -35,6 +35,21 @@ bool belongsToOneInvestment(const ProcessingDiagnostic& aDiagnostic, ReportType 
            context.mAffectedReports == std::vector<ReportType>{aReport};
 }
 
+/// An error of one cash-interest payment of Doh-Obr: it has no ISIN, so it names the broker that
+/// holds the cash, and leaving that broker's cash interest out is safe.
+bool belongsToOneBroker(const ProcessingDiagnostic& aDiagnostic, ReportType aReport) {
+    const auto& context = aDiagnostic.mContext;
+
+    return aReport == ReportType::OtherInterest && context.mStage != PipelineStage::XmlGeneration &&
+           !context.mIsin.has_value() && context.mCashInterestBroker.has_value() &&
+           context.mAffectedReports == std::vector<ReportType>{aReport};
+}
+
+/// An error that one investment or one broker owns.
+bool belongsToOneUnit(const ProcessingDiagnostic& aDiagnostic, ReportType aReport) {
+    return belongsToOneInvestment(aDiagnostic, aReport) || belongsToOneBroker(aDiagnostic, aReport);
+}
+
 /// The positions of the diagnostics that an open question of the form can resolve.
 std::set<std::size_t> linkedToQuestion(const ApplicationResultInput& aInput, ReportType aReport) {
     std::set<std::size_t> linked;
@@ -51,14 +66,26 @@ std::set<std::size_t> linkedToQuestion(const ApplicationResultInput& aInput, Rep
     return linked;
 }
 
-/// The question with one entry per ISIN of the listed diagnostics.
+/// The question with one entry per ISIN, and per broker, of the listed diagnostics.
 FailureResolutionQuestion questionOf(const std::vector<ProcessingDiagnostic>& aDiagnostics,
                                      const std::vector<std::size_t>& aListed) {
     std::map<Isin, FailedInvestment> investments;
+    std::map<Broker, FailedBroker> brokers;
 
     for (const auto position : aListed)
     {
         const auto& context = aDiagnostics.at(position).mContext;
+
+        if (!context.mIsin)
+        {
+            auto& broker = brokers[context.mCashInterestBroker.value()];
+
+            broker.mBroker = context.mCashInterestBroker.value();
+            broker.mReasonCodes.push_back(aDiagnostics.at(position).mCode);
+
+            continue;
+        }
+
         auto& investment = investments[context.mIsin.value()];
 
         investment.mIsin = context.mIsin.value();
@@ -75,6 +102,11 @@ FailureResolutionQuestion questionOf(const std::vector<ProcessingDiagnostic>& aD
     for (auto& [isin, investment] : investments)
     {
         question.mInvestments.push_back(std::move(investment));
+    }
+
+    for (auto& [broker, failed] : brokers)
+    {
+        question.mBrokers.push_back(std::move(failed));
     }
 
     return question;
@@ -115,19 +147,33 @@ std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
     return std::visit(choice, aAnswer);
 }
 
-/// Resolves the errors of the excluded ISINs and drops their open questions, as no answer to those
-/// can change the report any more. A question whose linked error stays unresolved (it also
-/// affects another form) stays open. A linked warning never keeps a question open: the payer choice
-/// of a dividend or coupon is linked to the warning that its payer is not found.
-void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded, ReportType aReport) {
+/// Resolves the errors of the excluded ISINs and brokers and drops the open questions of the
+/// ISINs, as no answer to those can change the report any more. A question whose linked error stays
+/// unresolved (it also affects another form) stays open. A linked warning never keeps a question
+/// open: the payer choice of a dividend or coupon is linked to the warning that its payer is not
+/// found.
+void exclude(ApplicationResultInput& aInput,
+             const std::set<Isin>& aExcluded,
+             const std::set<Broker>& aExcludedBrokers,
+             ReportType aReport) {
     const auto& diagnostics = aInput.mProcessingDiagnostics;
 
     for (std::size_t position = 0; position < diagnostics.size(); ++position)
     {
         const auto& diagnostic = diagnostics[position];
 
-        if (isFormError(diagnostic, aReport) && belongsToOneInvestment(diagnostic, aReport) &&
-            aExcluded.contains(diagnostic.mContext.mIsin.value()))
+        if (!isFormError(diagnostic, aReport))
+        {
+            continue;
+        }
+
+        const bool isExcludedInvestment = belongsToOneInvestment(diagnostic, aReport) &&
+                                          aExcluded.contains(diagnostic.mContext.mIsin.value());
+        const bool isExcludedBroker =
+            belongsToOneBroker(diagnostic, aReport) &&
+            aExcludedBrokers.contains(diagnostic.mContext.mCashInterestBroker.value());
+
+        if (isExcludedInvestment || isExcludedBroker)
         {
             aInput.mResolvedDiagnostics.push_back(position);
         }
@@ -157,6 +203,12 @@ void exclude(ApplicationResultInput& aInput, const std::set<Isin>& aExcluded, Re
 std::vector<Isin> FailureResolutionStage::resolve(ApplicationResultInput& aInput,
                                                   RunDecisions& aDecisions,
                                                   const FailureForm& aForm) {
+    return resolveUnits(aInput, aDecisions, aForm).mIsins;
+}
+
+ExcludedUnits FailureResolutionStage::resolveUnits(ApplicationResultInput& aInput,
+                                                   RunDecisions& aDecisions,
+                                                   const FailureForm& aForm) {
     const auto& diagnostics = aInput.mProcessingDiagnostics;
     const auto linked = linkedToQuestion(aInput, aForm.mReport);
     std::vector<std::size_t> listed;
@@ -169,7 +221,7 @@ std::vector<Isin> FailureResolutionStage::resolve(ApplicationResultInput& aInput
         }
 
         // An error that no investment owns cannot be solved by leaving investments out.
-        if (!belongsToOneInvestment(diagnostics[position], aForm.mReport))
+        if (!belongsToOneUnit(diagnostics[position], aForm.mReport))
         {
             return {};
         }
@@ -221,17 +273,24 @@ std::vector<Isin> FailureResolutionStage::resolve(ApplicationResultInput& aInput
         return {};
     }
 
-    const auto& investments = std::get<FailureResolutionQuestion>(question.mData).mInvestments;
+    const auto& asked = std::get<FailureResolutionQuestion>(question.mData);
     std::set<Isin> excluded;
+    std::set<Broker> excludedBrokers;
 
-    std::transform(investments.begin(),
-                   investments.end(),
+    std::transform(asked.mInvestments.begin(),
+                   asked.mInvestments.end(),
                    std::inserter(excluded, excluded.end()),
                    [](const FailedInvestment& aInvestment) { return aInvestment.mIsin; });
-    report.mExcludedInvestments = investments;
-    exclude(aInput, excluded, aForm.mReport);
+    std::transform(asked.mBrokers.begin(),
+                   asked.mBrokers.end(),
+                   std::inserter(excludedBrokers, excludedBrokers.end()),
+                   [](const FailedBroker& aBroker) { return aBroker.mBroker; });
+    report.mExcludedInvestments = asked.mInvestments;
+    report.mExcludedBrokers = asked.mBrokers;
+    exclude(aInput, excluded, excludedBrokers, aForm.mReport);
 
-    return {excluded.begin(), excluded.end()};
+    return {.mIsins = {excluded.begin(), excluded.end()},
+            .mBrokers = {excludedBrokers.begin(), excludedBrokers.end()}};
 }
 
 } // namespace taxbroker

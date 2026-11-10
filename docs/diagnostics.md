@@ -406,20 +406,25 @@ dropped. The choice never resolves an error of another form, and another form's 
 resolves a Doh-Div error. The warnings of Doh-Div (payer not found, foreign tax evidence) are not
 errors and are not part of the choice.
 
-### Choosing whether to exclude failed other-interest ISINs
+### Choosing whether to exclude failed other-interest ISINs or brokers
 
-Collect all Doh-Obr errors that can be isolated safely to complete ISINs: the error of a coupon
-payment (a missing official rate, an amount that does not fit) and the bond type errors below. A
+Collect all Doh-Obr errors that can be isolated safely to a unit: the error of a coupon payment (a
+missing official rate, an amount that does not fit, a value the form cannot hold) and the bond type
+errors below are units of their ISIN; the same errors of a payment of interest on the cash a broker
+holds, which has no ISIN, are units of that broker's cash interest. A
 parse or merge error never counts, even when it names an ISIN, because its ISIN can differ between
 duplicates; one that blocks Doh-Obr suppresses the question. Offer missing-data correction
 requests where the facts can be supplied. If the error remains or
 the user cannot supply the facts, return one `other_interest_failure_resolution_required` request
 with `affectedReports: [other_interest]`, the run revision, source references and all failed
 investments sorted by ISIN and then name. Each entry has its name, ISIN, reason codes and diagnostic
-IDs. The request has two choices, with neither preselected:
+IDs. The failed brokers are a separate list, `brokers`, sorted by broker, after the investments;
+each entry has the broker (the id of the source references), its reason codes and diagnostic IDs,
+and the list is left out when empty. The request has two choices, with neither preselected:
 
 1. `exclude_failed_instruments`: exclude every listed ISIN's selected-year Doh-Obr income rows
-   across all supplied brokers and accounts, including otherwise valid rows for those ISINs;
+   across all supplied brokers and accounts, including otherwise valid rows for those ISINs, and
+   every listed broker's cash-interest rows;
 2. `fail_report`: produce no Doh-Obr XML for this run.
 
 Before an answer, `otherInterest` is `needs_input` and has no XML. The user may instead correct
@@ -432,7 +437,8 @@ choice of an excluded ISIN is dropped, as no answer to it can change the report 
 On exclusion, rebuild Doh-Obr from the remaining valid income, including unaffected broker cash
 interest and bond coupons. Record `failureResolution: exclude_failed_instruments` and a deduplicated
 `otherInterest.excludedInvestments` list with names, ISINs, reason codes and diagnostic IDs in request
-order. Errors resolved for this form remain visible with `blocking: false`. Once no other blocking
+order, and the same for the left-out brokers in `otherInterest.excludedBrokers` (left out when
+empty). Errors resolved for this form remain visible with `blocking: false`. Once no other blocking
 errors or requests remain, use `generated` when rows remain, otherwise `no_data` with no XML.
 Show all excluded investments and the incomplete coverage beside the download. Never label the
 excluded investments successfully processed. Overall status is at least `completed_with_warnings`
@@ -446,19 +452,25 @@ choice was made; the entry of `excludedInvestments` of a form lists only the res
 affect that form. When a source problem also affects another form, retain a separate scoped
 blocking diagnostic there; resolving Doh-Obr must not clear it.
 
-This choice requires known instrument identity and a safely separable Doh-Obr scope. It cannot
-resolve missing ISINs, unclassified rows, cash-interest errors without an ISIN, file-level or shared
-metadata errors, or final XML serialization/schema/range failures. Such problems retain their
+This choice requires known instrument or broker identity and a safely separable Doh-Obr scope. It
+cannot resolve missing ISINs, unclassified rows, file-level or shared metadata errors, or a final
+XML serialization or schema failure of the whole document; a value of one row that the form cannot
+hold is found when the row is made and is a unit error. Doh-DHO has no such choice: leaving one
+bank's deposit interest out would change the shared EUR 1,000 total that decides whether the form
+is needed, so a Doh-DHO error still fails Doh-DHO. Such problems retain their
 normal correction request or report-failure behavior. An unresolved non-isolatable blocking error
 prevents offering an exclusion choice that could not produce a valid result. Developer mode cannot
 bypass any other-interest error. Classification exclusions remain a separate documented flow.
 
 **Implementation.** The interest stage makes the error of a missing official rate for each payment
 that needs it (with its form, rows, name and, for a coupon, its ISIN), not one error per currency
-and day, so a coupon's error belongs to its ISIN and a cash or deposit interest error never does.
-The failure stage is the same code as for capital gains with the form and the request type as
-parameters. After `exclude`, the coupon rows of the listed ISINs are removed from the Doh-Obr
-model; broker cash interest and other coupons stay.
+and day, so a coupon's error belongs to its ISIN. An error of a cash-interest payment of Doh-Obr
+names its broker (`cashInterestBroker` of the diagnostic context, never in the JSON) and has no
+ISIN; a deposit interest error names neither. The failure stage is the same code as for capital gains with
+the form and the request type as parameters; for Doh-Obr only it also owns the errors that name a
+broker. After `exclude`, the coupon rows of the listed ISINs and the cash-interest rows of the
+listed brokers are removed from the Doh-Obr model; other cash interest and other coupons stay. The
+recorded choice is bound to both lists, so a changed broker list asks again.
 
 **Bond type.** A bond (a debt security) with a sale or a maturity in the reporting year asks one
 `income_details_required` question, because the interest of a discount or zero-coupon bond arises
@@ -703,7 +715,7 @@ request type, and a failure-resolution question without an investment.
 | `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, the bond type of a bond with a sale or maturity in the year (`ordinary` or `discount_or_zero_coupon`, or a cancel), and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
 | `dividends_failure_resolution_required` | Exact complete failed Doh-Div ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
-| `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
+| `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list and, beside it, the failed brokers whose cash interest failed (`brokers`, only when there are any), safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 
 Confirmation controls have no default answer. Acknowledgement of a potential corporate-action
 mismatch is a frontend action supported by structured result fields; a non-blocking reminder does
@@ -893,7 +905,7 @@ Additional codes and their default scope are:
 | `source_quantity_corrected` | Warning for capital gains on one sale: its units were reduced to a quantity the user confirmed, because the files do not prove rounding. The original units stay in the unit evidence; no units or amounts in the message. |
 | `incomplete_history` keys | Without a key: a sale needs more units than the purchases left. Key `.correction_required` for a sale short by less than `0.00000100` units while its quantity question is open (linked to it); key `.correction_cancelled` after a cancel (no request, so the exclusion question follows). |
 | `xml_basis_rounding_difference` | Warning for capital gains, one per purchase row of a Doh-KDVP list whose `F4` times `F3`, rounded to four decimals, differs from the exact basis of its units rounded the same way. Output only: no value changes and no budget is used. Its sources and date are those of the purchase. |
-| `xml_value_out_of_range` | Error for the one form whose writer rejects the value (Doh-KDVP for capital gains, Doh-Div for dividends, Doh-DHO for deposit interest): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. |
+| `xml_value_out_of_range` | Error for the one form whose writer rejects the value (Doh-KDVP for capital gains, Doh-Div for dividends, Doh-DHO for deposit interest, Doh-Obr for other interest): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. For Doh-Obr the interest stage gives it too, in stage `fifo_tax` and before the failure question, for a value of one payment that the form cannot hold (the writer repeats the checks as a guard), so the coupon's ISIN or the broker's cash interest can be left out. |
 | `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked; no request. Key `.units_mismatch` (stage `fifo_tax`, on the sale) is a safety check: a decided sale whose rule blocks more units than the sale has loss units within the holding period cannot be written as rows; it should never happen. |
 | `corporate_action_not_applied` | Error for capital gains: a corporate action whose result cannot be reported yet. Key `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one; `.loss_window` for a date after 31 December with a merger row inside a December loss window (a split row there has its ratio question or its own error instead). An action of a class that never reaches Doh-KDVP gets none: that class has its own error. |
 | `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.ratio_required_before_sale` (parameters `saleDate` and `days`, 10) for the same question when a sale before the row needs more units than were held and the row may be a late booking, `.cancelled` after a cancel (no request), `.same_day` for two or more rows of one broker for the ISIN on one date, and `.different_dates` (parameter `days`, 10) for split rows of different brokers on dates at most that far apart that the user says are two splits, or that cannot be asked as one split (more than one such neighbour date, a merger row, or a broker on both dates; no request for these until the identity question exists). |

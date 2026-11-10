@@ -1,6 +1,7 @@
 #pragma once
 
 #include "taxbroker/diagnostic_messages.hpp"
+#include "taxbroker/event_metadata.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
 
 #include <optional>
@@ -82,6 +83,8 @@ struct ProcessingContext {
     std::optional<std::string> mField;
     std::optional<std::string> mInstrumentName;
     std::optional<Isin> mIsin;
+    /// Set only on an error of one Doh-Obr cash-interest payment: the broker that holds the cash.
+    std::optional<Broker> mCashInterestBroker;
 };
 
 /// Final application IDs and resolution status are assigned by later orchestration.

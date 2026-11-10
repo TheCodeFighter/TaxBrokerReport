@@ -57,7 +57,8 @@ struct PayerSinks {
                                                     std::optional<std::string> aName,
                                                     std::optional<Isin> aIsin);
 
-/// The payer facts of a reference row. A foreign payer's number is its identification number.
+/// The payer facts of a reference row. A foreign payer's number is its identification number; a
+/// Slovenian payer's `SI` and eight digits become its tax number (the eight digits).
 [[nodiscard]] PayerOutcome payerOutcomeOf(const PayerEntry& aEntry);
 
 /// The payer facts of a broker company that pays interest.

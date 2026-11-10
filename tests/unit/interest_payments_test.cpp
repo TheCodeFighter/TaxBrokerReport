@@ -1447,4 +1447,351 @@ TEST(InterestPaymentsTest, AStatementWithoutInterestGivesAnEmptyResult) {
     EXPECT_TRUE(result.mUsedRates.empty());
 }
 
+// --- The Doh-Obr row check: a value the form cannot hold is an error of its unit ---
+
+/// A catalogue with the given payer rows, a Trade Republic payer with the given tax number and one
+/// Interactive Brokers payer.
+ReferenceCatalogue catalogueWithTradeRepublicNumber(std::string_view aPayerRows,
+                                                    std::string_view aTradeRepublicNumber) {
+    const std::string payers = std::string{kPayersHeader} + std::string{aPayerRows};
+    const std::string relief = std::string{kReliefHeader} + "BE,Treaty text,manual,\n";
+    const std::string broker = std::string{kBrokerHeader} + "TR,TR-X,Broker T," +
+                               std::string{aTradeRepublicNumber} +
+                               ",\"1 Main Street, Berlin\",DE,manual,\n"
+                               "IBKR,IB-X,Broker X,123,1 Side Street,GB,manual,\n";
+
+    return parseReferenceCatalogue(payers, relief, broker);
+}
+
+TEST(InterestPaymentsTest, ACouponWhoseIssuerNumberIsTooLongForTheFormIsAnErrorOfItsIsin) {
+    // The identification number of Doh-Obr has at most 30 characters; this one has 31. The error is
+    // found here, so the user can leave the ISIN out before the XML is written.
+    const std::string longNumber(31, 'A');
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A," + longNumber +
+                    ",1 Main Street,FR,,,issuer,manual,\n"
+                    "XX0000000028,Issuer B,TAX-B,2 Main Street,FR,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // EUR 10.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+        {.mName = "Synthetic Bond B",
+         .mIsin = "XX0000000028",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                             .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 50'000, // EUR 5.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+
+    const auto& error = run.mLast.mDiagnostics.at(0);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, ProcessingDiagnosticCode::XmlValueOutOfRange);
+    EXPECT_EQ(error.mContext.mStage, PipelineStage::FifoTax);
+    EXPECT_EQ(error.mContext.mField, std::optional<std::string>{"IdentificationNumber"});
+    EXPECT_EQ(error.mContext.mIsin, std::optional<Isin>{"XX0000000010"});
+    EXPECT_EQ(error.mContext.mCashInterestBroker, std::nullopt);
+    EXPECT_EQ(error.mContext.mAffectedReports, std::vector<ReportType>{ReportType::OtherInterest});
+
+    // No row for Bond A; the row of Bond B (EUR 5.00) stays.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(std::get<BondCoupon>(run.mLast.mOtherReport.mRows.at(0).mKind).mIsin, "XX0000000028");
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 50'000);
+}
+
+TEST(InterestPaymentsTest, ACashInterestWhoseBrokerNumberIsTooLongIsAnErrorOfThatBroker) {
+    // The broker payer row of Trade Republic has a number of 31 characters; Interactive Brokers is
+    // fine. The error names Trade Republic and has no ISIN.
+    const std::string longNumber(31, 'A');
+    const auto catalogue = catalogueWithTradeRepublicNumber("", longNumber);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 30'000, // EUR 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR,
+               .mCashHolder = CashHolder::Broker}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                                          .mSources = {source(Broker::InteractiveBrokers,
+                                                              3,
+                                                              "synthetic-int-2")}},
+                            .mGrossAmount = 40'000, // EUR 4.00
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::EUR,
+                            .mTaxCurrency = Currency::EUR,
+                            .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+
+    const auto& error = run.mLast.mDiagnostics.at(0);
+
+    EXPECT_EQ(error.mCode, ProcessingDiagnosticCode::XmlValueOutOfRange);
+    EXPECT_EQ(error.mContext.mField, std::optional<std::string>{"IdentificationNumber"});
+    EXPECT_EQ(error.mContext.mIsin, std::nullopt);
+    EXPECT_EQ(error.mContext.mCashInterestBroker, std::optional<Broker>{Broker::TradeRepublic});
+    EXPECT_EQ(error.mContext.mAffectedReports, std::vector<ReportType>{ReportType::OtherInterest});
+
+    // Only the row of Interactive Brokers (EUR 4.00) is made.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 40'000);
+}
+
+TEST(InterestPaymentsTest, ACashInterestAboveTheLargestValueOfTheFormIsAnErrorOfItsBroker) {
+    // EUR 999999999999.9950 rounds to 1000000000000.00, which has 13 digits: the form holds 12.
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 9'999'999'999'999'950,
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR,
+               .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::XmlValueOutOfRange);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mField, std::optional<std::string>{"Value"});
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mCashInterestBroker,
+              std::optional<Broker>{Broker::TradeRepublic});
+    EXPECT_TRUE(run.mLast.mOtherReport.mRows.empty());
+}
+
+TEST(InterestPaymentsTest, TheLargestValueThatFitsTheFormIsARow) {
+    // EUR 999999999999.9949 rounds to 999999999999.99: the largest value, still a row.
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 9'999'999'999'999'949,
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR,
+               .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 9'999'999'999'999'949);
+}
+
+TEST(InterestPaymentsTest, AValidRowOfEachSubtypeGivesNoRowError) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,TAX-A,1 Main Street,FR,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // EUR 10.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                             .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 30'000, // EUR 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR,
+               .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_EQ(std::get<BrokerCashInterest>(run.mLast.mOtherReport.mRows.at(1).mKind).mBroker,
+              Broker::TradeRepublic);
+}
+
+TEST(InterestPaymentsTest, ACouponWhoseIssuerNameIsNotValidXmlTextIsAnErrorOfItsIsin) {
+    // A control character in the issuer's name cannot be written to the XML.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer\x01 A,TAX-A,1 Main Street,FR,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // EUR 10.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::XmlValueOutOfRange);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mField, std::optional<std::string>{"Name"});
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mIsin, std::optional<Isin>{"XX0000000010"});
+    EXPECT_TRUE(run.mLast.mOtherReport.mRows.empty());
+}
+
+TEST(InterestPaymentsTest, ACouponWhoseIssuerAddressIsNotValidXmlTextIsAnErrorOfItsIsin) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,TAX-A,1 Main\x02 Street,FR,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // EUR 10.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mField, std::optional<std::string>{"Address"});
+    EXPECT_TRUE(run.mLast.mOtherReport.mRows.empty());
+}
+
+TEST(InterestPaymentsTest, ACouponWithAForeignTaxAboveTheLargestValueOfTheFormIsAnErrorOfItsIsin) {
+    // Tax EUR 999999999999.9950 rounds to 1000000000000.00, which has 13 digits.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,TAX-A,1 Main Street,FR,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // EUR 10.00
+               .mTaxPaid = 9'999'999'999'999'950,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mField,
+              std::optional<std::string>{"ForeignTax"});
+    EXPECT_TRUE(run.mLast.mOtherReport.mRows.empty());
+}
+
+TEST(InterestPaymentsTest, ASlovenianIssuersForeignTaxIsNotCheckedBecauseItIsNotWritten) {
+    // The issuer's country is SI, so the huge tax is not written and is no error of the row (the
+    // warning about a Slovenian coupon with tax is given instead).
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,SI12345674,1 Main Street,SI,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // EUR 10.00
+               .mTaxPaid = 9'999'999'999'999'950,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+    };
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mTaxNumber,
+              std::optional<std::string>{"12345674"});
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::SlovenianCouponTax);
+}
+
 } // namespace

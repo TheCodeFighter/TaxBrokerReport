@@ -1175,6 +1175,106 @@ TEST(ApplicationResultJsonTest, WritesTheDividendsFailureQuestionWithItsInvestme
               nlohmann::json::array({"missing_exchange_rate"}));
 }
 
+TEST(ApplicationResultJsonTest, WritesTheBrokersOfTheDohObrFailureQuestionBesideItsInvestments) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {ReportType::OtherInterest},
+                     .mCashInterestBroker = Broker::TradeRepublic},
+    }};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::OtherInterestFailureResolutionRequired,
+                .mAffectedReports = {ReportType::OtherInterest},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {},
+                        .mBrokers = {FailedBroker{
+                            .mBroker = Broker::TradeRepublic,
+                            .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+                        }}},
+            },
+        .mProcessingDiagnostics = {0},
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "other_interest_failure_resolution_required");
+    EXPECT_EQ(request.at("investments"), nlohmann::json::array());
+    EXPECT_EQ(request.at("brokers"), nlohmann::json::parse(R"([{"broker": "trade_republic",
+                                         "reasonCodes": ["missing_exchange_rate"],
+                                         "diagnosticIds": ["diagnostic-0001"]}])"));
+}
+
+TEST(ApplicationResultJsonTest, WritesTheExcludedBrokersOfDohObrAndNoEmptyBrokerLists) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {ReportType::OtherInterest},
+                     .mCashInterestBroker = Broker::TradeRepublic},
+    }};
+    input.mResolvedDiagnostics = {0};
+
+    auto& other = input.mReports[static_cast<std::size_t>(ReportType::OtherInterest)];
+
+    other.mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+    other.mExcludedBrokers = {FailedBroker{
+        .mBroker = Broker::TradeRepublic,
+        .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& reports = json.at("reports");
+
+    EXPECT_EQ(reports.at("otherInterest").at("excludedBrokers"),
+              nlohmann::json::parse(R"([{"broker": "trade_republic",
+                                         "reasonCodes": ["missing_exchange_rate"],
+                                         "diagnosticIds": ["diagnostic-0001"]}])"));
+    EXPECT_EQ(reports.at("otherInterest").at("excludedInvestments"), nlohmann::json::array());
+
+    // The capital form has no brokers, so its JSON does not change.
+    EXPECT_FALSE(reports.at("capitalGains").contains("excludedBrokers"));
+}
+
+TEST(ApplicationResultJsonTest, ARecordedAnswerListsTheBrokersOfItsQuestion) {
+    auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    result.mDecisions = {RecordedDecision{
+        .mId = "decision-0001",
+        .mType = RequestType::OtherInterestFailureResolutionRequired,
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments = {},
+                .mBrokers = {FailedBroker{
+                    .mBroker = Broker::InteractiveBrokers,
+                    .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+                }}},
+        .mAnswer = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments},
+        .mFromEarlierRun = false,
+        .mUsed = true,
+    }};
+
+    const auto json = nlohmann::ordered_json::parse(api::serializeApplicationResultJson(result));
+    const auto expected = nlohmann::ordered_json::parse(R"([{
+      "id": "decision-0001",
+      "type": "other_interest_failure_resolution_required",
+      "fromEarlierRun": false,
+      "used": true,
+      "investments": [],
+      "brokers": [
+        {"broker": "interactive_brokers", "reasonCodes": ["missing_exchange_rate"]}
+      ],
+      "answer": "exclude_failed_instruments"
+    }])");
+
+    EXPECT_EQ(json.at("decisions"), expected);
+}
+
 TEST(ApplicationResultJsonTest, WritesEveryAnswer) {
     auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
     result.mDecisions = {

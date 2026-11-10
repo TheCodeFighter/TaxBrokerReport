@@ -83,10 +83,11 @@ IncomeReports prepareIncomeReports(ApplicationResultInput& aInput,
 
     appendInterestPayments(aInput, std::move(interest));
 
-    const auto excludedCoupons =
-        FailureResolutionStage::resolve(aInput, aDecisions, kOtherInterestFailure);
+    const auto excludedOther =
+        FailureResolutionStage::resolveUnits(aInput, aDecisions, kOtherInterestFailure);
 
-    excludeCoupons(reports.mOther, excludedCoupons);
+    excludeCoupons(reports.mOther, excludedOther.mIsins);
+    excludeBrokerCashInterest(reports.mOther, excludedOther.mBrokers);
     reports.mUsedRates = mergedRates(std::move(dividendRates), std::move(interestRates));
 
     return reports;

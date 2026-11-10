@@ -1748,6 +1748,25 @@ TEST(ReportCommandTest, AnAnswerToAFailureQuestionCountsTheFailedInvestments) {
     EXPECT_EQ(cli::answerLine(fail), "1 failed investment: block the report");
 }
 
+TEST(ReportCommandTest, AnAnswerToAFailureQuestionWithBrokersCountsInvestmentsAndBrokers) {
+    const RecordedDecision exclude{
+        .mId = "decision-0001",
+        .mType = RequestType::OtherInterestFailureResolutionRequired,
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments =
+                    {
+                        {.mIsin = "XX0000000010", .mName = "Synthetic Bond", .mReasonCodes = {}},
+                    },
+                .mBrokers = {{.mBroker = Broker::TradeRepublic, .mReasonCodes = {}}}},
+        .mAnswer = FailureResolutionAnswer{.mChoice = FailureResolution::ExcludeFailedInstruments},
+        .mFromEarlierRun = false,
+        .mUsed = true,
+    };
+
+    EXPECT_EQ(cli::answerLine(exclude), "2 failed items: leave the failed items out");
+}
+
 TEST(ReportCommandTest, AnAnswerToAQuestionWithoutDataNamesTheRequestType) {
     const RecordedDecision decision{
         .mId = "decision-0001",

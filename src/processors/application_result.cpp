@@ -379,6 +379,7 @@ struct DraftDiagnostic {
         .mField = context.mField,
         .mInstrumentName = context.mInstrumentName,
         .mIsin = context.mIsin,
+        .mCashInterestBroker = context.mCashInterestBroker,
     };
     diagnostic.mAffectedReports = std::move(reports);
 
@@ -451,10 +452,10 @@ bool isTwoCapitalLetters(const std::string& aText) {
            aText[1] <= 'Z';
 }
 
-/// A failure-resolution type needs a list with at least one investment, a loss question at
-/// least one sale, each with open units, a ratio question a source, open units and a date
-/// range around its effective date, a classification question an ISIN, a bond type question an ISIN
-/// and sold or matured units, and a quantity question an ISIN and open units below the sale units;
+/// A failure-resolution type needs a list with at least one investment or broker, a loss question
+/// at least one sale, each with open units, a ratio question a source, open units and a date range
+/// around its effective date, a classification question an ISIN, a bond type question an ISIN and
+/// sold or matured units, and a quantity question an ISIN and open units below the sale units;
 /// every other type has no question data until its processor defines it.
 void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
@@ -526,9 +527,10 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         throw std::invalid_argument("A classification question needs an ISIN.");
     }
 
-    if (failure != nullptr && failure->mInvestments.empty())
+    if (failure != nullptr && failure->mInvestments.empty() && failure->mBrokers.empty())
     {
-        throw std::invalid_argument("A failure-resolution question needs an investment.");
+        throw std::invalid_argument("A failure-resolution question needs an investment or a "
+                                    "broker.");
     }
 
     // Either the units at the row date, or the earlier sale that the action must come before.
@@ -633,13 +635,38 @@ investmentsOf(const QuestionData& aData,
     return investments;
 }
 
+/// The brokers of a failure question, each with the IDs of its linked diagnostics.
+[[nodiscard]] std::vector<RequestBroker>
+brokersOf(const std::vector<FailedBroker>& aBrokers,
+          const std::vector<std::size_t>& aLinkedDiagnostics,
+          const std::vector<ApplicationDiagnostic>& aDiagnostics) {
+    std::vector<RequestBroker> brokers;
+
+    for (const auto& failed : aBrokers)
+    {
+        RequestBroker broker{.mBroker = failed.mBroker, .mReasonCodes = failed.mReasonCodes};
+
+        for (const auto position : aLinkedDiagnostics)
+        {
+            if (aDiagnostics[position].mCashInterestBroker == failed.mBroker)
+            {
+                broker.mDiagnosticIds.push_back(aDiagnostics[position].mId);
+            }
+        }
+
+        brokers.push_back(std::move(broker));
+    }
+
+    return brokers;
+}
+
 /// The exclusion of a form needs a non-empty list; every other choice, or none, has none.
 void checkFailureResolution(const ReportInput& aInput) {
     const bool excludes = aInput.mFailureResolution == FailureResolution::ExcludeFailedInstruments;
 
-    if (excludes != !aInput.mExcludedInvestments.empty())
+    if (excludes != (!aInput.mExcludedInvestments.empty() || !aInput.mExcludedBrokers.empty()))
     {
-        throw std::invalid_argument("Only an exclusion lists excluded investments.");
+        throw std::invalid_argument("Only an exclusion lists excluded investments or brokers.");
     }
 }
 
@@ -666,9 +693,41 @@ excludedInvestmentsOf(const ReportInput& aInput,
 
     std::sort(resolvedPositions.begin(), resolvedPositions.end());
 
-    return investmentsOf(normalizedData(FailureResolutionQuestion{aInput.mExcludedInvestments}),
-                         resolvedPositions,
-                         aDiagnostics);
+    return investmentsOf(
+        normalizedData(
+            FailureResolutionQuestion{.mInvestments = aInput.mExcludedInvestments, .mBrokers = {}}),
+        resolvedPositions,
+        aDiagnostics);
+}
+
+/// The excluded brokers of a form, sorted like the question, each with the IDs of the resolved
+/// diagnostics of its cash interest that affect this form, in diagnostic order.
+[[nodiscard]] std::vector<RequestBroker>
+excludedBrokersOf(const ReportInput& aInput,
+                  ReportType aType,
+                  const std::vector<std::size_t>& aResolved,
+                  const std::vector<std::size_t>& aProcessingToDiagnostic,
+                  const std::vector<ApplicationDiagnostic>& aDiagnostics) {
+    std::vector<std::size_t> resolvedPositions;
+
+    for (const auto index : aResolved)
+    {
+        const auto position = aProcessingToDiagnostic.at(index);
+
+        if (affects(aDiagnostics[position].mAffectedReports, aType))
+        {
+            resolvedPositions.push_back(position);
+        }
+    }
+
+    std::sort(resolvedPositions.begin(), resolvedPositions.end());
+
+    const auto data = normalizedData(
+        FailureResolutionQuestion{.mInvestments = {}, .mBrokers = aInput.mExcludedBrokers});
+
+    return brokersOf(std::get<FailureResolutionQuestion>(data).mBrokers,
+                     resolvedPositions,
+                     aDiagnostics);
 }
 
 /// The excluded items of a run sorted by ISIN, each with its sources normalized and the IDs of its
@@ -847,6 +906,19 @@ QuestionData normalizedData(QuestionData aData) {
                   [](const FailedInvestment& aLeft, const FailedInvestment& aRight) {
                       return std::tie(aLeft.mIsin, aLeft.mName) <
                              std::tie(aRight.mIsin, aRight.mName);
+                  });
+
+        for (auto& broker : failure->mBrokers)
+        {
+            auto& codes = broker.mReasonCodes;
+            std::sort(codes.begin(), codes.end());
+            codes.erase(std::unique(codes.begin(), codes.end()), codes.end());
+        }
+
+        std::sort(failure->mBrokers.begin(),
+                  failure->mBrokers.end(),
+                  [](const FailedBroker& aLeft, const FailedBroker& aRight) {
+                      return aLeft.mBroker < aRight.mBroker;
                   });
     }
 
@@ -1137,6 +1209,11 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
                                 linkedDiagnostics.end());
         request.mInvestments = investmentsOf(request.mData, linkedDiagnostics, result.mDiagnostics);
 
+        if (const auto* failure = std::get_if<FailureResolutionQuestion>(&request.mData))
+        {
+            request.mBrokers = brokersOf(failure->mBrokers, linkedDiagnostics, result.mDiagnostics);
+        }
+
         result.mRequests.push_back(std::move(request));
     }
 
@@ -1154,6 +1231,11 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
                                                             aInput.mResolvedDiagnostics,
                                                             processingToDiagnostic,
                                                             result.mDiagnostics);
+        report.mExcludedBrokers = excludedBrokersOf(input,
+                                                    type,
+                                                    aInput.mResolvedDiagnostics,
+                                                    processingToDiagnostic,
+                                                    result.mDiagnostics);
 
         bool hasUnresolvedBlocker = false;
 

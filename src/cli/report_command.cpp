@@ -1038,7 +1038,7 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
             // It lists several investments, not one.
-            return countText(aQuestion.mInvestments.size(), "investment", "investments");
+            return unitsText(aQuestion.mInvestments.size(), aQuestion.mBrokers.size());
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
