@@ -84,7 +84,12 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
   import checks `SelfReport` (`false`, or `true` for a self-report), `Type` `1` for every row (a
   foreign fund distribution may need `4`; FURS did not say), a row without payer facts and
   without `SourceCountry`, and `ForeignTax` `0.00` on a row whose export had no tax.
-- **Doh-DHO and Doh-Obr.** Their writers do not exist yet. For Doh-Obr, check in a
+- **Doh-DHO as written by the app.** In a draft import of a file with a Trade Republic row, check
+  that eDavki accepts the taxpayer block without `ResidentCountry` and `WfTypeU`, the rows without
+  country names, `ForeignTaxPaid` `0.00` on a foreign row, the totals, `SelfReport` (`false`, or
+  `true` for a self-report), and a row without payer facts. The writer exists; no draft was
+  imported.
+- **Doh-Obr.** Its writer does not exist yet. Check in a
   draft import of a file with one cash-interest row and one bond-coupon row: that eDavki accepts
   the interest-type code `4` for broker cash interest (FURS names no code), the self-report
   encoding, `ForeignTax` `0` on a foreign row, and a row without `ReliefStatement`

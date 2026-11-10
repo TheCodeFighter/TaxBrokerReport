@@ -1,5 +1,7 @@
 #include "xml_common.hpp"
+#include "utils/numeric_util.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <iomanip>
@@ -24,11 +26,17 @@ constexpr std::string_view kXmlEncoding = "UTF-8";
 constexpr std::string_view kXmlIndent = "  ";
 
 constexpr std::size_t kTaxNumberDigits = 8;
-constexpr int kMinimumYear = 1000;
 constexpr int kMaximumYear = 9999;
 // `xs:date` holds a year from 1 to 9999 in four digits.
 constexpr int kMinimumDateYear = 1;
 constexpr std::size_t kMaximumPostNumberLength = 12;
+constexpr std::size_t kCountryLength = 2;
+
+// `Money` has four decimals and the form two, so a cent is 100 stored steps.
+constexpr Money kStepsPerCent = 100;
+constexpr Money kHalfCent = 50;
+constexpr std::int64_t kCentsPerUnit = 100;
+constexpr std::size_t kAmountDecimals = 2;
 
 // Limits of the characters that XML accepts.
 constexpr std::uint32_t kFirstPrintableCodePoint = 0x20U; // below it are the control characters
@@ -116,6 +124,29 @@ std::optional<std::size_t> xmlTextLength(std::string_view aText) {
     }
 
     return length;
+}
+
+bool isCountryCode(std::string_view aText) {
+    return aText.size() == kCountryLength &&
+           std::all_of(aText.begin(), aText.end(), [](char aCharacter) {
+               return aCharacter >= 'A' && aCharacter <= 'Z';
+           });
+}
+
+std::int64_t roundedCents(Money aValue) {
+    // Divides before it adds, so the largest `Money` value cannot overflow.
+    std::int64_t cents = aValue / kStepsPerCent;
+
+    if (aValue % kStepsPerCent >= kHalfCent)
+    {
+        ++cents;
+    }
+
+    return cents;
+}
+
+std::string amountText(std::int64_t aCents) {
+    return formatFixedPoint(aCents, kCentsPerUnit, kAmountDecimals);
 }
 
 bool isTaxNumber(std::string_view aText) {
@@ -245,7 +276,7 @@ void checkMetadata(std::vector<ProcessingDiagnostic>& aDiagnostics,
         addOutOfRange(aDiagnostics, aReport, "birthDate");
     }
 
-    if (aMetadata.mReportingYear < kMinimumYear || aMetadata.mReportingYear > kMaximumYear)
+    if (aMetadata.mReportingYear < aFields.mMinimumYear || aMetadata.mReportingYear > kMaximumYear)
     {
         addOutOfRange(aDiagnostics, aReport, aFields.mYear);
     }

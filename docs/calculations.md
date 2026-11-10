@@ -867,4 +867,5 @@ Tests based on this document must prove that:
 - [Current official Doh-Div schema](https://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd)
 - [Repository Doh-Div schema](../resources/xml/schemas/Doh_Div_3.xsd): the official file as
   downloaded on 2026-11-09 (SHA-256 starting `9a78d1e56f3b964`)
-- [Doh-DHO schema](../legacy-QT-GUI/resources/xml/edavk/schemas/Doh_DHO_4.xsd)
+- [Doh-DHO schema](../resources/xml/schemas/Doh_DHO_4.xsd): the official file as downloaded on
+  2026-11-10 (SHA-256 starting `bd881dc02d004be3`)

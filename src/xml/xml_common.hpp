@@ -6,6 +6,7 @@
 #include <pugixml.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -23,9 +24,13 @@ struct ErrorIdentity {
 /// The names of the form's own elements that the shared taxpayer check reports.
 struct MetadataFields {
     std::string_view mYear;  ///< The element with the reporting year.
+    int mMinimumYear{};      ///< The first year the form accepts; always set by the writer.
     std::string_view mPhone; ///< The element with the telephone number.
     std::string_view mEmail; ///< The element with the e-mail address.
 };
+
+/// The first year with four digits, the lowest year of a form that sets no later limit.
+inline constexpr int kFourDigitYear = 1000;
 
 /// The number of characters of a text that XML accepts: valid UTF-8 without control characters
 /// (below U+0020) and without U+FFFE and U+FFFF. Returns nothing for any other text.
@@ -37,6 +42,16 @@ struct MetadataFields {
 /// `YYYY-MM-DD`, or nothing for a year outside 1 to 9999, which `xs:date` cannot hold in four
 /// digits (year 0000 does not exist in XML).
 [[nodiscard]] std::optional<std::string> dateText(const Date& aDate);
+
+/// Two capital letters A to Z.
+[[nodiscard]] bool isCountryCode(std::string_view aText);
+
+/// The amount in cents, rounded once, halves up. A negative amount is cut towards zero, not
+/// rounded: the caller rejects a negative amount on its exact value first.
+[[nodiscard]] std::int64_t roundedCents(Money aValue);
+
+/// The cents with two decimals, such as `12.35`. Only for values that are not negative.
+[[nodiscard]] std::string amountText(std::int64_t aCents);
 
 /// The workflow code (`O` or `I`) and its name for the filing type.
 [[nodiscard]] std::string_view workflowCode(FilingType aFilingType);
