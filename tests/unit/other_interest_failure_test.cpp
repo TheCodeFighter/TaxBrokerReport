@@ -59,6 +59,26 @@ ReferenceCatalogue catalogueOf(std::string_view aPayerRows) {
     return parseReferenceCatalogue(payers, relief, broker);
 }
 
+SourceReference sourceOf(Broker aBroker, std::size_t aRow, std::string aTransactionId) {
+    return SourceReference{
+        .mBroker = aBroker,
+        .mFilename = SourceFilename::fromPath("history.csv"),
+        .mSourceRow = aRow,
+        .mTransactionId = std::move(aTransactionId),
+    };
+}
+
+/// A catalogue with the given issuer rows and one broker payer for each of two brokers.
+ReferenceCatalogue catalogueOfTwoBrokers(std::string_view aPayerRows) {
+    const std::string payers = std::string{kPayersHeader} + std::string{aPayerRows};
+    const std::string relief = std::string{kReliefHeader} + "BE,Treaty text,manual,\n";
+    const std::string broker = std::string{kBrokerHeader} +
+                               "TR,TR-X,Broker T,TAX-T,\"1 Main Street, Berlin\",DE,manual,\n"
+                               "IBKR,IB-X,Broker I,TAX-I,\"2 Main Street, Dublin\",IE,manual,\n";
+
+    return parseReferenceCatalogue(payers, relief, broker);
+}
+
 /// Marks the rate files of 2025 as loaded, from 2 January to 31 December, without any rate.
 void addFile2025(OfficialRateTable& aTable) {
     aTable.mFiles.push_back(OfficialRateFile{.mYear = 2025,
@@ -120,6 +140,7 @@ struct ObrRun {
     DecisionSession mSession;
     InterestPaymentsResult mLast;
     std::vector<Isin> mExcluded;
+    std::vector<Broker> mExcludedBrokers;
 
     ObrRun(const MergedStatement& aStatement,
            const ReferenceCatalogue& aCatalogue,
@@ -139,8 +160,13 @@ struct ObrRun {
             auto copy = mLast;
 
             appendInterestPayments(input, std::move(copy));
-            mExcluded = FailureResolutionStage::resolve(input, aDecisions, kOtherInterestFailure);
+            const auto units =
+                FailureResolutionStage::resolveUnits(input, aDecisions, kOtherInterestFailure);
+
+            mExcluded = units.mIsins;
+            mExcludedBrokers = units.mBrokers;
             excludeCoupons(mLast.mOtherReport, mExcluded);
+            excludeBrokerCashInterest(mLast.mOtherReport, mExcludedBrokers);
 
             if (!mLast.mOtherReport.mRows.empty())
             {
@@ -513,7 +539,7 @@ TEST(OtherInterestFailureTest, AChangedListOfIsinsNeedsANewAnswer) {
     EXPECT_FALSE(run.result().report(ReportType::OtherInterest).mFailureResolution.has_value());
 }
 
-TEST(OtherInterestFailureTest, ACashInterestErrorWithoutAnIsinGivesNoQuestion) {
+TEST(OtherInterestFailureTest, ACashInterestErrorNamesItsBrokerAndAsksTheFailureQuestion) {
     const auto catalogue = catalogueOf(kFrenchIssuers);
     OfficialRateTable rates;
     MergedStatement statement;
@@ -544,13 +570,23 @@ TEST(OtherInterestFailureTest, ACashInterestErrorWithoutAnIsinGivesNoQuestion) {
     orderChronologically(statement);
     ObrRun run{statement, catalogue, rates};
 
-    // Two errors: the coupon's has its ISIN, the cash interest's has none. The second belongs to
-    // no investment, so leaving Bond A out would not fix Doh-Obr: no question.
+    // Two errors: the coupon's has its ISIN, the cash interest's has none and names its broker. One
+    // question lists both units: the bond and the broker's cash interest.
     ASSERT_EQ(run.mLast.mDiagnostics.size(), 2U);
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mIsin, std::optional<Isin>{"XX0000000010"});
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mCashInterestBroker, std::nullopt);
     EXPECT_EQ(run.mLast.mDiagnostics.at(1).mContext.mIsin, std::nullopt);
-    EXPECT_TRUE(run.result().mRequests.empty());
-    EXPECT_EQ(run.obrStatus(), ReportStatus::Failed);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(1).mContext.mCashInterestBroker,
+              std::optional<Broker>{Broker::TradeRepublic});
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+
+    const auto& request = run.result().mRequests.at(0);
+
+    ASSERT_EQ(request.mInvestments.size(), 1U);
+    EXPECT_EQ(request.mInvestments.at(0).mIsin, "XX0000000010");
+    ASSERT_EQ(request.mBrokers.size(), 1U);
+    EXPECT_EQ(request.mBrokers.at(0).mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(run.obrStatus(), ReportStatus::NeedsInput);
 }
 
 TEST(OtherInterestFailureTest, ADepositAndACouponWithoutARateOnOneDayGiveTwoErrorsOfTheirOwnForm) {
@@ -1344,6 +1380,496 @@ TEST(OtherInterestFailureTest, ExcludingCouponsKeepsCashInterestAndTheOtherIsins
 
     excludeCoupons(report, {"XX0000000010"});
 
+    ASSERT_EQ(report.mRows.size(), 2U);
+    EXPECT_EQ(report.mRows.at(0).mGrossInterest, 20'000);
+    EXPECT_EQ(report.mRows.at(1).mGrossInterest, 30'000);
+}
+
+// --- A cash-interest error of one broker ---
+
+TEST(OtherInterestFailureTest,
+     ABrokersCashInterestCanBeLeftOutWhileTheOtherBrokerAndTheCouponStay) {
+    const auto catalogue = catalogueOfTwoBrokers(kFrenchIssuers);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates); // loaded, but without any USD rate
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-13"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 50'000, // EUR 5.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 30'000, // USD 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD,
+               .mCashHolder = CashHolder::Broker}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                                          .mSources = {sourceOf(Broker::InteractiveBrokers,
+                                                                4,
+                                                                "synthetic-int-3")}},
+                            .mGrossAmount = 40'000, // EUR 4.00
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::EUR,
+                            .mTaxCurrency = Currency::EUR,
+                            .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    // The cash interest of Trade Republic has no USD rate: one error, with its broker and no ISIN.
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::MissingExchangeRate);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mIsin, std::nullopt);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mCashInterestBroker,
+              std::optional<Broker>{Broker::TradeRepublic});
+
+    // The question lists the broker only; Doh-Obr waits for the answer.
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+
+    const auto& request = run.result().mRequests.at(0);
+
+    EXPECT_EQ(request.mType, RequestType::OtherInterestFailureResolutionRequired);
+    EXPECT_TRUE(request.mInvestments.empty());
+    ASSERT_EQ(request.mBrokers.size(), 1U);
+    EXPECT_EQ(request.mBrokers.at(0).mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(
+        request.mBrokers.at(0).mReasonCodes,
+        std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::MissingExchangeRate});
+    EXPECT_EQ(request.mBrokers.at(0).mDiagnosticIds, std::vector<std::string>{"diagnostic-0001"});
+    EXPECT_EQ(run.obrStatus(), ReportStatus::NeedsInput);
+
+    EXPECT_TRUE(run.answerFirst(kExclude).empty());
+
+    // The rows of the coupon (EUR 5.00) and of the other broker (EUR 4.00) stay.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 50'000);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mGrossInterest, 40'000);
+
+    // The error stays visible and no longer blocks; the form is made.
+    const auto& obr = run.result().report(ReportType::OtherInterest);
+
+    ASSERT_EQ(run.result().mDiagnostics.size(), 1U);
+    EXPECT_FALSE(run.result().mDiagnostics.at(0).mBlocking);
+    EXPECT_EQ(obr.mStatus, ReportStatus::Generated);
+    EXPECT_EQ(obr.mFailureResolution, FailureResolution::ExcludeFailedInstruments);
+    EXPECT_TRUE(obr.mExcludedInvestments.empty());
+    ASSERT_EQ(obr.mExcludedBrokers.size(), 1U);
+    EXPECT_EQ(obr.mExcludedBrokers.at(0).mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(obr.mExcludedBrokers.at(0).mDiagnosticIds,
+              std::vector<std::string>{"diagnostic-0001"});
+}
+
+TEST(OtherInterestFailureTest, ABrokerAndACouponThatFailTogetherAreOneQuestionAndBothAreLeftOut) {
+    const auto catalogue = catalogueOfTwoBrokers(kFrenchIssuers);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates); // loaded, but without any USD rate
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-13"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // USD 10.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 30'000, // USD 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD,
+               .mCashHolder = CashHolder::Broker}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                                          .mSources = {sourceOf(Broker::InteractiveBrokers,
+                                                                4,
+                                                                "synthetic-int-3")}},
+                            .mGrossAmount = 40'000, // EUR 4.00
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::EUR,
+                            .mTaxCurrency = Currency::EUR,
+                            .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 2U);
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+
+    const auto& request = run.result().mRequests.at(0);
+
+    ASSERT_EQ(request.mInvestments.size(), 1U);
+    EXPECT_EQ(request.mInvestments.at(0).mIsin, "XX0000000010");
+    ASSERT_EQ(request.mBrokers.size(), 1U);
+    EXPECT_EQ(request.mBrokers.at(0).mBroker, Broker::TradeRepublic);
+
+    EXPECT_TRUE(run.answerFirst(kExclude).empty());
+
+    // Only the cash interest of the other broker (EUR 4.00) is left.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 40'000);
+
+    const auto& obr = run.result().report(ReportType::OtherInterest);
+
+    EXPECT_EQ(obr.mStatus, ReportStatus::Generated);
+    ASSERT_EQ(obr.mExcludedInvestments.size(), 1U);
+    EXPECT_EQ(obr.mExcludedInvestments.at(0).mDiagnosticIds,
+              std::vector<std::string>{"diagnostic-0001"});
+    ASSERT_EQ(obr.mExcludedBrokers.size(), 1U);
+    EXPECT_EQ(obr.mExcludedBrokers.at(0).mDiagnosticIds,
+              std::vector<std::string>{"diagnostic-0002"});
+}
+
+TEST(OtherInterestFailureTest, FailingDohObrBecauseOfABrokerWritesNoFileAndExcludesNothing) {
+    const auto catalogue = catalogueOfTwoBrokers(kFrenchIssuers);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates); // loaded, but without any USD rate
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-13"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 50'000, // EUR 5.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 30'000, // USD 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD,
+               .mCashHolder = CashHolder::Broker}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                                          .mSources = {sourceOf(Broker::InteractiveBrokers,
+                                                                4,
+                                                                "synthetic-int-3")}},
+                            .mGrossAmount = 40'000, // EUR 4.00
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::EUR,
+                            .mTaxCurrency = Currency::EUR,
+                            .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    EXPECT_TRUE(run.answerFirst(kFailReport).empty());
+
+    const auto& obr = run.result().report(ReportType::OtherInterest);
+
+    EXPECT_EQ(obr.mStatus, ReportStatus::Failed);
+    EXPECT_EQ(obr.mFailureResolution, FailureResolution::FailReport);
+    EXPECT_TRUE(obr.mExcludedInvestments.empty());
+    EXPECT_TRUE(obr.mExcludedBrokers.empty());
+    EXPECT_FALSE(obr.mXml.has_value());
+}
+
+TEST(OtherInterestFailureTest, CancellingTheBrokerQuestionFailsDohObrWithoutAnAnswerOnRecord) {
+    const auto catalogue = catalogueOfTwoBrokers(kFrenchIssuers);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates); // loaded, but without any USD rate
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-13"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 50'000, // EUR 5.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 30'000, // USD 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD,
+               .mCashHolder = CashHolder::Broker}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                                          .mSources = {sourceOf(Broker::InteractiveBrokers,
+                                                                4,
+                                                                "synthetic-int-3")}},
+                            .mGrossAmount = 40'000, // EUR 4.00
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::EUR,
+                            .mTaxCurrency = Currency::EUR,
+                            .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    EXPECT_TRUE(run.answerFirst(CancelAnswer{}).empty());
+
+    const auto& obr = run.result().report(ReportType::OtherInterest);
+
+    EXPECT_EQ(obr.mStatus, ReportStatus::Failed);
+    EXPECT_FALSE(obr.mFailureResolution.has_value());
+    EXPECT_TRUE(obr.mExcludedBrokers.empty());
+}
+
+TEST(OtherInterestFailureTest, ARecordedBrokerExclusionDoesNotCoverAnotherBrokerThatFailsLater) {
+    const auto catalogue = catalogueOfTwoBrokers(kFrenchIssuers);
+    OfficialRateTable rates;
+    MergedStatement first;
+    MergedStatement second;
+
+    addFile2025(rates); // loaded, but without any USD rate
+    first.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-13"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 50'000, // EUR 5.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 30'000, // USD 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD,
+               .mCashHolder = CashHolder::Broker}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                                          .mSources = {sourceOf(Broker::InteractiveBrokers,
+                                                                4,
+                                                                "synthetic-int-3")}},
+                            .mGrossAmount = 40'000, // EUR 4.00
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::EUR,
+                            .mTaxCurrency = Currency::EUR,
+                            .mCashHolder = CashHolder::Broker}}},
+    };
+    second.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-13"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 50'000, // EUR 5.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+               .mGrossAmount = 30'000, // USD 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD,
+               .mCashHolder = CashHolder::Broker}}},
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-15"),
+                                          .mSources = {sourceOf(Broker::InteractiveBrokers,
+                                                                4,
+                                                                "synthetic-int-3")}},
+                            .mGrossAmount = 40'000, // USD 4.00
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::USD,
+                            .mTaxCurrency = Currency::USD,
+                            .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(first);
+    orderChronologically(second);
+    ObrRun run{first, catalogue, rates};
+
+    EXPECT_TRUE(run.answerFirst(kExclude).empty());
+    EXPECT_EQ(run.obrStatus(), ReportStatus::Generated);
+
+    // The next run fails the cash interest of the other broker as well: the recorded answer was for
+    // the list [Trade Republic] only, so the question is asked again with both brokers.
+    run.start(second, catalogue, rates);
+
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    ASSERT_EQ(run.result().mRequests.at(0).mBrokers.size(), 2U);
+    EXPECT_EQ(run.result().mRequests.at(0).mBrokers.at(0).mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(run.result().mRequests.at(0).mBrokers.at(1).mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(run.obrStatus(), ReportStatus::NeedsInput);
+}
+
+TEST(OtherInterestFailureTest, AnErrorNoUnitOwnsStopsTheBrokerQuestion) {
+    // A cash-interest error of Trade Republic, and an error of the form without an ISIN or a
+    // broker (a file-level error): leaving the broker out would not fix Doh-Obr, so nothing is
+    // asked.
+    DecisionSession session;
+    std::vector<Broker> excludedBrokers;
+
+    session.start([&excludedBrokers](RunDecisions& aDecisions) {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        input.mProcessingDiagnostics.push_back(ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {ReportType::OtherInterest},
+                         .mCashInterestBroker = Broker::TradeRepublic},
+        });
+        input.mProcessingDiagnostics.push_back(ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::ArithmeticOverflow,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {ReportType::OtherInterest}},
+        });
+        excludedBrokers =
+            FailureResolutionStage::resolveUnits(input, aDecisions, kOtherInterestFailure).mBrokers;
+
+        return input;
+    });
+
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_TRUE(excludedBrokers.empty());
+    EXPECT_EQ(session.result().report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
+}
+
+TEST(OtherInterestFailureTest, ADepositErrorNamesNoBrokerAndAsksNoQuestion) {
+    // The deposit interest of a bank has no rate: Doh-DHO fails. Leaving a bank out would change
+    // the shared EUR 1,000 total, so there is no broker unit and no question.
+    const auto catalogue = catalogueOfTwoBrokers(kFrenchIssuers);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates); // loaded, but without any USD rate
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {sourceOf(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 30'000, // USD 3.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::USD,
+               .mTaxCurrency = Currency::USD,
+               .mCashHolder = CashHolder::Bank}}},
+    };
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mAffectedReports,
+              std::vector<ReportType>{ReportType::BankDepositInterest});
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mCashInterestBroker, std::nullopt);
+    EXPECT_TRUE(run.result().mRequests.empty());
+    EXPECT_EQ(run.result().report(ReportType::BankDepositInterest).mStatus, ReportStatus::Failed);
+}
+
+TEST(OtherInterestFailureTest, ExcludingBrokersKeepsCouponsAndTheCashInterestOfOtherBrokers) {
+    OtherInterestReportObr report;
+
+    report.mRows = {
+        ObrInterestRow{
+            .mPayment = {StatementEventKind::Interest, std::nullopt, 0},
+            .mKind = BrokerCashInterest{.mBroker = Broker::TradeRepublic},
+            .mDate = day("2025-01-31"),
+            .mPayer = {.mName = "Example Bank A", .mCountry = "DE"},
+            .mGrossInterest = 10'000, // EUR 1.00
+            .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
+            .mSourceCountry = "DE",
+            .mTreatyClaim = std::nullopt,
+        },
+        ObrInterestRow{
+            .mPayment = {StatementEventKind::Interest, 0, 1},
+            .mKind = BondCoupon{.mIsin = "XX0000000010"},
+            .mDate = day("2025-02-28"),
+            .mPayer = {.mName = "Issuer A", .mCountry = "FR"},
+            .mGrossInterest = 20'000, // EUR 2.00
+            .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
+            .mSourceCountry = "FR",
+            .mTreatyClaim = std::nullopt,
+        },
+        ObrInterestRow{
+            .mPayment = {StatementEventKind::Interest, std::nullopt, 2},
+            .mKind = BrokerCashInterest{.mBroker = Broker::InteractiveBrokers},
+            .mDate = day("2025-03-31"),
+            .mPayer = {.mName = "Example Bank B", .mCountry = "IE"},
+            .mGrossInterest = 30'000, // EUR 3.00
+            .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
+            .mSourceCountry = "IE",
+            .mTreatyClaim = std::nullopt,
+        },
+        ObrInterestRow{
+            .mPayment = {StatementEventKind::Interest, std::nullopt, 3},
+            .mKind = BrokerCashInterest{.mBroker = Broker::TradeRepublic},
+            .mDate = day("2025-04-30"),
+            .mPayer = {.mName = "Example Bank A", .mCountry = "DE"},
+            .mGrossInterest = 40'000, // EUR 4.00
+            .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
+            .mSourceCountry = "DE",
+            .mTreatyClaim = std::nullopt,
+        },
+    };
+
+    excludeBrokerCashInterest(report, {Broker::TradeRepublic});
+
+    // Both cash rows of the first broker are gone; the coupon and the other broker's row stay.
     ASSERT_EQ(report.mRows.size(), 2U);
     EXPECT_EQ(report.mRows.at(0).mGrossInterest, 20'000);
     EXPECT_EQ(report.mRows.at(1).mGrossInterest, 30'000);

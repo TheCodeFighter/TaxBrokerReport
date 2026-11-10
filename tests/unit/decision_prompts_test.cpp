@@ -1109,6 +1109,35 @@ Your answer (exclude, fail or cancel):
 )");
 }
 
+TEST(DecisionPromptsTest, TheFailureQuestionOfDohObrListsTheBrokersAfterTheInvestments) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::OtherInterestFailureResolutionRequired,
+        .mAffectedReports = {ReportType::OtherInterest},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments = {{.mIsin = "XX0000000010",
+                                  .mName = "Synthetic Bond A",
+                                  .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate}}},
+                .mBrokers = {{.mBroker = Broker::InteractiveBrokers,
+                              .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate}}}},
+    }}));
+
+    EXPECT_EQ(ask(session, "exclude\n"),
+              R"(Question request-0001: Doh-Obr cannot include 2 items:
+  XX0000000010 Synthetic Bond A: missing_exchange_rate
+  Cash interest of Interactive Brokers: missing_exchange_rate
+  exclude: write Doh-Obr without every investment and broker listed here; they are not in the
+  XML, and the summary lists them. fail: write no Doh-Obr. cancel: no answer, and no
+  Doh-Obr.
+Your answer (exclude, fail or cancel):
+
+)");
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments}});
+}
+
 TEST(DecisionPromptsTest, TheFailureQuestionOfOneInvestmentTakesFail) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{

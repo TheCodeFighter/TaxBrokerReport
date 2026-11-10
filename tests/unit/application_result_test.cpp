@@ -1964,6 +1964,87 @@ TEST(ApplicationResultRequestTest, AFailureRequestListsItsInvestmentsSorted) {
               (std::vector<std::string>{"diagnostic-0002"}));
 }
 
+TEST(ApplicationResultRequestTest, AFailureRequestListsItsBrokersSortedWithTheirDiagnostics) {
+    // Two cash-interest errors of two brokers, listed out of broker order and with a repeated
+    // reason code. A question of brokers only is valid: no investment is needed.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kOther},
+                         .mCashInterestBroker = Broker::InteractiveBrokers},
+            .mMessage = "Synthetic processing message.",
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kOther},
+                         .mCashInterestBroker = Broker::TradeRepublic},
+            .mMessage = "Synthetic processing message.",
+        },
+    };
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::OtherInterestFailureResolutionRequired,
+                .mAffectedReports = {kOther},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {},
+                        .mBrokers =
+                            {
+                                FailedBroker{
+                                    .mBroker = Broker::InteractiveBrokers,
+                                    .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate,
+                                                     ProcessingDiagnosticCode::MissingExchangeRate},
+                                },
+                                FailedBroker{
+                                    .mBroker = Broker::TradeRepublic,
+                                    .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+                                },
+                            },
+                    },
+            },
+        .mProcessingDiagnostics = {0, 1},
+    }};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& request = result.mRequests[0];
+
+    EXPECT_TRUE(request.mInvestments.empty());
+    ASSERT_EQ(request.mBrokers.size(), 2U);
+
+    // Trade Republic comes before Interactive Brokers; the repeated reason code is listed once. The
+    // diagnostics keep their creation order (these have no source to sort by), so the error of
+    // Interactive Brokers, created first, is diagnostic-0001.
+    EXPECT_EQ(request.mBrokers[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(request.mBrokers[0].mDiagnosticIds, (std::vector<std::string>{"diagnostic-0002"}));
+    EXPECT_EQ(request.mBrokers[1].mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(
+        request.mBrokers[1].mReasonCodes,
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::MissingExchangeRate}));
+    EXPECT_EQ(request.mBrokers[1].mDiagnosticIds, (std::vector<std::string>{"diagnostic-0001"}));
+    EXPECT_EQ(result.report(kOther).mStatus, ReportStatus::NeedsInput);
+}
+
+TEST(ApplicationResultRequestTest, OnlyAnExclusionListsExcludedBrokers) {
+    // A list of excluded brokers without the exclusion choice is a stage bug.
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mReports[static_cast<std::size_t>(kOther)].mFailureResolution =
+        FailureResolution::FailReport;
+    input.mReports[static_cast<std::size_t>(kOther)].mExcludedBrokers = {
+        FailedBroker{.mBroker = Broker::TradeRepublic, .mReasonCodes = {}}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+}
+
 TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {
     // A failure choice without its investment list.
     ApplicationResultInput withoutList{.mReportingYear = 2024};
