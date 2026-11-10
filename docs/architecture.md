@@ -528,10 +528,11 @@ facts such as product category and payer identity; the tax processor applies dat
 Unknown classifications and missing income fields produce structured requests. Explicit
 classification exclusions remain visible in `excludedItems`, separate from each report's failed ISINs.
 
-A Doh-Obr error safely isolated to an ISIN produces
+A Doh-Obr error safely isolated to an ISIN or to one broker's cash interest produces
 `other_interest_failure_resolution_required`. The user excludes all listed failed ISINs' Doh-Obr
-income or fails that form; `FailureResolutionStage` serves all three forms with the form and the
-request type as parameters. Each report owns its exclusion list and failure choice; capital and
+income, and the cash interest of every listed broker (an error of one cash-interest payment names
+its broker, as it has no ISIN), or fails that form; `FailureResolutionStage` serves all three
+forms with the form and the request type as parameters. Each report owns its exclusion list and failure choice; capital and
 other-interest choices never apply to each other. Preserve original evidence and unaffected income.
 Doh-Div has the same choice (`dividends_failure_resolution_required`): the dividend stage makes
 one missing-rate error for each payment, with its ISIN, so one ISIN's failure never fails the
@@ -848,8 +849,8 @@ answer to the builder.
 The income models are in `include/taxbroker/income_report_models.hpp`. Like the Doh-KDVP model they
 are broker-neutral, hold no CSV, JSON, HTTP, frontend or XML fields and need no XML library. The
 taxpayer and the year are not repeated: a writer gets `ReportMetadata` beside the model of its form.
-The processors build the models. The Doh-Div and Doh-DHO writers (`DivXmlWriter`, `DhoXmlWriter`)
-exist; the Doh-Obr writer comes later.
+The processors build the models. The Doh-Div, Doh-DHO and Doh-Obr writers (`DivXmlWriter`,
+`DhoXmlWriter`, `ObrXmlWriter`) exist.
 
 - **Amounts.** Every amount is EUR `Money` at 4 decimals and is never rounded in the model; the
   writer rounds once to 2 decimals. A foreign payment and its foreign tax are converted before
@@ -959,9 +960,9 @@ cash interest and coupons together) and the rates it used. It makes no XML. The 
    payment. The next two stages read the statement it rewrote, when it rewrote one.
 2. `prepareDividendPayments`, then the Doh-Div failure choice (`kDividendsFailure`): the failed
    ISINs the user leaves out are removed from the model with `excludeDividends`.
-3. `prepareInterestPayments`, then the Doh-Obr failure choice (`kOtherInterestFailure`) and
-   `excludeCoupons`. The answer to the deposit allowance question sets the Doh-DHO reason for
-   having no data.
+3. `prepareInterestPayments`, then the Doh-Obr failure choice (`kOtherInterestFailure`, which also
+   returns the failed brokers) and `excludeCoupons` with `excludeBrokerCashInterest`. The answer
+   to the deposit allowance question sets the Doh-DHO reason for having no data.
 
 Each stage appends its diagnostics, requests and excluded items to the same
 `ApplicationResultInput`, so each form keeps its own status: a failed or open income form never
@@ -1031,6 +1032,19 @@ whole model first and writes nothing when a value does not fit the form (one
 limits are in `tax_rules.md`, "Doh-DHO form contract". An empty model gives a document without
 rows and with totals of `0.00`; the caller decides that there is nothing to file. The CLI does not
 call the writer yet.
+
+### Doh-Obr XML writer
+
+`ObrXmlWriter::write` (`include/xml/obr_xml_writer.hpp`) turns `ReportMetadata` and
+`OtherInterestReportObr` into one Doh-Obr document with both subtypes, cash interest and bond
+coupons, one `Interest` row per payment. Like the other income writers it checks the whole model
+first and writes nothing when a value does not fit the form (one `xml_value_out_of_range` error per
+field, with the payer name and, for a coupon, its ISIN); the rules are in `tax_rules.md`, "Doh-Obr
+form contract". The interest stage finds the row problems first, so that the user can leave out the
+failing coupon's ISIN or the failing broker's cash interest; the writer is a guard for the
+document and repeats those checks. The shared checks and number helpers are in `xml_common`; the
+text check `xmlTextLength` is in the core (`include/utils/xml_text.hpp`), because the stage uses it
+too. The CLI does not call the writer yet.
 
 ### CLI report command (walking skeleton)
 

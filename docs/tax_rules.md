@@ -1081,19 +1081,27 @@ uses the same header as Doh-KDVP (workflow `I`, name `SamoPrijava`), `DocumentWo
 `SelfReport` `true`; this is unverified until a draft import. FURS requires electronic filing
 when more than five interest payments were received in the year.
 
+**Writer.** `ObrXmlWriter` writes `SelfReport`, `Period`, `DocumentWorkflowID`, `Email` and
+`TelephoneNumber` when known, `ResidentOfRepublicOfSlovenia` and, for a resident, `Country` `SI`,
+then one `Interest` row per model row in model order. `WfTypeU`, `Notes`, `Reduction`,
+`ReliefStatement`, the attachment and the late-submission elements are not written. The coupon of
+a bond is the whole coupon: accrued interest paid with a purchase is part of the buyer's cost and
+does not lower the coupon, so a coupon of EUR 50.00 is `Value` `50.00` even when EUR 25.00 of
+accrued interest was paid at purchase.
+
 **One `Interest` row per payment, in this order:**
 
 | Field | Cash interest | Bond coupon | Rule |
 | --- | --- | --- | --- |
 | `Date` | Date the interest was received | Coupon payment date | `xs:date`, inside the filed year, required. |
-| `TaxNumber` | Left out | Left out | Only for a Slovenian payer (`xs:int`); both subtypes have a foreign payer. |
+| `TaxNumber` | Left out | Slovenian issuer's eight digits, otherwise left out | Only for a Slovenian payer (`xs:int`); the digits come from its reference row (`SI` and eight digits). Cash interest has a foreign payer. |
 | `IdentificationNumber` | Payer's tax or other identification number | Issuer's (unconfirmed, see "Still open") | At most 30 characters. Optional in general, required for a foreign payer. |
 | `Name` | Payer's name | Issuer's name | Required. |
 | `Address` | Payer's address | Issuer's address | Required. |
 | `Country` | Payer's country, two letters | Issuer's country, two letters | Required; `SI` for a Slovenian payer. |
 | `Type` | `4` (unconfirmed, see below) | `2` | Interest-type code, required. |
 | `Value` | Gross interest in EUR | Gross coupon in EUR | Two decimals, greater than zero, required. |
-| `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0` only when known to be zero), empty for a Slovenian payer. |
+| `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0.00` when none), left out for a Slovenian payer whatever the export holds: a Slovenian withholding is not foreign tax (the warning `slovenian_coupon_tax` tells the user). |
 | `Country2` | Payer's country | Payer's country | Source country, two letters; left out when not known. |
 | `ReliefStatement` | Left out | Left out | Optional, at most 100 characters; see below. |
 
@@ -1107,6 +1115,16 @@ greater than zero. A foreign amount is converted at the official ECB rate of the
 example debit interest), or that rounds to `0.00`, is not written and is never netted against
 other rows; it is listed with a warning. Netting debit interest is a tax question and not
 decided here.
+
+A value the form cannot hold is found when the row is made, before the failure question: a payer
+identification number longer than 30 characters, a name or address that is empty or not valid XML
+text, a `Value` or `ForeignTax` that rounds above `999999999999.99`, or a negative foreign tax
+(not checked for a Slovenian payer, whose foreign tax is not written). Such a row is not made. The
+error is `xml_value_out_of_range` with the Doh-Obr field, for the coupon's ISIN or for the cash
+interest of its broker, so the user can leave that investment or broker out (`diagnostics.md`).
+The writer repeats these checks as a guard and also stops the file for a date outside the year, a
+payer tax number that is not eight digits, a country that is not two capital letters and a row with
+a treaty claim, which is never dropped silently.
 
 **Interest-type codes.** The instructions list 1 loans; 2 debt securities, including convertible
 ones; 3 deposits at banks and savings banks not established in Slovenia or another EU state;
