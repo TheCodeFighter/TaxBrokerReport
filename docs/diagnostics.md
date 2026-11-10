@@ -79,8 +79,8 @@ adapters, report scope, deterministic order and IDs, report and overall status, 
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
 (`include/taxbroker/decision_session.hpp`); of the eleven request types only the three
 failure-resolution types, the loss question, the ratio question, the classification question of
-a trade investment, the payer choice, the deposit interest question and the bond type question
-have question data and answers so far. The capital failure choice is applied
+a trade investment, the payer choice, the treaty claim, the deposit interest question and the bond
+type question have question data and answers so far. The capital failure choice is applied
 (`FailureResolutionStage`, `include/processors/failure_resolution_stage.hpp`): see "Choosing
 whether to exclude failed capital ISINs". The classification of trade investments is applied
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
@@ -662,6 +662,18 @@ warning as a payer that is not found. The request is listed with its form (`requ
 never makes the form `needs_input` and never blocks. A recorded answer lists the same `payerCheck`.
 The question changes (a new question, a new answer) when a reference row changes. The same question
 is asked for the issuer of a bond coupon; it then affects Doh-Obr.
+
+A treaty claim request (`income_details_required` for the dividends of one payer country with
+foreign tax in the year and no usable treaty text in the reference files) has no `options` and no
+`isin` and `"treatyCheck"` with `year`, `country` and `isins` (the ISINs of the taxed rows, sorted).
+It is answered with `{"statement":"..."}` (a claim with that text: 1 to 100 characters, not only
+spaces, valid UTF-8, no control characters, not the word `true` or `false` in any case, each checked
+without the spaces and no-break spaces at its ends, which are dropped) or `"no_claim"`; an invalid
+text and a cancel are rejected with `answer_does_not_fit`. The request is listed with Doh-Div
+(`requestIds`) but never makes the form `needs_input` and never blocks: no answer is no claim. A
+claim sets the text as the `ReliefStatement` of the country's rows with a foreign tax above 0. A
+country with a usable reference text is claimed without a request. The question changes when the set
+of taxed ISINs changes. A recorded answer lists the same `treatyCheck`.
 
 A deposit interest request (`deposit_interest_total_required`) has no `options` and `"depositCheck"`
 with `year`, `importedInterestEur` (the exact total of the imported qualifying interest, four

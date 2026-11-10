@@ -1,4 +1,5 @@
 #include "xml/div_xml_writer.hpp"
+#include "taxbroker/application_result.hpp"
 #include "utils/numeric_util.hpp"
 #include "xml_common.hpp"
 
@@ -145,6 +146,18 @@ void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics,
     {
         addOutOfRange(aDiagnostics, kReport, "ForeignTax", identity);
     }
+
+    // A claim needs a foreign tax and a trimmed text a claim may carry; true and false are not one.
+    if (aRow.mTreatyClaim)
+    {
+        const auto& statement = aRow.mTreatyClaim->mStatement;
+
+        if (aRow.mWithholding.mForeignTax <= 0 || !xmlTextLength(statement) ||
+            !isValidTreatyStatement(statement) || trimmedTreatyStatement(statement) != statement)
+        {
+            addOutOfRange(aDiagnostics, kReport, "ReliefStatement", identity);
+        }
+    }
 }
 
 void appendDivHeader(pugi::xml_node aBody, const ReportMetadata& aMetadata) {
@@ -172,8 +185,15 @@ void appendDividend(pugi::xml_node aBody, const DivDividendRow& aRow) {
     appendText(dividend, "Value", amountText(roundedCents(aRow.mGrossIncome)));
     appendText(dividend, "ForeignTax", amountText(roundedCents(aRow.mWithholding.mForeignTax)));
     appendOptionalText(dividend, "SourceCountry", aRow.mSourceCountry);
-    // A confirmed treaty claim is `true`; the treaty text is not written.
-    appendBoolean(dividend, "ReliefStatement", aRow.mTreatyClaim.has_value());
+    // A claim writes its treaty text, which eDavki needs to apply the relief; otherwise `false`.
+    if (aRow.mTreatyClaim)
+    {
+        appendText(dividend, "ReliefStatement", aRow.mTreatyClaim->mStatement);
+    }
+    else
+    {
+        appendBoolean(dividend, "ReliefStatement", false);
+    }
 }
 
 } // namespace

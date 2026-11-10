@@ -2397,4 +2397,48 @@ TEST(ApplicationResultJsonTest, TheInterestDiagnosticCodesAreWrittenByName) {
     EXPECT_EQ(diagnostics[3].at("code"), "deposit_interest_add_other_banks");
 }
 
+TEST(ApplicationResultJsonTest, ATreatyClaimRequestListsTheYearTheCountryAndTheIsins) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+    input.mRequests = {RequestInput{
+        .mQuestion = {.mType = RequestType::IncomeDetailsRequired,
+                      .mAffectedReports = {ReportType::Dividends},
+                      .mData = TreatyClaimQuestion{.mYear = 2025,
+                                                   .mCountry = "SE",
+                                                   .mIsins = {"XX0000000010", "XX0000000028"}}}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "income_details_required");
+    EXPECT_FALSE(request.contains("isin"));
+    EXPECT_EQ(request.at("treatyCheck"),
+              (nlohmann::json{{"year", 2025},
+                              {"country", "SE"},
+                              {"isins", {"XX0000000010", "XX0000000028"}}}));
+}
+
+TEST(ApplicationResultJsonTest, RecordedTreatyAnswersAreATextOrNoClaim) {
+    ApplicationResult result;
+    const TreatyClaimQuestion question{.mYear = 2025, .mCountry = "BE", .mIsins = {"XX0000000010"}};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = TreatyClaimAnswer{.mStatement = "Art. 10(2)"}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = TreatyClaimAnswer{.mStatement = std::nullopt}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 2U);
+    EXPECT_EQ(decisions[0].at("answer"), (nlohmann::json{{"statement", "Art. 10(2)"}}));
+    EXPECT_EQ(decisions[1].at("answer"), "no_claim");
+    EXPECT_EQ(decisions[0].at("treatyCheck").at("country"), "BE");
+}
+
 } // namespace

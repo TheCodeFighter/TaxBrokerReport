@@ -1708,6 +1708,133 @@ TEST(DecisionPromptsTest, AnInputEndingAtThePayerQuestionLeavesItOpen) {
     EXPECT_EQ(session.result().mRequests.size(), 1U);
 }
 
+/// A treaty claim question for a country without a treaty text in the reference files.
+DecisionQuestion treatyQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {ReportType::Dividends},
+        .mData = TreatyClaimQuestion{.mYear = 2025,
+                                     .mCountry = "BE",
+                                     .mIsins = {"XX0000000010", "XX0000000028"}},
+    };
+}
+
+TEST(DecisionPromptsTest, ATreatyQuestionNamesTheCountryAndTheIsinsAndOtherTypesATextToClaim) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({treatyQuestion()}));
+
+    const auto output = ask(session, "OTHER\nArt. 10(2)\n");
+
+    EXPECT_TRUE(cli::canAsk(treatyQuestion().mData));
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: treaty relief on the dividends from BE in 2025\n"
+                         "  Foreign tax was withheld on 2 investments: XX0000000010 XX0000000028\n"
+                         "  The reference files have no treaty text for this country.\n"));
+    EXPECT_TRUE(contains(output,
+                         "  Without a claim the dividends keep false, and FURS may credit less of "
+                         "the foreign tax.\n"));
+    EXPECT_TRUE(contains(output, "  other: claim with a text you type. no: no claim.\n"));
+    EXPECT_TRUE(contains(output, "Your answer (other or no):"));
+    EXPECT_TRUE(contains(output, "Treaty text (1 to 100 characters):"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(
+        session.result().mDecisions[0].mAnswer,
+        AnswerValue{TreatyClaimAnswer{.mStatement = std::optional<std::string>{"Art. 10(2)"}}});
+}
+
+TEST(DecisionPromptsTest, NoAnswersATreatyQuestionWithoutAClaim) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({treatyQuestion()}));
+
+    (void)ask(session, "no\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{TreatyClaimAnswer{.mStatement = std::nullopt}});
+}
+
+TEST(DecisionPromptsTest, OtherAsksForATextAndAnInvalidTextIsAskedAgain) {
+    // An empty text and a 101-character text are not claims; the third one is.
+    DecisionSession session;
+    session.start(asksUntilAnswered({treatyQuestion()}));
+
+    const auto output =
+        ask(session, "other\n\nother\n" + std::string(101, 'x') + "\nother\nArt. 10(2)\n");
+
+    EXPECT_EQ(
+        countOf(output,
+                "The text must have 1 to 100 characters, no control characters, and not be true "
+                "or false.\n"),
+        2U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(
+        session.result().mDecisions[0].mAnswer,
+        AnswerValue{TreatyClaimAnswer{.mStatement = std::optional<std::string>{"Art. 10(2)"}}});
+}
+
+TEST(DecisionPromptsTest, AnUnknownWordAtTheTreatyQuestionIsAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({treatyQuestion()}));
+
+    // `yes` is not an answer: there is no reference text to claim with.
+    const auto output = ask(session, "maybe\nyes\nno\n");
+
+    EXPECT_EQ(countOf(output, "Answer other or no.\n"), 2U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheTreatyQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({treatyQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheTreatyTextLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({treatyQuestion()}));
+
+    // `other` asks for the text, but the input ends there.
+    const auto output = ask(session, "other\n");
+
+    EXPECT_TRUE(contains(output, "Treaty text (1 to 100 characters):"));
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, TheTreatyAnswersAreListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({treatyQuestion()}));
+
+    const auto claimed = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = TreatyClaimAnswer{.mStatement = std::optional<std::string>{"Art. 10(2)"}},
+    }});
+
+    ASSERT_TRUE(claimed.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "BE, treaty claim: treaty relief claimed: Art. 10(2)");
+
+    const auto deleted = session.deleteAllAnswers(session.result().mRunRevision);
+
+    ASSERT_TRUE(deleted.empty());
+
+    const auto declined = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = TreatyClaimAnswer{.mStatement = std::nullopt},
+    }});
+
+    ASSERT_TRUE(declined.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]), "BE, treaty claim: no treaty claim");
+}
+
 TEST(DecisionPromptsTest, ThePayerAnswersAreListedInTheSummary) {
     DecisionSession session;
     session.start(asksUntilAnswered({payerQuestion()}));

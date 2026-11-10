@@ -461,6 +461,16 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return aValue.mType == BondType::Ordinary ? "ordinary" : "discount_or_zero_coupon";
         }
+        else if constexpr (std::is_same_v<Value, TreatyClaimAnswer>)
+        {
+            // No claim is a string; a claim is its treaty text.
+            if (!aValue.mStatement)
+            {
+                return "no_claim";
+            }
+
+            return Json{{"statement", *aValue.mStatement}};
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             // A skip is a string; a pick is the position of the row among the options.
@@ -664,6 +674,13 @@ Json payerCheckToJson(const PayerChoiceQuestion& aQuestion) {
     return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"options", options}};
 }
 
+/// The question data of a treaty claim question: the country and its taxed ISINs.
+Json treatyCheckToJson(const TreatyClaimQuestion& aQuestion) {
+    return Json{{"year", aQuestion.mYear},
+                {"country", aQuestion.mCountry},
+                {"isins", aQuestion.mIsins}};
+}
+
 /// The options the question offers: no dividends and no bond coupon without an ISIN.
 Json incomeOptionsToJson(const IncomeClassificationQuestion& aQuestion) {
     Json options = Json::array();
@@ -787,6 +804,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
     if (const auto* payer = std::get_if<PayerChoiceQuestion>(&aRequest.mData))
     {
         serialized["payerCheck"] = payerCheckToJson(*payer);
+    }
+
+    if (const auto* treaty = std::get_if<TreatyClaimQuestion>(&aRequest.mData))
+    {
+        serialized["treatyCheck"] = treatyCheckToJson(*treaty);
     }
 
     if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aRequest.mData))
@@ -954,6 +976,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* payer = std::get_if<PayerChoiceQuestion>(&aDecision.mData))
     {
         serialized["payerCheck"] = payerCheckToJson(*payer);
+    }
+
+    if (const auto* treaty = std::get_if<TreatyClaimQuestion>(&aDecision.mData))
+    {
+        serialized["treatyCheck"] = treatyCheckToJson(*treaty);
     }
 
     if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aDecision.mData))

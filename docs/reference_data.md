@@ -150,10 +150,11 @@ ISIN prefix does not prove where the payer lives.
    income row is still made, and a warning tells the user to complete them in eDavki. With two
    rows that disagree the user picks one of them or skips (a skip, or no answer, is like no row). A row with `country` `SI` makes
    the payment a Slovenian payment, which is not reported (the company deducts the tax).
-5. **The relief statement is not a claim.** A row in `relief_statements.csv` never means that the
-   user is entitled to relief. The dividend rows do not use it: they make no treaty claim, and the
-   Doh-Div writer writes `ReliefStatement` `false`. How its text may fill a claim is decided
-   when treaty claims are supported.
+5. **The relief statement is the treaty text of the claim.** A row in `relief_statements.csv` is
+   the treaty text that a Doh-Div row with a foreign tax and the row's country claims; the writer
+   writes it as `ReliefStatement`. The row never shows that the investor is entitled to relief,
+   and a row without foreign tax makes no claim (`false`). A country without a usable row is asked
+   for a text.
 6. **Broker payers** are used only with the broker they name. The payer of a broker's cash
    interest is its only row; a broker with no row or several (such as Interactive Brokers, whose
    export does not say which company holds the cash) has no known payer, and the payer facts stay

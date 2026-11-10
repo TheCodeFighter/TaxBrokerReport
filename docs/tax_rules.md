@@ -824,11 +824,11 @@ complete them in eDavki before filing. A missing payer never blocks Doh-Div and 
 A payer found by exact identifier, or several rows with the same facts, fills the payer facts of
 every dividend row of the ISIN without a question; the result lists the reference row. The source
 country of a Doh-Div row is the payer's country, and empty when the payer is not known. A Doh-Div
-row makes no treaty claim: `ReliefStatement` is written as `false` (the `true`/`false` format of
-the earlier app, which eDavki accepted with `true`; `false` is checked in a draft import,
+row with a foreign tax makes a treaty claim when the reference files give the treaty text of its
+payer country (see below); without a claim `ReliefStatement` is written as `false` (eDavki
+accepted `true` and `false`; `false` is still to be checked in a draft import,
 `verification.md`). When any row has a foreign tax above 0, the result warns once that the user
-attaches the evidence of the payment and the tax in eDavki
-(`foreign_tax_evidence_required`).
+attaches the evidence of the payment and the tax in eDavki (`foreign_tax_evidence_required`).
 
 For reportable foreign income, retain the gross payment and actual foreign tax separately, both in
 EUR at the official ECB rate of the receipt date. A blank source tax is a foreign tax of 0 (no tax
@@ -841,12 +841,20 @@ treaty provision. Do not replace actual tax with a catalogue percentage, subtrac
 income, or describe the entire payment as exempt merely because a tax treaty exists. FURS decides
 the allowable credit. Fund-level withholding is not automatically tax paid by the investor.
 
-A foreign-tax credit and a treaty exemption are separate treatments. Populate foreign-tax fields
-from verified payment facts. Populate an exemption claim only with a confirmed applicable legal
-basis, including the required treaty article/paragraph for the income date; otherwise leave the
-optional exemption field absent. A requested but unsupported exemption returns
-`income_details_required`; the user may supply the basis or explicitly withdraw that claim.
-The catalogue cannot preselect an exemption. Apply each form's verified instructions and XSD.
+**Treaty claim on dividends.** A foreign tax paid on a dividend means the treaty of the payer
+country applies, and eDavki needs the treaty text to apply the relief. So a row with a foreign tax
+above 0 and a payer country gets a claim, without a question and without a warning, when the
+reference files give one treaty text for that country (`relief_statements.csv`; several rows with
+the same text count as one, and the first row is the claim's reference row). A reference or typed
+text is used without the spaces and no-break spaces at its start and end, and the limits apply to
+the text without them. The claim writes the text as the `ReliefStatement` value. A country with
+foreign tax and no usable text (no row, rows with different texts, or a text that no claim may
+carry) gives one question that never blocks: the user types the treaty text (1 to 100 characters,
+valid UTF-8, no control characters, not the word `true` or `false`) or makes no claim, and no answer
+is no claim. Rows without foreign tax, rows without a payer country and rows of other countries keep
+`false`. The gross and the foreign tax never change. Unconfirmed: the reference rows have no
+effective dates, so the app cannot check that the treaty text applies on the income date; the user
+checks it in eDavki.
 
 The result lists the evidence the user must attach when filing a foreign-tax claim in eDavki.
 XML generation does not mean evidence was attached or a return was filed. Missing facts needed
@@ -886,7 +894,7 @@ has no `edp:bodyContent`: it holds `Doh_Div`, then one `Dividend` per payment, a
 | `Value` | Gross dividend in EUR | Two decimals, greater than zero after rounding. |
 | `ForeignTax` | Foreign tax in EUR | Two decimals, `0.00` when none was withheld. |
 | `SourceCountry` | Payer's country | Left out when not known; two capital letters. |
-| `ReliefStatement` | Treaty claim | `true` with a confirmed claim, otherwise `false`. The treaty text is not written. |
+| `ReliefStatement` | Treaty claim | The treaty text with a claim (rows with foreign tax only), otherwise `false`. |
 
 **Numbers.** `Value` and `ForeignTax` are `Amount_Type`: a decimal with two fraction digits and no
 limit on the digits before them. They are rounded once from the four-decimal EUR amount, halves
@@ -900,8 +908,10 @@ the beta.
 
 **Rows the form cannot hold.** The writer never repairs a value. A gross that rounds to `0.00` or
 less, a negative tax, a date outside the year, a country that is not two capital letters, a payer
-tax number that is not eight digits and text that is not valid XML each stop the file with
-`xml_value_out_of_range` for Doh-Div and its field; the other forms are not affected.
+tax number that is not eight digits, text that is not valid XML, and a treaty claim on a row
+without foreign tax or with a text that no claim may carry (see "Treaty claim on dividends") or
+with spaces at its start or end each stop the file with `xml_value_out_of_range` for Doh-Div and
+its field; the other forms are not affected.
 
 **Still open.** The type code of a fund distribution; `ReliefStatement` `false` and `SelfReport`
 in a draft import; a row without payer facts; the treaty text (`ReliefStatement` instructions

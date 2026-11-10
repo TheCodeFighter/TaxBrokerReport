@@ -2,6 +2,7 @@
 #include "utils/numbered_id.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <iterator>
 #include <numeric>
@@ -444,6 +445,12 @@ struct DraftDiagnostic {
            aType == RequestType::OtherInterestFailureResolutionRequired;
 }
 
+/// True for exactly two characters from A to Z.
+bool isTwoCapitalLetters(const std::string& aText) {
+    return aText.size() == 2 && aText[0] >= 'A' && aText[0] <= 'Z' && aText[1] >= 'A' &&
+           aText[1] <= 'Z';
+}
+
 /// A failure-resolution type needs a list with at least one investment, a loss question at
 /// least one sale, each with open units, a ratio question a source, open units and a date
 /// range around its effective date, a classification question an ISIN, a bond type question an ISIN
@@ -459,6 +466,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aQuestion.mData);
     const auto* income = std::get_if<IncomeClassificationQuestion>(&aQuestion.mData);
     const auto* bond = std::get_if<BondTypeQuestion>(&aQuestion.mData);
+    const auto* treaty = std::get_if<TreatyClaimQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
@@ -470,7 +478,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
         ((classification != nullptr || income != nullptr) != isClassificationType) ||
         (quantity != nullptr) != isQuantityType ||
-        ((payer != nullptr || bond != nullptr) && !isIncomeDetailsType) ||
+        ((payer != nullptr || bond != nullptr || treaty != nullptr) && !isIncomeDetailsType) ||
         (deposit != nullptr) != isDepositType)
     {
         throw std::invalid_argument("The question data does not fit the request type.");
@@ -487,6 +495,12 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A payer choice question needs an ISIN and at least two "
                                     "reference rows.");
+    }
+
+    if (treaty != nullptr && (!isTwoCapitalLetters(treaty->mCountry) || treaty->mIsins.empty()))
+    {
+        throw std::invalid_argument("A treaty claim question needs a country of two capital "
+                                    "letters and an ISIN.");
     }
 
     if (deposit != nullptr && (deposit->mTotal <= 0 || deposit->mTotal > kDepositInterestAllowance))
@@ -714,6 +728,108 @@ const EffectiveDateRange* findEffectiveDateRange(const CorporateActionRatioQuest
     return range == aQuestion.mDateRanges.end() ? nullptr : &*range;
 }
 
+std::string_view trimmedTreatyStatement(std::string_view aText) {
+    constexpr std::array<std::string_view, 2> kBlanks{" ", "\xC2\xA0"}; // space, no-break space
+    bool isTrimmed = false;
+
+    while (!isTrimmed)
+    {
+        isTrimmed = true;
+
+        for (const auto blank : kBlanks)
+        {
+            if (aText.starts_with(blank))
+            {
+                aText.remove_prefix(blank.size());
+                isTrimmed = false;
+            }
+
+            if (aText.ends_with(blank))
+            {
+                aText.remove_suffix(blank.size());
+                isTrimmed = false;
+            }
+        }
+    }
+
+    return aText;
+}
+
+bool isValidTreatyStatement(std::string_view aText) {
+    const auto text = trimmedTreatyStatement(aText);
+    std::size_t length = 0;
+    std::size_t position = 0;
+
+    while (position < text.size())
+    {
+        const auto lead = static_cast<unsigned char>(text[position]);
+        std::size_t extraBytes = 0;
+        char32_t code = lead;
+
+        if (lead >= 0xF0 && lead <= 0xF4)
+        {
+            extraBytes = 3;
+            code = lead & 0x07U;
+        }
+        else if (lead >= 0xE0 && lead <= 0xEF)
+        {
+            extraBytes = 2;
+            code = lead & 0x0FU;
+        }
+        else if (lead >= 0xC2 && lead <= 0xDF)
+        {
+            extraBytes = 1;
+            code = lead & 0x1FU;
+        }
+        else if (lead >= 0x80)
+        {
+            return false; // a continuation byte alone, or an invalid lead byte
+        }
+
+        if (position + extraBytes >= text.size())
+        {
+            return false; // the sequence is cut off
+        }
+
+        for (std::size_t offset = 1; offset <= extraBytes; ++offset)
+        {
+            const auto next = static_cast<unsigned char>(text[position + offset]);
+
+            if ((next & 0xC0U) != 0x80U)
+            {
+                return false;
+            }
+
+            code = (code << 6U) | (next & 0x3FU);
+        }
+
+        const bool overlong =
+            (extraBytes == 2 && code < 0x800) || (extraBytes == 3 && code < 0x10000);
+        const bool surrogate = code >= 0xD800 && code <= 0xDFFF;
+        const bool control = code < 0x20 || (code >= 0x7F && code <= 0x9F);
+
+        if (overlong || surrogate || code > 0x10FFFF || control)
+        {
+            return false;
+        }
+
+        ++length;
+        position += extraBytes + 1;
+    }
+
+    // The words true and false are the form's yes/no values, not a treaty text.
+    std::string lower{text};
+
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](char aCharacter) {
+        return aCharacter >= 'A' && aCharacter <= 'Z' ? static_cast<char>(aCharacter + ('a' - 'A'))
+                                                      : aCharacter;
+    });
+
+    // A trimmed text that is not empty starts with a visible character.
+    return !text.empty() && length <= kMaxTreatyStatementLength && lower != "true" &&
+           lower != "false";
+}
+
 QuestionData normalizedData(QuestionData aData) {
     if (auto* failure = std::get_if<FailureResolutionQuestion>(&aData))
     {
@@ -787,6 +903,14 @@ QuestionData normalizedData(QuestionData aData) {
                                       aRight.mSource.mFile,
                                       aRight.mSource.mRowNumber);
                   });
+    }
+
+    if (auto* treaty = std::get_if<TreatyClaimQuestion>(&aData))
+    {
+        auto& isins = treaty->mIsins;
+
+        std::sort(isins.begin(), isins.end());
+        isins.erase(std::unique(isins.begin(), isins.end()), isins.end());
     }
 
     if (auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aData))
@@ -1066,8 +1190,10 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
             {
                 report.mRequestIds.push_back(request.mId);
 
-                // A payer choice is listed but never stops a form: a skip is a valid answer.
-                hasBlockingRequest |= !std::holds_alternative<PayerChoiceQuestion>(request.mData);
+                // A payer choice and a treaty claim are listed but never stop a form: a skip or no
+                // claim is a valid answer.
+                hasBlockingRequest |= !std::holds_alternative<PayerChoiceQuestion>(request.mData) &&
+                                      !std::holds_alternative<TreatyClaimQuestion>(request.mData);
             }
         }
 

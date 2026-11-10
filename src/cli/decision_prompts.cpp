@@ -757,6 +757,68 @@ std::optional<AnswerValue> readDepositAnswer(std::istream& aIn, std::ostream& aO
     }
 }
 
+/// The question for the treaty text of the dividends of one payer country.
+void writeTreatyQuestion(std::ostream& aOut,
+                         const DecisionRequest& aRequest,
+                         const TreatyClaimQuestion& aQuestion) {
+    aOut << "Question " << aRequest.mId << ": treaty relief on the dividends from "
+         << aQuestion.mCountry << " in " << aQuestion.mYear << '\n'
+         << "  Foreign tax was withheld on "
+         << countText(aQuestion.mIsins.size(), "investment", "investments") << ":";
+
+    for (const auto& isin : aQuestion.mIsins)
+    {
+        aOut << ' ' << isin;
+    }
+
+    aOut << "\n  The reference files have no treaty text for this country.\n"
+            "  A claim writes your text as ReliefStatement in Doh-Div. You check in eDavki that\n"
+            "  the treaty applies to you and attach the evidence of the tax.\n"
+            "  Without a claim the dividends keep false, and FURS may credit less of the foreign "
+            "tax.\n"
+            "  other: claim with a text you type. no: no claim.\n";
+}
+
+std::optional<AnswerValue> readTreatyAnswer(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (other or no):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "no")
+        {
+            return TreatyClaimAnswer{.mStatement = std::nullopt};
+        }
+
+        if (word != "other")
+        {
+            aOut << "Answer other or no.\n";
+            continue;
+        }
+
+        const auto text = readLine(aIn, aOut, "Treaty text (1 to 100 characters):");
+
+        if (!text)
+        {
+            return std::nullopt;
+        }
+
+        if (isValidTreatyStatement(*text))
+        {
+            return TreatyClaimAnswer{.mStatement = *text};
+        }
+
+        aOut << "The text must have 1 to " << kMaxTreatyStatementLength
+             << " characters, no control characters, and not be true or false.\n";
+    }
+}
+
 /// The question which of several reference rows is the payer of a dividend.
 void writePayerQuestion(std::ostream& aOut,
                         const DecisionRequest& aRequest,
@@ -914,6 +976,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
             writePayerQuestion(aOut, aRequest, aQuestion);
             return readPayerAnswer(aQuestion, aIn, aOut);
         }
+        else if constexpr (std::is_same_v<Question, TreatyClaimQuestion>)
+        {
+            writeTreatyQuestion(aOut, aRequest, aQuestion);
+            return readTreatyAnswer(aIn, aOut);
+        }
         else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
         {
             writeDepositQuestion(aOut, aRequest, aQuestion);
@@ -1036,6 +1103,11 @@ std::string answerText(const AnswerValue& aAnswer) {
                        ? "an ordinary bond"
                        : "a discount or zero-coupon bond (issued below its nominal value)";
         }
+        else if constexpr (std::is_same_v<Value, TreatyClaimAnswer>)
+        {
+            return aValue.mStatement ? "treaty relief claimed: " + *aValue.mStatement
+                                     : std::string{"no treaty claim"};
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             return aValue.mPickedOption ? "payer row " + std::to_string(*aValue.mPickedOption + 1)
@@ -1080,6 +1152,7 @@ bool canAsk(const QuestionData& aData) {
             return true;
         }
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion> ||
+                           std::is_same_v<Question, TreatyClaimQuestion> ||
                            std::is_same_v<Question, DepositInterestTotalQuestion> ||
                            std::is_same_v<Question, IncomeClassificationQuestion> ||
                            std::is_same_v<Question, BondTypeQuestion>)
@@ -1221,6 +1294,10 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
         {
             return investmentText(aQuestion.mIsin, aQuestion.mName) + ", payer";
+        }
+        else if constexpr (std::is_same_v<Question, TreatyClaimQuestion>)
+        {
+            return aQuestion.mCountry + ", treaty claim";
         }
         else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
         {

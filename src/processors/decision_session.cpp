@@ -21,8 +21,9 @@ namespace {
 /// ratio or a cancel, or, when its rows are on different dates, that they are separate events, and
 /// a quantity question a corrected quantity or a cancel. A payer choice question takes a row among
 /// its options or a skip, never a cancel, and a deposit interest total question yes or no, and a
-/// bond type question a bond type or a cancel. A question without question data takes no answer
-/// until its processor defines one, because all questions of its type would be the same question.
+/// bond type question a bond type or a cancel, and a treaty claim question a valid text or no
+/// claim, never a cancel. A question without question data takes no answer until its processor
+/// defines one, because all questions of its type would be the same question.
 [[nodiscard]] bool fitsQuestion(const QuestionData& aData, const AnswerValue& aAnswer) {
     const auto fits = [&aAnswer](const auto& aData) {
         using Data = std::decay_t<decltype(aData)>;
@@ -76,6 +77,13 @@ namespace {
         {
             return std::holds_alternative<BondTypeAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
+        }
+        else if constexpr (std::is_same_v<Data, TreatyClaimQuestion>)
+        {
+            const auto* answer = std::get_if<TreatyClaimAnswer>(&aAnswer);
+
+            return answer != nullptr &&
+                   (!answer->mStatement || isValidTreatyStatement(*answer->mStatement));
         }
         else
         {
@@ -409,6 +417,12 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
 
             ratio->mNewShares = reduced.mNewShares;
             ratio->mOldShares = reduced.mOldShares;
+        }
+
+        // A checked treaty text is kept without the spaces at its start and end.
+        if (auto* treaty = std::get_if<TreatyClaimAnswer>(&value); treaty && treaty->mStatement)
+        {
+            *treaty->mStatement = std::string{trimmedTreatyStatement(*treaty->mStatement)};
         }
 
         const auto recorded =

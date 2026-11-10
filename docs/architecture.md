@@ -878,8 +878,9 @@ writers come later.
   empty facts, and the report is still made. The schemas allow
   this (every element of Doh-Div and Doh-DHO is optional); that eDavki accepts such a file is
   unverified (`verification.md`).
-- **Treaty claim.** `TreatyClaim` is present only when the user confirmed a claim, with the treaty
-  text and the reference row it came from. A reference row never creates a claim.
+- **Treaty claim.** `TreatyClaim` is present only on a row with a foreign tax and a payer country,
+  with the treaty text written as `ReliefStatement` and the reference row it came from (none for a
+  text the user typed). The stage makes it from the reference files, or from the user's text.
 - **Filing evidence.** The model holds no evidence list. The user attaches it in eDavki; the result
   tells the user to do so when a row has a foreign tax above 0 or a treaty claim, derived from the
   rows.
@@ -907,7 +908,13 @@ payer questions, the diagnostics and the rates it used.
   pair have no row. An amount that does not fit gives the numeric error of the payment, also without
   a row. A blank tax is 0 with the blank flag and no warning.
 - **Notice.** One `foreign_tax_evidence_required` warning per run when a row has a foreign tax above
-  0. A treaty claim is never made.
+  0.
+- **Treaty claims.** After the rows, per payer country that has rows with a foreign tax above 0:
+  when the reference files give one valid text for the country, `TreatyClaim` is set on its taxed
+  rows (with the first reference row), without a question or warning. Otherwise one
+  `TreatyClaimQuestion` (`income_details_required`, never blocking) lists the taxed ISINs; a typed
+  text sets `TreatyClaim` on the taxed rows without a reference row; no answer or no claim leaves
+  them without a claim. Rows without a payer country get neither.
 
 `appendDividendPayments` adds the diagnostics, requests and excluded items to an
 `ApplicationResultInput`, as `appendClassification` does for the classification stage.

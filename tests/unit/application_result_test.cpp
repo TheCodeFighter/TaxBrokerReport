@@ -3271,4 +3271,144 @@ TEST(ApplicationResultRequestTest, DepositDataAndTheRequestTypeMustFitEachOther)
                  std::invalid_argument);
 }
 
+/// A treaty claim question for the country BE with two taxed ISINs, given out of order.
+TreatyClaimQuestion treatyQuestion() {
+    return TreatyClaimQuestion{.mYear = 2025,
+                               .mCountry = "BE",
+                               .mIsins = {"XX0000000028", "XX0000000010", "XX0000000028"}};
+}
+
+ApplicationResultInput treatyInput(TreatyClaimQuestion aQuestion) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+
+    input.mReports[static_cast<std::size_t>(kDividends)].mXml = "<dividends/>";
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = RequestType::IncomeDetailsRequired,
+                                        .mAffectedReports = {kDividends},
+                                        .mData = std::move(aQuestion),
+                                    }}};
+
+    return input;
+}
+
+TEST(ApplicationResultRequestTest, AnOpenTreatyQuestionIsListedButDoesNotMakeTheFormNeedInput) {
+    const auto result = ApplicationResultBuilder::build(treatyInput(treatyQuestion()));
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.report(kDividends).mRequestIds, std::vector<std::string>{"request-0001"});
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.mStatus, OverallStatus::Success);
+}
+
+TEST(ApplicationResultRequestTest, TheTreatyIsinsAreSortedWithoutRepeats) {
+    const auto result = ApplicationResultBuilder::build(treatyInput(treatyQuestion()));
+    const auto& question = std::get<TreatyClaimQuestion>(result.mRequests.at(0).mData);
+
+    EXPECT_EQ(question.mIsins, (std::vector<Isin>{"XX0000000010", "XX0000000028"}));
+}
+
+TEST(ApplicationResultRequestTest, ATreatyQuestionWithACountryAndIsinsIsValid) {
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(treatyInput(treatyQuestion())));
+}
+
+TEST(ApplicationResultRequestTest, ATreatyQuestionCountryOfThreeLettersIsRejected) {
+    auto question = treatyQuestion();
+
+    question.mCountry = "BEL";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(treatyInput(question)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, ATreatyQuestionCountryOfTwoLowerCaseLettersIsRejected) {
+    auto question = treatyQuestion();
+
+    question.mCountry = "be";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(treatyInput(question)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, ATreatyQuestionWithoutAnIsinIsRejected) {
+    auto question = treatyQuestion();
+
+    question.mIsins.clear();
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(treatyInput(question)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, TreatyDataAndTheRequestTypeMustFitEachOther) {
+    auto input = treatyInput(treatyQuestion());
+
+    input.mRequests[0].mQuestion.mType = RequestType::TaxClassificationRequired;
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, ATreatyTextIsValidWhenItHasVisibleCharactersAndFitsTheLimit) {
+    EXPECT_TRUE(isValidTreatyStatement("10/01, 2b odstavek 10. člena"));
+    EXPECT_TRUE(isValidTreatyStatement(std::string(100, 'x')));
+    EXPECT_FALSE(isValidTreatyStatement(""));
+    EXPECT_FALSE(isValidTreatyStatement("    "));
+    EXPECT_FALSE(isValidTreatyStatement(std::string(101, 'x')));
+    EXPECT_FALSE(isValidTreatyStatement("a\tb"));
+    EXPECT_FALSE(isValidTreatyStatement("false")); // the form's no-claim value
+    EXPECT_FALSE(isValidTreatyStatement("True"));  // capital letters are the same word
+    EXPECT_TRUE(isValidTreatyStatement("false claim"));
+    EXPECT_FALSE(isValidTreatyStatement(std::string{"a\x7f"}));
+}
+
+TEST(ApplicationResultRequestTest, ATreatyTextWithInvalidUtf8IsInvalid) {
+    EXPECT_FALSE(isValidTreatyStatement("\xE8"
+                                        "a")); // Latin-2 "č": lead byte, no tail
+    EXPECT_FALSE(isValidTreatyStatement(std::string(300, '\x80'))); // continuation bytes alone
+    EXPECT_FALSE(isValidTreatyStatement("\xC3"
+                                        "ab"));               // lead byte, then a letter
+    EXPECT_FALSE(isValidTreatyStatement("a\xC3"));            // cut off at the end
+    EXPECT_FALSE(isValidTreatyStatement("\xC0\x80"));         // overlong form of U+0000
+    EXPECT_FALSE(isValidTreatyStatement("\xED\xA0\x80"));     // surrogate U+D800
+    EXPECT_FALSE(isValidTreatyStatement("\xF4\x90\x80\x80")); // above U+10FFFF
+}
+
+TEST(ApplicationResultRequestTest, ATreatyTextWithAC1ControlOrOnlyInvisibleSpacesIsInvalid) {
+    EXPECT_FALSE(isValidTreatyStatement("a\xC2\x85"));        // U+0085, a C1 control
+    EXPECT_FALSE(isValidTreatyStatement("\xC2\xA0\xC2\xA0")); // only no-break spaces
+    EXPECT_TRUE(isValidTreatyStatement("\xC2\xA0"
+                                       "a"));                // visible text after one
+    EXPECT_TRUE(isValidTreatyStatement("\xF0\x9F\x98\x80")); // U+1F600, one 4-byte character
+}
+
+TEST(ApplicationResultRequestTest, ATreatyTextIsTrimmedOfSpacesAndNoBreakSpacesAtItsEnds) {
+    EXPECT_EQ(trimmedTreatyStatement("  Art. 10(2)  "), "Art. 10(2)");
+    EXPECT_EQ(trimmedTreatyStatement("\xC2\xA0 Art. 10 \xC2\xA0"), "Art. 10"); // no-break spaces
+    EXPECT_EQ(trimmedTreatyStatement("Art. 10 (2)"), "Art. 10 (2)");           // inner space kept
+    EXPECT_EQ(trimmedTreatyStatement("   "), "");
+}
+
+TEST(ApplicationResultRequestTest, ATreatyTextIsCheckedAfterTrimming) {
+    EXPECT_FALSE(isValidTreatyStatement(" true ")); // the word true once trimmed
+    EXPECT_FALSE(isValidTreatyStatement("\xC2\xA0"
+                                        "FALSE")); // a no-break space, then false
+    EXPECT_TRUE(isValidTreatyStatement(" " + std::string(100, 'x') + " ")); // 100 once trimmed
+    EXPECT_FALSE(isValidTreatyStatement(" " + std::string(101, 'x')));
+}
+
+TEST(ApplicationResultRequestTest, ATreatyTextLimitCountsCharactersNotBytes) {
+    std::string hundred;
+    std::string hundredAndOne;
+
+    // "č" is 2 bytes in UTF-8: 100 of them are 200 bytes but 100 characters.
+    for (int count = 0; count < 100; ++count)
+    {
+        hundred += "č";
+    }
+
+    hundredAndOne = hundred + "č";
+
+    EXPECT_EQ(hundred.size(), 200U);
+    EXPECT_TRUE(isValidTreatyStatement(hundred));
+    EXPECT_FALSE(isValidTreatyStatement(hundredAndOne));
+}
+
 } // namespace

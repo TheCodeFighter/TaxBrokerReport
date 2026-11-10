@@ -54,6 +54,16 @@ ReferenceCatalogue catalogueOf(std::string_view aPayerRows) {
     return parseReferenceCatalogue(payers, relief, broker);
 }
 
+/// A catalogue with the given payer rows and relief statement rows (without the header).
+ReferenceCatalogue treatyCatalogueOf(std::string_view aPayerRows, std::string_view aReliefRows) {
+    const std::string payers = std::string{kPayersHeader} + std::string{aPayerRows};
+    const std::string relief = std::string{kReliefHeader} + std::string{aReliefRows};
+    const std::string broker =
+        std::string{kBrokerHeader} + "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n";
+
+    return parseReferenceCatalogue(payers, relief, broker);
+}
+
 /// Marks the rate file of 2025 as loaded, from 2 January to 31 December.
 void addFile2025(OfficialRateTable& aTable) {
     aTable.mFiles.push_back(OfficialRateFile{.mYear = 2025,
@@ -219,7 +229,11 @@ TEST(DividendPaymentsTest, EurDividendKeepsItsAmountsAndTakesThePayerFacts) {
     EXPECT_EQ(row.mTreatyClaim, std::nullopt);
     EXPECT_TRUE(result.mUsedRates.empty());
     EXPECT_TRUE(result.mExcludedItems.empty());
-    EXPECT_TRUE(result.mRequests.empty());
+
+    // The only request is the treaty claim question of the country DE (tax above 0).
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_TRUE(
+        std::holds_alternative<TreatyClaimQuestion>(result.mRequests.at(0).mQuestion.mData));
 }
 
 TEST(DividendPaymentsTest, ForeignGrossWithTaxInEurConvertsOnlyTheGross) {
@@ -1200,7 +1214,7 @@ TEST(DividendPaymentsTest, NoForeignTaxGivesNoEvidenceNotice) {
               0U);
 }
 
-TEST(DividendPaymentsTest, AReliefStatementOfThePayerCountryDoesNotMakeATreatyClaim) {
+TEST(DividendPaymentsTest, AReliefStatementOfThePayerCountryIsTheTreatyClaimOfATaxedRow) {
     // The synthetic catalogue has a relief statement for BE, the country of this payer.
     const auto catalogue =
         catalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n");
@@ -1229,7 +1243,9 @@ TEST(DividendPaymentsTest, AReliefStatementOfThePayerCountryDoesNotMakeATreatyCl
         prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
 
     ASSERT_EQ(result.mReport.mRows.size(), 1U);
-    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+    ASSERT_TRUE(result.mReport.mRows.at(0).mTreatyClaim.has_value());
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim->mStatement, "Treaty text");
+    EXPECT_TRUE(result.mRequests.empty());
 }
 
 TEST(DividendPaymentsTest, TwoPaymentsOnOneCurrencyAndDayUseOneRate) {
@@ -1279,6 +1295,660 @@ TEST(DividendPaymentsTest, TwoPaymentsOnOneCurrencyAndDayUseOneRate) {
     EXPECT_EQ(result.mReport.mRows.at(0).mGrossIncome, 91'912);  // 10 / 1.088 = 9.1912
     EXPECT_EQ(result.mReport.mRows.at(1).mGrossIncome, 183'824); // 20 / 1.088 = 18.38235294
     EXPECT_EQ(result.mUsedRates.size(), 1U);
+}
+
+// --- Treaty claims ---
+
+TEST(DividendPaymentsTest, BlankTaxIsNoClaimAndAsksNoQuestion) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = std::nullopt,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    // No foreign tax: nothing to relieve, so no claim and no question.
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+    EXPECT_TRUE(result.mRequests.empty());
+}
+
+TEST(DividendPaymentsTest, UnknownPayerWithTaxIsNoClaimAndAsksNoQuestion) {
+    // The ISIN is not in the payer rows, so the row has no country.
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000028,Payer B,TAX-B,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+    EXPECT_TRUE(result.mRequests.empty());
+}
+
+TEST(DividendPaymentsTest, TaxedDividendOfACountryWithATreatyTextIsClaimedWithoutAQuestion) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+
+    const auto& row = result.mReport.mRows.at(0);
+
+    ASSERT_TRUE(row.mTreatyClaim.has_value());
+    EXPECT_EQ(row.mTreatyClaim->mStatement, "Treaty text BE");
+    ASSERT_TRUE(row.mTreatyClaim->mCatalogueRow.has_value());
+    EXPECT_EQ(row.mTreatyClaim->mCatalogueRow->mFile, "relief_statements.csv");
+    EXPECT_EQ(row.mTreatyClaim->mCatalogueRow->mRowNumber, 2U); // header = 1
+
+    // A claim never changes the gross income or the foreign tax.
+    EXPECT_EQ(row.mGrossIncome, 50'000);
+    EXPECT_EQ(row.mWithholding.mForeignTax, 9'000);
+}
+
+TEST(DividendPaymentsTest, ForeignCurrencyClaimKeepsTheConvertedAmounts) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,US,,,issuer,manual,\n",
+                          "US,\"10/01, 2b odstavek 10. člena\",manual,\n");
+    OfficialRateTable rates;
+    addFile2025(rates);
+    addRate(rates, "USD", "2025-03-14", 125'000'000, 3); // 1 EUR = 1.2500 USD
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 1'000'000, // USD 100.00
+                 .mTaxPaid = 150'000,       // USD 15.00
+                 .mCurrency = Currency::USD,
+                 .mTaxCurrency = Currency::USD},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+
+    const auto& row = result.mReport.mRows.at(0);
+
+    EXPECT_EQ(row.mGrossIncome, 800'000);             // USD 100 / 1.25 = EUR 80.0000
+    EXPECT_EQ(row.mWithholding.mForeignTax, 120'000); // USD 15 / 1.25 = EUR 12.0000
+    ASSERT_TRUE(row.mTreatyClaim.has_value());
+    EXPECT_EQ(row.mTreatyClaim->mStatement, "10/01, 2b odstavek 10. člena");
+}
+
+TEST(DividendPaymentsTest, OnlyTheTaxedRowsOfTheCountryAreClaimed) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-06-20"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 60'000, // EUR 6.00
+                 .mTaxPaid = std::nullopt,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    ASSERT_EQ(result.mReport.mRows.size(), 2U);
+    EXPECT_TRUE(result.mReport.mRows.at(0).mTreatyClaim.has_value()); // EUR 0.90 tax
+    EXPECT_EQ(result.mReport.mRows.at(1).mTreatyClaim, std::nullopt); // blank tax
+    EXPECT_TRUE(result.mRequests.empty());
+}
+
+TEST(DividendPaymentsTest, TwoTaxedPaymentsOfOneIsinAreBothClaimed) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-06-20"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 60'000, // EUR 6.00
+                 .mTaxPaid = 12'000,     // EUR 1.20
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    ASSERT_EQ(result.mReport.mRows.size(), 2U);
+    EXPECT_TRUE(result.mReport.mRows.at(0).mTreatyClaim.has_value()); // EUR 0.90 tax
+    EXPECT_TRUE(result.mReport.mRows.at(1).mTreatyClaim.has_value()); // EUR 1.20 tax
+    EXPECT_TRUE(result.mRequests.empty());
+}
+
+TEST(DividendPaymentsTest, RowsWithTheSameTextClaimWithTheFirstRow) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n"
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+
+    const auto& claim = result.mReport.mRows.at(0).mTreatyClaim;
+
+    ASSERT_TRUE(claim.has_value());
+    EXPECT_EQ(claim->mStatement, "Treaty text BE");
+    ASSERT_TRUE(claim->mCatalogueRow.has_value());
+    EXPECT_EQ(claim->mCatalogueRow->mRowNumber, 2U); // the first of rows 2 and 3
+}
+
+TEST(DividendPaymentsTest, RowsWithDifferentTextsAskTheQuestion) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,Treaty text one,manual,\n"
+                          "BE,Treaty text two,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    // Two different texts: the app does not pick one, so no claim and a question.
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+
+    const auto* question =
+        std::get_if<TreatyClaimQuestion>(&result.mRequests.at(0).mQuestion.mData);
+
+    ASSERT_NE(question, nullptr);
+    EXPECT_EQ(question->mCountry, "BE");
+}
+
+TEST(DividendPaymentsTest, ASuppliedTextNoClaimMayCarryAsksTheQuestion) {
+    // The text has 101 characters, one more than a claim may carry, so it is not used.
+    const std::string longRow = "BE," + std::string(101, 'x') + ",manual,\n";
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          longRow);
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+}
+
+TEST(DividendPaymentsTest, ASuppliedTextIsClaimedWithoutTheSpacesAtItsEnds) {
+    // The relief row has two spaces before and one after its text.
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,  Treaty text BE ,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    ASSERT_TRUE(result.mReport.mRows.at(0).mTreatyClaim.has_value());
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim->mStatement, "Treaty text BE");
+}
+
+TEST(DividendPaymentsTest, CountryWithoutATextAsksAQuestionThatDoesNotStopDohDiv) {
+    // The relief file has no SE row.
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    // The row has no claim while the question is open.
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+
+    const auto& request = run.result().mRequests.at(0);
+
+    EXPECT_EQ(request.mType, RequestType::IncomeDetailsRequired);
+    EXPECT_EQ(request.mAffectedReports, std::vector<ReportType>{ReportType::Dividends});
+    EXPECT_EQ(request.mIsin, std::nullopt);
+    EXPECT_EQ(request.mTaxDate, std::optional<Date>{day("2025-03-14")});
+
+    const auto* question = std::get_if<TreatyClaimQuestion>(&request.mData);
+
+    ASSERT_NE(question, nullptr);
+    EXPECT_EQ(question->mYear, 2025);
+    EXPECT_EQ(question->mCountry, "SE");
+    EXPECT_EQ(question->mIsins, std::vector<Isin>{"XX0000000010"});
+    EXPECT_EQ(dividendStatus(run.result()), ReportStatus::NoData); // no XML input; not needs_input
+}
+
+TEST(DividendPaymentsTest, OwnTextIsAClaimWithoutAReferenceRow) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections =
+        run.answerFirst(TreatyClaimAnswer{.mStatement = std::optional<std::string>{"Art. 10(2)"}});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.result().mRequests.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+
+    const auto& row = run.mLast.mReport.mRows.at(0);
+
+    ASSERT_TRUE(row.mTreatyClaim.has_value());
+    EXPECT_EQ(row.mTreatyClaim->mStatement, "Art. 10(2)");
+    EXPECT_EQ(row.mTreatyClaim->mCatalogueRow, std::nullopt);
+
+    // A claim never changes the gross income or the foreign tax.
+    EXPECT_EQ(row.mGrossIncome, 50'000);
+    EXPECT_EQ(row.mWithholding.mForeignTax, 9'000);
+}
+
+TEST(DividendPaymentsTest, NoClaimAnswerLeavesTheRowWithoutAClaim) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(TreatyClaimAnswer{.mStatement = std::nullopt});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.result().mRequests.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+}
+
+TEST(DividendPaymentsTest, TwoCountriesWithoutATextAskTwoQuestionsInCountryOrder) {
+    // The relief file has neither a BE nor a CA row.
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,CA,,,issuer,manual,\n"
+                          "XX0000000028,Payer B,TAX-B,2 Main Street,BE,,,issuer,manual,\n",
+                          "DE,Treaty text DE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {
+        {
+            .mName = "Synthetic Payer A",
+            .mIsin = "XX0000000010",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                                   .mSources = {source(2, "synthetic-div-1")}},
+                     .mGrossAmount = 50'000, // EUR 5.00
+                     .mTaxPaid = 9'000,      // EUR 0.90
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Payer B",
+            .mIsin = "XX0000000028",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2025-04-10"),
+                                   .mSources = {source(3, "synthetic-div-2")}},
+                     .mGrossAmount = 60'000, // EUR 6.00
+                     .mTaxPaid = 8'000,      // EUR 0.80
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    // Country order, not payment order: BE (paid on 10 April) before CA (paid on 14 March).
+    ASSERT_EQ(result.mRequests.size(), 2U);
+
+    const auto* first = std::get_if<TreatyClaimQuestion>(&result.mRequests.at(0).mQuestion.mData);
+    const auto* second = std::get_if<TreatyClaimQuestion>(&result.mRequests.at(1).mQuestion.mData);
+
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(first->mCountry, "BE");
+    EXPECT_EQ(first->mIsins, std::vector<Isin>{"XX0000000028"});
+    EXPECT_EQ(second->mCountry, "CA");
+    EXPECT_EQ(second->mIsins, std::vector<Isin>{"XX0000000010"});
+}
+
+TEST(DividendPaymentsTest, ACountryWithATextIsClaimedAndOnlyACountryWithoutOneIsAsked) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n"
+                          "XX0000000028,Payer B,TAX-B,2 Main Street,SE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {
+        {
+            .mName = "Synthetic Payer A",
+            .mIsin = "XX0000000010",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                                   .mSources = {source(2, "synthetic-div-1")}},
+                     .mGrossAmount = 50'000, // EUR 5.00
+                     .mTaxPaid = 9'000,      // EUR 0.90
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "Synthetic Payer B",
+            .mIsin = "XX0000000028",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2025-04-10"),
+                                   .mSources = {source(3, "synthetic-div-2")}},
+                     .mGrossAmount = 60'000, // EUR 6.00
+                     .mTaxPaid = 8'000,      // EUR 0.80
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    ASSERT_EQ(result.mReport.mRows.size(), 2U);
+    ASSERT_TRUE(result.mReport.mRows.at(0).mTreatyClaim.has_value()); // BE, paid on 14 March
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim->mStatement, "Treaty text BE");
+    EXPECT_EQ(result.mReport.mRows.at(1).mTreatyClaim, std::nullopt); // SE has no text
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto* question =
+        std::get_if<TreatyClaimQuestion>(&result.mRequests.at(0).mQuestion.mData);
+
+    ASSERT_NE(question, nullptr);
+    EXPECT_EQ(question->mCountry, "SE");
+    EXPECT_EQ(question->mIsins, std::vector<Isin>{"XX0000000028"});
+}
+
+TEST(DividendPaymentsTest, ANewTaxedIsinInTheCountryIsANewQuestion) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n"
+                          "XX0000000028,Payer B,TAX-B,2 Main Street,SE,,,issuer,manual,\n",
+                          "BE,Treaty text BE,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement oneIsin;
+    oneIsin.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+    MergedStatement twoIsins;
+    twoIsins.mPresentation.mDividendInstruments = {
+        oneIsin.mPresentation.mDividendInstruments.at(0),
+        {
+            .mName = "Synthetic Payer B",
+            .mIsin = "XX0000000028",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2025-04-10"),
+                                   .mSources = {source(3, "synthetic-div-2")}},
+                     .mGrossAmount = 60'000, // EUR 6.00
+                     .mTaxPaid = 8'000,      // EUR 0.80
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(oneIsin);
+    orderChronologically(twoIsins);
+    DividendRun run{oneIsin, catalogue, rates};
+
+    EXPECT_TRUE(run.answerFirst(TreatyClaimAnswer{.mStatement = std::nullopt}).empty());
+    EXPECT_TRUE(run.result().mRequests.empty());
+
+    // A second taxed ISIN of the same country changes the question, so the answer does not apply.
+    run.start(twoIsins, catalogue, rates);
+
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+
+    const auto* question = std::get_if<TreatyClaimQuestion>(&run.result().mRequests.at(0).mData);
+
+    ASSERT_NE(question, nullptr);
+    EXPECT_EQ(question->mIsins, (std::vector<Isin>{"XX0000000010", "XX0000000028"}));
 }
 
 } // namespace

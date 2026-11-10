@@ -6515,4 +6515,108 @@ TEST(CliReportIntegrationTest, TheTerminalAsksWhatAnInterestPaymentOfUnknownType
     EXPECT_FALSE(contains(result.mOut, "Open questions"));
 }
 
+TEST(CliReportIntegrationTest, ATaxedDividendOfACountryWithATreatyTextAsksNoTreatyQuestion) {
+    // The payer is in BE, which has a treaty text in the built-in reference files, so the claim is
+    // made without a question. The tax column of Trade Republic is negative (EUR -1.50 is a
+    // foreign tax of EUR 1.50).
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision\n"
+        "XX0000000010,Payer X,TAX-X,1 Main Street,BE,,,issuer,manual,\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000010,,,10,,-1.5,EUR,,,,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(result.mOut, "treaty relief on the dividends"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, TheTerminalAsksForATreatyTextOfACountryWithoutOne) {
+    // The built-in reference files have no treaty text for SE, so the user is asked for one.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision\n"
+        "XX0000000010,Payer X,TAX-X,1 Main Street,SE,,,issuer,manual,\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000010,,,10,,-1.5,EUR,,,,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             "--trade-republic",
+                             history},
+                            "other\nArt. 10(2)\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: treaty relief on the dividends from SE in 2024\n"
+                         "  Foreign tax was withheld on 1 investment: XX0000000010\n"
+                         "  The reference files have no treaty text for this country.\n"));
+    EXPECT_TRUE(contains(result.mOut, "SE, treaty claim: treaty relief claimed: Art. 10(2)"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, WithoutInputAnOpenTreatyQuestionIsListedAndMakesNoClaim) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision\n"
+        "XX0000000010,Payer X,TAX-X,1 Main Street,SE,,,issuer,manual,\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000010,,,10,,-1.5,EUR,,,,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--reference-files",
+                             payers,
+                             "--no-input",
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Open questions: 1\n"
+                         "  request-0001 income_details_required, treaty claim for SE\n"));
+}
+
 } // namespace
