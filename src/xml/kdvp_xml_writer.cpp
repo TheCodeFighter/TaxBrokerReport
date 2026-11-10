@@ -34,8 +34,10 @@ constexpr std::string_view kPeriodStartSuffix = "-01-01";
 constexpr std::string_view kPeriodEndSuffix = "-12-31";
 
 constexpr ReportType kReport = ReportType::CapitalGains;
-constexpr MetadataFields kMetadataFields{
-    .mYear = "Year", .mPhone = "TelephoneNumber", .mEmail = "Email"};
+constexpr MetadataFields kMetadataFields{.mYear = "Year",
+                                         .mMinimumYear = kFourDigitYear,
+                                         .mPhone = "TelephoneNumber",
+                                         .mEmail = "Email"};
 constexpr std::size_t kMaximumIsinLength = 12;
 constexpr std::size_t kMaximumNameLength = 100;
 

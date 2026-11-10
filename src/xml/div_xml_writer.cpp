@@ -1,14 +1,10 @@
 #include "xml/div_xml_writer.hpp"
 #include "taxbroker/application_result.hpp"
-#include "utils/numeric_util.hpp"
 #include "xml_common.hpp"
 
 #include <pugixml.hpp>
 
-#include <algorithm>
 #include <chrono>
-#include <cstddef>
-#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -22,46 +18,14 @@ namespace {
 constexpr std::string_view kDivNamespace = "http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd";
 
 constexpr ReportType kReport = ReportType::Dividends;
-constexpr MetadataFields kMetadataFields{
-    .mYear = "Period", .mPhone = "PhoneNumber", .mEmail = "EmailAddress"};
+constexpr MetadataFields kMetadataFields{.mYear = "Period",
+                                         .mMinimumYear = kFourDigitYear,
+                                         .mPhone = "PhoneNumber",
+                                         .mEmail = "EmailAddress"};
 
 // Form type 1: a dividend. The instructions list a fund distribution as type 4; whether that
 // code is right for a foreign fund is unconfirmed, so every payment is written as type 1.
 constexpr std::string_view kDividendType = "1";
-
-constexpr std::size_t kCountryLength = 2;
-
-// `Money` has four decimals and the form two, so a cent is 100 stored steps.
-constexpr Money kStepsPerCent = 100;
-constexpr Money kHalfCent = 50;
-constexpr std::int64_t kCentsPerUnit = 100;
-constexpr std::size_t kAmountDecimals = 2;
-
-/// The amount in cents, rounded once, halves up. Divides before it adds, so the largest `Money`
-/// value cannot overflow. A negative amount is cut towards zero, not rounded: the caller rejects
-/// every amount that is not above zero, and that is the same for the cut and the rounded value.
-std::int64_t roundedCents(Money aValue) {
-    std::int64_t cents = aValue / kStepsPerCent;
-
-    if (aValue % kStepsPerCent >= kHalfCent)
-    {
-        ++cents;
-    }
-
-    return cents;
-}
-
-/// The cents with two decimals, such as `12.35`. Only for values that are not negative.
-std::string amountText(std::int64_t aCents) {
-    return formatFixedPoint(aCents, kCentsPerUnit, kAmountDecimals);
-}
-
-bool isCountryCode(std::string_view aText) {
-    return aText.size() == kCountryLength &&
-           std::all_of(aText.begin(), aText.end(), [](char aCharacter) {
-               return aCharacter >= 'A' && aCharacter <= 'Z';
-           });
-}
 
 std::string_view dividendType(DividendKind aKind) {
     switch (aKind)

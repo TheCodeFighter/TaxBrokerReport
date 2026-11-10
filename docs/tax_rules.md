@@ -991,10 +991,70 @@ EUR 200 in eDavki; exactly EUR 1,000 does not require a return.
 IBKR cash interest of EUR 20 belongs in Doh-Obr independently of those totals. Ordinary foreign
 bond coupons do not use the deposit allowance.
 
-Doh-DHO can use verified legacy behavior as a reference. Doh-Obr, including bond coupons, is new
-work. Start with synthetic broker-neutral fixtures, official form instructions and the applicable
-XSD. Track real broker-export and eDavki acceptance verification separately when no live bond
+Doh-DHO used verified legacy behavior as a reference (see "Doh-DHO form contract"). Doh-Obr,
+including bond coupons, is new work. Start with synthetic broker-neutral fixtures, official form
+instructions and the applicable XSD. Track real broker-export and eDavki acceptance verification separately when no live bond
 example is available; passing synthetic tests must not be described as live verification.
+
+## Doh-DHO form contract
+
+Checked on 10 November 2026 against the schema, the XML instructions and the XML template that FURS
+publishes (see "Sources"). Only these files were read; no eDavki import was done.
+
+**Schema.** `resources/xml/schemas/Doh_DHO_4.xsd`, SHA-256
+`bd881dc02d004be3ac2864278d6acabbfae86ec7db672e3ec9a1b566faa1e2be`, namespace
+`http://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd`, identical to the file online. It imports
+`EDP-Common-1.xsd` next to it. Version 5 does not exist. Every element is optional; the
+instructions make most fields required, so the writer checks what the form needs.
+
+**Document.** `Envelope` holds `edp:Header` (as for Doh-KDVP), `edp:Signatures` and `body` with
+`edp:bodyContent` and `Doh_DHO`. `Doh_DHO` has, in this order: `Doh_DHO_TaxPayerData` (`Email` and
+`PhoneNumber` when known, `SelfReport` (`true` for a self-report), `IsResident`), one
+`Doh_DHO_InterestEarned` per model row (at most 999) and `Doh_DHO_Totals`. `WfTypeU`, `Notes`,
+`ResidentCountry` (the template writes `SI`), the country names, `Doh_DHO_Attachment` and the
+late-submission elements are not written.
+
+**One `Doh_DHO_InterestEarned` row per model row, in model order:**
+
+| Field | Source | Rule |
+| --- | --- | --- |
+| `TaxID` | Slovenian tax number of the bank | Left out when not known; eight digits. |
+| `IDeu` | The bank's tax or other number in its EU state | Left out when not known. |
+| `Title`, `Address` | Payer name and address | Left out when not known; 1 to 50 and 1 to 100 characters. |
+| `PayerCountryCode` | Payer's country | Left out when not known; two capital letters. |
+| `InterestType` | Kind of interest | `1` (deposits at banks in Slovenia and other EU states). |
+| `InterestEarned` | Sum of the payments in EUR | Two decimals, greater than zero after rounding. |
+| `ForeignTaxPaid` | Foreign tax in EUR | Two decimals, `0.00` when none; left out for a payer country `SI`. |
+| `SourceCountryCode` | Source country | Left out when not known; two capital letters. |
+
+**Numbers.** `InterestEarned`, `ForeignTaxPaid` and the totals are a decimal that is not negative,
+with two fraction digits and at most 12 digits in all (the largest is `9999999999.99`). Each row
+amount is rounded once from the four-decimal EUR sum, halves away from zero. The totals are the
+sums of the rounded row amounts, so they always equal the rows (`calculations.md`). `Year` is the
+reporting year, 2006 or later.
+
+**Slovenian payer.** The instructions say the foreign tax must stay empty when the payer country is
+`SI`. The writer leaves it out and stops the file when the row has a foreign tax that is above 0
+after rounding.
+
+**EU states only.** The instructions allow Doh-DHO only for payers and sources in an EU state;
+another country imports but gives a critical error at submission (such interest belongs in
+Doh-Obr, type 3). The writer does not check the membership: the routing decides the form, and
+Trade Republic (`DE`) is the only bank that reaches it today. A bank outside the EU needs a check
+before it is added.
+
+**Treaty column.** The instructions list a column to claim an exemption under an international
+treaty (DA/NE), but the schema has no element for it, so it cannot be written.
+
+**Rows the form cannot hold.** The writer never repairs a value. A payer tax number that is not
+eight digits, a name or address that is empty or too long, a country that is not two capital
+letters, an interest that rounds to `0.00` or less, a negative tax, an amount or a total above the
+largest value, more than 999 rows, a year before 2006, a foreign tax on a Slovenian payer and text
+that is not valid XML each stop the file with `xml_value_out_of_range` for Doh-DHO and its field;
+the other forms are not affected.
+
+**Still open.** Whether eDavki imports a file without `ResidentCountry`, without country names, or
+with a row without payer facts; `SelfReport`. All are listed in `verification.md`.
 
 ## Doh-Obr form contract
 
@@ -1203,6 +1263,9 @@ Tests based on this document must prove that:
 - [eDavki dividend return instructions, including foreign-tax evidence and treaty claims](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_div.n.sl.pdf)
 - [FURS international taxation and treaty sources](https://www.fu.gov.si/davki_in_druge_dajatve/podrocja/mednarodno_obdavcenje)
 - [eDavki other-interest return (Doh-Obr)](https://edavki.durs.si/EdavkiPortal/OpenPortal/CommonPages/Opdynp/PageD.aspx?category=odmera_dohodnine_od_drugih_obresti)
+- [Doh-DHO schema, version 4](https://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd)
+- [Doh-DHO XML instructions](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_dho_xml.n.sl.pdf)
+- [Doh-DHO XML template with the code lists](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_dho_xml.i.xlsx)
 - [Doh-Obr XML instructions](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_obr_xml.n.sl.pdf)
 - [Doh-Obr XML template with the code lists](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_obr_xml.i.xlsx)
 - [Doh-Obr form instructions](https://edavki.durs.si/OpenPortal/Dokumenti/doh_odm_dr_obr20.n.sl.pdf)

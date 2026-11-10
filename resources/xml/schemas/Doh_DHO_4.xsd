@@ -1,0 +1,284 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns="http://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd" targetNamespace="http://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd" elementFormDefault="qualified">
+    <!-- Import the common schema -->
+    <xs:import namespace="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd" schemaLocation="EDP-Common-1.xsd" id="EDP-Common-1" />
+  
+<!-- Root element of the document definition -->
+<xs:element name="Doh_DHO">
+  <xs:complexType>
+    <xs:sequence>
+
+			<xs:element name="Doh_DHO_TaxPayerData" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>                    
+            <xs:element name="Email" type="xs:string" minOccurs="0">
+              <xs:annotation>
+                <xs:documentation xml:lang="sl">Elektronski naslov</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+            <xs:element name="PhoneNumber" type="xs:string" minOccurs="0">
+              <xs:annotation>
+                <xs:documentation xml:lang="sl">Telefonska številka</xs:documentation>
+              </xs:annotation>
+            </xs:element>                    
+            <xs:element name="SelfReport" type="xs:boolean" minOccurs="0">
+              <xs:annotation>
+                <xs:documentation xml:lang="sl">Samoprijava</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+            <xs:element name="WfTypeU" type="xs:boolean" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="Notes" type="xs:string" minOccurs="0"/>
+            <xs:element name="ResidentCountry" type="xs:string" minOccurs="0">
+              <xs:annotation>
+                <xs:documentation xml:lang="sl">Država rezidentstva</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+            <xs:element name="IsResident" type="xs:boolean" default="false" minOccurs="0">
+              <xs:annotation>
+                <xs:documentation xml:lang="sl">Rezident Republike Slovenije</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+              
+      <xs:element name="Doh_DHO_InterestEarned" minOccurs="0" maxOccurs="999">
+          <xs:complexType>
+              <xs:sequence>
+                  <xs:element name="TaxID" type="typeTaxId" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Davčna številka banke hranilnice registrirane v SLO
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="IDeu" type="xs:string" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Identifikacijska številka banke hranilnice v drugi državi članici EU
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="Title" type="typeTitle" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Naziv banke hranilnice
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="Address" type="typeAddress" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Naslov banke hranilnice
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="PayerCountryCode" type="typeCountryCode" minOccurs="0"/>
+                  <xs:element name="PayerCountryName" type="typeCountryName" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Država izplačevalca
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="InterestType" type="xs:string" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Šifra vrste obresti
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="InterestEarned" type="typeDecNonNeg" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Znesek obresti
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="ForeignTaxPaid" type="typeDecNonNeg" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Tuji davek
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>
+                  <xs:element name="SourceCountryCode" type="typeCountryCode" minOccurs="0"/>
+                  <xs:element name="SourceCountryName" type="typeCountryName" minOccurs="0">
+                    <xs:annotation>
+                      <xs:documentation xml:lang="sl">
+                        Država vira
+                      </xs:documentation>
+                    </xs:annotation>
+                  </xs:element>     
+              </xs:sequence>
+          </xs:complexType>
+      </xs:element>
+
+      <xs:element name="Doh_DHO_Totals">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="TotalInterestEarned" type="typeDecNonNeg" minOccurs="0" />
+                <xs:element name="TotalForeignTaxPaid" type="typeDecNonNeg" minOccurs="0" />
+                <xs:element name="Notes" type="typeNote" minOccurs="0" />
+                <xs:element name="Year" type="typeHeaderYear" minOccurs="0" />
+            </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+              
+      <xs:element name="Doh_DHO_Attachment" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+              <xs:sequence>
+                  <xs:element name="Document" type="typeDoc" minOccurs="0" />
+              </xs:sequence>
+          </xs:complexType>
+      </xs:element>     
+              
+      <xs:element ref="SubseqSubmissDecision" minOccurs="0" />
+      <xs:element ref="SubseqSubmissProposal" minOccurs="0" />
+              
+    </xs:sequence>
+  </xs:complexType>
+</xs:element>
+
+  <xs:element name="SubseqSubmissDecision">
+    <xs:complexType>
+      <xs:annotation>
+        <xs:documentation>Podatki iz sklepa o dovolitvi predložitve davčne napovedi po izteku predpisanega roka</xs:documentation>
+      </xs:annotation>
+      <xs:sequence>
+        <xs:element name="DecisionId" type="xs:string" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Številka sklepa</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="DecisionDate" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Datum izdaje sklepa</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="SubmissionDeadline" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Rok za predložitev, določen v sklepu</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="SubseqSubmissProposal">
+    <xs:complexType>
+      <xs:annotation>
+        <xs:documentation>Predlog za naknadno predložitev davčne napovedi</xs:documentation>
+      </xs:annotation>     
+      <xs:sequence>
+        <xs:element name="ProposalSubmitted" type="xs:boolean" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>Vloga za podaljšanje roka - že vložena</xs:documentation>
+          </xs:annotation>
+        </xs:element>        
+        <xs:element name="StartDate" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Datum prenehanja razlogov za zamudo roka</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="ProposalDeadline" type="xs:date" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Rok za naknadno predložitev</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="DelayReasons" type="xs:string" minOccurs="0" >
+          <xs:annotation>
+            <xs:documentation>Navedba opravičljivih razlogov za zamudo roka</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  
+  
+    <!-- Document types definition -->
+    <xs:simpleType name="typeDecNonNeg">
+        <xs:restriction base="xs:decimal">
+            <xs:fractionDigits value="2" />
+            <xs:totalDigits value="12" />
+            <xs:minInclusive value="0" />
+        </xs:restriction>
+    </xs:simpleType>
+      
+    <xs:simpleType name="typeCountryCode">
+      <xs:restriction base="xs:string">
+      </xs:restriction>
+    </xs:simpleType>
+    
+    <xs:simpleType name="typeCountryName">
+      <xs:restriction base="xs:string">
+        <xs:maxLength value="100"/>
+      </xs:restriction>
+    </xs:simpleType>
+        
+    <xs:simpleType name="typeTitle">
+      <xs:restriction base="xs:string">
+       <xs:maxLength value="50" />
+       <xs:minLength value="1"/>
+      </xs:restriction>
+    </xs:simpleType>
+    
+    <xs:simpleType name="typeAddress">
+      <xs:restriction base="xs:string">
+       <xs:maxLength value="100" />
+       <xs:minLength value="1"/>
+      </xs:restriction>
+    </xs:simpleType>
+      
+    <xs:simpleType name="typeTaxId">
+      <xs:restriction base="xs:string">
+       <xs:maxLength value="20" />
+       </xs:restriction>
+    </xs:simpleType>
+          
+    <xs:simpleType name="typeNote">
+      <xs:restriction base="xs:string">
+        <xs:maxLength value="500" />
+      </xs:restriction>
+    </xs:simpleType>
+      
+    <xs:simpleType name="typeDoc">
+      <xs:restriction base="xs:string">
+        <xs:maxLength value="70" />
+      </xs:restriction>
+    </xs:simpleType>
+    
+    
+    <xs:simpleType name="typeHeaderYear">
+      <xs:restriction base="typeYear">
+        <xs:minInclusive value="2006" />
+      </xs:restriction>
+    </xs:simpleType>
+    
+    <xs:simpleType name="typeYear">
+      <xs:restriction base="xs:int">
+        <xs:pattern value="[1-9][0-9]{3}" />
+      </xs:restriction>
+    </xs:simpleType>
+    
+    
+  <!-- Document types definition -->
+  <!-- Document envelope that contains the document header, signatures and its body. -->
+  <xs:element name="Envelope">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="edp:Header" />
+        <xs:element ref="edp:AttachmentList" minOccurs="0" />
+        <xs:element ref="edp:Signatures" />
+        <xs:element name="body">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element ref="edp:bodyContent" />
+              <xs:element ref="Doh_DHO" />
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
