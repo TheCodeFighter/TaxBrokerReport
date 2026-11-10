@@ -1,4 +1,5 @@
 #include "xml/obr_xml_writer.hpp"
+#include "taxbroker/application_result.hpp"
 #include "xml_common.hpp"
 
 #include <pugixml.hpp>
@@ -137,10 +138,19 @@ void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics,
         }
     }
 
-    // The form has no place for a treaty claim in this model; it is never dropped silently.
+    // A claim needs a foreign tax that is written, and, when it has a text, a trimmed text a claim
+    // may carry; a claim without a text is written as `DA`.
     if (aRow.mTreatyClaim)
     {
-        addOutOfRange(aDiagnostics, kReport, "ReliefStatement", identity);
+        const auto& statement = aRow.mTreatyClaim->mStatement;
+        const bool badText =
+            statement && (!xmlTextLength(*statement) || !isValidTreatyStatement(*statement) ||
+                          trimmedTreatyStatement(*statement) != *statement);
+
+        if (aRow.mWithholding.mForeignTax <= 0 || isSlovenianPayer(aRow) || badText)
+        {
+            addOutOfRange(aDiagnostics, kReport, "ReliefStatement", identity);
+        }
     }
 }
 
@@ -149,9 +159,9 @@ pugi::xml_node appendObrHeader(pugi::xml_node aBody, const ReportMetadata& aMeta
     const auto& taxpayer = aMetadata.mTaxpayer;
     auto obr = aBody.append_child("Doh_Obr");
 
-    appendBoolean(obr, "SelfReport", aMetadata.mFilingType == FilingType::SelfReport);
+    appendBoolean(obr, "SelfReport", false);
     appendText(obr, "Period", std::to_string(aMetadata.mReportingYear));
-    appendText(obr, "DocumentWorkflowID", workflowCode(aMetadata.mFilingType));
+    appendText(obr, "DocumentWorkflowID", workflowCode(FilingType::Original));
     appendOptionalText(obr, "Email", taxpayer.mEmail);
     appendOptionalText(obr, "TelephoneNumber", taxpayer.mPhoneNumber);
     appendBoolean(obr, "ResidentOfRepublicOfSlovenia", taxpayer.mIsResident);
@@ -185,6 +195,20 @@ void appendInterest(pugi::xml_node aObr, const ObrInterestRow& aRow) {
     }
 
     appendOptionalText(interest, "Country2", aRow.mSourceCountry);
+
+    // A claim writes its treaty text, or `DA` when the user fills in the paragraph and article in
+    // eDavki; a row without a claim has no element.
+    if (aRow.mTreatyClaim)
+    {
+        if (aRow.mTreatyClaim->mStatement)
+        {
+            appendText(interest, "ReliefStatement", *aRow.mTreatyClaim->mStatement);
+        }
+        else
+        {
+            appendText(interest, "ReliefStatement", "DA");
+        }
+    }
 }
 
 } // namespace
@@ -208,7 +232,8 @@ XmlWriteResult ObrXmlWriter::write(const ReportMetadata& aMetadata,
     pugi::xml_document document;
     auto envelope = beginDocument(document, kObrNamespace);
 
-    appendHeader(envelope, aMetadata);
+    // The form has no self-report in eDavki: it is always filed as an original.
+    appendHeader(envelope, aMetadata, FilingType::Original);
     envelope.append_child("edp:Signatures");
 
     auto body = envelope.append_child("body");

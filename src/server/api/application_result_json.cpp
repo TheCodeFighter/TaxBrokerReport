@@ -161,6 +161,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "slovenian_coupon_tax";
     case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
         return "deposit_interest_add_other_banks";
+    case ProcessingDiagnosticCode::TreatyClaimDetailsMissing:
+        return "treaty_claim_details_missing";
     }
 
     return "unrepresentable_value";
@@ -471,6 +473,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
 
             return Json{{"statement", *aValue.mStatement}};
         }
+        else if constexpr (std::is_same_v<Value, InterestTreatyClaimAnswer>)
+        {
+            return aValue.mClaim ? "claim" : "no_claim";
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             // A skip is a string; a pick is the position of the row among the options.
@@ -681,6 +687,15 @@ Json treatyCheckToJson(const TreatyClaimQuestion& aQuestion) {
                 {"isins", aQuestion.mIsins}};
 }
 
+/// The question data of an interest treaty claim question: the country, its taxed coupon ISINs and
+/// whether its cash interest has foreign tax too.
+Json interestTreatyCheckToJson(const InterestTreatyClaimQuestion& aQuestion) {
+    return Json{{"year", aQuestion.mYear},
+                {"country", aQuestion.mCountry},
+                {"isins", aQuestion.mIsins},
+                {"cashInterest", aQuestion.mCashInterest}};
+}
+
 /// The options the question offers: no dividends and no bond coupon without an ISIN.
 Json incomeOptionsToJson(const IncomeClassificationQuestion& aQuestion) {
     Json options = Json::array();
@@ -827,6 +842,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
     if (const auto* treaty = std::get_if<TreatyClaimQuestion>(&aRequest.mData))
     {
         serialized["treatyCheck"] = treatyCheckToJson(*treaty);
+    }
+
+    if (const auto* treaty = std::get_if<InterestTreatyClaimQuestion>(&aRequest.mData))
+    {
+        serialized["interestTreatyCheck"] = interestTreatyCheckToJson(*treaty);
     }
 
     if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aRequest.mData))
@@ -1021,6 +1041,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* treaty = std::get_if<TreatyClaimQuestion>(&aDecision.mData))
     {
         serialized["treatyCheck"] = treatyCheckToJson(*treaty);
+    }
+
+    if (const auto* treaty = std::get_if<InterestTreatyClaimQuestion>(&aDecision.mData))
+    {
+        serialized["interestTreatyCheck"] = interestTreatyCheckToJson(*treaty);
     }
 
     if (const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aDecision.mData))

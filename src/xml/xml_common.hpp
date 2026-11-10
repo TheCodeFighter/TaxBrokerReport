@@ -96,8 +96,10 @@ void appendOptionalText(pugi::xml_node aParent,
 [[nodiscard]] pugi::xml_node beginDocument(pugi::xml_document& aDocument,
                                            std::string_view aNamespace);
 
-/// Writes `edp:Header` (taxpayer and workflow) into the `Envelope`.
-void appendHeader(pugi::xml_node aEnvelope, const ReportMetadata& aMetadata);
+/// Writes `edp:Header` (taxpayer and the workflow of `aFilingType`) into the `Envelope`.
+void appendHeader(pugi::xml_node aEnvelope,
+                  const ReportMetadata& aMetadata,
+                  FilingType aFilingType);
 
 /// The whole document as UTF-8 text.
 [[nodiscard]] std::string saveDocument(const pugi::xml_document& aDocument);

@@ -38,6 +38,9 @@ constexpr std::array kRowKind{
 constexpr std::array kField{
     MessageParamDefinition{"field", MessageParamKind::Text},
 };
+constexpr std::array kCountry{
+    MessageParamDefinition{"country", MessageParamKind::Text},
+};
 constexpr std::array kDefaultHour{
     MessageParamDefinition{"defaultHour", MessageParamKind::Number},
 };
@@ -401,6 +404,8 @@ constexpr std::array kDefinitions{
                       "reference_file.invalid_instrument_kind",
                       {}},
     MessageDefinition{
+        MessageKey::ReferenceFileInvalidTreatyIncome, "reference_file.invalid_treaty_income", {}},
+    MessageDefinition{
         MessageKey::ReferenceFileInvalidVerifiedOn, "reference_file.invalid_verified_on", {}},
     MessageDefinition{MessageKey::ReferenceFileInvalidSource, "reference_file.invalid_source", {}},
     MessageDefinition{MessageKey::ReferenceFileMissingSourceRevision,
@@ -415,6 +420,8 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::SlovenianCouponTax, "slovenian_coupon_tax", {}},
     MessageDefinition{
         MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
+    MessageDefinition{
+        MessageKey::TreatyClaimDetailsMissing, "treaty_claim_details_missing", kCountry},
     MessageDefinition{MessageKey::TaxClassificationUnknownIncomeConfirmationRequired,
                       "tax_classification_unknown.income_confirmation_required",
                       {}},

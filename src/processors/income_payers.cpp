@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace taxbroker {
@@ -169,6 +170,29 @@ PayerOutcome payerOutcomeOf(const BrokerPayerEntry& aEntry) {
     outcome.mIsSlovenian = aEntry.mCountry == kSlovenia;
 
     return outcome;
+}
+
+std::optional<std::pair<std::string, CatalogueSource>> treatyTextOf(
+    const ReferenceCatalogue& aCatalogue, const std::string& aCountry, TreatyIncome aIncome) {
+    const auto rows = aCatalogue.reliefStatements(aCountry, aIncome);
+
+    if (rows.empty())
+    {
+        return std::nullopt;
+    }
+
+    const auto text = trimmedTreatyStatement(rows.front()->mStatement);
+    const auto differs = [text](const ReliefStatementEntry* aRow) {
+        return trimmedTreatyStatement(aRow->mStatement) != text;
+    };
+
+    // A supplied text that no claim may carry (too long, a control character) is no text.
+    if (std::any_of(rows.begin(), rows.end(), differs) || !isValidTreatyStatement(text))
+    {
+        return std::nullopt;
+    }
+
+    return std::pair{std::string{text}, rows.front()->mSource};
 }
 
 void addPayerNotFound(const PayerForm& aForm,

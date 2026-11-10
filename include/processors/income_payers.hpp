@@ -87,6 +87,12 @@ void addSlovenianExclusion(const PayerForm& aForm,
                            const Isin& aIsin,
                            const IsinPayments& aPayments);
 
+/// The trimmed treaty text of a country for a kind of income and its reference row, or none when
+/// the country has no row of that kind, its rows give different texts or the text is not a valid
+/// claim text. A text of another kind of income is never used.
+[[nodiscard]] std::optional<std::pair<std::string, CatalogueSource>> treatyTextOf(
+    const ReferenceCatalogue& aCatalogue, const std::string& aCountry, TreatyIncome aIncome);
+
 /// Adds the rate needs of one income payment: the gross, and the tax when it is above 0 and
 /// foreign.
 void addIncomeRateNeeds(std::vector<RateNeed>& aNeeds,

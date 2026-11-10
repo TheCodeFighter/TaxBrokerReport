@@ -35,10 +35,12 @@ struct ForeignWithholding {
     bool operator==(const ForeignWithholding&) const = default;
 };
 
-/// A treaty claim of a row with foreign tax: the reference text of its country or one the user
-/// typed. The text is written as the ReliefStatement. A row without one makes no claim.
+/// A treaty claim of a row with foreign tax: the reference text of its country, one the user
+/// typed, or no text when the user only claimed the treaty. A row without a claim makes none.
 struct TreatyClaim {
-    std::string mStatement;                       ///< The treaty article text, written to the XML.
+    /// The treaty article text, written as the ReliefStatement; empty: claimed, the paragraph and
+    /// article are filled in eDavki.
+    std::optional<std::string> mStatement;
     std::optional<CatalogueSource> mCatalogueRow; ///< The relief-statement row; empty: typed.
 
     bool operator==(const TreatyClaim&) const = default;
@@ -119,7 +121,7 @@ struct ObrInterestRow {
     Money mGrossInterest{};                             ///< EUR, above zero.
     ForeignWithholding mWithholding;                    ///< Always set by the creator.
     std::optional<std::string> mSourceCountry;          ///< 2 letters; empty when not known.
-    std::optional<TreatyClaim> mTreatyClaim;            ///< Not written until the claim rule.
+    std::optional<TreatyClaim> mTreatyClaim;            ///< Empty: no claim.
 
     bool operator==(const ObrInterestRow&) const = default;
 };

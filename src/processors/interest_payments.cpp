@@ -417,8 +417,9 @@ bool isUsableText(const std::string& aText, std::optional<std::size_t> aMaximumL
 }
 
 /// The fields of a Doh-Obr row that the form cannot hold, in form order. The date, the countries
-/// and the treaty claim cannot fail here, and a value that rounds to 0.00 is no row. The foreign
-/// tax of a Slovenian payer is not written, so its value does not matter.
+/// and the treaty claim (set only after the rows are made) cannot fail here, and a value that
+/// rounds to 0.00 is no row. The foreign tax of a Slovenian payer is not written, so its value does
+/// not matter.
 std::vector<std::string_view> obrFieldProblems(const ObrInterestRow& aRow) {
     const auto& payer = aRow.mPayer;
     std::vector<std::string_view> problems;
@@ -699,6 +700,145 @@ std::set<Isin> askBondTypes(const MergedStatement& aStatement,
     return heldBack;
 }
 
+/// One Doh-Obr row with foreign tax, for its treaty claim.
+struct TreatyRow {
+    std::size_t mIndex{};                  ///< Position in the report rows.
+    TreatyIncome mIncome{};                ///< Coupon or cash interest; always set by the creator.
+    std::optional<Isin> mIsin;             ///< The ISIN of a coupon; empty for cash interest.
+    std::vector<SourceReference> mSources; ///< The sources of the payment.
+    Date mTaxDate;                         ///< The receipt date.
+};
+
+/// The Doh-Obr rows of one payer country that had foreign tax, in report order.
+using TreatyGroup = std::vector<TreatyRow>;
+
+/// Adds the payment's row to the treaty group of its payer country. A row of a Slovenian payer has
+/// no foreign tax in the file, and a row without a payer country has no question.
+void addToTreatyGroup(std::map<std::string, TreatyGroup>& aGroups,
+                      const Payment& aPayment,
+                      const ObrInterestRow& aRow,
+                      std::size_t aRowIndex) {
+    if (aRow.mWithholding.mForeignTax <= 0 || !aRow.mPayer.mCountry ||
+        *aRow.mPayer.mCountry == kSlovenia)
+    {
+        return;
+    }
+
+    const auto& metadata = aPayment.mTransaction->mMetadata;
+    const bool isCoupon = aPayment.mRoute == Route::Coupon;
+
+    aGroups[*aRow.mPayer.mCountry].push_back(TreatyRow{
+        .mIndex = aRowIndex,
+        .mIncome = isCoupon ? TreatyIncome::BondCoupon : TreatyIncome::CashInterest,
+        .mIsin = isCoupon ? std::optional<Isin>{aPayment.mInstrument->mIsin.value()} : std::nullopt,
+        .mSources = metadata.mSources,
+        .mTaxDate = metadata.mTaxDate,
+    });
+}
+
+/// Claims, for each payer country with foreign tax, the rows of a kind of income whose reference
+/// rows give one treaty text, without a question. The rows of the other kinds are asked once per
+/// country: a yes marks them as claimed without a text and adds one warning (the paragraph and
+/// article are filled in eDavki); no answer or a no leaves them without a claim.
+void applyTreatyClaims(InterestPaymentsResult& aResult,
+                       const std::map<std::string, TreatyGroup>& aGroups,
+                       int aYear,
+                       const ReferenceCatalogue& aCatalogue,
+                       RunDecisions& aDecisions) {
+    for (const auto& [country, rows] : aGroups)
+    {
+        const auto couponText = treatyTextOf(aCatalogue, country, TreatyIncome::BondCoupon);
+        const auto cashText = treatyTextOf(aCatalogue, country, TreatyIncome::CashInterest);
+        std::vector<const TreatyRow*> asked;
+
+        for (const auto& row : rows)
+        {
+            const auto& text = row.mIncome == TreatyIncome::BondCoupon ? couponText : cashText;
+
+            if (text)
+            {
+                aResult.mOtherReport.mRows[row.mIndex].mTreatyClaim =
+                    TreatyClaim{.mStatement = text->first, .mCatalogueRow = text->second};
+            }
+            else
+            {
+                asked.push_back(&row);
+            }
+        }
+
+        if (asked.empty())
+        {
+            continue;
+        }
+
+        std::vector<Isin> isins;
+        std::vector<SourceReference> sources;
+        bool cashInterest = false;
+        Date firstDate = asked.front()->mTaxDate;
+
+        for (const auto* row : asked)
+        {
+            firstDate = std::min(firstDate, row->mTaxDate);
+            sources.insert(sources.end(), row->mSources.begin(), row->mSources.end());
+
+            if (row->mIsin)
+            {
+                isins.push_back(*row->mIsin);
+            }
+            else
+            {
+                cashInterest = true;
+            }
+        }
+
+        DecisionQuestion question{
+            .mType = RequestType::IncomeDetailsRequired,
+            .mAffectedReports = {ReportType::OtherInterest},
+            .mSources = sources,
+            .mTaxDate = firstDate,
+            .mIsin = std::nullopt,
+            .mData = normalizedData(InterestTreatyClaimQuestion{
+                .mYear = aYear,
+                .mCountry = country,
+                .mIsins = std::move(isins),
+                .mCashInterest = cashInterest,
+            }),
+        };
+        const auto* answer = aDecisions.find(question);
+
+        if (answer == nullptr)
+        {
+            aResult.mRequests.push_back(
+                RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = {}});
+
+            continue;
+        }
+
+        // The session accepts only a yes or no answer for this question.
+        if (!std::get<InterestTreatyClaimAnswer>(*answer).mClaim)
+        {
+            continue;
+        }
+
+        for (const auto* row : asked)
+        {
+            aResult.mOtherReport.mRows[row->mIndex].mTreatyClaim =
+                TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt};
+        }
+
+        aResult.mDiagnostics.push_back(
+            incomeDiagnostic(ReportType::OtherInterest,
+                             DiagnosticSeverity::Warning,
+                             ProcessingDiagnosticCode::TreatyClaimDetailsMissing,
+                             makeDiagnosticMessage(MessageKey::TreatyClaimDetailsMissing,
+                                                   {textParam("country", country)}),
+                             sources,
+                             firstDate,
+                             std::nullopt,
+                             std::nullopt));
+    }
+}
+
 } // namespace
 
 InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement,
@@ -750,6 +890,7 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
 
     IncomeEurConverter converter{selection, result.mDiagnostics};
     std::map<Broker, DepositGroup> deposits;
+    std::map<std::string, TreatyGroup> treatyGroups;
     Money total = 0;
     bool depositComplete = true;
     bool hasDeposit = false;
@@ -819,9 +960,12 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
         // A row with a value the form cannot hold is not made, so no partial row is written.
         if (problems.empty())
         {
+            addToTreatyGroup(treatyGroups, payment, row, result.mOtherReport.mRows.size());
             result.mOtherReport.mRows.push_back(std::move(row));
         }
     }
+
+    applyTreatyClaims(result, treatyGroups, aLedger.mYear, aCatalogue, aDecisions);
 
     if (hasDeposit && depositComplete)
     {

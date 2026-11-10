@@ -1,18 +1,18 @@
-country,statement,source,source_revision
-BE,"5/99, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CA,"6/01, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CN,"13/95, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-US,"10/01, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-DE,"22/06, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NO,"7/09, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-RU,"11/96, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-CH,"15/97, 5/137, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-IN,"13/04, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-NL,"4/05, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-IE,"25/02, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-FR,"4/05, 2a odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-GB,"12/08, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-IL,"15/07, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-JP,"5/17, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-FI,"12/04, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
-AT,"4/98, 2 odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+country,income,statement,source,source_revision
+BE,dividend,"5/99, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CA,dividend,"6/01, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CN,dividend,"13/95, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+US,dividend,"10/01, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+DE,dividend,"22/06, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NO,dividend,"7/09, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+RU,dividend,"11/96, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+CH,dividend,"15/97, 5/137, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IN,dividend,"13/04, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+NL,dividend,"4/05, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IE,dividend,"25/02, 2b odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FR,dividend,"4/05, 2a odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+GB,dividend,"12/08, 2. odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+IL,dividend,"15/07, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+JP,dividend,"5/17, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+FI,dividend,"12/04, 2c odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c
+AT,dividend,"4/98, 2 odstavek 10. člena",ib-edavki,22220f546378b638c129ffe4bd6f2c9a3139809c

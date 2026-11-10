@@ -258,7 +258,9 @@ pugi::xml_node beginDocument(pugi::xml_document& aDocument, std::string_view aNa
     return envelope;
 }
 
-void appendHeader(pugi::xml_node aEnvelope, const ReportMetadata& aMetadata) {
+void appendHeader(pugi::xml_node aEnvelope,
+                  const ReportMetadata& aMetadata,
+                  FilingType aFilingType) {
     const auto& taxpayer = aMetadata.mTaxpayer;
     auto header = aEnvelope.append_child("edp:Header");
     auto taxpayerNode = header.append_child("edp:taxpayer");
@@ -280,8 +282,8 @@ void appendHeader(pugi::xml_node aEnvelope, const ReportMetadata& aMetadata) {
 
     auto workflow = header.append_child("edp:Workflow");
 
-    appendText(workflow, "edp:DocumentWorkflowID", workflowCode(aMetadata.mFilingType));
-    appendText(workflow, "edp:DocumentWorkflowName", workflowName(aMetadata.mFilingType));
+    appendText(workflow, "edp:DocumentWorkflowID", workflowCode(aFilingType));
+    appendText(workflow, "edp:DocumentWorkflowName", workflowName(aFilingType));
 }
 
 std::string saveDocument(const pugi::xml_document& aDocument) {

@@ -22,8 +22,9 @@ namespace {
 /// a quantity question a corrected quantity or a cancel. A payer choice question takes a row among
 /// its options or a skip, never a cancel, and a deposit interest total question yes or no, and a
 /// bond type question a bond type or a cancel, and a treaty claim question a valid text or no
-/// claim, never a cancel. A question without question data takes no answer until its processor
-/// defines one, because all questions of its type would be the same question.
+/// claim, and an interest treaty claim question yes or no, never a cancel. A question without
+/// question data takes no answer until its processor defines one, because all questions of its type
+/// would be the same question.
 [[nodiscard]] bool fitsQuestion(const QuestionData& aData, const AnswerValue& aAnswer) {
     const auto fits = [&aAnswer](const auto& aData) {
         using Data = std::decay_t<decltype(aData)>;
@@ -84,6 +85,10 @@ namespace {
 
             return answer != nullptr &&
                    (!answer->mStatement || isValidTreatyStatement(*answer->mStatement));
+        }
+        else if constexpr (std::is_same_v<Data, InterestTreatyClaimQuestion>)
+        {
+            return std::holds_alternative<InterestTreatyClaimAnswer>(aAnswer);
         }
         else
         {
