@@ -21,7 +21,7 @@ using namespace taxbroker;
 constexpr std::string_view kPayersHeader =
     "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
     "source_revision\n";
-constexpr std::string_view kReliefHeader = "country,statement,source,source_revision\n";
+constexpr std::string_view kReliefHeader = "country,income,statement,source,source_revision\n";
 constexpr std::string_view kBrokerHeader =
     "broker,code,name,tax_number,address,country,source,source_revision\n";
 
@@ -47,7 +47,7 @@ ReportingYearLedger ledger2025() {
 /// A catalogue with the given payer rows, one relief statement (BE) and one broker payer.
 ReferenceCatalogue catalogueOf(std::string_view aPayerRows) {
     const std::string payers = std::string{kPayersHeader} + std::string{aPayerRows};
-    const std::string relief = std::string{kReliefHeader} + "BE,Treaty text,manual,\n";
+    const std::string relief = std::string{kReliefHeader} + "BE,dividend,Treaty text,manual,\n";
     const std::string broker =
         std::string{kBrokerHeader} + "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n";
 
@@ -1237,7 +1237,7 @@ TEST(DividendPaymentsTest, AReliefStatementOfThePayerCountryIsTheTreatyClaimOfAT
     orderChronologically(statement);
     RunDecisions decisions;
 
-    ASSERT_EQ(catalogue.reliefStatements("BE").size(), 1U);
+    ASSERT_EQ(catalogue.reliefStatements("BE", TreatyIncome::Dividend).size(), 1U);
 
     const auto result =
         prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
@@ -1302,7 +1302,7 @@ TEST(DividendPaymentsTest, TwoPaymentsOnOneCurrencyAndDayUseOneRate) {
 TEST(DividendPaymentsTest, BlankTaxIsNoClaimAndAsksNoQuestion) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1335,7 +1335,7 @@ TEST(DividendPaymentsTest, UnknownPayerWithTaxIsNoClaimAndAsksNoQuestion) {
     // The ISIN is not in the payer rows, so the row has no country.
     const auto catalogue =
         treatyCatalogueOf("XX0000000028,Payer B,TAX-B,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1366,7 +1366,7 @@ TEST(DividendPaymentsTest, UnknownPayerWithTaxIsNoClaimAndAsksNoQuestion) {
 TEST(DividendPaymentsTest, TaxedDividendOfACountryWithATreatyTextIsClaimedWithoutAQuestion) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1408,7 +1408,7 @@ TEST(DividendPaymentsTest, TaxedDividendOfACountryWithATreatyTextIsClaimedWithou
 TEST(DividendPaymentsTest, ForeignCurrencyClaimKeepsTheConvertedAmounts) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,US,,,issuer,manual,\n",
-                          "US,\"10/01, 2b odstavek 10. člena\",manual,\n");
+                          "US,dividend,\"10/01, 2b odstavek 10. člena\",manual,\n");
     OfficialRateTable rates;
     addFile2025(rates);
     addRate(rates, "USD", "2025-03-14", 125'000'000, 3); // 1 EUR = 1.2500 USD
@@ -1447,7 +1447,7 @@ TEST(DividendPaymentsTest, ForeignCurrencyClaimKeepsTheConvertedAmounts) {
 TEST(DividendPaymentsTest, OnlyTheTaxedRowsOfTheCountryAreClaimed) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1485,7 +1485,7 @@ TEST(DividendPaymentsTest, OnlyTheTaxedRowsOfTheCountryAreClaimed) {
 TEST(DividendPaymentsTest, TwoTaxedPaymentsOfOneIsinAreBothClaimed) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1523,8 +1523,8 @@ TEST(DividendPaymentsTest, TwoTaxedPaymentsOfOneIsinAreBothClaimed) {
 TEST(DividendPaymentsTest, RowsWithTheSameTextClaimWithTheFirstRow) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n"
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n"
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1561,8 +1561,8 @@ TEST(DividendPaymentsTest, RowsWithTheSameTextClaimWithTheFirstRow) {
 TEST(DividendPaymentsTest, RowsWithDifferentTextsAskTheQuestion) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,Treaty text one,manual,\n"
-                          "BE,Treaty text two,manual,\n");
+                          "BE,dividend,Treaty text one,manual,\n"
+                          "BE,dividend,Treaty text two,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1599,7 +1599,7 @@ TEST(DividendPaymentsTest, RowsWithDifferentTextsAskTheQuestion) {
 
 TEST(DividendPaymentsTest, ASuppliedTextNoClaimMayCarryAsksTheQuestion) {
     // The text has 101 characters, one more than a claim may carry, so it is not used.
-    const std::string longRow = "BE," + std::string(101, 'x') + ",manual,\n";
+    const std::string longRow = "BE,dividend," + std::string(101, 'x') + ",manual,\n";
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
                           longRow);
@@ -1634,7 +1634,7 @@ TEST(DividendPaymentsTest, ASuppliedTextIsClaimedWithoutTheSpacesAtItsEnds) {
     // The relief row has two spaces before and one after its text.
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
-                          "BE,  Treaty text BE ,manual,\n");
+                          "BE,dividend,  Treaty text BE ,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1667,7 +1667,7 @@ TEST(DividendPaymentsTest, CountryWithoutATextAsksAQuestionThatDoesNotStopDohDiv
     // The relief file has no SE row.
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1712,7 +1712,7 @@ TEST(DividendPaymentsTest, CountryWithoutATextAsksAQuestionThatDoesNotStopDohDiv
 TEST(DividendPaymentsTest, OwnTextIsAClaimWithoutAReferenceRow) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1753,7 +1753,7 @@ TEST(DividendPaymentsTest, OwnTextIsAClaimWithoutAReferenceRow) {
 TEST(DividendPaymentsTest, NoClaimAnswerLeavesTheRowWithoutAClaim) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {{
@@ -1786,7 +1786,7 @@ TEST(DividendPaymentsTest, TwoCountriesWithoutATextAskTwoQuestionsInCountryOrder
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,CA,,,issuer,manual,\n"
                           "XX0000000028,Payer B,TAX-B,2 Main Street,BE,,,issuer,manual,\n",
-                          "DE,Treaty text DE,manual,\n");
+                          "DE,dividend,Treaty text DE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {
@@ -1842,7 +1842,7 @@ TEST(DividendPaymentsTest, ACountryWithATextIsClaimedAndOnlyACountryWithoutOneIs
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n"
                           "XX0000000028,Payer B,TAX-B,2 Main Street,SE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
     statement.mPresentation.mDividendInstruments = {
@@ -1899,7 +1899,7 @@ TEST(DividendPaymentsTest, ANewTaxedIsinInTheCountryIsANewQuestion) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,SE,,,issuer,manual,\n"
                           "XX0000000028,Payer B,TAX-B,2 Main Street,SE,,,issuer,manual,\n",
-                          "BE,Treaty text BE,manual,\n");
+                          "BE,dividend,Treaty text BE,manual,\n");
     OfficialRateTable rates;
     MergedStatement oneIsin;
     oneIsin.mPresentation.mDividendInstruments = {{
@@ -1949,6 +1949,41 @@ TEST(DividendPaymentsTest, ANewTaxedIsinInTheCountryIsANewQuestion) {
 
     ASSERT_NE(question, nullptr);
     EXPECT_EQ(question->mIsins, (std::vector<Isin>{"XX0000000010", "XX0000000028"}));
+}
+
+TEST(DividendPaymentsTest, AnInterestTextOfThePayerCountryIsNotUsedForADividend) {
+    // BE has a text for cash interest and one for coupons, but none for dividends.
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,BE,,,issuer,manual,\n",
+                          "BE,cash_interest,Cash interest text,manual,\n"
+                          "BE,bond_coupon,Coupon text,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 9'000,      // EUR 0.90
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    // No dividend text: no claim and the question for a text.
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mTreatyClaim, std::nullopt);
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_NE(std::get_if<TreatyClaimQuestion>(&result.mRequests.at(0).mQuestion.mData), nullptr);
 }
 
 } // namespace

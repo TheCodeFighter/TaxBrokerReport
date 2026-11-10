@@ -30,12 +30,12 @@ constexpr std::string_view kIsinB = "XX0000000028"; // same prefix as A, another
 constexpr std::string_view kPayersHeader =
     "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
     "source_revision\n";
-constexpr std::string_view kReliefHeader = "country,statement,source,source_revision\n";
+constexpr std::string_view kReliefHeader = "country,income,statement,source,source_revision\n";
 constexpr std::string_view kBrokerHeader =
     "broker,code,name,tax_number,address,country,source,source_revision\n";
 
 // One valid row each, for the tests that break only one of the other files.
-constexpr std::string_view kOneRelief = "BE,Treaty text,manual,\n";
+constexpr std::string_view kOneRelief = "BE,dividend,Treaty text,manual,\n";
 constexpr std::string_view kOneBroker = "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n";
 
 ReferenceCatalogue
@@ -57,6 +57,20 @@ TEST(ReferenceCatalogueTest, LoadsTheEmbeddedFiles) {
     EXPECT_EQ(catalogue.payers().size(), 282U); // 68 upstream ISINs + the ISINs found
     EXPECT_EQ(catalogue.allReliefStatements().size(), 17U);
     EXPECT_EQ(catalogue.brokerPayers().size(), 6U);
+}
+
+TEST(ReferenceCatalogueTest, TheEmbeddedReliefStatementsAreAllDividendTexts) {
+    // No interest text is built in yet: the 17 upstream rows are dividend texts.
+    const ReferenceCatalogue& catalogue = referenceCatalogue();
+
+    EXPECT_EQ(catalogue.reliefStatements("US", TreatyIncome::Dividend).size(), 1U);
+    EXPECT_TRUE(catalogue.reliefStatements("US", TreatyIncome::CashInterest).empty());
+    EXPECT_TRUE(catalogue.reliefStatements("US", TreatyIncome::BondCoupon).empty());
+
+    for (const auto& entry : catalogue.allReliefStatements())
+    {
+        EXPECT_EQ(entry.mIncome, TreatyIncome::Dividend);
+    }
 }
 
 TEST(ReferenceCatalogueTest, EmbeddedPayersHaveNoKindNoVerificationDateAndTheUpstreamSource) {
@@ -232,7 +246,7 @@ TEST(ReferenceCatalogueTest, IgnoresAnExtraConidColumnOfAnOlderFile) {
 
 TEST(ReferenceCatalogueTest, FindsABrokerPayerByBrokerAndCode) {
     const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
-                                 "BE,Treaty text,manual,\n",
+                                 "BE,dividend,Treaty text,manual,\n",
                                  "IBKR,IB-UK,Broker UK,03958476,Level 20,GB,ib-edavki,abc123\n");
 
     const BrokerPayerEntry* found = catalogue.brokerPayer("IBKR", "IB-UK");
@@ -246,17 +260,51 @@ TEST(ReferenceCatalogueTest, FindsABrokerPayerByBrokerAndCode) {
 }
 
 TEST(ReferenceCatalogueTest, ListsTheReliefStatementsOfACountryInFileOrder) {
-    const auto catalogue =
-        parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
-              "BE,Text one,manual,\nCA,Text two,manual,\nBE,Text three,manual,\n");
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+                                 "BE,dividend,Text one,manual,\n"
+                                 "CA,dividend,Text two,manual,\n"
+                                 "BE,dividend,Text three,manual,\n");
 
-    const auto belgium = catalogue.reliefStatements("BE");
+    const auto belgium = catalogue.reliefStatements("BE", TreatyIncome::Dividend);
 
     ASSERT_EQ(belgium.size(), 2U);
     EXPECT_EQ(belgium[0]->mStatement, "Text one");
     EXPECT_EQ(belgium[1]->mStatement, "Text three");
-    EXPECT_EQ(catalogue.reliefStatements("CA").size(), 1U);
-    EXPECT_TRUE(catalogue.reliefStatements("DE").empty());
+    EXPECT_EQ(catalogue.reliefStatements("CA", TreatyIncome::Dividend).size(), 1U);
+    EXPECT_TRUE(catalogue.reliefStatements("DE", TreatyIncome::Dividend).empty());
+}
+
+TEST(ReferenceCatalogueTest, EachKindOfIncomeHasItsOwnReliefStatementsForACountry) {
+    // US has one text for each kind; the lookup of a kind never returns another kind's text.
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+                                 "US,dividend,Dividend text,manual,\n"
+                                 "US,cash_interest,Cash interest text,manual,\n"
+                                 "US,bond_coupon,Coupon text,manual,\n");
+
+    const auto dividend = catalogue.reliefStatements("US", TreatyIncome::Dividend);
+    const auto cashInterest = catalogue.reliefStatements("US", TreatyIncome::CashInterest);
+    const auto bondCoupon = catalogue.reliefStatements("US", TreatyIncome::BondCoupon);
+
+    ASSERT_EQ(dividend.size(), 1U);
+    EXPECT_EQ(dividend[0]->mStatement, "Dividend text");
+    EXPECT_EQ(dividend[0]->mIncome, TreatyIncome::Dividend);
+
+    ASSERT_EQ(cashInterest.size(), 1U);
+    EXPECT_EQ(cashInterest[0]->mStatement, "Cash interest text");
+    EXPECT_EQ(cashInterest[0]->mIncome, TreatyIncome::CashInterest);
+
+    ASSERT_EQ(bondCoupon.size(), 1U);
+    EXPECT_EQ(bondCoupon[0]->mStatement, "Coupon text");
+    EXPECT_EQ(bondCoupon[0]->mIncome, TreatyIncome::BondCoupon);
+}
+
+TEST(ReferenceCatalogueTest, ACountryWithOnlyOneKindOfReliefStatementHasNoneForTheOthers) {
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+                                 "US,bond_coupon,Coupon text,manual,\n");
+
+    EXPECT_EQ(catalogue.reliefStatements("US", TreatyIncome::BondCoupon).size(), 1U);
+    EXPECT_TRUE(catalogue.reliefStatements("US", TreatyIncome::Dividend).empty());
+    EXPECT_TRUE(catalogue.reliefStatements("US", TreatyIncome::CashInterest).empty());
 }
 
 // --- Load faults ---
@@ -435,20 +483,35 @@ TEST(ReferenceCatalogueTest, RejectsAPayersFileWithAnUnclosedQuote) {
 TEST(ReferenceCatalogueTest, RejectsAnEmptyReliefStatement) {
     expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "relief_statements.csv row 2: the statement is empty",
-                "BE,,manual,\n");
+                "BE,dividend,,manual,\n");
+}
+
+TEST(ReferenceCatalogueTest, RejectsAReliefStatementWithAnUnknownIncome) {
+    // "interest" is not one of dividend, cash_interest and bond_coupon.
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+                "relief_statements.csv row 2: the income is not dividend, cash_interest or "
+                "bond_coupon",
+                "BE,interest,Treaty text,manual,\n");
+}
+
+TEST(ReferenceCatalogueTest, RejectsAReliefStatementWithAnEmptyIncome) {
+    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+                "relief_statements.csv row 2: the income is not dividend, cash_interest or "
+                "bond_coupon",
+                "BE,,Treaty text,manual,\n");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAReliefStatementWithAWrongCountry) {
     expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "relief_statements.csv row 2: the country is not 2 uppercase letters",
-                "Belgium,Treaty text,manual,\n");
+                "Belgium,dividend,Treaty text,manual,\n");
 }
 
 TEST(ReferenceCatalogueTest, RejectsARepeatedBrokerPayer) {
     // Rows 2 and 3 have the broker IBKR and the code IB-X.
     expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "broker_payers.csv row 3: the broker and code are already in the file",
-                "BE,Treaty text,manual,\n",
+                "BE,dividend,Treaty text,manual,\n",
                 "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n"
                 "IBKR,IB-X,Broker Y,456,2 Main Street,GB,manual,\n");
 }
@@ -456,7 +519,7 @@ TEST(ReferenceCatalogueTest, RejectsARepeatedBrokerPayer) {
 TEST(ReferenceCatalogueTest, RejectsABrokerPayerWithoutACode) {
     expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                 "broker_payers.csv row 2: the code is empty",
-                "BE,Treaty text,manual,\n",
+                "BE,dividend,Treaty text,manual,\n",
                 "IBKR,,Broker X,123,1 Main Street,GB,manual,\n");
 }
 
@@ -588,7 +651,7 @@ TEST(ReferenceDataTest, EachSuppliedFileReplacesOnlyTheFileOfItsName) {
     TemporaryFolder folder;
     const auto load = loadReferenceData(
         {folder.write("relief_statements.csv",
-                      std::string{kReliefHeader} + "BE,Treaty text,manual,\n"),
+                      std::string{kReliefHeader} + "BE,dividend,Treaty text,manual,\n"),
          folder.write("broker_payers.csv", std::string{kBrokerHeader} + std::string{kOneBroker})});
 
     ASSERT_TRUE(load.mCatalogue.has_value());
@@ -852,8 +915,9 @@ TEST(ReferenceDataTest, FaultOfAHeaderWithARepeatedColumn) {
 
 TEST(ReferenceDataTest, FaultOfAnEmptyReliefStatementNamesItsFile) {
     TemporaryFolder folder;
-    const auto load = loadReferenceData(
-        {folder.write("relief_statements.csv", std::string{kReliefHeader} + "BE,,manual,\n")});
+    const auto load =
+        loadReferenceData({folder.write("relief_statements.csv",
+                                        std::string{kReliefHeader} + "BE,dividend,,manual,\n")});
 
     ASSERT_TRUE(load.mFault.has_value());
     EXPECT_EQ(load.mFault->mFile, "relief_statements.csv");
@@ -861,6 +925,33 @@ TEST(ReferenceDataTest, FaultOfAnEmptyReliefStatementNamesItsFile) {
     EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileEmptyField);
     EXPECT_EQ(load.mFault->mMessage.mParams,
               (std::vector<MessageParam>{textParam("field", "statement")}));
+}
+
+TEST(ReferenceDataTest, FaultOfAnUnknownTreatyIncomeNamesItsFile) {
+    TemporaryFolder folder;
+    const auto load = loadReferenceData(
+        {folder.write("relief_statements.csv",
+                      std::string{kReliefHeader} + "BE,interest,Treaty text,manual,\n")});
+
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "relief_statements.csv");
+    EXPECT_EQ(load.mFault->mRow, 2U);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileInvalidTreatyIncome);
+}
+
+TEST(ReferenceDataTest, FaultOfAReliefFileWithoutTheIncomeColumn) {
+    // The header lacks income, which dividend texts of an older file do not have.
+    TemporaryFolder folder;
+    const auto load = loadReferenceData(
+        {folder.write("relief_statements.csv",
+                      "country,statement,source,source_revision\nBE,Treaty text,manual,\n")});
+
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "relief_statements.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileMissingColumns);
+    EXPECT_EQ(load.mFault->mMessage.mParams,
+              (std::vector<MessageParam>{numberParam("count", 1), textParam("columns", "income")}));
 }
 
 TEST(ReferenceDataTest, FaultOfARepeatedBrokerAndCode) {

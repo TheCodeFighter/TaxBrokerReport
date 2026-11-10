@@ -3492,4 +3492,83 @@ TEST(ApplicationResultRequestTest, ATreatyTextLimitCountsCharactersNotBytes) {
     EXPECT_FALSE(isValidTreatyStatement(hundredAndOne));
 }
 
+// --- Interest treaty claim question ---
+
+/// An interest treaty claim question for the country US with two coupon ISINs, given out of order.
+InterestTreatyClaimQuestion interestTreatyQuestion() {
+    return InterestTreatyClaimQuestion{.mYear = 2025,
+                                       .mCountry = "US",
+                                       .mIsins = {"XX0000000028", "XX0000000010", "XX0000000028"},
+                                       .mCashInterest = false};
+}
+
+ApplicationResultInput interestTreatyInput(InterestTreatyClaimQuestion aQuestion) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+
+    input.mReports[static_cast<std::size_t>(ReportType::OtherInterest)].mXml = "<obr/>";
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = RequestType::IncomeDetailsRequired,
+                                        .mAffectedReports = {ReportType::OtherInterest},
+                                        .mData = std::move(aQuestion),
+                                    }}};
+
+    return input;
+}
+
+TEST(ApplicationResultRequestTest, AnOpenInterestTreatyQuestionIsListedButDoesNotBlockTheForm) {
+    const auto result =
+        ApplicationResultBuilder::build(interestTreatyInput(interestTreatyQuestion()));
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.report(ReportType::OtherInterest).mRequestIds,
+              std::vector<std::string>{"request-0001"});
+    EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.mStatus, OverallStatus::Success);
+}
+
+TEST(ApplicationResultRequestTest, TheInterestTreatyIsinsAreSortedWithoutRepeats) {
+    const auto result =
+        ApplicationResultBuilder::build(interestTreatyInput(interestTreatyQuestion()));
+    const auto& question = std::get<InterestTreatyClaimQuestion>(result.mRequests.at(0).mData);
+
+    EXPECT_EQ(question.mIsins, (std::vector<Isin>{"XX0000000010", "XX0000000028"}));
+}
+
+TEST(ApplicationResultRequestTest, AnInterestTreatyQuestionOfCashInterestOnlyNeedsNoIsin) {
+    auto question = interestTreatyQuestion();
+
+    question.mIsins.clear();
+    question.mCashInterest = true;
+
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(interestTreatyInput(question)));
+}
+
+TEST(ApplicationResultRequestTest,
+     AnInterestTreatyQuestionWithoutIsinsAndWithoutCashInterestIsRejected) {
+    auto question = interestTreatyQuestion();
+
+    question.mIsins.clear();
+    question.mCashInterest = false;
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(interestTreatyInput(question)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, AnInterestTreatyQuestionCountryOfThreeLettersIsRejected) {
+    auto question = interestTreatyQuestion();
+
+    question.mCountry = "USA";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(interestTreatyInput(question)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, InterestTreatyDataAndTheRequestTypeMustFitEachOther) {
+    auto input = interestTreatyInput(interestTreatyQuestion());
+
+    input.mRequests[0].mQuestion.mType = RequestType::TaxClassificationRequired;
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+}
+
 } // namespace

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:name>Synthetic Taxpayer</edp:name>
+      <edp:address1>Synthetic Street 1</edp:address1>
+      <edp:city>Synthetic City</edp:city>
+      <edp:postNumber>1000</edp:postNumber>
+      <edp:postName>Synthetic City</edp:postName>
+      <edp:birthDate>1990-01-31</edp:birthDate>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_Obr>
+      <SelfReport>false</SelfReport>
+      <Period>2023</Period>
+      <DocumentWorkflowID>O</DocumentWorkflowID>
+      <Email>taxpayer@example.com</Email>
+      <TelephoneNumber>+38600000000</TelephoneNumber>
+      <ResidentOfRepublicOfSlovenia>true</ResidentOfRepublicOfSlovenia>
+      <Country>SI</Country>
+      <Interest>
+        <Date>2023-06-15</Date>
+        <Type>2</Type>
+        <Value>25.00</Value>
+        <ForeignTax>0.00</ForeignTax>
+      </Interest>
+      <Interest>
+        <Date>2023-11-30</Date>
+        <IdentificationNumber>DE307510626</IdentificationNumber>
+        <Name>Trade Republic Bank GmbH</Name>
+        <Address>Brunnenstr. 19-21, 10119 Berlin</Address>
+        <Country>DE</Country>
+        <Type>4</Type>
+        <Value>3.45</Value>
+        <ForeignTax>0.00</ForeignTax>
+        <Country2>DE</Country2>
+      </Interest>
+    </Doh_Obr>
+  </body>
+</Envelope>

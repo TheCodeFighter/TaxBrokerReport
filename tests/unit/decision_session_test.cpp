@@ -2725,4 +2725,80 @@ TEST(DecisionSessionTest, ATreatyQuestionRejectsACancelAndAnotherAnswerType) {
     EXPECT_EQ(session.result().mRunRevision, 1U);
 }
 
+// --- Interest treaty claim question ---
+
+DecisionQuestion interestTreatyQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {ReportType::OtherInterest},
+        .mData = InterestTreatyClaimQuestion{.mYear = 2025,
+                                             .mCountry = "US",
+                                             .mIsins = {"XX0000000010"},
+                                             .mCashInterest = false},
+    };
+}
+
+/// A session whose stage asks the interest treaty question until it is answered.
+DecisionSession interestTreatySession() {
+    DecisionSession session;
+
+    session.start([](RunDecisions& aDecisions) {
+        const auto question = interestTreatyQuestion();
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    });
+
+    return session;
+}
+
+TEST(DecisionSessionTest, AnInterestTreatyQuestionTakesYes) {
+    auto session = interestTreatySession();
+
+    EXPECT_TRUE(
+        session.answer({{"request-0001", 1, InterestTreatyClaimAnswer{.mClaim = true}}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, AnInterestTreatyQuestionTakesNo) {
+    auto session = interestTreatySession();
+
+    EXPECT_TRUE(
+        session.answer({{"request-0001", 1, InterestTreatyClaimAnswer{.mClaim = false}}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, AnInterestTreatyQuestionRejectsATextAndACancel) {
+    auto session = interestTreatySession();
+
+    const auto text = session.answer(
+        {{"request-0001", 1, TreatyClaimAnswer{.mStatement = std::string{"Art. 10(2)"}}}});
+
+    ASSERT_EQ(text.size(), 1U);
+    EXPECT_EQ(text[0].mReason, AnswerRejection::AnswerDoesNotFit);
+
+    const auto cancel = session.answer({{"request-0001", 1, CancelAnswer{}}});
+
+    ASSERT_EQ(cancel.size(), 1U);
+    EXPECT_EQ(cancel[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ADividendTreatyQuestionRejectsAnInterestTreatyAnswer) {
+    auto session = treatySession();
+
+    const auto rejections =
+        session.answer({{"request-0001", 1, InterestTreatyClaimAnswer{.mClaim = true}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
 } // namespace

@@ -23,7 +23,7 @@ using namespace taxbroker;
 constexpr std::string_view kPayersHeader =
     "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
     "source_revision\n";
-constexpr std::string_view kReliefHeader = "country,statement,source,source_revision\n";
+constexpr std::string_view kReliefHeader = "country,income,statement,source,source_revision\n";
 constexpr std::string_view kBrokerHeader =
     "broker,code,name,tax_number,address,country,source,source_revision\n";
 
@@ -49,7 +49,7 @@ ReportingYearLedger ledger2025() {
 /// A catalogue with the given payer rows, one relief statement (BE) and one broker payer.
 ReferenceCatalogue catalogueOf(std::string_view aPayerRows) {
     const std::string payers = std::string{kPayersHeader} + std::string{aPayerRows};
-    const std::string relief = std::string{kReliefHeader} + "BE,Treaty text,manual,\n";
+    const std::string relief = std::string{kReliefHeader} + "BE,dividend,Treaty text,manual,\n";
     const std::string broker =
         std::string{kBrokerHeader} + "IBKR,IB-X,Broker X,123,1 Main Street,GB,manual,\n";
 

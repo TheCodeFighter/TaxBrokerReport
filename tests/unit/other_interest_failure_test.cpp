@@ -27,7 +27,7 @@ constexpr Units kOneUnit = 100'000'000;
 constexpr std::string_view kPayersHeader =
     "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
     "source_revision\n";
-constexpr std::string_view kReliefHeader = "country,statement,source,source_revision\n";
+constexpr std::string_view kReliefHeader = "country,income,statement,source,source_revision\n";
 constexpr std::string_view kBrokerHeader =
     "broker,code,name,tax_number,address,country,source,source_revision\n";
 
@@ -52,7 +52,7 @@ SourceReference source(std::size_t aRow, std::string aTransactionId) {
 /// A catalogue with the given issuer rows and one broker payer for Trade Republic.
 ReferenceCatalogue catalogueOf(std::string_view aPayerRows) {
     const std::string payers = std::string{kPayersHeader} + std::string{aPayerRows};
-    const std::string relief = std::string{kReliefHeader} + "BE,Treaty text,manual,\n";
+    const std::string relief = std::string{kReliefHeader} + "BE,dividend,Treaty text,manual,\n";
     const std::string broker = std::string{kBrokerHeader} +
                                "TR,TR-X,Broker T,TAX-T,\"1 Main Street, Berlin\",DE,manual,\n";
 
@@ -71,7 +71,7 @@ SourceReference sourceOf(Broker aBroker, std::size_t aRow, std::string aTransact
 /// A catalogue with the given issuer rows and one broker payer for each of two brokers.
 ReferenceCatalogue catalogueOfTwoBrokers(std::string_view aPayerRows) {
     const std::string payers = std::string{kPayersHeader} + std::string{aPayerRows};
-    const std::string relief = std::string{kReliefHeader} + "BE,Treaty text,manual,\n";
+    const std::string relief = std::string{kReliefHeader} + "BE,dividend,Treaty text,manual,\n";
     const std::string broker = std::string{kBrokerHeader} +
                                "TR,TR-X,Broker T,TAX-T,\"1 Main Street, Berlin\",DE,manual,\n"
                                "IBKR,IB-X,Broker I,TAX-I,\"2 Main Street, Dublin\",IE,manual,\n";

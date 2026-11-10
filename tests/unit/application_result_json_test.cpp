@@ -2541,4 +2541,77 @@ TEST(ApplicationResultJsonTest, RecordedTreatyAnswersAreATextOrNoClaim) {
     EXPECT_EQ(decisions[0].at("treatyCheck").at("country"), "BE");
 }
 
+TEST(ApplicationResultJsonTest,
+     AnInterestTreatyClaimRequestListsTheCountryTheIsinsAndCashInterest) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+    input.mRequests = {
+        RequestInput{.mQuestion = {.mType = RequestType::IncomeDetailsRequired,
+                                   .mAffectedReports = {ReportType::OtherInterest},
+                                   .mData = InterestTreatyClaimQuestion{.mYear = 2025,
+                                                                        .mCountry = "US",
+                                                                        .mIsins = {"XX0000000010"},
+                                                                        .mCashInterest = true}}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "income_details_required");
+    EXPECT_FALSE(request.contains("isin"));
+    EXPECT_FALSE(request.contains("treatyCheck"));
+    EXPECT_EQ(request.at("interestTreatyCheck"),
+              (nlohmann::json{{"year", 2025},
+                              {"country", "US"},
+                              {"isins", {"XX0000000010"}},
+                              {"cashInterest", true}}));
+}
+
+TEST(ApplicationResultJsonTest, RecordedInterestTreatyAnswersAreClaimOrNoClaim) {
+    ApplicationResult result;
+    const InterestTreatyClaimQuestion question{.mYear = 2025,
+                                               .mCountry = "US",
+                                               .mIsins = {"XX0000000010"},
+                                               .mCashInterest = false};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = InterestTreatyClaimAnswer{.mClaim = true}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = InterestTreatyClaimAnswer{.mClaim = false}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 2U);
+    EXPECT_EQ(decisions[0].at("answer"), "claim");
+    EXPECT_EQ(decisions[1].at("answer"), "no_claim");
+    EXPECT_EQ(decisions[0].at("interestTreatyCheck").at("country"), "US");
+}
+
+TEST(ApplicationResultJsonTest, TheTreatyClaimDetailsMissingWarningHasItsCodeAndTheCountry) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+    auto message =
+        makeDiagnosticMessage(MessageKey::TreatyClaimDetailsMissing, {textParam("country", "US")});
+
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Warning,
+        .mCode = ProcessingDiagnosticCode::TreatyClaimDetailsMissing,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {ReportType::OtherInterest}},
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& diagnostic = json.at("diagnostics").at(0);
+
+    EXPECT_EQ(diagnostic.at("code"), "treaty_claim_details_missing");
+    EXPECT_EQ(diagnostic.at("messageKey"), "treaty_claim_details_missing");
+}
+
 } // namespace

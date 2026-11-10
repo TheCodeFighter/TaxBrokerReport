@@ -322,6 +322,7 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::ReferenceFileInvalidInstrumentKind,
          "reference_file.invalid_instrument_kind",
          {}},
+        {MessageKey::ReferenceFileInvalidTreatyIncome, "reference_file.invalid_treaty_income", {}},
         {MessageKey::ReferenceFileInvalidVerifiedOn, "reference_file.invalid_verified_on", {}},
         {MessageKey::ReferenceFileInvalidSource, "reference_file.invalid_source", {}},
         {MessageKey::ReferenceFileMissingSourceRevision,
@@ -334,6 +335,9 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
         {MessageKey::SlovenianCouponTax, "slovenian_coupon_tax", {}},
         {MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
+        {MessageKey::TreatyClaimDetailsMissing,
+         "treaty_claim_details_missing",
+         {{"country", MessageParamKind::Text}}},
         {MessageKey::TaxClassificationUnknownIncomeConfirmationRequired,
          "tax_classification_unknown.income_confirmation_required",
          {}},
@@ -408,8 +412,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 139U);
-    ASSERT_EQ(expectedMessages().size(), 139U);
+    ASSERT_EQ(definitions.size(), 141U);
+    ASSERT_EQ(expectedMessages().size(), 141U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -443,8 +447,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 139U);
-    EXPECT_EQ(keys.size(), 139U);
+    EXPECT_EQ(ids.size(), 141U);
+    EXPECT_EQ(keys.size(), 141U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -467,7 +471,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 148U); // 139 message keys and 9 terms.
+    ASSERT_EQ(table.size(), 150U); // 141 message keys and 9 terms.
 
     std::set<std::string> tableKeys;
 

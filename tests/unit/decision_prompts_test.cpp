@@ -2254,4 +2254,109 @@ TEST(DecisionPromptsTest, ABondCouponAnswerIsListedInTheSummary) {
               "XX0000000001 Synthetic Payer, payment on 2025-03-10: a bond coupon (Doh-Obr)");
 }
 
+/// An interest treaty claim question for the country US: two coupons and cash interest.
+DecisionQuestion interestTreatyQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {ReportType::OtherInterest},
+        .mData = InterestTreatyClaimQuestion{.mYear = 2025,
+                                             .mCountry = "US",
+                                             .mIsins = {"XX0000000010", "XX0000000028"},
+                                             .mCashInterest = true},
+    };
+}
+
+TEST(DecisionPromptsTest, AnInterestTreatyQuestionNamesTheCountryAndExplainsTheEdavkiStep) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({interestTreatyQuestion()}));
+
+    const auto output = ask(session, "yes\n");
+
+    EXPECT_TRUE(cli::canAsk(interestTreatyQuestion().mData));
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: treaty relief on the interest from US in 2025\n"
+                         "  Foreign tax was withheld on 2 bonds: XX0000000010 XX0000000028, and "
+                         "on cash interest.\n"));
+    EXPECT_TRUE(contains(output, "ReliefStatement DA in Doh-Obr"));
+    EXPECT_TRUE(
+        contains(output, "you fill in\n  the paragraph and article of the treaty in eDavki"));
+    EXPECT_TRUE(contains(output, "Your answer (yes or no):"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{InterestTreatyClaimAnswer{.mClaim = true}});
+}
+
+TEST(DecisionPromptsTest, AnInterestTreatyQuestionOfCashInterestOnlyNamesNoBonds) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {ReportType::OtherInterest},
+        .mData = InterestTreatyClaimQuestion{.mYear = 2025,
+                                             .mCountry = "DE",
+                                             .mIsins = {},
+                                             .mCashInterest = true},
+    }}));
+
+    const auto output = ask(session, "no\n");
+
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: treaty relief on the interest from DE in 2025\n"
+                         "  Foreign tax was withheld on cash interest.\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{InterestTreatyClaimAnswer{.mClaim = false}});
+}
+
+TEST(DecisionPromptsTest, AnUnknownWordAtTheInterestTreatyQuestionIsAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({interestTreatyQuestion()}));
+
+    // `other` is for the dividend question; here only yes or no are answers.
+    const auto output = ask(session, "maybe\nother\nno\n");
+
+    EXPECT_EQ(countOf(output, "Answer yes or no.\n"), 2U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheInterestTreatyQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({interestTreatyQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, TheInterestTreatyAnswersAreListedInTheSummary) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({interestTreatyQuestion()}));
+
+    const auto claimed = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = InterestTreatyClaimAnswer{.mClaim = true},
+    }});
+
+    ASSERT_TRUE(claimed.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "US, interest treaty claim: treaty relief claimed, filled in eDavki");
+
+    const auto deleted = session.deleteAllAnswers(session.result().mRunRevision);
+
+    ASSERT_TRUE(deleted.empty());
+
+    const auto declined = session.answer({DecisionAnswer{
+        .mRequestId = "request-0001",
+        .mRunRevision = session.result().mRunRevision,
+        .mValue = InterestTreatyClaimAnswer{.mClaim = false},
+    }});
+
+    ASSERT_TRUE(declined.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "US, interest treaty claim: no treaty claim");
+}
+
 } // namespace

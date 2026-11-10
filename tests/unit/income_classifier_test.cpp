@@ -109,7 +109,7 @@ ReferenceCatalogue catalogueOf(std::string_view aPayerRows) {
 
     return parseReferenceCatalogue(
         payers,
-        "country,statement,source,source_revision\n",
+        "country,income,statement,source,source_revision\n",
         "broker,code,name,tax_number,address,country,source,source_revision\n"
         "TR,TR-X,Broker T,TAX-T,\"1 Main Street, Berlin\",DE,manual,\n");
 }
@@ -554,7 +554,7 @@ TEST(IncomeClassifierTest, TheRewrittenStatementFeedsTheInterestStageAfterABroke
     const auto catalogue = parseReferenceCatalogue(
         "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
         "source_revision\n",
-        "country,statement,source,source_revision\n",
+        "country,income,statement,source,source_revision\n",
         "broker,code,name,tax_number,address,country,source,source_revision\n");
     const OfficialRateTable rates{};
     DecisionSession session;

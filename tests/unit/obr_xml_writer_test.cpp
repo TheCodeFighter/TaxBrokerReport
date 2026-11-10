@@ -194,7 +194,9 @@ TEST(ObrXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
     expectValidForObrSchema(*result.mXml);
 }
 
-TEST(ObrXmlWriterTest, SelfReportWritesItsWorkflowCode) {
+// eDavki rejects the self-report workflow for this form, so a self-report run writes an
+// original.
+TEST(ObrXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2025,
@@ -205,11 +207,11 @@ TEST(ObrXmlWriterTest, SelfReportWritesItsWorkflowCode) {
     const auto result = ObrXmlWriter::write(metadata, report);
 
     ASSERT_TRUE(result.mXml.has_value());
-    EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowID"), std::vector<std::string>{"I"});
+    EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowID"), std::vector<std::string>{"O"});
     EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowName"),
-              std::vector<std::string>{"SamoPrijava"});
-    EXPECT_EQ(textsOf(*result.mXml, "DocumentWorkflowID"), std::vector<std::string>{"I"});
-    EXPECT_EQ(textsOf(*result.mXml, "SelfReport"), std::vector<std::string>{"true"});
+              std::vector<std::string>{"Original"});
+    EXPECT_EQ(textsOf(*result.mXml, "DocumentWorkflowID"), std::vector<std::string>{"O"});
+    EXPECT_EQ(textsOf(*result.mXml, "SelfReport"), std::vector<std::string>{"false"});
     expectValidForObrSchema(*result.mXml);
 }
 
@@ -969,8 +971,134 @@ TEST(ObrXmlWriterTest, IsinThatIsNotValidXmlTextIsLeftOutOfTheError) {
     expectOneError(result, "Country2", "A Issuer", std::nullopt);
 }
 
-TEST(ObrXmlWriterTest, ATreatyClaimStopsTheFile) {
-    // The form has no place for the claim in this model; it is never dropped silently.
+TEST(ObrXmlWriterTest, AClaimWithoutATextWritesDAOnTheClaimedRowOnly) {
+    // The user claims the treaty and fills in the paragraph and article in eDavki, so the claimed
+    // row has `DA`. The other row has no claim and no element.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BondCoupon{.mIsin = "US0000000002"},
+                .mDate = day("2025-06-15"),
+                .mPayer = {.mName = "Example Issuer Inc",
+                           .mAddress = "1 Example Street, New York",
+                           .mCountry = "US",
+                           .mIdentificationNumber = "US0000000000"},
+                .mGrossInterest = 250'000,                                        // EUR 25.00
+                .mWithholding = {.mForeignTax = 37'500, .mBlankInExport = false}, // EUR 3.75
+                .mSourceCountry = "US",
+                .mTreatyClaim =
+                    TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt},
+            },
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{1}, std::size_t{0}},
+                .mKind = BondCoupon{.mIsin = "FR0000000001"},
+                .mDate = day("2025-07-15"),
+                .mPayer = {.mName = "Example Issuer SA",
+                           .mAddress = "1 Rue Exemple, 75001 Paris",
+                           .mCountry = "FR",
+                           .mIdentificationNumber = "FR0000000000"},
+                .mGrossInterest = 100'000,                                        // EUR 10.00
+                .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false}, // EUR 1.50
+                .mSourceCountry = "FR",
+                .mTreatyClaim = std::nullopt,
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_EQ(*result.mXml, R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_Obr>
+      <SelfReport>false</SelfReport>
+      <Period>2025</Period>
+      <DocumentWorkflowID>O</DocumentWorkflowID>
+      <ResidentOfRepublicOfSlovenia>true</ResidentOfRepublicOfSlovenia>
+      <Country>SI</Country>
+      <Interest>
+        <Date>2025-06-15</Date>
+        <IdentificationNumber>US0000000000</IdentificationNumber>
+        <Name>Example Issuer Inc</Name>
+        <Address>1 Example Street, New York</Address>
+        <Country>US</Country>
+        <Type>2</Type>
+        <Value>25.00</Value>
+        <ForeignTax>3.75</ForeignTax>
+        <Country2>US</Country2>
+        <ReliefStatement>DA</ReliefStatement>
+      </Interest>
+      <Interest>
+        <Date>2025-07-15</Date>
+        <IdentificationNumber>FR0000000000</IdentificationNumber>
+        <Name>Example Issuer SA</Name>
+        <Address>1 Rue Exemple, 75001 Paris</Address>
+        <Country>FR</Country>
+        <Type>2</Type>
+        <Value>10.00</Value>
+        <ForeignTax>1.50</ForeignTax>
+        <Country2>FR</Country2>
+      </Interest>
+    </Doh_Obr>
+  </body>
+</Envelope>
+)xml");
+    expectValidForObrSchema(*result.mXml);
+}
+
+TEST(ObrXmlWriterTest, AClaimWithATextWritesTheText) {
+    // Nothing makes a text today; the model and the writer are ready for it.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BrokerCashInterest{},
+                .mDate = day("2025-03-31"),
+                .mPayer = {.mName = "A Broker", .mCountry = "DE"},
+                .mGrossInterest = 1'000'000,
+                .mWithholding = {.mForeignTax = 10'000, .mBlankInExport = false},
+                .mSourceCountry = "DE",
+                .mTreatyClaim = TreatyClaim{.mStatement = std::string{"2. odstavek 11. člena"},
+                                            .mCatalogueRow = std::nullopt},
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_EQ(textsOf(*result.mXml, "ReliefStatement"),
+              std::vector<std::string>{"2. odstavek 11. člena"});
+    expectValidForObrSchema(*result.mXml);
+}
+
+TEST(ObrXmlWriterTest, AClaimTextOf101CharactersStopsTheFile) {
+    // The schema allows 100 characters; 101 is never cut or dropped.
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2025,
@@ -987,13 +1115,97 @@ TEST(ObrXmlWriterTest, ATreatyClaimStopsTheFile) {
                 .mWithholding = {.mForeignTax = 10'000, .mBlankInExport = false},
                 .mSourceCountry = "DE",
                 .mTreatyClaim =
-                    TreatyClaim{.mStatement = "Example treaty text", .mCatalogueRow = std::nullopt},
+                    TreatyClaim{.mStatement = std::string(101, 'a'), .mCatalogueRow = std::nullopt},
             },
         }};
 
     const auto result = ObrXmlWriter::write(metadata, report);
 
     expectOneError(result, "ReliefStatement", "A Broker", std::nullopt);
+}
+
+TEST(ObrXmlWriterTest, AClaimTextWithASpaceAtItsStartStopsTheFile) {
+    // A claim text is kept trimmed by the session; the writer never trims it.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BrokerCashInterest{},
+                .mDate = day("2025-03-31"),
+                .mPayer = {.mName = "A Broker", .mCountry = "DE"},
+                .mGrossInterest = 1'000'000,
+                .mWithholding = {.mForeignTax = 10'000, .mBlankInExport = false},
+                .mSourceCountry = "DE",
+                .mTreatyClaim = TreatyClaim{.mStatement = std::string{" 2. odstavek"},
+                                            .mCatalogueRow = std::nullopt},
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "A Broker", std::nullopt);
+}
+
+TEST(ObrXmlWriterTest, AClaimOnARowWithoutForeignTaxStopsTheFile) {
+    // A treaty claim needs a foreign tax; it is never dropped silently.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BrokerCashInterest{},
+                .mDate = day("2025-03-31"),
+                .mPayer = {.mName = "A Broker", .mCountry = "DE"},
+                .mGrossInterest = 1'000'000,
+                .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
+                .mSourceCountry = "DE",
+                .mTreatyClaim =
+                    TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt},
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "A Broker", std::nullopt);
+}
+
+TEST(ObrXmlWriterTest, AClaimOnASlovenianPayerStopsTheFile) {
+    // The foreign tax of a Slovenian payer is not written, so a treaty claim has no tax to relieve.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BondCoupon{.mIsin = "SI0000000001"},
+                .mDate = day("2025-03-31"),
+                .mPayer = {.mName = "Issuer SI",
+                           .mAddress = "1 Main Street, Ljubljana",
+                           .mCountry = "SI",
+                           .mTaxNumber = "12345674"},
+                .mGrossInterest = 250'000,
+                .mWithholding = {.mForeignTax = 62'500, .mBlankInExport = false},
+                .mSourceCountry = "SI",
+                .mTreatyClaim =
+                    TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt},
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "Issuer SI", "SI0000000001");
 }
 
 TEST(ObrXmlWriterTest, ACouponErrorHasTheIsinAndTheName) {
