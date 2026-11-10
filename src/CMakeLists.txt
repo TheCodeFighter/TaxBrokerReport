@@ -83,6 +83,7 @@ add_library(taxbroker_core STATIC
     utils/logger.cpp
     utils/numeric_util.cpp
     utils/split_ratio.cpp
+    utils/xml_text.cpp
 )
 
 target_include_directories(taxbroker_core PUBLIC 
@@ -121,6 +122,7 @@ add_library(taxbroker_xml STATIC
     xml/dho_xml_writer.cpp
     xml/div_xml_writer.cpp
     xml/kdvp_xml_writer.cpp
+    xml/obr_xml_writer.cpp
     xml/xml_common.cpp
 )
 

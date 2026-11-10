@@ -51,14 +51,7 @@ bool isSlovenianPayer(const DhoInterestRow& aRow) {
 
 /// The payer name of a row for the context of its errors, only when it is valid XML text.
 ErrorIdentity rowIdentity(const DhoInterestRow& aRow) {
-    ErrorIdentity identity;
-
-    if (aRow.mPayer.mName && !aRow.mPayer.mName->empty() && xmlTextLength(*aRow.mPayer.mName))
-    {
-        identity.mName = aRow.mPayer.mName;
-    }
-
-    return identity;
+    return payerIdentity(aRow.mPayer.mName);
 }
 
 /// Optional text of 1 to `aMaximumLength` characters that XML accepts.
@@ -80,16 +73,6 @@ void checkLimitedText(std::vector<ProcessingDiagnostic>& aDiagnostics,
     }
 }
 
-void checkCountry(std::vector<ProcessingDiagnostic>& aDiagnostics,
-                  std::string_view aField,
-                  const std::optional<std::string>& aCountry,
-                  const ErrorIdentity& aIdentity) {
-    if (aCountry && !isCountryCode(*aCountry))
-    {
-        addOutOfRange(aDiagnostics, kReport, aField, aIdentity);
-    }
-}
-
 void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics, const DhoInterestRow& aRow) {
     const auto identity = rowIdentity(aRow);
     const auto& payer = aRow.mPayer;
@@ -106,8 +89,8 @@ void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics, const DhoInterest
 
     checkLimitedText(aDiagnostics, "Title", payer.mName, kMaximumTitleLength, identity);
     checkLimitedText(aDiagnostics, "Address", payer.mAddress, kMaximumAddressLength, identity);
-    checkCountry(aDiagnostics, "PayerCountryCode", payer.mCountry, identity);
-    checkCountry(aDiagnostics, "SourceCountryCode", aRow.mSourceCountry, identity);
+    checkCountry(aDiagnostics, kReport, "PayerCountryCode", payer.mCountry, identity);
+    checkCountry(aDiagnostics, kReport, "SourceCountryCode", aRow.mSourceCountry, identity);
 
     // The form reports interest above zero: a value that rounds to 0.00 is no payment to file.
     const auto interestCents = roundedCents(aRow.mInterest);

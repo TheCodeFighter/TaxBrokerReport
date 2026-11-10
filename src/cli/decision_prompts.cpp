@@ -160,9 +160,10 @@ std::string_view failureFormName(RequestType aType) {
 
 void writeFailureQuestion(std::ostream& aOut, const DecisionRequest& aRequest) {
     const auto form = failureFormName(aRequest.mType);
+    const bool hasBrokers = !aRequest.mBrokers.empty();
 
     aOut << "Question " << aRequest.mId << ": " << form << " cannot include "
-         << countText(aRequest.mInvestments.size(), "investment", "investments") << ":\n";
+         << unitsText(aRequest.mInvestments.size(), aRequest.mBrokers.size()) << ":\n";
 
     for (const auto& investment : aRequest.mInvestments)
     {
@@ -170,8 +171,15 @@ void writeFailureQuestion(std::ostream& aOut, const DecisionRequest& aRequest) {
              << reasonCodesText(investment) << '\n';
     }
 
-    aOut << "  exclude: write " << form
-         << " without every investment listed here; they are not in the\n"
+    for (const auto& broker : aRequest.mBrokers)
+    {
+        aOut << "  " << brokerCashInterestText(broker) << ": "
+             << reasonCodesText(broker.mReasonCodes) << '\n';
+    }
+
+    aOut << "  exclude: write " << form << " without every "
+         << (hasBrokers ? "investment and broker" : "investment")
+         << " listed here; they are not in the\n"
             "  XML, and the summary lists them. fail: write no "
          << form << ". cancel: no answer, and no\n  " << form << ".\n";
 }
@@ -1027,11 +1035,12 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
     return std::visit(ask, aRequest.mData);
 }
 
-std::string_view failureResolutionText(FailureResolution aChoice) {
+/// The choice as the summary shows it; "items" when the question lists brokers too.
+std::string_view failureResolutionText(FailureResolution aChoice, bool aHasBrokers) {
     switch (aChoice)
     {
     case FailureResolution::ExcludeFailedInstruments:
-        return "leave the failed investments out";
+        return aHasBrokers ? "leave the failed items out" : "leave the failed investments out";
     case FailureResolution::FailReport:
         break;
     }
@@ -1040,13 +1049,13 @@ std::string_view failureResolutionText(FailureResolution aChoice) {
 }
 
 /// The answer as the summary shows it.
-std::string answerText(const AnswerValue& aAnswer) {
-    const auto text = [](const auto& aValue) -> std::string {
+std::string answerText(const AnswerValue& aAnswer, bool aHasBrokers) {
+    const auto text = [aHasBrokers](const auto& aValue) -> std::string {
         using Value = std::decay_t<decltype(aValue)>;
 
         if constexpr (std::is_same_v<Value, FailureResolutionAnswer>)
         {
-            return std::string{failureResolutionText(aValue.mChoice)};
+            return std::string{failureResolutionText(aValue.mChoice, aHasBrokers)};
         }
         else if constexpr (std::is_same_v<Value, CancelAnswer>)
         {
@@ -1274,9 +1283,7 @@ std::string answerLine(const RecordedDecision& aDecision) {
         }
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
-            return countText(aQuestion.mInvestments.size(),
-                             "failed investment",
-                             "failed investments");
+            return failedUnitsText(aQuestion.mInvestments.size(), aQuestion.mBrokers.size());
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
@@ -1350,8 +1357,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
     const bool oneSplit = ratio != nullptr && ratio->mAskSameEvent &&
                           std::holds_alternative<SplitRatioAnswer>(aDecision.mAnswer);
 
+    const auto* failure = std::get_if<FailureResolutionQuestion>(&aDecision.mData);
+    const bool hasBrokers = failure != nullptr && !failure->mBrokers.empty();
+
     return std::visit(questionText, aDecision.mData) + ": " + (oneSplit ? "one split, " : "") +
-           answerText(aDecision.mAnswer);
+           answerText(aDecision.mAnswer, hasBrokers);
 }
 
 } // namespace taxbroker::cli

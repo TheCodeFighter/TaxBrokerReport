@@ -98,6 +98,8 @@ struct DepositInterestReportDHO {
 
 /// Doh-Obr subtype: interest on the cash a broker holds. The writer maps it to its type code.
 struct BrokerCashInterest {
+    Broker mBroker{}; ///< The broker that holds the cash; always set by the creator.
+
     bool operator==(const BrokerCashInterest&) const = default;
 };
 

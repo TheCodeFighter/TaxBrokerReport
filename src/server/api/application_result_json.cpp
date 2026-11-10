@@ -760,6 +760,24 @@ Json bondCheckToJson(const BondTypeQuestion& aQuestion) {
     return check;
 }
 
+/// The failed brokers of a question or an exclusion, with the IDs of their diagnostics.
+Json brokersToJson(const std::vector<RequestBroker>& aBrokers) {
+    Json brokers = Json::array();
+
+    std::transform(aBrokers.begin(),
+                   aBrokers.end(),
+                   std::back_inserter(brokers),
+                   [](const RequestBroker& aBroker) {
+                       return Json{
+                           {"broker", toString(aBroker.mBroker)},
+                           {"reasonCodes", reasonCodesToJson(aBroker.mReasonCodes)},
+                           {"diagnosticIds", aBroker.mDiagnosticIds},
+                       };
+                   });
+
+    return brokers;
+}
+
 Json requestToJson(const DecisionRequest& aRequest) {
     // The keys follow the order of the JSON example in diagnostics.md.
     Json serialized{
@@ -848,6 +866,12 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["options"] = Json::array({toString(FailureResolution::ExcludeFailedInstruments),
                                              toString(FailureResolution::FailReport)});
         serialized["investments"] = std::move(investments);
+
+        // Only the Doh-Obr question has brokers, so the other questions keep their data as it is.
+        if (!aRequest.mBrokers.empty())
+        {
+            serialized["brokers"] = brokersToJson(aRequest.mBrokers);
+        }
     }
 
     return serialized;
@@ -951,6 +975,22 @@ Json decisionToJson(const RecordedDecision& aDecision) {
                        });
 
         serialized["investments"] = std::move(investments);
+
+        if (!failure->mBrokers.empty())
+        {
+            Json brokers = Json::array();
+
+            std::transform(failure->mBrokers.begin(),
+                           failure->mBrokers.end(),
+                           std::back_inserter(brokers),
+                           [](const FailedBroker& aBroker) {
+                               return Json{
+                                   {"broker", toString(aBroker.mBroker)},
+                                   {"reasonCodes", reasonCodesToJson(aBroker.mReasonCodes)},
+                               };
+                           });
+            serialized["brokers"] = std::move(brokers);
+        }
     }
 
     if (const auto* loss = std::get_if<LossEligibilityQuestion>(&aDecision.mData))
@@ -1027,6 +1067,12 @@ Json reportToJson(ReportType aType, const ReportResult& aReport) {
                            };
                        });
         serialized["excludedInvestments"] = std::move(excluded);
+
+        // Only a Doh-Obr exclusion can list brokers; an empty list stays out like for every form.
+        if (!aReport.mExcludedBrokers.empty())
+        {
+            serialized["excludedBrokers"] = brokersToJson(aReport.mExcludedBrokers);
+        }
     }
 
     if (aReport.mFailureResolution)

@@ -91,6 +91,8 @@ struct ApplicationDiagnostic {
     std::optional<std::string> mField;
     std::optional<std::string> mInstrumentName;
     std::optional<Isin> mIsin;
+    /// Set only on an error of one Doh-Obr cash-interest payment: the broker that holds the cash.
+    std::optional<Broker> mCashInterestBroker;
     /// The open request that can resolve this diagnostic.
     std::optional<std::string> mRequestId;
 };
@@ -109,11 +111,22 @@ struct FailedInvestment {
     bool operator==(const FailedInvestment&) const = default;
 };
 
+/// The cash interest of one broker in a failure-resolution question of Doh-Obr: a failing payment
+/// of the cash a broker holds has no ISIN, so the broker is the unit that can be left out.
+struct FailedBroker {
+    Broker mBroker{}; ///< Always set by the creator.
+    std::vector<ApplicationDiagnosticCode> mReasonCodes;
+
+    bool operator==(const FailedBroker&) const = default;
+};
+
 /// The question data of `capital_gains_failure_resolution_required`,
 /// `dividends_failure_resolution_required` and `other_interest_failure_resolution_required`: the
-/// complete list of failed investments.
+/// complete lists of failed investments and, for Doh-Obr only, of brokers whose cash interest
+/// failed.
 struct FailureResolutionQuestion {
     std::vector<FailedInvestment> mInvestments;
+    std::vector<FailedBroker> mBrokers;
 
     bool operator==(const FailureResolutionQuestion&) const = default;
 };
@@ -524,6 +537,14 @@ struct RequestInvestment {
     std::vector<std::string> mDiagnosticIds;
 };
 
+/// A broker whose cash interest failed, as the result shows it.
+struct RequestBroker {
+    Broker mBroker{}; ///< Always set by the creator.
+    std::vector<ApplicationDiagnosticCode> mReasonCodes;
+    /// The linked diagnostics of this broker's cash interest, in diagnostic order.
+    std::vector<std::string> mDiagnosticIds;
+};
+
 struct DecisionRequest {
     /// `request-0001` and so on, assigned after the final sort.
     std::string mId;
@@ -534,6 +555,8 @@ struct DecisionRequest {
     std::optional<Date> mTaxDate;
     std::optional<Isin> mIsin;
     std::vector<RequestInvestment> mInvestments;
+    /// The failed brokers of a Doh-Obr failure question; empty for every other question.
+    std::vector<RequestBroker> mBrokers;
     /// The normalized question data. With mType it is the question an answer is bound to, never
     /// mId.
     QuestionData mData;
@@ -619,6 +642,9 @@ struct ReportInput {
     std::optional<FailureResolution> mFailureResolution;
     /// The investments left out of this form, only with ExcludeFailedInstruments.
     std::vector<FailedInvestment> mExcludedInvestments;
+    /// The brokers whose cash interest is left out of this form, only with
+    /// ExcludeFailedInstruments.
+    std::vector<FailedBroker> mExcludedBrokers;
 };
 
 struct ReportResult {
@@ -635,6 +661,10 @@ struct ReportResult {
     /// diagnostics that the exclusion resolved. Empty unless mFailureResolution is
     /// ExcludeFailedInstruments.
     std::vector<RequestInvestment> mExcludedInvestments;
+    /// The brokers whose cash interest is left out of this form, each with the IDs of the
+    /// diagnostics that the exclusion resolved. Empty unless mFailureResolution is
+    /// ExcludeFailedInstruments.
+    std::vector<RequestBroker> mExcludedBrokers;
     /// Always false until the developer-mode flow exists
     bool mUnsafe{};
 };

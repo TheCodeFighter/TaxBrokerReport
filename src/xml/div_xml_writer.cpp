@@ -40,29 +40,7 @@ std::string_view dividendType(DividendKind aKind) {
 /// The ISIN and the payer name of a row for the context of its errors, each only when it is valid
 /// XML text.
 ErrorIdentity rowIdentity(const DivDividendRow& aRow) {
-    ErrorIdentity identity;
-
-    if (xmlTextLength(aRow.mIsin))
-    {
-        identity.mIsin = aRow.mIsin;
-    }
-
-    if (aRow.mPayer.mName && !aRow.mPayer.mName->empty() && xmlTextLength(*aRow.mPayer.mName))
-    {
-        identity.mName = aRow.mPayer.mName;
-    }
-
-    return identity;
-}
-
-void checkCountry(std::vector<ProcessingDiagnostic>& aDiagnostics,
-                  std::string_view aField,
-                  const std::optional<std::string>& aCountry,
-                  const ErrorIdentity& aIdentity) {
-    if (aCountry && !isCountryCode(*aCountry))
-    {
-        addOutOfRange(aDiagnostics, kReport, aField, aIdentity);
-    }
+    return payerIdentity(aRow.mPayer.mName, aRow.mIsin);
 }
 
 void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics,
@@ -97,8 +75,8 @@ void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics,
     checkPayerText("PayerName", payer.mName);
     checkPayerText("PayerAddress", payer.mAddress);
 
-    checkCountry(aDiagnostics, "PayerCountry", payer.mCountry, identity);
-    checkCountry(aDiagnostics, "SourceCountry", aRow.mSourceCountry, identity);
+    checkCountry(aDiagnostics, kReport, "PayerCountry", payer.mCountry, identity);
+    checkCountry(aDiagnostics, kReport, "SourceCountry", aRow.mSourceCountry, identity);
 
     // The form reports a gross dividend: a value that rounds to 0.00 is no payment to file.
     if (roundedCents(aRow.mGrossIncome) <= 0)

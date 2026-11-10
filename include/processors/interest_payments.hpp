@@ -39,6 +39,10 @@ struct InterestPaymentsResult {
 /// interest and the coupons of other ISINs stay, in their order.
 void excludeCoupons(OtherInterestReportObr& aReport, const std::vector<Isin>& aIsins);
 
+/// Removes the cash-interest rows of the listed brokers, the other half of a Doh-Obr exclusion.
+void excludeBrokerCashInterest(OtherInterestReportObr& aReport,
+                               const std::vector<Broker>& aBrokers);
+
 /// Appends the diagnostics, the requests and the excluded items of the result to aInput, with
 /// their positions moved to the numbering of aInput. The report models stay with the caller.
 void appendInterestPayments(ApplicationResultInput& aInput, InterestPaymentsResult&& aResult);

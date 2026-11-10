@@ -3,13 +3,30 @@
 #include "taxbroker/currency.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <stdexcept>
+#include <string>
 #include <variant>
 
 namespace taxbroker {
 namespace {
 
 constexpr std::string_view kSlovenia = "SI";
+
+/// Eight digits after the prefix `SI`, not all zero (the form's tax number is a positive integer),
+/// the form of a Slovenian VAT identification number.
+bool isSlovenianVatId(const std::string& aNumber) {
+    constexpr std::size_t kDigits = 8;
+
+    const auto isDigit = [](char aCharacter) { return aCharacter >= '0' && aCharacter <= '9'; };
+    const auto isZero = [](char aCharacter) { return aCharacter == '0'; };
+    const auto digits = aNumber.begin() + kSlovenia.size();
+
+    return aNumber.size() == kSlovenia.size() + kDigits &&
+           aNumber.compare(0, kSlovenia.size(), kSlovenia) == 0 &&
+           std::all_of(digits, aNumber.end(), isDigit) &&
+           !std::all_of(digits, aNumber.end(), isZero);
+}
 
 /// The reference rows of a conflict as the options of a payer choice question, sorted.
 PayerChoiceQuestion
@@ -118,12 +135,22 @@ ProcessingDiagnostic incomeDiagnostic(ReportType aReport,
 
 PayerOutcome payerOutcomeOf(const PayerEntry& aEntry) {
     PayerOutcome outcome;
+    std::optional<std::string> taxNumber;
+    std::optional<std::string> identificationNumber = aEntry.mTaxNumber;
+
+    // A Slovenian payer's reference number is `SI` and its eight digits: the forms want the eight
+    // digits as the tax number, and no other identification number.
+    if (aEntry.mCountry == kSlovenia && aEntry.mTaxNumber && isSlovenianVatId(*aEntry.mTaxNumber))
+    {
+        taxNumber = aEntry.mTaxNumber->substr(kSlovenia.size());
+        identificationNumber = std::nullopt;
+    }
 
     outcome.mPayer = IncomePayer{.mName = aEntry.mName,
                                  .mAddress = aEntry.mAddress,
                                  .mCountry = aEntry.mCountry,
-                                 .mTaxNumber = std::nullopt,
-                                 .mIdentificationNumber = aEntry.mTaxNumber,
+                                 .mTaxNumber = taxNumber,
+                                 .mIdentificationNumber = identificationNumber,
                                  .mCatalogueRow = aEntry.mSource};
     outcome.mIsSlovenian = aEntry.mCountry == kSlovenia;
 

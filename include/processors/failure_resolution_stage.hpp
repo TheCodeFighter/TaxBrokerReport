@@ -30,6 +30,13 @@ inline constexpr FailureForm kOtherInterestFailure{
     .mRequest = RequestType::OtherInterestFailureResolutionRequired,
 };
 
+/// What the user chose to leave out of a form: whole investments by ISIN and, for Doh-Obr only,
+/// the cash interest of whole brokers.
+struct ExcludedUnits {
+    std::vector<Isin> mIsins;     ///< Sorted.
+    std::vector<Broker> mBrokers; ///< Sorted; always empty except for Doh-Obr.
+};
+
 class FailureResolutionStage final {
   public:
     /// Asks, or applies the answer to, the choice for the errors of one form that belong to one
@@ -42,6 +49,13 @@ class FailureResolutionStage final {
     /// XML) also blocks the form.
     [[nodiscard]] static std::vector<Isin>
     resolve(ApplicationResultInput& aInput, RunDecisions& aDecisions, const FailureForm& aForm);
+
+    /// The same, and also the brokers whose cash interest the user left out (Doh-Obr only): an
+    /// error of one cash-interest payment names its broker instead of an ISIN. The recorded choice
+    /// is bound to the lists of both, so a changed list asks again.
+    [[nodiscard]] static ExcludedUnits resolveUnits(ApplicationResultInput& aInput,
+                                                    RunDecisions& aDecisions,
+                                                    const FailureForm& aForm);
 };
 
 } // namespace taxbroker

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace taxbroker::cli {
 
@@ -33,17 +34,46 @@ inline std::string investmentText(const Isin& aIsin, const std::string& aName) {
     return aIsin + " " + aName;
 }
 
-/// The reason codes of an investment of a failure question or of an exclusion, in the order of the
-/// result: `incomplete_history, missing_exchange_rate`.
-inline std::string reasonCodesText(const RequestInvestment& aInvestment) {
+/// The reason codes of a failure question entry or of an exclusion, in the order of the result:
+/// `incomplete_history, missing_exchange_rate`.
+inline std::string reasonCodesText(const std::vector<ApplicationDiagnosticCode>& aCodes) {
     std::string text;
 
-    for (const auto& code : aInvestment.mReasonCodes)
+    for (const auto& code : aCodes)
     {
         text += (text.empty() ? "" : ", ") + std::string{api::diagnosticCodeName(code)};
     }
 
     return text;
+}
+
+inline std::string reasonCodesText(const RequestInvestment& aInvestment) {
+    return reasonCodesText(aInvestment.mReasonCodes);
+}
+
+/// What a failed broker is called in a question: the cash interest it holds.
+inline std::string brokerCashInterestText(const RequestBroker& aBroker) {
+    return "Cash interest of " + std::string{brokerName(aBroker.mBroker)};
+}
+
+/// The number of investments, or of items when brokers are listed too, of a failure question.
+inline std::string unitsText(std::size_t aInvestments, std::size_t aBrokers) {
+    if (aBrokers == 0)
+    {
+        return countText(aInvestments, "investment", "investments");
+    }
+
+    return countText(aInvestments + aBrokers, "item", "items");
+}
+
+/// The number of failed investments and brokers of a failure question, for a summary.
+inline std::string failedUnitsText(std::size_t aInvestments, std::size_t aBrokers) {
+    if (aBrokers == 0)
+    {
+        return countText(aInvestments, "failed investment", "failed investments");
+    }
+
+    return countText(aInvestments + aBrokers, "failed item", "failed items");
 }
 
 } // namespace taxbroker::cli

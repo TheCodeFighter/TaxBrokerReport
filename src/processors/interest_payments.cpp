@@ -3,8 +3,10 @@
 #include "processors/bond_years.hpp"
 #include "processors/income_payers.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
+#include "utils/xml_text.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <map>
 #include <optional>
 #include <set>
@@ -23,6 +25,13 @@ constexpr Money kHalfCent = MONEY_SCALE / 200;
 
 /// The residence country of a Slovenian payer.
 constexpr std::string_view kSlovenia = "SI";
+
+// Limits of the Doh-Obr schema that a row must meet. The XML writer has its own copy as a guard
+// (core and XML are separate targets).
+constexpr std::size_t kMaximumIdentificationLength = 30;
+/// EUR 999999999999.9949: the largest amount that rounds to the largest value of 12 digits and 2
+/// decimals, 999999999999.99.
+constexpr Money kLargestObrAmount = 9'999'999'999'999'949;
 
 /// The coupon form's share of the payer helpers. A Slovenian issuer is not left out: its listed
 /// bonds are not subject to the withholding of the payer, so the user reports the coupons.
@@ -357,11 +366,15 @@ std::optional<Amounts> convert(IncomeEurConverter& aConverter,
 ObrInterestRow
 obrRow(const Payment& aPayment, const Amounts& aAmounts, const PayerOutcome& aPayer) {
     const auto& transaction = *aPayment.mTransaction;
-    std::variant<BrokerCashInterest, BondCoupon> kind = BrokerCashInterest{};
+    std::variant<BrokerCashInterest, BondCoupon> kind;
 
     if (aPayment.mRoute == Route::Coupon)
     {
         kind = BondCoupon{.mIsin = aPayment.mInstrument->mIsin.value()};
+    }
+    else
+    {
+        kind = BrokerCashInterest{.mBroker = brokerOf(aPayment)};
     }
 
     return ObrInterestRow{
@@ -374,6 +387,90 @@ obrRow(const Payment& aPayment, const Amounts& aAmounts, const PayerOutcome& aPa
         .mSourceCountry = aPayer.mPayer.mCountry,
         .mTreatyClaim = std::nullopt,
     };
+}
+
+/// The error that a value of a Doh-Obr row does not fit the form. It is found here, before the
+/// failure question, so the user can leave out the coupon's ISIN or the broker's cash interest.
+ProcessingDiagnostic obrValueError(const Payment& aPayment, std::string_view aField) {
+    const auto& metadata = aPayment.mTransaction->mMetadata;
+    auto diagnostic =
+        incomeDiagnostic(ReportType::OtherInterest,
+                         DiagnosticSeverity::Error,
+                         ProcessingDiagnosticCode::XmlValueOutOfRange,
+                         makeDiagnosticMessage(MessageKey::XmlValueOutOfRange,
+                                               {textParam("field", std::string{aField})}),
+                         metadata.mSources,
+                         metadata.mTaxDate,
+                         nameOf(aPayment),
+                         aPayment.mInstrument->mIsin);
+
+    diagnostic.mContext.mField = std::string{aField};
+
+    return diagnostic;
+}
+
+/// Text that XML accepts and that is not empty, within a limit when one is given.
+bool isUsableText(const std::string& aText, std::optional<std::size_t> aMaximumLength) {
+    const auto length = xmlTextLength(aText);
+
+    return length && *length > 0 && (!aMaximumLength || *length <= *aMaximumLength);
+}
+
+/// The fields of a Doh-Obr row that the form cannot hold, in form order. The date, the countries
+/// and the treaty claim cannot fail here, and a value that rounds to 0.00 is no row. The foreign
+/// tax of a Slovenian payer is not written, so its value does not matter.
+std::vector<std::string_view> obrFieldProblems(const ObrInterestRow& aRow) {
+    const auto& payer = aRow.mPayer;
+    std::vector<std::string_view> problems;
+
+    if (payer.mIdentificationNumber &&
+        !isUsableText(*payer.mIdentificationNumber, kMaximumIdentificationLength))
+    {
+        problems.push_back("IdentificationNumber");
+    }
+
+    if (payer.mName && !isUsableText(*payer.mName, std::nullopt))
+    {
+        problems.push_back("Name");
+    }
+
+    if (payer.mAddress && !isUsableText(*payer.mAddress, std::nullopt))
+    {
+        problems.push_back("Address");
+    }
+
+    if (aRow.mGrossInterest > kLargestObrAmount)
+    {
+        problems.push_back("Value");
+    }
+
+    const auto& tax = aRow.mWithholding.mForeignTax;
+
+    if (payer.mCountry != kSlovenia && (tax < 0 || tax > kLargestObrAmount))
+    {
+        problems.push_back("ForeignTax");
+    }
+
+    return problems;
+}
+
+/// Names the broker on every error added since `aFirst` for a cash-interest payment, so that the
+/// failure question can offer to leave that broker's cash interest out.
+void markCashInterestBroker(std::vector<ProcessingDiagnostic>& aDiagnostics,
+                            std::size_t aFirst,
+                            const Payment& aPayment) {
+    if (aPayment.mRoute != Route::Cash)
+    {
+        return;
+    }
+
+    for (auto position = aFirst; position < aDiagnostics.size(); ++position)
+    {
+        if (aDiagnostics[position].mSeverity == DiagnosticSeverity::Error)
+        {
+            aDiagnostics[position].mContext.mCashInterestBroker = brokerOf(aPayment);
+        }
+    }
 }
 
 /// Adds aValue to aSum; on an overflow adds the error to the diagnostics and returns false.
@@ -668,10 +765,12 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
 
         hasDeposit |= payment.mRoute == Route::Deposit;
 
+        const auto firstNewDiagnostic = result.mDiagnostics.size();
         const auto amounts = convert(converter, selection, payment, result.mDiagnostics);
 
         if (!amounts)
         {
+            markCashInterestBroker(result.mDiagnostics, firstNewDiagnostic, payment);
             depositComplete &= payment.mRoute != Route::Deposit;
 
             continue;
@@ -707,7 +806,21 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
             result.mDiagnostics.push_back(slovenianCouponTaxWarning(payment));
         }
 
-        result.mOtherReport.mRows.push_back(obrRow(payment, *amounts, payer));
+        auto row = obrRow(payment, *amounts, payer);
+        const auto problems = obrFieldProblems(row);
+
+        for (const auto field : problems)
+        {
+            result.mDiagnostics.push_back(obrValueError(payment, field));
+        }
+
+        markCashInterestBroker(result.mDiagnostics, firstNewDiagnostic, payment);
+
+        // A row with a value the form cannot hold is not made, so no partial row is written.
+        if (problems.empty())
+        {
+            result.mOtherReport.mRows.push_back(std::move(row));
+        }
     }
 
     if (hasDeposit && depositComplete)
@@ -732,6 +845,18 @@ void excludeCoupons(OtherInterestReportObr& aReport, const std::vector<Isin>& aI
 
         return coupon != nullptr &&
                std::find(aIsins.begin(), aIsins.end(), coupon->mIsin) != aIsins.end();
+    };
+
+    std::erase_if(aReport.mRows, isListed);
+}
+
+void excludeBrokerCashInterest(OtherInterestReportObr& aReport,
+                               const std::vector<Broker>& aBrokers) {
+    const auto isListed = [&aBrokers](const ObrInterestRow& aRow) {
+        const auto* cash = std::get_if<BrokerCashInterest>(&aRow.mKind);
+
+        return cash != nullptr &&
+               std::find(aBrokers.begin(), aBrokers.end(), cash->mBroker) != aBrokers.end();
     };
 
     std::erase_if(aReport.mRows, isListed);

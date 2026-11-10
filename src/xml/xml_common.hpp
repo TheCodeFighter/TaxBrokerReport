@@ -2,6 +2,7 @@
 
 #include "taxbroker/processing_diagnostics.hpp"
 #include "taxbroker/report_models.hpp"
+#include "utils/xml_text.hpp"
 
 #include <pugixml.hpp>
 
@@ -32,10 +33,6 @@ struct MetadataFields {
 /// The first year with four digits, the lowest year of a form that sets no later limit.
 inline constexpr int kFourDigitYear = 1000;
 
-/// The number of characters of a text that XML accepts: valid UTF-8 without control characters
-/// (below U+0020) and without U+FFFE and U+FFFF. Returns nothing for any other text.
-[[nodiscard]] std::optional<std::size_t> xmlTextLength(std::string_view aText);
-
 /// Eight digits, not all zero (the schema type is a positive integer).
 [[nodiscard]] bool isTaxNumber(std::string_view aText);
 
@@ -57,12 +54,24 @@ inline constexpr int kFourDigitYear = 1000;
 [[nodiscard]] std::string_view workflowCode(FilingType aFilingType);
 [[nodiscard]] std::string_view workflowName(FilingType aFilingType);
 
+/// The name of a payer and the ISIN of an instrument for the context of an error, each only when
+/// it is valid XML text; an empty name is left out too.
+[[nodiscard]] ErrorIdentity payerIdentity(const std::optional<std::string>& aName,
+                                          const std::optional<Isin>& aIsin = std::nullopt);
+
 /// Adds one error for a field that the form does not accept. The value is never part of the
 /// message.
 void addOutOfRange(std::vector<ProcessingDiagnostic>& aDiagnostics,
                    ReportType aReport,
                    std::string_view aField,
                    const ErrorIdentity& aIdentity = {});
+
+/// Optional country: an error unless it is absent or two capital letters.
+void checkCountry(std::vector<ProcessingDiagnostic>& aDiagnostics,
+                  ReportType aReport,
+                  std::string_view aField,
+                  const std::optional<std::string>& aCountry,
+                  const ErrorIdentity& aIdentity);
 
 /// Optional text: nothing to check when it is absent.
 void checkText(std::vector<ProcessingDiagnostic>& aDiagnostics,
