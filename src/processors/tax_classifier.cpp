@@ -53,7 +53,8 @@ Choice choiceOf(const AnswerValue& aAnswer) {
                           std::is_same_v<Answer, PayerChoiceAnswer> ||
                           std::is_same_v<Answer, DepositInterestTotalAnswer> ||
                           std::is_same_v<Answer, IncomeTreatmentAnswer> ||
-                          std::is_same_v<Answer, BondTypeAnswer>);
+                          std::is_same_v<Answer, BondTypeAnswer> ||
+                          std::is_same_v<Answer, TreatyClaimAnswer>);
             throw std::logic_error("Only a classification choice or a cancel can answer this.");
         }
     };

@@ -35,10 +35,11 @@ struct ForeignWithholding {
     bool operator==(const ForeignWithholding&) const = default;
 };
 
-/// A treaty claim that the user confirmed. A row without one makes no claim.
+/// A treaty claim of a row with foreign tax: the reference text of its country or one the user
+/// typed. The text is written as the ReliefStatement. A row without one makes no claim.
 struct TreatyClaim {
-    std::string mStatement;                       ///< The treaty article text.
-    std::optional<CatalogueSource> mCatalogueRow; ///< The relief-statement row it came from.
+    std::string mStatement;                       ///< The treaty article text, written to the XML.
+    std::optional<CatalogueSource> mCatalogueRow; ///< The relief-statement row; empty: typed.
 
     bool operator==(const TreatyClaim&) const = default;
 };

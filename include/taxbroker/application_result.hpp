@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -341,6 +342,17 @@ struct BondTypeQuestion {
     bool operator==(const BondTypeQuestion&) const = default;
 };
 
+/// The question data of `income_details_required` for the treaty text of the dividends of one payer
+/// country that had foreign tax in the year and has no usable text in the reference files. The
+/// answer never blocks: no answer is no claim.
+struct TreatyClaimQuestion {
+    int mYear{};              ///< The reporting year.
+    std::string mCountry;     ///< Payer country, 2 uppercase letters.
+    std::vector<Isin> mIsins; ///< ISINs of the rows with foreign tax.
+
+    bool operator==(const TreatyClaimQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
 using QuestionData = std::variant<std::monostate,
@@ -352,7 +364,8 @@ using QuestionData = std::variant<std::monostate,
                                   PayerChoiceQuestion,
                                   DepositInterestTotalQuestion,
                                   IncomeClassificationQuestion,
-                                  BondTypeQuestion>;
+                                  BondTypeQuestion,
+                                  TreatyClaimQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -462,6 +475,25 @@ struct BondTypeAnswer {
     bool operator==(const BondTypeAnswer&) const = default;
 };
 
+/// The answer to a treaty claim question: the treaty text of the claim, or none for no claim. The
+/// text passes isValidTreatyStatement; the session keeps it trimmed.
+struct TreatyClaimAnswer {
+    std::optional<std::string> mStatement;
+
+    bool operator==(const TreatyClaimAnswer&) const = default;
+};
+
+/// The longest treaty text of a claim, in characters (UTF-8 code points).
+inline constexpr std::size_t kMaxTreatyStatementLength = 100;
+
+/// The treaty text without the spaces and no-break spaces at its start and end.
+[[nodiscard]] std::string_view trimmedTreatyStatement(std::string_view aText);
+
+/// True for a text a claim may carry once trimmed (trimmedTreatyStatement): valid UTF-8, not longer
+/// than kMaxTreatyStatementLength characters, not empty, without control characters, and not the
+/// word true or false (any case), which the form reads as yes or no.
+[[nodiscard]] bool isValidTreatyStatement(std::string_view aText);
+
 using AnswerValue = std::variant<FailureResolutionAnswer,
                                  CancelAnswer,
                                  NoOtherActivityAnswer,
@@ -474,7 +506,8 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  PayerChoiceAnswer,
                                  DepositInterestTotalAnswer,
                                  IncomeTreatmentAnswer,
-                                 BondTypeAnswer>;
+                                 BondTypeAnswer,
+                                 TreatyClaimAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {

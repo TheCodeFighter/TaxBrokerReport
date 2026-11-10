@@ -407,7 +407,7 @@ TEST(DivXmlWriterTest, RowsKeepTheModelOrder) {
     expectValidForDivSchema(*result.mXml);
 }
 
-TEST(DivXmlWriterTest, ATreatyClaimWritesTrueWithoutTheTreatyText) {
+TEST(DivXmlWriterTest, ATreatyClaimWritesTheTreatyTextAsTheReliefStatement) {
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2025,
@@ -423,15 +423,15 @@ TEST(DivXmlWriterTest, ATreatyClaimWritesTrueWithoutTheTreatyText) {
             .mGrossIncome = 100'000,
             .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false},
             .mSourceCountry = "US",
-            .mTreatyClaim =
-                TreatyClaim{.mStatement = "Article 10(2)", .mCatalogueRow = std::nullopt},
+            .mTreatyClaim = TreatyClaim{.mStatement = "10/01, 2b odstavek 10. člena",
+                                        .mCatalogueRow = std::nullopt},
         }}};
 
     const auto result = DivXmlWriter::write(metadata, report);
 
     ASSERT_TRUE(result.mXml.has_value());
-    EXPECT_EQ(textsOf(*result.mXml, "ReliefStatement"), std::vector<std::string>{"true"});
-    EXPECT_EQ(result.mXml->find("Article 10(2)"), std::string::npos);
+    EXPECT_EQ(textsOf(*result.mXml, "ReliefStatement"),
+              std::vector<std::string>{"10/01, 2b odstavek 10. člena"});
     expectValidForDivSchema(*result.mXml);
 }
 
@@ -536,6 +536,159 @@ void expectOneError(const XmlWriteResult& aResult,
     {
         EXPECT_FALSE(diagnostic.mContext.mIsin.has_value());
     }
+}
+
+TEST(DivXmlWriterTest, ATreatyTextThatIsNotValidXmlStopsTheFile) {
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{
+        .mRows = {{
+            .mPayment = {StatementEventKind::Dividend, 0, 0},
+            .mIsin = "US0000000001",
+            .mDate = day("2025-03-14"),
+            .mPayer = {.mCountry = "US"},
+            .mKind = DividendKind::Ordinary,
+            .mGrossIncome = 100'000,
+            .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false},
+            .mSourceCountry = "US",
+            // A control character (0x01) is not valid XML text.
+            .mTreatyClaim = TreatyClaim{.mStatement = std::string{"bad\x01text"},
+                                        .mCatalogueRow = std::nullopt},
+        }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, ATreatyClaimWithoutForeignTaxStopsTheFile) {
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{
+        .mRows = {{
+            .mPayment = {StatementEventKind::Dividend, 0, 0},
+            .mIsin = "US0000000001",
+            .mDate = day("2025-03-14"),
+            .mPayer = {.mCountry = "US"},
+            .mKind = DividendKind::Ordinary,
+            .mGrossIncome = 100'000,
+            .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
+            .mSourceCountry = "US",
+            // A claim needs a foreign tax above 0.
+            .mTreatyClaim = TreatyClaim{.mStatement = "10/01, 2b odstavek 10. člena",
+                                        .mCatalogueRow = std::nullopt},
+        }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, AnEmptyTreatyTextStopsTheFile) {
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{
+        .mRows = {{
+            .mPayment = {StatementEventKind::Dividend, 0, 0},
+            .mIsin = "US0000000001",
+            .mDate = day("2025-03-14"),
+            .mPayer = {.mCountry = "US"},
+            .mKind = DividendKind::Ordinary,
+            .mGrossIncome = 100'000,
+            .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false},
+            .mSourceCountry = "US",
+            // An empty text is no claim.
+            .mTreatyClaim = TreatyClaim{.mStatement = "", .mCatalogueRow = std::nullopt},
+        }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, ATreatyTextFalseStopsTheFile) {
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{
+        .mRows = {{
+            .mPayment = {StatementEventKind::Dividend, 0, 0},
+            .mIsin = "US0000000001",
+            .mDate = day("2025-03-14"),
+            .mPayer = {.mCountry = "US"},
+            .mKind = DividendKind::Ordinary,
+            .mGrossIncome = 100'000,
+            .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false},
+            .mSourceCountry = "US",
+            // false is the form's no-claim value, not a treaty text.
+            .mTreatyClaim = TreatyClaim{.mStatement = "false", .mCatalogueRow = std::nullopt},
+        }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, ATreatyTextWithSpacesAtItsEndsStopsTheFile) {
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{
+        .mRows = {{
+            .mPayment = {StatementEventKind::Dividend, 0, 0},
+            .mIsin = "US0000000001",
+            .mDate = day("2025-03-14"),
+            .mPayer = {.mCountry = "US"},
+            .mKind = DividendKind::Ordinary,
+            .mGrossIncome = 100'000,
+            .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false},
+            .mSourceCountry = "US",
+            // The stage and the session trim the text; this one is not trimmed.
+            .mTreatyClaim = TreatyClaim{.mStatement = " Art. 10(2)", .mCatalogueRow = std::nullopt},
+        }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, ATreatyTextOf101CharactersStopsTheFile) {
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{
+        .mRows = {{
+            .mPayment = {StatementEventKind::Dividend, 0, 0},
+            .mIsin = "US0000000001",
+            .mDate = day("2025-03-14"),
+            .mPayer = {.mCountry = "US"},
+            .mKind = DividendKind::Ordinary,
+            .mGrossIncome = 100'000,
+            .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false},
+            .mSourceCountry = "US",
+            // One character more than a claim may carry.
+            .mTreatyClaim =
+                TreatyClaim{.mStatement = std::string(101, 'x'), .mCatalogueRow = std::nullopt},
+        }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "US0000000001");
 }
 
 TEST(DivXmlWriterTest, GrossOfZeroIsRejected) {

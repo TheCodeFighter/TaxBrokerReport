@@ -13,7 +13,7 @@ namespace taxbroker {
 struct DividendPaymentsResult {
     DividendReportDiv mReport;                     ///< Rows in date order, then ledger order.
     std::vector<ExcludedItemInput> mExcludedItems; ///< Excluded Slo payers, one per ISIN.
-    std::vector<RequestInput> mRequests;           ///< Payer choice questions, none blocking.
+    std::vector<RequestInput> mRequests; ///< Payer and treaty text questions, none blocking.
     std::vector<ProcessingDiagnostic> mDiagnostics;
     std::vector<UsedOfficialRate> mUsedRates; ///< One per currency and day, by date, then code.
 };
@@ -21,8 +21,10 @@ struct DividendPaymentsResult {
 /**
  * Builds the Doh-Div rows of the reporting year in ledger order, in EUR at the official rate of
  * the receipt date. A blank tax is 0. Payers are looked up by ISIN; a missing one gives empty
- * payer facts. Slovenian payers are excluded. A payment without a rate has no row and an error of
- * its ISIN. An Unknown currency throws std::logic_error.
+ * payer facts. The taxed rows of a payer country with a treaty text in the reference files are
+ * claimed with it; another country with foreign tax is asked for a text. Slovenian payers are
+ * excluded. A payment without a rate has no row and an error of its ISIN. An Unknown currency
+ * throws std::logic_error.
  */
 [[nodiscard]] DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement,
                                                              const ReportingYearLedger& aLedger,

@@ -77,8 +77,10 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
   1 January to 28 February. A working self-report is expected to mean the original works too, but
   that is an expectation, not a check. Next window: 1 January to 28 February 2027, tax year 2026.
 - **Doh-Div as written by the app.** The writer puts `ReliefStatement` `false` on every row
-  without a treaty claim, in the `true`/`false` format of the earlier app. Only `true` was ever
-  written and imported; `false` is unconfirmed until a draft import accepts it. The same draft
+  without a treaty claim and the treaty text on a claimed row (a claim needs a foreign tax and a
+  payer country). eDavki accepts `true` and `false`, and needs the treaty text to apply the relief;
+  that it accepts the text in the element and `false` is unconfirmed until a draft import accepts
+  them. The same draft
   import checks `SelfReport` (`false`, or `true` for a self-report), `Type` `1` for every row (a
   foreign fund distribution may need `4`; FURS did not say), a row without payer facts and
   without `SourceCountry`, and `ForeignTax` `0.00` on a row whose export had no tax.

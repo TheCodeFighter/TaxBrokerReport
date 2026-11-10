@@ -2592,4 +2592,137 @@ TEST(DecisionSessionTest, AWarningCreatesNoRequest) {
     EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
+// --- Treaty claim question ---
+
+DecisionQuestion treatyQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {kDividends},
+        .mData = TreatyClaimQuestion{.mYear = 2025, .mCountry = "BE", .mIsins = {"XX0000000010"}},
+    };
+}
+
+/// A session whose stage asks the treaty question until it is answered.
+DecisionSession treatySession() {
+    DecisionSession session;
+
+    session.start([](RunDecisions& aDecisions) {
+        const auto question = treatyQuestion();
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    });
+
+    return session;
+}
+
+AnswerValue treatyClaim(std::string aText) {
+    return TreatyClaimAnswer{.mStatement = std::move(aText)};
+}
+
+TEST(DecisionSessionTest, ATreatyQuestionTakesATextAsAClaim) {
+    auto session = treatySession();
+
+    EXPECT_TRUE(session.answer({{"request-0001", 1, treatyClaim("Treaty text BE")}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, ATreatyTextIsRecordedWithoutTheSpacesAtItsEnds) {
+    auto session = treatySession();
+
+    EXPECT_TRUE(session.answer({{"request-0001", 1, treatyClaim("  Art. 10(2) ")}}).empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{TreatyClaimAnswer{.mStatement = "Art. 10(2)"}});
+}
+
+TEST(DecisionSessionTest, ATreatyTextThatIsTrueOnceTrimmedIsRejected) {
+    auto session = treatySession();
+
+    const auto rejections = session.answer({{"request-0001", 1, treatyClaim(" true ")}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ATreatyQuestionTakesNoClaim) {
+    auto session = treatySession();
+
+    EXPECT_TRUE(session.answer({{"request-0001", 1, TreatyClaimAnswer{.mStatement = std::nullopt}}})
+                    .empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, ATreatyTextOf100CharactersIsAccepted) {
+    auto session = treatySession();
+
+    EXPECT_TRUE(session.answer({{"request-0001", 1, treatyClaim(std::string(100, 'x'))}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, AnEmptyTreatyTextIsRejected) {
+    auto session = treatySession();
+
+    const auto rejections = session.answer({{"request-0001", 1, treatyClaim("")}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ATreatyTextOfOnlySpacesIsRejected) {
+    auto session = treatySession();
+
+    const auto rejections = session.answer({{"request-0001", 1, treatyClaim("   ")}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ATreatyTextOf101CharactersIsRejected) {
+    auto session = treatySession();
+
+    const auto rejections =
+        session.answer({{"request-0001", 1, treatyClaim(std::string(101, 'x'))}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ATreatyTextWithALineBreakIsRejected) {
+    auto session = treatySession();
+
+    const auto rejections = session.answer({{"request-0001", 1, treatyClaim("Art. 10\n(2)")}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ATreatyQuestionRejectsACancelAndAnotherAnswerType) {
+    auto session = treatySession();
+
+    const auto cancel = session.answer({{"request-0001", 1, kCancel}});
+    const auto payer = session.answer({{"request-0001", 1, PayerChoiceAnswer{.mPickedOption = 0}}});
+
+    ASSERT_EQ(cancel.size(), 1U);
+    EXPECT_EQ(cancel[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    ASSERT_EQ(payer.size(), 1U);
+    EXPECT_EQ(payer[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
 } // namespace
