@@ -24,7 +24,7 @@ struct ErrorIdentity {
 /// The names of the form's own elements that the shared taxpayer check reports.
 struct MetadataFields {
     std::string_view mYear;  ///< The element with the reporting year.
-    int mMinimumYear;        ///< The first year the form accepts; always set by the writer.
+    int mMinimumYear{};      ///< The first year the form accepts; always set by the writer.
     std::string_view mPhone; ///< The element with the telephone number.
     std::string_view mEmail; ///< The element with the e-mail address.
 };
