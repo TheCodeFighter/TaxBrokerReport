@@ -1416,8 +1416,9 @@ Running `scripts/dump_tr_kdvp.sh` writes the Doh-KDVP XML of the selected year t
 the file is not a complete return; the tool says so.
 
 Running `scripts/report.sh` runs `taxbroker report` in Docker and writes to
-`runtime/report/<year>/`; with `--synthetic` it reads `tests/test_data/cli/report_fixture.csv` and
-`tests/test_data/cli/taxpayer.json`. A real taxpayer file stays below `runtime/`. The script takes
+`runtime/report/<year>/`; with `--synthetic` it reads `tests/test_data/cli/report_fixture.csv`,
+`report_income_fixture.csv` (2024 dividends, bank interest and bond coupons), the made-up USD rates
+`report_ecb_rates.csv` and `tests/test_data/cli/taxpayer.json`, so all four forms are written. A real taxpayer file stays below `runtime/`. The script takes
 the same file options (`--trade-republic`, `--ecb-rates`, `--reference-files`) with the same
 list rule.
 
