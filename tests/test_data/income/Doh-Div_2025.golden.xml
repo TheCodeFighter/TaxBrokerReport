@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:name>Synthetic Taxpayer</edp:name>
+      <edp:address1>Synthetic Street 1</edp:address1>
+      <edp:city>Synthetic City</edp:city>
+      <edp:postNumber>1000</edp:postNumber>
+      <edp:postName>Synthetic City</edp:postName>
+      <edp:birthDate>1990-01-31</edp:birthDate>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <Doh_Div>
+      <Period>2025</Period>
+      <EmailAddress>taxpayer@example.com</EmailAddress>
+      <PhoneNumber>+38600000000</PhoneNumber>
+      <IsResident>true</IsResident>
+      <SelfReport>false</SelfReport>
+    </Doh_Div>
+    <Dividend>
+      <Date>2025-03-14</Date>
+      <PayerIdentificationNumber>942404110</PayerIdentificationNumber>
+      <PayerName>Apple Inc</PayerName>
+      <PayerAddress>1 Infinite Loop, Cupertino, CA 95014</PayerAddress>
+      <PayerCountry>US</PayerCountry>
+      <Type>1</Type>
+      <Value>10.02</Value>
+      <ForeignTax>0.00</ForeignTax>
+      <SourceCountry>US</SourceCountry>
+      <ReliefStatement>false</ReliefStatement>
+    </Dividend>
+    <Dividend>
+      <Date>2025-05-15</Date>
+      <PayerIdentificationNumber>221024240</PayerIdentificationNumber>
+      <PayerName>Johnson &amp; Johnson</PayerName>
+      <PayerAddress>One Johnson &amp; Johnson Plz, New Brunswick, NJ 08933</PayerAddress>
+      <PayerCountry>US</PayerCountry>
+      <Type>1</Type>
+      <Value>15.63</Value>
+      <ForeignTax>2.40</ForeignTax>
+      <SourceCountry>US</SourceCountry>
+      <ReliefStatement>10/01, 2b odstavek 10. člena</ReliefStatement>
+    </Dividend>
+    <Dividend>
+      <Date>2025-06-20</Date>
+      <Type>1</Type>
+      <Value>5.00</Value>
+      <ForeignTax>0.00</ForeignTax>
+      <ReliefStatement>false</ReliefStatement>
+    </Dividend>
+    <Dividend>
+      <Date>2025-09-10</Date>
+      <PayerIdentificationNumber>60746948/0001-12</PayerIdentificationNumber>
+      <PayerName>Banco Bradesco SA</PayerName>
+      <PayerAddress>Núcleo Cidade de Deus, s/n, Vila Yara, Osasco, SP 06029-900</PayerAddress>
+      <PayerCountry>BR</PayerCountry>
+      <Type>1</Type>
+      <Value>4.00</Value>
+      <ForeignTax>0.00</ForeignTax>
+      <SourceCountry>BR</SourceCountry>
+      <ReliefStatement>false</ReliefStatement>
+    </Dividend>
+  </body>
+</Envelope>

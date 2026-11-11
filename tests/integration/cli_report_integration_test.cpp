@@ -3364,8 +3364,8 @@ TEST(CliReportIntegrationTest, ThreeSuppliedReferenceFilesAreAllListedAsSupplied
         "source_revision\n"
         "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n");
     const auto relief = folder.writeText("relief_statements.csv",
-                                         "country,statement,source,source_revision\n"
-                                         "BE,Treaty text,manual,\n");
+                                         "country,income,statement,source,source_revision\n"
+                                         "BE,dividend,Treaty text,manual,\n");
     const auto broker =
         folder.writeText("broker_payers.csv",
                          "broker,code,name,tax_number,address,country,source,source_revision\n"
@@ -6443,6 +6443,107 @@ TEST(CliReportIntegrationTest, TheTerminalAsksTheDepositInterestAllowance) {
     EXPECT_TRUE(
         contains(result.mOut, "bank-deposit interest 2024: above EUR 1,000 with the other banks"));
     EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, TheTerminalAsksWhetherToClaimTheTaxTreatyOnTaxedCashInterest) {
+    // Trade Republic is a broker before 6 December 2023, so this is cash interest of Doh-Obr; its
+    // payer is the broker's company in DE, and the export has EUR 0.20 tax.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "yes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Question request-0001: treaty relief on the interest from DE in 2023\n"
+                         "  Foreign tax was withheld on cash interest.\n"));
+    EXPECT_TRUE(contains(result.mOut, "Your answer (yes or no):"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "DE, interest treaty claim: treaty relief claimed, filled in eDavki"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+}
+
+TEST(CliReportIntegrationTest, WithoutInputTheTaxTreatyQuestionStaysOpenAndDoesNotBlock) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--no-input",
+                             "--trade-republic",
+                             history},
+                            "");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(result.mOut, "Question request-0001"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Open questions: 1\n"
+                         "  request-0001 income_details_required, interest treaty claim for DE\n"));
+}
+
+TEST(CliReportIntegrationTest, ASuppliedBondCouponTextClaimsATaxedCouponWithoutAQuestion) {
+    // The bond is bought on 2023-01-10 and kept, so there is no bond type question. The coupon of
+    // EUR 25.00 has EUR 3.00 tax and its issuer is in US. The supplied relief file has a
+    // bond_coupon text for US, so the coupon is claimed with it: nothing is asked.
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto payers = folder.writeText(
+        "payers.csv",
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision\n"
+        "XX0000000010,Synthetic Issuer US,TAX-U,1 Main Street,US,bond,,issuer,manual,\n");
+    const auto relief = folder.writeText("relief_statements.csv",
+                                         "country,income,statement,source,source_revision\n"
+                                         "US,bond_coupon,2. odstavek 11. člena,manual,\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-01-10T10:00:00Z,2023-01-10,DEFAULT,TRADING,BUY,BOND,Synthetic Bond US,XX0000000010,1000,1,-1000,,,EUR,,,,,synthetic-bond-buy-1,,,,)",
+            R"(2023-03-14T10:00:00Z,2023-03-14,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond US,XX0000000010,,,25.00,,-3.00,EUR,,,,Synthetic bond interest,synthetic-coupon-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--no-input",
+                             "--reference-files",
+                             payers,
+                             relief,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(result.mOut, "Question request-0001"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+    EXPECT_FALSE(contains(result.mOut, "interest treaty claim"));
 }
 
 TEST(CliReportIntegrationTest, TheTerminalAsksWhichOfTwoReferenceRowsIsThePayer) {

@@ -36,8 +36,8 @@ constexpr std::array<std::string_view, 10> kPayerColumns{"isin",
                                                          "isin_source",
                                                          "source",
                                                          "source_revision"};
-constexpr std::array<std::string_view, 4> kReliefStatementColumns{
-    "country", "statement", "source", "source_revision"};
+constexpr std::array<std::string_view, 5> kReliefStatementColumns{
+    "country", "income", "statement", "source", "source_revision"};
 constexpr std::array<std::string_view, 8> kBrokerPayerColumns{
     "broker", "code", "name", "tax_number", "address", "country", "source", "source_revision"};
 
@@ -354,10 +354,31 @@ std::vector<PayerEntry> readPayers(std::string_view aText, CatalogueOrigin aOrig
     return payers;
 }
 
+/// The kind of income of the `income` column, or none for another text.
+std::optional<TreatyIncome> treatyIncomeOf(std::string_view aText) {
+    if (aText == "dividend")
+    {
+        return TreatyIncome::Dividend;
+    }
+
+    if (aText == "cash_interest")
+    {
+        return TreatyIncome::CashInterest;
+    }
+
+    if (aText == "bond_coupon")
+    {
+        return TreatyIncome::BondCoupon;
+    }
+
+    return std::nullopt;
+}
+
 std::vector<ReliefStatementEntry> readReliefStatements(std::string_view aText,
                                                        CatalogueOrigin aOrigin) {
     const CsvTable table = readFile(kReliefStatementsFile, aText, kReliefStatementColumns);
     const std::size_t countryColumn = table.columnIndex("country");
+    const std::size_t incomeColumn = table.columnIndex("income");
     const std::size_t statementColumn = table.columnIndex("statement");
     const std::size_t sourceColumn = table.columnIndex("source");
     const std::size_t revisionColumn = table.columnIndex("source_revision");
@@ -370,10 +391,22 @@ std::vector<ReliefStatementEntry> readReliefStatements(std::string_view aText,
         const auto& fields = row.mFields;
 
         requireCountry(kReliefStatementsFile, number, fields[countryColumn]);
+
+        const auto income = treatyIncomeOf(fields[incomeColumn]);
+
+        if (!income)
+        {
+            failRow(kReliefStatementsFile,
+                    number,
+                    "the income is not dividend, cash_interest or bond_coupon",
+                    MessageKey::ReferenceFileInvalidTreatyIncome);
+        }
+
         requireText(kReliefStatementsFile, number, fields[statementColumn], "statement");
 
         statements.push_back(ReliefStatementEntry{
             .mCountry = fields[countryColumn],
+            .mIncome = *income,
             .mStatement = fields[statementColumn],
             .mSource = readSource(kReliefStatementsFile,
                                   number,
@@ -520,12 +553,12 @@ PayerLookup ReferenceCatalogue::findPayer(std::string_view aIsin) const {
 }
 
 std::vector<const ReliefStatementEntry*>
-ReferenceCatalogue::reliefStatements(std::string_view aCountry) const {
+ReferenceCatalogue::reliefStatements(std::string_view aCountry, TreatyIncome aIncome) const {
     std::vector<const ReliefStatementEntry*> statements;
 
     for (const ReliefStatementEntry& entry : *mReliefStatements)
     {
-        if (entry.mCountry == aCountry)
+        if (entry.mCountry == aCountry && entry.mIncome == aIncome)
         {
             statements.push_back(&entry);
         }

@@ -181,31 +181,6 @@ struct TreatyGroup {
     Date mFirstDate;
 };
 
-/// The trimmed treaty text of a country and its reference row, or none when the country has no row,
-/// its rows give different texts or the text is not a valid claim text.
-std::optional<std::pair<std::string, CatalogueSource>>
-treatyTextOf(const ReferenceCatalogue& aCatalogue, const std::string& aCountry) {
-    const auto rows = aCatalogue.reliefStatements(aCountry);
-
-    if (rows.empty())
-    {
-        return std::nullopt;
-    }
-
-    const auto text = trimmedTreatyStatement(rows.front()->mStatement);
-    const auto differs = [text](const ReliefStatementEntry* aRow) {
-        return trimmedTreatyStatement(aRow->mStatement) != text;
-    };
-
-    // A supplied text that no claim may carry (too long, a control character) is no text.
-    if (std::any_of(rows.begin(), rows.end(), differs) || !isValidTreatyStatement(text))
-    {
-        return std::nullopt;
-    }
-
-    return std::pair{std::string{text}, rows.front()->mSource};
-}
-
 /// Sets the claim of every country with foreign tax whose reference rows give one treaty text,
 /// without a question. Another country is asked for a text; a typed text is the claim, no answer
 /// or no claim leaves its rows without one.
@@ -216,7 +191,7 @@ void applyTreatyClaims(DividendPaymentsResult& aResult,
                        RunDecisions& aDecisions) {
     for (const auto& [country, group] : aGroups)
     {
-        const auto referenceText = treatyTextOf(aCatalogue, country);
+        const auto referenceText = treatyTextOf(aCatalogue, country, TreatyIncome::Dividend);
 
         if (referenceText)
         {

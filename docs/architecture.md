@@ -781,7 +781,10 @@ email and phone are optional, as in the FURS schema. The model does not check th
 code that reads the user's input does, whether the user typed it or loaded it from a file. The
 taxpayer fields can come from a saved profile once profiles are kept between runs, and the user
 can change any of them before each run. The filing type is chosen for each run (`Original` unless the user picks
-`SelfReport`) and is never saved with the profile. The
+`SelfReport`) and is never saved with the profile. Only the Doh-KDVP writer uses it: eDavki
+does not import the self-report workflow for Doh-Div, Doh-DHO and Doh-Obr (draft import,
+2026-11-10, [`verification.md`](verification.md)), so those writers always write `O` with
+`Original` and `SelfReport` `false`. The
 writer adds constants that are not data: the taxpayer type `FO`, the period dates (1 January and
 31 December of the year), the list type `PLVP`, row numbers and the workflow codes.
 
@@ -877,11 +880,14 @@ The processors build the models. The Doh-Div, Doh-DHO and Doh-Obr writers (`DivX
   left out of the XML, and a warning tells the user to complete it in eDavki. When an ISIN has
   several reference rows, the user picks the row to use or skips; a skip, or no answer, gives
   empty facts, and the report is still made. The schemas allow
-  this (every element of Doh-Div and Doh-DHO is optional); that eDavki accepts such a file is
-  unverified (`verification.md`).
+  this (every element of Doh-Div and Doh-DHO is optional); eDavki imports such a file as a draft
+  and lists critical content errors for the missing facts, which the user completes
+  (`verification.md`).
 - **Treaty claim.** `TreatyClaim` is present only on a row with a foreign tax and a payer country,
   with the treaty text written as `ReliefStatement` and the reference row it came from (none for a
-  text the user typed). The stage makes it from the reference files, or from the user's text.
+  text the user typed). The stage makes it from the reference files, or from the user's text. The
+  text is optional: a Doh-Obr claim the user only said yes to has none and is written as `DA`;
+  Doh-Div always has a text and its writer stops the file for a claim without one.
 - **Filing evidence.** The model holds no evidence list. The user attaches it in eDavki; the result
   tells the user to do so when a row has a foreign tax above 0 or a treaty claim, derived from the
   rows.
@@ -949,6 +955,13 @@ reports stage below; both share the payer, rate and exclusion helpers of
   `below_deposit_interest_threshold`, no answer leaves Doh-DHO `needs_input`. A payment without a
   rate gives no total and no question; the rate error fails Doh-DHO.
 - **Doh-Obr.** One row per payment, in ledger order, with the payer facts and the foreign tax.
+- **Treaty claims.** After the rows, per payer country (not `SI`) with rows that have a foreign
+  tax above 0: a coupon takes the one `bond_coupon` text of the country and cash interest the one
+  `cash_interest` text, without a question. The country's rows of a kind without a text get one
+  `InterestTreatyClaimQuestion` (`income_details_required`, never blocking), yes or no. Yes sets a
+  `TreatyClaim` without a text on those rows and gives one `treaty_claim_details_missing` warning
+  (the user fills in the paragraph and article in eDavki); no answer or no leaves them without a
+  claim. Rows without a payer country get no question. Dividend texts are never used here.
 
 ### Income reports stage
 
@@ -1021,6 +1034,13 @@ The integration tests also read the rows of each document back and run their own
 values written as literals in each test. A valid schema check is not eDavki acceptance: the schema
 makes every F1 to F11 optional. The eDavki draft imports are recorded separately, in
 [`verification.md`](verification.md).
+
+Doh-Div, Doh-DHO and Doh-Obr have one committed golden file per scenario in
+`tests/test_data/income/` (described in its `README.md`). Each is the whole document from a
+synthetic Trade Republic CSV through parse, merge, the income stages and the writer, compared byte
+for byte and checked against the form's schema; the values were worked out by hand and also stand
+as literals in the test. As for Doh-KDVP, a valid schema is not eDavki acceptance; an eDavki draft
+import accepted the Doh-Div, Doh-DHO and Doh-Obr files (2026-11-10, `verification.md`).
 
 ### Doh-DHO XML writer
 

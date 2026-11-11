@@ -878,8 +878,8 @@ below and checks what the form needs.
 **Document.** `Envelope` holds `edp:Header` (as for Doh-KDVP), `edp:Signatures` and `body`. `body`
 has no `edp:bodyContent`: it holds `Doh_Div`, then one `Dividend` per payment, as siblings.
 `Doh_Div` has, in this order: `Period` (the year), `EmailAddress` and `PhoneNumber` when known,
-`IsResident`, `SelfReport` (`true` for a self-report). `ResidentCountry`, `Locked`, `WfTypeU` and
-`Notes` are not written.
+`IsResident`, `SelfReport` (always `false`: the form is always filed as an original).
+`ResidentCountry`, `Locked`, `WfTypeU` and `Notes` are not written.
 
 **One `Dividend` row per payment, in model order:**
 
@@ -913,9 +913,10 @@ without foreign tax or with a text that no claim may carry (see "Treaty claim on
 with spaces at its start or end each stop the file with `xml_value_out_of_range` for Doh-Div and
 its field; the other forms are not affected.
 
-**Still open.** The type code of a fund distribution; `ReliefStatement` `false` and `SelfReport`
-in a draft import; a row without payer facts; the treaty text (`ReliefStatement` instructions
-ask for the paragraph and article). All are listed in `verification.md`.
+**Still open.** The type code of a fund distribution, and that eDavki applies the relief from the
+treaty text (a draft shows no calculation). A draft import accepted `ReliefStatement` `false`, the
+treaty text and a row without payer facts (with content errors the user completes). All are listed
+in `verification.md`.
 
 ## Interest forms and the annual deposit allowance
 
@@ -1009,7 +1010,7 @@ instructions make most fields required, so the writer checks what the form needs
 
 **Document.** `Envelope` holds `edp:Header` (as for Doh-KDVP), `edp:Signatures` and `body` with
 `edp:bodyContent` and `Doh_DHO`. `Doh_DHO` has, in this order: `Doh_DHO_TaxPayerData` (`Email` and
-`PhoneNumber` when known, `SelfReport` (`true` for a self-report), `IsResident`), one
+`PhoneNumber` when known, `SelfReport` (always `false`), `IsResident`), one
 `Doh_DHO_InterestEarned` per model row (at most 999) and `Doh_DHO_Totals`. `WfTypeU`, `Notes`,
 `ResidentCountry` (the template writes `SI`), the country names, `Doh_DHO_Attachment` and the
 late-submission elements are not written.
@@ -1053,8 +1054,9 @@ largest value, more than 999 rows, a year before 2006, a foreign tax on a Sloven
 that is not valid XML each stop the file with `xml_value_out_of_range` for Doh-DHO and its field;
 the other forms are not affected.
 
-**Still open.** Whether eDavki imports a file without `ResidentCountry`, without country names, or
-with a row without payer facts; `SelfReport`. All are listed in `verification.md`.
+**Still open.** Nothing about the import itself: a draft import accepted a file without
+`ResidentCountry`, without country names and with a row without payer facts, with the content
+errors for the missing payer facts that the warning already names (`verification.md`).
 
 ## Doh-Obr form contract
 
@@ -1076,16 +1078,17 @@ workflow), `edp:Signatures` and `body` with `edp:bodyContent` and `Doh_Obr`. `Do
 this order: `SelfReport`, `WfTypeU`, `Notes`, `Period` (the year, for example `2025`),
 `DocumentWorkflowID` (one character: `O` original, `P` correction), `Email`, `TelephoneNumber`,
 `ResidentOfRepublicOfSlovenia` (`true`), `Country` (`SI`), then any number of `Interest` rows.
-`Reduction` is for a non-resident who claims a treaty reduction and is not written. A self-report
-uses the same header as Doh-KDVP (workflow `I`, name `SamoPrijava`), `DocumentWorkflowID` `I` and
-`SelfReport` `true`; this is unverified until a draft import. FURS requires electronic filing
+`Reduction` is for a non-resident who claims a treaty reduction and is not written. The form is
+always filed as an original: header workflow `O` / `Original`, `DocumentWorkflowID` `O` and
+`SelfReport` `false`, also for a run with `--self-report`. A draft import accepted this and
+rejected the self-report encoding (`verification.md`). FURS requires electronic filing
 when more than five interest payments were received in the year.
 
 **Writer.** `ObrXmlWriter` writes `SelfReport`, `Period`, `DocumentWorkflowID`, `Email` and
 `TelephoneNumber` when known, `ResidentOfRepublicOfSlovenia` and, for a resident, `Country` `SI`,
 then one `Interest` row per model row in model order. `WfTypeU`, `Notes`, `Reduction`,
-`ReliefStatement`, the attachment and the late-submission elements are not written. The coupon of
-a bond is the whole coupon: accrued interest paid with a purchase is part of the buyer's cost and
+the attachment and the late-submission elements are not written; `ReliefStatement` is written
+only for a treaty claim (see "Treaty claim" below). The coupon of a bond is the whole coupon: accrued interest paid with a purchase is part of the buyer's cost and
 does not lower the coupon, so a coupon of EUR 50.00 is `Value` `50.00` even when EUR 25.00 of
 accrued interest was paid at purchase.
 
@@ -1103,7 +1106,7 @@ accrued interest was paid at purchase.
 | `Value` | Gross interest in EUR | Gross coupon in EUR | Two decimals, greater than zero, required. |
 | `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0.00` when none), left out for a Slovenian payer whatever the export holds: a Slovenian withholding is not foreign tax (the warning `slovenian_coupon_tax` tells the user). |
 | `Country2` | Payer's country | Payer's country | Source country, two letters; left out when not known. |
-| `ReliefStatement` | Left out | Left out | Optional, at most 100 characters; see below. |
+| `ReliefStatement` | The treaty text of the country's cash interest with a claim, `DA` without a text, otherwise left out | The treaty text of the issuer's country with a claim, `DA` without a text, otherwise left out | Optional, at most 100 characters; see "Treaty claim". |
 
 **Numbers.** `Value` and `ForeignTax` are `Decimal12_2Type`: digits only, at most 12 before the
 point and at most 2 after it, so `12.5`, `0` and `999999999999.99` pass and `-1.00`, `1.234` and
@@ -1123,8 +1126,9 @@ text, a `Value` or `ForeignTax` that rounds above `999999999999.99`, or a negati
 error is `xml_value_out_of_range` with the Doh-Obr field, for the coupon's ISIN or for the cash
 interest of its broker, so the user can leave that investment or broker out (`diagnostics.md`).
 The writer repeats these checks as a guard and also stops the file for a date outside the year, a
-payer tax number that is not eight digits, a country that is not two capital letters and a row with
-a treaty claim, which is never dropped silently.
+payer tax number that is not eight digits, a country that is not two capital letters and a treaty
+claim on a row without foreign tax or with a Slovenian payer, or with a text that no claim may carry
+(more than 100 characters, spaces at its ends), which is never dropped silently.
 
 **Interest-type codes.** The instructions list 1 loans; 2 debt securities, including convertible
 ones; 3 deposits at banks and savings banks not established in Slovenia or another EU state;
@@ -1157,14 +1161,44 @@ a question and without a warning, for a dividend, a bond coupon and cash interes
 instructions require evidence for a foreign-tax deduction (amount, base, final and actually
 paid); the result lists it, and XML generation does not mean it was attached.
 
-**Treaty claim.** The XML instructions describe `ReliefStatement` as `DA` or `NE`; the form
-instructions describe the treaty paragraph and article. They disagree, so the element is not
-written and no exemption is claimed. Unconfirmed: ask FURS together with the type code.
+**Treaty claim.** The form has a column to claim an exemption under an international treaty
+(*Uveljavljam oprostitev po mednarodni pogodbi (odstavek, člen)*). The form instructions say a
+resident enters the paragraph and article of the treaty between Slovenia and the country where the
+income arose; the XML instructions describe the element as `DA` or `NE`. The reference files can
+hold a text per country and kind of income (`relief_statements.csv`, `income` `cash_interest` or
+`bond_coupon`), and a text can differ between the two kinds, so each kind has its own rows. The
+built-in file has no interest text yet; a text is added in a release or in a supplied file. A
+dividend text is never used for interest.
 
-**Still open.** The type code for broker cash interest; the content of `ReliefStatement`; who the
-payer of a bond coupon is (the issuer or the paying broker); the self-report encoding; a real bond
-export for the coupon and maturity shapes; an eDavki draft import of a file with both subtypes
-(`verification.md`).
+- A coupon or cash-interest row with a foreign tax above 0, a payer country other than `SI` and a
+  payer country at all is a row that can claim. A coupon takes the one `bond_coupon` text of its
+  payer country and cash interest the one `cash_interest` text (several rows with the same text
+  count as one, and the first row is the claim's reference row). The claim is made without a
+  question and without a warning, and `ReliefStatement` is the text. Several different texts, or a
+  text that no claim may carry, are no text.
+- The rows of a country without a text of their kind give one question per payer country (the
+  coupons and the cash interest without a text together): claim the tax treaty, yes or no. The
+  question never blocks; no answer is no claim. A country whose taxed rows all have a text gets no
+  question. Rows without foreign tax, with a Slovenian payer (its tax is not foreign tax) or
+  without a payer country are not asked about.
+- Yes: those rows are claimed without a text, `ReliefStatement` is `DA`, and one warning for the
+  country (`treaty_claim_details_missing`) tells the user to fill in the paragraph and article of
+  the treaty in eDavki, because the app has no text for them. The user attaches the evidence of the
+  tax as for any foreign tax.
+- No, or no answer: no claim and no element.
+- The model keeps the claim as the shared `TreatyClaim` with an optional text: a claim with a text
+  writes the text, a claim without one writes `DA` (as the XML instructions describe the element).
+
+A draft import (2026-11-10, `verification.md`) accepted a Doh-Obr file with one row whose
+`ReliefStatement` is a text (`2. odstavek 11. člena`), one with `true` and one without the
+element, with a `Type` `2` and a `Type` `4` row. The writer now writes `DA` instead of `true`
+(the XML instructions' value); `DA` is not imported yet.
+
+**Still open.** The type code for broker cash interest (FURS names none; `4` imports); the treaty
+paragraph and article of interest (built in only where a text was added; otherwise filled in
+eDavki) and whether the text needs the *Uradni list MP* number as the dividend texts have it; who
+the payer of a bond coupon is (the issuer or the paying broker); a real bond export for the coupon
+and maturity shapes (`verification.md`).
 
 `tests/test_data/obr/Doh-Obr_2025_example.xml` is a synthetic file with one row of each subtype,
 checked against the schema by a unit test. This is a schema check only. Row 1 is cash interest:

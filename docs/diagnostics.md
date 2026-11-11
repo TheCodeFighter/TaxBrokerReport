@@ -687,6 +687,19 @@ claim sets the text as the `ReliefStatement` of the country's rows with a foreig
 country with a usable reference text is claimed without a request. The question changes when the set
 of taxed ISINs changes. A recorded answer lists the same `treatyCheck`.
 
+An interest treaty claim request (`income_details_required` for the Doh-Obr interest of one payer
+country with foreign tax in the year, for the rows whose kind of income has no usable treaty text in
+the reference files: a coupon needs a `bond_coupon` text, cash interest a `cash_interest` text; a
+kind with a text is claimed without a request) has no `options` and no `isin` and
+`"interestTreatyCheck"` with `year`, `country`, `isins` (the ISINs of the taxed coupons without a text, sorted; empty when only
+cash interest is asked) and `cashInterest` (`true` when the country's cash interest has tax and no
+text). It is answered with
+`"claim"` or `"no_claim"`; a text and a cancel are rejected with `answer_does_not_fit`, and the
+dividend treaty answers do not answer it. The request is listed with Doh-Obr (`requestIds`) but never
+makes the form `needs_input` and never blocks: no answer is no claim. A claim marks the asked
+rows with `ReliefStatement` `DA` and gives the warning `treaty_claim_details_missing`. A recorded
+answer lists the same `interestTreatyCheck`.
+
 A deposit interest request (`deposit_interest_total_required`) has no `options` and `"depositCheck"`
 with `year`, `importedInterestEur` (the exact total of the imported qualifying interest, four
 decimals) and `limitEur` (`"1000.0000"`). It is asked only when that total is above 0 and at most
@@ -839,7 +852,8 @@ before any file is read), `reference_file.unreadable`, `reference_file.unclosed_
 `reference_file.repeated_column` (`column`), `reference_file.field_count` (`expected`, `found`),
 `reference_file.empty_field` (`field`), `reference_file.invalid_isin`,
 `reference_file.invalid_isin_source`, `reference_file.invalid_country`,
-`reference_file.invalid_instrument_kind`, `reference_file.invalid_verified_on`,
+`reference_file.invalid_instrument_kind`, `reference_file.invalid_treaty_income`,
+`reference_file.invalid_verified_on`,
 `reference_file.invalid_source`, `reference_file.missing_source_revision` and
 `reference_file.duplicate_broker_code`. A message never holds a value of the file.
 
@@ -926,6 +940,7 @@ Additional codes and their default scope are:
 | `interest_payer_not_found` | Warning for Doh-Obr (and Doh-DHO when the payments are deposit interest), once per ISIN of a coupon or once per broker of cash interest: no reference row gave the payer, several rows disagree and the user skipped them or has not answered, or the broker has no single company in `broker_payers.csv`. The rows are made without payer facts and the user completes them in eDavki. |
 | `interest_payment_not_positive` | Warning for the form of the payment, one per payment: an interest payment of 0 or less, or one that rounds to 0.00, is not a row, is not netted against other payments and is not in the deposit total. |
 | `slovenian_coupon_tax` | Warning for Doh-Obr, one per coupon row whose payer has the residence country `SI` and whose export has a tax above 0. A Slovenian withholding is not foreign tax and gives no credit; if the payer already taxed the coupon, the user leaves it out in eDavki. The row is still made. |
+| `treaty_claim_details_missing` | Warning for Doh-Obr, one per payer country after the answer `claim`: the user fills in the paragraph and article of the tax treaty in the claimed rows in eDavki, because the app does not fill them in yet. The parameter `country` is the payer country; the sources and the date are those of the country's taxed payments. |
 | `deposit_interest_add_other_banks` | Warning for Doh-DHO, once per run, after the answer `above_limit`: the form holds only the imported interest, and the user adds the interest of the other banks in eDavki. |
 
 `broker_exchange_rate_used` is also a warning. Other previously

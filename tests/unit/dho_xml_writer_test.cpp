@@ -160,7 +160,9 @@ TEST(DhoXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
     expectValidForDhoSchema(*result.mXml);
 }
 
-TEST(DhoXmlWriterTest, SelfReportWritesItsWorkflowCode) {
+// eDavki rejects the self-report workflow for this form, so a self-report run writes an
+// original.
+TEST(DhoXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2025,
@@ -171,10 +173,10 @@ TEST(DhoXmlWriterTest, SelfReportWritesItsWorkflowCode) {
     const auto result = DhoXmlWriter::write(metadata, report);
 
     ASSERT_TRUE(result.mXml.has_value());
-    EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowID"), std::vector<std::string>{"I"});
+    EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowID"), std::vector<std::string>{"O"});
     EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowName"),
-              std::vector<std::string>{"SamoPrijava"});
-    EXPECT_EQ(textsOf(*result.mXml, "SelfReport"), std::vector<std::string>{"true"});
+              std::vector<std::string>{"Original"});
+    EXPECT_EQ(textsOf(*result.mXml, "SelfReport"), std::vector<std::string>{"false"});
     expectValidForDhoSchema(*result.mXml);
 }
 

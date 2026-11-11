@@ -137,7 +137,9 @@ TEST(DivXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
     expectValidForDivSchema(*result.mXml);
 }
 
-TEST(DivXmlWriterTest, SelfReportWritesItsWorkflowCode) {
+// eDavki rejects the self-report workflow for this form, so a self-report run writes an
+// original.
+TEST(DivXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2025,
@@ -148,10 +150,10 @@ TEST(DivXmlWriterTest, SelfReportWritesItsWorkflowCode) {
     const auto result = DivXmlWriter::write(metadata, report);
 
     ASSERT_TRUE(result.mXml.has_value());
-    EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowID"), std::vector<std::string>{"I"});
+    EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowID"), std::vector<std::string>{"O"});
     EXPECT_EQ(textsOf(*result.mXml, "edp:DocumentWorkflowName"),
-              std::vector<std::string>{"SamoPrijava"});
-    EXPECT_EQ(textsOf(*result.mXml, "SelfReport"), std::vector<std::string>{"true"});
+              std::vector<std::string>{"Original"});
+    EXPECT_EQ(textsOf(*result.mXml, "SelfReport"), std::vector<std::string>{"false"});
     expectValidForDivSchema(*result.mXml);
 }
 
@@ -608,6 +610,31 @@ TEST(DivXmlWriterTest, AnEmptyTreatyTextStopsTheFile) {
             .mSourceCountry = "US",
             // An empty text is no claim.
             .mTreatyClaim = TreatyClaim{.mStatement = "", .mCatalogueRow = std::nullopt},
+        }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, ATreatyClaimWithoutATextStopsTheFile) {
+    // Doh-Div always names the treaty; a claim without a text is never written as `DA`.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{
+        .mRows = {{
+            .mPayment = {StatementEventKind::Dividend, 0, 0},
+            .mIsin = "US0000000001",
+            .mDate = day("2025-03-14"),
+            .mPayer = {.mCountry = "US"},
+            .mKind = DividendKind::Ordinary,
+            .mGrossIncome = 100'000,
+            .mWithholding = {.mForeignTax = 15'000, .mBlankInExport = false},
+            .mSourceCountry = "US",
+            .mTreatyClaim = TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt},
         }}};
 
     const auto result = DivXmlWriter::write(metadata, report);

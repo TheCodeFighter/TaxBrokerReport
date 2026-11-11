@@ -827,6 +827,63 @@ std::optional<AnswerValue> readTreatyAnswer(std::istream& aIn, std::ostream& aOu
     }
 }
 
+/// The question whether to claim the tax treaty on the interest of one payer country.
+void writeInterestTreatyQuestion(std::ostream& aOut,
+                                 const DecisionRequest& aRequest,
+                                 const InterestTreatyClaimQuestion& aQuestion) {
+    aOut << "Question " << aRequest.mId << ": treaty relief on the interest from "
+         << aQuestion.mCountry << " in " << aQuestion.mYear << '\n'
+         << "  Foreign tax was withheld on ";
+
+    if (!aQuestion.mIsins.empty())
+    {
+        aOut << countText(aQuestion.mIsins.size(), "bond", "bonds") << ":";
+
+        for (const auto& isin : aQuestion.mIsins)
+        {
+            aOut << ' ' << isin;
+        }
+
+        aOut << (aQuestion.mCashInterest ? ", and on cash interest" : "") << ".\n";
+    }
+    else
+    {
+        aOut << "cash interest.\n";
+    }
+
+    aOut << "  yes: claim the tax treaty. The rows get ReliefStatement DA in Doh-Obr; you fill "
+            "in\n"
+            "  the paragraph and article of the treaty in eDavki after the import, and attach the\n"
+            "  evidence of the tax. This app does not fill them in yet.\n"
+            "  no: no claim.\n";
+}
+
+std::optional<AnswerValue> readInterestTreatyAnswer(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (yes or no):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "yes")
+        {
+            return InterestTreatyClaimAnswer{.mClaim = true};
+        }
+
+        if (word == "no")
+        {
+            return InterestTreatyClaimAnswer{.mClaim = false};
+        }
+
+        aOut << "Answer yes or no.\n";
+    }
+}
+
 /// The question which of several reference rows is the payer of a dividend.
 void writePayerQuestion(std::ostream& aOut,
                         const DecisionRequest& aRequest,
@@ -989,6 +1046,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
             writeTreatyQuestion(aOut, aRequest, aQuestion);
             return readTreatyAnswer(aIn, aOut);
         }
+        else if constexpr (std::is_same_v<Question, InterestTreatyClaimQuestion>)
+        {
+            writeInterestTreatyQuestion(aOut, aRequest, aQuestion);
+            return readInterestTreatyAnswer(aIn, aOut);
+        }
         else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
         {
             writeDepositQuestion(aOut, aRequest, aQuestion);
@@ -1117,6 +1179,11 @@ std::string answerText(const AnswerValue& aAnswer, bool aHasBrokers) {
             return aValue.mStatement ? "treaty relief claimed: " + *aValue.mStatement
                                      : std::string{"no treaty claim"};
         }
+        else if constexpr (std::is_same_v<Value, InterestTreatyClaimAnswer>)
+        {
+            return aValue.mClaim ? std::string{"treaty relief claimed, filled in eDavki"}
+                                 : std::string{"no treaty claim"};
+        }
         else if constexpr (std::is_same_v<Value, PayerChoiceAnswer>)
         {
             return aValue.mPickedOption ? "payer row " + std::to_string(*aValue.mPickedOption + 1)
@@ -1162,6 +1229,7 @@ bool canAsk(const QuestionData& aData) {
         }
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion> ||
                            std::is_same_v<Question, TreatyClaimQuestion> ||
+                           std::is_same_v<Question, InterestTreatyClaimQuestion> ||
                            std::is_same_v<Question, DepositInterestTotalQuestion> ||
                            std::is_same_v<Question, IncomeClassificationQuestion> ||
                            std::is_same_v<Question, BondTypeQuestion>)
@@ -1305,6 +1373,10 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, TreatyClaimQuestion>)
         {
             return aQuestion.mCountry + ", treaty claim";
+        }
+        else if constexpr (std::is_same_v<Question, InterestTreatyClaimQuestion>)
+        {
+            return aQuestion.mCountry + ", interest treaty claim";
         }
         else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
         {

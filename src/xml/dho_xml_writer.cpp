@@ -145,7 +145,7 @@ void appendTaxpayerData(pugi::xml_node aDho, const ReportMetadata& aMetadata) {
 
     appendOptionalText(data, "Email", taxpayer.mEmail);
     appendOptionalText(data, "PhoneNumber", taxpayer.mPhoneNumber);
-    appendBoolean(data, "SelfReport", aMetadata.mFilingType == FilingType::SelfReport);
+    appendBoolean(data, "SelfReport", false);
     appendBoolean(data, "IsResident", taxpayer.mIsResident);
 }
 
@@ -221,7 +221,8 @@ XmlWriteResult DhoXmlWriter::write(const ReportMetadata& aMetadata,
     pugi::xml_document document;
     auto envelope = beginDocument(document, kDhoNamespace);
 
-    appendHeader(envelope, aMetadata);
+    // The form has no self-report in eDavki: it is always filed as an original.
+    appendHeader(envelope, aMetadata, FilingType::Original);
     envelope.append_child("edp:Signatures");
 
     auto body = envelope.append_child("body");

@@ -1033,6 +1033,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "SlovenianCouponTax";
     case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
         return "DepositInterestAddOtherBanks";
+    case ProcessingDiagnosticCode::TreatyClaimDetailsMissing:
+        return "TreatyClaimDetailsMissing";
     }
 
     return "Unknown";

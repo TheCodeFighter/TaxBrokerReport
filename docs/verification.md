@@ -44,6 +44,17 @@ only.
   `DocumentWorkflowID` `I` with `DocumentWorkflowName` `SamoPrijava`. The `S` and `SelfReport`
   that the legacy app wrote, and that the app wrote until this finding, are wrong. The writer now
   writes `I` and `SamoPrijava`.
+- **2026-11-10, no self-report workflow for the income forms.** A draft import of Doh-Div,
+  Doh-DHO and Doh-Obr with `I` / `SamoPrijava` and `SelfReport` `true` did not work; the same
+  files as originals (`O` / `Original`, `SelfReport` `false`) imported. A Doh-Obr file with `O` in
+  the header and `I` in `DocumentWorkflowID` of the body (a hand edit) did not work either. The
+  three writers therefore always write an original, also for a run with `--self-report`, which
+  changes only Doh-KDVP. The `ib-edavki` project also writes `O` for these forms.
+- **2026-11-10, the content errors of a draft import are expected.** eDavki lists a critical
+  content error for a row that has some payer facts but not all (name, address, payer country,
+  source country), and for a foreign tax without the proof of payment as an attachment. A row
+  without a reference row has empty payer facts, and the app already warns about both (a payer
+  that is not found and the foreign-tax evidence); the user completes them in eDavki.
 - **2026-10-27, no calculation in a draft.** eDavki calculates the tax only after a return is
   submitted, and FURS contacts the taxpayer if something is wrong. A draft import therefore shows
   that eDavki accepts the file and its rows, not that the gain or the holding period is treated as
@@ -69,33 +80,47 @@ Schema `Doh_KDVP_9.xsd` with `EDP-Common-1.xsd` (`resources/xml/schemas/`).
 | P1 | 2025 | `I` | S3 | 2026-10-27 | Imported | Nothing: a draft shows no holding period or tax | The import does not tell whether the row is tax free |
 | P2 | 2023 | `I` | S4 | 2026-10-27 | Imported | Nothing: a draft shows no holding period or tax | The import does not tell whether the row is tax free |
 
+## Results: income forms
+
+Golden files of `tests/test_data/income/` (synthetic), original workflow `O`, a tax number that
+passes eDavki's check. Each file is app output: an integration test compares the writer's
+output with it byte for byte.
+
+| Form | Schema | Tax year | Checked on | Import | Content errors | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Doh-Div | `Doh_Div_3.xsd` | 2024 (the golden file has 2025; a 2025 return already existed) | 2026-11-10 | Imported | Row 3 (no payer facts): name, address, payer country, source country; foreign-tax proof for the row with tax 2.40 | Dates, amounts (4.00, 5.00, 15.63 with tax 2.40, 10.02), `BR` and `US` countries, the Brazilian identification number, the treaty text `10/01, 2b odstavek 10. člena` and `false` as expected |
+| Doh-DHO | `Doh_DHO_4.xsd` | 2025 | 2026-11-10 | Imported | None | |
+| Doh-Obr | `Doh_Obr_2.xsd` | 2025 | 2026-11-10 | Imported | Both coupons (no payer facts): payer country, name, address, source country | `Type` 2, `Value` 16,00 and 15,63, `ForeignTax` 0,00 as expected |
+| Doh-Obr (`Doh-Obr_2023_treaty`) | `Doh_Obr_2.xsd` | 2022 (the golden file has 2023) | 2026-11-10 | Imported | Foreign-tax proof of payment required for the rows with a foreign tax (3.00 and 6.00) | Three rows with payer facts: `ReliefStatement` `2. odstavek 11. člena`, `ReliefStatement` `true` (imported before the change to `DA`), and a `Type` `4` cash-interest row without the element |
+
 ## Not checked yet
 
 - **eDavki's calculation** for any scenario, including the holding-period boundaries (S3, S4, P1,
   P2) and `F7` below the broker quantity (S2): a draft does not show it (see Findings).
-- **The original workflow `O` from the CLI.** eDavki imports an original return only from
-  1 January to 28 February. A working self-report is expected to mean the original works too, but
-  that is an expectation, not a check. Next window: 1 January to 28 February 2027, tax year 2026.
-- **Doh-Div as written by the app.** The writer puts `ReliefStatement` `false` on every row
-  without a treaty claim and the treaty text on a claimed row (a claim needs a foreign tax and a
-  payer country). eDavki accepts `true` and `false`, and needs the treaty text to apply the relief;
-  that it accepts the text in the element and `false` is unconfirmed until a draft import accepts
-  them. The same draft
-  import checks `SelfReport` (`false`, or `true` for a self-report), `Type` `1` for every row (a
-  foreign fund distribution may need `4`; FURS did not say), a row without payer facts and
-  without `SourceCountry`, and `ForeignTax` `0.00` on a row whose export had no tax.
-- **Doh-DHO as written by the app.** In a draft import of a file with a Trade Republic row, check
-  that eDavki accepts the taxpayer block without `ResidentCountry` and `WfTypeU`, the rows without
-  country names, `ForeignTaxPaid` `0.00` on a foreign row, the totals, `SelfReport` (`false`, or
-  `true` for a self-report), and a row without payer facts. The writer exists; no draft was
-  imported.
-- **Doh-Obr as written by the app.** The writer exists; no draft was imported. Check in a
-  draft import of a file with one cash-interest row and one bond-coupon row: that eDavki accepts
-  the interest-type code `4` for broker cash interest (FURS names no code), the self-report
-  encoding, `ForeignTax` `0.00` on a foreign row, a row without `ReliefStatement`, and the payer
-  fields of a coupon (the issuer's facts; unconfirmed). Also a coupon of a Slovenian issuer: its
-  `TaxNumber` (eight digits) and no `ForeignTax`, and whether a draft shows the interest as
-  expected (`tax_rules.md`, "Doh-Obr form contract").
+- **The original workflow `O` for Doh-KDVP.** Doh-Div, Doh-DHO and Doh-Obr as originals were
+  imported as drafts on 2026-11-10 (see "Results: income forms"), outside 1 January to
+  28 February, so the note in `tests/manual/edavki/README.md` that an original imports only in
+  that window does not hold for these forms. Doh-KDVP as an original was not imported yet.
+- **Doh-Div as written by the app.** A draft import accepted `ReliefStatement` `false` on the rows
+  without a claim and the treaty text on the claimed row, `Type` `1`, `ForeignTax` `0.00` and
+  `SelfReport` `false`. Still open: that eDavki applies the relief from the text (a draft shows no
+  calculation), `Type` for a foreign fund distribution (it may need `4`; FURS did not say), and a
+  row without payer facts only warns: eDavki lists critical content errors for it, which the user
+  completes in eDavki before filing.
+- **Doh-DHO as written by the app.** A draft import accepted the file (taxpayer block without
+  `ResidentCountry` and `WfTypeU`, no country names, the totals, `SelfReport` `false`) with no
+  errors. Still open: a row without payer facts and a row with a foreign tax.
+- **Doh-Obr as written by the app.** Draft imports accepted two coupons of `Type` `2` without
+  payer facts (the only errors were the empty payer facts), and a file with payer facts, a treaty
+  text for interest (`2. odstavek 11. člena`), `ReliefStatement` `true` (the writer now writes `DA`, not imported yet), and broker cash interest
+  of `Type` `4` (see "Results: income forms"). Still open: whether eDavki shows a `true` row as a
+  claim the user completes with the paragraph and article (not recorded), and whether an interest text needs the
+  *Uradni list MP* number (the built-in file has no interest text yet); the interest-type code
+  for broker cash interest (FURS names none, `4` imports); the payer fields of a coupon (the
+  issuer's facts; unconfirmed); a coupon of a Slovenian issuer (its `TaxNumber`, eight digits, and
+  no `ForeignTax`); whether a draft shows the interest as expected (`tax_rules.md`, "Doh-Obr form
+  contract"). `Doh-Obr_2023.golden.xml` (a self-report run written as an original) is not
+  imported; its rows have the shapes already imported.
 - **S5, a loss blocked by the 30-day rule (`F10` false)** (`tests/manual/edavki/README.md`, from
   following tasks): not imported yet.
 - **S6 to S8, the rows for split lots and partly blocked losses** (#267): not imported yet. The

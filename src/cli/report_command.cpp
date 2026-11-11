@@ -77,6 +77,7 @@ Options:
   --year YYYY        The tax year, 2000 to 9999.
   --taxpayer FILE    Your details as JSON (see "Taxpayer file" below).
   --self-report      Write a self-report (samoprijava) instead of an original return.
+                     Only Doh-KDVP has one: the income forms are always originals.
   --no-input         Ask no questions: an open question blocks its form (see
                      "Questions" below).
   --out DIR          The folder for the output files. It is created if it is missing.
@@ -1058,6 +1059,10 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         else if constexpr (std::is_same_v<Question, TreatyClaimQuestion>)
         {
             return "treaty claim for " + aQuestion.mCountry;
+        }
+        else if constexpr (std::is_same_v<Question, InterestTreatyClaimQuestion>)
+        {
+            return "interest treaty claim for " + aQuestion.mCountry;
         }
         else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
         {

@@ -236,7 +236,7 @@ XmlWriteResult KdvpXmlWriter::write(const ReportMetadata& aMetadata,
     pugi::xml_document document;
     auto envelope = beginDocument(document, kKdvpNamespace);
 
-    appendHeader(envelope, aMetadata);
+    appendHeader(envelope, aMetadata, aMetadata.mFilingType);
     envelope.append_child("edp:Signatures");
 
     auto body = envelope.append_child("body");

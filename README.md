@@ -69,8 +69,9 @@ scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json --trade-republic 
 ```
 
 Give your whole history, not only the tax year. The XML and a readable summary are written to
-`runtime/report/2025/`. Use `--self-report` for a self-report (*samoprijava*). The command asks
-its questions in the terminal; `--no-input` asks nothing and lists the open questions instead.
+`runtime/report/2025/`. Use `--self-report` for a self-report (*samoprijava*) of Doh-KDVP; the
+income forms are always originals. The command asks its questions in the terminal; `--no-input`
+asks nothing and lists the open questions instead.
 
 More detail: [docker/docker_doc.md](docker/docker_doc.md) (the Docker setup),
 [docs/development.md](docs/development.md) (builds, tests, checks and debug dumps) and

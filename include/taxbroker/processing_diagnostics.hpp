@@ -72,6 +72,8 @@ enum class ProcessingDiagnosticCode {
     SlovenianCouponTax,
     /// A warning: the user adds the interest of the other banks in eDavki.
     DepositInterestAddOtherBanks,
+    /// A warning: the user fills in the treaty paragraph and article of claimed Doh-Obr rows.
+    TreatyClaimDetailsMissing,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

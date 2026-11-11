@@ -35,7 +35,7 @@ files are the source: a company that is added later is a new row with `source` s
 | --- | --- | ---: |
 | `payers.csv` | `isin`, `name`, `tax_number`, `address`, `country`, `instrument_kind`, `verified_on`, `isin_source`, `source`, `source_revision` | 282 |
 | `payers_without_isin.csv` | `ticker`, `ibkr_conid`, `name`, `tax_number`, `address`, `country`, `note`, `source`, `source_revision` | 151 |
-| `relief_statements.csv` | `country`, `statement`, `source`, `source_revision` | 17 |
+| `relief_statements.csv` | `country`, `income`, `statement`, `source`, `source_revision` | 17 |
 | `broker_payers.csv` | `broker`, `code`, `name`, `tax_number`, `address`, `country`, `source`, `source_revision` | 6 |
 
 - `payers.csv`: a payer of dividends, found by its ISIN. Every row has an ISIN, so one row serves
@@ -59,8 +59,13 @@ files are the source: a company that is added later is a new row with `source` s
   several instruments), `instrument_ended` (the ISIN found belongs to a later company, for example
   after a move to another country, not to the company of the row) or `isin_check_digit` (upstream's
   ISIN fails the check digit). The app does not read this file.
-- `relief_statements.csv`: the treaty text that upstream writes into the `ReliefStatement` field of
-  Doh-Div, one per country. The text is Slovenian (a treaty citation).
+- `relief_statements.csv`: the treaty text of a country for the `ReliefStatement` field, one row per
+  country and kind of income. `income` is `dividend` (Doh-Div, the 17 upstream rows),
+  `cash_interest` (Doh-Obr interest on the cash a broker holds) or `bond_coupon` (Doh-Obr bond
+  coupon). The articles of a treaty can differ per kind of income, so a row serves only its own
+  kind. The text is Slovenian (a treaty citation). Upstream has no interest text, so the built-in
+  file has no `cash_interest` or `bond_coupon` row yet: a row is added with `source` `manual` and a
+  source for the text (the treaty or an official FURS page), in a release or in a supplied file.
 - `broker_payers.csv`: the broker companies that pay interest on the cash a broker holds, for
   Doh-Obr and Doh-DHO: the five Interactive Brokers companies and Trade Republic Bank GmbH (`TR`,
   `manual`, from its imprint: Brunnenstr. 19-21, 10119 Berlin, VAT ID `DE307510626`).
@@ -154,7 +159,11 @@ ISIN prefix does not prove where the payer lives.
    the treaty text that a Doh-Div row with a foreign tax and the row's country claims; the writer
    writes it as `ReliefStatement`. The row never shows that the investor is entitled to relief,
    and a row without foreign tax makes no claim (`false`). A country without a usable row is asked
-   for a text.
+   for a text. A row is used only for its own `income`: a Doh-Div row uses a `dividend` text, a
+   Doh-Obr bond coupon a `bond_coupon` text and Doh-Obr cash interest a `cash_interest` text; a
+   text of another kind is never used. A Doh-Obr row of a country without a text of its kind is
+   asked about with a yes or no (`ReliefStatement` `DA`, the paragraph and article are filled in
+   eDavki), once for the country's rows without a text.
 6. **Broker payers** are used only with the broker they name. The payer of a broker's cash
    interest is its only row; a broker with no row or several (such as Interactive Brokers, whose
    export does not say which company holds the cash) has no known payer, and the payer facts stay
@@ -208,7 +217,8 @@ translate it:
   uppercase letters; an `instrument_kind` that is empty or one of the four kinds; a `verified_on`
   that is empty or a calendar date; `source` `ib-edavki` or `manual`, and a `source_revision` for
   `ib-edavki`.
-- `relief_statements.csv`: a 2-letter `country`, a non-empty `statement`, a source.
+- `relief_statements.csv`: a 2-letter `country`, an `income` of `dividend`, `cash_interest` or
+  `bond_coupon`, a non-empty `statement`, a source.
 - `broker_payers.csv`: a non-empty `broker`, `code`, `name` and `address`, a 2-letter `country`, a
   source, and no broker and code twice.
 

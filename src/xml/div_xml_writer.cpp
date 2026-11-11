@@ -90,12 +90,13 @@ void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics,
     }
 
     // A claim needs a foreign tax and a trimmed text a claim may carry; true and false are not one.
+    // The form must name the treaty here, so a claim without a text is not accepted.
     if (aRow.mTreatyClaim)
     {
         const auto& statement = aRow.mTreatyClaim->mStatement;
 
-        if (aRow.mWithholding.mForeignTax <= 0 || !xmlTextLength(statement) ||
-            !isValidTreatyStatement(statement) || trimmedTreatyStatement(statement) != statement)
+        if (aRow.mWithholding.mForeignTax <= 0 || !statement || !xmlTextLength(*statement) ||
+            !isValidTreatyStatement(*statement) || trimmedTreatyStatement(*statement) != *statement)
         {
             addOutOfRange(aDiagnostics, kReport, "ReliefStatement", identity);
         }
@@ -110,7 +111,7 @@ void appendDivHeader(pugi::xml_node aBody, const ReportMetadata& aMetadata) {
     appendOptionalText(div, "EmailAddress", taxpayer.mEmail);
     appendOptionalText(div, "PhoneNumber", taxpayer.mPhoneNumber);
     appendBoolean(div, "IsResident", taxpayer.mIsResident);
-    appendBoolean(div, "SelfReport", aMetadata.mFilingType == FilingType::SelfReport);
+    appendBoolean(div, "SelfReport", false);
 }
 
 void appendDividend(pugi::xml_node aBody, const DivDividendRow& aRow) {
@@ -130,7 +131,7 @@ void appendDividend(pugi::xml_node aBody, const DivDividendRow& aRow) {
     // A claim writes its treaty text, which eDavki needs to apply the relief; otherwise `false`.
     if (aRow.mTreatyClaim)
     {
-        appendText(dividend, "ReliefStatement", aRow.mTreatyClaim->mStatement);
+        appendText(dividend, "ReliefStatement", aRow.mTreatyClaim->mStatement.value());
     }
     else
     {
@@ -159,7 +160,8 @@ XmlWriteResult DivXmlWriter::write(const ReportMetadata& aMetadata,
     pugi::xml_document document;
     auto envelope = beginDocument(document, kDivNamespace);
 
-    appendHeader(envelope, aMetadata);
+    // The form has no self-report in eDavki: it is always filed as an original.
+    appendHeader(envelope, aMetadata, FilingType::Original);
     envelope.append_child("edp:Signatures");
 
     // The schema has no `edp:bodyContent` here; the `Dividend` rows follow `Doh_Div` in `body`.

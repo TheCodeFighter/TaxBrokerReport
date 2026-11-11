@@ -88,7 +88,14 @@ class IncomeRun {
     IncomeRun(const TemporaryCsv& aCsv, int aYear) : IncomeRun(aCsv, aYear, OfficialRateTable{}) {}
 
     IncomeRun(const TemporaryCsv& aCsv, int aYear, OfficialRateTable aRates)
-        : mRates(std::move(aRates)) {
+        : IncomeRun(aCsv, aYear, std::move(aRates), referenceCatalogue()) {}
+
+    /// The run with this reference data instead of the built-in files.
+    IncomeRun(const TemporaryCsv& aCsv,
+              int aYear,
+              OfficialRateTable aRates,
+              ReferenceCatalogue aCatalogue)
+        : mRates(std::move(aRates)), mCatalogue(std::move(aCatalogue)) {
         tr::TradeRepublicParser parser;
         std::vector<StatementMergeInput> inputs{{0, parser.parse(aCsv.path())}};
 
@@ -105,7 +112,7 @@ class IncomeRun {
             mReports = prepareIncomeReports(input,
                                             mPrepared.mMerged.mStatement,
                                             mPrepared.mLedger.value(),
-                                            referenceCatalogue(),
+                                            mCatalogue,
                                             mRates,
                                             aDecisions);
 
@@ -155,6 +162,7 @@ class IncomeRun {
   private:
     TaxProcessingResult mPrepared;
     OfficialRateTable mRates;
+    ReferenceCatalogue mCatalogue;
     DecisionSession mSession;
     IncomeReports mReports;
 };
@@ -322,6 +330,63 @@ TEST(IncomeReportsIntegrationTest, InterestIsSortedIntoDhoAndOneObrWithBothSubty
     EXPECT_EQ(question->mYear, 2023);
     EXPECT_EQ(question->mTotal, 20'000); // EUR 2.00
     EXPECT_EQ(run.status(ReportType::BankDepositInterest), ReportStatus::NeedsInput);
+}
+
+TEST(IncomeReportsIntegrationTest, YesToTheTreatyQuestionClaimsTheTaxedCashInterestWithAWarning) {
+    // Trade Republic is a broker before 6 December 2023, so this interest is cash interest in
+    // Doh-Obr. Its payer is the broker's company in DE, and the export has EUR 0.20 tax.
+    const TemporaryCsv csv{
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+    };
+
+    IncomeRun run{csv, 2023};
+
+    // Before the answer: one open question, no claim, and Doh-Obr is not blocked.
+    ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
+    EXPECT_FALSE(run.reports().mOther.mRows[0].mTreatyClaim.has_value());
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+
+    const auto* question =
+        std::get_if<InterestTreatyClaimQuestion>(&run.result().mRequests[0].mData);
+
+    ASSERT_NE(question, nullptr);
+    EXPECT_EQ(question->mYear, 2023);
+    EXPECT_EQ(question->mCountry, "DE");
+    EXPECT_TRUE(question->mIsins.empty());
+    EXPECT_TRUE(question->mCashInterest);
+    EXPECT_NE(run.status(ReportType::OtherInterest), ReportStatus::NeedsInput);
+
+    // Yes: the row is claimed without a text, and one warning tells the user to complete it.
+    ASSERT_TRUE(run.answerFirst(InterestTreatyClaimAnswer{.mClaim = true}).empty());
+    EXPECT_TRUE(run.result().mRequests.empty());
+    ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
+    ASSERT_TRUE(run.reports().mOther.mRows[0].mTreatyClaim.has_value());
+    EXPECT_FALSE(run.reports().mOther.mRows[0].mTreatyClaim->mStatement.has_value());
+    EXPECT_EQ(run.diagnosticsOf(ProcessingDiagnosticCode::TreatyClaimDetailsMissing).size(), 1U);
+}
+
+TEST(IncomeReportsIntegrationTest, ACashInterestTextOfTheReferenceFilesClaimsTheTaxedCashInterest) {
+    // Same row as above, but a supplied relief file has a cash interest text for DE, the country of
+    // the broker's company: the row is claimed with the text, with no question and no warning.
+    const TemporaryCsv csv{
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+    };
+    const auto catalogue = parseReferenceCatalogue(
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision\n",
+        "country,income,statement,source,source_revision\n"
+        "DE,cash_interest,1. odstavek 11. člena,manual,\n",
+        "broker,code,name,tax_number,address,country,source,source_revision\n"
+        "TR,TR-X,Broker T,TAX-T,\"1 Main Street, Berlin\",DE,manual,\n");
+
+    IncomeRun run{csv, 2023, OfficialRateTable{}, catalogue};
+
+    EXPECT_TRUE(run.result().mRequests.empty());
+    ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
+    ASSERT_TRUE(run.reports().mOther.mRows[0].mTreatyClaim.has_value());
+    EXPECT_EQ(run.reports().mOther.mRows[0].mTreatyClaim->mStatement,
+              std::optional<std::string>{"1. odstavek 11. člena"});
+    EXPECT_TRUE(run.diagnosticsOf(ProcessingDiagnosticCode::TreatyClaimDetailsMissing).empty());
 }
 
 TEST(IncomeReportsIntegrationTest, YesToTheAllowanceQuestionMakesTheDohDhoRow) {

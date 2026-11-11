@@ -47,9 +47,19 @@ struct PayerEntry {
     CatalogueSource mSource;                    ///< Provenance of the row.
 };
 
-/// The treaty text of one country for the relief statement field of Doh-Div.
+/// The kind of income a treaty text is for. The articles can differ per kind, so a text is never
+/// used for another kind.
+enum class TreatyIncome {
+    Dividend,     ///< A dividend, Doh-Div.
+    CashInterest, ///< Interest on the cash a broker holds, Doh-Obr.
+    BondCoupon,   ///< A bond coupon, Doh-Obr.
+};
+
+/// The treaty text of one country and one kind of income, for the relief statement field of
+/// Doh-Div and Doh-Obr.
 struct ReliefStatementEntry {
     std::string mCountry;    ///< 2 uppercase letters.
+    TreatyIncome mIncome{};  ///< The kind of income the text is for; always set by the creator.
     std::string mStatement;  ///< Slovenian citation of the treaty article.
     CatalogueSource mSource; ///< Provenance of the row.
 };
@@ -114,9 +124,9 @@ class ReferenceCatalogue {
     /// are one Found; any difference is a Conflict.
     [[nodiscard]] PayerLookup findPayer(std::string_view aIsin) const;
 
-    /// Every relief statement of the country, in file order.
+    /// Every relief statement of the country for the kind of income, in file order.
     [[nodiscard]] std::vector<const ReliefStatementEntry*>
-    reliefStatements(std::string_view aCountry) const;
+    reliefStatements(std::string_view aCountry, TreatyIncome aIncome) const;
 
     /// The broker payer with this broker and code, or null.
     [[nodiscard]] const BrokerPayerEntry* brokerPayer(std::string_view aBroker,
