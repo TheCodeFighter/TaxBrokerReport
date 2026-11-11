@@ -24,6 +24,10 @@ struct UsedOfficialRate {
     OfficialRate mRate;
 };
 
+/// The rates of two lists by date, then currency code, one per currency and day.
+[[nodiscard]] std::vector<UsedOfficialRate> mergedRates(std::vector<UsedOfficialRate> aFirstRates,
+                                                        std::vector<UsedOfficialRate> aSecondRates);
+
 /// What convertCapitalTrades did: the converted copy, each conversion and the rates it used.
 struct TradeConversionResult {
     /// The statement with the converted trades in EUR; absent when no trade was converted.

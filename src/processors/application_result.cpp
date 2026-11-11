@@ -1290,10 +1290,11 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
             {
                 report.mRequestIds.push_back(request.mId);
 
-                // A payer choice and a treaty claim are listed but never stop a form: a skip or no
-                // claim is a valid answer.
+                // A payer choice, a treaty claim and the deposit interest total are listed but
+                // never stop a form: a skip, no claim or no answer is a valid way to go on.
                 hasBlockingRequest |=
                     !std::holds_alternative<PayerChoiceQuestion>(request.mData) &&
+                    !std::holds_alternative<DepositInterestTotalQuestion>(request.mData) &&
                     !std::holds_alternative<TreatyClaimQuestion>(request.mData) &&
                     !std::holds_alternative<InterestTreatyClaimQuestion>(request.mData);
             }

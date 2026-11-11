@@ -40,6 +40,7 @@ add_executable(taxbroker_unit_tests
     unit/fifo_matcher_test.cpp
     unit/loss_eligibility_test.cpp
     unit/processing_diagnostics_test.cpp
+    unit/output_files_test.cpp
     unit/report_command_test.cpp
     unit/currency_test.cpp
     unit/date_utils_test.cpp

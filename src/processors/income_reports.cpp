@@ -4,42 +4,11 @@
 #include "processors/income_classifier.hpp"
 #include "taxbroker/currency.hpp"
 
-#include <algorithm>
-#include <iterator>
 #include <optional>
 #include <string>
 #include <utility>
 
 namespace taxbroker {
-
-namespace {
-
-/// The rates of both stages by date, then currency code, one per currency and day.
-std::vector<UsedOfficialRate> mergedRates(std::vector<UsedOfficialRate> aDividendRates,
-                                          std::vector<UsedOfficialRate> aInterestRates) {
-    std::vector<UsedOfficialRate> rates = std::move(aDividendRates);
-
-    std::move(aInterestRates.begin(), aInterestRates.end(), std::back_inserter(rates));
-
-    const auto before = [](const UsedOfficialRate& aLeft, const UsedOfficialRate& aRight) {
-        if (aLeft.mTaxDate != aRight.mTaxDate)
-        {
-            return aLeft.mTaxDate < aRight.mTaxDate;
-        }
-
-        return currencyCode(aLeft.mCurrency) < currencyCode(aRight.mCurrency);
-    };
-    const auto same = [](const UsedOfficialRate& aLeft, const UsedOfficialRate& aRight) {
-        return aLeft.mTaxDate == aRight.mTaxDate && aLeft.mCurrency == aRight.mCurrency;
-    };
-
-    std::stable_sort(rates.begin(), rates.end(), before);
-    rates.erase(std::unique(rates.begin(), rates.end(), same), rates.end());
-
-    return rates;
-}
-
-} // namespace
 
 IncomeReports prepareIncomeReports(ApplicationResultInput& aInput,
                                    const MergedStatement& aStatement,

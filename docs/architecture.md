@@ -854,7 +854,7 @@ The income models are in `include/taxbroker/income_report_models.hpp`. Like the 
 are broker-neutral, hold no CSV, JSON, HTTP, frontend or XML fields and need no XML library. The
 taxpayer and the year are not repeated: a writer gets `ReportMetadata` beside the model of its form.
 The processors build the models. The Doh-Div, Doh-DHO and Doh-Obr writers (`DivXmlWriter`,
-`DhoXmlWriter`, `ObrXmlWriter`) exist.
+`DhoXmlWriter`, `ObrXmlWriter`) exist, and the report command calls them.
 
 - **Amounts.** Every amount is EUR `Money` at 4 decimals and is never rounded in the model; the
   writer rounds once to 2 decimals. A foreign payment and its foreign tax are converted before
@@ -953,7 +953,9 @@ reports stage below; both share the payer, rate and exclusion helpers of
   deposit payments is compared with EUR 1,000 at four decimals. Above it the rows are made. At or
   below it `deposit_interest_total_required` is asked: yes makes the rows and the warning
   `deposit_interest_add_other_banks`, no gives no rows and the reason
-  `below_deposit_interest_threshold`, no answer leaves Doh-DHO `needs_input`. A payment without a
+  `below_deposit_interest_threshold`, and no answer makes the rows and the warning as for yes. The
+  open question is listed but never blocks Doh-DHO, as the payer choice and the treaty questions
+  do not block their forms. A payment without a
   rate gives no total and no question; the rate error fails Doh-DHO.
 - **Doh-Obr.** One row per payment, in ledger order, with the payer facts and the foreign tax.
 - **Treaty claims.** After the rows, per payer country (not `SI`) with rows that have a foreign
@@ -1059,8 +1061,8 @@ shared helpers of `xml_common` (amount rounding, country and text checks, header
 whole model first and writes nothing when a value does not fit the form (one
 `xml_value_out_of_range` error per field, with the payer name when it is valid text); the rules and
 limits are in `tax_rules.md`, "Doh-DHO form contract". An empty model gives a document without
-rows and with totals of `0.00`; the caller decides that there is nothing to file. The CLI does not
-call the writer yet.
+rows and with totals of `0.00`; the caller decides that there is nothing to file. The report command
+writes no file for a form without rows.
 
 ### Doh-Obr XML writer
 
@@ -1073,7 +1075,7 @@ form contract". The interest stage finds the row problems first, so that the use
 failing coupon's ISIN or the failing broker's cash interest; the writer is a guard for the
 document and repeats those checks. The shared checks and number helpers are in `xml_common`; the
 text check `xmlTextLength` is in the core (`include/utils/xml_text.hpp`), because the stage uses it
-too. The CLI does not call the writer yet.
+too. The report command writes no file for a form without rows.
 
 ### CLI report command (walking skeleton)
 
@@ -1091,7 +1093,9 @@ error, and so is a file outside a list or `--`; a file whose name starts with `-
 never from guessing the file.
 
 The `taxbroker` executable (`src/cli/`) produces a real Doh-KDVP file for a bounded set of cases
-and blocks every other case with a structured error; it never guesses. `taxbroker --help` and
+and blocks every other case with a structured error; it never guesses. It also writes Doh-Div,
+Doh-DHO and Doh-Obr from the income stages; each form has its own status and a blocked form never
+stops another. `taxbroker --help` and
 `taxbroker report --help` explain the options, the taxpayer file, the output files, the exit codes
 and what is supported, blocked and skipped. The whole command is in the `taxbroker_cli` library
 (`runCli`), so the tests run it in process; the executable only sets up logging. The
@@ -1108,7 +1112,9 @@ reporting-year preparation, once. The rest runs as the calculation of a `Decisio
 per revision: the classification, the conversion of foreign trades to EUR, FIFO, the
 corporate-action stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital
 report gates, `FailureResolutionStage` (after `exclude` the command builds the rows again without
-the investments the user left out) and the XML writer; the session builds the application result.
+the investments the user left out) and the Doh-KDVP XML writer; then the income stages
+(`prepareIncomeReports`) and the three income writers through `writeReportXml`. The session builds
+the application result, which gives each form its status.
 A loss that the files decide in full is written as they decide it. A sale whose blocked units are
 only part of its listed units is written in several rows.
 
@@ -1225,24 +1231,41 @@ rows of a partly blocked loss, and classification requests.
 error, `filingType` included: the filing type is chosen for each run (`--self-report`), never
 read from the file. An error names the key, never the value.
 
-**Output.** In the `--out` folder (created when missing): `Doh-KDVP_<year>.xml` only when the
-capital report is `generated`, and `summary_<year>.txt` for every run that got that far; the same
-summary goes to stdout. A blocked or no-data run deletes an old `Doh-KDVP_<year>.xml` there and
-says so, so a file of an earlier run is never taken for this run's result. The summary has the
-input files (file names and source IDs only), the capital status, each ISIN with a sale in the year
+**Output.** In the `--out` folder (created when missing): `Doh-KDVP_<year>.xml`, `Doh-Div_<year>.xml`,
+`Doh-DHO_<year>.xml` and `Doh-Obr_<year>.xml`, each only when its form is `generated`, and
+`summary_<year>.txt` for every run that got that far; the same summary goes to stdout. A form that
+is not generated writes nothing and leaves a file of an earlier run as it is; the summary names
+such a file ("is from an earlier run, not from this run"), so it is never taken for this run's
+result. A `generated` form replaces its file. The summary has the input files (file names and
+source IDs only), a "Forms" block with one status line per form (rows for an income form, a
+reason for `no_data`, `without N excluded investments` or brokers), each ISIN with a sale in the year
 (listed with its sale rows and units, the units with `F10` false and how many of them were assumed
 without an answer, blocked with its codes and
 sales, or only units past the holding period), the excluded items ("Excluded items": ISIN, name,
 category, reason and, for a bond, the units bought, sold and matured and the maturity date), the
 units past the holding period (`mLongHeld`: ISIN, sale date, units), the
-skipped private-market events, and the diagnostics in application order (capital errors, capital
-warnings, then the others with their severity). It has units and dates, no EUR amounts.
+skipped private-market events, and the diagnostics per form (`Doh-KDVP errors`, `Doh-KDVP
+warnings`, and the same for an income form that has a diagnostic; a diagnostic that affects
+several forms is listed under each), then those that affect no form (with their severity). The
+investments and brokers the user left out of Doh-Div or Doh-Obr are listed like the Doh-KDVP
+ones ("Excluded investments (not in Doh-Div)", "Excluded brokers (not in Doh-Obr)"). The list of
+official rates holds the rates of the trades and of the income, one line per currency and day. It
+has units and dates, no EUR amounts.
 
-Both files are first written as `<name>.tmp` in the output folder and only then renamed over the
-files of an earlier run, or the old XML is deleted. A folder at an output path is refused before
-anything is written. So a run that fails keeps the files of an earlier run as they were.
+Every written file is first written as `<name>.tmp` in the output folder. Then `replaceFiles`
+(`src/cli/output_files.cpp`) replaces the files one by one: an earlier file is first moved to
+`<name>.old`, then the new file is renamed in. When a step fails, the steps already done are undone
+in reverse order and every `.tmp` file is deleted; on success the `.old` copies are deleted. A
+folder at the path of a file that this run writes is refused before anything is written. The
+`.tmp` and `.old` names are the command's own: a file of the user with such a name in the output
+folder is replaced (the help says so). So a run
+that fails keeps the files of an earlier run as they were; only when an undo step itself fails does
+stderr name the files that could not be restored. The summary's lines `ECB rate files to load` and
+`ECB rate files to replace` list the years of the capital warnings and of the income forms'
+`missing_exchange_rate` errors.
 
-**Exit codes.** `0`: the capital report is `generated` or `no_data`. `1`: it is blocked (`failed`).
+**Exit codes.** `0`: every form is `generated` or `no_data`. `1`: at least one form is
+`needs_input` or `failed`; the other forms are still written.
 `2`: the command could not run (an option, a missing or invalid file, the output folder); no
 output file is changed (a missing output folder may already be created) and stderr names the
 problem with file names only, never a folder.
