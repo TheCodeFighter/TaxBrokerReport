@@ -266,8 +266,9 @@ TEST(ObrXmlWriterTest, PayerNotFoundLeavesThePayerFieldsOut) {
     expectValidForObrSchema(*result.mXml);
 }
 
-TEST(ObrXmlWriterTest, SlovenianIssuerWritesTaxNumberAndNoForeignTax) {
-    // A Slovenian issuer: `TaxNumber`, no `IdentificationNumber`, and no foreign tax.
+TEST(ObrXmlWriterTest, SlovenianIssuerWritesTaxNumberAndNoNameAddressOrForeignTax) {
+    // A Slovenian issuer with a tax number: `TaxNumber`, no `IdentificationNumber`, no `Name` and
+    // `Address` (eDavki fills them in from the tax register) and no foreign tax.
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2025,
@@ -282,7 +283,7 @@ TEST(ObrXmlWriterTest, SlovenianIssuerWritesTaxNumberAndNoForeignTax) {
                 .mPayer = {.mName = "Example Izdajatelj d.d.",
                            .mAddress = "1 Main St, Ljubljana",
                            .mCountry = "SI",
-                           .mTaxNumber = "12345674"},
+                           .mTaxNumber = "12345679"},
                 .mGrossInterest = 100'000,
                 .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
                 .mSourceCountry = "SI",
@@ -296,7 +297,47 @@ TEST(ObrXmlWriterTest, SlovenianIssuerWritesTaxNumberAndNoForeignTax) {
     ASSERT_TRUE(result.mXml.has_value());
     EXPECT_NE(result.mXml->find("      <Interest>\n"
                                 "        <Date>2025-06-15</Date>\n"
-                                "        <TaxNumber>12345674</TaxNumber>\n"
+                                "        <TaxNumber>12345679</TaxNumber>\n"
+                                "        <Country>SI</Country>\n"
+                                "        <Type>2</Type>\n"
+                                "        <Value>10.00</Value>\n"
+                                "        <Country2>SI</Country2>\n"
+                                "      </Interest>"),
+              std::string::npos);
+    EXPECT_TRUE(textsOf(*result.mXml, "ForeignTax").empty());
+    expectValidForObrSchema(*result.mXml);
+}
+
+TEST(ObrXmlWriterTest, SlovenianIssuerWithoutATaxNumberKeepsNameAndAddress) {
+    // No valid tax number is known (the stage warned): the name and address are written, so the
+    // user sees whom the row is about and completes the number in eDavki.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BondCoupon{.mIsin = "SI0000000001"},
+                .mDate = day("2025-06-15"),
+                .mPayer = {.mName = "Example Izdajatelj d.d.",
+                           .mAddress = "1 Main St, Ljubljana",
+                           .mCountry = "SI"},
+                .mGrossInterest = 100'000,
+                .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
+                .mSourceCountry = "SI",
+                .mTreatyClaim = std::nullopt,
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_NE(result.mXml->find("      <Interest>\n"
+                                "        <Date>2025-06-15</Date>\n"
                                 "        <Name>Example Izdajatelj d.d.</Name>\n"
                                 "        <Address>1 Main St, Ljubljana</Address>\n"
                                 "        <Country>SI</Country>\n"
@@ -305,7 +346,7 @@ TEST(ObrXmlWriterTest, SlovenianIssuerWritesTaxNumberAndNoForeignTax) {
                                 "        <Country2>SI</Country2>\n"
                                 "      </Interest>"),
               std::string::npos);
-    EXPECT_TRUE(textsOf(*result.mXml, "ForeignTax").empty());
+    EXPECT_TRUE(textsOf(*result.mXml, "TaxNumber").empty());
     expectValidForObrSchema(*result.mXml);
 }
 
@@ -326,7 +367,7 @@ TEST(ObrXmlWriterTest, SlovenianIssuerWithATaxIsWrittenWithoutForeignTax) {
                 .mPayer = {.mName = "Example Izdajatelj d.d.",
                            .mAddress = "1 Main St, Ljubljana",
                            .mCountry = "SI",
-                           .mTaxNumber = "12345674"},
+                           .mTaxNumber = "12345679"},
                 .mGrossInterest = 100'000,
                 .mWithholding = {.mForeignTax = 50'000, .mBlankInExport = false},
                 .mSourceCountry = "SI",
@@ -1194,7 +1235,7 @@ TEST(ObrXmlWriterTest, AClaimOnASlovenianPayerStopsTheFile) {
                 .mPayer = {.mName = "Issuer SI",
                            .mAddress = "1 Main Street, Ljubljana",
                            .mCountry = "SI",
-                           .mTaxNumber = "12345674"},
+                           .mTaxNumber = "12345679"},
                 .mGrossInterest = 250'000,
                 .mWithholding = {.mForeignTax = 62'500, .mBlankInExport = false},
                 .mSourceCountry = "SI",
@@ -1206,6 +1247,36 @@ TEST(ObrXmlWriterTest, AClaimOnASlovenianPayerStopsTheFile) {
     const auto result = ObrXmlWriter::write(metadata, report);
 
     expectOneError(result, "ReliefStatement", "Issuer SI", "SI0000000001");
+}
+
+TEST(ObrXmlWriterTest, ASlovenianPayerWithAnIdentificationNumberStopsTheFile) {
+    // A Slovenian payer has a tax number and no identification number (eDavki rejects it).
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BondCoupon{.mIsin = "SI0000000001"},
+                .mDate = day("2025-06-15"),
+                .mPayer = {.mName = "Issuer SI",
+                           .mAddress = "1 Main Street, Ljubljana",
+                           .mCountry = "SI",
+                           .mTaxNumber = "12345679",
+                           .mIdentificationNumber = "12345679"},
+                .mGrossInterest = 100'000,
+                .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
+                .mSourceCountry = "SI",
+                .mTreatyClaim = std::nullopt,
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    expectOneError(result, "IdentificationNumber", "Issuer SI", "SI0000000001");
 }
 
 TEST(ObrXmlWriterTest, ACouponErrorHasTheIsinAndTheName) {

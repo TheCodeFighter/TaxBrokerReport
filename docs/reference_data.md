@@ -50,8 +50,13 @@ files are the source: a company that is added later is a new row with `source` s
   imported row leaves them empty. They are shown to the user and never compared with a payment
   date. A row has no validity dates: when a payer changes, the new facts are a new row, and the
   lookup reports the two rows as a conflict until the user decides.
-- A Slovenian company is a row of `payers.csv` with `country` `SI` and `source` `manual`. There
-  is no separate file; no such row exists yet.
+- A Slovenian company is a row of `payers.csv` with `country` `SI`. Its `tax_number` is the eight
+  digits only, with a valid check digit (no `SI` prefix); otherwise the app writes no tax number
+  and warns. The four rows (Krka, NLB, Petrol, Luka Koper) hold upstream's number without `SI`,
+  and each passes the check digit. Upstream's Krka number failed it; the row holds `82646716`
+  from the Slovenian tax register instead (checked in eDavki), with `source` `manual`.
+  `payers_without_isin.csv` and `payers_by_ticker.csv` still have the `SI` prefix; the app does not
+  read them.
 - `payers_without_isin.csv`: upstream payers whose ISIN is not certain, kept so that they are not
   lost. `ticker` is upstream's symbol, `ibkr_conid` the Interactive Brokers contract number where
   upstream gave one (a record of the upstream data, not a key). `note` says why the row is here:
@@ -185,7 +190,9 @@ The three upstream XML files were read once with an XML parser and written as th
 - Upstream's `-` (meaning unknown) as the tax number of 3 payers became an empty field.
 - One value was corrected: the country `IRL` of one payer (Johnson Controls International Plc)
   became `IE`, the 2-letter code every other row uses.
-- Every row has `source` set to `ib-edavki` and `source_revision` set to the revision above.
+- Every row has `source` set to `ib-edavki` and `source_revision` set to the revision above, except
+  the Krka row (see "Slovenian company" above): its tax number was corrected by hand, so its
+  `source` is `manual` and its `source_revision` is empty.
 
 After the ISIN lookup ("How the ISINs were found"), the `ibkr_conid` column was removed from
 `payers.csv` and the column `isin_source` added. The rows keep upstream order: first the 299

@@ -114,6 +114,13 @@ void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics,
                    payer.mIdentificationNumber,
                    kMaximumIdentificationLength,
                    identity);
+
+    // eDavki rejects an identification number on a Slovenian payer, which has a tax number.
+    if (isSlovenianPayer(aRow) && payer.mIdentificationNumber)
+    {
+        addOutOfRange(aDiagnostics, kReport, "IdentificationNumber", identity);
+    }
+
     checkPayerText(aDiagnostics, "Name", payer.mName, std::nullopt, identity);
     checkPayerText(aDiagnostics, "Address", payer.mAddress, std::nullopt, identity);
     checkCountry(aDiagnostics, kReport, "Country", payer.mCountry, identity);
@@ -181,8 +188,15 @@ void appendInterest(pugi::xml_node aObr, const ObrInterestRow& aRow) {
     appendText(interest, "Date", dateText(aRow.mDate).value());
     appendOptionalText(interest, "TaxNumber", payer.mTaxNumber);
     appendOptionalText(interest, "IdentificationNumber", payer.mIdentificationNumber);
-    appendOptionalText(interest, "Name", payer.mName);
-    appendOptionalText(interest, "Address", payer.mAddress);
+
+    // eDavki fills in the name and address of a Slovenian payer from the tax register by its tax
+    // number, and rejects a different spelling.
+    if (!isSlovenianPayer(aRow) || !payer.mTaxNumber)
+    {
+        appendOptionalText(interest, "Name", payer.mName);
+        appendOptionalText(interest, "Address", payer.mAddress);
+    }
+
     appendOptionalText(interest, "Country", payer.mCountry);
     appendText(interest, "Type", interestType(aRow));
     appendText(interest, "Value", amountText(roundedCents(aRow.mGrossInterest)));

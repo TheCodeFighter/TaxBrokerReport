@@ -242,14 +242,6 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
     for (const auto& [broker, payments] : byBroker)
     {
         const auto entries = aCatalogue.brokerPayersOf(broker);
-
-        if (entries.size() == 1)
-        {
-            payers.emplace(broker, payerOutcomeOf(*entries.front()));
-
-            continue;
-        }
-
         std::set<ReportType> reports;
         std::vector<SourceReference> sources;
 
@@ -262,6 +254,28 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
         }
 
         const auto& first = *payments.front()->mTransaction;
+
+        if (entries.size() == 1)
+        {
+            const auto outcome = payerOutcomeOf(*entries.front());
+
+            if (outcome.mSlovenianTaxNumberMissing)
+            {
+                auto warning = slovenianTaxNumberMissingWarning(*reports.begin(),
+                                                                sources,
+                                                                first.mMetadata.mTaxDate,
+                                                                nameOf(*payments.front()),
+                                                                std::nullopt);
+
+                warning.mContext.mAffectedReports.assign(reports.begin(), reports.end());
+                aDiagnostics.push_back(std::move(warning));
+            }
+
+            payers.emplace(broker, outcome);
+
+            continue;
+        }
+
         auto warning = incomeDiagnostic(*reports.begin(),
                                         DiagnosticSeverity::Warning,
                                         ProcessingDiagnosticCode::InterestPayerNotFound,

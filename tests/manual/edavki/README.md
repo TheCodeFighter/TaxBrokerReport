@@ -317,7 +317,7 @@ Purchase value 400 + 600 = 1,000, sale value 480 + 660 = 1,140, gain **140** (80
 Checks: eDavki imports two purchase rows with the same date, and `F8` (old and new units added) is
 accepted.
 
-## Income forms (E1 to E5)
+## Income forms (E1 to E7)
 
 Draft imports of the Doh-Div, Doh-DHO and Doh-Obr files. The files of `taxbroker report` are
 originals: eDavki accepts the original workflow `O` of these forms as a draft at any time of the
@@ -392,12 +392,15 @@ scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json --no-input \
     --reference-files tests/manual/edavki/e4_reference/payers.csv
 ```
 
-Doh-Obr row: EUR 30.00 coupon of 2025-06-16, `Type` 2, `Value` **30.00**, `IdentificationNumber`
-`12345679`, `Country` `SI`, `Country2` `SI`, no `ForeignTax` (the form leaves it out for a Slovenian
-payer) and no `ReliefStatement`. No warning (no tax was paid).
+Doh-Obr row: EUR 30.00 coupon of 2025-06-16, `Type` 2, `Value` **30.00**, `TaxNumber`
+`12345679`, `Country` `SI`, `Country2` `SI`. No `IdentificationNumber`, `Name`, `Address` (eDavki
+fills them in from the tax register by the tax number), no `ForeignTax` (the form leaves it out for
+a Slovenian payer) and no `ReliefStatement`. No warning (no tax was paid).
 
-Checks: eDavki accepts an eight-digit `IdentificationNumber` and a Slovenian payer country on a
-coupon row, and shows no foreign tax.
+Checks: the draft import is accepted; the check before submitting no longer asks for the tax number
+or complains about the identification number. It reports that `12345679` is not in the tax register
+(expected for a made-up number). With a real number, for example Krka `82646716`, the register
+gives the name and address and the check passes.
 
 ### E5: `Doh-Obr_2023.golden.xml`
 

@@ -74,15 +74,29 @@ TEST(ReferenceCatalogueTest, TheEmbeddedReliefStatementsAreAllDividendTexts) {
 }
 
 TEST(ReferenceCatalogueTest, EmbeddedPayersHaveNoKindNoVerificationDateAndTheUpstreamSource) {
+    // Every row is upstream's except the Krka row: its tax number was corrected by hand, so its
+    // source is `manual` (the ISIN still came from upstream).
     const ReferenceCatalogue& catalogue = referenceCatalogue();
+    std::size_t manualRows = 0;
 
     for (const PayerEntry& entry : catalogue.payers())
     {
         EXPECT_FALSE(entry.mInstrumentKind.has_value());
         EXPECT_FALSE(entry.mVerifiedOn.has_value());
-        EXPECT_EQ(entry.mSource.mSource, "ib-edavki");
         EXPECT_EQ(entry.mSource.mFile, "payers.csv");
+
+        if (entry.mIsin == "SI0031102120")
+        {
+            EXPECT_EQ(entry.mSource.mSource, "manual");
+            ++manualRows;
+        }
+        else
+        {
+            EXPECT_EQ(entry.mSource.mSource, "ib-edavki");
+        }
     }
+
+    EXPECT_EQ(manualRows, 1U);
 }
 
 TEST(ReferenceCatalogueTest, EveryEmbeddedPayerHasAnIsinFromUpstreamOrWikidata) {

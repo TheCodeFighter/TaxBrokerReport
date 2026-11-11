@@ -420,6 +420,8 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
     MessageDefinition{MessageKey::SlovenianCouponTax, "slovenian_coupon_tax", {}},
     MessageDefinition{
+        MessageKey::SlovenianPayerTaxNumberMissing, "slovenian_payer_tax_number_missing", {}},
+    MessageDefinition{
         MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
     MessageDefinition{
         MessageKey::TreatyClaimDetailsMissing, "treaty_claim_details_missing", kCountry},

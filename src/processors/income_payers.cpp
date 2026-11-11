@@ -1,6 +1,7 @@
 #include "processors/income_payers.hpp"
 
 #include "taxbroker/currency.hpp"
+#include "taxbroker/tax_number.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -13,21 +14,6 @@ namespace taxbroker {
 namespace {
 
 constexpr std::string_view kSlovenia = "SI";
-
-/// Eight digits after the prefix `SI`, not all zero (the form's tax number is a positive integer),
-/// the form of a Slovenian VAT identification number.
-bool isSlovenianVatId(const std::string& aNumber) {
-    constexpr std::size_t kDigits = 8;
-
-    const auto isDigit = [](char aCharacter) { return aCharacter >= '0' && aCharacter <= '9'; };
-    const auto isZero = [](char aCharacter) { return aCharacter == '0'; };
-    const auto digits = aNumber.begin() + kSlovenia.size();
-
-    return aNumber.size() == kSlovenia.size() + kDigits &&
-           aNumber.compare(0, kSlovenia.size(), kSlovenia) == 0 &&
-           std::all_of(digits, aNumber.end(), isDigit) &&
-           !std::all_of(digits, aNumber.end(), isZero);
-}
 
 /// The reference rows of a conflict as the options of a payer choice question, sorted.
 PayerChoiceQuestion
@@ -106,6 +92,41 @@ bool isSlovenianLookup(const PayerLookup& aLookup) {
                        [](const PayerEntry* aEntry) { return aEntry->mCountry == kSlovenia; });
 }
 
+/// The payer facts for a number from a reference row. A Slovenian payer's number is its tax number
+/// when it is valid, otherwise nothing, and it never has an identification number (the form
+/// rejects one). Any other payer's number is its identification number.
+PayerOutcome payerOutcomeOfNumber(const std::string& aName,
+                                  const std::string& aAddress,
+                                  const std::string& aCountry,
+                                  const std::optional<std::string>& aNumber,
+                                  const CatalogueSource& aSource) {
+    PayerOutcome outcome;
+    const bool isSlovenian = aCountry == kSlovenia;
+    std::optional<std::string> taxNumber;
+    std::optional<std::string> identificationNumber = aNumber;
+
+    if (isSlovenian)
+    {
+        if (aNumber && isSlovenianTaxNumber(*aNumber))
+        {
+            taxNumber = aNumber;
+        }
+
+        identificationNumber = std::nullopt;
+        outcome.mSlovenianTaxNumberMissing = !taxNumber;
+    }
+
+    outcome.mPayer = IncomePayer{.mName = aName,
+                                 .mAddress = aAddress,
+                                 .mCountry = aCountry,
+                                 .mTaxNumber = taxNumber,
+                                 .mIdentificationNumber = identificationNumber,
+                                 .mCatalogueRow = aSource};
+    outcome.mIsSlovenian = isSlovenian;
+
+    return outcome;
+}
+
 } // namespace
 
 ProcessingDiagnostic incomeDiagnostic(ReportType aReport,
@@ -135,41 +156,34 @@ ProcessingDiagnostic incomeDiagnostic(ReportType aReport,
 }
 
 PayerOutcome payerOutcomeOf(const PayerEntry& aEntry) {
-    PayerOutcome outcome;
-    std::optional<std::string> taxNumber;
-    std::optional<std::string> identificationNumber = aEntry.mTaxNumber;
-
-    // A Slovenian payer's reference number is `SI` and its eight digits: the forms want the eight
-    // digits as the tax number, and no other identification number.
-    if (aEntry.mCountry == kSlovenia && aEntry.mTaxNumber && isSlovenianVatId(*aEntry.mTaxNumber))
-    {
-        taxNumber = aEntry.mTaxNumber->substr(kSlovenia.size());
-        identificationNumber = std::nullopt;
-    }
-
-    outcome.mPayer = IncomePayer{.mName = aEntry.mName,
-                                 .mAddress = aEntry.mAddress,
-                                 .mCountry = aEntry.mCountry,
-                                 .mTaxNumber = taxNumber,
-                                 .mIdentificationNumber = identificationNumber,
-                                 .mCatalogueRow = aEntry.mSource};
-    outcome.mIsSlovenian = aEntry.mCountry == kSlovenia;
-
-    return outcome;
+    return payerOutcomeOfNumber(aEntry.mName,
+                                aEntry.mAddress,
+                                aEntry.mCountry,
+                                aEntry.mTaxNumber,
+                                aEntry.mSource);
 }
 
 PayerOutcome payerOutcomeOf(const BrokerPayerEntry& aEntry) {
-    PayerOutcome outcome;
+    return payerOutcomeOfNumber(aEntry.mName,
+                                aEntry.mAddress,
+                                aEntry.mCountry,
+                                aEntry.mTaxNumber,
+                                aEntry.mSource);
+}
 
-    outcome.mPayer = IncomePayer{.mName = aEntry.mName,
-                                 .mAddress = aEntry.mAddress,
-                                 .mCountry = aEntry.mCountry,
-                                 .mTaxNumber = std::nullopt,
-                                 .mIdentificationNumber = aEntry.mTaxNumber,
-                                 .mCatalogueRow = aEntry.mSource};
-    outcome.mIsSlovenian = aEntry.mCountry == kSlovenia;
-
-    return outcome;
+ProcessingDiagnostic slovenianTaxNumberMissingWarning(ReportType aReport,
+                                                      std::vector<SourceReference> aSources,
+                                                      std::optional<Date> aTaxDate,
+                                                      std::optional<std::string> aName,
+                                                      std::optional<Isin> aIsin) {
+    return incomeDiagnostic(aReport,
+                            DiagnosticSeverity::Warning,
+                            ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing,
+                            makeDiagnosticMessage(MessageKey::SlovenianPayerTaxNumberMissing),
+                            std::move(aSources),
+                            aTaxDate,
+                            std::move(aName),
+                            std::move(aIsin));
 }
 
 std::optional<std::pair<std::string, CatalogueSource>> treatyTextOf(
@@ -239,6 +253,16 @@ PayerOutcome resolvePayer(const PayerForm& aForm,
 
     // A form that reports a Slovenian payer's income too treats the payer as any other.
     outcome.mIsSlovenian = outcome.mIsSlovenian && aForm.mSlovenianExclusion.has_value();
+
+    // A row that is written needs the tax number of a Slovenian payer.
+    if (outcome.mSlovenianTaxNumberMissing && !outcome.mIsSlovenian)
+    {
+        aSinks.mDiagnostics.push_back(slovenianTaxNumberMissingWarning(aForm.mReport,
+                                                                       aPayments.mSources,
+                                                                       aPayments.mFirstDate,
+                                                                       aPayments.mName,
+                                                                       aIsin));
+    }
 
     return outcome;
 }

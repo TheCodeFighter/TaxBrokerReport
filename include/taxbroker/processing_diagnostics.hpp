@@ -72,6 +72,8 @@ enum class ProcessingDiagnosticCode {
     InterestPaymentNotPositive,
     /// A warning: a coupon of a Slovenian issuer has tax, which is not foreign tax.
     SlovenianCouponTax,
+    /// A warning: a written row's payer is in Slovenia, but no valid Slovenian tax number is known.
+    SlovenianPayerTaxNumberMissing,
     /// A warning: the user adds the interest of the other banks in eDavki.
     DepositInterestAddOtherBanks,
     /// A warning: the user fills in the treaty paragraph and article of claimed Doh-Obr rows.

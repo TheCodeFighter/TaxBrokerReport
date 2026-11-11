@@ -74,6 +74,7 @@ add_executable(taxbroker_unit_tests
     unit/numeric_util_test.cpp
     unit/obr_schema_test.cpp
     unit/split_ratio_test.cpp
+    unit/tax_number_test.cpp
 )
 
 target_include_directories(taxbroker_unit_tests PRIVATE 

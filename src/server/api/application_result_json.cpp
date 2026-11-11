@@ -161,6 +161,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "interest_payment_not_positive";
     case ProcessingDiagnosticCode::SlovenianCouponTax:
         return "slovenian_coupon_tax";
+    case ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing:
+        return "slovenian_payer_tax_number_missing";
     case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
         return "deposit_interest_add_other_banks";
     case ProcessingDiagnosticCode::TreatyClaimDetailsMissing:
