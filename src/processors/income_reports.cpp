@@ -37,6 +37,12 @@ IncomeReports prepareIncomeReports(ApplicationResultInput& aInput,
 
     excludeDividends(reports.mDividends, excludedDividends);
 
+    // The notice is made after the exclusions, so it names only the rows that stay in the form.
+    if (auto notice = foreignTaxEvidenceNotice(statement, reports.mDividends))
+    {
+        appendStageOutput(aInput, {std::move(*notice)}, {});
+    }
+
     auto interest = prepareInterestPayments(statement, aLedger, aCatalogue, aRates, aDecisions);
     auto interestRates = std::move(interest.mUsedRates);
 
@@ -57,6 +63,12 @@ IncomeReports prepareIncomeReports(ApplicationResultInput& aInput,
 
     excludeCoupons(reports.mOther, excludedOther.mIsins);
     excludeBrokerCashInterest(reports.mOther, excludedOther.mBrokers);
+
+    if (auto notice = foreignTaxEvidenceNotice(statement, reports.mOther))
+    {
+        appendStageOutput(aInput, {std::move(*notice)}, {});
+    }
+
     reports.mUsedRates = mergedRates(std::move(dividendRates), std::move(interestRates));
 
     return reports;

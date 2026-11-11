@@ -6,6 +6,7 @@
 #include "taxbroker/income_report_models.hpp"
 #include "taxbroker/reference_catalogue.hpp"
 
+#include <optional>
 #include <vector>
 
 namespace taxbroker {
@@ -34,6 +35,11 @@ struct DividendPaymentsResult {
 
 /// Removes every row of the listed ISINs, as the exclusion of failed ISINs asks. The order stays.
 void excludeDividends(DividendReportDiv& aReport, const std::vector<Isin>& aExcluded);
+
+/// The one warning that the user attaches the evidence of the foreign tax in eDavki, for the rows
+/// left in aReport that have a tax above 0 (its sources are those rows' payments), or none.
+[[nodiscard]] std::optional<ProcessingDiagnostic>
+foreignTaxEvidenceNotice(const MergedStatement& aStatement, const DividendReportDiv& aReport);
 
 /// Appends the diagnostics, the requests and the excluded items of the result to aInput, with
 /// their positions moved to the numbering of aInput. The report model stays with the caller.

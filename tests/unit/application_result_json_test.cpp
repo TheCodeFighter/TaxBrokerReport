@@ -2485,16 +2485,18 @@ TEST(ApplicationResultJsonTest, TheInterestDiagnosticCodesAreWrittenByName) {
         diagnostic(ProcessingDiagnosticCode::InterestPayerNotFound),
         diagnostic(ProcessingDiagnosticCode::InterestPaymentNotPositive),
         diagnostic(ProcessingDiagnosticCode::SlovenianCouponTax),
+        diagnostic(ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing),
         diagnostic(ProcessingDiagnosticCode::DepositInterestAddOtherBanks)};
 
     const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
     const auto& diagnostics = json.at("diagnostics");
 
-    ASSERT_EQ(diagnostics.size(), 4U);
+    ASSERT_EQ(diagnostics.size(), 5U);
     EXPECT_EQ(diagnostics[0].at("code"), "interest_payer_not_found");
     EXPECT_EQ(diagnostics[1].at("code"), "interest_payment_not_positive");
     EXPECT_EQ(diagnostics[2].at("code"), "slovenian_coupon_tax");
-    EXPECT_EQ(diagnostics[3].at("code"), "deposit_interest_add_other_banks");
+    EXPECT_EQ(diagnostics[3].at("code"), "slovenian_payer_tax_number_missing");
+    EXPECT_EQ(diagnostics[4].at("code"), "deposit_interest_add_other_banks");
 }
 
 TEST(ApplicationResultJsonTest, ATreatyClaimRequestListsTheYearTheCountryAndTheIsins) {

@@ -83,6 +83,7 @@ add_library(taxbroker_core STATIC
     utils/logger.cpp
     utils/numeric_util.cpp
     utils/split_ratio.cpp
+    utils/tax_number.cpp
     utils/xml_text.cpp
 )
 

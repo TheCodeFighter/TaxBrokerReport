@@ -1188,6 +1188,12 @@ TEST(InterestPaymentsTest, ATaxOnASlovenianIssuerCouponIsARowWithAWarning) {
     EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mWithholding.mForeignTax, 75'000);
     EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::SlovenianCouponTax), 1U);
 
+    // The evidence notice is for the French issuer's tax only; the Slovenian tax is not written.
+    const auto notice = foreignTaxEvidenceNotice(statement, run.mLast.mOtherReport);
+
+    ASSERT_TRUE(notice.has_value());
+    EXPECT_EQ(notice->mContext.mSources.size(), 1U);
+
     const auto warning =
         std::find_if(run.mLast.mDiagnostics.begin(),
                      run.mLast.mDiagnostics.end(),
@@ -1811,7 +1817,7 @@ TEST(InterestPaymentsTest, ASlovenianIssuersForeignTaxIsNotCheckedBecauseItIsNot
     // The issuer's country is SI, so the huge tax is not written and is no error of the row (the
     // warning about a Slovenian coupon with tax is given instead).
     const auto catalogue =
-        catalogueOf("XX0000000010,Issuer A,SI12345674,1 Main Street,SI,,,issuer,manual,\n");
+        catalogueOf("XX0000000010,Issuer A,12345679,1 Main Street,SI,,,issuer,manual,\n");
     OfficialRateTable rates;
     MergedStatement statement;
 
@@ -1835,9 +1841,295 @@ TEST(InterestPaymentsTest, ASlovenianIssuersForeignTaxIsNotCheckedBecauseItIsNot
 
     ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
     EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mTaxNumber,
-              std::optional<std::string>{"12345674"});
+              std::optional<std::string>{"12345679"});
     ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::SlovenianCouponTax);
+}
+
+TEST(InterestPaymentsTest, ACouponOfASlovenianIssuerWithoutAValidNumberWarns) {
+    // 12345674 has the wrong check digit (it must be 9), so the issuer has no tax number: the row
+    // is still made with the name, and one warning asks the user to enter the number in eDavki.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,12345674,1 Main Street,SI,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 300'000, // EUR 30.00
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+    };
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mTaxNumber, std::nullopt);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mIdentificationNumber, std::nullopt);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mName,
+              std::optional<std::string>{"Issuer A"});
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mAffectedReports,
+              std::vector<ReportType>{ReportType::OtherInterest});
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mSources.size(), 1U);
+}
+
+TEST(InterestPaymentsTest, ACouponOfASlovenianIssuerWithAValidNumberDoesNotWarn) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,12345679,1 Main Street,SI,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 300'000, // EUR 30.00
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR}}},
+    };
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mTaxNumber,
+              std::optional<std::string>{"12345679"});
+    EXPECT_EQ(
+        countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing),
+        0U);
+}
+
+TEST(InterestPaymentsTest, ACashInterestOfASlovenianBrokerWithoutAValidNumberWarns) {
+    // The only broker payer row of Trade Republic is Slovenian and its number has the prefix `SI`,
+    // which is not a tax number: the row is still made with the name, and one warning asks the
+    // user to enter the number in eDavki.
+    const std::string broker =
+        std::string{kBrokerHeader} +
+        "TR,TR-S,Broker T,SI12345679,\"1 Main Street, Ljubljana\",SI,manual,\n";
+    const auto catalogue =
+        parseReferenceCatalogue(std::string{kPayersHeader},
+                                std::string{kReliefHeader} + "BE,dividend,Treaty text,manual,\n",
+                                broker);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    addFile2025(rates);
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "",
+         .mIsin = std::nullopt,
+         .mInterestType = InterestType::BrokerInterest,
+         .mTransactions =
+             {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                             .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+               .mGrossAmount = 100'000, // EUR 10.00
+               .mTaxPaid = 0,
+               .mCurrency = Currency::EUR,
+               .mTaxCurrency = Currency::EUR,
+               .mCashHolder = CashHolder::Broker}}},
+    };
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mTaxNumber, std::nullopt);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mIdentificationNumber, std::nullopt);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mName,
+              std::optional<std::string>{"Broker T"});
+
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mAffectedReports,
+              std::vector<ReportType>{ReportType::OtherInterest});
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mContext.mSources.size(), 1U);
+}
+
+// --- The foreign-tax evidence notice ---
+
+TEST(InterestPaymentsTest, ACouponWithForeignTaxAsksForEvidence) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer US,TAX-U,1 Main Street,US,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "Synthetic Bond US",
+        .mIsin = "XX0000000010",
+        .mInterestType = InterestType::BondInterest,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 250'000, // EUR 25.00
+                 .mTaxPaid = 30'000,      // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+
+    const auto maybeNotice = foreignTaxEvidenceNotice(statement, run.mLast.mOtherReport);
+
+    ASSERT_TRUE(maybeNotice.has_value());
+
+    const auto& notice = *maybeNotice;
+
+    EXPECT_EQ(notice.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(notice.mCode, ProcessingDiagnosticCode::ForeignTaxEvidenceRequired);
+    EXPECT_EQ(notice.mMessageKey,
+              std::optional<MessageKey>{MessageKey::ForeignTaxEvidenceRequired});
+    EXPECT_EQ(notice.mContext.mAffectedReports, std::vector<ReportType>{ReportType::OtherInterest});
+    ASSERT_EQ(notice.mContext.mSources.size(), 1U);
+    EXPECT_EQ(notice.mContext.mSources.at(0).mSourceRow, 2U);
+}
+
+TEST(InterestPaymentsTest, TwoTaxedCouponsGiveOneEvidenceNotice) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer US,TAX-U,1 Main Street,US,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "Synthetic Bond US",
+        .mIsin = "XX0000000010",
+        .mInterestType = InterestType::BondInterest,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 250'000, // EUR 25.00
+                 .mTaxPaid = 30'000,      // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-06-16"),
+                               .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+                 .mGrossAmount = 400'000, // EUR 40.00
+                 .mTaxPaid = 60'000,      // EUR 6.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+
+    const auto maybeNotice = foreignTaxEvidenceNotice(statement, run.mLast.mOtherReport);
+
+    ASSERT_TRUE(maybeNotice.has_value());
+
+    const auto& notice = *maybeNotice;
+
+    ASSERT_EQ(notice.mContext.mSources.size(), 2U);
+    EXPECT_EQ(notice.mContext.mSources.at(0).mSourceRow, 2U);
+    EXPECT_EQ(notice.mContext.mSources.at(1).mSourceRow, 3U);
+}
+
+TEST(InterestPaymentsTest, ACouponWithoutTaxAndCashInterestAskForNoEvidence) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer US,TAX-U,1 Main Street,US,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {
+        {
+            .mName = "Synthetic Bond US",
+            .mIsin = "XX0000000010",
+            .mInterestType = InterestType::BondInterest,
+            .mTransactions =
+                {
+                    {.mMetadata =
+                         {.mTaxDate = day("2023-03-14"),
+                          .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+                     .mGrossAmount = 250'000, // EUR 25.00
+                     .mTaxPaid = 0,
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR},
+                },
+        },
+        {
+            .mName = "",
+            .mIsin = std::nullopt,
+            .mInterestType = InterestType::BrokerInterest,
+            .mTransactions =
+                {
+                    {.mMetadata =
+                         {.mTaxDate = day("2023-11-30"),
+                          .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+                     .mGrossAmount = 34'500, // EUR 3.45, the broker holds the cash
+                     .mTaxPaid = 0,
+                     .mCurrency = Currency::EUR,
+                     .mTaxCurrency = Currency::EUR,
+                     .mCashHolder = CashHolder::Broker},
+                },
+        },
+    };
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates, 2023};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_FALSE(foreignTaxEvidenceNotice(statement, run.mLast.mOtherReport).has_value());
+}
+
+TEST(InterestPaymentsTest, AnExcludedCouponsTaxGivesNoEvidenceNotice) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer US,TAX-U,1 Main Street,US,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "Synthetic Bond US",
+        .mIsin = "XX0000000010",
+        .mInterestType = InterestType::BondInterest,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 250'000, // EUR 25.00
+                 .mTaxPaid = 30'000,      // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_TRUE(foreignTaxEvidenceNotice(statement, run.mLast.mOtherReport).has_value());
+
+    // The user leaves the ISIN out of the form: no taxed row is left, so no notice.
+    excludeCoupons(run.mLast.mOtherReport, {"XX0000000010"});
+
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.size(), 0U);
+    EXPECT_FALSE(foreignTaxEvidenceNotice(statement, run.mLast.mOtherReport).has_value());
 }
 
 // --- The treaty claim of Doh-Obr interest ---
@@ -1970,6 +2262,7 @@ TEST(InterestPaymentsTest, NoLeavesTheRowsWithoutAClaimAndWithoutAWarning) {
     EXPECT_TRUE(run.result().mRequests.empty());
     ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
     EXPECT_FALSE(run.mLast.mOtherReport.mRows.at(0).mTreatyClaim.has_value());
+
     EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 }
 
@@ -2281,6 +2574,7 @@ TEST(InterestPaymentsTest, ABondCouponTextOfThePayerCountryIsTheClaimOfATaxedCou
     EXPECT_EQ(claim.mCatalogueRow->mRowNumber, 2U);
 
     EXPECT_TRUE(run.result().mRequests.empty());
+
     EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 }
 
@@ -2523,6 +2817,7 @@ TEST(InterestPaymentsTest, EachKindOfInterestGetsTheTextOfItsOwnKindWithoutAQues
               std::optional<std::string>{"Cash interest text"});
 
     EXPECT_TRUE(run.result().mRequests.empty());
+
     EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 }
 

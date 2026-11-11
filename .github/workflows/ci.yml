@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Build development image
         run: scripts/build.sh image
@@ -34,7 +34,7 @@ jobs:
         run: docker save taxbrokerreport-dev | zstd -T0 -3 -o "$RUNNER_TEMP/dev-image.tar.zst"
 
       - name: Upload development image
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dev-image
           path: ${{ runner.temp }}/dev-image.tar.zst
@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Load development image
         uses: ./.github/actions/load-dev-image
@@ -63,7 +63,7 @@ jobs:
         run: tar -C "$GITHUB_WORKSPACE" -cf - build/dev | zstd -T0 -3 -o "$RUNNER_TEMP/dev-build.tar.zst"
 
       - name: Upload build tree
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dev-build
           path: ${{ runner.temp }}/dev-build.tar.zst
@@ -79,7 +79,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Build production image
         run: scripts/build.sh prod
@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload the static binaries
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: taxbroker-linux-x86_64-${{ steps.package.outputs.short_sha }}
           path: ${{ runner.temp }}/taxbroker-linux-x86_64.tar.gz
@@ -135,7 +135,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Load development image
         uses: ./.github/actions/load-dev-image
@@ -160,7 +160,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Load development image
         uses: ./.github/actions/load-dev-image
@@ -208,7 +208,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -258,7 +258,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Load development image
         uses: ./.github/actions/load-dev-image
@@ -280,7 +280,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Load development image
         uses: ./.github/actions/load-dev-image
@@ -290,7 +290,7 @@ jobs:
 
       - name: Upload the input that broke a check
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: fuzz-findings
           path: |
@@ -311,7 +311,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Load development image
         uses: ./.github/actions/load-dev-image
@@ -340,14 +340,14 @@ jobs:
 
     steps:
       - name: Checkout pull-request commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: current
 
       - name: Checkout base commit
         if: matrix.target == 'baseline'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ matrix.ref }}
           path: baseline
@@ -366,7 +366,7 @@ jobs:
         run: scripts/coverage.sh
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-${{ matrix.target }}
           path: ${{ matrix.target }}/coverage/
@@ -385,13 +385,13 @@ jobs:
 
     steps:
       - name: Download pull-request coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: coverage-current
           path: current/coverage
 
       - name: Download base coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: coverage-baseline
           path: baseline/coverage
@@ -484,7 +484,7 @@ jobs:
 
       - name: Upload HTML coverage report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-coverage-html
           path: current/coverage/
@@ -494,7 +494,7 @@ jobs:
       - name: Update coverage comment
         if: github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const fs = require('fs');

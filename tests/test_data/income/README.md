@@ -11,7 +11,8 @@ Status: values checked by hand and XSD-valid. eDavki draft import accepted on 20
 errors were the expected ones: the empty payer facts of the rows without a reference row, and the
 foreign-tax evidence that is attached by hand (`docs/verification.md`). `Doh-Obr_2023_treaty`
 was accepted on 2026-11-10 too (tax year moved to 2022), with its text, `true` and `Type` 4 rows.
-`Doh-Obr_2023` is not imported yet.
+`Doh-Obr_2023` is not imported; its rows have the shapes that were. On 2026-11-11 the CLI output for the
+synthetic income fixture (four forms) and a taxed coupon with payer facts were imported too (`docs/verification.md`).
 
 | File | Year, workflow in the file | Input and rates | Expected rows |
 | --- | --- | --- | --- |

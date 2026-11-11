@@ -148,6 +148,7 @@ enum class MessageKey {
     InterestPayerNotFound,
     InterestPaymentNotPositive,
     SlovenianCouponTax,
+    SlovenianPayerTaxNumberMissing,
     DepositInterestAddOtherBanks,
     TreatyClaimDetailsMissing,
     TaxClassificationUnknownIncomeConfirmationRequired,

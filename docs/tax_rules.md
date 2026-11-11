@@ -1097,16 +1097,26 @@ accrued interest was paid at purchase.
 | Field | Cash interest | Bond coupon | Rule |
 | --- | --- | --- | --- |
 | `Date` | Date the interest was received | Coupon payment date | `xs:date`, inside the filed year, required. |
-| `TaxNumber` | Left out | Slovenian issuer's eight digits, otherwise left out | Only for a Slovenian payer (`xs:int`); the digits come from its reference row (`SI` and eight digits). Cash interest has a foreign payer. |
-| `IdentificationNumber` | Payer's tax or other identification number | Issuer's (unconfirmed, see "Still open") | At most 30 characters. Optional in general, required for a foreign payer. |
-| `Name` | Payer's name | Issuer's name | Required. |
-| `Address` | Payer's address | Issuer's address | Required. |
+| `TaxNumber` | Left out | Slovenian issuer's eight digits, otherwise left out | Required for a Slovenian payer (`xs:int`; eDavki's check before submitting). The reference row holds the eight digits, with a valid check digit (see "Slovenian tax number"); otherwise it is left out and the row warns `slovenian_payer_tax_number_missing`. Cash interest has a foreign payer. |
+| `IdentificationNumber` | Payer's tax or other identification number | Issuer's (unconfirmed, see "Still open") | At most 30 characters. Optional in general, required for a foreign payer; for a Slovenian payer it must stay empty (eDavki's check before submitting). |
+| `Name` | Payer's name | Issuer's name | Left out for a Slovenian payer with a tax number: eDavki fills it in from the tax register and rejects a different spelling. Otherwise written. |
+| `Address` | Payer's address | Issuer's address | Left out for a Slovenian payer with a tax number, as `Name`. Otherwise written. |
 | `Country` | Payer's country, two letters | Issuer's country, two letters | Required; `SI` for a Slovenian payer. |
 | `Type` | `4` (unconfirmed, see below) | `2` | Interest-type code, required. |
 | `Value` | Gross interest in EUR | Gross coupon in EUR | Two decimals, greater than zero, required. |
 | `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0.00` when none), left out for a Slovenian payer whatever the export holds: a Slovenian withholding is not foreign tax (the warning `slovenian_coupon_tax` tells the user). |
 | `Country2` | Payer's country | Payer's country | Source country, two letters; left out when not known. |
 | `ReliefStatement` | The treaty text of the country's cash interest with a claim, `DA` without a text, otherwise left out | The treaty text of the issuer's country with a claim, `DA` without a text, otherwise left out | Optional, at most 100 characters; see "Treaty claim". |
+
+**Slovenian tax number.** Exactly eight digits; the last is the check digit of the first seven
+(weights 8 to 2, 11 minus the sum modulo 11, 10 written as 0; a sum that is a multiple of 11 has no
+digit). `SI` before the digits is not a tax number. eDavki's check before submitting wants, for a
+payer in `SI`, the tax number filled and the identification number empty, and then takes the name
+and address from the tax register. So a Slovenian payer's Doh-Obr row has `TaxNumber` and no
+`IdentificationNumber`, `Name` or `Address`. A payer whose reference row has no valid number is
+written with its name and address, no number, and the warning `slovenian_payer_tax_number_missing`:
+the user enters the tax number in eDavki. The same number rule applies to a broker payer and to
+Doh-DHO and Doh-Div, which still write the name and address (unconfirmed by an import).
 
 **Numbers.** `Value` and `ForeignTax` are `Decimal12_2Type`: digits only, at most 12 before the
 point and at most 2 after it, so `12.5`, `0` and `999999999999.99` pass and `-1.00`, `1.234` and
@@ -1159,7 +1169,10 @@ made, as for dividends. The payer of broker cash interest is the broker, whose f
 **Foreign tax.** A blank source tax means no tax was paid: the row gets `ForeignTax` `0`, without
 a question and without a warning, for a dividend, a bond coupon and cash interest alike. The form
 instructions require evidence for a foreign-tax deduction (amount, base, final and actually
-paid); the result lists it, and XML generation does not mean it was attached.
+paid); the result lists it, and XML generation does not mean it was attached. When any Doh-Obr row
+has a foreign tax above 0 (a Slovenian payer's tax is not written and does not count), the result
+warns once that the user attaches the evidence of the payment and the tax in eDavki
+(`foreign_tax_evidence_required`); eDavki lists the missing proof as a critical content error.
 
 **Treaty claim.** The form has a column to claim an exemption under an international treaty
 (*Uveljavljam oprostitev po mednarodni pogodbi (odstavek, člen)*). The form instructions say a

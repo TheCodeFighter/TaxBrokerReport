@@ -1,0 +1,2 @@
+isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,source_revision
+XX0000000036,Synthetic Issuer US Inc.,TAX-U,1 Main Street New York,US,bond,,issuer,manual,

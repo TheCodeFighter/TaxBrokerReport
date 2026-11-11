@@ -92,6 +92,10 @@ output with it byte for byte.
 | Doh-DHO | `Doh_DHO_4.xsd` | 2025 | 2026-11-10 | Imported | None | |
 | Doh-Obr | `Doh_Obr_2.xsd` | 2025 | 2026-11-10 | Imported | Both coupons (no payer facts): payer country, name, address, source country | `Type` 2, `Value` 16,00 and 15,63, `ForeignTax` 0,00 as expected |
 | Doh-Obr (`Doh-Obr_2023_treaty`) | `Doh_Obr_2.xsd` | 2022 (the golden file has 2023) | 2026-11-10 | Imported | Foreign-tax proof of payment required for the rows with a foreign tax (3.00 and 6.00) | Three rows with payer facts: `ReliefStatement` `2. odstavek 11. člena`, `ReliefStatement` `true` (imported before the change to `DA`), and a `Type` `4` cash-interest row without the element |
+| Doh-Obr (E4, a coupon of a Slovenian issuer) | `Doh_Obr_2.xsd` | 2025 | 2026-11-11 | Imported | None at import. The check before submitting, for the row written at fb4a079: a Slovenian payer needs `TaxNumber` and must not have `IdentificationNumber`. With the made-up number moved to `TaxNumber`: name and address differ from the tax register. | With a real tax number (Krka `82646716`) and only the number filled in, eDavki fills in the name and address from the register and the check passes. The writer now writes `TaxNumber` and leaves out `IdentificationNumber`, `Name` and `Address` for such a payer |
+| Doh-Div (E2, a dividend on a Saturday, rate of the day before) | `Doh_Div_3.xsd` | 2025 | 2026-11-11 | Imported | Only the empty payer facts, as expected | `Value` 10,00, `ForeignTax` 0,00, date 2025-03-15 as expected |
+| Doh-Obr (E7, a taxed coupon with payer facts and a treaty text, through the CLI) | `Doh_Obr_2.xsd` | 2025 | 2026-11-11 | Imported | No unexpected error | App commit fb4a079 |
+| Doh-KDVP, Doh-Div, Doh-DHO, Doh-Obr (E1, the four files of `scripts/report.sh --synthetic`) | the four schemas | 2024 | 2026-11-11 | Imported | No unexpected error | App commit fb4a079, the taxpayer's own tax numbers |
 
 ## Not checked yet
 
@@ -117,12 +121,15 @@ output with it byte for byte.
   claim the user completes with the paragraph and article (not recorded), and whether an interest text needs the
   *Uradni list MP* number (the built-in file has no interest text yet); the interest-type code
   for broker cash interest (FURS names none, `4` imports); the payer fields of a coupon (the
-  issuer's facts; unconfirmed); a coupon of a Slovenian issuer (its `TaxNumber`, eight digits, and
-  no `ForeignTax`); whether a draft shows the interest as expected (`tax_rules.md`, "Doh-Obr form
-  contract"). `Doh-Obr_2023.golden.xml` (a self-report run written as an original) is not
-  imported; its rows have the shapes already imported.
+  issuer's facts; unconfirmed); whether a draft shows the interest as expected (`tax_rules.md`, "Doh-Obr form
+  contract"). A coupon of a Slovenian issuer: eDavki's check before submitting wants `TaxNumber`
+  (eight digits) and no `IdentificationNumber`, and fills in the name and address from the tax
+  register (E4, 2026-11-11); a draft import accepts it. Still open: the same rule for a Slovenian
+  payer in Doh-DHO and Doh-Div (not checked). `Doh-Obr_2023.golden.xml` (a self-report run written
+  as an original) is not imported; its rows have the shapes already imported (E1 and E7 cover
+  them).
 - **S5, a loss blocked by the 30-day rule (`F10` false)** (`tests/manual/edavki/README.md`, from
-  following tasks): not imported yet.
+  following tasks): not imported (see "Not imported on purpose").
 - **S6 to S8, the rows for split lots and partly blocked losses** (#267): not imported yet. The
   files and expected rows are in `tests/manual/edavki/README.md`.
 - **The developer export without `F10`**. The CLI blocks that case today.
