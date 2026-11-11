@@ -1,5 +1,7 @@
 #include "../support/xsd_validation.hpp"
 #include "parsers/traderepublic_parser.hpp"
+#include "processors/corporate_actions.hpp"
+#include "processors/failure_resolution_stage.hpp"
 #include "processors/income_reports.hpp"
 #include "processors/tax_processor.hpp"
 #include "taxbroker/currency.hpp"
@@ -10,6 +12,7 @@
 #include "xml/dho_xml_writer.hpp"
 #include "xml/div_xml_writer.hpp"
 #include "xml/obr_xml_writer.hpp"
+#include "xml/report_xml_stage.hpp"
 
 #include <gtest/gtest.h>
 
@@ -191,6 +194,80 @@ ReportMetadata metadata(int aYear, FilingType aFilingType) {
         .mFilingType = aFilingType,
     };
 }
+
+/// The stages of the report command that matter for the capital history: the FIFO pools, the
+/// choice to leave failed investments out of Doh-KDVP, the income stages and the income XML.
+/// The Doh-KDVP builder is not run: its status comes from the errors and questions alone.
+class CapitalAndIncomeRun {
+  public:
+    CapitalAndIncomeRun(const std::filesystem::path& aCsv, int aYear)
+        : mCatalogue(referenceCatalogue()) {
+        tr::TradeRepublicParser parser;
+        std::vector<StatementMergeInput> inputs{{0, parser.parse(aCsv)}};
+
+        mPrepared = TaxProcessor::prepareReportingYear(
+            {aYear, DeterministicStatementMerger{}.merge(std::move(inputs))});
+
+        mSession.start([this, aYear](RunDecisions& aDecisions) {
+            ApplicationResultInput input{
+                .mReportingYear = aYear,
+                .mMergeDiagnostics = mPrepared.mMerged.mDiagnostics,
+                .mProcessingDiagnostics = mPrepared.mDiagnostics,
+            };
+
+            auto pools = matchCapitalPools(mPrepared.mMerged.mStatement,
+                                           mPrepared.mLedger.value(),
+                                           aDecisions);
+
+            appendStageOutput(input, std::move(pools.mFifo.mDiagnostics), {});
+            appendStageOutput(input,
+                              std::move(pools.mQuantities.mDiagnostics),
+                              std::move(pools.mQuantities.mRequests));
+
+            static_cast<void>(FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure));
+
+            mReports = prepareIncomeReports(input,
+                                            mPrepared.mMerged.mStatement,
+                                            mPrepared.mLedger.value(),
+                                            mCatalogue,
+                                            OfficialRateTable{},
+                                            aDecisions);
+
+            writeReportXml(input,
+                           metadata(aYear, FilingType::Original),
+                           {.mDividends = &mReports.mDividends, .mOther = &mReports.mOther});
+
+            return input;
+        });
+    }
+
+    [[nodiscard]] const ApplicationResult& result() const {
+        return mSession.result();
+    }
+
+    [[nodiscard]] const IncomeReports& reports() const {
+        return mReports;
+    }
+
+    [[nodiscard]] ReportStatus status(ReportType aType) const {
+        return result().report(aType).mStatus;
+    }
+
+    /// Answers the first open request and returns the rejections.
+    std::vector<RejectedAnswer> answerFirst(AnswerValue aAnswer) {
+        return mSession.answer({DecisionAnswer{
+            .mRequestId = result().mRequests.at(0).mId,
+            .mRunRevision = result().mRunRevision,
+            .mValue = std::move(aAnswer),
+        }});
+    }
+
+  private:
+    TaxProcessingResult mPrepared;
+    ReferenceCatalogue mCatalogue;
+    DecisionSession mSession;
+    IncomeReports mReports;
+};
 
 /// A committed file under `tests/test_data`, read byte for byte.
 std::string readTestData(std::string_view aFolder, std::string_view aName) {
@@ -458,6 +535,133 @@ TEST(IncomeXmlIntegrationTest, DohObrWithPayersForeignTaxAndTreatyClaimsMatchesT
     ASSERT_TRUE(result.mXml.has_value());
     EXPECT_EQ(*result.mXml, readTestData("income", "Doh-Obr_2023_treaty.golden.xml"));
     expectValidForObrSchema(*result.mXml);
+}
+
+const AnswerValue kExclude = FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments};
+const AnswerValue kFailReport = FailureResolutionAnswer{FailureResolution::FailReport};
+
+TEST(IncomeXmlIntegrationTest,
+     IncompleteCapitalHistoryLeavesDohDivAndDohObrWrittenWhileItsQuestionIsOpen) {
+    // XX0000000001: 2 units bought, 5 sold, so 3 units have no purchase (incomplete history).
+    // The dividend is on the same ISIN: EUR 10.00 with EUR 1.50 tax. The interest of 2023-11-01
+    // is EUR 1.23 before 6 December 2023, so it is cash interest (Doh-Obr).
+    const TemporaryCsv csv{
+        R"(2023-03-01T09:00:00Z,2023-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-1,,,,)",
+        R"(2023-04-03T09:00:00Z,2023-04-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,10,50,,,EUR,,,,,synthetic-sell-1,,,,)",
+        R"(2023-05-02T09:00:00Z,2023-05-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share,XX0000000001,,,10,,-1.50,EUR,,,,,synthetic-dividend-1,,,,)",
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+    };
+
+    const CapitalAndIncomeRun run{csv.path(), 2023};
+
+    // The error is for Doh-KDVP only.
+    ASSERT_FALSE(run.result().mDiagnostics.empty());
+    EXPECT_EQ(run.result().mDiagnostics.at(0).mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::IncompleteHistory});
+    EXPECT_EQ(run.result().mDiagnostics.at(0).mAffectedReports,
+              (std::vector{ReportType::CapitalGains}));
+    EXPECT_EQ(run.result().mDiagnostics.at(0).mIsin, "XX0000000001");
+
+    // One question: leave XX0000000001 out of Doh-KDVP or fail the report.
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    EXPECT_EQ(run.result().mRequests.at(0).mType,
+              RequestType::CapitalGainsFailureResolutionRequired);
+    EXPECT_EQ(run.status(ReportType::CapitalGains), ReportStatus::NeedsInput);
+
+    const auto* question =
+        std::get_if<FailureResolutionQuestion>(&run.result().mRequests.at(0).mData);
+
+    ASSERT_NE(question, nullptr);
+    ASSERT_EQ(question->mInvestments.size(), 1U);
+    EXPECT_EQ(question->mInvestments.at(0).mIsin, "XX0000000001");
+
+    // Doh-Div: the dividend is a row, EUR 10.00 gross and EUR 1.50 tax.
+    ASSERT_EQ(run.reports().mDividends.mRows.size(), 1U);
+    EXPECT_EQ(run.reports().mDividends.mRows.at(0).mIsin, "XX0000000001");
+    EXPECT_EQ(run.reports().mDividends.mRows.at(0).mGrossIncome, 100'000);
+    EXPECT_EQ(run.reports().mDividends.mRows.at(0).mWithholding.mForeignTax, 15'000);
+    EXPECT_EQ(run.status(ReportType::Dividends), ReportStatus::Generated);
+    EXPECT_TRUE(run.result().report(ReportType::Dividends).mXml.has_value());
+
+    // Doh-Obr: the cash interest is a row, EUR 1.23.
+    ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
+    EXPECT_TRUE(std::holds_alternative<BrokerCashInterest>(run.reports().mOther.mRows.at(0).mKind));
+    EXPECT_EQ(run.reports().mOther.mRows.at(0).mGrossInterest, 12'300);
+    EXPECT_EQ(run.status(ReportType::OtherInterest), ReportStatus::Generated);
+    EXPECT_TRUE(run.result().report(ReportType::OtherInterest).mXml.has_value());
+
+    EXPECT_EQ(run.status(ReportType::BankDepositInterest), ReportStatus::NoData);
+    EXPECT_EQ(run.result().mStatus, OverallStatus::NeedsInput);
+}
+
+TEST(IncomeXmlIntegrationTest, FailingTheCapitalReportKeepsDohDivAndDohObrWritten) {
+    // The same rows as above; the user chooses to write no Doh-KDVP.
+    const TemporaryCsv csv{
+        R"(2023-03-01T09:00:00Z,2023-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-1,,,,)",
+        R"(2023-04-03T09:00:00Z,2023-04-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,10,50,,,EUR,,,,,synthetic-sell-1,,,,)",
+        R"(2023-05-02T09:00:00Z,2023-05-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share,XX0000000001,,,10,,-1.50,EUR,,,,,synthetic-dividend-1,,,,)",
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+    };
+
+    CapitalAndIncomeRun run{csv.path(), 2023};
+
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    ASSERT_TRUE(run.answerFirst(kFailReport).empty());
+
+    EXPECT_TRUE(run.result().mRequests.empty());
+    EXPECT_EQ(run.status(ReportType::CapitalGains), ReportStatus::Failed);
+
+    ASSERT_EQ(run.reports().mDividends.mRows.size(), 1U);
+    EXPECT_EQ(run.reports().mDividends.mRows.at(0).mGrossIncome, 100'000); // EUR 10.00
+    EXPECT_EQ(run.status(ReportType::Dividends), ReportStatus::Generated);
+    EXPECT_TRUE(run.result().report(ReportType::Dividends).mXml.has_value());
+
+    ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
+    EXPECT_EQ(run.reports().mOther.mRows.at(0).mGrossInterest, 12'300); // EUR 1.23
+    EXPECT_EQ(run.status(ReportType::OtherInterest), ReportStatus::Generated);
+    EXPECT_TRUE(run.result().report(ReportType::OtherInterest).mXml.has_value());
+
+    // One report failed and the others are written (diagnostics rule 3).
+    EXPECT_EQ(run.result().mStatus, OverallStatus::PartialSuccess);
+}
+
+TEST(IncomeXmlIntegrationTest, LeavingTheIsinOutOfDohKdvpKeepsItsDividendInDohDiv) {
+    // The same rows as above; the user leaves XX0000000001 out of Doh-KDVP.
+    const TemporaryCsv csv{
+        R"(2023-03-01T09:00:00Z,2023-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-1,,,,)",
+        R"(2023-04-03T09:00:00Z,2023-04-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,10,50,,,EUR,,,,,synthetic-sell-1,,,,)",
+        R"(2023-05-02T09:00:00Z,2023-05-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share,XX0000000001,,,10,,-1.50,EUR,,,,,synthetic-dividend-1,,,,)",
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+    };
+
+    CapitalAndIncomeRun run{csv.path(), 2023};
+
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    ASSERT_TRUE(run.answerFirst(kExclude).empty());
+
+    EXPECT_TRUE(run.result().mRequests.empty());
+
+    // Doh-KDVP has nothing left and lists the investment it left out.
+    EXPECT_EQ(run.status(ReportType::CapitalGains), ReportStatus::NoData);
+    ASSERT_EQ(run.result().report(ReportType::CapitalGains).mExcludedInvestments.size(), 1U);
+    EXPECT_EQ(run.result().report(ReportType::CapitalGains).mExcludedInvestments.at(0).mIsin,
+              "XX0000000001");
+
+    // The error stays visible but no longer blocks.
+    ASSERT_FALSE(run.result().mDiagnostics.empty());
+    EXPECT_EQ(run.result().mDiagnostics.at(0).mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::IncompleteHistory});
+    EXPECT_FALSE(run.result().mDiagnostics.at(0).mBlocking);
+
+    // The dividend of the same ISIN is still reported.
+    ASSERT_EQ(run.reports().mDividends.mRows.size(), 1U);
+    EXPECT_EQ(run.reports().mDividends.mRows.at(0).mIsin, "XX0000000001");
+    EXPECT_EQ(run.reports().mDividends.mRows.at(0).mGrossIncome, 100'000); // EUR 10.00
+    EXPECT_EQ(run.status(ReportType::Dividends), ReportStatus::Generated);
+    EXPECT_EQ(run.status(ReportType::OtherInterest), ReportStatus::Generated);
+
+    // An exclusion and the payer warning make the run complete with warnings (rule 4).
+    EXPECT_EQ(run.result().mStatus, OverallStatus::CompletedWithWarnings);
 }
 
 } // namespace
