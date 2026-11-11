@@ -123,6 +123,7 @@ add_library(taxbroker_xml STATIC
     xml/div_xml_writer.cpp
     xml/kdvp_xml_writer.cpp
     xml/obr_xml_writer.cpp
+    xml/report_xml_stage.cpp
     xml/xml_common.cpp
 )
 

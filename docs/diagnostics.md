@@ -87,8 +87,8 @@ whether to exclude failed capital ISINs". The classification of trade investment
 `excludedItems`". The dividend and other-interest failure choices use the same stage, but the
 report command does not run the dividend or interest stage yet, so `taxbroker report` asks
 neither these choices nor the bond type.
-Developer mode, the income summaries and XML failure isolation are not part of it yet; until they
-exist, `unsafe` is `false`.
+Developer mode and the income summaries are not part of it yet; until they exist, `unsafe` is
+`false`. XML failures are isolated per form: see "XML writer stage" below.
 
 ### Report result
 
@@ -293,7 +293,7 @@ The processor determines scope from the data that the failed operation could aff
 | Another dividend calculation error | Dividends only. |
 | A Doh-Obr error safely isolated to a complete ISIN | Other interest only, with the exclusion/failure choice below. |
 | Another interest calculation error | Its established form; both interest forms when the subtype is unknown. |
-| XML serialization or schema failure | Only the XML file being generated. |
+| XML serialization or schema failure | Only the XML file being generated. It is never an exclusion choice and developer mode never bypasses it. |
 
 The parser records the kind of the row on each row diagnostic, and the application result takes
 the scope from it:
@@ -328,6 +328,21 @@ After a scoped error, the pipeline still validates and generates every unaffecte
 collects later independent diagnostics. It stops only work that depends on unreliable state. For
 example, after incomplete history makes one ISIN unsafe, later FIFO results for that ISIN are not
 calculated, but another ISIN and both income reports continue.
+
+### XML writer stage
+
+`writeReportXml` (`include/xml/report_xml_stage.hpp`) runs the four XML writers one after the
+other, for each form whose model has rows, and stores each XML and its errors in the application
+input. Each writer is guarded on its own:
+
+- a field the form does not accept gives `xml_value_out_of_range` and no XML for that form;
+- a writer that throws gives one `xml_serialization_failed` error for that form and no XML for it,
+  and the stage writes a log line for the developers;
+- the other forms keep their XML, and each form's status stays independent.
+
+A form whose model has no rows is not written, so it ends as `no_data` (or whatever its other
+diagnostics say). Doh-Obr is one document for broker cash interest and bond coupons together, so
+one error in either subtype fails the whole form.
 
 ### Choosing whether to exclude failed capital ISINs
 
@@ -906,8 +921,10 @@ The later stages use the codes defined by their rule documents. These include:
   [`fifo.md`](fifo.md);
 - `invalid_exchange_rate`, `broker_exchange_rate_used`,
   `unrepresentable_value`, and `arithmetic_overflow` in [`calculations.md`](calculations.md); and
-- `xml_value_out_of_range`, `xml_serialization_failed`, and `xml_schema_validation_failed` for the
-  final XML boundary.
+- `xml_value_out_of_range` and `xml_serialization_failed` for the final XML boundary. The app does
+  not validate a document against the FURS schema at run time, so it makes no
+  `xml_schema_validation_failed`: each writer checks every field limit of its schema before it
+  writes, and the schema and golden XML tests prove that what it writes is valid.
 
 Additional codes and their default scope are:
 
@@ -920,6 +937,7 @@ Additional codes and their default scope are:
 | `incomplete_history` keys | Without a key: a sale needs more units than the purchases left. Key `.correction_required` for a sale short by less than `0.00000100` units while its quantity question is open (linked to it); key `.correction_cancelled` after a cancel (no request, so the exclusion question follows). |
 | `xml_basis_rounding_difference` | Warning for capital gains, one per purchase row of a Doh-KDVP list whose `F4` times `F3`, rounded to four decimals, differs from the exact basis of its units rounded the same way. Output only: no value changes and no budget is used. Its sources and date are those of the purchase. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value (Doh-KDVP for capital gains, Doh-Div for dividends, Doh-DHO for deposit interest, Doh-Obr for other interest): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. For Doh-Obr the interest stage gives it too, in stage `fifo_tax` and before the failure question, for a value of one payment that the form cannot hold (the writer repeats the checks as a guard), so the coupon's ISIN or the broker's cash interest can be left out. |
+| `xml_serialization_failed` | Error for one form whose XML writer stopped on an internal error, such as an unknown enumeration value: no XML for that form, the other forms keep theirs. Stage `xml_generation`, no field, no ISIN and no parameters; the exception text goes to the developer log only, never into the message. The log line is `XML writer of <form> stopped: <text>`, so a writer throws only with a fixed text, never with a value, a name or an ISIN. |
 | `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked; no request. Key `.units_mismatch` (stage `fifo_tax`, on the sale) is a safety check: a decided sale whose rule blocks more units than the sale has loss units within the holding period cannot be written as rows; it should never happen. |
 | `corporate_action_not_applied` | Error for capital gains: a corporate action whose result cannot be reported yet. Key `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one; `.loss_window` for a date after 31 December with a merger row inside a December loss window (a split row there has its ratio question or its own error instead). An action of a class that never reaches Doh-KDVP gets none: that class has its own error. |
 | `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.ratio_required_before_sale` (parameters `saleDate` and `days`, 10) for the same question when a sale before the row needs more units than were held and the row may be a late booking, `.cancelled` after a cancel (no request), `.same_day` for two or more rows of one broker for the ISIN on one date, and `.different_dates` (parameter `days`, 10) for split rows of different brokers on dates at most that far apart that the user says are two splits, or that cannot be asked as one split (more than one such neighbour date, a merger row, or a broker on both dates; no request for these until the identity question exists). |

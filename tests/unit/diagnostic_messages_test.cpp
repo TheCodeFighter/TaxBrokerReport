@@ -109,6 +109,7 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::XmlValueOutOfRange,
          "xml_value_out_of_range",
          {{"field", MessageParamKind::Text}}},
+        {MessageKey::XmlSerializationFailed, "xml_serialization_failed", {}},
         {MessageKey::UnsupportedTaxTreatmentCapitalClass,
          "unsupported_tax_treatment.capital_class",
          {{"assetClass", MessageParamKind::Text}}},
@@ -412,8 +413,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 141U);
-    ASSERT_EQ(expectedMessages().size(), 141U);
+    ASSERT_EQ(definitions.size(), 142U);
+    ASSERT_EQ(expectedMessages().size(), 142U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -447,8 +448,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 141U);
-    EXPECT_EQ(keys.size(), 141U);
+    EXPECT_EQ(ids.size(), 142U);
+    EXPECT_EQ(keys.size(), 142U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -471,7 +472,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 150U); // 141 message keys and 9 terms.
+    ASSERT_EQ(table.size(), 151U); // 142 message keys and 9 terms.
 
     std::set<std::string> tableKeys;
 
