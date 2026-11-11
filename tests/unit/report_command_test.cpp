@@ -1796,4 +1796,293 @@ TEST(ReportCommandTest, AnAnswerToAQuestionWithoutDataNamesTheRequestType) {
     EXPECT_EQ(cli::answerLine(decision), "exchange_rates_required: cancelled");
 }
 
+// Replacing the output files
+
+TEST(ReportCommandTest, AnOldFileThatCannotBeMovedAsideFailsTheRunAndKeepsTheOldFiles) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    std::filesystem::create_directory(folder.outputDirectory());
+    (void)folder.writeText("out/summary_2024.txt", "an old summary of an earlier run");
+    // The earlier summary is moved to summary_2024.txt.old first; a file cannot be renamed onto
+    // a folder, so that step fails.
+    std::filesystem::create_directory(folder.outputDirectory() + "/summary_2024.txt.old");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_EQ(result.mErr, "taxbroker: the output files cannot be replaced.\n");
+    EXPECT_EQ(folder.readOutput("summary_2024.txt"), "an old summary of an earlier run");
+    EXPECT_FALSE(folder.hasOutput("summary_2024.txt.tmp"));
+}
+
+// ECB rate files named by an income form
+
+/// An ECB file of 2026 that ends on 2026-11-10, far from 31 December.
+constexpr std::string_view kEcbUsd2026UntilNovember =
+    R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-01-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-03-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-11-10,1.25,A
+)";
+
+TEST(ReportCommandTest, ADividendWithoutAnEcbFileOfItsYearNamesTheFileToLoad) {
+    // The built-in rates end with 2025, and no file of 2026 is given.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2026-03-02T09:00:00Z,2026-03-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Dollar Share,XX0000000002,,,8.00,,,EUR,10.00,USD,0.800000,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2026",
+                             "--taxpayer",
+                             taxpayer,
+                             "--no-input",
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-Div_2026.xml"));
+    EXPECT_TRUE(contains(result.mOut, "Doh-Div errors: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "missing_exchange_rate"));
+    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to load: 2026\n"));
+    EXPECT_FALSE(contains(result.mOut, "ECB rate files to replace"));
+}
+
+TEST(ReportCommandTest, ADividendAfterTheLastDayOfAnEcbFileNamesTheFileToReplace) {
+    // The file ends on 2026-11-10, so it cannot tell whether 2026-11-12 had a rate.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", kEcbUsd2026UntilNovember);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2026-11-12T09:00:00Z,2026-11-12,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Dollar Share,XX0000000002,,,8.00,,,EUR,10.00,USD,0.800000,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2026",
+                             "--taxpayer",
+                             taxpayer,
+                             "--no-input",
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-Div_2026.xml"));
+    EXPECT_TRUE(contains(result.mOut, "Doh-Div errors: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to replace (they end too early): 2026\n"));
+    EXPECT_FALSE(contains(result.mOut, "ECB rate files to load"));
+}
+
+// What the user left out of an income form
+
+TEST(ReportCommandTest, AnExcludedBrokerLeavesDohObrWrittenFromTheCoupons) {
+    // The Trade Republic interest of 2023-02-01 is before 6 December 2023, so it is cash interest
+    // of Doh-Obr, in a currency (HRK) that the euro replaced on 2023-01-01: no rate exists. The
+    // user leaves the broker's cash interest out; the EUR coupon stays.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-02-01T10:00:00Z,2023-02-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.33,,,EUR,10.00,HRK,0.133000,Synthetic broker interest,synthetic-interest-1,,,,)",
+            R"(2023-03-10T10:00:00Z,2023-03-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond B,XS0000000002,,,10.00,,,EUR,,,,Interest payment,synthetic-coupon-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): generated without 1 excluded broker, 1 row, "
+                         "written to Doh-Obr_2023.xml\n"));
+    EXPECT_TRUE(contains(result.mOut, "Excluded brokers (not in Doh-Obr): Trade Republic\n"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "    Resolved by your answer: the cash interest of this broker is left out "
+                 "of the XML.\n"));
+    EXPECT_FALSE(contains(result.mOut, "the investment is left out of the XML"));
+    EXPECT_TRUE(contains(folder.readOutput("Doh-Obr_2023.xml"), "<Value>10.00</Value>"));
+}
+
+TEST(ReportCommandTest, ExcludingTheOnlyBrokerLeavesDohObrWithNoData) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-02-01T10:00:00Z,2023-02-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.33,,,EUR,10.00,HRK,0.133000,Synthetic broker interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-Obr_2023.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): no data, nothing is left to report after "
+                         "the excluded brokers\n"));
+}
+
+TEST(ReportCommandTest, ExcludingTheOnlyCouponInvestmentLeavesDohObrWithNoData) {
+    // The HRK coupon of 2023-03-10 has no rate (the euro replaced HRK on 2023-01-01).
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-03-10T10:00:00Z,2023-03-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond A,XS0000000001,,,1.33,,,EUR,10.00,HRK,0.133000,Interest payment,synthetic-coupon-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-Obr_2023.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): no data, nothing is left to report after "
+                         "the excluded investments\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded investments (not in Doh-Obr): 1\n"
+                         "  XS0000000001 Synthetic Bond A: missing_exchange_rate\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "    Resolved by your answer: the investment is left out of the XML.\n"));
+}
+
+TEST(ReportCommandTest, AnExcludedInvestmentAndAnExcludedBrokerAreCountedTogether) {
+    // Both the HRK coupon of Bond A and the HRK cash interest of the broker have no rate; a EUR
+    // coupon of Bond B stays.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-02-01T10:00:00Z,2023-02-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.33,,,EUR,10.00,HRK,0.133000,Synthetic broker interest,synthetic-interest-1,,,,)",
+            R"(2023-03-10T10:00:00Z,2023-03-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond A,XS0000000001,,,1.33,,,EUR,10.00,HRK,0.133000,Interest payment,synthetic-coupon-1,,,,)",
+            R"(2023-04-10T10:00:00Z,2023-04-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond B,XS0000000002,,,10.00,,,EUR,,,,Interest payment,synthetic-coupon-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): generated without 1 excluded investment and "
+                         "1 excluded broker, 1 row, written to Doh-Obr_2023.xml\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded investments (not in Doh-Obr): 1\n"
+                         "  XS0000000001 Synthetic Bond A: missing_exchange_rate\n"));
+    EXPECT_TRUE(contains(result.mOut, "Excluded brokers (not in Doh-Obr): Trade Republic\n"));
+}
+
+TEST(ReportCommandTest, DepositInterestAnsweredAtMostTheAllowanceWritesNoDohDho) {
+    // Trade Republic is a bank from 6 December 2023, so this EUR 1.00 is deposit interest. The
+    // user answers no: all banks together are at most EUR 1,000, so there is nothing to file.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-04-01T10:00:00Z,2025-04-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.00,,,EUR,,,,Synthetic bank interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "no\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-DHO_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Bank-deposit interest (Doh-DHO): no data, not needed, your deposit "
+                         "interest of all banks is at most EUR 1,000\n"));
+}
+
+// Rows that belong to no form
+
+TEST(ReportCommandTest, APrivateMarketBuyWithUnitsIsListedUnderNotAboutAForm) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            // shares is 100: a private-market row has no units, so this one gets a warning.
+            R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,CASH,PRIVATE_MARKET_BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000009,100,1,-100,,,EUR,,,,,synthetic-private-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "\nNot about a form (skipped private-market rows): 1\n"
+                         "  diagnostic-0001 warning unsupported_asset_class, history.csv row 2\n"));
+}
+
 } // namespace

@@ -481,4 +481,53 @@ TEST(TradeConversionTest, APriceThatDoesNotFitStaysForeignWithAnOverflowError) {
               (std::vector<SourceReference>{source(2, "synthetic-buy-1")}));
 }
 
+/// A used rate of one currency and day; aValue is foreign units per 1 EUR at 8 decimals.
+UsedOfficialRate
+usedRate(Currency aCurrency, std::string_view aDate, ExchangeRate aValue, std::size_t aRow) {
+    return UsedOfficialRate{
+        .mCurrency = aCurrency,
+        .mTaxDate = date(aDate),
+        .mRate = OfficialRate{.mCurrencyCode = std::string{currencyCode(aCurrency)},
+                              .mObservationDate = date(aDate),
+                              .mValue = aValue,
+                              .mSourceFile = SourceFilename::fromPath("exr_2025.csv"),
+                              .mSourceRow = aRow,
+                              .mSource = OfficialRateSource::EcbReferenceRateFile,
+                              .mOrigin = OfficialRateOrigin::Supplied}};
+}
+
+TEST(TradeConversionTest, MergedRatesAreSortedByDateThenCurrencyCode) {
+    const auto rates = mergedRates({usedRate(Currency::USD, "2025-03-10", 110'000'000, 5),
+                                    usedRate(Currency::USD, "2025-01-10", 125'000'000, 3)},
+                                   {usedRate(Currency::CHF, "2025-03-10", 95'000'000, 8),
+                                    usedRate(Currency::GBP, "2025-02-03", 85'000'000, 6)});
+
+    ASSERT_EQ(rates.size(), 4U);
+    // 2025-01-10 USD, 2025-02-03 GBP, then the two of 2025-03-10 by code: CHF before USD.
+    EXPECT_EQ(rates.at(0).mTaxDate, date("2025-01-10"));
+    EXPECT_EQ(rates.at(0).mCurrency, Currency::USD);
+    EXPECT_EQ(rates.at(1).mTaxDate, date("2025-02-03"));
+    EXPECT_EQ(rates.at(1).mCurrency, Currency::GBP);
+    EXPECT_EQ(rates.at(2).mTaxDate, date("2025-03-10"));
+    EXPECT_EQ(rates.at(2).mCurrency, Currency::CHF);
+    EXPECT_EQ(rates.at(3).mTaxDate, date("2025-03-10"));
+    EXPECT_EQ(rates.at(3).mCurrency, Currency::USD);
+}
+
+TEST(TradeConversionTest, MergedRatesKeepOneRatePerCurrencyAndDay) {
+    // Both lists used the USD rate of 2025-01-10; the first list's copy is kept.
+    const auto rates = mergedRates({usedRate(Currency::USD, "2025-01-10", 125'000'000, 3)},
+                                   {usedRate(Currency::USD, "2025-01-10", 125'000'000, 9),
+                                    usedRate(Currency::USD, "2025-03-10", 110'000'000, 5)});
+
+    ASSERT_EQ(rates.size(), 2U);
+    EXPECT_EQ(rates.at(0).mTaxDate, date("2025-01-10"));
+    EXPECT_EQ(rates.at(0).mRate.mSourceRow, 3U);
+    EXPECT_EQ(rates.at(1).mTaxDate, date("2025-03-10"));
+}
+
+TEST(TradeConversionTest, MergedRatesOfTwoEmptyListsAreEmpty) {
+    EXPECT_TRUE(mergedRates({}, {}).empty());
+}
+
 } // namespace
