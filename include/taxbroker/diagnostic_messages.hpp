@@ -54,6 +54,7 @@ enum class MessageKey {
     InvalidReportingYear,
     IncompleteHistory,
     XmlValueOutOfRange,
+    XmlSerializationFailed,
     UnsupportedTaxTreatmentCapitalClass,
     UnsupportedTaxTreatmentPrivateMarketSkipped,
     UnsupportedTaxTreatmentDiscountBond,

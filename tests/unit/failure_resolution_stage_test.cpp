@@ -1440,4 +1440,79 @@ TEST(FailureResolutionStageTest, ExcludingOneIsinFromDividendsAndCapitalResolves
     EXPECT_TRUE(result.report(kDividends).mExcludedInvestments.empty());
 }
 
+TEST(FailureResolutionStageTest, AnXmlErrorOfADividendIsinAsksNoExclusion) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        // The Doh-Div writer found the error in the final document, so no ISIN can be left out.
+        input.mProcessingDiagnostics = {ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::XmlValueOutOfRange,
+            .mContext = {.mStage = PipelineStage::XmlGeneration,
+                         .mAffectedReports = {kDividends},
+                         .mInstrumentName = "Synthetic Payer A",
+                         .mIsin = "XX0000000001"},
+            .mMessage = "Synthetic XML error.",
+        }};
+
+        return input;
+    };
+    DecisionSession session;
+    std::vector<Isin> excluded;
+
+    start(session, input, excluded, kDividendsFailure);
+
+    EXPECT_TRUE(excluded.empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_EQ(session.result().report(kDividends).mStatus, ReportStatus::Failed);
+}
+
+TEST(FailureResolutionStageTest, AnXmlErrorOfOtherInterestAsksNoExclusionForAnIsinOrABroker) {
+    const auto isinInput = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        input.mProcessingDiagnostics = {ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::XmlValueOutOfRange,
+            .mContext = {.mStage = PipelineStage::XmlGeneration,
+                         .mAffectedReports = {kOtherInterest},
+                         .mInstrumentName = "Synthetic Bond A",
+                         .mIsin = "XX0000000002"},
+            .mMessage = "Synthetic XML error.",
+        }};
+
+        return input;
+    };
+    const auto brokerInput = []() {
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        // A cash-interest error of one broker, found in the final document.
+        input.mProcessingDiagnostics = {ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::XmlValueOutOfRange,
+            .mContext = {.mStage = PipelineStage::XmlGeneration,
+                         .mAffectedReports = {kOtherInterest},
+                         .mCashInterestBroker = Broker::TradeRepublic},
+            .mMessage = "Synthetic XML error.",
+        }};
+
+        return input;
+    };
+    DecisionSession isinSession;
+    DecisionSession brokerSession;
+    std::vector<Isin> excluded;
+
+    start(isinSession, isinInput, excluded, kOtherInterestFailure);
+
+    EXPECT_TRUE(excluded.empty());
+    EXPECT_TRUE(isinSession.result().mRequests.empty());
+    EXPECT_EQ(isinSession.result().report(kOtherInterest).mStatus, ReportStatus::Failed);
+
+    start(brokerSession, brokerInput, excluded, kOtherInterestFailure);
+
+    EXPECT_TRUE(excluded.empty());
+    EXPECT_TRUE(brokerSession.result().mRequests.empty());
+    EXPECT_EQ(brokerSession.result().report(kOtherInterest).mStatus, ReportStatus::Failed);
+}
+
 } // namespace

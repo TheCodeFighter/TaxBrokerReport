@@ -115,6 +115,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "incomplete_history";
     case ProcessingDiagnosticCode::XmlValueOutOfRange:
         return "xml_value_out_of_range";
+    case ProcessingDiagnosticCode::XmlSerializationFailed:
+        return "xml_serialization_failed";
     case ProcessingDiagnosticCode::UnsupportedTaxTreatment:
         return "unsupported_tax_treatment";
     case ProcessingDiagnosticCode::TaxClassificationUnknown:

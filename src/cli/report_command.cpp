@@ -20,7 +20,7 @@
 #include "taxbroker/official_rates.hpp"
 #include "taxbroker/reference_catalogue.hpp"
 #include "utils/numeric_util.hpp"
-#include "xml/kdvp_xml_writer.hpp"
+#include "xml/report_xml_stage.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1387,7 +1387,6 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     // the capital form is failed or needs input, never empty.
     if (built.mReport && !hasGateError)
     {
-        auto& capital = input.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
         // The warnings of the rows that the XML lists; without XML there are none.
         auto basisDifferences = basisDifferenceDiagnostics(capitalStatement, built);
 
@@ -1399,6 +1398,8 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
             // as having no sale.
             if (excluded.empty() && !hasLeftOutDisposal(statement, ledger, input.mExcludedItems))
             {
+                auto& capital = input.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
+
                 capital.mNoDataReason = NoDataReason::NoSelectedYearDisposals;
             }
         }
@@ -1409,12 +1410,8 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
                 .mReportingYear = aOptions.mYear,
                 .mFilingType = aOptions.mFilingType,
             };
-            auto written = KdvpXmlWriter::write(metadata, *built.mReport);
 
-            std::move(written.mDiagnostics.begin(),
-                      written.mDiagnostics.end(),
-                      std::back_inserter(processing));
-            capital.mXml = std::move(written.mXml);
+            writeReportXml(input, metadata, {.mCapitalGains = &*built.mReport});
         }
     }
 

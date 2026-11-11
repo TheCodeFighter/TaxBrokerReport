@@ -211,6 +211,7 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::InvalidReportingYear, "invalid_reporting_year", kYearRange},
     MessageDefinition{MessageKey::IncompleteHistory, "incomplete_history", {}},
     MessageDefinition{MessageKey::XmlValueOutOfRange, "xml_value_out_of_range", kField},
+    MessageDefinition{MessageKey::XmlSerializationFailed, "xml_serialization_failed", {}},
     MessageDefinition{MessageKey::UnsupportedTaxTreatmentCapitalClass,
                       "unsupported_tax_treatment.capital_class",
                       kAssetClass},

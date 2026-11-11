@@ -274,6 +274,7 @@ Each pipeline stage either passes data on or computes new data, and its signatur
 | `FifoMatcher::match` | `const&` statement and ledger | computes matches; both are still needed |
 | `CapitalGainsReportBuilder::build` | `const&` statement, ledger and FIFO result | computes report rows; all are still needed |
 | `KdvpXmlWriter::write` | `const&` metadata and report | computes the XML text; the report is still needed |
+| `writeReportXml` | `ApplicationResultInput&`, `const&` metadata and models | calls each writer under its own guard and stores the XML and the writer's errors in the input |
 | `ApplicationResultBuilder::build` | `ApplicationResultInput&&` | moves each report's XML into the result; the diagnostics become new application diagnostics |
 
 A copy is made only where a caller still needs the data afterwards, and it is written out at the
@@ -982,6 +983,14 @@ Each stage appends its diagnostics, requests and excluded items to the same
 changes another form. The `taxbroker report` command runs this stage after the Doh-KDVP stages, so
 the capital output and the order of its questions do not move; the income questions are asked in
 the terminal, and the income models are not written to files until the income XML writers exist.
+
+### XML writer stage
+
+`writeReportXml` (`include/xml/report_xml_stage.hpp`, in `taxbroker_xml`) is the one place that
+calls the four writers. It runs each writer for a form whose model has rows and guards it on its
+own: a writer that throws gives one `xml_serialization_failed` error for its form and a log line,
+and the other forms keep their XML. The `taxbroker report` command calls it with the capital model
+only; the income models are added with the income files. See "XML writer stage" in `diagnostics.md`.
 
 ### Doh-KDVP XML writer
 

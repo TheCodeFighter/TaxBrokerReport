@@ -34,6 +34,8 @@ enum class ProcessingDiagnosticCode {
     InvalidReportingYear,
     IncompleteHistory,
     XmlValueOutOfRange,
+    /// An error: an XML writer stopped on an internal error; its form has no XML.
+    XmlSerializationFailed,
     UnsupportedTaxTreatment,
     TaxClassificationUnknown,
     /// A corporate action that is applied but whose result cannot be reported yet, or that is not
