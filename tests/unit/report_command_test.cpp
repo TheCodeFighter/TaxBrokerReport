@@ -131,7 +131,7 @@ Usage:
   taxbroker --help
 
 Commands:
-  report    Write the Doh-KDVP form (capital gains) for one year.
+  report    Write the tax forms Doh-KDVP, Doh-Div, Doh-DHO and Doh-Obr for one year.
 
 Run 'taxbroker report --help' for the details.
 )";
@@ -840,13 +840,17 @@ TEST(ReportCommandTest, GeneratedYearWritesTheXmlAndTheSummary) {
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(result.mErr.empty());
-    EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
+    EXPECT_EQ(result.mOut, R"(TaxBrokerReport 2024 (original return)
 Input files: 1
   source-0001 history.csv
 Reference data: built-in (ib-edavki 22220f5)
 ECB rate files: built-in 2016 to 2025
 
-Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
+Forms:
+  Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml
+  Dividends (Doh-Div): no data, no dividend to report in 2024
+  Bank-deposit interest (Doh-DHO): no data, no bank-deposit interest to report in 2024
+  Other interest (Doh-Obr): no data, no cash interest or bond coupon to report in 2024
 
 Investments with a sale in 2024: 1
   XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units
@@ -855,9 +859,9 @@ Units past the holding period (tax free, not in the XML): 0
 
 Private-market events skipped (only a cash amount, no units): 0
 
-Errors: 0
+Doh-KDVP errors: 0
 
-Warnings: 0
+Doh-KDVP warnings: 0
 )");
 
     EXPECT_EQ(folder.readOutput("summary_2024.txt"), result.mOut);
@@ -883,7 +887,7 @@ TEST(ReportCommandTest, SelfReportIsNamedInTheSummaryTitle) {
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
-    EXPECT_EQ(result.mOut.rfind("TaxBrokerReport: Doh-KDVP 2024 (self-report)\n", 0), 0U);
+    EXPECT_EQ(result.mOut.rfind("TaxBrokerReport 2024 (self-report)\n", 0), 0U);
 }
 
 TEST(ReportCommandTest, EachInputFileIsListedWithItsSourceIdAndFileName) {
@@ -933,13 +937,17 @@ TEST(ReportCommandTest, YearWithoutDataWritesOnlyTheSummary) {
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
-    EXPECT_EQ(result.mOut, R"(TaxBrokerReport: Doh-KDVP 2024 (original return)
+    EXPECT_EQ(result.mOut, R"(TaxBrokerReport 2024 (original return)
 Input files: 1
   source-0001 history.csv
 Reference data: built-in (ib-edavki 22220f5)
 ECB rate files: built-in 2016 to 2025
 
-Capital gains (Doh-KDVP): no data, no sale in 2024 needs a Doh-KDVP form
+Forms:
+  Capital gains (Doh-KDVP): no data, no sale in 2024 needs a Doh-KDVP form
+  Dividends (Doh-Div): no data, no dividend to report in 2024
+  Bank-deposit interest (Doh-DHO): no data, no bank-deposit interest to report in 2024
+  Other interest (Doh-Obr): no data, no cash interest or bond coupon to report in 2024
 
 Investments with a sale in 2024: 0
 
@@ -947,15 +955,15 @@ Units past the holding period (tax free, not in the XML): 0
 
 Private-market events skipped (only a cash amount, no units): 0
 
-Errors: 0
+Doh-KDVP errors: 0
 
-Warnings: 0
+Doh-KDVP warnings: 0
 )");
     EXPECT_TRUE(folder.hasOutput("summary_2024.txt"));
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
 }
 
-TEST(ReportCommandTest, YearWithoutDataDeletesAnOldXml) {
+TEST(ReportCommandTest, YearWithoutDataKeepsAnOldXmlAndSaysSo) {
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
@@ -973,14 +981,16 @@ TEST(ReportCommandTest, YearWithoutDataDeletesAnOldXml) {
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
-    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_EQ(folder.readOutput("Doh-KDVP_2024.xml"), "an old file of an earlier run");
     EXPECT_TRUE(contains(result.mOut,
-                         "Capital gains (Doh-KDVP): no data, no sale in 2024 needs a Doh-KDVP "
+                         "  Capital gains (Doh-KDVP): no data, no sale in 2024 needs a Doh-KDVP "
                          "form\n"
-                         "Deleted the old Doh-KDVP_2024.xml of an earlier run.\n\n"));
+                         "    Doh-KDVP_2024.xml in the output folder is from an earlier run, not "
+                         "from this run.\n"
+                         "  Dividends (Doh-Div): no data"));
 }
 
-TEST(ReportCommandTest, BlockedYearWithoutAnOldXmlDeletesNothing) {
+TEST(ReportCommandTest, BlockedYearWithoutAnOldXmlSaysNothingAboutOne) {
     // Buy 1 @ 10 and 1 @ 40, sell 2 @ 30: +20 and -10. The sale empties the holding, so the loss
     // question is asked; the input ends without an answer, so the question blocks the year.
     const TemporaryFolder folder;
@@ -1005,9 +1015,10 @@ TEST(ReportCommandTest, BlockedYearWithoutAnOldXmlDeletesNothing) {
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
-                         "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
-                         "below)\n\n"));
-    EXPECT_FALSE(contains(result.mOut, "Deleted the old"));
+                         "  Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
+                         "below)\n"
+                         "  Dividends (Doh-Div): no data"));
+    EXPECT_FALSE(contains(result.mOut, "from an earlier run"));
     EXPECT_TRUE(folder.hasOutput("summary_2024.txt"));
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
 }
@@ -1195,9 +1206,9 @@ TEST(ReportCommandTest, PrivateMarketEventsAreListedWithAndWithoutAnIsin) {
                          "  (no ISIN) Synthetic Other Fund: 2024-11-15, history.csv row 3\n\n"));
 }
 
-TEST(ReportCommandTest, DiagnosticsOfOtherFormsShowTheirSeverity) {
+TEST(ReportCommandTest, DividendDiagnosticsAreListedUnderDohDivAndBlockOnlyIt) {
     // One dividend error, one parser warning and one stage warning (the payer is not in the
-    // reference files): all are listed apart with their severity.
+    // reference files): all belong to Doh-Div. The rejected row blocks Doh-Div, and only it.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -1219,17 +1230,18 @@ TEST(ReportCommandTest, DiagnosticsOfOtherFormsShowTheirSeverity) {
                              "--trade-republic",
                              history});
 
-    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
-                         "Errors: 0\n\nWarnings: 0\n\n"
-                         "Not about Doh-KDVP (dividends, interest and skipped private-market "
-                         "rows): 3\n"
-                         "  diagnostic-0001 error invalid_value, history.csv row 2\n"));
-    EXPECT_TRUE(
-        contains(result.mOut, "  diagnostic-0002 warning missing_field, history.csv row 3\n"));
+                         "  Dividends (Doh-Div): blocked, no XML was written (see the errors "
+                         "below)\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Doh-KDVP errors: 0\n\nDoh-KDVP warnings: 0\n\n"
+                         "Doh-Div errors: 1\n"
+                         "  diagnostic-0001 invalid_value, history.csv row 2\n"));
+    EXPECT_TRUE(contains(result.mOut, "  diagnostic-0002 missing_field, history.csv row 3\n"));
     // The second dividend (row 3, 2024-05-01) is the only one that became a payment.
     EXPECT_TRUE(contains(result.mOut,
-                         "  diagnostic-0003 warning dividend_payer_not_found, XX0000000001, "
+                         "  diagnostic-0003 dividend_payer_not_found, XX0000000001, "
                          "2024-05-01, history.csv row 3\n"));
 }
 
@@ -1267,7 +1279,7 @@ TEST(ReportCommandTest, DiagnosticWithSeveralSourcesNamesTheFirstAndCountsTheOth
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
-                         "Errors: 1\n"
+                         "Doh-KDVP errors: 1\n"
                          "  diagnostic-0001 conflicting_duplicate, XX0000000001 Synthetic Share, "
                          "2024-01-10, first.csv row 2 (+2 more)\n"));
 }
@@ -1289,7 +1301,8 @@ TEST(ReportCommandTest, FileLevelErrorNamesOnlyTheFile) {
                              other});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_TRUE(contains(result.mOut, "Errors: 1\n  diagnostic-0001 invalid_header, other.csv\n"));
+    EXPECT_TRUE(
+        contains(result.mOut, "Doh-KDVP errors: 1\n  diagnostic-0001 invalid_header, other.csv\n"));
 }
 
 TEST(ReportCommandTest, DiagnosticWithoutASourceNamesOnlyItsCode) {
@@ -1316,7 +1329,8 @@ TEST(ReportCommandTest, DiagnosticWithoutASourceNamesOnlyItsCode) {
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_TRUE(contains(result.mOut, "Errors: 1\n  diagnostic-0001 xml_value_out_of_range\n"));
+    EXPECT_TRUE(
+        contains(result.mOut, "Doh-KDVP errors: 1\n  diagnostic-0001 xml_value_out_of_range\n"));
 }
 
 TEST(ReportCommandTest, BlockedInvestmentNamesEachCodeOnceAndEachSale) {
@@ -1421,7 +1435,7 @@ TEST(ReportCommandTest, ACryptoPurchaseIsListedAsATaxRuleExclusionWithoutAWarnin
                          "Excluded items (left out of the reports, not in the XML): 1\n"
                          "  XX0000000005 Synthetic Coin: crypto, tax rule: crypto is not part of "
                          "Doh-KDVP; check whether a separate crypto return applies to you\n"));
-    EXPECT_TRUE(contains(result.mOut, "Errors: 0\n\nWarnings: 0\n"));
+    EXPECT_TRUE(contains(result.mOut, "Doh-KDVP errors: 0\n\nDoh-KDVP warnings: 0\n"));
 }
 
 TEST(ReportCommandTest, ABondBoughtAndSoldInTheYearListsItsUnitsWithoutAMaturityDate) {
@@ -1445,14 +1459,14 @@ TEST(ReportCommandTest, ABondBoughtAndSoldInTheYearListsItsUnitsWithoutAMaturity
                              history});
 
     // 400 units bought and 250 sold, none matured: the line ends after the units, with no
-    // maturity date.
-    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    // maturity date. A bond sold in the year asks its type, and with no input Doh-Obr is blocked.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
                          "Excluded items (left out of the reports, not in the XML): 1\n"
                          "  XS0000000001 Synthetic Bond: bond, tax rule: debt security, only its "
                          "interest is taxable; bought 400.0000, sold 250.0000, matured 0.0000 "
                          "units\n"));
-    EXPECT_TRUE(contains(result.mOut, "Errors: 0\n\nWarnings: 0\n"));
+    EXPECT_TRUE(contains(result.mOut, "Doh-KDVP errors: 0\n\nDoh-KDVP warnings: 0\n"));
 }
 
 TEST(ReportCommandTest, AMaturedBondListsItsMaturityDate) {
@@ -1475,7 +1489,8 @@ TEST(ReportCommandTest, AMaturedBondListsItsMaturityDate) {
                              "--trade-republic",
                              history});
 
-    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    // A bond matured in the year asks its type, and with no input Doh-Obr is blocked.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
     EXPECT_TRUE(contains(result.mOut,
                          "Excluded items (left out of the reports, not in the XML): 1\n"
                          "  XS0000000001 Synthetic Bond: bond, tax rule: debt security, only its "
@@ -1561,7 +1576,7 @@ TEST(ReportCommandTest, FolderAtTheXmlPathOfAGeneratedYearFails) {
     EXPECT_FALSE(folder.hasOutput("summary_2024.txt"));
 }
 
-TEST(ReportCommandTest, FolderAtTheXmlPathOfAYearWithoutDataFails) {
+TEST(ReportCommandTest, FolderAtTheXmlPathOfAYearWithoutDataIsLeftAlone) {
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv("history.csv", {});
@@ -1577,12 +1592,13 @@ TEST(ReportCommandTest, FolderAtTheXmlPathOfAYearWithoutDataFails) {
                              "--trade-republic",
                              history});
 
-    // Even an empty folder there is not deleted: this run did not make it.
-    EXPECT_EQ(result.mExitCode, kExitFailure);
-    EXPECT_TRUE(result.mOut.empty());
-    EXPECT_EQ(result.mErr, "taxbroker: the old Doh-KDVP_2024.xml cannot be deleted.\n");
-    EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
-    EXPECT_FALSE(folder.hasOutput("summary_2024.txt"));
+    // A form without data writes nothing, so the folder is not touched, and it is not an old file
+    // of an earlier run.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_FALSE(contains(result.mOut, "from an earlier run"));
+    EXPECT_TRUE(std::filesystem::is_directory(folder.outputDirectory() + "/Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(folder.hasOutput("summary_2024.txt"));
 }
 
 TEST(ReportCommandTest, FolderAtTheSummaryPathFails) {
@@ -1778,6 +1794,295 @@ TEST(ReportCommandTest, AnAnswerToAQuestionWithoutDataNamesTheRequestType) {
     };
 
     EXPECT_EQ(cli::answerLine(decision), "exchange_rates_required: cancelled");
+}
+
+// Replacing the output files
+
+TEST(ReportCommandTest, AnOldFileThatCannotBeMovedAsideFailsTheRunAndKeepsTheOldFiles) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    std::filesystem::create_directory(folder.outputDirectory());
+    (void)folder.writeText("out/summary_2024.txt", "an old summary of an earlier run");
+    // The earlier summary is moved to summary_2024.txt.old first; a file cannot be renamed onto
+    // a folder, so that step fails.
+    std::filesystem::create_directory(folder.outputDirectory() + "/summary_2024.txt.old");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_EQ(result.mErr, "taxbroker: the output files cannot be replaced.\n");
+    EXPECT_EQ(folder.readOutput("summary_2024.txt"), "an old summary of an earlier run");
+    EXPECT_FALSE(folder.hasOutput("summary_2024.txt.tmp"));
+}
+
+// ECB rate files named by an income form
+
+/// An ECB file of 2026 that ends on 2026-11-10, far from 31 December.
+constexpr std::string_view kEcbUsd2026UntilNovember =
+    R"(KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-01-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-03-02,1.25,A
+EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A,2026-11-10,1.25,A
+)";
+
+TEST(ReportCommandTest, ADividendWithoutAnEcbFileOfItsYearNamesTheFileToLoad) {
+    // The built-in rates end with 2025, and no file of 2026 is given.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2026-03-02T09:00:00Z,2026-03-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Dollar Share,XX0000000002,,,8.00,,,EUR,10.00,USD,0.800000,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2026",
+                             "--taxpayer",
+                             taxpayer,
+                             "--no-input",
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-Div_2026.xml"));
+    EXPECT_TRUE(contains(result.mOut, "Doh-Div errors: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "missing_exchange_rate"));
+    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to load: 2026\n"));
+    EXPECT_FALSE(contains(result.mOut, "ECB rate files to replace"));
+}
+
+TEST(ReportCommandTest, ADividendAfterTheLastDayOfAnEcbFileNamesTheFileToReplace) {
+    // The file ends on 2026-11-10, so it cannot tell whether 2026-11-12 had a rate.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", kEcbUsd2026UntilNovember);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2026-11-12T09:00:00Z,2026-11-12,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Dollar Share,XX0000000002,,,8.00,,,EUR,10.00,USD,0.800000,,synthetic-dividend-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2026",
+                             "--taxpayer",
+                             taxpayer,
+                             "--no-input",
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-Div_2026.xml"));
+    EXPECT_TRUE(contains(result.mOut, "Doh-Div errors: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "  ECB rate files to replace (they end too early): 2026\n"));
+    EXPECT_FALSE(contains(result.mOut, "ECB rate files to load"));
+}
+
+// What the user left out of an income form
+
+TEST(ReportCommandTest, AnExcludedBrokerLeavesDohObrWrittenFromTheCoupons) {
+    // The Trade Republic interest of 2023-02-01 is before 6 December 2023, so it is cash interest
+    // of Doh-Obr, in a currency (HRK) that the euro replaced on 2023-01-01: no rate exists. The
+    // user leaves the broker's cash interest out; the EUR coupon stays.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-02-01T10:00:00Z,2023-02-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.33,,,EUR,10.00,HRK,0.133000,Synthetic broker interest,synthetic-interest-1,,,,)",
+            R"(2023-03-10T10:00:00Z,2023-03-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond B,XS0000000002,,,10.00,,,EUR,,,,Interest payment,synthetic-coupon-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): generated without 1 excluded broker, 1 row, "
+                         "written to Doh-Obr_2023.xml\n"));
+    EXPECT_TRUE(contains(result.mOut, "Excluded brokers (not in Doh-Obr): Trade Republic\n"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "    Resolved by your answer: the cash interest of this broker is left out "
+                 "of the XML.\n"));
+    EXPECT_FALSE(contains(result.mOut, "the investment is left out of the XML"));
+    EXPECT_TRUE(contains(folder.readOutput("Doh-Obr_2023.xml"), "<Value>10.00</Value>"));
+}
+
+TEST(ReportCommandTest, ExcludingTheOnlyBrokerLeavesDohObrWithNoData) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-02-01T10:00:00Z,2023-02-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.33,,,EUR,10.00,HRK,0.133000,Synthetic broker interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-Obr_2023.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): no data, nothing is left to report after "
+                         "the excluded brokers\n"));
+}
+
+TEST(ReportCommandTest, ExcludingTheOnlyCouponInvestmentLeavesDohObrWithNoData) {
+    // The HRK coupon of 2023-03-10 has no rate (the euro replaced HRK on 2023-01-01).
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-03-10T10:00:00Z,2023-03-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond A,XS0000000001,,,1.33,,,EUR,10.00,HRK,0.133000,Interest payment,synthetic-coupon-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-Obr_2023.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): no data, nothing is left to report after "
+                         "the excluded investments\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded investments (not in Doh-Obr): 1\n"
+                         "  XS0000000001 Synthetic Bond A: missing_exchange_rate\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "    Resolved by your answer: the investment is left out of the XML.\n"));
+}
+
+TEST(ReportCommandTest, AnExcludedInvestmentAndAnExcludedBrokerAreCountedTogether) {
+    // Both the HRK coupon of Bond A and the HRK cash interest of the broker have no rate; a EUR
+    // coupon of Bond B stays.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2023-02-01T10:00:00Z,2023-02-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.33,,,EUR,10.00,HRK,0.133000,Synthetic broker interest,synthetic-interest-1,,,,)",
+            R"(2023-03-10T10:00:00Z,2023-03-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond A,XS0000000001,,,1.33,,,EUR,10.00,HRK,0.133000,Interest payment,synthetic-coupon-1,,,,)",
+            R"(2023-04-10T10:00:00Z,2023-04-10,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond B,XS0000000002,,,10.00,,,EUR,,,,Interest payment,synthetic-coupon-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2023",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "exclude\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Other interest (Doh-Obr): generated without 1 excluded investment and "
+                         "1 excluded broker, 1 row, written to Doh-Obr_2023.xml\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Excluded investments (not in Doh-Obr): 1\n"
+                         "  XS0000000001 Synthetic Bond A: missing_exchange_rate\n"));
+    EXPECT_TRUE(contains(result.mOut, "Excluded brokers (not in Doh-Obr): Trade Republic\n"));
+}
+
+TEST(ReportCommandTest, DepositInterestAnsweredAtMostTheAllowanceWritesNoDohDho) {
+    // Trade Republic is a bank from 6 December 2023, so this EUR 1.00 is deposit interest. The
+    // user answers no: all banks together are at most EUR 1,000, so there is nothing to file.
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-04-01T10:00:00Z,2025-04-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.00,,,EUR,,,,Synthetic bank interest,synthetic-interest-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "no\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(folder.hasOutput("Doh-DHO_2025.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Bank-deposit interest (Doh-DHO): no data, not needed, your deposit "
+                         "interest of all banks is at most EUR 1,000\n"));
+}
+
+// Rows that belong to no form
+
+TEST(ReportCommandTest, APrivateMarketBuyWithUnitsIsListedUnderNotAboutAForm) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            // shares is 100: a private-market row has no units, so this one gets a warning.
+            R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,CASH,PRIVATE_MARKET_BUY,PRIVATE_FUND,Synthetic Private Fund,XX0000000009,100,1,-100,,,EUR,,,,,synthetic-private-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "\nNot about a form (skipped private-market rows): 1\n"
+                         "  diagnostic-0001 warning unsupported_asset_class, history.csv row 2\n"));
 }
 
 } // namespace

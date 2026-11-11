@@ -3294,7 +3294,7 @@ DecisionQuestion depositQuestion(Money aTotal) {
     };
 }
 
-TEST(ApplicationResultRequestTest, AnOpenDepositQuestionMakesOnlyDohDhoNeedInput) {
+TEST(ApplicationResultRequestTest, AnOpenDepositQuestionIsListedButDoesNotMakeDohDhoNeedInput) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mReports[static_cast<std::size_t>(kBank)].mXml = "<deposit/>";
     input.mReports[static_cast<std::size_t>(kOther)].mXml = "<other/>";
@@ -3302,9 +3302,11 @@ TEST(ApplicationResultRequestTest, AnOpenDepositQuestionMakesOnlyDohDhoNeedInput
 
     const auto result = ApplicationResultBuilder::build(std::move(input));
 
-    EXPECT_EQ(result.report(kBank).mStatus, ReportStatus::NeedsInput);
+    // The question is listed under Doh-DHO, but the form with its XML is generated.
+    EXPECT_EQ(result.report(kBank).mRequestIds, std::vector<std::string>{"request-0001"});
+    EXPECT_EQ(result.report(kBank).mStatus, ReportStatus::Generated);
     EXPECT_EQ(result.report(kOther).mStatus, ReportStatus::Generated);
-    EXPECT_EQ(result.mStatus, OverallStatus::NeedsInput);
+    EXPECT_EQ(result.mStatus, OverallStatus::Success);
 }
 
 TEST(ApplicationResultRequestTest, ADepositQuestionNeedsATotalAboveZeroAndAtMostTheAllowance) {

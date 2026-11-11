@@ -1,6 +1,7 @@
 #include "cli/report_command.hpp"
 
 #include "cli/decision_prompts.hpp"
+#include "cli/output_files.hpp"
 #include "cli/taxpayer_file.hpp"
 #include "cli_text.hpp"
 #include "parsers/traderepublic_parser.hpp"
@@ -25,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstdint>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -34,6 +36,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -58,7 +61,7 @@ Usage:
   taxbroker --help
 
 Commands:
-  report    Write the Doh-KDVP form (capital gains) for one year.
+  report    Write the tax forms Doh-KDVP, Doh-Div, Doh-DHO and Doh-Obr for one year.
 
 Run 'taxbroker report --help' for the details.
 )";
@@ -69,9 +72,11 @@ constexpr std::string_view kReportHelp =
                    [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
                    --trade-republic FILE...
 
-Writes the Doh-KDVP form (capital gains from selling shares and funds) for one year from
-Trade Republic CSV exports, and a readable summary. The XML can be imported into eDavki
-as a draft. Nothing is sent anywhere: everything stays on this computer.
+Writes the forms Doh-KDVP (capital gains from selling shares and funds), Doh-Div (dividends),
+Doh-DHO (bank-deposit interest) and Doh-Obr (other interest and bond coupons) for one year
+from Trade Republic CSV exports, and a readable summary. The XML can be imported into eDavki
+as a draft. Nothing is sent anywhere: everything stays on this computer. Each form is
+made on its own: a blocked form never stops another.
 
 Options:
   --year YYYY        The tax year, 2000 to 9999.
@@ -119,12 +124,17 @@ Taxpayer file (JSON):
   The filing type is not in the file: use --self-report for a self-report.
 
 Output files in DIR:
-  Doh-KDVP_YYYY.xml  The form. Written only when it could be made in full.
-  summary_YYYY.txt   Each investment sold in the year, the units past the holding period,
-                     the skipped private-market events, the warnings, the errors, the
-                     open questions and your answers. The same summary is printed here.
-  A blocked run, or a year without a sale to report, deletes an old Doh-KDVP_YYYY.xml
-  in DIR, so a file from an earlier run is never mistaken for this run's result.
+  Doh-KDVP_YYYY.xml, Doh-Div_YYYY.xml, Doh-DHO_YYYY.xml, Doh-Obr_YYYY.xml
+                     One file per form, written only when that form could be made in
+                     full. A form without data has no file.
+  summary_YYYY.txt   The status of each form, each investment sold in the year, the units
+                     past the holding period, the skipped private-market events, the
+                     warnings and errors of each form, the open questions and your
+                     answers. The same summary is printed here.
+  A form that is not made leaves the file of an earlier run as it is; the summary says
+  so, so it is never mistaken for this run's result.
+  While it writes, the command uses the names <file>.tmp and <file>.old in DIR, and may
+  replace files with those names.
 
 Supported for now:
   - Shares and funds (ETFs) bought and sold in EUR.
@@ -133,6 +143,8 @@ Supported for now:
   - The 30-day loss rule: a sale at a loss whose loss a purchase of the same investment
     within 30 days before or after it blocks in full is written with F10 false. A loss
     that the files alone cannot decide is written as you answer (see "Questions").
+  - Dividends (Doh-Div), Trade Republic interest (Doh-DHO or Doh-Obr) and bond coupons
+    (Doh-Obr), in EUR or a currency with an official ECB rate.
 
 Questions:
   Some cases need your answer. The command asks in the terminal, one question at a time,
@@ -159,20 +171,19 @@ Questions:
     Doh-KDVP. A problem with a file, a row, the year or the XML is not solved this way. It
     comes after the questions of other investments and before those of the listed ones,
     which exclude drops.
-  - Income questions (dividends, interest and bond coupons). The command also prepares the
-    income of the year for Doh-Div, Doh-DHO and Doh-Obr, but does not write those forms
-    yet, so these questions never change the Doh-KDVP file or the exit code. They are:
+  - Income questions (dividends, interest and bond coupons). They are:
     the type of a bond sold or matured in the year (ordinary, or discount for a discount or
     zero-coupon bond); whether your bank-deposit interest with your other banks is above
-    EUR 1,000; which of several reference rows is the payer of a dividend (a number, or
-    skip: you complete the payer in eDavki); what an income payment of unknown type is;
-    and, as for Doh-KDVP, whether to leave out the dividend or coupon investments with a
-    problem (exclude, fail or cancel).
+    EUR 1,000 (without an answer Doh-DHO is made, from the imported interest only); which
+    of several reference rows is the payer of a dividend (a number, or skip: you complete
+    the payer in eDavki); what an income payment of unknown type is; and, as for Doh-KDVP,
+    whether to leave out the dividend or coupon investments with a problem (exclude, fail
+    or cancel).
   An answer that does not fit is explained and the question is asked again. cancel closes
   a question without an answer, and the form it is about is blocked. With --no-input, or when
   the input ends (Ctrl-D), the open questions stay open: the forms they are about are blocked
-  (a payer choice blocks nothing) and the summary
-  lists them. The answers are used only in this run and are never saved, so the next run
+  (a payer choice, a treaty claim and the deposit-interest question block nothing) and the
+  summary lists them. The answers are used only in this run and are never saved, so the next run
   asks again.
 
 Foreign currencies:
@@ -189,12 +200,12 @@ Foreign currencies:
 
 Left out by a tax rule (not in the XML, listed under "Excluded items" in the summary,
 without a warning):
-  - Bonds: debt securities are no capital gain. Only their interest is reported (Doh-Obr,
-    not made yet). The summary shows the units bought, sold and matured in the year.
+  - Bonds: debt securities are no capital gain. Only their interest is reported (Doh-Obr).
+    The summary shows the units bought, sold and matured in the year.
   - Crypto assets: they are not part of Doh-KDVP. Check whether a separate crypto return
     applies to you.
 
-The report is blocked (no XML) when an investment sold in the year:
+Doh-KDVP is blocked (no XML) when an investment sold in the year:
   - is a private fund or a derivative;
   - has a split or reverse split up to 31 December whose ratio is not answered, a merger,
     or split rows of two brokers at most 10 days apart that are not one split. An answered
@@ -225,12 +236,14 @@ Skipped:
   - Bond maturities and their corrections (Trade Republic FINAL_MATURITY,
     FINAL_MATURITY_CANCELLED and REDEMPTION rows) are information only. Bond sales and
     maturities are in no form; the summary adds them up per bond.
-  - Dividends and interest: their forms (Doh-Div, Doh-DHO, Doh-Obr) are not made yet.
+
+Doh-Div, Doh-DHO and Doh-Obr are blocked, for example, by a payment in a foreign currency
+that no ECB rate file covers, by an open question or by a payment that is rejected.
 
 Exit codes:
-  0  The XML was written, or no sale in the year needs a Doh-KDVP form.
-  1  The report is blocked: the errors and the open questions are in the summary. No XML
-     was written.
+  0  Every form was written, or has no data.
+  1  At least one form is blocked: its errors and open questions are in the summary. The
+     other forms are still written.
   2  The command could not run: a wrong option, a missing file, an invalid taxpayer
      file or an output file that cannot be written. No output file was changed.
 
@@ -547,10 +560,14 @@ std::string saleLine(const MergedStatement& aStatement, const StatementEventRefe
     return "sale " + isoDate(metadata.mTaxDate) + ", " + sourceText(primarySource(metadata));
 }
 
-bool affectsCapital(const ApplicationDiagnostic& aDiagnostic) {
+bool affects(const ApplicationDiagnostic& aDiagnostic, ReportType aType) {
     return std::find(aDiagnostic.mAffectedReports.begin(),
                      aDiagnostic.mAffectedReports.end(),
-                     ReportType::CapitalGains) != aDiagnostic.mAffectedReports.end();
+                     aType) != aDiagnostic.mAffectedReports.end();
+}
+
+bool affectsCapital(const ApplicationDiagnostic& aDiagnostic) {
+    return affects(aDiagnostic, ReportType::CapitalGains);
 }
 
 std::string_view severityText(DiagnosticSeverity aSeverity) {
@@ -566,10 +583,11 @@ std::string_view severityText(DiagnosticSeverity aSeverity) {
 }
 
 /// One diagnostic in two lines: where it is, then the English message. The severity is written
-/// only for a list that mixes errors and warnings.
+/// only for a list that mixes errors and warnings. aForm is the form the list belongs to, if any.
 void writeDiagnostic(std::ostream& aOut,
                      const ApplicationDiagnostic& aDiagnostic,
-                     bool aWithSeverity) {
+                     bool aWithSeverity,
+                     std::optional<ReportType> aForm) {
     aOut << "  " << aDiagnostic.mId << ' ';
 
     if (aWithSeverity)
@@ -603,30 +621,42 @@ void writeDiagnostic(std::ostream& aOut,
 
     aOut << "\n    " << aDiagnostic.mMessage << '\n';
 
-    // An error that does not block was resolved by the user leaving its investment out, unless it
-    // is a class error of a file row that the classification of its investment took over.
-    if (aDiagnostic.mSeverity == DiagnosticSeverity::Error && !aDiagnostic.mBlocking &&
-        affectsCapital(aDiagnostic))
+    // An error that does not block was resolved by the user leaving its investment (or a broker's
+    // cash interest) out, unless it is a class error of a file row that the classification of its
+    // investment took over.
+    if (aDiagnostic.mSeverity == DiagnosticSeverity::Error && !aDiagnostic.mBlocking && aForm &&
+        affects(aDiagnostic, *aForm))
     {
         const bool isFileError = aDiagnostic.mStage == PipelineStage::Parsing ||
                                  aDiagnostic.mStage == PipelineStage::Merging;
 
-        aOut << (isFileError
-                     ? "    Handled by the classification of its investment: see the question or "
-                       "the excluded items.\n"
-                     : "    Resolved by your answer: the investment is left out of the XML.\n");
+        if (isFileError)
+        {
+            aOut << "    Handled by the classification of its investment: see the question or "
+                    "the excluded items.\n";
+        }
+        else if (aDiagnostic.mCashInterestBroker)
+        {
+            aOut << "    Resolved by your answer: the cash interest of this broker is left out of "
+                    "the XML.\n";
+        }
+        else
+        {
+            aOut << "    Resolved by your answer: the investment is left out of the XML.\n";
+        }
     }
 }
 
 void writeDiagnostics(std::ostream& aOut,
                       std::string_view aTitle,
                       const std::vector<const ApplicationDiagnostic*>& aDiagnostics,
-                      bool aWithSeverity) {
+                      bool aWithSeverity,
+                      std::optional<ReportType> aForm) {
     aOut << aTitle << ": " << aDiagnostics.size() << '\n';
 
     for (const auto* diagnostic : aDiagnostics)
     {
-        writeDiagnostic(aOut, *diagnostic, aWithSeverity);
+        writeDiagnostic(aOut, *diagnostic, aWithSeverity, aForm);
     }
 }
 
@@ -653,11 +683,29 @@ struct RunOutcome {
     const ApplicationResult& mResult;
     std::vector<UsedOfficialRate> mUsedRates; ///< Rates that converted a trade, by date, then code.
     std::string mDataSources; ///< The "Reference data" and "ECB rate files" lines, each with `\n`.
-    bool mDeletedOldXml{};
+    /// The rows of each form's model, by report type. Only the income forms use them.
+    std::array<std::size_t, 4> mRows{};
+    /// True for a form that is not generated and has an XML file of an earlier run in the folder.
+    std::array<bool, 4> mKeptOldFile{};
 };
 
-std::string xmlFileName(int aYear) {
-    return "Doh-KDVP_" + std::to_string(aYear) + ".xml";
+/// One tax form of the report: its result type, its code in the file name and its label.
+struct FormInfo {
+    ReportType mType{};      ///< Always set by the creator.
+    std::string_view mCode;  ///< For example "Doh-KDVP".
+    std::string_view mLabel; ///< For example "Capital gains".
+};
+
+/// The forms in the fixed order of the report types.
+constexpr std::array<FormInfo, 4> kForms{{
+    {ReportType::CapitalGains, "Doh-KDVP", "Capital gains"},
+    {ReportType::Dividends, "Doh-Div", "Dividends"},
+    {ReportType::BankDepositInterest, "Doh-DHO", "Bank-deposit interest"},
+    {ReportType::OtherInterest, "Doh-Obr", "Other interest"},
+}};
+
+std::string xmlFileName(const FormInfo& aForm, int aYear) {
+    return std::string{aForm.mCode} + "_" + std::to_string(aYear) + ".xml";
 }
 
 std::string summaryFileName(int aYear) {
@@ -765,61 +813,209 @@ std::string textParameter(const ApplicationDiagnostic& aDiagnostic, std::string_
                                                      : std::get<std::string>(found->mValue);
 }
 
-/// The years of the ECB rate files to load or to replace, from the structured warnings.
-void writeRateFileYears(std::ostream& aOut, const ApplicationResult& aResult) {
-    for (const auto& diagnostic : aResult.mDiagnostics)
+/// The number parameter of the diagnostic, or nothing when it has none.
+std::optional<std::uint64_t> numberParameter(const ApplicationDiagnostic& aDiagnostic,
+                                             std::string_view aName) {
+    const auto found =
+        std::find_if(aDiagnostic.mMessageParams.begin(),
+                     aDiagnostic.mMessageParams.end(),
+                     [aName](const MessageParam& aParam) { return aParam.mName == aName; });
+
+    if (found == aDiagnostic.mMessageParams.end() ||
+        !std::holds_alternative<std::uint64_t>(found->mValue))
     {
-        if (diagnostic.mMessageKey == MessageKey::OfficialRateFilesRequiredNotLoaded)
+        return std::nullopt;
+    }
+
+    return std::get<std::uint64_t>(found->mValue);
+}
+
+/// Adds the years of a "2023, 2024" text to the set.
+void addYears(std::set<int>& aYears, const std::string& aText) {
+    std::istringstream stream{aText};
+    std::string part;
+
+    while (std::getline(stream, part, ','))
+    {
+        const auto start = part.find_first_not_of(' ');
+
+        if (start == std::string::npos)
         {
-            aOut << "  ECB rate files to load: " << textParameter(diagnostic, "years") << '\n';
+            continue;
         }
-        else if (diagnostic.mMessageKey == MessageKey::OfficialRateFilesRequiredEndsEarly)
+
+        int year = 0;
+        const auto* first = part.data() + start;
+        const auto* last = part.data() + part.size();
+
+        if (std::from_chars(first, last, year).ec == std::errc{})
         {
-            aOut << "  ECB rate files to replace (they end too early): "
-                 << textParameter(diagnostic, "years") << '\n';
+            aYears.insert(year);
         }
     }
 }
 
-void writeCapitalStatus(std::ostream& aOut, const RunOutcome& aOutcome) {
-    const int year = aOutcome.mOptions.mYear;
+/// True when the diagnostic is about an income form.
+bool affectsIncomeForm(const ApplicationDiagnostic& aDiagnostic) {
+    return affects(aDiagnostic, ReportType::Dividends) ||
+           affects(aDiagnostic, ReportType::BankDepositInterest) ||
+           affects(aDiagnostic, ReportType::OtherInterest);
+}
 
-    aOut << "Capital gains (Doh-KDVP): ";
+/// The years of the ECB rate files to load or to replace. The capital years come from its run
+/// warnings; an income form has no such warning, so its years come from the structured parameters
+/// of its `missing_exchange_rate` errors.
+void writeRateFileYears(std::ostream& aOut, const ApplicationResult& aResult) {
+    std::set<int> toLoad;
+    std::set<int> toReplace;
 
-    switch (aOutcome.mResult.report(ReportType::CapitalGains).mStatus)
+    for (const auto& diagnostic : aResult.mDiagnostics)
     {
-    case ReportStatus::Generated: {
-        const auto excluded = excludedInvestments(aOutcome.mResult).size();
+        if (diagnostic.mMessageKey == MessageKey::OfficialRateFilesRequiredNotLoaded)
+        {
+            addYears(toLoad, textParameter(diagnostic, "years"));
+        }
+        else if (diagnostic.mMessageKey == MessageKey::OfficialRateFilesRequiredEndsEarly)
+        {
+            addYears(toReplace, textParameter(diagnostic, "years"));
+        }
+        else if (diagnostic.mMessageKey == MessageKey::MissingExchangeRateNoRateFile &&
+                 affectsIncomeForm(diagnostic))
+        {
+            if (const auto year = numberParameter(diagnostic, "year"))
+            {
+                toLoad.insert(static_cast<int>(*year));
+            }
+        }
+        else if (diagnostic.mMessageKey == MessageKey::MissingExchangeRateRateFileEndsEarly &&
+                 affectsIncomeForm(diagnostic))
+        {
+            // The file of the date's year ends early, so its last date has that year.
+            addYears(toReplace, textParameter(diagnostic, "lastDate").substr(0, 4));
+        }
+    }
 
-        aOut << "generated"
-             << (excluded == 0
-                     ? ""
-                     : " without " +
-                           countText(excluded, "excluded investment", "excluded investments"))
-             << ", written to " << xmlFileName(year) << '\n';
+    const auto text = [](const std::set<int>& aYears) {
+        std::string years;
+
+        for (const auto year : aYears)
+        {
+            years += (years.empty() ? "" : ", ") + std::to_string(year);
+        }
+
+        return years;
+    };
+
+    if (!toLoad.empty())
+    {
+        aOut << "  ECB rate files to load: " << text(toLoad) << '\n';
+    }
+
+    if (!toReplace.empty())
+    {
+        aOut << "  ECB rate files to replace (they end too early): " << text(toReplace) << '\n';
+    }
+}
+
+/// " without 1 excluded investment and 1 excluded broker" for what the user left out of a form,
+/// or nothing.
+std::string leftOutText(const ReportResult& aReport) {
+    std::string text;
+
+    if (!aReport.mExcludedInvestments.empty())
+    {
+        text += " without " + countText(aReport.mExcludedInvestments.size(),
+                                        "excluded investment",
+                                        "excluded investments");
+    }
+
+    if (!aReport.mExcludedBrokers.empty())
+    {
+        const auto brokers =
+            countText(aReport.mExcludedBrokers.size(), "excluded broker", "excluded brokers");
+
+        text += (text.empty() ? " without " : " and ") + brokers;
+    }
+
+    return text;
+}
+
+/// Why a form has no data, as the rest of its status line.
+std::string noDataText(const FormInfo& aForm, const ReportResult& aReport, int aYear) {
+    if (!aReport.mExcludedInvestments.empty())
+    {
+        return "nothing is left to report after the excluded investments";
+    }
+
+    if (!aReport.mExcludedBrokers.empty())
+    {
+        return "nothing is left to report after the excluded brokers";
+    }
+
+    if (aReport.mNoDataReason == NoDataReason::BelowDepositInterestThreshold)
+    {
+        return "not needed, your deposit interest of all banks is at most EUR 1,000";
+    }
+
+    const auto year = std::to_string(aYear);
+
+    switch (aForm.mType)
+    {
+    case ReportType::CapitalGains:
+        return "no sale in " + year + " needs a Doh-KDVP form";
+    case ReportType::Dividends:
+        return "no dividend to report in " + year;
+    case ReportType::BankDepositInterest:
+        return "no bank-deposit interest to report in " + year;
+    case ReportType::OtherInterest:
         break;
     }
-    case ReportStatus::NoData:
-        if (!excludedInvestments(aOutcome.mResult).empty())
+
+    return "no cash interest or bond coupon to report in " + year;
+}
+
+/// One status line per form, and a note under a form whose old file was kept.
+void writeForms(std::ostream& aOut, const RunOutcome& aOutcome) {
+    const int year = aOutcome.mOptions.mYear;
+
+    aOut << "Forms:\n";
+
+    for (const auto& form : kForms)
+    {
+        const auto& report = aOutcome.mResult.report(form.mType);
+        const auto index = static_cast<std::size_t>(form.mType);
+
+        aOut << "  " << form.mLabel << " (" << form.mCode << "): ";
+
+        switch (report.mStatus)
         {
-            aOut << "no data, nothing is left to report after the excluded investments\n";
+        case ReportStatus::Generated:
+            aOut << "generated" << leftOutText(report);
+
+            if (form.mType != ReportType::CapitalGains)
+            {
+                aOut << ", " << countText(aOutcome.mRows[index], "row", "rows");
+            }
+
+            aOut << ", written to " << xmlFileName(form, year) << '\n';
+            break;
+        case ReportStatus::NoData:
+            aOut << "no data, " << noDataText(form, report, year) << '\n';
+            break;
+        case ReportStatus::NeedsInput:
+        case ReportStatus::Failed:
+            aOut << "blocked, no XML was written (see the errors below)\n";
             break;
         }
 
-        aOut << "no data, no sale in " << year << " needs a Doh-KDVP form\n";
-        break;
-    case ReportStatus::NeedsInput:
-    case ReportStatus::Failed:
-        aOut << "blocked, no XML was written (see the errors below)\n";
-        break;
+        if (aOutcome.mKeptOldFile[index])
+        {
+            aOut << "    " << xmlFileName(form, year)
+                 << " in the output folder is from an earlier run, not from this run.\n";
+        }
     }
 
     writeRateFileYears(aOut, aOutcome.mResult);
-
-    if (aOutcome.mDeletedOldXml)
-    {
-        aOut << "Deleted the old " << xmlFileName(year) << " of an earlier run.\n";
-    }
 }
 
 void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
@@ -892,24 +1088,41 @@ void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
     }
 }
 
-/// The investments the user left out, only when there is one.
+/// The investments and brokers the user left out of each form, only for forms that have some.
 void writeExcluded(std::ostream& aOut, const RunOutcome& aOutcome) {
-    const auto& excluded = excludedInvestments(aOutcome.mResult);
-
-    if (excluded.empty())
+    for (const auto& form : kForms)
     {
-        return;
+        const auto& report = aOutcome.mResult.report(form.mType);
+
+        if (!report.mExcludedInvestments.empty())
+        {
+            // The capital list keeps its own heading: the form is the one of the summary.
+            aOut << "Excluded investments (not in "
+                 << (form.mType == ReportType::CapitalGains ? "the XML" : form.mCode)
+                 << "): " << report.mExcludedInvestments.size() << '\n';
+
+            for (const auto& investment : report.mExcludedInvestments)
+            {
+                aOut << "  " << investmentText(investment.mIsin, investment.mName) << ": "
+                     << reasonCodesText(investment) << '\n';
+            }
+
+            aOut << '\n';
+        }
+
+        if (!report.mExcludedBrokers.empty())
+        {
+            aOut << "Excluded brokers (not in " << form.mCode << "): ";
+
+            for (std::size_t index = 0; index < report.mExcludedBrokers.size(); ++index)
+            {
+                aOut << (index == 0 ? "" : ", ")
+                     << brokerName(report.mExcludedBrokers[index].mBroker);
+            }
+
+            aOut << "\n\n";
+        }
     }
-
-    aOut << "Excluded investments (not in the XML): " << excluded.size() << '\n';
-
-    for (const auto& investment : excluded)
-    {
-        aOut << "  " << investmentText(investment.mIsin, investment.mName) << ": "
-             << reasonCodesText(investment) << '\n';
-    }
-
-    aOut << '\n';
 }
 
 std::string_view categoryText(ExcludedCategory aCategory) {
@@ -1133,13 +1346,50 @@ void writeUsedRates(std::ostream& aOut, const RunOutcome& aOutcome) {
     aOut << '\n';
 }
 
+/// The errors and the warnings of a form. The Doh-KDVP lists are always written; an income form
+/// has them only when it has a diagnostic.
+void writeFormDiagnostics(std::ostream& aOut, const RunOutcome& aOutcome, const FormInfo& aForm) {
+    std::vector<const ApplicationDiagnostic*> errors;
+    std::vector<const ApplicationDiagnostic*> warnings;
+
+    for (const auto& diagnostic : aOutcome.mResult.mDiagnostics)
+    {
+        if (!affects(diagnostic, aForm.mType))
+        {
+            continue;
+        }
+
+        (diagnostic.mSeverity == DiagnosticSeverity::Error ? errors : warnings)
+            .push_back(&diagnostic);
+    }
+
+    if (aForm.mType != ReportType::CapitalGains && errors.empty() && warnings.empty())
+    {
+        return;
+    }
+
+    const std::string code{aForm.mCode};
+
+    aOut << '\n';
+    writeDiagnostics(aOut, code + " errors", errors, false, aForm.mType);
+    aOut << '\n';
+    writeDiagnostics(aOut, code + " warnings", warnings, false, aForm.mType);
+}
+
 std::string summaryText(const RunOutcome& aOutcome) {
     std::ostringstream out;
     const auto& options = aOutcome.mOptions;
 
-    out << "TaxBrokerReport: Doh-KDVP " << options.mYear << " ("
+    out << "TaxBrokerReport " << options.mYear << " ("
         << (options.mFilingType == FilingType::Original ? "original return" : "self-report")
-        << ")\nInput files: " << options.mTradeRepublicPaths.size() << '\n';
+        << ")\n";
+
+    if (options.mFilingType == FilingType::SelfReport)
+    {
+        out << "The income forms are always original returns.\n";
+    }
+
+    out << "Input files: " << options.mTradeRepublicPaths.size() << '\n';
 
     for (std::size_t index = 0; index < options.mTradeRepublicPaths.size(); ++index)
     {
@@ -1148,7 +1398,7 @@ std::string summaryText(const RunOutcome& aOutcome) {
     }
 
     out << aOutcome.mDataSources << '\n';
-    writeCapitalStatus(out, aOutcome);
+    writeForms(out, aOutcome);
     out << '\n';
     writeInvestments(out, aOutcome);
     out << '\n';
@@ -1159,40 +1409,33 @@ std::string summaryText(const RunOutcome& aOutcome) {
     writeUsedRates(out, aOutcome);
     writePrivateMarketEvents(out, aOutcome);
 
-    std::vector<const ApplicationDiagnostic*> errors;
-    std::vector<const ApplicationDiagnostic*> warnings;
+    for (const auto& form : kForms)
+    {
+        writeFormDiagnostics(out, aOutcome, form);
+    }
+
+    writeOpenQuestions(out, aOutcome.mResult);
+    writeAnswers(out, aOutcome.mResult);
+
     std::vector<const ApplicationDiagnostic*> others;
 
     for (const auto& diagnostic : aOutcome.mResult.mDiagnostics)
     {
-        if (!affectsCapital(diagnostic))
+        const bool affectsAForm =
+            std::any_of(kForms.begin(), kForms.end(), [&diagnostic](const FormInfo& aForm) {
+                return affects(diagnostic, aForm.mType);
+            });
+
+        if (!affectsAForm)
         {
             others.push_back(&diagnostic);
         }
-        else if (diagnostic.mSeverity == DiagnosticSeverity::Error)
-        {
-            errors.push_back(&diagnostic);
-        }
-        else
-        {
-            warnings.push_back(&diagnostic);
-        }
     }
-
-    out << '\n';
-    writeDiagnostics(out, "Errors", errors, false);
-    out << '\n';
-    writeDiagnostics(out, "Warnings", warnings, false);
-    writeOpenQuestions(out, aOutcome.mResult);
-    writeAnswers(out, aOutcome.mResult);
 
     if (!others.empty())
     {
         out << '\n';
-        writeDiagnostics(out,
-                         "Not about Doh-KDVP (dividends, interest and skipped private-market rows)",
-                         others,
-                         true);
+        writeDiagnostics(out, "Not about a form (skipped private-market rows)", others, true, {});
     }
 
     return out.str();
@@ -1207,34 +1450,12 @@ bool writeFile(const std::filesystem::path& aPath, std::string_view aText) {
     return static_cast<bool>(output);
 }
 
-/// True when nothing is at the path or a file is there, so the path can be replaced or deleted.
+/// True when nothing is at the path or a file is there, so the path can be replaced.
 bool isFileOrMissing(const std::filesystem::path& aPath) {
     std::error_code error;
     const auto status = std::filesystem::status(aPath, error);
 
     return !std::filesystem::exists(status) || std::filesystem::is_regular_file(status);
-}
-
-/// The name an output file is written under before it replaces the file of an earlier run.
-std::filesystem::path temporaryPath(const std::filesystem::path& aPath) {
-    auto path = aPath;
-    path += ".tmp";
-
-    return path;
-}
-
-/// Deletes the temporary files of a failed run. Something that is not a file is left alone: this
-/// run did not make it.
-void removeTemporaryFiles(std::initializer_list<std::filesystem::path> aPaths) {
-    for (const auto& path : aPaths)
-    {
-        std::error_code error;
-
-        if (std::filesystem::is_regular_file(path, error))
-        {
-            std::filesystem::remove(path, error);
-        }
-    }
 }
 
 /// The ISINs that the builder blocked, for a preview of the rows of every other ISIN.
@@ -1290,7 +1511,8 @@ struct CalculatedRun {
     CapitalGainsBuildResult mBuilt;
     /// The rows of the ISINs without a problem, when the builder made no report.
     std::optional<CapitalGainsReportKDVP> mPreviewWithoutBlocked;
-    std::vector<UsedOfficialRate> mUsedRates; ///< The rates that converted a trade.
+    std::vector<UsedOfficialRate> mUsedRates; ///< The rates of the trades and the income.
+    std::array<std::size_t, 4> mRows{};       ///< The rows of each income form, by report type.
 };
 
 /// One calculation from the merged files and the answers: FIFO, the corporate-action stage, the
@@ -1383,6 +1605,12 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
                        (processing[position].mSeverity == DiagnosticSeverity::Error && !resolved);
     }
 
+    const ReportMetadata metadata{
+        .mTaxpayer = aTaxpayer,
+        .mReportingYear = aOptions.mYear,
+        .mFilingType = aOptions.mFilingType,
+    };
+
     // A blocked ISIN always has an error (FIFO, corporate action or gate), so without a report
     // the capital form is failed or needs input, never empty.
     if (built.mReport && !hasGateError)
@@ -1405,25 +1633,28 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
         }
         else
         {
-            const ReportMetadata metadata{
-                .mTaxpayer = aTaxpayer,
-                .mReportingYear = aOptions.mYear,
-                .mFilingType = aOptions.mFilingType,
-            };
-
             writeReportXml(input, metadata, {.mCapitalGains = &*built.mReport});
         }
     }
 
     // The income stages come last, so nothing in the capital output or its question order moves.
-    // The models are not written yet; the questions and diagnostics of the stages are.
-    static_cast<void>(
-        prepareIncomeReports(input, statement, ledger, aCatalogue, aRates, aDecisions));
+    // Each form keeps its own status: a form whose stage has an error or a question is not
+    // generated, whatever the writer made, and the other forms are not touched.
+    auto income = prepareIncomeReports(input, statement, ledger, aCatalogue, aRates, aDecisions);
+
+    writeReportXml(
+        input,
+        metadata,
+        {.mDividends = &income.mDividends, .mDeposit = &income.mDeposit, .mOther = &income.mOther});
 
     aCalculated = CalculatedRun{
         .mBuilt = std::move(built),
         .mPreviewWithoutBlocked = std::move(previewWithoutBlocked),
-        .mUsedRates = std::move(conversion.mUsedRates),
+        .mUsedRates = mergedRates(std::move(conversion.mUsedRates), std::move(income.mUsedRates)),
+        .mRows = {0,
+                  income.mDividends.mRows.size(),
+                  income.mDeposit.mRows.size(),
+                  income.mOther.mRows.size()},
     };
 
     return input;
@@ -1478,7 +1709,6 @@ int runReport(const ReportOptions& aOptions,
     const auto& built = calculated.value().mBuilt;
     const auto& preview =
         built.mReport ? *built.mReport : calculated.value().mPreviewWithoutBlocked.value();
-    const auto& capitalResult = result.report(ReportType::CapitalGains);
 
     std::error_code error;
     std::filesystem::create_directories(aOptions.mOutputDirectory, error);
@@ -1489,22 +1719,30 @@ int runReport(const ReportOptions& aOptions,
         return kExitFailure;
     }
 
-    const auto xmlPath = aOptions.mOutputDirectory / xmlFileName(aOptions.mYear);
     const auto summaryPath = aOptions.mOutputDirectory / summaryFileName(aOptions.mYear);
-    const bool generated = capitalResult.mStatus == ReportStatus::Generated;
 
-    // A folder at an output path would make the run fail after the other file was changed, so
-    // it is refused before anything is written.
-    if (!isFileOrMissing(xmlPath) && generated)
-    {
-        aErr << "taxbroker: " << xmlFileName(aOptions.mYear) << " cannot be written.\n";
-        return kExitFailure;
-    }
+    // A folder at an output path would make the run fail after another file was changed, so it
+    // is refused before anything is written. A form that is not generated writes nothing, and its
+    // file of an earlier run stays as it is.
+    std::array<bool, 4> keptOldFile{};
+    bool allDone = true;
 
-    if (!isFileOrMissing(xmlPath))
+    for (const auto& form : kForms)
     {
-        aErr << "taxbroker: the old " << xmlFileName(aOptions.mYear) << " cannot be deleted.\n";
-        return kExitFailure;
+        const auto index = static_cast<std::size_t>(form.mType);
+        const auto status = result.report(form.mType).mStatus;
+        const auto xmlPath = aOptions.mOutputDirectory / xmlFileName(form, aOptions.mYear);
+        const bool generated = status == ReportStatus::Generated;
+
+        allDone = allDone && (generated || status == ReportStatus::NoData);
+
+        if (generated && !isFileOrMissing(xmlPath))
+        {
+            aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear) << " cannot be written.\n";
+            return kExitFailure;
+        }
+
+        keptOldFile[index] = !generated && std::filesystem::is_regular_file(xmlPath, error);
     }
 
     if (!isFileOrMissing(summaryPath))
@@ -1513,7 +1751,6 @@ int runReport(const ReportOptions& aOptions,
         return kExitFailure;
     }
 
-    const bool deletesOldXml = !generated && std::filesystem::exists(xmlPath, error);
     const RunOutcome outcome{
         .mOptions = aOptions,
         .mStatement = statement,
@@ -1522,62 +1759,80 @@ int runReport(const ReportOptions& aOptions,
         .mResult = result,
         .mUsedRates = calculated.value().mUsedRates,
         .mDataSources = aDataSources,
-        .mDeletedOldXml = deletesOldXml,
+        .mRows = calculated.value().mRows,
+        .mKeptOldFile = keptOldFile,
     };
     const auto summary = summaryText(outcome);
 
-    // Both files are written under temporary names first, so a run that fails here (exit 2)
+    // Every file is written under a temporary name first, so a run that fails here (exit 2)
     // leaves the files of an earlier run as they were.
-    const auto xmlTemporary = temporaryPath(xmlPath);
+    std::vector<FileReplacement> replacements;
+    std::vector<std::filesystem::path> temporaries;
+
+    for (const auto& form : kForms)
+    {
+        const auto& report = result.report(form.mType);
+
+        if (report.mStatus != ReportStatus::Generated)
+        {
+            continue;
+        }
+
+        const auto xmlPath = aOptions.mOutputDirectory / xmlFileName(form, aOptions.mYear);
+        const auto xmlTemporary = temporaryPath(xmlPath);
+
+        temporaries.push_back(xmlTemporary);
+
+        if (!writeFile(xmlTemporary, report.mXml.value()))
+        {
+            removeTemporaryFiles(temporaries);
+            aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear) << " cannot be written.\n";
+            return kExitFailure;
+        }
+
+        replacements.push_back({.mTemporary = xmlTemporary, .mFinal = xmlPath});
+    }
+
     const auto summaryTemporary = temporaryPath(summaryPath);
 
-    if (generated && !writeFile(xmlTemporary, capitalResult.mXml.value()))
-    {
-        removeTemporaryFiles({xmlTemporary});
-        aErr << "taxbroker: " << xmlFileName(aOptions.mYear) << " cannot be written.\n";
-        return kExitFailure;
-    }
+    temporaries.push_back(summaryTemporary);
 
     if (!writeFile(summaryTemporary, summary))
     {
-        removeTemporaryFiles({xmlTemporary, summaryTemporary});
+        removeTemporaryFiles(temporaries);
         aErr << "taxbroker: " << summaryFileName(aOptions.mYear) << " cannot be written.\n";
         return kExitFailure;
     }
 
-    // The final paths hold a file or nothing, and the temporary files are in the same folder, so
-    // these steps only rename or delete inside a folder that was just written to.
-    std::error_code replaceError;
+    replacements.push_back({.mTemporary = summaryTemporary, .mFinal = summaryPath});
 
-    if (generated)
-    {
-        std::filesystem::rename(xmlTemporary, xmlPath, replaceError);
-    }
-    else if (deletesOldXml)
-    {
-        std::filesystem::remove(xmlPath, replaceError);
-    }
+    // The final paths hold a file or nothing. A failing step puts back the files of an earlier
+    // run, so the run changes nothing (exit 2).
+    const auto replaced = replaceFiles(replacements);
 
-    if (!replaceError)
+    if (!replaced.mReplaced)
     {
-        std::filesystem::rename(summaryTemporary, summaryPath, replaceError);
-    }
+        aErr << "taxbroker: the output files cannot be replaced";
 
-    if (replaceError)
-    {
-        removeTemporaryFiles({xmlTemporary, summaryTemporary});
-        aErr << "taxbroker: the output files cannot be replaced.\n";
+        if (!replaced.mNotRestored.empty())
+        {
+            aErr << ", and ";
+
+            for (std::size_t index = 0; index < replaced.mNotRestored.size(); ++index)
+            {
+                aErr << (index == 0 ? "" : ", ") << replaced.mNotRestored[index];
+            }
+
+            aErr << " of an earlier run could not be restored";
+        }
+
+        aErr << ".\n";
         return kExitFailure;
     }
 
     aOut << summary;
 
-    if (generated || capitalResult.mStatus == ReportStatus::NoData)
-    {
-        return kExitSuccess;
-    }
-
-    return kExitBlocked;
+    return allDone ? kExitSuccess : kExitBlocked;
 }
 
 /// The years as ranges, such as "2016 to 2024, 2026".

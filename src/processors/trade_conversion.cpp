@@ -2,6 +2,8 @@
 
 #include "taxbroker/currency.hpp"
 
+#include <algorithm>
+#include <iterator>
 #include <map>
 #include <string>
 #include <utility>
@@ -136,6 +138,30 @@ TradeConversionResult convertCapitalTrades(const MergedStatement& aStatement,
     }
 
     return result;
+}
+
+std::vector<UsedOfficialRate> mergedRates(std::vector<UsedOfficialRate> aFirstRates,
+                                          std::vector<UsedOfficialRate> aSecondRates) {
+    std::vector<UsedOfficialRate> rates = std::move(aFirstRates);
+
+    std::move(aSecondRates.begin(), aSecondRates.end(), std::back_inserter(rates));
+
+    const auto before = [](const UsedOfficialRate& aLeft, const UsedOfficialRate& aRight) {
+        if (aLeft.mTaxDate != aRight.mTaxDate)
+        {
+            return aLeft.mTaxDate < aRight.mTaxDate;
+        }
+
+        return currencyCode(aLeft.mCurrency) < currencyCode(aRight.mCurrency);
+    };
+    const auto same = [](const UsedOfficialRate& aLeft, const UsedOfficialRate& aRight) {
+        return aLeft.mTaxDate == aRight.mTaxDate && aLeft.mCurrency == aRight.mCurrency;
+    };
+
+    std::stable_sort(rates.begin(), rates.end(), before);
+    rates.erase(std::unique(rates.begin(), rates.end(), same), rates.end());
+
+    return rates;
 }
 
 } // namespace taxbroker

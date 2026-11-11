@@ -532,8 +532,8 @@ std::vector<DhoInterestRow> depositRows(const std::map<Broker, DepositGroup>& aG
     return rows;
 }
 
-/// Decides, by the allowance, whether the deposit rows are made, and asks when only the other
-/// banks can make them filing.
+/// Decides, by the allowance, whether the deposit rows are made. At or below it the rows are made
+/// too, with a reminder, unless the user answers that the total of all banks is not above it.
 void applyAllowance(InterestPaymentsResult& aResult,
                     const std::map<Broker, DepositGroup>& aGroups,
                     const std::map<Broker, PayerOutcome>& aPayers,
@@ -575,20 +575,19 @@ void applyAllowance(InterestPaymentsResult& aResult,
     };
     const auto* answer = aDecisions.find(question);
 
-    if (answer == nullptr)
-    {
-        aResult.mRequests.push_back(
-            RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = {}});
-
-        return;
-    }
-
-    // The session accepts only a yes or no answer for this question.
-    if (!std::get<DepositInterestTotalAnswer>(*answer).mAboveLimit)
+    // Without an answer the form is made as for yes and the question stays listed. The session
+    // accepts only a yes or no answer for this question.
+    if (answer != nullptr && !std::get<DepositInterestTotalAnswer>(*answer).mAboveLimit)
     {
         aResult.mDepositNoDataReason = NoDataReason::BelowDepositInterestThreshold;
 
         return;
+    }
+
+    if (answer == nullptr)
+    {
+        aResult.mRequests.push_back(
+            RequestInput{.mQuestion = question, .mProcessingDiagnostics = {}});
     }
 
     aResult.mDepositReport.mRows = depositRows(aGroups, aPayers);

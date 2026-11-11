@@ -340,7 +340,9 @@ when:
 - the file of that year ends before the day (key `.rate_file_ends_early`, with the file's last
   date): the app cannot tell a day without rates from a file that was downloaded early. A file
   that ends within 4 days of 31 December counts as the whole year, because the ECB publishes
-  nothing on the last days of some years;
+  nothing on the last days of some years. A file of the running year, downloaded before its end,
+  is accepted: every day up to its last date gets its rate, and a day after it is blocked until a
+  newer file is loaded;
 - the ECB published rates on that day but none for the currency, for example a currency that
   stopped being published, or the loaded files have no rate within the 4 days (key
   `.no_rate_on_date`).
@@ -423,7 +425,9 @@ copy, so none of them converts or branches on the currency.
   year and not left out count. A rate that no file can fix (`.no_rate_on_date`, `.replaced_by_eur`)
   adds no year. The warning never blocks, so the user can still exclude the investment; the years
   are listed also then, because loading the files brings the investment back. The CLI prints them
-  under the capital status line.
+  under the form status lines. The income forms have no such warning, so the CLI adds the year of
+  each of their `missing_exchange_rate` errors from its parameters: `year` of `.no_rate_file`, or
+  the year of `lastDate` of `.rate_file_ends_early`.
 
 The application result returns one structured `exchange_rates_required` request containing the
 missing `(currency, tax date)` pairs. The frontend must not discover them from logs.

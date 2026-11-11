@@ -7,6 +7,8 @@ source "$script_dir/lib.sh"
 
 default_csv="tmp/TransactionExport.csv"
 synthetic_csv="tests/test_data/cli/report_fixture.csv"
+synthetic_income_csv="tests/test_data/cli/report_income_fixture.csv"
+synthetic_ecb="tests/test_data/cli/report_ecb_rates.csv"
 synthetic_taxpayer="tests/test_data/cli/taxpayer.json"
 
 usage() {
@@ -26,8 +28,11 @@ Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.js
     "-" as ./-name.csv.
 
     --reuse-build   run the existing build/dev and compile nothing
-    --synthetic     use the synthetic CSV $synthetic_csv
-                    (trades in 2024) and $synthetic_taxpayer
+    --synthetic     use the synthetic CSVs $synthetic_csv (trades in 2024)
+                    and $synthetic_income_csv (dividends, bank interest and bond
+                    coupons in 2024), the synthetic USD rates $synthetic_ecb
+                    (they replace the built-in 2024 year) and $synthetic_taxpayer;
+                    it asks the Doh-DHO allowance question (yes writes Doh-DHO)
     --taxpayer      the taxpayer JSON; keep a real one below runtime/, for example
                     runtime/taxpayer.json (required without --synthetic)
     --self-report   write a self-report instead of an original return
@@ -184,7 +189,13 @@ if [[ "$synthetic" == true ]]; then
         exit 2
     fi
 
-    csv_inputs=("$synthetic_csv")
+    if [[ ${#ecb_inputs[@]} -gt 0 ]]; then
+        echo "--synthetic takes no --ecb-rates paths." >&2
+        exit 2
+    fi
+
+    csv_inputs=("$synthetic_csv" "$synthetic_income_csv")
+    ecb_inputs=("$synthetic_ecb")
     year="${year:-2024}"
     taxpayer="${taxpayer:-$synthetic_taxpayer}"
     output_dir="${output_dir:-runtime/report/synthetic_$year}"

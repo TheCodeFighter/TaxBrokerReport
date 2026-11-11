@@ -10,7 +10,18 @@
   also has every taxpayer field, in the order of
   `KdvpXmlWriterTest.AllOptionalTaxpayerFieldsAreWrittenInSchemaOrder`.
 
-`scripts/report.sh --synthetic` and the `CliReport.Binary` CTest use these files.
+- `report_income_fixture.csv` is 2024 income for `scripts/report.sh --synthetic` only (no test reads
+  it): five dividends (Apple USD 12.50 and Johnson & Johnson USD 20.00 with EUR 2.40 foreign tax,
+  a fund and a Brazilian payer without conversion, a Slovenian payer that is left out), three bank
+  interest payments of EUR 1.00 in all, and a bond kept all year with two coupons of USD 20.00.
+- `report_ecb_rates.csv` is a made-up 2024 USD rate file (1.20 on 2024-02-14, 1.25 on 2024-03-14,
+  1.30 on 2024-05-15, 1.40 on 2024-08-14; they replace the built-in 2024 year). With it the run
+  gives Doh-Div `Value` 10.00 (12.50 / 1.25) and 15.38 (20.00 / 1.30), and Doh-Obr `Value` 16.67
+  (20.00 / 1.20) and 14.29 (20.00 / 1.40), Doh-DHO `InterestEarned` 1.00. Answer yes to the one
+  Doh-DHO question.
+
+`scripts/report.sh --synthetic` uses all of these files; the `CliReport.Binary` CTest uses only
+`report_fixture.csv`, `taxpayer.json` and the golden file.
 
 For trying the questions of `taxbroker report` by hand (no test reads them):
 

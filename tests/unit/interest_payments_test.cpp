@@ -170,7 +170,7 @@ std::size_t countOf(const std::vector<ProcessingDiagnostic>& aDiagnostics,
 
 // --- The deposit allowance ---
 
-TEST(InterestPaymentsTest, DepositInterestBelowTheAllowanceAsksAndWaitsForTheAnswer) {
+TEST(InterestPaymentsTest, DepositInterestBelowTheAllowanceAsksAndMakesTheRowWithoutAnAnswer) {
     const auto catalogue = catalogueOf("");
     OfficialRateTable rates;
     MergedStatement statement;
@@ -208,10 +208,15 @@ TEST(InterestPaymentsTest, DepositInterestBelowTheAllowanceAsksAndWaitsForTheAns
 
     InterestRun run{statement, catalogue, rates};
 
-    // 3 x EUR 300.00 = EUR 900.00 is at most EUR 1,000: no rows, one question.
+    // 3 x EUR 300.00 = EUR 900.00 is at most EUR 1,000: one question, and without an answer the
+    // row is made as for yes, with the reminder to add the other banks.
     EXPECT_EQ(run.mLast.mQualifyingTotal, std::optional<Money>{9'000'000});
-    EXPECT_TRUE(run.mLast.mDepositReport.mRows.empty());
+    ASSERT_EQ(run.mLast.mDepositReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mDepositReport.mRows.at(0).mInterest, 9'000'000);
     EXPECT_EQ(run.mLast.mDepositNoDataReason, std::nullopt);
+    EXPECT_EQ(
+        countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::DepositInterestAddOtherBanks),
+        1U);
     EXPECT_TRUE(run.mLast.mOtherReport.mRows.empty());
     ASSERT_EQ(run.result().mRequests.size(), 1U);
 
@@ -226,8 +231,9 @@ TEST(InterestPaymentsTest, DepositInterestBelowTheAllowanceAsksAndWaitsForTheAns
     EXPECT_EQ(question->mYear, 2025);
     EXPECT_EQ(question->mTotal, 9'000'000);
 
-    // The open question stops Doh-DHO, and only Doh-DHO.
-    EXPECT_EQ(statusOf(run.result(), ReportType::BankDepositInterest), ReportStatus::NeedsInput);
+    // The open question is listed but stops no form. This test writes no XML, so Doh-DHO has no
+    // data here; with XML it is generated (the CLI tests).
+    EXPECT_EQ(statusOf(run.result(), ReportType::BankDepositInterest), ReportStatus::NoData);
     EXPECT_EQ(statusOf(run.result(), ReportType::OtherInterest), ReportStatus::NoData);
 }
 
@@ -328,7 +334,7 @@ TEST(InterestPaymentsTest, AnswerNoGivesNoRowsAndTheBelowThresholdReason) {
     EXPECT_EQ(statusOf(run.result(), ReportType::BankDepositInterest), ReportStatus::NoData);
 }
 
-TEST(InterestPaymentsTest, ExactlyTheAllowanceStillAsksTheQuestion) {
+TEST(InterestPaymentsTest, ExactlyTheAllowanceStillAsksTheQuestionAndMakesTheRow) {
     const auto catalogue = catalogueOf("");
     OfficialRateTable rates;
     MergedStatement statement;
@@ -359,9 +365,11 @@ TEST(InterestPaymentsTest, ExactlyTheAllowanceStillAsksTheQuestion) {
 
     InterestRun run{statement, catalogue, rates};
 
-    // EUR 1,000.0000 is not above the allowance.
+    // EUR 1,000.0000 is not above the allowance: the question is asked, and without an answer the
+    // row is made from the imported interest.
     EXPECT_EQ(run.mLast.mQualifyingTotal, std::optional<Money>{10'000'000});
-    EXPECT_TRUE(run.mLast.mDepositReport.mRows.empty());
+    ASSERT_EQ(run.mLast.mDepositReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mDepositReport.mRows.at(0).mInterest, 10'000'000);
     ASSERT_EQ(run.result().mRequests.size(), 1U);
 }
 
@@ -440,7 +448,8 @@ TEST(InterestPaymentsTest, AnAnswerForOneTotalDoesNotAnswerAnotherTotal) {
     changed.mPresentation.mInterestInstruments.at(0).mTransactions.at(0).mGrossAmount = 9'000'100;
     run.start(changed, catalogue, rates);
 
-    EXPECT_TRUE(run.mLast.mDepositReport.mRows.empty());
+    ASSERT_EQ(run.mLast.mDepositReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mDepositReport.mRows.at(0).mInterest, 9'000'100);
     ASSERT_EQ(run.result().mRequests.size(), 1U);
 
     const auto* question =
@@ -768,9 +777,11 @@ TEST(InterestPaymentsTest, CashInterestOfAnotherBrokerDoesNotCountForTheAllowanc
     InterestRun run{statement, catalogue, rates};
 
     // EUR 900.00 + EUR 200.00 would be above the allowance, but the IBKR interest is other
-    // interest, so the total stays EUR 900.00 and the question is asked.
+    // interest, so the total stays EUR 900.00 and the question is asked. Without an answer the
+    // row holds the EUR 900.00 only.
     EXPECT_EQ(run.mLast.mQualifyingTotal, std::optional<Money>{9'000'000});
-    EXPECT_TRUE(run.mLast.mDepositReport.mRows.empty());
+    ASSERT_EQ(run.mLast.mDepositReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mDepositReport.mRows.at(0).mInterest, 9'000'000);
     EXPECT_EQ(run.result().mRequests.size(), 1U);
 }
 

@@ -318,9 +318,10 @@ TEST(IncomeReportsIntegrationTest, InterestIsSortedIntoDhoAndOneObrWithBothSubty
     EXPECT_EQ(obrRows[1].mDate, *parseCalendarDate("2023-11-01"));
     EXPECT_EQ(obrRows[1].mGrossInterest, 12'300); // EUR 1.23
 
-    // Doh-DHO: EUR 2.00 is at most EUR 1,000, so the allowance question comes first and the
-    // form has no rows yet.
-    EXPECT_TRUE(run.reports().mDeposit.mRows.empty());
+    // Doh-DHO: EUR 2.00 is at most EUR 1,000, so the allowance question is asked, and without an
+    // answer the row is made as for yes.
+    ASSERT_EQ(run.reports().mDeposit.mRows.size(), 1U);
+    EXPECT_EQ(run.reports().mDeposit.mRows[0].mInterest, 20'000); // EUR 2.00
     ASSERT_EQ(run.result().mRequests.size(), 1U);
 
     const auto* question =
@@ -329,7 +330,7 @@ TEST(IncomeReportsIntegrationTest, InterestIsSortedIntoDhoAndOneObrWithBothSubty
     ASSERT_NE(question, nullptr);
     EXPECT_EQ(question->mYear, 2023);
     EXPECT_EQ(question->mTotal, 20'000); // EUR 2.00
-    EXPECT_EQ(run.status(ReportType::BankDepositInterest), ReportStatus::NeedsInput);
+    EXPECT_NE(run.status(ReportType::BankDepositInterest), ReportStatus::NeedsInput);
 }
 
 TEST(IncomeReportsIntegrationTest, YesToTheTreatyQuestionClaimsTheTaxedCashInterestWithAWarning) {

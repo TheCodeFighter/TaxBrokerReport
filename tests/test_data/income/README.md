@@ -21,6 +21,11 @@ was accepted on 2026-11-10 too (tax year moved to 2022), with its text, `true` a
 | `Doh-Obr_2023.golden.xml` | 2023, `O` (the run asks for a self-report) | A coupon of EUR 25.00 of a bond that is still held, and Trade Republic interest of EUR 3.45 on 2023-11-30 (before 6 December 2023, so cash interest). | `Type` 2, `Value` 25.00, no payer facts; `Type` 4, `Value` 3.45 with the broker's payer facts (`DE`). The test runs it with `FilingType::SelfReport`; the file is still an original (`SelfReport` false, workflow `O` / `Original`), because eDavki rejects the self-report workflow for the income forms. |
 | `Doh-Obr_2023_treaty.golden.xml` | 2023, `O` | Two bonds bought on 2023-01-10 and kept, two taxed coupons, and Trade Republic interest of EUR 3.45 on 2023-11-30 (cash interest). All EUR. A supplied catalogue has both issuers (kind `bond`), a `bond_coupon` text for `US` and the Trade Republic broker payer. The treaty question for `DE` is answered yes. | Coupon of 2023-03-14: `Value` 25.00, `ForeignTax` 3.00, issuer in `US` with its payer facts, `ReliefStatement` `2. odstavek 11. člena` (the reference text). Coupon of 2023-06-16: `Value` 40.00, `ForeignTax` 6.00, issuer in `DE`, no text for `DE`, so `ReliefStatement` `DA`. Cash interest: `Type` 4, `Value` 3.45, `ForeignTax` 0.00, the broker's payer facts, no `ReliefStatement`. |
 
+`tests/integration/cli_report_integration_test.cpp` (`TheIncomeFormsMatchTheGoldenFiles2025`) runs
+`taxbroker report` on the rows of the `Doh-Div_2025`, `Doh-DHO_2025` and `Doh-Obr_2025` files and
+compares the three files it writes with them byte for byte, so the command and the stages give
+the same XML.
+
 After an eDavki draft import of a file, change its status to "eDavki draft import accepted on
 <date>" and record the import in `docs/verification.md`. A rejection fixes the writer and the
 golden file together.

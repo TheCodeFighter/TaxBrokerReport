@@ -84,9 +84,8 @@ type question have question data and answers so far. The capital failure choice 
 (`FailureResolutionStage`, `include/processors/failure_resolution_stage.hpp`): see "Choosing
 whether to exclude failed capital ISINs". The classification of trade investments is applied
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
-`excludedItems`". The dividend and other-interest failure choices use the same stage, but the
-report command does not run the dividend or interest stage yet, so `taxbroker report` asks
-neither these choices nor the bond type.
+`excludedItems`". The dividend and other-interest failure choices use the same stage, and the
+report command runs both stages and asks these choices and the bond type in the terminal.
 Developer mode and the income summaries are not part of it yet; until they exist, `unsafe` is
 `false`. XML failures are isolated per form: see "XML writer stage" below.
 
@@ -665,8 +664,7 @@ an ISIN) and `"incomeCheck"` with `eventKind` (`"interest"` or `"dividend"`), `r
 `grossAmount` (four decimals) and `currency`. A recorded answer lists the same `incomeCheck` and
 `"answer"`: `"dividends"`, `"bank_deposit_interest"`, `{"choice":"other_interest","subtype":
 "broker_cash"}` or `{"choice":"other_interest","subtype":"bond_coupon"}`,
-`"exclude_from_supported_reports"` or `"cancel"`. The CLI has no prompt for it until the income
-forms are part of its report.
+`"exclude_from_supported_reports"` or `"cancel"`. The CLI asks it in the terminal.
 
 A quantity request has no `options` and `"quantityCheck"` with `name`, `isin`, `saleDate`,
 `transaction` (`broker` and `transactionId`, only when the sale has one), `originalUnits` (the
@@ -739,7 +737,7 @@ request type, and a failure-resolution question without an investment.
 | `quantity_correction_required` | One request for the first sale of an ISIN whose pool stopped for a shortage below `0.00000100` units that the discarded source digits do not prove to be rounding: the ISIN, its name, the sale (date, broker and transaction ID), its units, the units left (the proposed quantity), the unit value in EUR and the budget used. Answer with the corrected sale units (above 0, at most the units left, less than `0.00000100` below the sale, and with the roundings before it below EUR 0.01 in total) or cancel. |
 | `loss_eligibility_confirmation_required` | One request per ISIN: the ISIN, its name and every sale of the year whose loss the files cannot decide, each with its date, broker and transaction ID, sale units, loss units, inclusive window, known replacements (date and units in the units of the sale) and known and open units. Answer `no_other_activity` (the investment was not bought or sold at another broker or account: the open units keep their loss) or `other_activity` (every open unit is blocked, the safe side; the user corrects it in eDavki). |
 | `tax_classification_required` | One request per trade investment whose asset class is missing, not recognized or conflicting: the ISIN, its name and the class labels of its rows (question data), with the options `capital_gains` and `exclude_from_supported_reports` and no preselected choice; answer with one of them or cancel. A second kind of question is for one interest or dividend payment of unknown type (`tax_rules.md`, "Supported tax categories and user classification"): the question data is the receipt date, name, ISIN, transaction, class labels, gross amount and currency; the options are `dividends`, `bank_deposit_interest`, `other_interest` (subtype `broker_cash` or `bond_coupon`) and `exclude_from_supported_reports`, without `dividends` and `bond_coupon` when there is no ISIN. |
-| `deposit_interest_total_required` | The year and the exact imported qualifying interest in EUR (above 0, at most 1,000); answer yes (`above_limit`) or no (`not_above_limit`). It is the only request with no default and no cancel. |
+| `deposit_interest_total_required` | The year and the exact imported qualifying interest in EUR (above 0, at most 1,000); answer yes (`above_limit`) or no (`not_above_limit`). It has no cancel. Without an answer the form is made as for yes, and the open request never blocks it. |
 | `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, the bond type of a bond with a sale or maturity in the year (`ordinary` or `discount_or_zero_coupon`, or a cancel), and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
 | `dividends_failure_resolution_required` | Exact complete failed Doh-Div ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
