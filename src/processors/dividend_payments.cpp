@@ -294,7 +294,6 @@ DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement
     }
 
     IncomeEurConverter converter{selection, result.mDiagnostics};
-    std::vector<SourceReference> taxSources;
     std::map<std::string, TreatyGroup> treatyGroups;
 
     for (const auto& payment : payments)
@@ -317,8 +316,6 @@ DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement
 
         if (row->mWithholding.mForeignTax > 0)
         {
-            taxSources.insert(taxSources.end(), metadata.mSources.begin(), metadata.mSources.end());
-
             // A claim needs the payer's country; a row without it has no question.
             if (row->mSourceCountry)
             {
@@ -340,20 +337,6 @@ DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement
 
     applyTreatyClaims(result, treatyGroups, aLedger.mYear, aCatalogue, aDecisions);
 
-    // One notice for the run: the user attaches the evidence of the tax in eDavki.
-    if (!taxSources.empty())
-    {
-        result.mDiagnostics.push_back(
-            incomeDiagnostic(ReportType::Dividends,
-                             DiagnosticSeverity::Warning,
-                             ProcessingDiagnosticCode::ForeignTaxEvidenceRequired,
-                             makeDiagnosticMessage(MessageKey::ForeignTaxEvidenceRequired),
-                             std::move(taxSources),
-                             std::nullopt,
-                             std::nullopt,
-                             std::nullopt));
-    }
-
     result.mUsedRates = converter.usedRates();
 
     return result;
@@ -363,6 +346,40 @@ void excludeDividends(DividendReportDiv& aReport, const std::vector<Isin>& aExcl
     std::erase_if(aReport.mRows, [&aExcluded](const DivDividendRow& aRow) {
         return std::find(aExcluded.begin(), aExcluded.end(), aRow.mIsin) != aExcluded.end();
     });
+}
+
+std::optional<ProcessingDiagnostic> foreignTaxEvidenceNotice(const MergedStatement& aStatement,
+                                                             const DividendReportDiv& aReport) {
+    const auto& instruments = aStatement.mPresentation.mDividendInstruments;
+    std::vector<SourceReference> sources;
+
+    for (const auto& row : aReport.mRows)
+    {
+        if (row.mWithholding.mForeignTax <= 0)
+        {
+            continue;
+        }
+
+        const auto& metadata = instruments.at(row.mPayment.mInstrumentIndex.value())
+                                   .mTransactions.at(row.mPayment.mEventIndex)
+                                   .mMetadata;
+
+        sources.insert(sources.end(), metadata.mSources.begin(), metadata.mSources.end());
+    }
+
+    if (sources.empty())
+    {
+        return std::nullopt;
+    }
+
+    return incomeDiagnostic(ReportType::Dividends,
+                            DiagnosticSeverity::Warning,
+                            ProcessingDiagnosticCode::ForeignTaxEvidenceRequired,
+                            makeDiagnosticMessage(MessageKey::ForeignTaxEvidenceRequired),
+                            std::move(sources),
+                            std::nullopt,
+                            std::nullopt,
+                            std::nullopt);
 }
 
 void appendDividendPayments(ApplicationResultInput& aInput, DividendPaymentsResult&& aResult) {

@@ -1,0 +1,2 @@
+datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2025-03-15T09:00:00Z,2025-03-15,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share US,XX0000000010,,,10.00,,,EUR,12.50,USD,0.800000,,e2-dividend-1,,,,

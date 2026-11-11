@@ -1159,7 +1159,10 @@ made, as for dividends. The payer of broker cash interest is the broker, whose f
 **Foreign tax.** A blank source tax means no tax was paid: the row gets `ForeignTax` `0`, without
 a question and without a warning, for a dividend, a bond coupon and cash interest alike. The form
 instructions require evidence for a foreign-tax deduction (amount, base, final and actually
-paid); the result lists it, and XML generation does not mean it was attached.
+paid); the result lists it, and XML generation does not mean it was attached. When any Doh-Obr row
+has a foreign tax above 0 (a Slovenian payer's tax is not written and does not count), the result
+warns once that the user attaches the evidence of the payment and the tax in eDavki
+(`foreign_tax_evidence_required`); eDavki lists the missing proof as a critical content error.
 
 **Treaty claim.** The form has a column to claim an exemption under an international treaty
 (*Uveljavljam oprostitev po mednarodni pogodbi (odstavek, člen)*). The form instructions say a

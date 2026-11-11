@@ -958,6 +958,9 @@ reports stage below; both share the payer, rate and exclusion helpers of
   do not block their forms. A payment without a
   rate gives no total and no question; the rate error fails Doh-DHO.
 - **Doh-Obr.** One row per payment, in ledger order, with the payer facts and the foreign tax.
+- **Notice.** One `foreign_tax_evidence_required` warning per run when a row has a foreign tax above
+  0 and a payer country other than `SI`, as for dividends. It is made after the exclusions of the
+  form, from the rows that stay, so a left-out investment never asks for evidence.
 - **Treaty claims.** After the rows, per payer country (not `SI`) with rows that have a foreign
   tax above 0: a coupon takes the one `bond_coupon` text of the country and cash interest the one
   `cash_interest` text, without a question. The country's rows of a kind without a text get one

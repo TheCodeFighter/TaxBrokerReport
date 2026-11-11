@@ -1,0 +1,2 @@
+isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,source_revision
+XX0000000028,Synthetic Issuer d.d.,12345679,Testna ulica 1 Ljubljana,SI,bond,,issuer,manual,

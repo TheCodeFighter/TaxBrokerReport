@@ -43,6 +43,12 @@ void excludeCoupons(OtherInterestReportObr& aReport, const std::vector<Isin>& aI
 void excludeBrokerCashInterest(OtherInterestReportObr& aReport,
                                const std::vector<Broker>& aBrokers);
 
+/// The one warning that the user attaches the evidence of the foreign tax in eDavki, for the rows
+/// left in aReport that have a tax above 0 and a payer outside Slovenia (the tax of a Slovenian
+/// payer is not written), or none. Its sources are those rows' payments.
+[[nodiscard]] std::optional<ProcessingDiagnostic>
+foreignTaxEvidenceNotice(const MergedStatement& aStatement, const OtherInterestReportObr& aReport);
+
 /// Appends the diagnostics, the requests and the excluded items of the result to aInput, with
 /// their positions moved to the numbering of aInput. The report models stay with the caller.
 void appendInterestPayments(ApplicationResultInput& aInput, InterestPaymentsResult&& aResult);

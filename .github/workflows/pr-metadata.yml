@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Validate related issue section
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const body = context.payload.pull_request.body ?? '';
@@ -60,3 +60,49 @@ jobs:
             }
 
             core.info(`Valid related issue value: ${section}`);
+
+  pr-title:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: PR title
+    # Dependabot titles its own pull requests. A skipped job passes the required check.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate the TBR number of the title
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const title = context.payload.pull_request.title ?? '';
+            const match = /^TBR-(\d{4}): \S/.exec(title);
+
+            if (!match) {
+              core.setFailed(
+                `The title "${title}" must look like "TBR-0123: Short description" ` +
+                '(four digits, a colon and a space).'
+              );
+              return;
+            }
+
+            const number = match[1];
+            const sameNumber = new RegExp(`^TBR[- ]${number}\\b`);
+            const commits = await github.paginate(github.rest.repos.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: 'main',
+              per_page: 100,
+            });
+            const used = commits.find(
+              (commit) => sameNumber.test(commit.commit.message.split('\n')[0])
+            );
+
+            if (used) {
+              core.setFailed(
+                `TBR-${number} is already used on main by ${used.sha.slice(0, 7)}: ` +
+                `"${used.commit.message.split('\n')[0]}". Take the next free number.`
+              );
+              return;
+            }
+
+            core.info(`TBR-${number} is free on main.`);

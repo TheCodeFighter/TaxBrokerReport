@@ -1005,6 +1005,41 @@ void excludeBrokerCashInterest(OtherInterestReportObr& aReport,
     std::erase_if(aReport.mRows, isListed);
 }
 
+std::optional<ProcessingDiagnostic>
+foreignTaxEvidenceNotice(const MergedStatement& aStatement, const OtherInterestReportObr& aReport) {
+    const auto& instruments = aStatement.mPresentation.mInterestInstruments;
+    std::vector<SourceReference> sources;
+
+    for (const auto& row : aReport.mRows)
+    {
+        // The tax of a Slovenian payer is not written, so it needs no evidence.
+        if (row.mWithholding.mForeignTax <= 0 || row.mPayer.mCountry == kSlovenia)
+        {
+            continue;
+        }
+
+        const auto& metadata = instruments.at(row.mPayment.mInstrumentIndex.value())
+                                   .mTransactions.at(row.mPayment.mEventIndex)
+                                   .mMetadata;
+
+        sources.insert(sources.end(), metadata.mSources.begin(), metadata.mSources.end());
+    }
+
+    if (sources.empty())
+    {
+        return std::nullopt;
+    }
+
+    return incomeDiagnostic(ReportType::OtherInterest,
+                            DiagnosticSeverity::Warning,
+                            ProcessingDiagnosticCode::ForeignTaxEvidenceRequired,
+                            makeDiagnosticMessage(MessageKey::ForeignTaxEvidenceRequired),
+                            std::move(sources),
+                            std::nullopt,
+                            std::nullopt,
+                            std::nullopt);
+}
+
 void appendInterestPayments(ApplicationResultInput& aInput, InterestPaymentsResult&& aResult) {
     appendStageOutput(aInput, std::move(aResult.mDiagnostics), std::move(aResult.mRequests));
 }

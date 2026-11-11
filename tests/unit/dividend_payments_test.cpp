@@ -195,10 +195,8 @@ TEST(DividendPaymentsTest, EurDividendKeepsItsAmountsAndTakesThePayerFacts) {
     const auto result =
         prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
 
-    // The tax of EUR 0.75 is above 0, so the run has its evidence notice and nothing else.
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
-              ProcessingDiagnosticCode::ForeignTaxEvidenceRequired);
+    // The evidence notice is not made by this stage, so the run has no diagnostic at all.
+    EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mReport.mRows.size(), 1U);
 
     const auto& row = result.mReport.mRows.at(0);
@@ -1168,10 +1166,12 @@ TEST(DividendPaymentsTest, ForeignTaxAboveZeroGivesOneEvidenceNoticeForTheRun) {
     const auto result =
         prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
 
-    // One notice for the run, with the sources of the two payments that paid tax.
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    // One notice for the rows, with the sources of the two payments that paid tax.
+    const auto maybeNotice = foreignTaxEvidenceNotice(statement, result.mReport);
 
-    const auto& notice = result.mDiagnostics.at(0);
+    ASSERT_TRUE(maybeNotice.has_value());
+
+    const auto& notice = *maybeNotice;
 
     EXPECT_EQ(notice.mSeverity, DiagnosticSeverity::Warning);
     EXPECT_EQ(notice.mCode, ProcessingDiagnosticCode::ForeignTaxEvidenceRequired);
@@ -1210,8 +1210,41 @@ TEST(DividendPaymentsTest, NoForeignTaxGivesNoEvidenceNotice) {
         prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
 
     ASSERT_EQ(result.mReport.mRows.size(), 1U);
-    EXPECT_EQ(countOf(result.mDiagnostics, ProcessingDiagnosticCode::ForeignTaxEvidenceRequired),
-              0U);
+    EXPECT_FALSE(foreignTaxEvidenceNotice(statement, result.mReport).has_value());
+}
+
+TEST(DividendPaymentsTest, AnExcludedRowsTaxGivesNoEvidenceNotice) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,DE,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 7'500,      // EUR 0.75
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    auto result = prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    ASSERT_TRUE(foreignTaxEvidenceNotice(statement, result.mReport).has_value());
+
+    // The user leaves the ISIN out of the form: no taxed row is left, so no notice.
+    excludeDividends(result.mReport, {"XX0000000010"});
+
+    EXPECT_EQ(result.mReport.mRows.size(), 0U);
+    EXPECT_FALSE(foreignTaxEvidenceNotice(statement, result.mReport).has_value());
 }
 
 TEST(DividendPaymentsTest, AReliefStatementOfThePayerCountryIsTheTreatyClaimOfATaxedRow) {
