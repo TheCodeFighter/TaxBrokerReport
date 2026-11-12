@@ -173,7 +173,6 @@ std::variant<TaxpayerMetadata, TaxpayerFileError> parseTaxpayerJson(std::string_
 
 std::variant<TaxpayerMetadata, TaxpayerFileError>
 readTaxpayerFile(const std::filesystem::path& aPath) {
-    // A folder opens on Linux and fails only while it is read, so it is checked first.
     std::error_code error;
     const bool regularFile = std::filesystem::is_regular_file(aPath, error);
     std::ifstream input{aPath, std::ios::binary};

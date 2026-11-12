@@ -32,6 +32,8 @@ enum class DiagnosticCode {
     MixedRateYears,
     DuplicateRateYear,
     NoRates,
+    InputFileTooLarge,
+    InputFileOutOfMemory,
 };
 
 /// The kind of row a parser diagnostic is about. The application result uses it to decide which

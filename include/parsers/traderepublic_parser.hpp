@@ -18,7 +18,16 @@ static_assert(kTrDateMismatchDefaultHour >= 0 && kTrDateMismatchDefaultHour < 24
 
 class TradeRepublicParser final : public CsvParser {
   public:
-    ParseResult parse(const std::filesystem::path& aCsvPath, std::size_t aSourceIndex = 0) override;
+    using CsvParser::CsvParser;
+
+    ParseResult parse(std::string_view aCsvText,
+                      std::string_view aDisplayFilename,
+                      std::size_t aSourceIndex) override;
+
+  protected:
+    [[nodiscard]] Broker broker() const noexcept override {
+        return Broker::TradeRepublic;
+    }
 
   private:
     struct RowContext;

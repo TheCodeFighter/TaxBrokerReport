@@ -2,6 +2,7 @@
 #include "taxbroker/currency.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
+#include "taxbroker/input_file.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/logger.hpp"
@@ -13,13 +14,12 @@
 #include <csv.hpp>
 #include <cstdint>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <iterator>
 #include <limits>
+#include <new>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
-#include <system_error>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -232,21 +232,8 @@ taxbroker::ParseDiagnostic fileDiagnostic(taxbroker::DiagnosticSeverity aSeverit
 
 /// An odd number of quote characters means a quoted field never closes. The CSV reader would
 /// then merge the following records into that field without any error, so the file is rejected.
-/// An unreadable file returns false; the reader reports that case itself.
-bool hasUnclosedQuote(const std::filesystem::path& aCsvPath) {
-    std::error_code error;
-    const bool regularFile = std::filesystem::is_regular_file(aCsvPath, error);
-    std::ifstream input{aCsvPath, std::ios::binary};
-
-    if (!regularFile || !input)
-    {
-        return false;
-    }
-
-    const auto quoteCount =
-        std::count(std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}, '"');
-
-    return quoteCount % 2 != 0;
+bool hasUnclosedQuote(std::string_view aCsvText) {
+    return std::count(aCsvText.begin(), aCsvText.end(), '"') % 2 != 0;
 }
 
 /// A line break inside a field of a record with the wrong field count means a quote crossed a
@@ -478,16 +465,50 @@ EventMetadata TradeRepublicParser::RowContext::metadata(Date aTaxDate) const {
     };
 }
 
-ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
-                                       std::size_t aSourceIndex) {
+ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
+                                       const std::string_view aDisplayFilename,
+                                       const std::size_t aSourceIndex) {
     ParseResult parsedResult{
         .mBroker = Broker::TradeRepublic,
     };
-    const auto sourceFile = SourceFilename::fromPath(aCsvPath.string());
+    const auto validFilename = SourceFilename::tryFromPath(aDisplayFilename);
+
+    if (!validFilename)
+    {
+        LOG_ERROR("Trade Republic CSV source {} has no valid file name", aSourceIndex);
+        parsedResult.mDiagnostics.emplace_back(
+            fileDiagnostic(DiagnosticSeverity::Error,
+                           DiagnosticCode::ParseError,
+                           SourceFilename{},
+                           makeDiagnosticMessage(MessageKey::ParseErrorInvalidFilename)));
+
+        return parsedResult;
+    }
+
+    const SourceFilename& sourceFile = *validFilename;
+
+    if (aCsvText.size() > maxInputBytes())
+    {
+        parsedResult.mDiagnostics.emplace_back(
+            inputFileFaultDiagnostic(InputFileFault::TooLarge,
+                                     sourceFile.value(),
+                                     brokerName(Broker::TradeRepublic),
+                                     aSourceIndex,
+                                     maxInputBytes()));
+
+        return parsedResult;
+    }
 
     try
     {
-        if (hasUnclosedQuote(aCsvPath))
+        // The CSV reader has no header to read in an empty input; it is reported, as it always
+        // was, like a file that cannot be read.
+        if (aCsvText.empty())
+        {
+            throw std::runtime_error{"empty CSV input"};
+        }
+
+        if (hasUnclosedQuote(aCsvText))
         {
             LOG_ERROR("Trade Republic CSV source {} has an unclosed quote", aSourceIndex);
             parsedResult.mDiagnostics.emplace_back(
@@ -503,7 +524,9 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
         // differs from the header, which also shifts all later row numbers.
         csv::CSVFormat format;
         format.delimiter(delimiter).variable_columns(csv::VariableColumnPolicy::KEEP);
-        csv::CSVReader reader(aCsvPath.string(), format);
+        // The reader must not outlive the stream it reads, so the stream is declared first.
+        std::stringstream stream{std::string{aCsvText}};
+        csv::CSVReader reader(stream, format);
         const auto headerNames = reader.get_col_names();
         const std::size_t headerFieldCount = headerNames.size();
         const auto missingColumns = missingRequiredColumns(headerNames);
@@ -697,6 +720,16 @@ ParseResult TradeRepublicParser::parse(const std::filesystem::path& aCsvPath,
                 makeDiagnosticMessage(MessageKey::LocalizedNumberFormat,
                                       {numberParam("rowCount", localizedNumberRows)})));
         }
+    } catch (const std::bad_alloc&)
+    {
+        // Discard partial results after a file-level failure.
+        parsedResult.mStatement = {};
+        parsedResult.mDiagnostics.emplace_back(
+            inputFileFaultDiagnostic(InputFileFault::OutOfMemory,
+                                     sourceFile.value(),
+                                     brokerName(Broker::TradeRepublic),
+                                     aSourceIndex,
+                                     maxInputBytes()));
     } catch (const std::runtime_error&)
     {
         LOG_ERROR("Trade Republic CSV source {} could not be parsed", aSourceIndex);

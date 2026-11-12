@@ -6,16 +6,16 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <fstream>
 #include <iterator>
 #include <memory>
+#include <new>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace taxbroker {
@@ -667,18 +667,28 @@ const ReferenceCatalogue& referenceCatalogue() {
     return catalogue;
 }
 
-ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aFiles) {
+namespace {
+
+/// The text of one supplied file, or why there is none.
+using ReferenceText = std::variant<std::string, InputFileFault>;
+
+/// The reference data of a run. aNames are the file names of the supplied files and aTextOf(i)
+/// gives the text of the i-th one. The names are checked before any text is taken.
+template <typename TextOf>
+ReferenceDataLoad loadReferenceFiles(const std::vector<std::string>& aNames,
+                                     const TextOf& aTextOf,
+                                     const std::size_t aMaxFileBytes) {
     constexpr std::array<std::string_view, 3> names{kPayersFile,
                                                     kReliefStatementsFile,
                                                     kBrokerPayersFile};
 
     ReferenceDataLoad load;
-    std::array<std::optional<std::filesystem::path>, 3> suppliedPaths;
+    std::array<std::optional<std::size_t>, 3> suppliedFrom;
 
     // The names come first, so a wrong list is reported before any file is read.
-    for (const auto& path : aFiles)
+    for (std::size_t position = 0; position < aNames.size(); ++position)
     {
-        const std::string name = path.filename().string();
+        const std::string& name = aNames[position];
         const auto found = std::find(names.begin(), names.end(), name);
 
         if (found == names.end())
@@ -686,14 +696,16 @@ ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aF
             load.mFault = ReferenceFileFault{
                 .mFile = name,
                 .mRow = std::nullopt,
-                .mMessage = makeDiagnosticMessage(MessageKey::ReferenceFileUnknownName,
-                                                  {textParam("name", name)}),
+                // A name without a file name is shown as a placeholder, not as two spaces.
+                .mMessage = makeDiagnosticMessage(
+                    MessageKey::ReferenceFileUnknownName,
+                    {textParam("name", name.empty() ? "<no file name>" : name)}),
             };
 
             return load;
         }
 
-        auto& slot = suppliedPaths[static_cast<std::size_t>(found - names.begin())];
+        auto& slot = suppliedFrom[static_cast<std::size_t>(found - names.begin())];
 
         if (slot)
         {
@@ -707,8 +719,12 @@ ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aF
             return load;
         }
 
-        slot = path;
+        slot = position;
     }
+
+    // The file being read or parsed, and its place in the supplied list (the log's source index).
+    std::string_view currentFile;
+    std::size_t currentPosition = 0;
 
     try
     {
@@ -716,25 +732,37 @@ ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aF
 
         for (std::size_t index = 0; index < names.size(); ++index)
         {
-            if (!suppliedPaths[index])
+            if (!suppliedFrom[index])
             {
                 continue;
             }
 
-            // A folder opens on Linux and fails only while it is read, so it is checked first.
-            std::error_code error;
-            const bool regularFile = std::filesystem::is_regular_file(*suppliedPaths[index], error);
-            std::ifstream input{*suppliedPaths[index], std::ios::binary};
+            currentFile = names[index];
+            currentPosition = *suppliedFrom[index];
 
-            if (!regularFile || !input)
+            auto text = aTextOf(*suppliedFrom[index]);
+
+            if (const auto* fault = std::get_if<InputFileFault>(&text))
             {
-                failFile(names[index],
-                         "the file cannot be read",
-                         MessageKey::ReferenceFileUnreadable);
+                if (*fault == InputFileFault::Unreadable)
+                {
+                    failFile(names[index],
+                             "the file cannot be read",
+                             MessageKey::ReferenceFileUnreadable);
+                }
+
+                auto message = inputFileFaultMessage(*fault,
+                                                     "reference_files",
+                                                     currentPosition,
+                                                     aMaxFileBytes);
+
+                throw ReferenceFileError{std::string{names[index]} + ": the file was not read",
+                                         ReferenceFileFault{.mFile = std::string{names[index]},
+                                                            .mRow = std::nullopt,
+                                                            .mMessage = std::move(message)}};
             }
 
-            suppliedTexts[index].assign(std::istreambuf_iterator<char>{input},
-                                        std::istreambuf_iterator<char>{});
+            suppliedTexts[index] = std::move(std::get<std::string>(text));
 
             load.mOrigins[index] = CatalogueOrigin::Supplied;
         }
@@ -743,14 +771,26 @@ ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aF
         const auto supplied = [&](std::size_t aIndex) {
             return load.mOrigins[aIndex] == CatalogueOrigin::Supplied;
         };
+
+        currentFile = kPayersFile;
+        currentPosition = suppliedFrom[0].value_or(0);
+
         const auto payers = supplied(0)
                                 ? std::make_shared<const PayerList>(
                                       readPayers(suppliedTexts[0], CatalogueOrigin::Supplied))
                                 : builtInLists().mPayers;
+
+        currentFile = kReliefStatementsFile;
+        currentPosition = suppliedFrom[1].value_or(0);
+
         const auto reliefStatements =
             supplied(1) ? std::make_shared<const std::vector<ReliefStatementEntry>>(
                               readReliefStatements(suppliedTexts[1], CatalogueOrigin::Supplied))
                         : builtInLists().mReliefStatements;
+
+        currentFile = kBrokerPayersFile;
+        currentPosition = suppliedFrom[2].value_or(0);
+
         const auto brokerPayers =
             supplied(2) ? std::make_shared<const BrokerPayerList>(
                               readBrokerPayers(suppliedTexts[2], CatalogueOrigin::Supplied))
@@ -761,9 +801,78 @@ ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aF
     {
         load.mCatalogue.reset();
         load.mFault = error.fault();
+    } catch (const std::bad_alloc&)
+    {
+        load.mCatalogue.reset();
+        load.mFault = ReferenceFileFault{
+            .mFile = std::string{currentFile},
+            .mRow = std::nullopt,
+            .mMessage = inputFileFaultMessage(InputFileFault::OutOfMemory,
+                                              "reference_files",
+                                              currentPosition,
+                                              aMaxFileBytes),
+        };
     }
 
     return load;
+}
+
+} // namespace
+
+ReferenceDataLoad loadReferenceData(const std::span<const InputFile> aFiles,
+                                    const std::size_t aMaxFileBytes) {
+    std::vector<std::string> names;
+
+    names.reserve(aFiles.size());
+
+    for (const InputFile& file : aFiles)
+    {
+        // A display name with a folder part counts by its last part. A name without a file name
+        // (empty or ending in a separator) is kept empty, so no folder reaches the fault.
+        const auto filename = SourceFilename::tryFromPath(file.mName);
+
+        names.push_back(filename ? filename->value() : std::string{});
+    }
+
+    return loadReferenceFiles(
+        names,
+        [&aFiles, aMaxFileBytes](std::size_t aPosition) -> ReferenceText {
+            const std::string& content = aFiles[aPosition].mContent;
+
+            if (content.size() > aMaxFileBytes)
+            {
+                return InputFileFault::TooLarge;
+            }
+
+            try
+            { return std::string{content}; } catch (const std::bad_alloc&)
+            { return InputFileFault::OutOfMemory; }
+        },
+        aMaxFileBytes);
+}
+
+ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aFiles,
+                                    const std::size_t aMaxFileBytes) {
+    std::vector<std::string> names(aFiles.size());
+
+    std::transform(aFiles.begin(),
+                   aFiles.end(),
+                   names.begin(),
+                   [](const std::filesystem::path& aPath) { return aPath.filename().string(); });
+
+    return loadReferenceFiles(
+        names,
+        [&aFiles, aMaxFileBytes](std::size_t aPosition) -> ReferenceText {
+            auto read = readInputFile(aFiles[aPosition], aMaxFileBytes);
+
+            if (auto* fault = std::get_if<InputFileFault>(&read))
+            {
+                return *fault;
+            }
+
+            return std::move(std::get<InputFile>(read).mContent);
+        },
+        aMaxFileBytes);
 }
 
 } // namespace taxbroker

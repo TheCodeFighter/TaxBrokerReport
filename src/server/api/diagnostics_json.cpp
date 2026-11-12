@@ -44,8 +44,13 @@ std::string serializeDiagnosticsJson(const ParseResult& aParseResult, int aInden
     nlohmann::json diagnostics = nlohmann::json::array();
     for (const auto& diagnostic : aParseResult.mDiagnostics)
     {
-        const auto sourceFile = SourceFilename::fromPath(diagnostic.mSourceFile).value();
-        nlohmann::json source{{"file", sourceFile}};
+        // A name that is not a plain file name (an invalid-name error has none) is left out.
+        const auto sourceFile = SourceFilename::tryFromPath(diagnostic.mSourceFile);
+        nlohmann::json source = nlohmann::json::object();
+        if (sourceFile)
+        {
+            source["file"] = sourceFile->value();
+        }
         if (diagnostic.mRowIndex)
         {
             source["row"] = *diagnostic.mRowIndex;
