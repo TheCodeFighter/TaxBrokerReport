@@ -50,7 +50,12 @@ One application run returns one `ApplicationResult` with:
 - one result each for capital gains, dividends, bank-deposit interest, and other interest;
 - explicit classification exclusions in `excludedItems`, distinct from per-report ISIN exclusions; and
 - informational income totals, fee totals, corrections, and every answer the decision session
-  keeps (`decisions`, see "Structured user-decision contract").
+  keeps (`decisions`, see "Structured user-decision contract"); and
+- the facts the summary of a run shows: the investments with a sale in the selected year
+  (`capitalSummary`), the official rates that converted an amount (`usedRates`), the qualifying
+  bank-deposit interest against the allowance (`depositInterest`), the applied quantity
+  corrections and the cumulative reconciliation impact per ISIN (`corrections`,
+  `reconciliation`), and where the reference data and the rate files came from (`dataSources`).
 
 Income results also retain reference-catalogue provenance, confirmed withholding/relief treatment,
 and a list of supporting documents to attach in eDavki. A generated XML is not a filed return or
@@ -86,8 +91,56 @@ whether to exclude failed capital ISINs". The classification of trade investment
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
 `excludedItems`". The dividend and other-interest failure choices use the same stage, and the
 report command runs both stages and asks these choices and the bond type in the terminal.
-Developer mode and the income summaries are not part of it yet; until they exist, `unsafe` is
-`false`. XML failures are isolated per form: see "XML writer stage" below.
+The fee summary and developer mode are not part of it yet; until developer mode exists, `unsafe`
+is `false`. XML failures are isolated per form: see "XML writer stage" below.
+
+### Application request
+
+An application run starts from an `ApplicationRequest` (`include/taxbroker/application_request.hpp`),
+which needs neither HTTP nor JSON:
+
+- the reporting year and the filing type;
+- the taxpayer metadata;
+- the broker files in memory (`InputFile`: display name and bytes), each with its broker, in
+  request order; the position is the run-local source index (`source-0001` for index 0);
+- the supplied ECB rate files and reference files in memory, which may be empty; and
+- no answers: the decision session keeps them.
+
+The command line reads each file into memory once and fails the run before any calculation when a
+file cannot be read. The request is not part of the application JSON.
+
+### Summary facts
+
+These parts are informational: the XML is the truth, and they never change a status.
+
+- `capitalSummary.investments`: one entry for each ISIN with a sale in the selected year, by ISIN:
+  `state` (`listed`: it has rows in the filing list; `blocked`: a blocking capital error of the
+  ISIN keeps it out; `excluded`: the user left it out; `long_held_only`: only units past the
+  holding period), `reasonCodes` (the blocking codes in diagnostic order for `blocked`, the reason
+  codes of the exclusion for `excluded`), `listedSales`, `listedUnits`, `blockedLossUnits` (the
+  listed units whose loss the 30-day rule blocks, `F10` false) and the `sales` in ledger order with
+  their date and safe source. `capitalSummary.longHeld` lists the units past the holding period.
+- `usedRates`: the official rates that converted a trade or an income amount, by tax date, then
+  currency code, with the observation date, the rate (foreign units per 1 EUR at eight decimals),
+  the file, the row and whether the file is built in or supplied.
+- `reports.<form>.incomeSummary` for the three income forms: the total gross income and foreign
+  tax in EUR, `rowCount`, and one `rows` entry for each row of the form's model: the kind
+  (`dividend`, `deposit_interest`, `broker_cash_interest`, `bond_coupon`), ISIN, broker (cash
+  interest), date (none for a Doh-DHO row, which sums several payments), gross and foreign tax in
+  EUR at four decimals, whether the export's tax was blank, the payer facts with the reference row
+  they came from (an empty payer: not found), the treaty claim (`none`, `reference_text`,
+  `user_text`, `claimed_without_text`) and `evidenceRequired`: the user attaches the evidence in
+  eDavki when the foreign tax is above 0 or a claim is made.
+- `depositInterest`: only when the year has qualifying interest with a known total:
+  `importedInterestEur`, `limitEur` (1,000) and `addOtherBanks`, true when the form holds only the
+  imported interest and the user adds the other banks' interest in eDavki (the total is at or
+  below the limit and the user did not answer "no").
+- `corrections`: each quantity correction applied to a sale (original and corrected units, kind
+  `rounding_evidence` or `user_confirmed`, the exact EUR impact). `reconciliation`: the cumulative
+  absolute impact of every ISIN with an impact above 0, always below the `limitEur` of `"0.0100"`.
+- `dataSources`: the three reference files and the ECB rate files of the run with their origin
+  (`built_in`, `supplied`), the upstream revision of the built-in payers, and for a supplied rate
+  file whether it replaces a built-in year.
 
 ### Report result
 
@@ -1156,6 +1209,11 @@ is present; the raw CSV row is not.
       "unsafe": false
     }
   },
+  "capitalSummary": { "investments": [], "longHeld": [] },
+  "usedRates": [],
+  "corrections": [],
+  "reconciliation": [],
+  "dataSources": { "referenceFiles": [], "rateFiles": [] },
   "diagnostics": [
     {
       "id": "diagnostic-0001",

@@ -5,6 +5,7 @@
 #include "cli/taxpayer_file.hpp"
 #include "cli_text.hpp"
 #include "parsers/traderepublic_parser.hpp"
+#include "processors/application_summaries.hpp"
 #include "processors/failure_resolution_stage.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
@@ -16,8 +17,10 @@
 #include "processors/tax_processor.hpp"
 #include "processors/trade_conversion.hpp"
 #include "taxbroker/api/application_result_json.hpp"
+#include "taxbroker/application_request.hpp"
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/decision_session.hpp"
+#include "taxbroker/input_file.hpp"
 #include "taxbroker/official_rates.hpp"
 #include "taxbroker/reference_catalogue.hpp"
 #include "utils/numeric_util.hpp"
@@ -531,10 +534,6 @@ std::string isoDate(const Date& aDate) {
     return text;
 }
 
-std::string sourceText(const SourceReference& aSource) {
-    return aSource.mFilename.value() + " row " + std::to_string(aSource.mSourceRow);
-}
-
 /// The run-local ID of a file, as in the application result: `source-0001` for index 0.
 std::string sourceId(std::size_t aSourceIndex) {
     char text[32]{};
@@ -551,26 +550,10 @@ std::string sourceText(const ApplicationSource& aSource) {
     return aSource.mRow ? file + " row " + std::to_string(*aSource.mRow) : file;
 }
 
-const TradeTransaction& tradeOf(const MergedStatement& aStatement,
-                                const StatementEventReference& aEvent) {
-    return aStatement.mPresentation.mTradeInstruments.at(aEvent.mInstrumentIndex.value())
-        .mTransactions.at(aEvent.mEventIndex);
-}
-
-std::string saleLine(const MergedStatement& aStatement, const StatementEventReference& aSale) {
-    const auto& metadata = tradeOf(aStatement, aSale).mMetadata;
-
-    return "sale " + isoDate(metadata.mTaxDate) + ", " + sourceText(primarySource(metadata));
-}
-
 bool affects(const ApplicationDiagnostic& aDiagnostic, ReportType aType) {
     return std::find(aDiagnostic.mAffectedReports.begin(),
                      aDiagnostic.mAffectedReports.end(),
                      aType) != aDiagnostic.mAffectedReports.end();
-}
-
-bool affectsCapital(const ApplicationDiagnostic& aDiagnostic) {
-    return affects(aDiagnostic, ReportType::CapitalGains);
 }
 
 std::string_view severityText(DiagnosticSeverity aSeverity) {
@@ -663,31 +646,11 @@ void writeDiagnostics(std::ostream& aOut,
     }
 }
 
-/// What the summary says about one ISIN with a sale in the selected year.
-struct InvestmentLine {
-    std::string mName;
-    /// Sales and their units, when the ISIN has a list in the filing rows. A sale whose loss is
-    /// blocked in part has several rows but is one sale.
-    std::size_t mListedSales{};
-    Units mListedUnits{};
-    Units mBlockedLossUnits{};
-    bool mListed{};
-    /// The sales the summary names under a blocked ISIN, in ledger order.
-    std::vector<StatementEventReference> mSales;
-};
-
-/// Everything the summary needs from one run.
+/// Everything the summary needs from one run: the request, the result, and which forms keep a
+/// file of an earlier run in the output folder.
 struct RunOutcome {
-    const ReportOptions& mOptions;
-    const MergedStatement& mStatement;
-    const CapitalGainsBuildResult& mBuilt;
-    /// The filing rows of the ISINs without a problem, also when the report is blocked.
-    const CapitalGainsReportKDVP& mPreview;
+    const ApplicationRequest& mRequest;
     const ApplicationResult& mResult;
-    std::vector<UsedOfficialRate> mUsedRates; ///< Rates that converted a trade, by date, then code.
-    std::string mDataSources; ///< The "Reference data" and "ECB rate files" lines, each with `\n`.
-    /// The rows of each form's model, by report type. Only the income forms use them.
-    std::array<std::size_t, 4> mRows{};
     /// True for a form that is not generated and has an XML file of an earlier run in the folder.
     std::array<bool, 4> mKeptOldFile{};
 };
@@ -713,96 +676,6 @@ std::string xmlFileName(const FormInfo& aForm, int aYear) {
 
 std::string summaryFileName(int aYear) {
     return "summary_" + std::to_string(aYear) + ".txt";
-}
-
-/// The ISINs with a sale in the selected year: the listed ones, the blocked ones and those with
-/// only units past the holding period, by ISIN.
-std::map<Isin, InvestmentLine> investmentLines(const RunOutcome& aOutcome) {
-    std::map<Isin, InvestmentLine> lines;
-
-    for (const auto& list : aOutcome.mPreview.mLists)
-    {
-        auto& line = lines[list.mIsin];
-        line.mName = list.mName;
-        line.mListed = true;
-
-        for (const auto& row : list.mRows)
-        {
-            if (const auto* sale = std::get_if<KdvpSaleRow>(&row.mEntry))
-            {
-                // The rows of one sale follow each other.
-                if (line.mSales.empty() || line.mSales.back() != sale->mSale)
-                {
-                    ++line.mListedSales;
-                    line.mSales.push_back(sale->mSale);
-                }
-
-                line.mListedUnits += sale->mUnits;
-                line.mBlockedLossUnits +=
-                    sale->mLossRule == KdvpLossRule::Blocked ? sale->mUnits : Units{0};
-            }
-        }
-    }
-
-    for (const auto& longHeld : aOutcome.mBuilt.mLongHeld)
-    {
-        auto& line = lines[longHeld.mIsin];
-        line.mName = longHeld.mName;
-        line.mSales.push_back(longHeld.mSale);
-    }
-
-    for (const auto& blocked : aOutcome.mBuilt.mBlocked)
-    {
-        auto& line = lines[blocked.mIsin];
-        line.mName = blocked.mName;
-        line.mSales = blocked.mSales;
-    }
-
-    for (const auto& excluded : aOutcome.mBuilt.mExcluded)
-    {
-        auto& line = lines[excluded.mIsin];
-        line.mName = excluded.mName;
-        line.mSales = excluded.mSales;
-    }
-
-    for (auto& [isin, line] : lines)
-    {
-        std::sort(line.mSales.begin(),
-                  line.mSales.end(),
-                  [](const StatementEventReference& aLeft, const StatementEventReference& aRight) {
-                      return aLeft.mEventIndex < aRight.mEventIndex;
-                  });
-        line.mSales.erase(std::unique(line.mSales.begin(), line.mSales.end()), line.mSales.end());
-    }
-
-    return lines;
-}
-
-/// The codes of the blocking capital errors of an ISIN, in diagnostic order, each once.
-std::vector<std::string_view> blockingCodes(const ApplicationResult& aResult, const Isin& aIsin) {
-    std::vector<std::string_view> codes;
-
-    for (const auto& diagnostic : aResult.mDiagnostics)
-    {
-        if (!diagnostic.mBlocking || !affectsCapital(diagnostic) || diagnostic.mIsin != aIsin)
-        {
-            continue;
-        }
-
-        const auto code = api::diagnosticCodeName(diagnostic.mCode);
-
-        if (std::find(codes.begin(), codes.end(), code) == codes.end())
-        {
-            codes.push_back(code);
-        }
-    }
-
-    return codes;
-}
-
-/// The excluded investments of the capital result, empty unless the user chose to leave out.
-const std::vector<RequestInvestment>& excludedInvestments(const ApplicationResult& aResult) {
-    return aResult.report(ReportType::CapitalGains).mExcludedInvestments;
 }
 
 /// The text of a text parameter of the diagnostic, or an empty string when it has none.
@@ -979,7 +852,7 @@ std::string noDataText(const FormInfo& aForm, const ReportResult& aReport, int a
 
 /// One status line per form, and a note under a form whose old file was kept.
 void writeForms(std::ostream& aOut, const RunOutcome& aOutcome) {
-    const int year = aOutcome.mOptions.mYear;
+    const int year = aOutcome.mRequest.mReportingYear;
 
     aOut << "Forms:\n";
 
@@ -987,6 +860,7 @@ void writeForms(std::ostream& aOut, const RunOutcome& aOutcome) {
     {
         const auto& report = aOutcome.mResult.report(form.mType);
         const auto index = static_cast<std::size_t>(form.mType);
+        const auto rows = report.mIncome ? report.mIncome->mRows.size() : std::size_t{0};
 
         aOut << "  " << form.mLabel << " (" << form.mCode << "): ";
 
@@ -997,7 +871,7 @@ void writeForms(std::ostream& aOut, const RunOutcome& aOutcome) {
 
             if (form.mType != ReportType::CapitalGains)
             {
-                aOut << ", " << countText(aOutcome.mRows[index], "row", "rows");
+                aOut << ", " << countText(rows, "row", "rows");
             }
 
             aOut << ", written to " << xmlFileName(form, year) << '\n';
@@ -1022,72 +896,49 @@ void writeForms(std::ostream& aOut, const RunOutcome& aOutcome) {
 }
 
 void writeInvestments(std::ostream& aOut, const RunOutcome& aOutcome) {
-    const auto lines = investmentLines(aOutcome);
+    const auto& investments = aOutcome.mResult.mCapitalInvestments;
     const bool generated =
         aOutcome.mResult.report(ReportType::CapitalGains).mStatus == ReportStatus::Generated;
 
-    aOut << "Investments with a sale in " << aOutcome.mOptions.mYear << ": " << lines.size()
-         << '\n';
+    aOut << "Investments with a sale in " << aOutcome.mRequest.mReportingYear << ": "
+         << investments.size() << '\n';
 
-    for (const auto& [isin, line] : lines)
+    for (const auto& investment : investments)
     {
-        const auto codes = blockingCodes(aOutcome.mResult, isin);
-        const auto& excluded = excludedInvestments(aOutcome.mResult);
-        const auto left = std::find_if(
-            excluded.begin(),
-            excluded.end(),
-            [&isin](const RequestInvestment& aInvestment) { return aInvestment.mIsin == isin; });
+        aOut << "  " << investmentText(investment.mIsin, investment.mName) << ": ";
 
-        aOut << "  " << investmentText(isin, line.mName) << ": ";
-
-        if (left != excluded.end())
+        switch (investment.mState)
         {
-            aOut << "excluded (" << reasonCodesText(*left) << ")\n";
+        case CapitalInvestmentState::Excluded:
+        case CapitalInvestmentState::Blocked:
+            aOut << (investment.mState == CapitalInvestmentState::Excluded ? "excluded ("
+                                                                           : "blocked (")
+                 << reasonCodesText(investment.mReasonCodes) << ")\n";
 
-            for (const auto& sale : line.mSales)
+            for (const auto& sale : investment.mSales)
             {
-                aOut << "    " << saleLine(aOutcome.mStatement, sale) << '\n';
+                aOut << "    sale " << isoDate(sale.mDate) << ", " << sourceText(sale.mSource)
+                     << '\n';
             }
 
-            continue;
-        }
-
-        if (!codes.empty())
-        {
-            aOut << "blocked (";
-
-            for (std::size_t index = 0; index < codes.size(); ++index)
-            {
-                aOut << (index == 0 ? "" : ", ") << codes[index];
-            }
-
-            aOut << ")\n";
-
-            for (const auto& sale : line.mSales)
-            {
-                aOut << "    " << saleLine(aOutcome.mStatement, sale) << '\n';
-            }
-
-            continue;
-        }
-
-        if (!line.mListed)
-        {
+            break;
+        case CapitalInvestmentState::LongHeldOnly:
             aOut << "only units past the holding period, not in the XML\n";
-            continue;
+            break;
+        case CapitalInvestmentState::Listed:
+            aOut << (generated ? "listed, " : "no problem, ")
+                 << countText(investment.mListedSales, "sale", "sales") << ", "
+                 << unitsText(investment.mListedUnits) << " units";
+
+            if (investment.mBlockedLossUnits > 0)
+            {
+                aOut << ", " << unitsText(investment.mBlockedLossUnits)
+                     << " units with a loss blocked by the 30-day rule (F10 false)";
+            }
+
+            aOut << '\n';
+            break;
         }
-
-        aOut << (generated ? "listed, " : "no problem, ")
-             << countText(line.mListedSales, "sale", "sales") << ", "
-             << unitsText(line.mListedUnits) << " units";
-
-        if (line.mBlockedLossUnits > 0)
-        {
-            aOut << ", " << unitsText(line.mBlockedLossUnits)
-                 << " units with a loss blocked by the 30-day rule (F10 false)";
-        }
-
-        aOut << '\n';
     }
 }
 
@@ -1200,15 +1051,14 @@ void writeExcludedItems(std::ostream& aOut, const ApplicationResult& aResult) {
 }
 
 void writeLongHeld(std::ostream& aOut, const RunOutcome& aOutcome) {
-    aOut << "Units past the holding period (tax free, not in the XML): "
-         << aOutcome.mBuilt.mLongHeld.size() << '\n';
+    const auto& longHeld = aOutcome.mResult.mLongHeld;
 
-    for (const auto& longHeld : aOutcome.mBuilt.mLongHeld)
+    aOut << "Units past the holding period (tax free, not in the XML): " << longHeld.size() << '\n';
+
+    for (const auto& sale : longHeld)
     {
-        const auto& metadata = tradeOf(aOutcome.mStatement, longHeld.mSale).mMetadata;
-
-        aOut << "  " << investmentText(longHeld.mIsin, longHeld.mName) << ": sale "
-             << isoDate(metadata.mTaxDate) << ", " << unitsText(longHeld.mUnits) << " units\n";
+        aOut << "  " << investmentText(sale.mIsin, sale.mName) << ": sale "
+             << isoDate(sale.mSaleDate) << ", " << unitsText(sale.mUnits) << " units\n";
     }
 }
 
@@ -1321,14 +1171,16 @@ void writeAnswers(std::ostream& aOut, const ApplicationResult& aResult) {
 /// The official rates that converted a trade, so the user can check them. The date of the rate
 /// is named only when it is earlier than the trade's tax date.
 void writeUsedRates(std::ostream& aOut, const RunOutcome& aOutcome) {
-    if (aOutcome.mUsedRates.empty())
+    const auto& usedRates = aOutcome.mResult.mUsedRates;
+
+    if (usedRates.empty())
     {
         return;
     }
 
     aOut << "Official exchange rates used (ECB reference rates, 1 EUR = rate in the currency):\n";
 
-    for (const auto& used : aOutcome.mUsedRates)
+    for (const auto& used : usedRates)
     {
         const auto& rate = used.mRate;
 
@@ -1379,28 +1231,118 @@ void writeFormDiagnostics(std::ostream& aOut, const RunOutcome& aOutcome, const 
     writeDiagnostics(aOut, code + " warnings", warnings, false, aForm.mType);
 }
 
+/// The years as ranges, such as "2016 to 2024, 2026".
+std::string yearRanges(const std::vector<int>& aYears) {
+    std::string text;
+
+    for (std::size_t index = 0; index < aYears.size();)
+    {
+        std::size_t last = index;
+
+        while (last + 1 < aYears.size() && aYears[last + 1] == aYears[last] + 1)
+        {
+            ++last;
+        }
+
+        text += text.empty() ? "" : ", ";
+        text += std::to_string(aYears[index]);
+
+        if (last > index)
+        {
+            text += " to " + std::to_string(aYears[last]);
+        }
+
+        index = last + 1;
+    }
+
+    return text;
+}
+
+/// The "Reference data" line: where each of the three files came from.
+std::string referenceDataLine(const ApplicationDataSources& aSources) {
+    std::string supplied;
+    std::string builtIn;
+    std::string revision;
+
+    for (const auto& file : aSources.mReferenceFiles)
+    {
+        std::string& target = file.mOrigin == CatalogueOrigin::Supplied ? supplied : builtIn;
+
+        target += target.empty() ? "" : ", ";
+        target += file.mFile;
+
+        if (!file.mUpstreamRevision.empty())
+        {
+            // The revision of the upstream data, short like a commit name.
+            revision = file.mUpstreamRevision.substr(0, 7);
+        }
+    }
+
+    if (supplied.empty())
+    {
+        return "Reference data: built-in" +
+               (revision.empty() ? "" : " (ib-edavki " + revision + ")") + "\n";
+    }
+
+    return "Reference data: " + supplied + " supplied" +
+           (builtIn.empty() ? "" : "; " + builtIn + " built-in") + "\n";
+}
+
+/// The "ECB rate files" line: the built-in years in use and the supplied files.
+std::string rateFilesLine(const ApplicationDataSources& aSources) {
+    std::vector<int> builtInYears;
+    std::string supplied;
+
+    for (const auto& file : aSources.mRateFiles)
+    {
+        if (file.mOrigin == OfficialRateOrigin::BuiltIn)
+        {
+            builtInYears.push_back(file.mYear);
+            continue;
+        }
+
+        supplied += supplied.empty() ? "" : ", ";
+        supplied += file.mFile + " (" + std::to_string(file.mYear) +
+                    (file.mReplacesBuiltIn ? ", replaces the built-in year" : "") + ")";
+    }
+
+    std::string line = "ECB rate files: ";
+
+    if (!builtInYears.empty())
+    {
+        line += "built-in " + yearRanges(builtInYears);
+    }
+
+    if (!supplied.empty())
+    {
+        line += std::string{builtInYears.empty() ? "" : "; "} + "supplied: " + supplied;
+    }
+
+    return line + "\n";
+}
+
 std::string summaryText(const RunOutcome& aOutcome) {
     std::ostringstream out;
-    const auto& options = aOutcome.mOptions;
+    const auto& request = aOutcome.mRequest;
 
-    out << "TaxBrokerReport " << options.mYear << " ("
-        << (options.mFilingType == FilingType::Original ? "original return" : "self-report")
+    out << "TaxBrokerReport " << request.mReportingYear << " ("
+        << (request.mFilingType == FilingType::Original ? "original return" : "self-report")
         << ")\n";
 
-    if (options.mFilingType == FilingType::SelfReport)
+    if (request.mFilingType == FilingType::SelfReport)
     {
         out << "The income forms are always original returns.\n";
     }
 
-    out << "Input files: " << options.mTradeRepublicPaths.size() << '\n';
+    out << "Input files: " << request.mBrokerFiles.size() << '\n';
 
-    for (std::size_t index = 0; index < options.mTradeRepublicPaths.size(); ++index)
+    for (std::size_t index = 0; index < request.mBrokerFiles.size(); ++index)
     {
-        out << "  " << sourceId(index) << ' ' << fileNameOf(options.mTradeRepublicPaths[index])
-            << '\n';
+        out << "  " << sourceId(index) << ' ' << request.mBrokerFiles[index].mFile.mName << '\n';
     }
 
-    out << aOutcome.mDataSources << '\n';
+    out << referenceDataLine(aOutcome.mResult.mDataSources)
+        << rateFilesLine(aOutcome.mResult.mDataSources) << '\n';
     writeForms(out, aOutcome);
     out << '\n';
     writeInvestments(out, aOutcome);
@@ -1509,26 +1451,15 @@ bool hasLeftOutDisposal(const MergedStatement& aStatement,
                        });
 }
 
-/// The stage results of a calculation that the summary needs beside the application result.
-struct CalculatedRun {
-    CapitalGainsBuildResult mBuilt;
-    /// The rows of the ISINs without a problem, when the builder made no report.
-    std::optional<CapitalGainsReportKDVP> mPreviewWithoutBlocked;
-    std::vector<UsedOfficialRate> mUsedRates; ///< The rates of the trades and the income.
-    std::array<std::size_t, 4> mRows{};       ///< The rows of each income form, by report type.
-};
-
 /// One calculation from the merged files and the answers: FIFO, the corporate-action stage, the
 /// loss rule, the builder, the gates, the choice to leave failed investments out and the XML. It
-/// reads nothing from aCalculated, so it keeps no state between calls; aCalculated only receives
-/// what the summary needs.
-ApplicationResultInput calculateReport(const ReportOptions& aOptions,
-                                       const TaxpayerMetadata& aTaxpayer,
+/// keeps no state between calls: everything the summary needs goes into the input of the result.
+ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
                                        const TaxProcessingResult& aPrepared,
                                        const ReferenceCatalogue& aCatalogue,
                                        const OfficialRateTable& aRates,
-                                       RunDecisions& aDecisions,
-                                       std::optional<CalculatedRun>& aCalculated) {
+                                       const ApplicationDataSources& aDataSources,
+                                       RunDecisions& aDecisions) {
     // The year was checked with the options, so the ledger is always there. The classification
     // comes first: the instruments it leaves out are not part of the capital stages.
     auto ledger = aPrepared.mLedger.value();
@@ -1556,7 +1487,7 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 
     // Copied, not moved: every calculation of the run starts from the same diagnostics.
     ApplicationResultInput input{
-        .mReportingYear = aOptions.mYear,
+        .mReportingYear = aRequest.mReportingYear,
         .mMergeDiagnostics = aPrepared.mMerged.mDiagnostics,
         .mProcessingDiagnostics = aPrepared.mDiagnostics,
     };
@@ -1609,9 +1540,9 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
     }
 
     const ReportMetadata metadata{
-        .mTaxpayer = aTaxpayer,
-        .mReportingYear = aOptions.mYear,
-        .mFilingType = aOptions.mFilingType,
+        .mTaxpayer = aRequest.mTaxpayer,
+        .mReportingYear = aRequest.mReportingYear,
+        .mFilingType = aRequest.mFilingType,
     };
 
     // A blocked ISIN always has an error (FIFO, corporate action or gate), so without a report
@@ -1650,15 +1581,13 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
         metadata,
         {.mDividends = &income.mDividends, .mDeposit = &income.mDeposit, .mOther = &income.mOther});
 
-    aCalculated = CalculatedRun{
-        .mBuilt = std::move(built),
-        .mPreviewWithoutBlocked = std::move(previewWithoutBlocked),
-        .mUsedRates = mergedRates(std::move(conversion.mUsedRates), std::move(income.mUsedRates)),
-        .mRows = {0,
-                  income.mDividends.mRows.size(),
-                  income.mDeposit.mRows.size(),
-                  income.mOther.mRows.size()},
-    };
+    // The summary reads the preview: the report, or the rows of the ISINs without a problem.
+    const auto& preview = built.mReport ? *built.mReport : previewWithoutBlocked.value();
+
+    appendCapitalSummary(input, capitalStatement, built, preview);
+    appendCorrections(input, capitalStatement, fifo);
+    input.mUsedRates = mergedRates(std::move(conversion.mUsedRates), std::move(income.mUsedRates));
+    input.mDataSources = aDataSources;
 
     return input;
 }
@@ -1666,39 +1595,39 @@ ApplicationResultInput calculateReport(const ReportOptions& aOptions,
 /// Parses and merges the files, calculates the report in a decision session, asks the open
 /// questions, writes the output files and the summary, and returns the exit code.
 int runReport(const ReportOptions& aOptions,
-              const TaxpayerMetadata& aTaxpayer,
+              const ApplicationRequest& aRequest,
               const ReferenceCatalogue& aCatalogue,
               const OfficialRateTable& aRates,
-              const std::string& aDataSources,
+              const ApplicationDataSources& aDataSources,
               std::istream& aIn,
               std::ostream& aOut,
               std::ostream& aErr) {
     tr::TradeRepublicParser parser;
     std::vector<StatementMergeInput> inputs;
 
-    for (std::size_t index = 0; index < aOptions.mTradeRepublicPaths.size(); ++index)
+    for (std::size_t index = 0; index < aRequest.mBrokerFiles.size(); ++index)
     {
-        inputs.push_back({index, parser.parseFile(aOptions.mTradeRepublicPaths[index], index)});
+        const auto& file = aRequest.mBrokerFiles[index];
+
+        // Trade Republic is the only broker with a parser so far.
+        if (file.mBroker != Broker::TradeRepublic)
+        {
+            throw std::logic_error("A broker file has a broker without a parser.");
+        }
+
+        inputs.push_back({index, parser.parse(file.mFile.mContent, file.mFile.mName, index)});
     }
 
     // Parsing, merging and the year do not depend on an answer, so they run once.
     const auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
-        .mReportingYear = aOptions.mYear,
+        .mReportingYear = aRequest.mReportingYear,
         .mMerged = DeterministicStatementMerger{}.merge(std::move(inputs)),
     });
-    const auto& statement = prepared.mMerged.mStatement;
-    std::optional<CalculatedRun> calculated;
     // The answers live only in this session, in memory, and end with this run.
     DecisionSession session;
 
     session.start([&](RunDecisions& aDecisions) {
-        return calculateReport(aOptions,
-                               aTaxpayer,
-                               prepared,
-                               aCatalogue,
-                               aRates,
-                               aDecisions,
-                               calculated);
+        return calculateReport(aRequest, prepared, aCatalogue, aRates, aDataSources, aDecisions);
     });
 
     if (aOptions.mAskQuestions)
@@ -1706,12 +1635,9 @@ int runReport(const ReportOptions& aOptions,
         askOpenQuestions(session, aIn, aOut);
     }
 
-    // The session keeps the result of the last calculation that succeeded, and that calculation
-    // filled calculated: a rejected answer calculates nothing.
+    // The session keeps the result of the last calculation that succeeded: a rejected answer
+    // calculates nothing.
     const auto& result = session.result();
-    const auto& built = calculated.value().mBuilt;
-    const auto& preview =
-        built.mReport ? *built.mReport : calculated.value().mPreviewWithoutBlocked.value();
 
     std::error_code error;
     std::filesystem::create_directories(aOptions.mOutputDirectory, error);
@@ -1755,14 +1681,8 @@ int runReport(const ReportOptions& aOptions,
     }
 
     const RunOutcome outcome{
-        .mOptions = aOptions,
-        .mStatement = statement,
-        .mBuilt = built,
-        .mPreview = preview,
+        .mRequest = aRequest,
         .mResult = result,
-        .mUsedRates = calculated.value().mUsedRates,
-        .mDataSources = aDataSources,
-        .mRows = calculated.value().mRows,
         .mKeptOldFile = keptOldFile,
     };
     const auto summary = summaryText(outcome);
@@ -1838,100 +1758,39 @@ int runReport(const ReportOptions& aOptions,
     return allDone ? kExitSuccess : kExitBlocked;
 }
 
-/// The years as ranges, such as "2016 to 2024, 2026".
-std::string yearRanges(const std::vector<int>& aYears) {
-    std::string text;
-
-    for (std::size_t index = 0; index < aYears.size();)
+/// Reads each file into memory and hands it to aAdd. On the first file that cannot be read it
+/// writes the reason to aErr (the file name only, never the path) and returns false.
+template <typename Add>
+bool readInputFiles(const std::vector<std::filesystem::path>& aPaths,
+                    std::string_view aKind,
+                    Add aAdd,
+                    std::ostream& aErr) {
+    for (std::size_t index = 0; index < aPaths.size(); ++index)
     {
-        std::size_t last = index;
+        auto read = readInputFile(aPaths[index]);
 
-        while (last + 1 < aYears.size() && aYears[last + 1] == aYears[last] + 1)
+        if (const auto* fault = std::get_if<InputFileFault>(&read))
         {
-            ++last;
+            aErr << "taxbroker: the " << aKind << ' ' << fileNameOf(aPaths[index]);
+
+            if (*fault == InputFileFault::Unreadable)
+            {
+                aErr << " could not be read.\n" << kHelpHint;
+            }
+            else
+            {
+                aErr << " cannot be used: " << inputFileFaultMessage(*fault, aKind, index).mEnglish
+                     << '\n'
+                     << kHelpHint;
+            }
+
+            return false;
         }
 
-        text += text.empty() ? "" : ", ";
-        text += std::to_string(aYears[index]);
-
-        if (last > index)
-        {
-            text += " to " + std::to_string(aYears[last]);
-        }
-
-        index = last + 1;
+        aAdd(std::move(std::get<InputFile>(read)));
     }
 
-    return text;
-}
-
-/// The "Reference data" line: where each of the three files came from.
-std::string referenceDataLine(const ReferenceDataLoad& aLoad) {
-    constexpr std::array<std::string_view, 3> names{"payers.csv",
-                                                    "relief_statements.csv",
-                                                    "broker_payers.csv"};
-    std::string supplied;
-    std::string builtIn;
-
-    for (std::size_t index = 0; index < names.size(); ++index)
-    {
-        std::string& target =
-            aLoad.mOrigins[index] == CatalogueOrigin::Supplied ? supplied : builtIn;
-
-        target += target.empty() ? "" : ", ";
-        target += names[index];
-    }
-
-    if (supplied.empty())
-    {
-        // The revision of the upstream data, short like a commit name.
-        const auto& payers = referenceCatalogue().payers();
-        const auto upstream =
-            std::find_if(payers.begin(), payers.end(), [](const PayerEntry& aPayer) {
-                return aPayer.mSource.mSource == "ib-edavki";
-            });
-        const std::string revision =
-            upstream == payers.end() ? "" : upstream->mSource.mSourceRevision.substr(0, 7);
-
-        return "Reference data: built-in" +
-               (revision.empty() ? "" : " (ib-edavki " + revision + ")") + "\n";
-    }
-
-    return "Reference data: " + supplied + " supplied" +
-           (builtIn.empty() ? "" : "; " + builtIn + " built-in") + "\n";
-}
-
-/// The "ECB rate files" line: the built-in years in use and the supplied files.
-std::string rateFilesLine(const OfficialRateTable& aRates) {
-    std::vector<int> builtInYears;
-    std::string supplied;
-
-    for (const auto& file : aRates.mFiles)
-    {
-        if (file.mOrigin == OfficialRateOrigin::BuiltIn)
-        {
-            builtInYears.push_back(file.mYear);
-            continue;
-        }
-
-        supplied += supplied.empty() ? "" : ", ";
-        supplied += file.mSourceFile.value() + " (" + std::to_string(file.mYear) +
-                    (file.mReplacesBuiltIn ? ", replaces the built-in year" : "") + ")";
-    }
-
-    std::string line = "ECB rate files: ";
-
-    if (!builtInYears.empty())
-    {
-        line += "built-in " + yearRanges(builtInYears);
-    }
-
-    if (!supplied.empty())
-    {
-        line += std::string{builtInYears.empty() ? "" : "; "} + "supplied: " + supplied;
-    }
-
-    return line + "\n";
+    return true;
 }
 
 int runReportCommand(std::span<const std::string> aArguments,
@@ -1970,9 +1829,39 @@ int runReportCommand(std::span<const std::string> aArguments,
         return kExitFailure;
     }
 
+    // Every user file is read into memory once, in the order of the command line. A file that
+    // cannot be read fails the run before anything is calculated.
+    ApplicationRequest request{
+        .mReportingYear = options.mYear,
+        .mFilingType = options.mFilingType,
+        .mTaxpayer = std::get<TaxpayerMetadata>(taxpayer),
+    };
+
+    if (!readInputFiles(
+            options.mTradeRepublicPaths,
+            "CSV file",
+            [&request](InputFile&& aFile) {
+                request.mBrokerFiles.push_back(
+                    {.mBroker = Broker::TradeRepublic, .mFile = std::move(aFile)});
+            },
+            aErr) ||
+        !readInputFiles(
+            options.mEcbRatePaths,
+            "ECB rate file",
+            [&request](InputFile&& aFile) { request.mEcbRateFiles.push_back(std::move(aFile)); },
+            aErr) ||
+        !readInputFiles(
+            options.mReferencePaths,
+            "reference file",
+            [&request](InputFile&& aFile) { request.mReferenceFiles.push_back(std::move(aFile)); },
+            aErr))
+    {
+        return kExitFailure;
+    }
+
     // The rate files are named by the user, so a file that is not valid fails the run: a gap
     // would otherwise show up as a missing rate.
-    const auto rates = loadOfficialRates(options.mEcbRatePaths);
+    const auto rates = loadOfficialRates(request.mEcbRateFiles);
 
     if (!rates.mDiagnostics.empty())
     {
@@ -1991,7 +1880,7 @@ int runReportCommand(std::span<const std::string> aArguments,
     }
 
     // The reference files are named by the user too: a file that is not valid fails the run.
-    const auto reference = loadReferenceData(options.mReferencePaths);
+    const auto reference = loadReferenceData(request.mReferenceFiles);
 
     if (reference.mFault)
     {
@@ -2020,10 +1909,10 @@ int runReportCommand(std::span<const std::string> aArguments,
         return kExitFailure;
     }
 
-    const std::string dataSources = referenceDataLine(reference) + rateFilesLine(rates.mTable);
+    const auto dataSources = dataSourcesOf(reference.mOrigins, rates.mTable);
 
     return runReport(options,
-                     std::get<TaxpayerMetadata>(taxpayer),
+                     request,
                      reference.mCatalogue.value(),
                      rates.mTable,
                      dataSources,

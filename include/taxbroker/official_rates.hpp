@@ -42,6 +42,13 @@ struct OfficialRate {
     OfficialRateOrigin mOrigin{}; ///< Built in or supplied; always set by the creator.
 };
 
+/// One rate that converted at least one amount, for the summary and the result.
+struct UsedOfficialRate {
+    Currency mCurrency{Currency::Unknown};
+    Date mTaxDate{};
+    OfficialRate mRate;
+};
+
 /// A rate file that was loaded.
 struct OfficialRateFile {
     SourceFilename mSourceFile;

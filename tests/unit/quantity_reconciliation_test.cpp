@@ -1,3 +1,4 @@
+#include "processors/application_summaries.hpp"
 #include "processors/corporate_actions.hpp"
 #include "processors/loss_eligibility.hpp"
 #include "processors/quantity_reconciliation.hpp"
@@ -1904,6 +1905,97 @@ TEST(QuantityReconciliationTest, TheLossRuleReadsTheCorrectedSale) {
     EXPECT_EQ(sale.mReplacements.at(0).mDate, day("2024-03-10"));
     EXPECT_EQ(sale.mReplacements.at(0).mUnits, 99'999'999);
     EXPECT_TRUE(loss.mRequests.empty());
+}
+
+TEST(QuantityReconciliationTest, TheResultInputListsTheCorrectionAndTheImpactOfTheIsinThatHasOne) {
+    // The scenario of the first test (a sale of 1 unit at EUR 36 reduced by 0.00000001 units), and
+    // a second ISIN with only a purchase, so no impact.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {{
+             .mName = "Synthetic Share",
+             .mIsin = "XX0000000001",
+             .mAssetClass = AssetClass::Stock,
+             .mTransactions =
+                 {
+                     {.mMetadata = {.mTaxDate = day("2023-01-10"),
+                                    .mSources = {source(2, "synthetic-buy-1")}},
+                      .mTradeSide = TradeSide::Buy,
+                      .mUnitPrice = 3'000'000'000,
+                      .mUnits = 33'333'333,
+                      .mCurrency = Currency::EUR,
+                      .mUnitEvidence = evidence(source(2, "synthetic-buy-1"),
+                                                "0.3333333340",
+                                                "40",
+                                                "0.333333334")},
+                     {.mMetadata = {.mTaxDate = day("2023-01-11"),
+                                    .mSources = {source(3, "synthetic-buy-2")}},
+                      .mTradeSide = TradeSide::Buy,
+                      .mUnitPrice = 3'000'000'000,
+                      .mUnits = 33'333'333,
+                      .mCurrency = Currency::EUR,
+                      .mUnitEvidence = evidence(source(3, "synthetic-buy-2"),
+                                                "0.3333333340",
+                                                "40",
+                                                "0.333333334")},
+                     {.mMetadata = {.mTaxDate = day("2023-01-12"),
+                                    .mSources = {source(4, "synthetic-buy-3")}},
+                      .mTradeSide = TradeSide::Buy,
+                      .mUnitPrice = 3'000'000'000,
+                      .mUnits = 33'333'333,
+                      .mCurrency = Currency::EUR,
+                      .mUnitEvidence = evidence(source(4, "synthetic-buy-3"),
+                                                "0.3333333340",
+                                                "40",
+                                                "0.333333334")},
+                     {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                                    .mSources = {source(5, "synthetic-sell-1")}},
+                      .mTradeSide = TradeSide::Sell,
+                      .mUnitPrice = 3'600'000'000,
+                      .mUnits = 100'000'000,
+                      .mCurrency = Currency::EUR,
+                      .mUnitEvidence =
+                          evidence(source(5, "synthetic-sell-1"), "-1.0000000000", "", "-1")},
+                 },
+         },
+         {
+             .mName = "Synthetic Fund",
+             .mIsin = "XX0000000002",
+             .mAssetClass = AssetClass::Stock,
+             .mTransactions =
+                 {
+                     {.mMetadata = {.mTaxDate = day("2023-02-01"),
+                                    .mSources = {source(6, "synthetic-buy-4")}},
+                      .mTradeSide = TradeSide::Buy,
+                      .mUnitPrice = 1'000'000'000,
+                      .mUnits = 100'000'000,
+                      .mCurrency = Currency::EUR},
+                 },
+         }};
+
+    const auto pools = poolsOf(merged, 2024);
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    appendCorrections(input, merged.mStatement, pools.mFifo);
+
+    ASSERT_EQ(input.mCorrections.size(), 1U);
+
+    const auto& correction = input.mCorrections.at(0);
+
+    EXPECT_EQ(correction.mIsin, "XX0000000001");
+    EXPECT_EQ(correction.mSaleDate, day("2024-03-01"));
+    EXPECT_EQ(correction.mSaleSource.mSourceRow, 5U);
+    EXPECT_EQ(correction.mSaleSource.mTransactionId,
+              std::optional<std::string>{"synthetic-sell-1"});
+    EXPECT_EQ(correction.mOriginalUnits, 100'000'000);
+    EXPECT_EQ(correction.mCorrectedUnits, 99'999'999);
+    EXPECT_EQ(correction.mKind, CorrectionKind::RoundingEvidence);
+    EXPECT_EQ(correction.mImpact, eur(36, 100'000'000));
+
+    // Only the ISIN with an impact is listed.
+    ASSERT_EQ(input.mReconciliation.size(), 1U);
+    EXPECT_EQ(input.mReconciliation.at(0).mIsin, "XX0000000001");
+    EXPECT_EQ(input.mReconciliation.at(0).mImpact, eur(36, 100'000'000));
 }
 
 } // namespace

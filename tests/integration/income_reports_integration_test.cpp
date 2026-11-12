@@ -606,4 +606,157 @@ TEST(IncomeReportsIntegrationTest, ASoldBondAsksItsTypeBeforeItsCouponsAreRows) 
     EXPECT_EQ(discount.status(ReportType::OtherInterest), ReportStatus::Failed);
 }
 
+// The income summary of the result: rows, totals and what the user attaches in eDavki.
+
+TEST(IncomeReportsIntegrationTest, TheDividendSummaryHasTheTotalsAndTheEvidenceOfEachRow) {
+    // EUR 10.00 with EUR 1.50 tax, and EUR 5.50 with a blank tax. No reference row: no payer.
+    const TemporaryCsv csv{
+        R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000001,,,10,,-1.50,EUR,,,,,synthetic-dividend-1,,,,)",
+        R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share B,XX0000000002,,,5.50,,,EUR,,,,,synthetic-dividend-2,,,,)",
+    };
+
+    const IncomeRun run{csv, 2024};
+
+    const auto& summary = run.result().report(ReportType::Dividends).mIncome;
+
+    ASSERT_TRUE(summary.has_value());
+    EXPECT_EQ(summary->mGross, 155'000);     // EUR 15.5000
+    EXPECT_EQ(summary->mForeignTax, 15'000); // EUR 1.5000
+    ASSERT_EQ(summary->mRows.size(), 2U);
+
+    const auto& taxed = summary->mRows[0];
+
+    EXPECT_EQ(taxed.mKind, IncomeRowKind::Dividend);
+    EXPECT_EQ(taxed.mIsin, std::optional<Isin>{"XX0000000001"});
+    EXPECT_EQ(taxed.mDate, std::optional<Date>{*parseCalendarDate("2024-04-01")});
+    EXPECT_EQ(taxed.mGross, 100'000);
+    EXPECT_EQ(taxed.mForeignTax, 15'000);
+    EXPECT_FALSE(taxed.mTaxBlankInExport);
+    EXPECT_FALSE(taxed.mPayerRow.has_value()); // payer not found
+    EXPECT_EQ(taxed.mTreaty, TreatyClaimKind::None);
+    EXPECT_TRUE(taxed.mEvidenceRequired);
+
+    const auto& untaxed = summary->mRows[1];
+
+    EXPECT_EQ(untaxed.mGross, 55'000);
+    EXPECT_EQ(untaxed.mForeignTax, 0);
+    EXPECT_TRUE(untaxed.mTaxBlankInExport);
+    EXPECT_FALSE(untaxed.mEvidenceRequired);
+
+    // The other two forms have an empty summary.
+    ASSERT_TRUE(run.result().report(ReportType::BankDepositInterest).mIncome.has_value());
+    EXPECT_TRUE(run.result().report(ReportType::BankDepositInterest).mIncome->mRows.empty());
+    EXPECT_EQ(run.result().report(ReportType::OtherInterest).mIncome->mGross, 0);
+    EXPECT_FALSE(run.result().report(ReportType::CapitalGains).mIncome.has_value());
+}
+
+TEST(IncomeReportsIntegrationTest, AReferenceTreatyTextIsSummarizedWithItsRowAndEvidence) {
+    // Same cash interest and reference files as the treaty text test above: EUR 1.23, EUR 0.20 tax.
+    const TemporaryCsv csv{
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+    };
+    const auto catalogue = parseReferenceCatalogue(
+        "isin,name,tax_number,address,country,instrument_kind,verified_on,isin_source,source,"
+        "source_revision\n",
+        "country,income,statement,source,source_revision\n"
+        "DE,cash_interest,1. odstavek 11. člena,manual,\n",
+        "broker,code,name,tax_number,address,country,source,source_revision\n"
+        "TR,TR-X,Broker T,TAX-T,\"1 Main Street, Berlin\",DE,manual,\n");
+
+    const IncomeRun run{csv, 2023, OfficialRateTable{}, catalogue};
+
+    const auto& summary = run.result().report(ReportType::OtherInterest).mIncome;
+
+    ASSERT_TRUE(summary.has_value());
+    EXPECT_EQ(summary->mGross, 12'300);     // EUR 1.2300
+    EXPECT_EQ(summary->mForeignTax, 2'000); // EUR 0.2000
+    ASSERT_EQ(summary->mRows.size(), 1U);
+
+    const auto& row = summary->mRows[0];
+
+    EXPECT_EQ(row.mKind, IncomeRowKind::BrokerCashInterest);
+    EXPECT_EQ(row.mBroker, std::optional<Broker>{Broker::TradeRepublic});
+    EXPECT_FALSE(row.mIsin.has_value());
+    EXPECT_EQ(row.mPayerName, std::optional<std::string>{"Broker T"});
+    EXPECT_EQ(row.mPayerCountry, std::optional<std::string>{"DE"});
+    ASSERT_TRUE(row.mPayerRow.has_value());
+    EXPECT_EQ(row.mPayerRow->mFile, "broker_payers.csv");
+    // parseReferenceCatalogue reads the text as built-in files; only loadReferenceData sets
+    // Supplied.
+    EXPECT_EQ(row.mPayerRow->mOrigin, CatalogueOrigin::BuiltIn);
+    EXPECT_EQ(row.mTreaty, TreatyClaimKind::ReferenceText);
+    ASSERT_TRUE(row.mTreatyRow.has_value());
+    EXPECT_EQ(row.mTreatyRow->mFile, "relief_statements.csv");
+    EXPECT_TRUE(row.mEvidenceRequired);
+}
+
+TEST(IncomeReportsIntegrationTest, AClaimWithoutATextIsSummarizedAsClaimedWithoutText) {
+    const TemporaryCsv csv{
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+    };
+
+    IncomeRun run{csv, 2023};
+
+    ASSERT_TRUE(run.answerFirst(InterestTreatyClaimAnswer{.mClaim = true}).empty());
+
+    const auto& rows = run.result().report(ReportType::OtherInterest).mIncome->mRows;
+
+    ASSERT_EQ(rows.size(), 1U);
+    EXPECT_EQ(rows[0].mTreaty, TreatyClaimKind::ClaimedWithoutText);
+    EXPECT_FALSE(rows[0].mTreatyRow.has_value());
+    EXPECT_TRUE(rows[0].mEvidenceRequired);
+}
+
+TEST(IncomeReportsIntegrationTest, TheDepositSummaryAsksToAddTheOtherBanksUnlessTheTotalIsAbove) {
+    // EUR 900.00 imported interest, at or below the EUR 1,000 allowance: the reminder is there
+    // before and after "yes". After "no" there is no form and no reminder.
+    const TemporaryCsv below{
+        R"(2023-12-29T10:00:00Z,2023-12-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,900.00,,,EUR,,,,Synthetic bank interest,synthetic-interest-2,,,,)",
+    };
+
+    IncomeRun run{below, 2023};
+
+    ASSERT_TRUE(run.result().mDepositInterest.has_value());
+    EXPECT_EQ(run.result().mDepositInterest->mImportedQualifying, 9'000'000); // EUR 900.0000
+    EXPECT_EQ(run.result().mDepositInterest->mAllowance, 10'000'000);         // EUR 1,000.0000
+    EXPECT_TRUE(run.result().mDepositInterest->mAddOtherBanks);
+
+    ASSERT_TRUE(run.answerFirst(DepositInterestTotalAnswer{.mAboveLimit = true}).empty());
+    EXPECT_TRUE(run.result().mDepositInterest->mAddOtherBanks);
+
+    ASSERT_EQ(run.result().report(ReportType::BankDepositInterest).mIncome->mRows.size(), 1U);
+    EXPECT_EQ(run.result().report(ReportType::BankDepositInterest).mIncome->mGross, 9'000'000);
+    EXPECT_EQ(run.result().report(ReportType::BankDepositInterest).mIncome->mRows[0].mKind,
+              IncomeRowKind::DepositInterest);
+
+    IncomeRun answeredNo{below, 2023};
+
+    ASSERT_TRUE(answeredNo.answerFirst(DepositInterestTotalAnswer{.mAboveLimit = false}).empty());
+    ASSERT_TRUE(answeredNo.result().mDepositInterest.has_value());
+    EXPECT_EQ(answeredNo.result().mDepositInterest->mImportedQualifying, 9'000'000);
+    EXPECT_FALSE(answeredNo.result().mDepositInterest->mAddOtherBanks);
+    EXPECT_TRUE(answeredNo.result().report(ReportType::BankDepositInterest).mIncome->mRows.empty());
+
+    // EUR 1,200.00 is above the allowance: all of it is in Doh-DHO and nothing is asked.
+    const TemporaryCsv above{
+        R"(2023-12-29T10:00:00Z,2023-12-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1200.00,,,EUR,,,,Synthetic bank interest,synthetic-interest-3,,,,)",
+    };
+    const IncomeRun aboveRun{above, 2023};
+
+    ASSERT_TRUE(aboveRun.result().mDepositInterest.has_value());
+    EXPECT_EQ(aboveRun.result().mDepositInterest->mImportedQualifying, 12'000'000);
+    EXPECT_FALSE(aboveRun.result().mDepositInterest->mAddOtherBanks);
+    EXPECT_TRUE(aboveRun.result().mRequests.empty());
+}
+
+TEST(IncomeReportsIntegrationTest, AYearWithoutDepositInterestHasNoDepositSummary) {
+    const TemporaryCsv csv{
+        R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000001,,,10,,,EUR,,,,,synthetic-dividend-1,,,,)",
+    };
+
+    const IncomeRun run{csv, 2024};
+
+    EXPECT_FALSE(run.result().mDepositInterest.has_value());
+}
+
 } // namespace

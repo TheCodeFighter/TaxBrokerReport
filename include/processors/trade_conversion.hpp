@@ -17,13 +17,6 @@ struct ConvertedTrade {
     OfficialRate mRate; ///< The rate used; its own date can be earlier than the trade's tax date.
 };
 
-/// One rate that converted at least one trade, for the summary.
-struct UsedOfficialRate {
-    Currency mCurrency{Currency::Unknown};
-    Date mTaxDate{};
-    OfficialRate mRate;
-};
-
 /// The rates of two lists by date, then currency code, one per currency and day.
 [[nodiscard]] std::vector<UsedOfficialRate> mergedRates(std::vector<UsedOfficialRate> aFirstRates,
                                                         std::vector<UsedOfficialRate> aSecondRates);

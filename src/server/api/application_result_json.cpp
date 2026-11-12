@@ -1072,6 +1072,215 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     return serialized;
 }
 
+std::string_view toString(CapitalInvestmentState aState) {
+    switch (aState)
+    {
+    case CapitalInvestmentState::Listed:
+        return "listed";
+    case CapitalInvestmentState::Blocked:
+        return "blocked";
+    case CapitalInvestmentState::Excluded:
+        return "excluded";
+    case CapitalInvestmentState::LongHeldOnly:
+        break;
+    }
+
+    return "long_held_only";
+}
+
+std::string_view toString(IncomeRowKind aKind) {
+    switch (aKind)
+    {
+    case IncomeRowKind::Unknown:
+        return "unknown";
+    case IncomeRowKind::Dividend:
+        return "dividend";
+    case IncomeRowKind::DepositInterest:
+        return "deposit_interest";
+    case IncomeRowKind::BrokerCashInterest:
+        return "broker_cash_interest";
+    case IncomeRowKind::BondCoupon:
+        break;
+    }
+
+    return "bond_coupon";
+}
+
+std::string_view toString(TreatyClaimKind aKind) {
+    switch (aKind)
+    {
+    case TreatyClaimKind::None:
+        return "none";
+    case TreatyClaimKind::ReferenceText:
+        return "reference_text";
+    case TreatyClaimKind::UserText:
+        return "user_text";
+    case TreatyClaimKind::ClaimedWithoutText:
+        break;
+    }
+
+    return "claimed_without_text";
+}
+
+std::string_view toString(CorrectionKind aKind) {
+    return aKind == CorrectionKind::RoundingEvidence ? "rounding_evidence" : "user_confirmed";
+}
+
+std::string_view toString(OfficialRateOrigin aOrigin) {
+    return aOrigin == OfficialRateOrigin::BuiltIn ? "built_in" : "supplied";
+}
+
+/// An EUR amount as an exact decimal string with four decimals: EUR 15.5 is `15.5000`.
+std::string moneyString(Money aAmount) {
+    constexpr std::size_t kDecimals = 4;
+
+    return formatFixedPoint(aAmount, MONEY_SCALE, kDecimals);
+}
+
+Json catalogueSourceToJson(const CatalogueSource& aSource) {
+    return Json{{"source", aSource.mSource},
+                {"sourceRevision", aSource.mSourceRevision},
+                {"file", aSource.mFile},
+                {"row", aSource.mRowNumber},
+                {"origin", toString(aSource.mOrigin)}};
+}
+
+Json capitalInvestmentToJson(const CapitalInvestment& aInvestment) {
+    Json sales = Json::array();
+
+    std::transform(aInvestment.mSales.begin(),
+                   aInvestment.mSales.end(),
+                   std::back_inserter(sales),
+                   [](const CapitalSaleFacts& aSale) {
+                       return Json{{"date", isoDate(aSale.mDate)},
+                                   {"source", sourcesToJson({aSale.mSource}).front()}};
+                   });
+
+    return Json{{"isin", aInvestment.mIsin},
+                {"name", aInvestment.mName},
+                {"state", toString(aInvestment.mState)},
+                {"reasonCodes", reasonCodesToJson(aInvestment.mReasonCodes)},
+                {"listedSales", aInvestment.mListedSales},
+                {"listedUnits", unitsString(aInvestment.mListedUnits)},
+                {"blockedLossUnits", unitsString(aInvestment.mBlockedLossUnits)},
+                {"sales", std::move(sales)}};
+}
+
+Json usedRateToJson(const UsedOfficialRate& aUsed) {
+    const auto& rate = aUsed.mRate;
+
+    return Json{{"currency", rate.mCurrencyCode},
+                {"taxDate", isoDate(aUsed.mTaxDate)},
+                {"observationDate", isoDate(rate.mObservationDate)},
+                {"rate", formatFixedPoint(rate.mValue, EXCHANGE_RATE_SCALE, 8)},
+                {"file", rate.mSourceFile.value()},
+                {"row", rate.mSourceRow},
+                {"origin", toString(rate.mOrigin)}};
+}
+
+Json incomeRowToJson(const IncomeRowFacts& aRow) {
+    Json payer = Json::object();
+
+    if (aRow.mPayerName)
+    {
+        payer["name"] = *aRow.mPayerName;
+    }
+    if (aRow.mPayerCountry)
+    {
+        payer["country"] = *aRow.mPayerCountry;
+    }
+    if (aRow.mPayerRow)
+    {
+        payer["catalogueRow"] = catalogueSourceToJson(*aRow.mPayerRow);
+    }
+
+    Json serialized{{"kind", toString(aRow.mKind)}};
+
+    if (aRow.mIsin)
+    {
+        serialized["isin"] = *aRow.mIsin;
+    }
+    if (aRow.mBroker)
+    {
+        serialized["broker"] = toString(*aRow.mBroker);
+    }
+    if (aRow.mDate)
+    {
+        serialized["date"] = isoDate(*aRow.mDate);
+    }
+
+    serialized["grossEur"] = moneyString(aRow.mGross);
+    serialized["foreignTaxEur"] = moneyString(aRow.mForeignTax);
+    serialized["taxBlankInExport"] = aRow.mTaxBlankInExport;
+    serialized["payer"] = std::move(payer);
+
+    Json treaty{{"claim", toString(aRow.mTreaty)}};
+
+    if (aRow.mTreatyRow)
+    {
+        treaty["catalogueRow"] = catalogueSourceToJson(*aRow.mTreatyRow);
+    }
+
+    serialized["treaty"] = std::move(treaty);
+    serialized["evidenceRequired"] = aRow.mEvidenceRequired;
+
+    return serialized;
+}
+
+Json incomeSummaryToJson(const IncomeSummary& aSummary) {
+    Json rows = Json::array();
+
+    std::transform(aSummary.mRows.begin(),
+                   aSummary.mRows.end(),
+                   std::back_inserter(rows),
+                   incomeRowToJson);
+
+    return Json{{"grossEur", moneyString(aSummary.mGross)},
+                {"foreignTaxEur", moneyString(aSummary.mForeignTax)},
+                {"rowCount", aSummary.mRows.size()},
+                {"rows", std::move(rows)}};
+}
+
+Json correctionToJson(const AppliedCorrection& aCorrection) {
+    return Json{{"isin", aCorrection.mIsin},
+                {"saleDate", isoDate(aCorrection.mSaleDate)},
+                {"source", sourcesToJson({aCorrection.mSaleSource}).front()},
+                {"originalUnits", unitsString(aCorrection.mOriginalUnits)},
+                {"correctedUnits", unitsString(aCorrection.mCorrectedUnits)},
+                {"kind", toString(aCorrection.mKind)},
+                {"impactEur", eurFractionToJson(aCorrection.mImpact)}};
+}
+
+Json dataSourcesToJson(const ApplicationDataSources& aSources) {
+    Json references = Json::array();
+
+    for (const auto& file : aSources.mReferenceFiles)
+    {
+        Json serialized{{"file", file.mFile}, {"origin", toString(file.mOrigin)}};
+
+        if (!file.mUpstreamRevision.empty())
+        {
+            serialized["upstreamRevision"] = file.mUpstreamRevision;
+        }
+
+        references.push_back(std::move(serialized));
+    }
+
+    Json rates = Json::array();
+
+    std::transform(aSources.mRateFiles.begin(),
+                   aSources.mRateFiles.end(),
+                   std::back_inserter(rates),
+                   [](const RateFileSource& aFile) {
+                       return Json{{"file", aFile.mFile},
+                                   {"year", aFile.mYear},
+                                   {"origin", toString(aFile.mOrigin)},
+                                   {"replacesBuiltIn", aFile.mReplacesBuiltIn}};
+                   });
+
+    return Json{{"referenceFiles", std::move(references)}, {"rateFiles", std::move(rates)}};
+}
+
 Json reportToJson(ReportType aType, const ReportResult& aReport) {
     Json serialized{
         {"status", toString(aReport.mStatus)},
@@ -1118,6 +1327,10 @@ Json reportToJson(ReportType aType, const ReportResult& aReport) {
     if (aReport.mNoDataReason)
     {
         serialized["reason"] = toString(*aReport.mNoDataReason);
+    }
+    if (aReport.mIncome)
+    {
+        serialized["incomeSummary"] = incomeSummaryToJson(*aReport.mIncome);
     }
 
     return serialized;
@@ -1173,16 +1386,74 @@ std::string serializeApplicationResultJson(const ApplicationResult& aResult, int
                    std::back_inserter(excludedItems),
                    excludedItemToJson);
 
-    const Json response{
+    Json investments = Json::array();
+
+    std::transform(aResult.mCapitalInvestments.begin(),
+                   aResult.mCapitalInvestments.end(),
+                   std::back_inserter(investments),
+                   capitalInvestmentToJson);
+
+    Json longHeld = Json::array();
+
+    std::transform(aResult.mLongHeld.begin(),
+                   aResult.mLongHeld.end(),
+                   std::back_inserter(longHeld),
+                   [](const LongHeldSale& aSale) {
+                       return Json{{"isin", aSale.mIsin},
+                                   {"name", aSale.mName},
+                                   {"saleDate", isoDate(aSale.mSaleDate)},
+                                   {"units", unitsString(aSale.mUnits)}};
+                   });
+
+    Json usedRates = Json::array();
+
+    std::transform(aResult.mUsedRates.begin(),
+                   aResult.mUsedRates.end(),
+                   std::back_inserter(usedRates),
+                   usedRateToJson);
+
+    Json corrections = Json::array();
+
+    std::transform(aResult.mCorrections.begin(),
+                   aResult.mCorrections.end(),
+                   std::back_inserter(corrections),
+                   correctionToJson);
+
+    Json reconciliation = Json::array();
+
+    std::transform(aResult.mReconciliation.begin(),
+                   aResult.mReconciliation.end(),
+                   std::back_inserter(reconciliation),
+                   [](const ReconciliationImpact& aImpact) {
+                       return Json{{"isin", aImpact.mIsin},
+                                   {"impactEur", eurFractionToJson(aImpact.mImpact)},
+                                   {"limitEur", "0.0100"}};
+                   });
+
+    Json response{
         {"schemaVersion", kApplicationResultSchemaVersion},
         {"status", toString(aResult.mStatus)},
         {"runRevision", aResult.mRunRevision},
         {"reports", std::move(reports)},
+        {"capitalSummary",
+         Json{{"investments", std::move(investments)}, {"longHeld", std::move(longHeld)}}},
+        {"usedRates", std::move(usedRates)},
+        {"corrections", std::move(corrections)},
+        {"reconciliation", std::move(reconciliation)},
+        {"dataSources", dataSourcesToJson(aResult.mDataSources)},
         {"excludedItems", std::move(excludedItems)},
         {"diagnostics", std::move(diagnostics)},
         {"requests", std::move(requests)},
         {"decisions", std::move(decisions)},
     };
+
+    if (aResult.mDepositInterest)
+    {
+        response["depositInterest"] = Json{
+            {"importedInterestEur", moneyString(aResult.mDepositInterest->mImportedQualifying)},
+            {"limitEur", moneyString(aResult.mDepositInterest->mAllowance)},
+            {"addOtherBanks", aResult.mDepositInterest->mAddOtherBanks}};
+    }
 
     return response.dump(aIndent, ' ', false, Json::error_handler_t::replace);
 }

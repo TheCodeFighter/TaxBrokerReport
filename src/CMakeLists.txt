@@ -51,6 +51,7 @@ add_library(taxbroker_core STATIC
     parsers/reference_catalogue.cpp
     parsers/traderepublic_parser.cpp
     processors/application_result.cpp
+    processors/application_summaries.cpp
     processors/bond_years.cpp
     processors/failure_resolution_stage.cpp
     processors/capital_gains_report_builder.cpp

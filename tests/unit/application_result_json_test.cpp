@@ -110,6 +110,11 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
           "unsafe": false
         }
       },
+      "capitalSummary": {"investments": [], "longHeld": []},
+      "usedRates": [],
+      "corrections": [],
+      "reconciliation": [],
+      "dataSources": {"referenceFiles": [], "rateFiles": []},
       "excludedItems": [],
       "diagnostics": [
         {
@@ -2614,6 +2619,235 @@ TEST(ApplicationResultJsonTest, TheTreatyClaimDetailsMissingWarningHasItsCodeAnd
 
     EXPECT_EQ(diagnostic.at("code"), "treaty_claim_details_missing");
     EXPECT_EQ(diagnostic.at("messageKey"), "treaty_claim_details_missing");
+}
+
+// The summary parts of the result: capital investments, rates, corrections, income, data sources.
+
+SourceReference saleSource(std::size_t aRow) {
+    return SourceReference{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("history.csv"),
+        .mSourceRow = aRow,
+        .mTransactionId = "synthetic-sell-1",
+        .mInputSequence = {0, aRow - 2},
+    };
+}
+
+TEST(ApplicationResultJsonTest, WritesTheCapitalSummaryOfEachInvestment) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mCapitalInvestments = {{
+        .mIsin = "XX0000000001",
+        .mName = "Example Share",
+        .mListed = true,
+        .mListedSales = 2,
+        .mListedUnits = 300'000'000,
+        .mBlockedLossUnits = 100'000'000,
+        .mSales = {{day("2024-03-01"), saleSource(5)}},
+    }};
+    input.mLongHeld = {{.mIsin = "XX0000000001",
+                        .mName = "Example Share",
+                        .mSaleDate = day("2024-03-01"),
+                        .mUnits = 50'000'000}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& summary = json.at("capitalSummary");
+
+    ASSERT_EQ(summary.at("investments").size(), 1U);
+    EXPECT_EQ(summary.at("investments").at(0).at("isin"), "XX0000000001");
+    EXPECT_EQ(summary.at("investments").at(0).at("state"), "listed");
+    EXPECT_EQ(summary.at("investments").at(0).at("reasonCodes"), nlohmann::json::array());
+    EXPECT_EQ(summary.at("investments").at(0).at("listedSales"), 2);
+    EXPECT_EQ(summary.at("investments").at(0).at("listedUnits"), "3.00000000");
+    EXPECT_EQ(summary.at("investments").at(0).at("blockedLossUnits"), "1.00000000");
+
+    const auto& sale = summary.at("investments").at(0).at("sales").at(0);
+
+    EXPECT_EQ(sale.at("date"), "2024-03-01");
+    EXPECT_EQ(sale.at("source").at("sourceId"), "source-0001");
+    EXPECT_EQ(sale.at("source").at("file"), "history.csv");
+    EXPECT_EQ(sale.at("source").at("row"), 5);
+
+    ASSERT_EQ(summary.at("longHeld").size(), 1U);
+    EXPECT_EQ(summary.at("longHeld").at(0).at("saleDate"), "2024-03-01");
+    EXPECT_EQ(summary.at("longHeld").at(0).at("units"), "0.50000000");
+}
+
+TEST(ApplicationResultJsonTest, WritesTheCorrectionsAndTheReconciliationImpactAsExactFractions) {
+    // 0.00000001 units at EUR 50 is EUR 0.0000005 = 1 / 2'000'000.
+    const auto impact =
+        std::get<ExactRational>(ExactRational::create(WideInteger{1}, WideInteger{2'000'000}));
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mCorrections = {{.mIsin = "XX0000000001",
+                           .mSaleDate = day("2024-03-04"),
+                           .mSaleSource = saleSource(5),
+                           .mOriginalUnits = 100'000'000,
+                           .mCorrectedUnits = 99'999'999,
+                           .mKind = CorrectionKind::RoundingEvidence,
+                           .mImpact = impact}};
+    input.mReconciliation = {{.mIsin = "XX0000000001", .mImpact = impact}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& correction = json.at("corrections").at(0);
+
+    EXPECT_EQ(correction.at("isin"), "XX0000000001");
+    EXPECT_EQ(correction.at("saleDate"), "2024-03-04");
+    EXPECT_EQ(correction.at("originalUnits"), "1.00000000");
+    EXPECT_EQ(correction.at("correctedUnits"), "0.99999999");
+    EXPECT_EQ(correction.at("kind"), "rounding_evidence");
+    EXPECT_EQ(correction.at("impactEur").at("numerator"), "1");
+    EXPECT_EQ(correction.at("impactEur").at("denominator"), "2000000");
+
+    const auto& total = json.at("reconciliation").at(0);
+
+    EXPECT_EQ(total.at("isin"), "XX0000000001");
+    EXPECT_EQ(total.at("impactEur").at("denominator"), "2000000");
+    EXPECT_EQ(total.at("limitEur"), "0.0100"); // EUR 0.01 at 4 decimals
+}
+
+TEST(ApplicationResultJsonTest, WritesTheIncomeSummaryOfAForm) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mReports[1].mIncome = IncomeSummary{
+        .mGross = 155'000,
+        .mForeignTax = 15'000,
+        .mRows = {
+            IncomeRowFacts{.mKind = IncomeRowKind::Dividend,
+                           .mIsin = "XX0000000001",
+                           .mDate = day("2024-04-01"),
+                           .mGross = 100'000,
+                           .mForeignTax = 15'000,
+                           .mPayerName = "Example Payer",
+                           .mPayerCountry = "DE",
+                           .mPayerRow = CatalogueSource{.mSource = "manual",
+                                                        .mFile = "payers.csv",
+                                                        .mRowNumber = 4,
+                                                        .mOrigin = CatalogueOrigin::BuiltIn},
+                           .mTreaty = TreatyClaimKind::ReferenceText,
+                           .mTreatyRow = CatalogueSource{.mSource = "manual",
+                                                         .mFile = "relief_statements.csv",
+                                                         .mRowNumber = 7,
+                                                         .mOrigin = CatalogueOrigin::Supplied},
+                           .mEvidenceRequired = true},
+            IncomeRowFacts{.mKind = IncomeRowKind::Dividend,
+                           .mIsin = "XX0000000002",
+                           .mDate = day("2024-04-02"),
+                           .mGross = 55'000,
+                           .mTaxBlankInExport = true}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& summary = json.at("reports").at("dividends").at("incomeSummary");
+
+    EXPECT_EQ(summary.at("grossEur"), "15.5000");
+    EXPECT_EQ(summary.at("foreignTaxEur"), "1.5000");
+    EXPECT_EQ(summary.at("rowCount"), 2);
+
+    const auto& first = summary.at("rows").at(0);
+
+    EXPECT_EQ(first.at("kind"), "dividend");
+    EXPECT_EQ(first.at("isin"), "XX0000000001");
+    EXPECT_EQ(first.at("date"), "2024-04-01");
+    EXPECT_EQ(first.at("grossEur"), "10.0000");
+    EXPECT_EQ(first.at("foreignTaxEur"), "1.5000");
+    EXPECT_FALSE(first.at("taxBlankInExport").get<bool>());
+    EXPECT_EQ(first.at("payer").at("name"), "Example Payer");
+    EXPECT_EQ(first.at("payer").at("country"), "DE");
+    EXPECT_EQ(first.at("payer").at("catalogueRow").at("file"), "payers.csv");
+    EXPECT_EQ(first.at("payer").at("catalogueRow").at("row"), 4);
+    EXPECT_EQ(first.at("payer").at("catalogueRow").at("origin"), "built_in");
+    EXPECT_EQ(first.at("treaty").at("claim"), "reference_text");
+    EXPECT_EQ(first.at("treaty").at("catalogueRow").at("file"), "relief_statements.csv");
+    EXPECT_EQ(first.at("treaty").at("catalogueRow").at("origin"), "supplied");
+    EXPECT_TRUE(first.at("evidenceRequired").get<bool>());
+
+    // A payer that was not found has an empty payer object and no treaty row.
+    const auto& second = summary.at("rows").at(1);
+
+    EXPECT_EQ(second.at("grossEur"), "5.5000");
+    EXPECT_TRUE(second.at("taxBlankInExport").get<bool>());
+    EXPECT_TRUE(second.at("payer").empty());
+    EXPECT_EQ(second.at("treaty").at("claim"), "none");
+    EXPECT_FALSE(second.at("treaty").contains("catalogueRow"));
+    EXPECT_FALSE(second.at("evidenceRequired").get<bool>());
+
+    // Doh-KDVP has no income summary, and the other forms have none when the stage gave none.
+    EXPECT_FALSE(json.at("reports").at("capitalGains").contains("incomeSummary"));
+}
+
+TEST(ApplicationResultJsonTest, WritesTheDepositInterestAndTheDataSources) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mDepositInterest =
+        DepositInterestSummary{.mImportedQualifying = 9'000'000, .mAddOtherBanks = true};
+    input.mDataSources = {.mReferenceFiles = {{.mFile = "payers.csv",
+                                               .mOrigin = CatalogueOrigin::BuiltIn,
+                                               .mUpstreamRevision = "0123456789abcdef"},
+                                              {.mFile = "relief_statements.csv",
+                                               .mOrigin = CatalogueOrigin::Supplied}},
+                          .mRateFiles = {{.mFile = "exr_2024.csv",
+                                          .mYear = 2024,
+                                          .mOrigin = OfficialRateOrigin::Supplied,
+                                          .mReplacesBuiltIn = true}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+
+    EXPECT_EQ(json.at("depositInterest").at("importedInterestEur"), "900.0000");
+    EXPECT_EQ(json.at("depositInterest").at("limitEur"), "1000.0000");
+    EXPECT_TRUE(json.at("depositInterest").at("addOtherBanks").get<bool>());
+
+    const auto& references = json.at("dataSources").at("referenceFiles");
+
+    ASSERT_EQ(references.size(), 2U);
+    EXPECT_EQ(references.at(0).at("file"), "payers.csv");
+    EXPECT_EQ(references.at(0).at("origin"), "built_in");
+    EXPECT_EQ(references.at(0).at("upstreamRevision"), "0123456789abcdef");
+    EXPECT_EQ(references.at(1).at("origin"), "supplied");
+    EXPECT_FALSE(references.at(1).contains("upstreamRevision"));
+
+    const auto& rates = json.at("dataSources").at("rateFiles");
+
+    ASSERT_EQ(rates.size(), 1U);
+    EXPECT_EQ(rates.at(0).at("file"), "exr_2024.csv");
+    EXPECT_EQ(rates.at(0).at("year"), 2024);
+    EXPECT_EQ(rates.at(0).at("origin"), "supplied");
+    EXPECT_TRUE(rates.at(0).at("replacesBuiltIn").get<bool>());
+}
+
+TEST(ApplicationResultJsonTest, WritesAUsedRateWithItsFileAndRow) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mUsedRates = {UsedOfficialRate{
+        .mCurrency = Currency::USD,
+        .mTaxDate = day("2024-05-02"),
+        .mRate = OfficialRate{.mCurrencyCode = "USD",
+                              .mObservationDate = day("2024-05-01"),
+                              .mValue = 108'000'000, // 1.08 USD per EUR at 8 decimals
+                              .mSourceFile = SourceFilename::fromPath("exr_2024.csv"),
+                              .mSourceRow = 3,
+                              .mOrigin = OfficialRateOrigin::Supplied}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& rate = json.at("usedRates").at(0);
+
+    EXPECT_EQ(rate.at("currency"), "USD");
+    EXPECT_EQ(rate.at("taxDate"), "2024-05-02");
+    EXPECT_EQ(rate.at("observationDate"), "2024-05-01");
+    EXPECT_EQ(rate.at("rate"), "1.08000000");
+    EXPECT_EQ(rate.at("file"), "exr_2024.csv");
+    EXPECT_EQ(rate.at("row"), 3);
+    EXPECT_EQ(rate.at("origin"), "supplied");
+}
+
+TEST(ApplicationResultJsonTest, ARowWhoseKindWasNeverSetIsWrittenAsUnknownNotAsADividend) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mReports[1].mIncome = IncomeSummary{.mRows = {IncomeRowFacts{}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+
+    EXPECT_EQ(json.at("reports").at("dividends").at("incomeSummary").at("rows").at(0).at("kind"),
+              "unknown");
 }
 
 } // namespace
