@@ -1404,6 +1404,17 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
       "unsafe": false
     }
   },
+  "capitalSummary": {
+    "investments": [],
+    "longHeld": []
+  },
+  "usedRates": [],
+  "corrections": [],
+  "reconciliation": [],
+  "dataSources": {
+    "referenceFiles": [],
+    "rateFiles": []
+  },
   "excludedItems": [],
   "diagnostics": [
     {

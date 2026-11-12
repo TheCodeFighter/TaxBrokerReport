@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -3571,6 +3572,244 @@ TEST(ApplicationResultRequestTest, InterestTreatyDataAndTheRequestTypeMustFitEac
     input.mRequests[0].mQuestion.mType = RequestType::TaxClassificationRequired;
 
     EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
+}
+
+// The summary parts of the result: capital investments, used rates, corrections.
+
+SourceReference saleSource(std::size_t aRow, std::string aTransactionId) {
+    return SourceReference{
+        .mBroker = Broker::TradeRepublic,
+        .mFilename = SourceFilename::fromPath("history.csv"),
+        .mSourceRow = aRow,
+        .mTransactionId = std::move(aTransactionId),
+        .mInputSequence = {0, aRow - 2},
+    };
+}
+
+ProcessingDiagnostic capitalError(ProcessingDiagnosticCode aCode, const Isin& aIsin) {
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = aCode,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {kCapital},
+                     .mInstrumentName = "Synthetic Share",
+                     .mIsin = aIsin},
+        .mMessage = "Synthetic processing message.",
+    };
+}
+
+TEST(ApplicationResultSummaryTest, InvestmentsAreListedByIsinWhateverTheOrderOfTheStage) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mCapitalInvestments = {
+        {.mIsin = "XX0000000002", .mName = "Share B", .mListed = true},
+        {.mIsin = "XX0000000001", .mName = "Share A", .mListed = true},
+    };
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mCapitalInvestments.size(), 2U);
+    EXPECT_EQ(result.mCapitalInvestments[0].mIsin, "XX0000000001");
+    EXPECT_EQ(result.mCapitalInvestments[1].mIsin, "XX0000000002");
+}
+
+TEST(ApplicationResultSummaryTest, AListedInvestmentKeepsItsRowFacts) {
+    // Two sales listed, 3 units in all, 1 of them with a loss that the 30-day rule blocks.
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mCapitalInvestments = {{
+        .mIsin = "XX0000000001",
+        .mName = "Share A",
+        .mListed = true,
+        .mListedSales = 2,
+        .mListedUnits = 300'000'000,
+        .mBlockedLossUnits = 100'000'000,
+        .mSales = {{day(2024, 3, 1), saleSource(5, "synthetic-sell-1")},
+                   {day(2024, 4, 2), saleSource(6, "synthetic-sell-2")}},
+    }};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mCapitalInvestments.size(), 1U);
+
+    const auto& investment = result.mCapitalInvestments[0];
+
+    EXPECT_EQ(investment.mState, CapitalInvestmentState::Listed);
+    EXPECT_TRUE(investment.mReasonCodes.empty());
+    EXPECT_EQ(investment.mListedSales, 2U);
+    EXPECT_EQ(investment.mListedUnits, 300'000'000);
+    EXPECT_EQ(investment.mBlockedLossUnits, 100'000'000);
+    ASSERT_EQ(investment.mSales.size(), 2U);
+    EXPECT_EQ(investment.mSales[0].mDate, day(2024, 3, 1));
+    EXPECT_EQ(investment.mSales[0].mSource.mRow, std::optional<std::size_t>{5});
+    EXPECT_EQ(investment.mSales[1].mDate, day(2024, 4, 2));
+    EXPECT_EQ(investment.mSales[1].mSource.mRow, std::optional<std::size_t>{6});
+}
+
+TEST(ApplicationResultSummaryTest, AnInvestmentWithoutRowsIsPastTheHoldingPeriodOnly) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mCapitalInvestments = {{.mIsin = "XX0000000001", .mName = "Share A", .mListed = false}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mCapitalInvestments.size(), 1U);
+    EXPECT_EQ(result.mCapitalInvestments[0].mState, CapitalInvestmentState::LongHeldOnly);
+}
+
+TEST(ApplicationResultSummaryTest, ABlockingCapitalErrorBlocksTheInvestmentWithEachCodeOnce) {
+    // XX0000000001 has two blocking errors, one of them twice; XX0000000002 has a warning only.
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mProcessingDiagnostics = {
+        capitalError(ProcessingDiagnosticCode::IncompleteHistory, "XX0000000001"),
+        capitalError(ProcessingDiagnosticCode::MissingExchangeRate, "XX0000000001"),
+        capitalError(ProcessingDiagnosticCode::IncompleteHistory, "XX0000000001"),
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kCapital},
+                         .mIsin = "XX0000000002"},
+            .mMessage = "Synthetic processing message.",
+        },
+    };
+    input.mCapitalInvestments = {
+        {.mIsin = "XX0000000001", .mName = "Share A", .mListed = false},
+        {.mIsin = "XX0000000002", .mName = "Share B", .mListed = true},
+    };
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mCapitalInvestments.size(), 2U);
+    EXPECT_EQ(result.mCapitalInvestments[0].mState, CapitalInvestmentState::Blocked);
+    EXPECT_EQ(
+        result.mCapitalInvestments[0].mReasonCodes,
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::IncompleteHistory,
+                                                ProcessingDiagnosticCode::MissingExchangeRate}));
+    EXPECT_EQ(result.mCapitalInvestments[1].mState, CapitalInvestmentState::Listed);
+}
+
+TEST(ApplicationResultSummaryTest,
+     AnInvestmentTheUserLeftOutIsExcludedWithTheReasonOfTheExclusion) {
+    // The error of XX0000000001 is resolved by the exclusion, so it no longer blocks.
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mProcessingDiagnostics = {
+        capitalError(ProcessingDiagnosticCode::IncompleteHistory, "XX0000000001")};
+    input.mResolvedDiagnostics = {0};
+    input.mReports[0].mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+    input.mReports[0].mExcludedInvestments = {
+        FailedInvestment{.mIsin = "XX0000000001",
+                         .mName = "Share A",
+                         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}}};
+    input.mCapitalInvestments = {{.mIsin = "XX0000000001", .mName = "Share A", .mListed = false}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mCapitalInvestments.size(), 1U);
+    EXPECT_EQ(result.mCapitalInvestments[0].mState, CapitalInvestmentState::Excluded);
+    EXPECT_EQ(
+        result.mCapitalInvestments[0].mReasonCodes,
+        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::IncompleteHistory}));
+}
+
+UsedOfficialRate usedRate(std::string aCode, Date aTaxDate) {
+    return UsedOfficialRate{.mTaxDate = aTaxDate,
+                            .mRate = OfficialRate{.mCurrencyCode = std::move(aCode)}};
+}
+
+TEST(ApplicationResultSummaryTest, UsedRatesAreSortedByDateThenCurrencyCode) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mUsedRates = {usedRate("USD", day(2024, 5, 2)),
+                        usedRate("USD", day(2024, 5, 1)),
+                        usedRate("GBP", day(2024, 5, 2))};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mUsedRates.size(), 3U);
+    EXPECT_EQ(result.mUsedRates[0].mRate.mCurrencyCode, "USD");
+    EXPECT_EQ(result.mUsedRates[0].mTaxDate, day(2024, 5, 1));
+    EXPECT_EQ(result.mUsedRates[1].mRate.mCurrencyCode, "GBP");
+    EXPECT_EQ(result.mUsedRates[1].mTaxDate, day(2024, 5, 2));
+    EXPECT_EQ(result.mUsedRates[2].mRate.mCurrencyCode, "USD");
+    EXPECT_EQ(result.mUsedRates[2].mTaxDate, day(2024, 5, 2));
+}
+
+TEST(ApplicationResultSummaryTest,
+     CorrectionsAndReconciliationAreSortedByIsinKeepingTheLedgerOrder) {
+    // The impact of removing 0.00000001 units valued at EUR 50 is EUR 0.0000005 = 1 / 2'000'000.
+    const auto impact =
+        std::get<ExactRational>(ExactRational::create(WideInteger{1}, WideInteger{2'000'000}));
+    const auto first = AppliedCorrectionInput{.mIsin = "XX0000000002",
+                                              .mSaleDate = day(2024, 3, 4),
+                                              .mSaleSource = saleSource(5, "synthetic-sell-1"),
+                                              .mOriginalUnits = 100'000'000,
+                                              .mCorrectedUnits = 99'999'999,
+                                              .mKind = CorrectionKind::RoundingEvidence,
+                                              .mImpact = impact};
+    auto second = first;
+    auto third = first;
+
+    second.mIsin = "XX0000000001";
+    second.mSaleDate = day(2024, 5, 6);
+    third.mIsin = "XX0000000001";
+    third.mSaleDate = day(2024, 7, 8);
+    third.mKind = CorrectionKind::UserConfirmed;
+
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mCorrections = {first, second, third};
+    input.mReconciliation = {{.mIsin = "XX0000000002", .mImpact = impact},
+                             {.mIsin = "XX0000000001", .mImpact = impact}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mCorrections.size(), 3U);
+    EXPECT_EQ(result.mCorrections[0].mIsin, "XX0000000001");
+    EXPECT_EQ(result.mCorrections[0].mSaleDate, day(2024, 5, 6));
+    EXPECT_EQ(result.mCorrections[1].mIsin, "XX0000000001");
+    EXPECT_EQ(result.mCorrections[1].mSaleDate, day(2024, 7, 8));
+    EXPECT_EQ(result.mCorrections[1].mKind, CorrectionKind::UserConfirmed);
+    EXPECT_EQ(result.mCorrections[2].mIsin, "XX0000000002");
+    EXPECT_EQ(result.mCorrections[2].mOriginalUnits, 100'000'000);
+    EXPECT_EQ(result.mCorrections[2].mCorrectedUnits, 99'999'999);
+    EXPECT_EQ(result.mCorrections[2].mSaleSource.mRow, std::optional<std::size_t>{5});
+    EXPECT_EQ(result.mCorrections[2].mImpact, impact);
+
+    ASSERT_EQ(result.mReconciliation.size(), 2U);
+    EXPECT_EQ(result.mReconciliation[0].mIsin, "XX0000000001");
+    EXPECT_EQ(result.mReconciliation[1].mIsin, "XX0000000002");
+}
+
+TEST(ApplicationResultSummaryTest, TheIncomeSummaryAndTheDataSourcesAreKept) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mReports[1].mIncome = IncomeSummary{.mGross = 155'000, .mForeignTax = 15'000};
+    input.mDepositInterest =
+        DepositInterestSummary{.mImportedQualifying = 9'000'000, .mAddOtherBanks = true};
+    input.mDataSources = {
+        .mReferenceFiles = {{.mFile = "payers.csv", .mOrigin = CatalogueOrigin::Supplied}},
+        .mRateFiles = {{.mFile = "exr_2024.csv",
+                        .mYear = 2024,
+                        .mOrigin = OfficialRateOrigin::Supplied,
+                        .mReplacesBuiltIn = true}}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_TRUE(result.report(kDividends).mIncome.has_value());
+    EXPECT_EQ(result.report(kDividends).mIncome->mGross, 155'000);
+    EXPECT_EQ(result.report(kDividends).mIncome->mForeignTax, 15'000);
+    EXPECT_FALSE(result.report(kCapital).mIncome.has_value());
+    ASSERT_TRUE(result.mDepositInterest.has_value());
+    EXPECT_EQ(result.mDepositInterest->mImportedQualifying, 9'000'000);
+    EXPECT_EQ(result.mDepositInterest->mAllowance, 10'000'000); // EUR 1,000.0000
+    EXPECT_TRUE(result.mDepositInterest->mAddOtherBanks);
+    ASSERT_EQ(result.mDataSources.mReferenceFiles.size(), 1U);
+    EXPECT_EQ(result.mDataSources.mReferenceFiles[0].mOrigin, CatalogueOrigin::Supplied);
+    ASSERT_EQ(result.mDataSources.mRateFiles.size(), 1U);
+    EXPECT_TRUE(result.mDataSources.mRateFiles[0].mReplacesBuiltIn);
 }
 
 } // namespace

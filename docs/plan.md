@@ -313,6 +313,12 @@ Its result contains:
 - status for each report type; and
 - every successfully generated XML document.
 
+The request type (`ApplicationRequest`) and the result facts of a run summary (investments, used
+rates, income rows with their provenance and filing evidence, deposit interest against the
+allowance, corrections and reconciliation, data sources) exist; the command line fills and reads
+them. Moving the whole pipeline behind one core operation follows. The fee summary, the
+exchange-rate request and the developer mode come with their own tasks.
+
 The result and its JSON boundary follow [`diagnostics.md`](diagnostics.md), including deterministic
 diagnostic ordering, safe source-row locations, independent report status, and partial success.
 

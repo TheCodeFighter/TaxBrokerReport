@@ -783,6 +783,111 @@ excludedItemsOf(std::vector<ExcludedItemInput>& aInputs,
     return items;
 }
 
+/// The investments with a sale of the year, by ISIN. An excluded one keeps the reason codes of its
+/// exclusion; a blocked one the codes of its blocking capital errors in diagnostic order, each
+/// once.
+[[nodiscard]] std::vector<CapitalInvestment>
+capitalInvestmentsOf(std::vector<CapitalInvestmentInput>& aInputs,
+                     const ApplicationResult& aResult) {
+    const auto& excluded = aResult.report(ReportType::CapitalGains).mExcludedInvestments;
+    std::vector<CapitalInvestment> investments;
+
+    investments.reserve(aInputs.size());
+
+    for (auto& input : aInputs)
+    {
+        CapitalInvestment investment{
+            .mIsin = input.mIsin,
+            .mName = std::move(input.mName),
+            .mListedSales = input.mListedSales,
+            .mListedUnits = input.mListedUnits,
+            .mBlockedLossUnits = input.mBlockedLossUnits,
+        };
+
+        for (const auto& [date, source] : input.mSales)
+        {
+            investment.mSales.push_back({.mDate = date, .mSource = sourceOf(source)});
+        }
+
+        const auto left = std::find_if(excluded.begin(),
+                                       excluded.end(),
+                                       [&input](const RequestInvestment& aInvestment) {
+                                           return aInvestment.mIsin == input.mIsin;
+                                       });
+
+        if (left != excluded.end())
+        {
+            investment.mState = CapitalInvestmentState::Excluded;
+            investment.mReasonCodes = left->mReasonCodes;
+        }
+        else
+        {
+            for (const auto& diagnostic : aResult.mDiagnostics)
+            {
+                if (diagnostic.mBlocking && diagnostic.mIsin == input.mIsin &&
+                    affects(diagnostic.mAffectedReports, ReportType::CapitalGains) &&
+                    std::find(investment.mReasonCodes.begin(),
+                              investment.mReasonCodes.end(),
+                              diagnostic.mCode) == investment.mReasonCodes.end())
+                {
+                    investment.mReasonCodes.push_back(diagnostic.mCode);
+                }
+            }
+
+            if (!investment.mReasonCodes.empty())
+            {
+                investment.mState = CapitalInvestmentState::Blocked;
+            }
+            else
+            {
+                investment.mState = input.mListed ? CapitalInvestmentState::Listed
+                                                  : CapitalInvestmentState::LongHeldOnly;
+            }
+        }
+
+        investments.push_back(std::move(investment));
+    }
+
+    std::stable_sort(investments.begin(),
+                     investments.end(),
+                     [](const CapitalInvestment& aLeft, const CapitalInvestment& aRight) {
+                         return aLeft.mIsin < aRight.mIsin;
+                     });
+
+    return investments;
+}
+
+/// The corrections by ISIN, keeping the ledger order inside an ISIN.
+[[nodiscard]] std::vector<AppliedCorrection>
+correctionsOf(std::vector<AppliedCorrectionInput>& aInputs) {
+    std::vector<AppliedCorrection> corrections;
+
+    corrections.reserve(aInputs.size());
+
+    std::transform(aInputs.begin(),
+                   aInputs.end(),
+                   std::back_inserter(corrections),
+                   [](AppliedCorrectionInput& aInput) {
+                       return AppliedCorrection{
+                           .mIsin = std::move(aInput.mIsin),
+                           .mSaleDate = aInput.mSaleDate,
+                           .mSaleSource = sourceOf(aInput.mSaleSource),
+                           .mOriginalUnits = aInput.mOriginalUnits,
+                           .mCorrectedUnits = aInput.mCorrectedUnits,
+                           .mKind = aInput.mKind,
+                           .mImpact = std::move(aInput.mImpact),
+                       };
+                   });
+
+    std::stable_sort(corrections.begin(),
+                     corrections.end(),
+                     [](const AppliedCorrection& aLeft, const AppliedCorrection& aRight) {
+                         return aLeft.mIsin < aRight.mIsin;
+                     });
+
+    return corrections;
+}
+
 } // namespace
 
 const EffectiveDateRange* findEffectiveDateRange(const CorporateActionRatioQuestion& aQuestion,
@@ -1318,9 +1423,34 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
             report.mStatus = ReportStatus::NoData;
             report.mNoDataReason = input.mNoDataReason;
         }
+
+        report.mIncome = std::move(input.mIncome);
     }
 
     result.mExcludedItems = excludedItemsOf(aInput.mExcludedItems, processingToDiagnostic, result);
+    result.mCapitalInvestments = capitalInvestmentsOf(aInput.mCapitalInvestments, result);
+    result.mLongHeld = std::move(aInput.mLongHeld);
+    result.mUsedRates = std::move(aInput.mUsedRates);
+
+    // By date, then currency code. The stage already keeps one rate per currency and day.
+    std::stable_sort(result.mUsedRates.begin(),
+                     result.mUsedRates.end(),
+                     [](const UsedOfficialRate& aLeft, const UsedOfficialRate& aRight) {
+                         return std::tie(aLeft.mTaxDate, aLeft.mRate.mCurrencyCode) <
+                                std::tie(aRight.mTaxDate, aRight.mRate.mCurrencyCode);
+                     });
+
+    result.mDepositInterest = aInput.mDepositInterest;
+    result.mCorrections = correctionsOf(aInput.mCorrections);
+    result.mReconciliation = std::move(aInput.mReconciliation);
+
+    std::stable_sort(result.mReconciliation.begin(),
+                     result.mReconciliation.end(),
+                     [](const ReconciliationImpact& aLeft, const ReconciliationImpact& aRight) {
+                         return aLeft.mIsin < aRight.mIsin;
+                     });
+
+    result.mDataSources = std::move(aInput.mDataSources);
     result.mStatus = overallStatus(result);
 
     return result;

@@ -1125,14 +1125,20 @@ stops another. `taxbroker --help` and
 and what is supported, blocked and skipped. The whole command is in the `taxbroker_cli` library
 (`runCli`), so the tests run it in process; the executable only sets up logging. The
 orchestration moves into the application service once that service connects all processing
-stages.
+stages. The summary reads only the `ApplicationRequest` and the `ApplicationResult`: every fact it
+prints (the investments of the year, the units past the holding period, the used rates, the rows of
+each income form, the data sources) is a field of the result, so the service and the API show the
+same facts.
 
-**Pipeline.** Each `--trade-republic` CSV is read with `parseFile` of the Trade Republic parser, with its position
-on the command line as the source index. The rates are loaded with `loadOfficialRates` (the
-built-in years and the `--ecb-rates` files; a supplied file replaces the built-in year it covers)
-and the reference data with `loadReferenceData` (the built-in files and the `--reference-files`
-files, each replacing the built-in file of its name). A supplied file that is not valid fails the
-run (exit 2) before anything is calculated. The summary says where the data came from. Then merge and
+**Pipeline.** The command reads every user file into memory once and builds an
+`ApplicationRequest` (`include/taxbroker/application_request.hpp`); a file that cannot be read
+fails the run (exit 2) before anything is calculated. Each `--trade-republic` file is parsed with
+`parse` of the Trade Republic parser, with its position on the command line as the source index.
+The rates are loaded with `loadOfficialRates` (the built-in years and the `--ecb-rates` files; a
+supplied file replaces the built-in year it covers) and the reference data with
+`loadReferenceData` (the built-in files and the `--reference-files` files, each replacing the
+built-in file of its name). A supplied file that is not valid fails the run (exit 2) before
+anything is calculated. The summary says where the data came from. Then merge and
 reporting-year preparation, once. The rest runs as the calculation of a `DecisionSession`, once
 per revision: the classification, the conversion of foreign trades to EUR, FIFO, the
 corporate-action stage, the loss rule (`OpenLossQuestions::Ask`), the report builder (no exclusions), the capital

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "taxbroker/exact_arithmetic.hpp"
+#include "taxbroker/official_rates.hpp"
 #include "taxbroker/processing_diagnostics.hpp"
 #include "taxbroker/reference_catalogue.hpp"
 #include "taxbroker/statement_merger.hpp"
@@ -11,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -654,6 +656,178 @@ struct ExcludedItemInput {
     std::vector<std::size_t> mProcessingDiagnostics;
 };
 
+/// What the report says about one ISIN with a sale in the selected year.
+enum class CapitalInvestmentState {
+    Listed,       ///< Its sales have rows in the filing list; no blocking error.
+    Blocked,      ///< A blocking capital error of the ISIN keeps it out of the list.
+    Excluded,     ///< The user left it out of the capital report.
+    LongHeldOnly, ///< Only units past the holding period; nothing to list.
+};
+
+/// One sale of an investment: its tax date and where it came from.
+struct CapitalSaleFacts {
+    Date mDate;
+    ApplicationSource mSource;
+};
+
+/// An ISIN with a sale in the selected year, as the result shows it. In ISIN order.
+struct CapitalInvestment {
+    Isin mIsin;
+    std::string mName;
+    CapitalInvestmentState mState{}; ///< Always set by the creator (the result builder).
+    /// Blocked: the codes of the blocking capital errors of the ISIN, in diagnostic order, each
+    /// once. Excluded: the reason codes of the exclusion. Empty otherwise.
+    std::vector<ApplicationDiagnosticCode> mReasonCodes;
+    std::size_t mListedSales{};
+    Units mListedUnits{};
+    /// The listed units whose loss the 30-day rule blocks (F10 false).
+    Units mBlockedLossUnits{};
+    /// The sales of the year of the ISIN, in ledger order, each once.
+    std::vector<CapitalSaleFacts> mSales;
+};
+
+/// A sale of the year of which units are past the holding period: tax free, no row.
+struct LongHeldSale {
+    Isin mIsin;
+    std::string mName;
+    Date mSaleDate;
+    Units mUnits{};
+
+    bool operator==(const LongHeldSale&) const = default;
+};
+
+/// What kind of payment an income row is.
+enum class IncomeRowKind {
+    Unknown, ///< Never in a result: the stage that makes a row always sets its kind.
+    Dividend,
+    DepositInterest,
+    BrokerCashInterest,
+    BondCoupon,
+};
+
+/// How a row's treaty claim is made.
+enum class TreatyClaimKind {
+    None,
+    ReferenceText,
+    UserText,
+    ClaimedWithoutText, ///< The user only said yes (Doh-Obr); the text is filled in eDavki.
+};
+
+/// One row of an income form, as facts for the user: where the payer data came from, the foreign
+/// tax, the treaty claim and whether evidence is to be attached in eDavki.
+struct IncomeRowFacts {
+    IncomeRowKind mKind{IncomeRowKind::Unknown};
+    std::optional<Isin> mIsin;
+    /// The broker that holds the cash; only for broker cash interest.
+    std::optional<Broker> mBroker;
+    std::optional<Date> mDate; ///< None for a Doh-DHO row, which sums several payments.
+    Money mGross{};            ///< EUR.
+    Money mForeignTax{};       ///< EUR; 0 is no tax paid.
+    bool mTaxBlankInExport{};
+    std::optional<std::string> mPayerName;
+    std::optional<std::string> mPayerCountry;
+    std::optional<CatalogueSource> mPayerRow;
+    TreatyClaimKind mTreaty{TreatyClaimKind::None};
+    std::optional<CatalogueSource> mTreatyRow; ///< Only for a reference text.
+    /// The user attaches evidence in eDavki: a foreign tax above 0 or a treaty claim.
+    bool mEvidenceRequired{};
+
+    bool operator==(const IncomeRowFacts&) const = default;
+};
+
+/// The rows of one income form and their totals in EUR. Informational: the XML is the truth.
+struct IncomeSummary {
+    Money mGross{};
+    Money mForeignTax{};
+    std::vector<IncomeRowFacts> mRows;
+
+    bool operator==(const IncomeSummary&) const = default;
+};
+
+/// The imported qualifying bank-deposit interest of the year against the allowance.
+struct DepositInterestSummary {
+    Money mImportedQualifying{};
+    Money mAllowance{kDepositInterestAllowance};
+    /// The form holds only the imported interest: the user adds the other banks' interest.
+    bool mAddOtherBanks{};
+
+    bool operator==(const DepositInterestSummary&) const = default;
+};
+
+/// How a sale's quantity was corrected.
+enum class CorrectionKind {
+    RoundingEvidence, ///< The discarded source digits prove a rounding difference.
+    UserConfirmed,    ///< The user confirmed the quantity.
+};
+
+/// A sale reduced to units the files can cover. The original event stays in the files.
+struct AppliedCorrection {
+    Isin mIsin;
+    Date mSaleDate;
+    ApplicationSource mSaleSource;
+    Units mOriginalUnits{};
+    Units mCorrectedUnits{};
+    CorrectionKind mKind{}; ///< Always set by the creator.
+    ExactRational mImpact;  ///< EUR value of the removed units, above 0.
+};
+
+/// The cumulative absolute EUR impact of the quantity roundings of one ISIN (corrections and
+/// corporate-action rounding), always below EUR 0.01.
+struct ReconciliationImpact {
+    Isin mIsin;
+    ExactRational mImpact;
+};
+
+/// A reference file of the run and where it came from.
+struct ReferenceFileSource {
+    std::string mFile; ///< `payers.csv`, `relief_statements.csv`, `broker_payers.csv`.
+    CatalogueOrigin mOrigin{};
+    std::string mUpstreamRevision; ///< Of the built-in payers file; empty otherwise.
+
+    bool operator==(const ReferenceFileSource&) const = default;
+};
+
+/// An ECB rate file of the run and where it came from.
+struct RateFileSource {
+    std::string mFile;
+    int mYear{};
+    OfficialRateOrigin mOrigin{};
+    bool mReplacesBuiltIn{};
+
+    bool operator==(const RateFileSource&) const = default;
+};
+
+/// Where the reference data and the exchange rates of the run came from.
+struct ApplicationDataSources {
+    std::vector<ReferenceFileSource> mReferenceFiles; ///< Payers, relief statements, broker payers.
+    std::vector<RateFileSource> mRateFiles;           ///< In the order of the loaded files.
+
+    bool operator==(const ApplicationDataSources&) const = default;
+};
+
+/// An investment as a stage hands it over; the sources are source references. The state and the
+/// reason codes are derived from the diagnostics and the exclusions when the result is built.
+struct CapitalInvestmentInput {
+    Isin mIsin;
+    std::string mName;
+    bool mListed{};
+    std::size_t mListedSales{};
+    Units mListedUnits{};
+    Units mBlockedLossUnits{};
+    std::vector<std::pair<Date, SourceReference>> mSales;
+};
+
+/// A quantity correction as a stage hands it over.
+struct AppliedCorrectionInput {
+    Isin mIsin;
+    Date mSaleDate;
+    SourceReference mSaleSource;
+    Units mOriginalUnits{};
+    Units mCorrectedUnits{};
+    CorrectionKind mKind{};
+    ExactRational mImpact;
+};
+
 /// What the report stage produced for one form, before the status is derived.
 struct ReportInput {
     /// The generated XML document, when the report stage produced one.
@@ -667,6 +841,8 @@ struct ReportInput {
     /// The brokers whose cash interest is left out of this form, only with
     /// ExcludeFailedInstruments.
     std::vector<FailedBroker> mExcludedBrokers;
+    /// The rows and totals of an income form; none for Doh-KDVP.
+    std::optional<IncomeSummary> mIncome;
 };
 
 struct ReportResult {
@@ -689,6 +865,8 @@ struct ReportResult {
     std::vector<RequestBroker> mExcludedBrokers;
     /// Always false until the developer-mode flow exists
     bool mUnsafe{};
+    /// The rows and totals of an income form; none for Doh-KDVP.
+    std::optional<IncomeSummary> mIncome;
 };
 
 /// All results of one run, in the fixed report order of ReportType.
@@ -701,6 +879,19 @@ struct ApplicationResult {
     std::array<ReportResult, 4> mReports;
     std::vector<RecordedDecision> mDecisions; ///< Builder leaves mDecisions empty.
     std::vector<ExcludedItem> mExcludedItems; ///< Sorted by ISIN.
+    /// The ISINs with a sale in the selected year, by ISIN.
+    std::vector<CapitalInvestment> mCapitalInvestments;
+    /// Units past the holding period, in ledger order.
+    std::vector<LongHeldSale> mLongHeld;
+    /// The official rates that converted an amount, by date, then currency code.
+    std::vector<UsedOfficialRate> mUsedRates;
+    /// Only when the year has qualifying bank-deposit interest from which the total is known.
+    std::optional<DepositInterestSummary> mDepositInterest;
+    /// The applied quantity corrections, by ISIN and ledger order.
+    std::vector<AppliedCorrection> mCorrections;
+    /// The ISINs with a rounding impact above 0, by ISIN.
+    std::vector<ReconciliationImpact> mReconciliation;
+    ApplicationDataSources mDataSources;
 
     [[nodiscard]] const ReportResult& report(ReportType aType) const {
         return mReports[static_cast<std::size_t>(aType)];
@@ -722,6 +913,15 @@ struct ApplicationResultInput {
     /// over. They stay errors but no longer block; the classification stage gives its own.
     std::vector<std::size_t> mResolvedMergeDiagnostics;
     std::vector<ExcludedItemInput> mExcludedItems;
+    /// The ISINs with a sale in the selected year, in any order; the builder sorts them by ISIN.
+    /// Each investment's sales are in ledger order.
+    std::vector<CapitalInvestmentInput> mCapitalInvestments;
+    std::vector<LongHeldSale> mLongHeld;
+    std::vector<UsedOfficialRate> mUsedRates;
+    std::optional<DepositInterestSummary> mDepositInterest;
+    std::vector<AppliedCorrectionInput> mCorrections;
+    std::vector<ReconciliationImpact> mReconciliation;
+    ApplicationDataSources mDataSources;
     /// Indexed by ReportType.
     std::array<ReportInput, 4> mReports;
 };
