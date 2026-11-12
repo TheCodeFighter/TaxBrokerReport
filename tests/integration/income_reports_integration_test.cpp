@@ -749,6 +749,17 @@ TEST(IncomeReportsIntegrationTest, TheDepositSummaryAsksToAddTheOtherBanksUnless
     EXPECT_TRUE(aboveRun.result().mRequests.empty());
 }
 
+TEST(IncomeReportsIntegrationTest, DividendTotalsThatDoNotFitInMoneyThrowInsteadOfWrapping) {
+    // Two dividends of EUR 500,000,000,000,000.00 each. Money has 4 decimals, so each is
+    // 5'000'000'000'000'000'000 and their sum is above the int64 limit of about 9.22e18.
+    const TemporaryCsv csv{
+        R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000001,,,500000000000000.00,,,EUR,,,,,synthetic-dividend-1,,,,)",
+        R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share B,XX0000000002,,,500000000000000.00,,,EUR,,,,,synthetic-dividend-2,,,,)",
+    };
+
+    EXPECT_THROW((IncomeRun{csv, 2024}), std::overflow_error);
+}
+
 TEST(IncomeReportsIntegrationTest, AYearWithoutDepositInterestHasNoDepositSummary) {
     const TemporaryCsv csv{
         R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Share A,XX0000000001,,,10,,,EUR,,,,,synthetic-dividend-1,,,,)",

@@ -635,6 +635,123 @@ TEST(ReportCommandTest, FirstMissingCsvIsNamed) {
     EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
 }
 
+TEST(ReportCommandTest, ACsvFileThatCannotBeReadIsNamedAndFailsTheRun) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("locked.csv", {});
+
+    // The file exists and is a regular file, so only reading it fails.
+    std::filesystem::permissions(history, std::filesystem::perms::none);
+
+    if (std::ifstream{history})
+    {
+        GTEST_SKIP() << "The process can read a file without permissions (for example as root).";
+    }
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: the CSV file locked.csv could not be read.\n" + std::string{kUsageHint});
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
+}
+
+TEST(ReportCommandTest, AnEcbRateFileThatCannotBeReadIsNamedAndFailsTheRun) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    const auto rates = folder.writeText("locked_rates.csv", "");
+
+    std::filesystem::permissions(rates, std::filesystem::perms::none);
+
+    if (std::ifstream{rates})
+    {
+        GTEST_SKIP() << "The process can read a file without permissions (for example as root).";
+    }
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history,
+                             "--ecb-rates",
+                             rates});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: the ECB rate file locked_rates.csv could not be read.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AReferenceFileThatCannotBeReadIsNamedAndFailsTheRun) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+    const auto reference = folder.writeText("locked_payers.csv", "");
+
+    std::filesystem::permissions(reference, std::filesystem::perms::none);
+
+    if (std::ifstream{reference})
+    {
+        GTEST_SKIP() << "The process can read a file without permissions (for example as root).";
+    }
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history,
+                             "--reference-files",
+                             reference});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: the reference file locked_payers.csv could not be read.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, ACsvFileOverTheSizeLimitIsNamedWithTheLimitAndFailsTheRun) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeText("big.csv", "");
+
+    // 100 MB + 1 byte, as a sparse file: the size is checked before anything is read.
+    std::filesystem::resize_file(history, 100U * 1024U * 1024U + 1U);
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: the CSV file big.csv cannot be used: The file is larger than 100 MB and "
+              "was not read. Check that you chose the right file.\n" +
+                  std::string{kUsageHint});
+    EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
+}
+
 TEST(ReportCommandTest, CsvIsCheckedBeforeTheTaxpayerFile) {
     const TemporaryFolder folder;
 

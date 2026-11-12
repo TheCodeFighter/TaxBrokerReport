@@ -2673,6 +2673,111 @@ TEST(ApplicationResultJsonTest, WritesTheCapitalSummaryOfEachInvestment) {
     EXPECT_EQ(summary.at("longHeld").at(0).at("units"), "0.50000000");
 }
 
+TEST(ApplicationResultJsonTest, WritesEveryStateOfACapitalInvestment) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    // XX0000000001 has an unresolved blocking error, XX0000000002 had one and the user excluded
+    // it, XX0000000003 only has units past the holding period (nothing listed).
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+                                        .mSeverity = DiagnosticSeverity::Error,
+                                        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+                                        .mContext = {.mStage = PipelineStage::FifoTax,
+                                                     .mAffectedReports = {kCapital},
+                                                     .mInstrumentName = "Blocked Share",
+                                                     .mIsin = "XX0000000001"},
+                                        .mMessage = "Synthetic error.",
+                                    },
+                                    ProcessingDiagnostic{
+                                        .mSeverity = DiagnosticSeverity::Error,
+                                        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+                                        .mContext = {.mStage = PipelineStage::FifoTax,
+                                                     .mAffectedReports = {kCapital},
+                                                     .mInstrumentName = "Excluded Share",
+                                                     .mIsin = "XX0000000002"},
+                                        .mMessage = "Synthetic error.",
+                                    }};
+    input.mResolvedDiagnostics = {1};
+    input.mReports[0].mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+    input.mReports[0].mExcludedInvestments = {{
+        .mIsin = "XX0000000002",
+        .mName = "Excluded Share",
+        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+    }};
+    input.mCapitalInvestments = {
+        {.mIsin = "XX0000000003", .mName = "Long Held Share", .mListed = false},
+        {.mIsin = "XX0000000001", .mName = "Blocked Share", .mListed = true},
+        {.mIsin = "XX0000000002", .mName = "Excluded Share", .mListed = true},
+    };
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& investments = json.at("capitalSummary").at("investments");
+
+    // The investments are written in ISIN order.
+    ASSERT_EQ(investments.size(), 3U);
+    EXPECT_EQ(investments.at(0).at("isin"), "XX0000000001");
+    EXPECT_EQ(investments.at(0).at("state"), "blocked");
+    EXPECT_EQ(investments.at(0).at("reasonCodes"), nlohmann::json::array({"incomplete_history"}));
+
+    EXPECT_EQ(investments.at(1).at("isin"), "XX0000000002");
+    EXPECT_EQ(investments.at(1).at("state"), "excluded");
+    EXPECT_EQ(investments.at(1).at("reasonCodes"), nlohmann::json::array({"incomplete_history"}));
+
+    EXPECT_EQ(investments.at(2).at("isin"), "XX0000000003");
+    EXPECT_EQ(investments.at(2).at("state"), "long_held_only");
+    EXPECT_EQ(investments.at(2).at("reasonCodes"), nlohmann::json::array());
+}
+
+TEST(ApplicationResultJsonTest, WritesEveryKindOfIncomeRow) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mReports[2].mIncome = IncomeSummary{
+        .mRows = {IncomeRowFacts{.mKind = IncomeRowKind::DepositInterest, .mGross = 10'000}}};
+    input.mReports[3].mIncome =
+        IncomeSummary{.mRows = {IncomeRowFacts{.mKind = IncomeRowKind::BrokerCashInterest,
+                                               .mBroker = Broker::InteractiveBrokers,
+                                               .mGross = 20'000},
+                                IncomeRowFacts{.mKind = IncomeRowKind::BondCoupon,
+                                               .mIsin = "XX0000000001",
+                                               .mGross = 30'000}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& deposit = json.at("reports").at("bankInterest").at("incomeSummary").at("rows");
+    const auto& other = json.at("reports").at("otherInterest").at("incomeSummary").at("rows");
+
+    ASSERT_EQ(deposit.size(), 1U);
+    EXPECT_EQ(deposit.at(0).at("kind"), "deposit_interest");
+    EXPECT_FALSE(deposit.at(0).contains("broker"));
+
+    ASSERT_EQ(other.size(), 2U);
+    EXPECT_EQ(other.at(0).at("kind"), "broker_cash_interest");
+    EXPECT_EQ(other.at(0).at("broker"), "interactive_brokers");
+    EXPECT_FALSE(other.at(0).contains("isin"));
+    EXPECT_EQ(other.at(1).at("kind"), "bond_coupon");
+    EXPECT_EQ(other.at(1).at("isin"), "XX0000000001");
+    EXPECT_FALSE(other.at(1).contains("broker"));
+}
+
+TEST(ApplicationResultJsonTest, WritesTheTreatyClaimKindsWithoutACatalogueRow) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mReports[3].mIncome =
+        IncomeSummary{.mRows = {IncomeRowFacts{.mKind = IncomeRowKind::BondCoupon,
+                                               .mIsin = "XX0000000001",
+                                               .mTreaty = TreatyClaimKind::UserText},
+                                IncomeRowFacts{.mKind = IncomeRowKind::BondCoupon,
+                                               .mIsin = "XX0000000002",
+                                               .mTreaty = TreatyClaimKind::ClaimedWithoutText}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& rows = json.at("reports").at("otherInterest").at("incomeSummary").at("rows");
+
+    ASSERT_EQ(rows.size(), 2U);
+    EXPECT_EQ(rows.at(0).at("treaty").at("claim"), "user_text");
+    EXPECT_FALSE(rows.at(0).at("treaty").contains("catalogueRow"));
+    EXPECT_EQ(rows.at(1).at("treaty").at("claim"), "claimed_without_text");
+    EXPECT_FALSE(rows.at(1).at("treaty").contains("catalogueRow"));
+}
+
 TEST(ApplicationResultJsonTest, WritesTheCorrectionsAndTheReconciliationImpactAsExactFractions) {
     // 0.00000001 units at EUR 50 is EUR 0.0000005 = 1 / 2'000'000.
     const auto impact =
