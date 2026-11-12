@@ -106,7 +106,7 @@ class IncomeRun {
               ReferenceCatalogue aCatalogue)
         : mRates(std::move(aRates)), mCatalogue(std::move(aCatalogue)) {
         tr::TradeRepublicParser parser;
-        std::vector<StatementMergeInput> inputs{{0, parser.parse(aCsv)}};
+        std::vector<StatementMergeInput> inputs{{0, parser.parseFile(aCsv)}};
 
         mPrepared = TaxProcessor::prepareReportingYear(
             {aYear, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -203,7 +203,7 @@ class CapitalAndIncomeRun {
     CapitalAndIncomeRun(const std::filesystem::path& aCsv, int aYear)
         : mCatalogue(referenceCatalogue()) {
         tr::TradeRepublicParser parser;
-        std::vector<StatementMergeInput> inputs{{0, parser.parse(aCsv)}};
+        std::vector<StatementMergeInput> inputs{{0, parser.parseFile(aCsv)}};
 
         mPrepared = TaxProcessor::prepareReportingYear(
             {aYear, DeterministicStatementMerger{}.merge(std::move(inputs))});

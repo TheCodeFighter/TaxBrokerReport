@@ -352,6 +352,11 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::TaxCategoryNotReportedUserChoiceIncomeMissingIsin,
          "tax_category_not_reported.user_choice_income_missing_isin",
          {}},
+        {MessageKey::ParseErrorInvalidFilename, "parse_error.invalid_filename", {}},
+        {MessageKey::InputFileTooLarge,
+         "input_file.too_large",
+         {{"limitMb", MessageParamKind::Number}}},
+        {MessageKey::InputFileOutOfMemory, "input_file.out_of_memory", {}},
     };
 
     return messages;
@@ -414,8 +419,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 143U);
-    ASSERT_EQ(expectedMessages().size(), 143U);
+    ASSERT_EQ(definitions.size(), 146U);
+    ASSERT_EQ(expectedMessages().size(), 146U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -449,8 +454,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 143U);
-    EXPECT_EQ(keys.size(), 143U);
+    EXPECT_EQ(ids.size(), 146U);
+    EXPECT_EQ(keys.size(), 146U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -473,7 +478,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 152U); // 143 message keys and 9 terms.
+    ASSERT_EQ(table.size(), 155U); // 146 message keys and 9 terms.
 
     std::set<std::string> tableKeys;
 
@@ -607,6 +612,26 @@ TEST(DiagnosticMessagesTest, RendersTheSlovenianSentenceWithTheSameParameters) {
     EXPECT_EQ(slovenian,
               "Vrstica ima drugačno število polj kot glava (pričakovano 23, najdeno 22); "
               "vrstica je bila preskočena.");
+}
+
+TEST(DiagnosticMessagesTest, RendersTheInputFileMessagesInBothLanguages) {
+    const std::vector<MessageParam> limit{numberParam("limitMb", 100U)};
+
+    EXPECT_EQ(renderMessage(MessageKey::InputFileTooLarge, limit, MessageLanguage::English),
+              "The file is larger than 100 MB and was not read. Check that you chose the right "
+              "file.");
+    EXPECT_EQ(renderMessage(MessageKey::InputFileTooLarge, limit, MessageLanguage::Slovenian),
+              "Datoteka je večja od 100 MB in ni bila prebrana. Preverite, ali ste izbrali pravo "
+              "datoteko.");
+    EXPECT_EQ(renderMessage(MessageKey::InputFileOutOfMemory, {}, MessageLanguage::English),
+              "There was not enough memory to read the file. Close other programs and try again.");
+    EXPECT_EQ(renderMessage(MessageKey::InputFileOutOfMemory, {}, MessageLanguage::Slovenian),
+              "Za branje datoteke ni bilo dovolj pomnilnika. Zaprite druge programe in poskusite "
+              "znova.");
+    EXPECT_EQ(renderMessage(MessageKey::ParseErrorInvalidFilename, {}, MessageLanguage::English),
+              "The file has no valid file name, so it was not read.");
+    EXPECT_EQ(renderMessage(MessageKey::ParseErrorInvalidFilename, {}, MessageLanguage::Slovenian),
+              "Datoteka nima veljavnega imena, zato ni bila prebrana.");
 }
 
 TEST(DiagnosticMessagesTest, RendersATermInTheLanguageOfTheSentence) {

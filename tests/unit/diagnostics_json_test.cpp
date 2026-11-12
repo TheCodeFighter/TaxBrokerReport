@@ -153,6 +153,30 @@ TEST(DiagnosticsJsonTest, KeepsOnlyFilenamesFromLinuxMacAndWindowsPaths) {
     EXPECT_EQ(diagnostics.at(2).at("source").at("file"), "windows.csv");
 }
 
+TEST(DiagnosticsJsonTest, ADiagnosticWithoutAValidFileNameHasNoFileAndDoesNotThrow) {
+    ParseResult parseResult{
+        .mBroker = Broker::TradeRepublic,
+    };
+    parseResult.mDiagnostics = {
+        ParseDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = DiagnosticCode::ParseError,
+            .mSourceFile = "",
+            .mMessage = "The file has no valid file name, so it was not read.",
+        },
+    };
+
+    std::string text;
+
+    ASSERT_NO_THROW(text = api::serializeDiagnosticsJson(parseResult));
+
+    const auto response = nlohmann::json::parse(text);
+
+    EXPECT_EQ(response.at("summary").at("errorCount"), 1U);
+    ASSERT_EQ(response.at("diagnostics").size(), 1U);
+    EXPECT_TRUE(response.at("diagnostics").at(0).at("source").empty());
+}
+
 TEST(DiagnosticsJsonTest, ReportsWarningOnlyResultsSeparatelyFromErrors) {
     ParseResult parseResult{
         .mBroker = Broker::InteractiveBrokers,
@@ -191,6 +215,8 @@ TEST(DiagnosticsJsonTest, KeepsEveryDiagnosticCodeStable) {
         ExpectedCode{DiagnosticCode::MixedRateYears, "mixed_rate_years"},
         ExpectedCode{DiagnosticCode::DuplicateRateYear, "duplicate_rate_year"},
         ExpectedCode{DiagnosticCode::NoRates, "no_rates"},
+        ExpectedCode{DiagnosticCode::InputFileTooLarge, "input_file_too_large"},
+        ExpectedCode{DiagnosticCode::InputFileOutOfMemory, "input_file_out_of_memory"},
     };
 
     for (const auto& expected : expectedCodes)

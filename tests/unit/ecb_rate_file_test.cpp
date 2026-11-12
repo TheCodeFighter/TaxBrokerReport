@@ -1,7 +1,9 @@
 #include "taxbroker/official_rates.hpp"
 
+#include "../support/large_allocation_hook.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
+#include "taxbroker/input_file.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>
@@ -11,10 +13,12 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -1286,10 +1290,9 @@ TEST(EcbRateFileTest, RejectsAnEmptyPathWithoutAFileName) {
     EXPECT_EQ(diagnostic.mSourceFile, "");
     EXPECT_EQ(diagnostic.mRowIndex, std::nullopt);
     EXPECT_EQ(diagnostic.mField, std::nullopt);
-    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorUnreadableRateFile);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorInvalidFilename);
     EXPECT_EQ(diagnostic.mMessageParams, (std::vector<MessageParam>{}));
-    EXPECT_EQ(diagnostic.mMessage,
-              "The rate file could not be opened or read. No rates were loaded.");
+    EXPECT_EQ(diagnostic.mMessage, "The file has no valid file name, so it was not read.");
 }
 
 TEST(EcbRateFileTest, RejectsBothFilesOfTheSameYearAndKeepsOtherYears) {
@@ -1405,11 +1408,202 @@ TEST(EcbRateFileTest, ReturnsNoRateForACurrencyValueOutsideTheEnum) {
 }
 
 TEST(EcbRateFileTest, LoadsNothingWithoutFiles) {
-    const auto result = loadEcbRateFiles({});
+    const auto result = loadEcbRateFiles(std::vector<std::filesystem::path>{});
 
     EXPECT_TRUE(result.mTable.mRates.empty());
     EXPECT_TRUE(result.mTable.mFiles.empty());
     EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+/// A synthetic ECB `csvdata` file of USD rates: the header and one row per (date, value).
+std::string
+usdRateFileText(std::initializer_list<std::pair<std::string_view, std::string_view>> aRows) {
+    std::string text = std::string{kHeader} + "\n";
+
+    for (const auto& [day, value] : aRows)
+    {
+        text += "EXR.D.USD.EUR.SP00.A,D,USD,EUR,SP00,A," + std::string{day} + "," +
+                std::string{value} +
+                ",A,F,,,P1D,,A,,,,,,,99Q1=100,,,4,,4F0,,Synthetic currency/Euro ECB reference "
+                "exchange rate,\"ECB reference exchange rate, Synthetic currency/Euro, 2.15 pm "
+                "(C.E.T.)\",USD,0\n";
+    }
+
+    return text;
+}
+
+TEST(EcbRateFileTest, LoadsAFileFromMemoryWithItsDisplayName) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "rates_2024.csv",
+                  .mContent =
+                      usdRateFileText({{"2024-01-02", "1.0956"}, {"2024-01-03", "1.0919"}})},
+    };
+
+    const auto result = loadEcbRateFiles(files);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_EQ(result.mTable.mRates.size(), 2U);
+
+    const OfficialRate* first = result.mTable.find("USD", date("2024-01-02"));
+    const OfficialRate* second = result.mTable.find("USD", date("2024-01-03"));
+
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(first->mValue, 109'560'000);  // 1.0956 at 8 decimals
+    EXPECT_EQ(second->mValue, 109'190'000); // 1.0919 at 8 decimals
+    EXPECT_EQ(first->mSourceFile.value(), "rates_2024.csv");
+    EXPECT_EQ(first->mOrigin, OfficialRateOrigin::Supplied);
+    ASSERT_EQ(result.mTable.mFiles.size(), 1U);
+    EXPECT_EQ(result.mTable.mFiles[0].mYear, 2024);
+}
+
+TEST(EcbRateFileTest, LoadsAFileFromMemoryAndReplacesTheBuiltInYear) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "rates_2024.csv",
+                  .mContent = usdRateFileText({{"2024-01-02", "1.0956"}})},
+    };
+
+    const auto result = loadOfficialRates(files);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+
+    const OfficialRate* rate = result.mTable.find("USD", date("2024-01-02"));
+
+    ASSERT_NE(rate, nullptr);
+    EXPECT_EQ(rate->mOrigin, OfficialRateOrigin::Supplied);
+    EXPECT_EQ(rate->mValue, 109'560'000);
+}
+
+TEST(EcbRateFileTest, TwoFilesFromMemoryForOneYearAreBothRejected) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "a.csv", .mContent = usdRateFileText({{"2024-01-02", "1.1"}})},
+        InputFile{.mName = "b.csv", .mContent = usdRateFileText({{"2024-01-03", "1.2"}})},
+    };
+
+    const auto result = loadEcbRateFiles(files);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::DuplicateRateYear);
+    EXPECT_EQ(result.mDiagnostics[0].mSourceFile, "a.csv");
+    EXPECT_EQ(result.mDiagnostics[1].mSourceFile, "b.csv");
+    EXPECT_TRUE(result.mTable.mRates.empty());
+}
+
+TEST(EcbRateFileTest, AFileFromMemoryWithoutAValidNameIsRejectedAndTheOtherFileLoads) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "", .mContent = usdRateFileText({{"2024-01-02", "1.0956"}})},
+        InputFile{.mName = "good_2024.csv",
+                  .mContent = usdRateFileText({{"2024-01-03", "1.0919"}})},
+    };
+
+    const auto result = loadEcbRateFiles(files);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorInvalidFilename);
+    EXPECT_EQ(diagnostic.mSourceFile, "");
+    ASSERT_EQ(result.mTable.mFiles.size(), 1U);
+    EXPECT_EQ(result.mTable.mFiles[0].mSourceFile.value(), "good_2024.csv");
+    EXPECT_EQ(result.mTable.mRates.size(), 1U); // only 2024-01-03 from the named file
+}
+
+TEST(EcbRateFileTest, APathThatEndsInASeparatorIsRejectedWithoutReadingAnything) {
+    const auto result =
+        loadEcbRateFiles(std::vector<std::filesystem::path>{std::filesystem::path{"/tmp/"}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::ParseErrorInvalidFilename);
+    EXPECT_EQ(result.mDiagnostics[0].mSourceFile, "");
+    EXPECT_TRUE(result.mTable.mFiles.empty());
+}
+
+TEST(EcbRateFileTest, ReportsAnUnreadableFileAtItsPlaceAmongTheValidFiles) {
+    TemporaryDirectory directory;
+    const auto missingPath = directory.path() / "missing.csv";
+    const auto goodPath =
+        directory.write("good_2024.csv", usdRateFileText({{"2024-01-02", "1.0956"}}));
+    const auto folderPath = directory.path() / "folder.csv";
+
+    std::filesystem::create_directories(folderPath);
+
+    const auto result =
+        loadEcbRateFiles(std::vector<std::filesystem::path>{missingPath, goodPath, folderPath});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics[0].mSourceFile, "missing.csv");
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::ParseErrorUnreadableRateFile);
+    EXPECT_EQ(result.mDiagnostics[1].mSourceFile, "folder.csv");
+    EXPECT_EQ(result.mDiagnostics[1].mMessageKey, MessageKey::ParseErrorUnreadableRateFile);
+    ASSERT_EQ(result.mTable.mFiles.size(), 1U);
+    EXPECT_EQ(result.mTable.mFiles[0].mSourceFile.value(), "good_2024.csv");
+}
+
+TEST(EcbRateFileTest, ARateFileOverTheSizeLimitIsNotReadAndTheOtherFileLoads) {
+    TemporaryDirectory directory;
+    const std::string goodText = usdRateFileText({{"2024-01-02", "1.0956"}});
+    const auto bigPath = directory.write("big_2025.csv", std::string(goodText.size() + 1, 'x'));
+    const auto goodPath = directory.write("good_2024.csv", goodText);
+
+    const auto result =
+        loadEcbRateFiles(std::vector<std::filesystem::path>{bigPath, goodPath}, goodText.size());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InputFileTooLarge);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InputFileTooLarge);
+    EXPECT_EQ(diagnostic.mSourceFile, "big_2025.csv");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    ASSERT_EQ(result.mTable.mFiles.size(), 1U);
+    EXPECT_EQ(result.mTable.mFiles[0].mSourceFile.value(), "good_2024.csv");
+}
+
+TEST(EcbRateFileTest, ARateFileInMemoryOverTheSizeLimitGivesATooLargeError) {
+    const std::string goodText = usdRateFileText({{"2024-01-02", "1.0956"}});
+    const std::vector<InputFile> files{InputFile{.mName = "big.csv", .mContent = goodText}};
+
+    const auto result = loadEcbRateFiles(files, goodText.size() - 1);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InputFileTooLarge);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::InputFileTooLarge);
+    // The test limit is below 1 MB, so it is 0 whole megabytes.
+    EXPECT_EQ(result.mDiagnostics[0].mMessageParams,
+              (std::vector<MessageParam>{numberParam("limitMb", 0)}));
+    EXPECT_FALSE(result.mDiagnostics[0].mRowIndex.has_value());
+    EXPECT_EQ(result.mDiagnostics[0].mSourceFile, "big.csv");
+    EXPECT_TRUE(result.mTable.mRates.empty());
+}
+
+TEST(EcbRateFileTest, RunningOutOfMemoryRejectsTheFileWithItsOwnError) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
+    // A file of the size of a large allocation, so the text of the file takes one.
+    const std::vector<InputFile> files{
+        InputFile{.mName = "rates_2024.csv",
+                  .mContent = usdRateFileText({{"2024-01-02", "1.0956"}}) +
+                              std::string(test::kLargeAllocationBytes, '\n')},
+    };
+    OfficialRateLoadResult result;
+
+    {
+        const test::ScopedAllocationFailure failure;
+
+        result = loadEcbRateFiles(files);
+    }
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::InputFileOutOfMemory);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::InputFileOutOfMemory);
+    EXPECT_EQ(result.mDiagnostics[0].mSourceFile, "rates_2024.csv");
+    EXPECT_TRUE(result.mTable.mRates.empty());
 }
 
 // Built-in rate files: the compact form `currency,date,rate`.

@@ -63,6 +63,10 @@ std::string_view toString(DiagnosticCode aCode) {
         return "duplicate_rate_year";
     case DiagnosticCode::NoRates:
         return "no_rates";
+    case DiagnosticCode::InputFileTooLarge:
+        return "input_file_too_large";
+    case DiagnosticCode::InputFileOutOfMemory:
+        return "input_file_out_of_memory";
     }
 
     return "parse_error";

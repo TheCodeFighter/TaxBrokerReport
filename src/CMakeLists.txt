@@ -44,8 +44,10 @@ configure_file(utils/built_in_ecb_rates.cpp.in ${EMBEDDED_DIR}/built_in_ecb_rate
 
 # Define the core library
 add_library(taxbroker_core STATIC
+    parsers/csv_parser.cpp
     parsers/ecb_rate_file.cpp
     parsers/ibkr_parser.cpp
+    parsers/input_file.cpp
     parsers/reference_catalogue.cpp
     parsers/traderepublic_parser.cpp
     processors/application_result.cpp

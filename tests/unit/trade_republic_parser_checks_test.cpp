@@ -32,24 +32,9 @@ ParseResult resultWithTrades(std::vector<TradeTransaction> aTrades) {
     return result;
 }
 
-/// Writes the CSV text to a temporary file named after the running test, returns the rows that
-/// test::recordRowsToCheck finds in it, and removes the file again.
+/// The rows that test::recordRowsToCheck finds in the CSV text.
 std::vector<std::size_t> recordRowsToCheckOf(std::string_view aText) {
-    const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
-    const auto path = std::filesystem::temp_directory_path() /
-                      ("taxbroker_parser_checks_" + std::string{info->name()} + ".csv");
-
-    {
-        std::ofstream output{path, std::ios::binary | std::ios::trunc};
-        output << aText;
-    }
-
-    auto rows = test::recordRowsToCheck(path);
-
-    std::error_code error;
-    std::filesystem::remove(path, error);
-
-    return rows;
+    return test::recordRowsToCheck(aText);
 }
 
 ParseDiagnostic errorOnRow(std::size_t aRow) {

@@ -360,6 +360,10 @@ std::string_view toString(DiagnosticCode aDiagnosticCode) {
         return "DuplicateRateYear";
     case DiagnosticCode::NoRates:
         return "NoRates";
+    case DiagnosticCode::InputFileTooLarge:
+        return "InputFileTooLarge";
+    case DiagnosticCode::InputFileOutOfMemory:
+        return "InputFileOutOfMemory";
     }
 
     return "Unknown";
@@ -870,7 +874,7 @@ std::vector<StatementMergeInput> parseInputs(std::span<char*> aCsvPaths) {
     {
         inputs.push_back(StatementMergeInput{
             .mSourceIndex = index,
-            .mParseResult = parser.parse(aCsvPaths[index], index),
+            .mParseResult = parser.parseFile(aCsvPaths[index], index),
         });
     }
 
@@ -1799,7 +1803,7 @@ int main(int aArgumentCount, char** aArguments) {
     try
     {
         taxbroker::tr::TradeRepublicParser parser;
-        const taxbroker::ParseResult parseResult = parser.parse(csvPath);
+        const taxbroker::ParseResult parseResult = parser.parseFile(csvPath);
 
         createParentDirectory(outputPath);
         std::ofstream output{outputPath};

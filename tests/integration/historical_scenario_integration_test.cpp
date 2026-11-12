@@ -114,8 +114,8 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesWritesItsRows2024)
         files.write("history_2024_2025.csv",
                     {split2024, juneSale, decemberSale, januaryPurchase, februarySale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(olderPath)},
-                                            {1, parser.parse(newerPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(olderPath)},
+                                            {1, parser.parseFile(newerPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -288,8 +288,8 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesWritesItsRows2025)
         files.write("history_2024_2025.csv",
                     {split2024, juneSale, decemberSale, januaryPurchase, februarySale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(olderPath)},
-                                            {1, parser.parse(newerPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(olderPath)},
+                                            {1, parser.parseFile(newerPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2025, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -445,7 +445,7 @@ TEST(HistoricalScenarioIntegrationTest, OneFileWithTheWholeHistoryWritesTheSameR
                                           januaryPurchase,
                                           februarySale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -618,8 +618,8 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesInReverseOrderWrit
         files.write("history_2024_2025.csv",
                     {split2024, juneSale, decemberSale, januaryPurchase, februarySale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(newerPath)},
-                                            {1, parser.parse(olderPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(newerPath)},
+                                            {1, parser.parseFile(olderPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -791,8 +791,8 @@ TEST(HistoricalScenarioIntegrationTest, OverlappingFilesWriteTheSameRows2024) {
         files.write("history_2024_2025.csv",
                     {split2024, juneSale, decemberSale, januaryPurchase, februarySale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(olderPath)},
-                                            {1, parser.parse(newerPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(olderPath)},
+                                            {1, parser.parseFile(newerPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});

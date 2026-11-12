@@ -856,6 +856,17 @@ its display name only. Their keys are `invalid_header.rate_file_columns`, `inval
 `invalid_value.rate_value`, `missing_field.rate_value`, `duplicate_rate`, `mixed_rate_years`,
 `duplicate_rate_year` and `no_rates`. A message never holds a rate value.
 
+The loaders of user files (the broker parser, the rate files, the reference files) share these
+file-level errors, with the display file name only and no row. `parse_error` with the key
+`parse_error.invalid_filename` (the name is empty, `.`, `..` or ends in a separator; the
+diagnostic has no file name) is given by the broker parser and the rate files; the reference-file
+loader reports such a name as an unknown file name. All three loaders also give
+`input_file_too_large` with the key `input_file.too_large` and the parameter `limitMb` (the file is
+over the 100 MB limit and was not read), and `input_file_out_of_memory` with the key
+`input_file.out_of_memory` (the memory for the file ran out). In the reference-file loader the last two are the key of the fault. The size and memory
+errors write one error log line with the input kind, the source index and the code, and no path,
+file name or size.
+
 The reference-file loader (see [`reference_data.md`](reference_data.md), "How the app loads the
 files") reports the first fault of a supplied file with one `reference_file.*` key, the file name
 (the last path part only) and the logical row when the fault is in a row (header = 1). The keys

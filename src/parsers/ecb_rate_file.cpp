@@ -2,6 +2,7 @@
 
 #include "taxbroker/currency.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
+#include "taxbroker/input_file.hpp"
 #include "utils/csv_text_reader.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/numeric_util.hpp"
@@ -9,13 +10,14 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
+#include <new>
 #include <optional>
 #include <set>
+#include <span>
 #include <stdexcept>
-#include <system_error>
 #include <string>
 #include <variant>
 
@@ -75,12 +77,6 @@ ParseDiagnostic rateDiagnostic(const SourceFilename& aSourceFile,
     };
 }
 
-SourceFilename displayName(const std::filesystem::path& aPath) {
-    try
-    { return SourceFilename::fromPath(aPath.string()); } catch (const std::invalid_argument&)
-    { return SourceFilename{}; }
-}
-
 bool isCurrencyCode(std::string_view aValue) {
     return aValue.size() == 3 && aValue != "EUR" &&
            std::all_of(aValue.begin(), aValue.end(), [](char aCharacter) {
@@ -136,26 +132,11 @@ ParseDiagnostic faultDiagnostic(const SourceFilename& aSourceFile, const CsvFaul
     throw std::logic_error{"Unknown CSV fault kind"};
 }
 
-/// Reads one file into aParsed and returns no diagnostic, or returns the first fault. The checks
-/// are the rate-file rules in `calculations.md`.
-std::optional<ParseDiagnostic> readRateFile(const std::filesystem::path& aPath,
-                                            const SourceFilename& aSourceFile,
-                                            ParsedRateFile& aParsed) {
-    // A folder opens on Linux and fails only while it is read, so it is checked first.
-    std::error_code fileError;
-    const bool regularFile = std::filesystem::is_regular_file(aPath, fileError);
-    std::ifstream input{aPath, std::ios::binary};
-
-    if (!regularFile || !input)
-    {
-        return rateDiagnostic(aSourceFile,
-                              DiagnosticCode::ParseError,
-                              makeDiagnosticMessage(MessageKey::ParseErrorUnreadableRateFile));
-    }
-
-    const std::string content{std::istreambuf_iterator<char>{input},
-                              std::istreambuf_iterator<char>{}};
-    const CsvTable table = readCsvText(content, ',', kRequiredColumns);
+/// Checks the text of one file into aParsed and returns no diagnostic, or returns the first
+/// fault. The checks are the rate-file rules in `calculations.md`.
+std::optional<ParseDiagnostic>
+checkRateText(std::string_view aText, const SourceFilename& aSourceFile, ParsedRateFile& aParsed) {
+    const CsvTable table = readCsvText(aText, ',', kRequiredColumns);
 
     // These faults come before any row; the others stop the rows and are mapped after the loop.
     const bool headerFault = table.mFault && (table.mFault->mKind == CsvFaultKind::UnclosedQuote ||
@@ -668,37 +649,82 @@ const OfficialRate* OfficialRateTable::find(Currency aCurrency, Date aDate) cons
     return find(currencyCode(aCurrency), aDate);
 }
 
-OfficialRateLoadResult loadEcbRateFiles(const std::vector<std::filesystem::path>& aPaths) {
-    OfficialRateLoadResult result;
-    std::vector<ParsedRateFile> accepted;
+namespace {
 
-    for (const auto& path : aPaths)
+/// Adds the diagnostic of a file that gave no text.
+void addRateFault(OfficialRateLoadResult& aResult,
+                  const SourceFilename& aSourceFile,
+                  const InputFileFault aFault,
+                  const std::size_t aIndex,
+                  const std::size_t aMaxFileBytes) {
+    if (aFault == InputFileFault::Unreadable)
     {
-        const SourceFilename sourceFile = displayName(path);
+        aResult.mDiagnostics.push_back(
+            rateDiagnostic(aSourceFile,
+                           DiagnosticCode::ParseError,
+                           makeDiagnosticMessage(MessageKey::ParseErrorUnreadableRateFile)));
+
+        return;
+    }
+
+    aResult.mDiagnostics.push_back(
+        inputFileFaultDiagnostic(aFault, aSourceFile.value(), "ecb_rates", aIndex, aMaxFileBytes));
+}
+
+/// Adds the error of a file without a valid file name (no name in the diagnostic).
+void addInvalidRateName(OfficialRateLoadResult& aResult) {
+    aResult.mDiagnostics.push_back(
+        rateDiagnostic(SourceFilename{},
+                       DiagnosticCode::ParseError,
+                       makeDiagnosticMessage(MessageKey::ParseErrorInvalidFilename)));
+}
+
+/// Checks the text of one file; an accepted file is added to aAccepted, else a diagnostic.
+void addRateText(OfficialRateLoadResult& aResult,
+                 std::vector<ParsedRateFile>& aAccepted,
+                 const SourceFilename& aSourceFile,
+                 const std::string_view aText,
+                 const std::size_t aIndex,
+                 const std::size_t aMaxFileBytes) {
+    if (aText.size() > aMaxFileBytes)
+    {
+        addRateFault(aResult, aSourceFile, InputFileFault::TooLarge, aIndex, aMaxFileBytes);
+
+        return;
+    }
+
+    try
+    {
         ParsedRateFile parsed;
-        std::optional<ParseDiagnostic> fault = readRateFile(path, sourceFile, parsed);
+        std::optional<ParseDiagnostic> fault = checkRateText(aText, aSourceFile, parsed);
 
         if (fault)
         {
-            result.mDiagnostics.push_back(std::move(*fault));
-            continue;
+            aResult.mDiagnostics.push_back(std::move(*fault));
+
+            return;
         }
 
-        accepted.push_back(std::move(parsed));
-    }
+        aAccepted.push_back(std::move(parsed));
+    } catch (const std::bad_alloc&)
+    { addRateFault(aResult, aSourceFile, InputFileFault::OutOfMemory, aIndex, aMaxFileBytes); }
+}
 
+/// Rejects two files of one year and puts the rates of the accepted files into the table.
+OfficialRateLoadResult finishRateLoad(OfficialRateLoadResult aResult,
+                                      std::vector<ParsedRateFile> aAccepted) {
     std::map<int, std::size_t> filesPerYear;
 
-    for (const auto& file : accepted)
+    for (const auto& file : aAccepted)
     {
         ++filesPerYear[file.mInfo.mYear];
     }
 
-    for (auto& file : accepted)
+    for (auto& file : aAccepted)
     {
         if (filesPerYear[file.mInfo.mYear] > 1)
         {
-            result.mDiagnostics.push_back(
+            aResult.mDiagnostics.push_back(
                 rateDiagnostic(file.mInfo.mSourceFile,
                                DiagnosticCode::DuplicateRateYear,
                                makeDiagnosticMessage(MessageKey::DuplicateRateYear,
@@ -710,17 +736,83 @@ OfficialRateLoadResult loadEcbRateFiles(const std::vector<std::filesystem::path>
         {
             auto key = std::make_pair(rate.mCurrencyCode, rate.mObservationDate);
 
-            result.mTable.mRates.emplace(std::move(key), std::move(rate));
+            aResult.mTable.mRates.emplace(std::move(key), std::move(rate));
         }
 
-        result.mTable.mFiles.push_back(std::move(file.mInfo));
+        aResult.mTable.mFiles.push_back(std::move(file.mInfo));
     }
 
-    return result;
+    return aResult;
 }
 
-OfficialRateLoadResult loadOfficialRates(const std::vector<std::filesystem::path>& aSuppliedPaths) {
-    OfficialRateLoadResult result = loadEcbRateFiles(aSuppliedPaths);
+} // namespace
+
+OfficialRateLoadResult loadEcbRateFiles(const std::span<const InputFile> aFiles,
+                                        const std::size_t aMaxFileBytes) {
+    OfficialRateLoadResult result;
+    std::vector<ParsedRateFile> accepted;
+
+    for (std::size_t index = 0; index < aFiles.size(); ++index)
+    {
+        const auto sourceFile = SourceFilename::tryFromPath(aFiles[index].mName);
+
+        if (!sourceFile)
+        {
+            addInvalidRateName(result);
+
+            continue;
+        }
+
+        addRateText(result, accepted, *sourceFile, aFiles[index].mContent, index, aMaxFileBytes);
+    }
+
+    return finishRateLoad(std::move(result), std::move(accepted));
+}
+
+OfficialRateLoadResult loadEcbRateFiles(const std::vector<std::filesystem::path>& aPaths,
+                                        const std::size_t aMaxFileBytes) {
+    OfficialRateLoadResult result;
+    std::vector<ParsedRateFile> accepted;
+
+    // One file at a time, so only one file is in memory at once.
+    for (std::size_t index = 0; index < aPaths.size(); ++index)
+    {
+        const auto validName = SourceFilename::tryFromPath(aPaths[index].filename().string());
+
+        // A path with no file name is reported without reading anything.
+        if (!validName)
+        {
+            addInvalidRateName(result);
+
+            continue;
+        }
+
+        const SourceFilename& sourceFile = *validName;
+        const auto read = readInputFile(aPaths[index], aMaxFileBytes);
+
+        if (const auto* fault = std::get_if<InputFileFault>(&read))
+        {
+            addRateFault(result, sourceFile, *fault, index, aMaxFileBytes);
+
+            continue;
+        }
+
+        addRateText(result,
+                    accepted,
+                    sourceFile,
+                    std::get<InputFile>(read).mContent,
+                    index,
+                    aMaxFileBytes);
+    }
+
+    return finishRateLoad(std::move(result), std::move(accepted));
+}
+
+namespace {
+
+/// Adds the built-in years that no accepted supplied file covers, in year order.
+OfficialRateLoadResult addBuiltInYears(OfficialRateLoadResult aSupplied) {
+    OfficialRateLoadResult result = std::move(aSupplied);
 
     std::set<int> suppliedYears;
 
@@ -756,6 +848,16 @@ OfficialRateLoadResult loadOfficialRates(const std::vector<std::filesystem::path
               });
 
     return result;
+}
+
+} // namespace
+
+OfficialRateLoadResult loadOfficialRates(const std::span<const InputFile> aSuppliedFiles) {
+    return addBuiltInYears(loadEcbRateFiles(aSuppliedFiles));
+}
+
+OfficialRateLoadResult loadOfficialRates(const std::vector<std::filesystem::path>& aSuppliedPaths) {
+    return addBuiltInYears(loadEcbRateFiles(aSuppliedPaths));
 }
 
 } // namespace taxbroker

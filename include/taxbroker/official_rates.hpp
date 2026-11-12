@@ -1,6 +1,7 @@
 #pragma once
 
 #include "taxbroker/diagnostics.hpp"
+#include "taxbroker/input_file.hpp"
 #include "taxbroker/types.hpp"
 
 #include <atomic>
@@ -160,7 +161,11 @@ struct OfficialRateLoadResult {
  * that both pass the checks are both rejected.
  */
 [[nodiscard]] OfficialRateLoadResult
-loadEcbRateFiles(const std::vector<std::filesystem::path>& aPaths);
+loadEcbRateFiles(const std::vector<std::filesystem::path>& aPaths,
+                 std::size_t aMaxFileBytes = kMaxInputFileBytes);
+
+[[nodiscard]] OfficialRateLoadResult
+loadEcbRateFiles(std::span<const InputFile> aFiles, std::size_t aMaxFileBytes = kMaxInputFileBytes);
 
 /**
  * The rates of a run: the supplied files (loaded as `loadEcbRateFiles` does) and, for each year
@@ -170,5 +175,7 @@ loadEcbRateFiles(const std::vector<std::filesystem::path>& aPaths);
  */
 [[nodiscard]] OfficialRateLoadResult
 loadOfficialRates(const std::vector<std::filesystem::path>& aSuppliedPaths);
+
+[[nodiscard]] OfficialRateLoadResult loadOfficialRates(std::span<const InputFile> aSuppliedFiles);
 
 } // namespace taxbroker

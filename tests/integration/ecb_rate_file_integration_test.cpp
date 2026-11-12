@@ -493,7 +493,7 @@ TEST(EcbRateFileIntegrationTest, RejectsTwoFilesOfTheSameYearAndKeepsAnotherYear
 // download of each year (USD per 1 EUR), checked against the downloaded file.
 
 TEST(EcbRateFileIntegrationTest, TheBuiltInRateFilesLoadWithoutErrors) {
-    const auto result = loadOfficialRates({});
+    const auto result = loadOfficialRates(std::vector<std::filesystem::path>{});
 
     EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mTable.mFiles.size(), 10U); // the years 2016 to 2025
@@ -521,7 +521,7 @@ TEST(EcbRateFileIntegrationTest, TheBuiltInRateFilesLoadWithoutErrors) {
 }
 
 TEST(EcbRateFileIntegrationTest, TheBuiltInRatesHaveTheEcbValuesAndTheirProvenance) {
-    const auto result = loadOfficialRates({});
+    const auto result = loadOfficialRates(std::vector<std::filesystem::path>{});
 
     const OfficialRate* first = result.mTable.find(Currency::USD, date("2025-01-02"));
 
@@ -638,8 +638,8 @@ TEST(EcbRateFileIntegrationTest, TwoSuppliedFilesOfOneYearAreBothRejectedAndTheB
 }
 
 TEST(EcbRateFileIntegrationTest, TheBuiltInYearsAreSharedByEveryLoadAndNotCopiedIntoTheTable) {
-    const auto first = loadOfficialRates({});
-    const auto second = loadOfficialRates({});
+    const auto first = loadOfficialRates(std::vector<std::filesystem::path>{});
+    const auto second = loadOfficialRates(std::vector<std::filesystem::path>{});
 
     // The table owns no rate; the ten years are shared read-only.
     EXPECT_TRUE(first.mTable.mRates.empty());
@@ -660,7 +660,8 @@ TEST(EcbRateFileIntegrationTest, ASuppliedFileOwnsItsRatesAndTheOtherYearsStaySh
 }
 
 TEST(EcbRateFileIntegrationTest, ThePublicationDaysOfTheBuiltInYearsAreTheDaysOfTheFiles) {
-    const auto days = loadOfficialRates({}).mTable.publicationDays();
+    const auto days =
+        loadOfficialRates(std::vector<std::filesystem::path>{}).mTable.publicationDays();
 
     EXPECT_TRUE(days.contains(date("2016-01-04")));
     EXPECT_TRUE(days.contains(date("2022-03-10"))); // AUD 1.5109 on that day
@@ -681,7 +682,7 @@ TEST(EcbRateFileIntegrationTest, ASuppliedFileTakesTheBuiltInPublicationDaysOfIt
 }
 
 TEST(EcbRateFileIntegrationTest, ACurrencyTheEcbStoppedHasNoRateOnADayItsOtherRatesExist) {
-    const auto result = loadOfficialRates({});
+    const auto result = loadOfficialRates(std::vector<std::filesystem::path>{});
     const std::vector<RateNeed> needs{
         {.mCurrency = Currency::RUB,
          .mTaxDate = date("2022-03-10"), // the ECB's last RUB rate is 2022-03-01

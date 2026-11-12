@@ -158,7 +158,7 @@ TEST(LossEligibilityIntegrationTest, AnsweringNoKeepsTheLoss) {
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale}))};
+        parser.parseFile(files.write("history.csv", {kBasePurchase, kBaseSale}))};
     const auto calculation = [&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
     };
@@ -231,7 +231,7 @@ TEST(LossEligibilityIntegrationTest, AnsweringYesBlocksTheWholeOpenLoss) {
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale}))};
+        parser.parseFile(files.write("history.csv", {kBasePurchase, kBaseSale}))};
     const auto calculation = [&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
     };
@@ -266,7 +266,7 @@ TEST(LossEligibilityIntegrationTest, ACallerThatDoesNotAskTreatsTheOpenLossAsBlo
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale}))};
+        parser.parseFile(files.write("history.csv", {kBasePurchase, kBaseSale}))};
     RunDecisions decisions;
 
     const auto result = ApplicationResultBuilder::build(
@@ -308,7 +308,7 @@ TEST(LossEligibilityIntegrationTest, APartlyBlockedLossIsWrittenInTwoSaleRows) {
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write("history.csv", {olderPurchase, decemberPurchase, sale}))};
+        parser.parseFile(files.write("history.csv", {olderPurchase, decemberPurchase, sale}))};
     const auto calculation = [&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
     };
@@ -374,7 +374,7 @@ TEST(LossEligibilityIntegrationTest, AnsweringYesBlocksAPartlyKnownLossInFull) {
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write("history.csv", {olderPurchase, decemberPurchase, sale}))};
+        parser.parseFile(files.write("history.csv", {olderPurchase, decemberPurchase, sale}))};
     const auto calculation = [&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
     };
@@ -412,7 +412,7 @@ TEST(LossEligibilityIntegrationTest, CancellingTheLossQuestionFailsTheReport) {
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale}))};
+        parser.parseFile(files.write("history.csv", {kBasePurchase, kBaseSale}))};
     const auto calculation = [&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
     };
@@ -440,7 +440,7 @@ TEST(LossEligibilityIntegrationTest, ANewRunWithTheSameFileUsesTheRecordedAnswer
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale}))};
+        parser.parseFile(files.write("history.csv", {kBasePurchase, kBaseSale}))};
     const auto calculation = [&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
     };
@@ -469,10 +469,10 @@ TEST(LossEligibilityIntegrationTest, AnAddedPurchaseAsksANewQuestion) {
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> firstFiles{
-        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale}))};
+        parser.parseFile(files.write("history.csv", {kBasePurchase, kBaseSale}))};
     const std::vector<ParseResult> secondFiles{
-        parser.parse(files.write("history.csv", {kBasePurchase, kBaseSale})),
-        parser.parse(files.write("january.csv", {addedPurchase}), 1)};
+        parser.parseFile(files.write("history.csv", {kBasePurchase, kBaseSale})),
+        parser.parseFile(files.write("january.csv", {addedPurchase}), 1)};
     DecisionSession session;
     session.start([&firstFiles](RunDecisions& aDecisions) {
         return calculateCapitalGains(firstFiles, 2024, aDecisions);
@@ -506,7 +506,7 @@ TEST(LossEligibilityIntegrationTest, DayThirtyCountsAndDayThirtyOneDoesNot) {
     // XX0000000002 has them 31 days before and after.
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
-    const std::vector<ParseResult> parsed{parser.parse(files.write(
+    const std::vector<ParseResult> parsed{parser.parseFile(files.write(
         "history.csv",
         {
             R"(2023-06-01T09:00:00Z,2023-06-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,100,10,-1000,,,EUR,,,,,synthetic-buy-1,,,,)",
@@ -547,7 +547,7 @@ TEST(LossEligibilityIntegrationTest, ADecember31LossCountsJanuary30AndNotJanuary
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write(
+        parser.parseFile(files.write(
             "history.csv",
             {
                 R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,100,10,-1000,,,EUR,,,,,synthetic-buy-1,,,,)",
@@ -555,7 +555,7 @@ TEST(LossEligibilityIntegrationTest, ADecember31LossCountsJanuary30AndNotJanuary
                 R"(2024-12-31T09:00:00Z,2024-12-31,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,8,80,,,EUR,,,,,synthetic-sell-1,,,,)",
                 R"(2024-12-31T10:00:00Z,2024-12-31,DEFAULT,TRADING,SELL,STOCK,Synthetic Fund,XX0000000002,-10,8,80,,,EUR,,,,,synthetic-sell-2,,,,)",
             })),
-        parser.parse(
+        parser.parseFile(
             files.write(
                 "january.csv",
                 {
@@ -588,7 +588,7 @@ TEST(LossEligibilityIntegrationTest, ASameDayRebuyBlocksTheLoss) {
     // The rebuy comes after the sale, so it replaces all 10 units: no question, F10 false.
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
-    const std::vector<ParseResult> parsed{parser.parse(files.write(
+    const std::vector<ParseResult> parsed{parser.parseFile(files.write(
         "history.csv",
         {
             R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
@@ -646,13 +646,13 @@ TEST(LossEligibilityIntegrationTest, AJanuaryPurchaseInALaterFileBlocksADecember
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
     const std::vector<ParseResult> parsed{
-        parser.parse(files.write(
+        parser.parseFile(files.write(
             "history.csv",
             {
                 R"(2023-09-01T09:00:00Z,2023-09-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,100,10,-1000,,,EUR,,,,,synthetic-buy-1,,,,)",
                 R"(2024-12-20T09:00:00Z,2024-12-20,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,8,32,,,EUR,,,,,synthetic-sell-1,,,,)",
             })),
-        parser.parse(
+        parser.parseFile(
             files.write(
                 "january.csv",
                 {
@@ -686,7 +686,7 @@ TEST(LossEligibilityIntegrationTest, AJanuaryReplacementOfTheYearBeforeIsNotUsed
     // has no known replacement and all its 10 units are open.
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
-    const std::vector<ParseResult> parsed{parser.parse(files.write(
+    const std::vector<ParseResult> parsed{parser.parseFile(files.write(
         "history.csv",
         {
             R"(2023-06-01T09:00:00Z,2023-06-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,100,10,-1000,,,EUR,,,,,synthetic-buy-1,,,,)",
@@ -716,7 +716,7 @@ TEST(LossEligibilityIntegrationTest, SellingEveryUnitKeepsTheLoss) {
     // before the sale, but the sale sells every unit held, so none of them counts.
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
-    const std::vector<ParseResult> parsed{parser.parse(files.write(
+    const std::vector<ParseResult> parsed{parser.parseFile(files.write(
         "history.csv",
         {
             R"(2023-09-01T09:00:00Z,2023-09-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,100,10,-1000,,,EUR,,,,,synthetic-buy-1,,,,)",
@@ -757,7 +757,7 @@ TEST(LossEligibilityIntegrationTest, CompetingLossesTakeTheReplacementInOrder) {
     // full, so its row has F10 false without a question. The later loss finds nothing left.
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
-    const std::vector<ParseResult> parsed{parser.parse(files.write(
+    const std::vector<ParseResult> parsed{parser.parseFile(files.write(
         "history.csv",
         {
             R"(2024-01-02T09:00:00Z,2024-01-02,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,200,10,-2000,,,EUR,,,,,synthetic-buy-1,,,,)",
@@ -811,7 +811,7 @@ TEST(LossEligibilityIntegrationTest, ProfitableAndLongHeldUnitsAreNotChecked) {
     // June purchase blocks it.
     const TemporaryLossInputs files;
     tr::TradeRepublicParser parser;
-    const std::vector<ParseResult> parsed{parser.parse(files.write(
+    const std::vector<ParseResult> parsed{parser.parseFile(files.write(
         "history.csv",
         {
             R"(2005-04-01T09:00:00Z,2005-04-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-1,,,,)",

@@ -82,6 +82,18 @@ memory leaks. Each test executable is started once to avoid Valgrind startup ove
 test discovered by CTest. With `scripts/valgrind.sh --reuse-build` it runs the existing `build/dev`
 as it is and compiles nothing.
 
+Some unit tests make a large allocation fail on purpose to check the out-of-memory errors. They use
+a hook that replaces the global `operator new` of the test binary
+(`tests/support/large_allocation_hook.hpp`). Valgrind replaces `operator new` of the binary with
+its own, so in the normal Valgrind run the hook never runs: these tests probe for it and skip. A
+second, short unit test run of `--part regular` starts the same binary with
+`--soname-synonyms=somalloc=nouserintercepts`, which leaves the binary's own `operator new` alone,
+and runs only these tests, selected by `RunningOutOfMemory` or `AllocationHook` in their names.
+That run sets `TBR_REQUIRE_ALLOCATION_HOOK=1`, so a test that cannot use the hook fails instead of
+skipping. Leaks and invalid memory access are checked in both runs; only a `new` freed with
+`free()` goes unreported in those tests. A new test with the hook starts with
+`SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();` and has one of the two words in its name.
+
 Unit test suites named `*LargeInputTest` read inputs of several megabytes (today an 11 MB and a
 21 MB ECB rate file) and take minutes under Valgrind. Each belongs to one part of
 `scripts/valgrind.sh`:

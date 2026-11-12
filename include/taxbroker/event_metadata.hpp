@@ -48,14 +48,30 @@ class SourceFilename {
   public:
     SourceFilename() = default;
 
-    [[nodiscard]] static SourceFilename fromPath(std::string_view aPath) {
+    /// The last part of the path, or nothing when it is empty, `.` or `..` (for example for a
+    /// path that ends in a separator).
+    [[nodiscard]] static std::optional<SourceFilename> tryFromPath(std::string_view aPath) {
         const auto separator = aPath.find_last_of("/\\");
         const auto basename = aPath.substr(separator == std::string_view::npos ? 0 : separator + 1);
+
         if (basename.empty() || basename == "." || basename == "..")
+        {
+            return std::nullopt;
+        }
+
+        return SourceFilename{std::string{basename}};
+    }
+
+    /// Like `tryFromPath`, but throws std::invalid_argument for a name that is not valid.
+    [[nodiscard]] static SourceFilename fromPath(std::string_view aPath) {
+        auto filename = tryFromPath(aPath);
+
+        if (!filename)
         {
             throw std::invalid_argument{"Source filename must have a non-empty basename"};
         }
-        return SourceFilename{std::string{basename}};
+
+        return std::move(*filename);
     }
 
     [[nodiscard]] const std::string& value() const noexcept {

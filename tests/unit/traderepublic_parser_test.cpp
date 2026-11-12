@@ -1,6 +1,8 @@
+#include "../support/large_allocation_hook.hpp"
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/diagnostics.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
+#include "taxbroker/input_file.hpp"
 #include "taxbroker/types.hpp"
 
 #include <gtest/gtest.h>
@@ -187,16 +189,30 @@ class TemporaryCsvFile {
     std::filesystem::path mPath;
 };
 
+/// The display file name of a test's synthetic CSV, the same name its temporary file would have.
+std::string syntheticCsvName() {
+    return "taxbroker_" + sanitizedTestName() + ".csv";
+}
+
 ParseResult parseRows(std::initializer_list<SyntheticCsvRow> aRows) {
-    const TemporaryCsvFile csvFile{aRows};
+    std::ostringstream text;
+
+    text << kCsvHeader << '\n';
+
+    for (const auto& row : aRows)
+    {
+        writeCsvRow(text, row);
+    }
+
     tr::TradeRepublicParser parser;
-    return parser.parse(csvFile.path());
+
+    return parser.parse(text.str(), syntheticCsvName(), 0);
 }
 
 ParseResult parseRawText(std::string_view aText) {
-    const TemporaryCsvFile csvFile{RawCsvText{aText}};
     tr::TradeRepublicParser parser;
-    return parser.parse(csvFile.path());
+
+    return parser.parse(aText, syntheticCsvName(), 0);
 }
 
 /// One CSV record as text, without the final newline.
@@ -401,12 +417,12 @@ std::filesystem::path supportedFixturePath() {
 
 ParseResult parseFixture() {
     tr::TradeRepublicParser parser;
-    return parser.parse(fixturePath());
+    return parser.parseFile(fixturePath());
 }
 
 ParseResult parseSupportedFixture() {
     tr::TradeRepublicParser parser;
-    return parser.parse(supportedFixturePath());
+    return parser.parseFile(supportedFixturePath());
 }
 
 void expectNoParsedRecords(const ParseResult& aParseResult) {
@@ -3357,7 +3373,7 @@ TEST(TradeRepublicParserTest, ReturnsAStructuredErrorWhenTheCsvCannotBeOpened) {
     ASSERT_FALSE(std::filesystem::exists(missingPath));
 
     tr::TradeRepublicParser parser;
-    const ParseResult parseResult = parser.parse(missingPath);
+    const ParseResult parseResult = parser.parseFile(missingPath);
 
     EXPECT_EQ(parseResult.mBroker, Broker::TradeRepublic);
     expectNoParsedRecords(parseResult);
@@ -3381,7 +3397,7 @@ TEST(TradeRepublicParserTest, ReturnsAStructuredErrorWhenTheCsvPathIsAFolder) {
     std::filesystem::create_directories(folderPath);
 
     tr::TradeRepublicParser parser;
-    const ParseResult parseResult = parser.parse(folderPath);
+    const ParseResult parseResult = parser.parseFile(folderPath);
 
     std::error_code ignored;
 
@@ -3589,6 +3605,497 @@ TEST(TradeRepublicParserTest, KeepsParseErrorForAnEmptyFile) {
     EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
     EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
     EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+}
+
+/// The text of a file, for the tests that parse the same file from memory.
+std::string readTextFile(const std::filesystem::path& aPath) {
+    std::ifstream input{aPath, std::ios::binary};
+
+    return std::string{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+}
+
+/// One row as CSV text: the header and the row (row 2).
+std::string csvTextOf(const SyntheticCsvRow& aRow) {
+    std::ostringstream text;
+
+    text << kCsvHeader << '\n';
+    writeCsvRow(text, aRow);
+
+    return text.str();
+}
+
+void expectOneInvalidFilenameError(const ParseResult& aParseResult) {
+    expectNoParsedRecords(aParseResult);
+    ASSERT_EQ(aParseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = aParseResult.mDiagnostics.front();
+
+    EXPECT_EQ(aParseResult.mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::ParseError);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::ParseErrorInvalidFilename);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
+    EXPECT_EQ(diagnostic.mSourceFile, "");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_FALSE(diagnostic.mTransactionId.has_value());
+    EXPECT_FALSE(diagnostic.mField.has_value());
+}
+
+TEST(TradeRepublicParserTest, ParsingTheFixtureFromMemoryGivesTheResultOfParsingTheFile) {
+    tr::TradeRepublicParser parser;
+    const ParseResult fromFile = parser.parseFile(fixturePath());
+    const ParseResult fromMemory =
+        parser.parse(readTextFile(fixturePath()), fixturePath().filename().string(), 0);
+
+    const auto transactionCount = [](const ParseResult& aResult) {
+        return std::accumulate(aResult.mStatement.mTradeInstruments.begin(),
+                               aResult.mStatement.mTradeInstruments.end(),
+                               std::size_t{0},
+                               [](std::size_t aCount, const TradeInstrument& aInstrument) {
+                                   return aCount + aInstrument.mTransactions.size();
+                               });
+    };
+
+    // Counts read from the fixture file: 3 buy rows in 3 instruments plus the split row's
+    // instrument (4 trade instruments); no dividend and no interest row (the card payment is
+    // ignored); 3 benefit rows; 1 private-market prepayment.
+    EXPECT_EQ(transactionCount(fromMemory), 3U);
+    EXPECT_EQ(transactionCount(fromFile), 3U);
+    EXPECT_EQ(fromMemory.mStatement.mTradeInstruments.size(), 4U);
+    EXPECT_EQ(fromFile.mStatement.mTradeInstruments.size(), 4U);
+    EXPECT_EQ(fromMemory.mStatement.mDividendInstruments.size(), 0U);
+    EXPECT_EQ(fromFile.mStatement.mDividendInstruments.size(), 0U);
+    EXPECT_EQ(fromMemory.mStatement.mInterestInstruments.size(), 0U);
+    EXPECT_EQ(fromFile.mStatement.mInterestInstruments.size(), 0U);
+    EXPECT_EQ(fromMemory.mStatement.mBenefitEvents.size(), 3U);
+    EXPECT_EQ(fromFile.mStatement.mBenefitEvents.size(), 3U);
+    EXPECT_EQ(fromMemory.mStatement.mPrivateMarketEvents.size(), 1U);
+    EXPECT_EQ(fromFile.mStatement.mPrivateMarketEvents.size(), 1U);
+
+    // Two diagnostics: the private fund (asset class unsupported for tax) and the unknown
+    // FUTURE_EVENT row (logical row 11).
+    ASSERT_EQ(fromMemory.mDiagnostics.size(), 2U);
+    ASSERT_EQ(fromFile.mDiagnostics.size(), 2U);
+    EXPECT_EQ(fromMemory.mDiagnostics[0].mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(fromMemory.mDiagnostics[1].mCode, DiagnosticCode::UnknownRowType);
+    EXPECT_EQ(fromMemory.mDiagnostics[1].mRowIndex, 11U);
+    EXPECT_EQ(fromMemory.mDiagnostics[1].mSourceFile, "traderepublic_parser_fixture.csv");
+
+    for (std::size_t index = 0; index < fromFile.mDiagnostics.size(); ++index)
+    {
+        SCOPED_TRACE(index);
+        EXPECT_EQ(fromMemory.mDiagnostics[index].mCode, fromFile.mDiagnostics[index].mCode);
+        EXPECT_EQ(fromMemory.mDiagnostics[index].mMessageKey,
+                  fromFile.mDiagnostics[index].mMessageKey);
+        EXPECT_EQ(fromMemory.mDiagnostics[index].mRowIndex, fromFile.mDiagnostics[index].mRowIndex);
+        EXPECT_EQ(fromMemory.mDiagnostics[index].mSourceFile,
+                  fromFile.mDiagnostics[index].mSourceFile);
+    }
+}
+
+TEST(TradeRepublicParserTest, ParsesOneBuyRowFromMemoryWithItsDisplayNameAndSourceIndex) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser;
+    const ParseResult parseResult = parser.parse(text, "upload.csv", 3);
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const auto& source = primarySource(
+        parseResult.mStatement.mTradeInstruments.front().mTransactions.front().mMetadata);
+
+    EXPECT_EQ(source.mFilename.value(), "upload.csv");
+    EXPECT_EQ(source.mSourceRow, 2U);
+    EXPECT_EQ(source.mInputSequence.mSourceIndex, 3U);
+    EXPECT_EQ(source.mInputSequence.mEventIndex, 0U);
+}
+
+TEST(TradeRepublicParserTest, AnEmptyDisplayNameGivesAStructuredErrorAndNoEvents) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser;
+
+    expectOneInvalidFilenameError(parser.parse(text, "", 0));
+}
+
+TEST(TradeRepublicParserTest, ADotAsDisplayNameGivesAStructuredError) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser;
+
+    expectOneInvalidFilenameError(parser.parse(text, ".", 0));
+}
+
+TEST(TradeRepublicParserTest, TwoDotsAsDisplayNameGiveAStructuredError) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser;
+
+    expectOneInvalidFilenameError(parser.parse(text, "..", 0));
+}
+
+TEST(TradeRepublicParserTest, ADisplayNameThatEndsInASeparatorGivesAStructuredError) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser;
+
+    expectOneInvalidFilenameError(parser.parse(text, "dir/", 0));
+}
+
+TEST(TradeRepublicParserTest, ADisplayNameWithAFolderPartKeepsOnlyTheFileName) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser;
+    const ParseResult parseResult = parser.parse(text, "private/user/upload.csv", 0);
+
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& source = primarySource(
+        parseResult.mStatement.mTradeInstruments.front().mTransactions.front().mMetadata);
+
+    EXPECT_EQ(source.mFilename.value(), "upload.csv");
+}
+
+TEST(TradeRepublicParserTest, AnEmptyPathGivesAStructuredErrorInsteadOfAnException) {
+    tr::TradeRepublicParser parser;
+
+    expectOneInvalidFilenameError(parser.parseFile(std::filesystem::path{}));
+}
+
+TEST(TradeRepublicParserTest, APathThatEndsInASeparatorGivesAStructuredError) {
+    tr::TradeRepublicParser parser;
+    const ParseResult parseResult = parser.parseFile(std::filesystem::path{"/tmp/"});
+
+    expectOneInvalidFilenameError(parseResult);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessage.find("/tmp"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, AnUnclosedQuoteInMemoryTextIsRejected) {
+    tr::TradeRepublicParser parser;
+    const std::string text = std::string{kCsvHeader} + "\n\"a,b\n";
+    const ParseResult parseResult = parser.parse(text, "quote.csv", 0);
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageKey, MessageKey::ParseErrorUnclosedQuote);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mSourceFile, "quote.csv");
+}
+
+TEST(TradeRepublicParserTest, AFieldWithAZeroByteInMemoryTextGivesAStructuredResultNotAnException) {
+    // The name holds a zero byte (14 characters: "Synthetic", NUL, "Name").
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = std::string{"Synthetic\0Name", 14},
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser;
+    ParseResult parseResult;
+
+    EXPECT_NO_THROW(parseResult = parser.parse(text, "zero.csv", 0));
+
+    // A zero byte is data in a text field: the row is a normal buy and the name keeps all 14
+    // bytes ("Synthetic", NUL, "Name").
+    EXPECT_EQ(parseResult.mBroker, Broker::TradeRepublic);
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = parseResult.mStatement.mTradeInstruments.front();
+
+    EXPECT_EQ(instrument.mTransactions.size(), 1U);
+    EXPECT_EQ(instrument.mName, std::string("Synthetic\0Name", 14));
+}
+
+TEST(TradeRepublicParserTest, AFileOverTheSizeLimitIsNotReadAndGivesATooLargeError) {
+    const auto path = std::filesystem::temp_directory_path() / "taxbroker_too_large_parser.csv";
+
+    {
+        std::ofstream output{path, std::ios::binary | std::ios::trunc};
+
+        output << std::string(1'001, 'x');
+    }
+
+    tr::TradeRepublicParser parser{1'000};
+    const ParseResult parseResult = parser.parseFile(path);
+
+    std::error_code ignored;
+
+    std::filesystem::remove(path, ignored);
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InputFileTooLarge);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InputFileTooLarge);
+    // The test limit of 1,000 bytes is 0 whole megabytes.
+    EXPECT_EQ(diagnostic.mMessageParams, std::vector<MessageParam>{numberParam("limitMb", 0)});
+    EXPECT_EQ(diagnostic.mSourceFile, "taxbroker_too_large_parser.csv");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_EQ(diagnostic.mMessage,
+              "The file is larger than 0 MB and was not read. Check that you chose the right "
+              "file.");
+}
+
+TEST(TradeRepublicParserTest, AFileOfExactlyTheSizeLimitIsParsed) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser{text.size()};
+
+    const ParseResult parseResult = parser.parse(text, "limit.csv", 0);
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+}
+
+TEST(TradeRepublicParserTest, MemoryTextOverTheSizeLimitGivesATooLargeError) {
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    tr::TradeRepublicParser parser{text.size() - 1};
+
+    const ParseResult parseResult = parser.parse(text, "limit.csv", 0);
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::InputFileTooLarge);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mSourceFile, "limit.csv");
+}
+
+TEST(TradeRepublicParserTest, RunningOutOfMemoryGivesAStructuredErrorNotAnException) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        // A description of the size of a large allocation, so the text of the file is one.
+        .mDescription = std::string(test::kLargeAllocationBytes, 'x'),
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    ParseResult parseResult;
+
+    {
+        const test::ScopedAllocationFailure failure;
+        tr::TradeRepublicParser parser;
+
+        parseResult = parser.parse(text, "memory.csv", 0);
+    }
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InputFileOutOfMemory);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InputFileOutOfMemory);
+    EXPECT_TRUE(diagnostic.mMessageParams.empty());
+    EXPECT_EQ(diagnostic.mSourceFile, "memory.csv");
+    EXPECT_EQ(diagnostic.mMessage,
+              "There was not enough memory to read the file. Close other programs and try "
+              "again.");
+}
+
+TEST(TradeRepublicParserTest, RunningOutOfMemoryWhileReadingAFileGivesTheSameError) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
+    const SyntheticCsvRow buy{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Test Share",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mCurrency = "EUR",
+        // A description of the size of a large allocation, so the text of the file is one.
+        .mDescription = std::string(test::kLargeAllocationBytes, 'x'),
+        .mTransactionId = "synthetic-test-transaction",
+    };
+    const std::string text = csvTextOf(buy);
+
+    const auto path = std::filesystem::temp_directory_path() / "taxbroker_memory_parser.csv";
+
+    {
+        std::ofstream output{path, std::ios::binary | std::ios::trunc};
+
+        output << text;
+    }
+
+    ParseResult parseResult;
+
+    {
+        const test::ScopedAllocationFailure failure;
+        tr::TradeRepublicParser parser;
+
+        parseResult = parser.parseFile(path);
+    }
+
+    std::error_code ignored;
+
+    std::filesystem::remove(path, ignored);
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mCode, DiagnosticCode::InputFileOutOfMemory);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mSourceFile, "taxbroker_memory_parser.csv");
 }
 
 TEST(TradeRepublicParserTest, ReportsAShortMiddleRowOnItsOwnRow) {
@@ -4450,7 +4957,7 @@ TEST(TradeRepublicParserTest, PopulatesCompleteSourceMetadataForEveryEventType) 
     const TemporaryCsvFile csvFile{
         {trade, dividend, brokerInterest, bondInterest, corporateAction, benefit, privateMarket}};
     tr::TradeRepublicParser parser;
-    const ParseResult parseResult = parser.parse(csvFile.path(), 7);
+    const ParseResult parseResult = parser.parseFile(csvFile.path(), 7);
     const auto& statement = parseResult.mStatement;
 
     const auto* tradeTransaction = findTradeTransaction(statement, trade.mTransactionId);
@@ -4521,7 +5028,7 @@ TEST(TradeRepublicParserTest, ReportsAStandaloneUnknownTransaction) {
 
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
-    const ParseResult parseResult = parser.parse(csvFile.path());
+    const ParseResult parseResult = parser.parseFile(csvFile.path());
 
     expectNoParsedRecords(parseResult);
     ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
@@ -5076,7 +5583,7 @@ TEST(TradeRepublicParserTest, RetainsTradeClassificationConflictForTheSameIsin) 
     const TemporaryCsvFile csvFile{stock, fund};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -5220,7 +5727,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingIdentity) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5308,7 +5815,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingIsin) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5396,7 +5903,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithShortDate) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5484,7 +5991,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithWrongDateSeparators) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5572,7 +6079,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNonNumericDate) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5660,7 +6167,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithImpossibleDate) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5748,7 +6255,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingPrice) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5840,7 +6347,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedPrice) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -5928,7 +6435,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithZeroPrice) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6016,7 +6523,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNegativePrice) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6104,7 +6611,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingPrice) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6192,7 +6699,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6280,7 +6787,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6368,7 +6875,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6456,7 +6963,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithZeroUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6544,7 +7051,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNegativeBuyUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6634,7 +7141,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithPositiveSellUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6722,7 +7229,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6810,7 +7317,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedAmount) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6898,7 +7405,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithOverflowingAmount) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -6986,7 +7493,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithZeroAmount) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7074,7 +7581,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithPositiveBuyAmount) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7162,7 +7669,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithNegativeSellAmount) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7250,7 +7757,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedAmount) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7338,7 +7845,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMalformedFee) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7426,7 +7933,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithPositiveFee) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7514,7 +8021,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMinimumSignedFee) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7602,7 +8109,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithMissingCurrency) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -7690,7 +8197,7 @@ TEST(TradeRepublicParserTest, RejectsTradeWithUnsupportedCurrency) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -12507,7 +13014,7 @@ TEST(TradeRepublicParserTest, DoesNotTreatUnverifiedInstrumentInterestAsBankInte
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -12571,7 +13078,7 @@ TEST(TradeRepublicParserTest, RejectsTradeAndReportsErrorWhenDatetimeIsMissing) 
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -12631,7 +13138,7 @@ TEST(TradeRepublicParserTest, RejectsDividendAndReportsErrorWhenDatetimeIsMissin
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -12691,7 +13198,7 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestAndReportsErrorWhenDatetimeI
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -12751,7 +13258,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestAndReportsErrorWhenDatetimeIsMi
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -12922,7 +13429,7 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMissingIdentity) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13010,7 +13517,7 @@ TEST(TradeRepublicParserTest, RejectsDividendWithMissingIsin) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13098,7 +13605,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingIdentity) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13186,7 +13693,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestWithMissingIsin) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13275,7 +13782,7 @@ TEST(TradeRepublicParserTest, RejectsActionWithMissingIdentity) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13367,7 +13874,7 @@ TEST(TradeRepublicParserTest, RejectsActionWithMissingIsin) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13456,7 +13963,7 @@ TEST(TradeRepublicParserTest, RejectsActionWithInvalidDate) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13545,7 +14052,7 @@ TEST(TradeRepublicParserTest, RejectsActionWithMissingUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13634,7 +14141,7 @@ TEST(TradeRepublicParserTest, RejectsActionWithMalformedUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13723,7 +14230,7 @@ TEST(TradeRepublicParserTest, RejectsActionWithOverflowingUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13812,7 +14319,7 @@ TEST(TradeRepublicParserTest, RejectsActionWithZeroUnits) {
     const TemporaryCsvFile csvFile{invalidRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -13886,7 +14393,7 @@ TEST(TradeRepublicParserTest, RetainsActionClassificationConflictForTheSameIsin)
     const TemporaryCsvFile csvFile{stock, fund};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -14229,7 +14736,7 @@ TEST(TradeRepublicParserTest, RejectsTradePriceBelowHalfStep) {
     const TemporaryCsvFile csvFile{{rejectedRow}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -14615,7 +15122,7 @@ TEST(TradeRepublicParserTest, RejectsTradePriceThatRoundsAboveTheLargestValue) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(result.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(result.mStatement.mDividendInstruments.empty());
@@ -14675,7 +15182,7 @@ TEST(TradeRepublicParserTest, RejectsTradeUnitsBelowHalfStep) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -14735,7 +15242,7 @@ TEST(TradeRepublicParserTest, RejectsTradeAmountBelowHalfStep) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -14795,7 +15302,7 @@ TEST(TradeRepublicParserTest, RejectsTradeFeeBelowHalfStep) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -14856,7 +15363,7 @@ TEST(TradeRepublicParserTest, RejectsDividendNegativeAmount) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -14916,7 +15423,7 @@ TEST(TradeRepublicParserTest, RejectsDividendPositiveAmountBelowHalfStep) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -14976,7 +15483,7 @@ TEST(TradeRepublicParserTest, RejectsDividendNegativeAmountBelowHalfStep) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15036,7 +15543,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestNegativeAmount) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15096,7 +15603,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestPositiveAmountBelowHalfStep) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15156,7 +15663,7 @@ TEST(TradeRepublicParserTest, RejectsBondInterestNegativeAmountBelowHalfStep) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15216,7 +15723,7 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestNegativeAmount) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15276,7 +15783,7 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestPositiveAmountBelowHalfStep)
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15336,7 +15843,7 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestNegativeAmountBelowHalfStep)
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15396,7 +15903,7 @@ TEST(TradeRepublicParserTest, RejectsTinyWithholdingButAcceptsExplicitZeroTax) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15488,7 +15995,7 @@ TEST(TradeRepublicParserTest, RejectsTinyOriginalDividendInsteadOfUsingLocalAmou
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path(), 4);
+    const auto rejected = parser.parseFile(csvFile.path(), 4);
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15616,7 +16123,7 @@ TEST(TradeRepublicParserTest, RejectsTinyOriginalDepositInterestInsteadOfUsingLo
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path(), 4);
+    const auto rejected = parser.parseFile(csvFile.path(), 4);
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15744,7 +16251,7 @@ TEST(TradeRepublicParserTest, RejectsTinyOriginalBondInterestInsteadOfUsingLocal
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path(), 4);
+    const auto rejected = parser.parseFile(csvFile.path(), 4);
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -15974,7 +16481,7 @@ TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyASymbolAsCashInterest)
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -16041,7 +16548,7 @@ TEST(TradeRepublicParserTest, DoesNotTreatInterestWithOnlyANameAsCashInterest) {
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -16104,7 +16611,7 @@ TEST(TradeRepublicParserTest, RejectsUnverifiedBondInterestLabelWithoutCreatingA
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -16203,7 +16710,7 @@ TEST(TradeRepublicParserTest, RejectsNegativeOriginalBondIncomeInsteadOfUsingLoc
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -16263,7 +16770,7 @@ TEST(TradeRepublicParserTest, RejectsTinyDepositInterestWithholdingInsteadOfLosi
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -16323,7 +16830,7 @@ TEST(TradeRepublicParserTest, RejectsTinyBondInterestWithholdingInsteadOfLosingI
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parse(csvFile.path());
+    const auto rejected = parser.parseFile(csvFile.path());
 
     EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
     EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
@@ -17443,7 +17950,7 @@ TEST(TradeRepublicParserTest, RetainsTradeWithMissingName) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -17520,7 +18027,7 @@ TEST(TradeRepublicParserTest, RetainsTradeWithMissingClass) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -17595,7 +18102,7 @@ TEST(TradeRepublicParserTest, RetainsTradeWithUnrecognizedClass) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -17670,7 +18177,7 @@ TEST(TradeRepublicParserTest, RetainsActionWithMissingName) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -17742,7 +18249,7 @@ TEST(TradeRepublicParserTest, RetainsActionWithMissingClass) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -17814,7 +18321,7 @@ TEST(TradeRepublicParserTest, RetainsActionWithUnrecognizedClass) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -17888,7 +18395,7 @@ TEST(TradeRepublicParserTest, RetainsDividendWithMissingName) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
 
@@ -17957,7 +18464,7 @@ TEST(TradeRepublicParserTest, RetainsBondInterestWithMissingName) {
     const TemporaryCsvFile csvFile{sourceRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
 
@@ -18051,7 +18558,7 @@ TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassLast) {
     const TemporaryCsvFile csvFile{unknownRow, knownRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -18159,7 +18666,7 @@ TEST(TradeRepublicParserTest, MissingClassRemainsUnresolvedWithKnownClassFirst) 
     const TemporaryCsvFile csvFile{knownRow, unknownRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -18265,7 +18772,7 @@ TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassLa
     const TemporaryCsvFile csvFile{unknownRow, knownRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -18371,7 +18878,7 @@ TEST(TradeRepublicParserTest, UnrecognizedClassRemainsUnresolvedWithKnownClassFi
     const TemporaryCsvFile csvFile{knownRow, unknownRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -18502,7 +19009,7 @@ TEST(TradeRepublicParserTest, LaterMatchingClassCannotClearAClassConflict) {
     const TemporaryCsvFile csvFile{firstRow, secondRow, thirdRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -18626,7 +19133,7 @@ TEST(TradeRepublicParserTest, RetainsClassConflictWhenActionPrecedesTrade) {
     const TemporaryCsvFile csvFile{actionRow, tradeRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -18730,7 +19237,7 @@ TEST(TradeRepublicParserTest, CompletesMissingTradeNameWithoutChangingOriginalEv
     const TemporaryCsvFile csvFile{unnamedRow, namedRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
 
@@ -18810,7 +19317,7 @@ TEST(TradeRepublicParserTest, CompletesMissingDividendNameWithoutChangingOrigina
     const TemporaryCsvFile csvFile{unnamedRow, namedRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mDividendInstruments.size(), 1U);
 
@@ -18890,7 +19397,7 @@ TEST(TradeRepublicParserTest, CompletesMissingBondInterestNameWithoutChangingOri
     const TemporaryCsvFile csvFile{unnamedRow, namedRow};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
 
@@ -19754,7 +20261,7 @@ TEST(TradeRepublicParserTest, WarnsOnceAboutLocalizedNumbersFromThreeRows) {
     const TemporaryCsvFile csvFile{validBuy, commaBuy, commaDividend, parenthesesBuy, validSell};
     tr::TradeRepublicParser parser;
 
-    const auto result = parser.parse(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
     ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
     EXPECT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(),

@@ -155,6 +155,9 @@ enum class MessageKey {
     TaxClassificationUnknownIncomeCancelled,
     TaxCategoryNotReportedUserChoiceIncome,
     TaxCategoryNotReportedUserChoiceIncomeMissingIsin,
+    ParseErrorInvalidFilename,
+    InputFileTooLarge,
+    InputFileOutOfMemory,
 };
 
 enum class MessageParamKind {

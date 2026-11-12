@@ -47,6 +47,28 @@ extra columns are allowed. A header that misses a required column, for example b
 was saved with semicolons, is rejected with one file-level `invalid_header` error and no rows are
 read. A file of 0 bytes stays a `parse_error`.
 
+**Input from memory.** The parser core takes the CSV text, a display file name and the source index
+(`CsvParser::parse(text, displayFilename, sourceIndex)`), so an upload never has to be written to a
+disk file. `CsvParser::parseFile(path, sourceIndex)` is the wrapper for the CLI and the tools: it
+reads the file and calls `parse`. Nothing in the parser throws for bad input. A display name that
+is empty, `.`, `..` or ends in a separator gives one file-level `parse_error`
+(`parse_error.invalid_filename`, no file name in the diagnostic); a name with a folder part keeps
+its last part. `parseFile` reads regular files only, so a pipe is an unreadable file. The ECB rate files and
+the reference files have both forms too (`loadEcbRateFiles`, `loadOfficialRates` and
+`loadReferenceData` take a list of `InputFile` (display name and bytes) as well as a list of
+paths). A rate file without a valid name gives the same `parse_error.invalid_filename`; the
+reference loader reports a name that is not one of its three files as `ReferenceFileUnknownName`. The taxpayer file already has both forms
+(`parseTaxpayerJson` and `readTaxpayerFile`).
+
+**Size limit and memory.** A user file is at most 100 MB (`kMaxInputFileBytes`,
+`include/taxbroker/input_file.hpp`); a bigger file is a wrong file. The path wrappers check the size
+on disk before they read, the memory forms check the size of the text, and a file over the limit
+is not read: it gives the file-level error `input_file_too_large` (`input_file.too_large`,
+parameter `limitMb`). The rest of the processing needs all events in memory, so a stream would
+not save memory. If the memory for one file still runs out (`std::bad_alloc`), that file gives
+`input_file_out_of_memory` (`input_file.out_of_memory`), never a crash. Each of the two writes one
+error log line with the input kind, the source index and the code (no path, file name or size).
+
 A row with a rejected field is skipped, and every invalid field of that row gets its own
 diagnostic, in the column order of the export. A sign check (shares or amount against the trade
 side) runs after the field checks and only on valid fields. A missing `datetime` is reported
@@ -1105,7 +1127,7 @@ and what is supported, blocked and skipped. The whole command is in the `taxbrok
 orchestration moves into the application service once that service connects all processing
 stages.
 
-**Pipeline.** Each `--trade-republic` CSV is read with the path-based Trade Republic parser, with its position
+**Pipeline.** Each `--trade-republic` CSV is read with `parseFile` of the Trade Republic parser, with its position
 on the command line as the source index. The rates are loaded with `loadOfficialRates` (the
 built-in years and the `--ecb-rates` files; a supplied file replaces the built-in year it covers)
 and the reference data with `loadReferenceData` (the built-in files and the `--reference-files`

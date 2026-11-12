@@ -703,6 +703,30 @@ TEST(ReportCommandTest, FirstMissingEcbRateFileIsNamed) {
     EXPECT_FALSE(std::filesystem::exists(folder.outputDirectory()));
 }
 
+TEST(ReportCommandTest, AnEcbRatePathWithoutAFileNameIsNamedByAPlaceholder) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv("history.csv", {});
+
+    // The path ends in a separator, so it has no file name and no folder is printed.
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ecb-rates",
+                             folder.path("rates") + "/",
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The ECB rate file <no file name> does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
+}
+
 TEST(ReportCommandTest, FirstMissingReferenceFileIsNamed) {
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);

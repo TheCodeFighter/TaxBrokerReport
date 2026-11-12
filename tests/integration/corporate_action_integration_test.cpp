@@ -164,7 +164,7 @@ TEST(CorporateActionIntegrationTest, ASplitAsksForTheRatio) {
             R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,3,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,6,6,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
 
     const auto& result = session.start([&parsed](RunDecisions& aDecisions) {
@@ -218,7 +218,7 @@ TEST(CorporateActionIntegrationTest, APurchaseOnTheSplitDayIsNotInThePositionBef
             R"(2024-06-01T10:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,3,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,6,6,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
 
     const auto& result = session.start([&parsed](RunDecisions& aDecisions) {
@@ -270,7 +270,7 @@ TEST(CorporateActionIntegrationTest, AConfirmedRatioIsAppliedAndASaleOfChangedUn
             R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,3,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,6,6,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
     session.start([&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
@@ -328,7 +328,7 @@ TEST(CorporateActionIntegrationTest, AReverseSplitRatioIsRecorded) {
             R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,-4,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,30,30,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
     session.start([&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
@@ -367,7 +367,7 @@ TEST(CorporateActionIntegrationTest, TheSourceValueIsNeverUsedAsTheRatio) {
             R"(2025-11-14T09:00:00Z,2025-11-14,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,4.68,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2025-12-01T09:00:00Z,2025-12-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.1,12,1.2,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     const auto calculation = [&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2025, aDecisions);
     };
@@ -420,7 +420,7 @@ TEST(CorporateActionIntegrationTest, CancellingTheRatioQuestionFailsTheReport) {
             R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,3,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,6,6,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
     session.start([&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
@@ -460,8 +460,8 @@ TEST(CorporateActionIntegrationTest, TheSameRowInTwoFilesIsOneQuestion) {
             R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,3,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,6,6,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(first, 0),
-                                          tr::TradeRepublicParser{}.parse(second, 1)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(first, 0),
+                                          tr::TradeRepublicParser{}.parseFile(second, 1)};
     DecisionSession session;
     session.start([&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
@@ -508,7 +508,7 @@ TEST(CorporateActionIntegrationTest, TwoSplitsAreAskedOneAtATime) {
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,14,,,,,,,,,,synthetic-split-2,,,,)",
             R"(2024-10-01T09:00:00Z,2024-10-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,2,2,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
     session.start([&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
@@ -594,7 +594,7 @@ TEST(CorporateActionIntegrationTest, TwoSplitRowsOnOneDayAreAmbiguous) {
             R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,3,,,,,,,,,,synthetic-split-2,,,,)",
             R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,6,6,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
 
     const auto& result = session.start([&parsed](RunDecisions& aDecisions) {
@@ -625,9 +625,9 @@ TEST(CorporateActionIntegrationTest, AnAddedPurchaseAsksANewQuestion) {
         {
             R"(2023-03-01T09:00:00Z,2023-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-2,,,,)",
         });
-    const std::vector<ParseResult> before{tr::TradeRepublicParser{}.parse(history, 0)};
-    const std::vector<ParseResult> after{tr::TradeRepublicParser{}.parse(history, 0),
-                                         tr::TradeRepublicParser{}.parse(added, 1)};
+    const std::vector<ParseResult> before{tr::TradeRepublicParser{}.parseFile(history, 0)};
+    const std::vector<ParseResult> after{tr::TradeRepublicParser{}.parseFile(history, 0),
+                                         tr::TradeRepublicParser{}.parseFile(added, 1)};
     DecisionSession session;
     session.start([&before](RunDecisions& aDecisions) {
         return calculateCapitalGains(before, 2024, aDecisions);
@@ -665,7 +665,7 @@ TEST(CorporateActionIntegrationTest, NoUnitsBeforeTheSplitIsAMissingPosition) {
             R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-2,,,,)",
             R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,20,20,,,EUR,,,,,synthetic-sell-2,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
 
     const auto& result = session.start([&parsed](RunDecisions& aDecisions) {
@@ -694,7 +694,7 @@ TEST(CorporateActionIntegrationTest, AnAnnouncementDateBeforeAPurchaseTakesTheUn
             R"(2025-11-14T09:00:00Z,2025-11-14,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,5.58,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2025-12-01T09:00:00Z,2025-12-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.1,12,1.2,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
     session.start([&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2025, aDecisions);
@@ -760,7 +760,7 @@ TEST(CorporateActionIntegrationTest, AnAnnouncementDateWithoutTradesBetweenIsAcc
             R"(2025-11-14T09:00:00Z,2025-11-14,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,4.68,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2025-12-01T09:00:00Z,2025-12-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.1,12,1.2,,,EUR,,,,,synthetic-sell-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
     session.start([&parsed](RunDecisions& aDecisions) {
         return calculateCapitalGains(parsed, 2025, aDecisions);
@@ -798,7 +798,7 @@ TEST(CorporateActionIntegrationTest, ASplitAfterTheSaleKeepsTheSaleRowsAndDouble
             R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-4,12,48,,,EUR,,,,,synthetic-sell-1,,,,)",
             R"(2024-11-15T09:00:00Z,2024-11-15,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,6,,,,,,,,,,synthetic-split-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     CapitalStages stages;
     DecisionSession session;
 
@@ -868,7 +868,7 @@ TEST(CorporateActionIntegrationTest, AnEarlyDateWithTooFewUnitsForALaterSaleIsRe
             R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,12,60,,,EUR,,,,,synthetic-sell-1,,,,)",
             R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,1,,,,,,,,,,synthetic-split-1,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     DecisionSession session;
 
     session.start([&parsed](RunDecisions& aDecisions) {
@@ -902,7 +902,7 @@ TEST(CorporateActionIntegrationTest, ALossSaleBeforeASplitIsComparedWithARebuyAf
             R"(2024-05-10T09:00:00Z,2024-05-10,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,2,,,,,,,,,,synthetic-split-1,,,,)",
             R"(2024-05-20T09:00:00Z,2024-05-20,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,6,4,-24,,,EUR,,,,,synthetic-buy-2,,,,)",
         });
-    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parse(history, 0)};
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(history, 0)};
     CapitalStages stages;
     DecisionSession session;
 

@@ -272,9 +272,12 @@ struct UsageError {
 
 struct HelpRequested {};
 
-/// Only the last part of a path, so no folder of the user is printed.
+/// Only the last part of a path, so no folder of the user is printed. A path that ends in a
+/// separator has no file name; a placeholder is printed then.
 std::string fileNameOf(const std::filesystem::path& aPath) {
-    return aPath.filename().string();
+    const std::string name = aPath.filename().string();
+
+    return name.empty() ? "<no file name>" : name;
 }
 
 std::optional<int> parseYear(std::string_view aText) {
@@ -1675,7 +1678,7 @@ int runReport(const ReportOptions& aOptions,
 
     for (std::size_t index = 0; index < aOptions.mTradeRepublicPaths.size(); ++index)
     {
-        inputs.push_back({index, parser.parse(aOptions.mTradeRepublicPaths[index], index)});
+        inputs.push_back({index, parser.parseFile(aOptions.mTradeRepublicPaths[index], index)});
     }
 
     // Parsing, merging and the year do not depend on an answer, so they run once.

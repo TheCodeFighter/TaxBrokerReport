@@ -188,6 +188,30 @@ TEST(TaxpayerFileTest, ReadsTheFileFromDisk) {
     EXPECT_EQ(std::get<TaxpayerMetadata>(result).mTaxNumber, "12345678");
 }
 
+TEST(TaxpayerFileTest, TheFileAndItsTextGiveTheSameTaxpayer) {
+    const std::string text =
+        R"({"taxNumber": "12345678", "isResident": true, "name": "Ana Novak", "city": "Ljubljana"})";
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("taxbroker_taxpayer_same_" + std::to_string(token));
+
+    {
+        std::ofstream output{path};
+        output << text;
+    }
+
+    const auto fromFile = readTaxpayerFile(path);
+
+    std::filesystem::remove(path);
+
+    const auto fromText = parseTaxpayerJson(text);
+
+    ASSERT_TRUE(std::holds_alternative<TaxpayerMetadata>(fromFile));
+    ASSERT_TRUE(std::holds_alternative<TaxpayerMetadata>(fromText));
+    EXPECT_EQ(std::get<TaxpayerMetadata>(fromFile), std::get<TaxpayerMetadata>(fromText));
+    EXPECT_EQ(std::get<TaxpayerMetadata>(fromText).mName, "Ana Novak");
+}
+
 TEST(TaxpayerFileTest, FolderCannotBeRead) {
     const auto folder = std::filesystem::temp_directory_path() / "taxbroker_taxpayer_folder.json";
 

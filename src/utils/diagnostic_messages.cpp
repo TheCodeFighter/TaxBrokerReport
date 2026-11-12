@@ -98,6 +98,9 @@ constexpr std::array kColumn{
 constexpr std::array kName{
     MessageParamDefinition{"name", MessageParamKind::Text},
 };
+constexpr std::array kLimitMb{
+    MessageParamDefinition{"limitMb", MessageParamKind::Number},
+};
 constexpr std::array kYear{
     MessageParamDefinition{"year", MessageParamKind::Number},
 };
@@ -437,6 +440,9 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::TaxCategoryNotReportedUserChoiceIncomeMissingIsin,
                       "tax_category_not_reported.user_choice_income_missing_isin",
                       {}},
+    MessageDefinition{MessageKey::ParseErrorInvalidFilename, "parse_error.invalid_filename", {}},
+    MessageDefinition{MessageKey::InputFileTooLarge, "input_file.too_large", kLimitMb},
+    MessageDefinition{MessageKey::InputFileOutOfMemory, "input_file.out_of_memory", {}},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -452,10 +458,8 @@ constexpr bool definitionsFollowKeyOrder() {
 }
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
-static_assert(
-    kDefinitions.size() ==
-        static_cast<std::size_t>(MessageKey::TaxCategoryNotReportedUserChoiceIncomeMissingIsin) + 1,
-    "Every MessageKey needs one definition");
+static_assert(kDefinitions.size() == static_cast<std::size_t>(MessageKey::InputFileOutOfMemory) + 1,
+              "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 9> kTermKeys{
     taxbroker::term::kRowKindTrade,

@@ -2,6 +2,7 @@
 
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/event_metadata.hpp"
+#include "taxbroker/input_file.hpp"
 #include "taxbroker/types.hpp"
 
 #include <array>
@@ -11,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -185,6 +187,13 @@ struct ReferenceDataLoad {
  * built-in file. An empty list gives the built-in data. Another name, or the same name twice, is
  * a fault before any file is read. A supplied file goes through the checks of the built-in files.
  */
-[[nodiscard]] ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aFiles);
+[[nodiscard]] ReferenceDataLoad loadReferenceData(const std::vector<std::filesystem::path>& aFiles,
+                                                  std::size_t aMaxFileBytes = kMaxInputFileBytes);
+
+/// The same for files in memory; the name of each is the display file name (a folder part is
+/// dropped). A file over the size limit, or one that runs out of memory, is a fault with its own
+/// message. The app always uses the default limit; a smaller one lets a test use a small file.
+[[nodiscard]] ReferenceDataLoad loadReferenceData(std::span<const InputFile> aFiles,
+                                                  std::size_t aMaxFileBytes = kMaxInputFileBytes);
 
 } // namespace taxbroker
