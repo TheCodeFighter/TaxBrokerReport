@@ -313,10 +313,12 @@ Its result contains:
 - status for each report type; and
 - every successfully generated XML document.
 
-The request type (`ApplicationRequest`) and the result facts of a run summary (investments, used
+The request type (`ApplicationRequest`), the result facts of a run summary (investments, used
 rates, income rows with their provenance and filing evidence, deposit interest against the
-allowance, corrections and reconciliation, data sources) exist; the command line fills and reads
-them. Moving the whole pipeline behind one core operation follows. The fee summary, the
+allowance, corrections and reconciliation, data sources) and the operation itself exist: an
+`ApplicationRun` (`taxbroker_service`) loads the supplied files, parses, merges, prepares the year
+and calculates every report and its XML in a decision session. The command line reads the files
+into the request, asks the questions, writes the files and prints the summary. The fee summary, the
 exchange-rate request and the developer mode come with their own tasks.
 
 The result and its JSON boundary follow [`diagnostics.md`](diagnostics.md), including deterministic

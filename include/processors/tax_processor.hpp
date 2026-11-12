@@ -1,5 +1,6 @@
 #pragma once
 
+#include "taxbroker/application_request.hpp"
 #include "taxbroker/processing_diagnostics.hpp"
 #include "taxbroker/statement_merger.hpp"
 
@@ -9,10 +10,6 @@
 #include <vector>
 
 namespace taxbroker {
-
-/// Inclusive bounds accepted by TaxProcessor::prepareReportingYear.
-inline constexpr int kMinimumReportingYear = 2000;
-inline constexpr int kMaximumReportingYear = 9999;
 
 /// The 30-day loss window: the sale day with this many days before and after it, both ends
 /// included.
