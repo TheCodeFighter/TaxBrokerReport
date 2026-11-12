@@ -1441,6 +1441,8 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
                      });
 
     result.mDepositInterest = aInput.mDepositInterest;
+    result.mFees = std::move(aInput.mFees);
+    result.mBenefits = std::move(aInput.mBenefits);
     result.mCorrections = correctionsOf(aInput.mCorrections);
     result.mReconciliation = std::move(aInput.mReconciliation);
 

@@ -182,6 +182,9 @@ Investments with a sale in 2024: 1
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -370,6 +373,9 @@ Investments with a sale in 2025: 1
 Units past the holding period (tax free, not in the XML): 1
   XX0000000001 Synthetic Share: sale 2025-06-02, 2.0000 units
 
+Fees in 2025 (information only, not in any form): none
+Benefits in 2025 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -492,6 +498,9 @@ Investments with a sale in 2025: 0
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2025 (information only, not in any form): none
+Benefits in 2025 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -543,6 +552,9 @@ Investments with a sale in 2024: 1
   XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units
 
 Units past the holding period (tax free, not in the XML): 0
+
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 2
   XX0000000009 Synthetic Private Fund: 2024-05-02, history.csv row 4
@@ -636,12 +648,63 @@ Investments with a sale in 2024: 1
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form):
+  Trade Republic, bonus: 1 benefit, 3.0000 EUR
+  Total: 3.0000 EUR
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
 
 Doh-KDVP warnings: 0
 )");
+}
+
+TEST(CliReportIntegrationTest, FeesAndEveryKindOfBenefitAreListedInTheSummary) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            // A purchase with a fee of EUR 1.00 and a sale with a fee of EUR 5.00.
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,-1.00,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,-5.00,,EUR,,,,,synthetic-sell-1,,,,)",
+            // A purchase in USD with a fee of USD 2.00 and no broker rate.
+            R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,TRADING,BUY,STOCK,Synthetic Dollar Share,XX0000000004,10,10,-100,-2.00,,USD,,,,,synthetic-buy-usd-1,,,,)",
+            // One benefit of each kind: EUR 2.50, EUR 5, EUR 3 and USD 2.50 (no rate for it).
+            R"(2024-04-01T09:00:00Z,2024-04-01,DEFAULT,CASH,BENEFITS_SAVEBACK,FUND,Synthetic Reward Fund,XX1000000002,,,2.50,,,EUR,,,,,synthetic-saveback-1,,,,)",
+            R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,CASH,STOCKPERK,STOCK,Synthetic Reward Share,XX1000000003,,,5,,,EUR,,,,,synthetic-stockperk-1,,,,)",
+            R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,CASH,BONUS,,,,,,3,,,EUR,,,,,synthetic-bonus-1,,,,)",
+            R"(2024-05-03T09:00:00Z,2024-05-03,DEFAULT,CASH,REFERRAL,,,,,,2.50,,,USD,,,,,synthetic-referral-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    // The EUR fees are EUR 1.00 + EUR 5.00 = EUR 6.00. The USD fee and the USD benefit have no
+    // broker rate, so their rows and both totals in EUR are not available.
+    EXPECT_TRUE(contains(result.mOut, R"(Fees in 2024 (information only, not in any form):
+  Trade Republic: 2 fees, 6.0000 EUR
+  Trade Republic: 1 fee, 2.0000 USD
+  Trade Republic in EUR: not available (a fee has no broker rate)
+  Total in EUR: not available (a fee has no broker rate)
+Benefits in 2024 (information only, not in any form):
+  Trade Republic, saveback: 1 benefit, 2.5000 EUR
+  Trade Republic, stock perk: 1 benefit, 5.0000 EUR
+  Trade Republic, bonus: 1 benefit, 3.0000 EUR
+  Trade Republic, referral: 1 benefit, 2.5000 USD
+  Trade Republic, referral in EUR: not available (a benefit is not in EUR)
+  Total in EUR: not available (a benefit is not in EUR)
+)"));
 }
 
 // The bond fixture (`test_data/csv/README.md`) holds a bond from purchase to a corrected maturity.
@@ -719,6 +782,9 @@ Investments with a sale in 2024: 1
   XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units
 
 Units past the holding period (tax free, not in the XML): 0
+
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 1
   XX0000000009 Synthetic Private Fund: 2024-05-02, history.csv row 4
@@ -1384,6 +1450,9 @@ Investments with a sale in 2025: 1
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2025 (information only, not in any form): none
+Benefits in 2025 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -1778,6 +1847,9 @@ Investments with a sale in 2025: 1
     sale 2025-03-10, history.csv row 3
 
 Units past the holding period (tax free, not in the XML): 0
+
+Fees in 2025 (information only, not in any form): none
+Benefits in 2025 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -2213,6 +2285,9 @@ Investments with a sale in 2025: 1
   XX0000000001 Synthetic Share: listed, 1 sale, 2.0000 units
 
 Units past the holding period (tax free, not in the XML): 0
+
+Fees in 2025 (information only, not in any form): none
+Benefits in 2025 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -4052,6 +4127,9 @@ Investments with a sale in 2024: 1
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -4252,6 +4330,9 @@ Investments with a sale in 2024: 1
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -4310,6 +4391,9 @@ Investments with a sale in 2024: 1
   XX0000000001 Synthetic Share: no problem, 1 sale, 10.0000 units
 
 Units past the holding period (tax free, not in the XML): 0
+
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -5124,6 +5208,9 @@ Investments with a sale in 2000: 0
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2000 (information only, not in any form): none
+Benefits in 2000 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -5342,6 +5429,9 @@ Investments with a sale in 2025: 1
 
 Units past the holding period (tax free, not in the XML): 1
   XX0000000001 Synthetic Share: sale 2025-06-02, 2.0000 units
+
+Fees in 2025 (information only, not in any form): none
+Benefits in 2025 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -5726,6 +5816,9 @@ Excluded investments (not in the XML): 1
   XX0000000002 Synthetic Other: incomplete_history
 
 Units past the holding period (tax free, not in the XML): 0
+
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 0
 

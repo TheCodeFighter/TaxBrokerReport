@@ -320,6 +320,8 @@ struct BondRedemptionEvent {
     std::optional<Money> mTaxPaid; ///< Positive tax withheld; absent means unknown.
     std::optional<BrokerExchangeRate> mExchangeRate; ///< Broker rate of a foreign amount.
     Currency mCurrency{Currency::Unknown};           ///< Currency of mAmount; Unknown without one.
+    /// Currency of mFeePaid (the export's `currency` field); Unknown without an amount row.
+    Currency mFeeCurrency{Currency::Unknown};
 };
 
 struct PrivateMarketEvent {

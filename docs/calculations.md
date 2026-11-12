@@ -356,8 +356,10 @@ year, even if no rate is missing:
   count as a whole year, and a need after its end was accepted. It names that end so the user can
   check that no later rate exists.
 
-One error covers one currency and date, with every event and report that needs it. What happens
-next (a typed rate, or the broker fallback below) is decided by the exchange-rate request.
+One error covers one currency and date, with every event and report that needs it. What should
+happen next (a typed rate, or the broker fallback below) is decided by the exchange-rate request,
+which is planned and not available yet: today the error blocks the reports that need the rate, and
+the user loads the ECB file of that year or leaves the investment or payment out.
 
 **Provenance.** Each rate keeps the value, the observation date, the ECB series key, whether it is
 built in or supplied, the file's display name and the row. A file rate is an official rate and is
@@ -373,6 +375,11 @@ value unchanged and drop the columns the program does not read. `THIRD_PARTY_NOT
 Any download is explicit and opt-in. The app works with no network access.
 
 ## Asking the user for official rates
+
+> **Not available yet.** The request, the typed rate and the broker fallback below describe the
+> planned behaviour. Today a currency and date without an official rate in the loaded files gives
+> `missing_exchange_rate`, which blocks the reports that need it. The user loads the ECB file of
+> that year (`--ecb-rates`) or leaves the investment or payment out.
 
 Importing foreign trades, dividends or interest does not require a broker exchange rate. Retain the
 original payment amount, currency, tax date and provenance when that optional value is absent;
@@ -450,6 +457,9 @@ rate for a later report run. The processing result records the rate, its currenc
 that the user entered it as an official rate.
 
 ## Optional broker-rate fallback
+
+> **Not available yet.** See "Asking the user for official rates". Broker rates are stored with
+> their direction and verification, but no report value is converted with one.
 
 The user may choose a broker-provided exchange rate instead of entering the official rate. This is
 not the default.
@@ -751,6 +761,28 @@ If Broker A does not supply a usable rate, its summary instead shows `1.2500 EUR
 processing error is created.
 
 The summary is informational and is never written to a FURS XML document.
+
+**What counts.** A fee counts when it is above 0 on a kept event of the selected year: a trade
+(also of an investment left out of the forms, because the fee was paid anyway), a bond redemption
+or a private-market event. A row the parser ignores (such as a card ordering fee) is not an
+investment fee and does not count. The summary reads the deduplicated events, so the same
+transaction in two exports counts once.
+
+A broker rate converts a fee only when it belongs to the fee's own event and its currency is the
+fee's currency. A bond redemption keeps the currency of its fee apart from the currency of its
+amount (the amount may be in another currency), so its fee converts with the redemption's own
+broker rate only when the fee is in the amount's currency.
+
+A subtotal or total that does not fit the money type is shown as not available, like a total
+without a rate. This is not an error and no diagnostic is made.
+
+### Informational benefit summary
+
+For the selected year the result also lists the broker benefits (saveback, stock perk, bonus,
+referral) by broker, benefit type and original currency: the count and the sum of each. A benefit
+has no broker rate, so a row has an EUR total only when every benefit in it is in EUR; the overall
+EUR total needs every row to have one. A benefit is never a purchase value, a unit or a form value,
+and it never asks for anything.
 
 ## Invalid, missing, and overflowing values
 

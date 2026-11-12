@@ -1666,6 +1666,7 @@ void TradeRepublicParser::parseBondRedemptionRow(const csv::CSVRow& aCsvRow,
     {
         event.mAmount = *signedAmount < 0 ? -*signedAmount : *signedAmount;
         event.mFeePaid = *feePaid;
+        event.mFeeCurrency = columnCurrency;
         event.mTaxPaid = taxPaid;
         event.mExchangeRate = amountAndCurrency.mExchangeRate;
         event.mCurrency = *amountAndCurrency.mCurrency;

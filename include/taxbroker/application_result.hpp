@@ -754,6 +754,51 @@ struct DepositInterestSummary {
     bool operator==(const DepositInterestSummary&) const = default;
 };
 
+/// The amounts of one original currency in a summary: how many and their sum.
+struct CurrencyTotal {
+    Currency mCurrency{Currency::Unknown};
+    std::size_t mCount{};        ///< How many amounts were added.
+    std::optional<Money> mTotal; ///< The sum.
+
+    bool operator==(const CurrencyTotal&) const = default;
+};
+
+/// The fees of one broker in the selected year, by original currency in currency code order.
+struct BrokerFees {
+    Broker mBroker{Broker::Unknown};
+    std::vector<CurrencyTotal> mByCurrency; ///< By currency code.
+    std::optional<Money> mEurTotal;         ///< The EUR sum.
+    std::size_t mBrokerRateCount{};         ///< The fees converted with their own broker rate.
+
+    bool operator==(const BrokerFees&) const = default;
+};
+
+/// The informational fee summary of the selected year. It never changes a form value.
+struct FeeSummary {
+    std::vector<BrokerFees> mBrokers;
+    std::optional<Money> mEurTotal;
+
+    bool operator==(const FeeSummary&) const = default;
+};
+
+/// The benefits of one broker and type in the selected year, by original currency.
+struct BrokerBenefits {
+    Broker mBroker{Broker::Unknown};
+    BenefitType mType{};
+    std::vector<CurrencyTotal> mByCurrency;
+    std::optional<Money> mEurTotal; ///< The EUR sum.
+
+    bool operator==(const BrokerBenefits&) const = default;
+};
+
+/// The informational benefit summary of the selected year. It never changes a form value.
+struct BenefitSummary {
+    std::vector<BrokerBenefits> mBrokers; ///< By broker, then benefit type, in enum order.
+    std::optional<Money> mEurTotal;       ///< None without a benefit or when a row has none.
+
+    bool operator==(const BenefitSummary&) const = default;
+};
+
 /// How a sale's quantity was corrected.
 enum class CorrectionKind {
     RoundingEvidence, ///< The discarded source digits prove a rounding difference.
@@ -887,6 +932,10 @@ struct ApplicationResult {
     std::vector<UsedOfficialRate> mUsedRates;
     /// Only when the year has qualifying bank-deposit interest from which the total is known.
     std::optional<DepositInterestSummary> mDepositInterest;
+    /// The fees of the selected year; information only.
+    FeeSummary mFees;
+    /// The benefits of the selected year; information only.
+    BenefitSummary mBenefits;
     /// The applied quantity corrections, by ISIN and ledger order.
     std::vector<AppliedCorrection> mCorrections;
     /// The ISINs with a rounding impact above 0, by ISIN.
@@ -919,6 +968,8 @@ struct ApplicationResultInput {
     std::vector<LongHeldSale> mLongHeld;
     std::vector<UsedOfficialRate> mUsedRates;
     std::optional<DepositInterestSummary> mDepositInterest;
+    FeeSummary mFees;
+    BenefitSummary mBenefits;
     std::vector<AppliedCorrectionInput> mCorrections;
     std::vector<ReconciliationImpact> mReconciliation;
     ApplicationDataSources mDataSources;

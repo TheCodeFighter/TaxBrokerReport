@@ -634,6 +634,7 @@ BondRedemptionEvent makeBondRedemption(std::size_t aSourceIndex,
         .mTaxPaid = std::nullopt,
         .mExchangeRate = std::nullopt,
         .mCurrency = aAmount ? Currency::EUR : Currency::Unknown,
+        .mFeeCurrency = aAmount ? Currency::EUR : Currency::Unknown,
     };
 }
 
@@ -731,6 +732,28 @@ TEST(DeterministicStatementMergerTest, RejectsABondMaturityWhoseUnitsDifferBetwe
     EXPECT_EQ(diagnostics.front()->mCode, MergeDiagnosticCode::ConflictingDuplicate);
     EXPECT_EQ(diagnostics.front()->mEventKinds, std::vector{StatementEventKind::BondRedemption});
     EXPECT_EQ(diagnostics.front()->mSources.size(), 2U);
+}
+
+TEST(DeterministicStatementMergerTest, RejectsABondPaymentWhoseFeeCurrencyDiffersBetweenFiles) {
+    std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
+                                            StatementMergeInput{.mSourceIndex = 1}};
+    // The same payment, EUR 1,000.00 at 4 decimals, but the fee is in EUR in one file and in USD
+    // in the other.
+    inputs[0].mParseResult.mStatement.mBondRedemptions.push_back(
+        makeBondRedemption(0, "first.csv", BondRedemptionKind::Payment, std::nullopt, 10'000'000));
+    inputs[1].mParseResult.mStatement.mBondRedemptions.push_back(
+        makeBondRedemption(1, "second.csv", BondRedemptionKind::Payment, std::nullopt, 10'000'000));
+    inputs[1].mParseResult.mStatement.mBondRedemptions.front().mFeeCurrency = Currency::USD;
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    EXPECT_TRUE(result.mStatement.mPresentation.mBondRedemptions.empty());
+
+    const auto diagnostics = diagnosticsOf<MergeDiagnostic>(result);
+
+    ASSERT_EQ(diagnostics.size(), 1U);
+    EXPECT_EQ(diagnostics.front()->mCode, MergeDiagnosticCode::ConflictingDuplicate);
+    EXPECT_EQ(diagnostics.front()->mEventKinds, std::vector{StatementEventKind::BondRedemption});
 }
 
 TEST(DeterministicStatementMergerTest, RejectsABondPaymentAndAReversalWithOneTransactionId) {
