@@ -1132,6 +1132,7 @@ TEST(ReferenceDataTest, APayersFileOnDiskOverTheSizeLimitIsNotRead) {
 }
 
 TEST(ReferenceDataTest, RunningOutOfMemoryIsAFaultWithItsOwnMessage) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
     // A file of the size of a large allocation, so its text takes one.
     const std::vector<InputFile> files{
         InputFile{.mName = "payers.csv",
@@ -1154,6 +1155,7 @@ TEST(ReferenceDataTest, RunningOutOfMemoryIsAFaultWithItsOwnMessage) {
 }
 
 TEST(ReferenceDataTest, RunningOutOfMemoryWhileParsingAFileNamesThatFile) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
     // A small payers file and a large relief-statements file. The large allocations are, in
     // order: the copy of the relief text for the loader (1st), the buffer of the CSV reader of
     // the payers file (2nd), then the allocations for the relief file (3rd on). Failing from the

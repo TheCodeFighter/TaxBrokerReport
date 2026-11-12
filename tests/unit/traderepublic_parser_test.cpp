@@ -4006,6 +4006,7 @@ TEST(TradeRepublicParserTest, MemoryTextOverTheSizeLimitGivesATooLargeError) {
 }
 
 TEST(TradeRepublicParserTest, RunningOutOfMemoryGivesAStructuredErrorNotAnException) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
     const SyntheticCsvRow buy{
         .mDatetime = "2024-01-15T10:00:00.000Z",
         .mDate = "2024-01-15",
@@ -4050,6 +4051,7 @@ TEST(TradeRepublicParserTest, RunningOutOfMemoryGivesAStructuredErrorNotAnExcept
 }
 
 TEST(TradeRepublicParserTest, RunningOutOfMemoryWhileReadingAFileGivesTheSameError) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
     const SyntheticCsvRow buy{
         .mDatetime = "2024-01-15T10:00:00.000Z",
         .mDate = "2024-01-15",

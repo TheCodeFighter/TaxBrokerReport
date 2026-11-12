@@ -27,7 +27,8 @@ Usage: valgrind.sh [--reuse-build] [--part regular|csv|ecb|reference|messages|al
   Builds build/dev from scratch, then runs each C++ executable under Valgrind
   inside the development container. The dump tools use synthetic test data.
   --reuse-build runs the existing build/dev as it is and compiles nothing.
-  --part regular    every executable, without the *LargeInputTest unit test suites
+  --part regular    every executable, without the *LargeInputTest unit test suites, and the
+                    out-of-memory tests in a short extra unit test run (see below)
   --part csv        the large-input suite of the CSV reader (minutes under Valgrind)
   --part ecb        the large-input suite of the ECB rate files
   --part reference  the large-input suite of the reference files
@@ -79,6 +80,9 @@ done
 
 prepare_dev_build "$reuse_build"
 
+# Extra Valgrind options of the next run_valgrind call (a list, empty by default).
+valgrind_options=()
+
 run_valgrind() {
     local executable="$1"
     shift
@@ -86,7 +90,9 @@ run_valgrind() {
     echo "==> Running $(basename "$executable") under Valgrind..."
     compose run --rm -T \
         -e TBR_LOG_FILE=/tmp/taxbroker-valgrind.log \
+        -e TBR_REQUIRE_ALLOCATION_HOOK="${TBR_REQUIRE_ALLOCATION_HOOK:-}" \
         dev valgrind \
+        "${valgrind_options[@]}" \
         --leak-check=full \
         --show-leak-kinds=definite,indirect \
         --errors-for-leak-kinds=definite,indirect \
@@ -104,6 +110,21 @@ run_large_part() {
         "--gtest_filter=$(large_suite_of_part "$1")"
 }
 
+# Valgrind replaces `operator new` of the test binary, so the allocation hook of the out-of-memory
+# tests (tests/support/large_allocation_hook.hpp) never runs and those tests skip in the main
+# unit test run. This run starts the same binary with the flag that leaves its own `operator new`
+# alone, runs only those tests (their names have RunningOutOfMemory or AllocationHook in them) and
+# fails when one of them skips. Leaks and invalid memory access are still checked.
+run_allocation_hook_tests() {
+    valgrind_options=(--soname-synonyms=somalloc=nouserintercepts)
+    TBR_REQUIRE_ALLOCATION_HOOK=1 run_valgrind \
+        /workspace/build/dev/tests/taxbroker_unit_tests \
+        --gtest_brief=1 \
+        --gtest_fail_if_no_test_selected \
+        '--gtest_filter=*RunningOutOfMemory*:*AllocationHook*'
+    valgrind_options=()
+}
+
 if [[ "$part" != regular && "$part" != all ]]; then
     run_large_part "$part"
     exit 0
@@ -113,6 +134,8 @@ run_valgrind \
     /workspace/build/dev/tests/taxbroker_unit_tests \
     --gtest_brief=1 \
     "--gtest_filter=-$large_input_filter"
+
+run_allocation_hook_tests
 
 run_valgrind \
     /workspace/build/dev/tests/taxbroker_integration_tests \

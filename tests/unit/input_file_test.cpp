@@ -118,6 +118,7 @@ TEST(InputFileTest, TheRealLimitIs100Megabytes) {
 }
 
 TEST(InputFileTest, RunningOutOfMemoryIsAFault) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
     const auto path = uniquePath("memory.csv");
 
     writeFile(path, std::string(test::kLargeAllocationBytes, 'x'));
@@ -136,7 +137,8 @@ TEST(InputFileTest, RunningOutOfMemoryIsAFault) {
     EXPECT_EQ(std::get<InputFileFault>(read), InputFileFault::OutOfMemory);
 }
 
-TEST(InputFileTest, AFileThatBecomesShorterWhileItIsReadIsUnreadable) {
+TEST(InputFileTest, AFileCutShortByTheAllocationHookIsUnreadable) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
     const auto path = uniquePath("shrinking.csv");
 
     writeFile(path, std::string(test::kLargeAllocationBytes, 'x'));

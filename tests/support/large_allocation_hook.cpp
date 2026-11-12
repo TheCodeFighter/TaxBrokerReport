@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <new>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,6 +22,34 @@ std::function<void()>* gAction = nullptr;
 thread_local bool tInsideAction = false;
 
 } // namespace
+
+bool allocationHookRuns() {
+    // Valgrind replaces `operator new` of the test binary unless it is started with
+    // `--soname-synonyms=somalloc=nouserintercepts`; then the hook never runs. A real probe
+    // tells that apart from a hook that works, whatever the reason.
+    static const bool runs = [] {
+        bool ran = false;
+
+        {
+            const ScopedLargeAllocationHook hook{[&ran] { ran = true; }};
+
+            // A volatile pointer keeps the compiler from dropping the allocation.
+            void* volatile memory = ::operator new(kLargeAllocationBytes);
+
+            ::operator delete(memory);
+        }
+
+        return ran;
+    }();
+
+    return runs;
+}
+
+bool allocationHookIsRequired() {
+    const char* required = std::getenv("TBR_REQUIRE_ALLOCATION_HOOK");
+
+    return required != nullptr && std::string_view{required} == "1";
+}
 
 ScopedLargeAllocationHook::ScopedLargeAllocationHook(std::function<void()> aAction) {
     gAction = new std::function<void()>{std::move(aAction)};
@@ -70,6 +99,15 @@ void* operator new(const std::size_t aBytes) {
     }
 
     throw std::bad_alloc{};
+}
+
+// The library allocates with this form too (the buffer of std::stable_sort, the thread-local
+// destructors) and frees the memory with the `operator delete` below. When it stays the library's
+// own, Valgrind sees a `new` freed with `free` and reports a mismatch.
+void* operator new(const std::size_t aBytes, const std::nothrow_t&) noexcept {
+    try
+    { return operator new(aBytes); } catch (...)
+    { return nullptr; }
 }
 
 void operator delete(void* aMemory) noexcept {

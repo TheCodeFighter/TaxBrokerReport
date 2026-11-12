@@ -1583,6 +1583,7 @@ TEST(EcbRateFileTest, ARateFileInMemoryOverTheSizeLimitGivesATooLargeError) {
 }
 
 TEST(EcbRateFileTest, RunningOutOfMemoryRejectsTheFileWithItsOwnError) {
+    SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE();
     // A file of the size of a large allocation, so the text of the file takes one.
     const std::vector<InputFile> files{
         InputFile{.mName = "rates_2024.csv",

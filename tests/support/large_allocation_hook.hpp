@@ -1,10 +1,21 @@
 #pragma once
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <functional>
 #include <optional>
 
 namespace taxbroker::test {
+
+/// True when the allocation hook below works in this process: a large allocation runs the action.
+/// It does not under Valgrind, which replaces `operator new` of the test binary, unless Valgrind
+/// is started with `--soname-synonyms=somalloc=nouserintercepts` (see `scripts/valgrind.sh`).
+bool allocationHookRuns();
+
+/// True when the environment variable `TBR_REQUIRE_ALLOCATION_HOOK` is `1`: a test that needs the
+/// hook then fails instead of skipping when the hook does not run.
+bool allocationHookIsRequired();
 
 /// An allocation of at least this many bytes counts as a large one. Test inputs that must reach
 /// a large allocation are at least this big; every other allocation of a test is smaller.
@@ -38,3 +49,22 @@ class ScopedAllocationFailure {
 };
 
 } // namespace taxbroker::test
+
+/// Starts a test that needs the allocation hook. When the hook does not run (under Valgrind
+/// without the flag above) the test is skipped, or fails when `TBR_REQUIRE_ALLOCATION_HOOK=1`, so
+/// the Valgrind run that sets it cannot skip these tests without anyone noticing. A test with the
+/// hook has `RunningOutOfMemory` or `AllocationHook` in its name: `scripts/valgrind.sh` selects
+/// them by that.
+#define SKIP_IF_ALLOCATION_HOOK_IS_UNAVAILABLE()                                                   \
+    do                                                                                             \
+    {                                                                                              \
+        if (!taxbroker::test::allocationHookRuns())                                                \
+        {                                                                                          \
+            if (taxbroker::test::allocationHookIsRequired())                                       \
+            {                                                                                      \
+                FAIL() << "The allocation hook does not run, but it is required.";                 \
+            }                                                                                      \
+                                                                                                   \
+            GTEST_SKIP() << "Valgrind replaces operator new, so the hook cannot run.";             \
+        }                                                                                          \
+    } while (false)
