@@ -8,6 +8,10 @@
 
 namespace taxbroker {
 
+/// Inclusive bounds of a reporting year that a run accepts.
+inline constexpr int kMinimumReportingYear = 2000;
+inline constexpr int kMaximumReportingYear = 9999;
+
 /// One broker export held in memory, with the broker that wrote it.
 struct BrokerInputFile {
     Broker mBroker{Broker::Unknown};

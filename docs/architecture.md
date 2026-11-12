@@ -1124,11 +1124,25 @@ stops another. `taxbroker --help` and
 `taxbroker report --help` explain the options, the taxpayer file, the output files, the exit codes
 and what is supported, blocked and skipped. The whole command is in the `taxbroker_cli` library
 (`runCli`), so the tests run it in process; the executable only sets up logging. The
-orchestration moves into the application service once that service connects all processing
-stages. The summary reads only the `ApplicationRequest` and the `ApplicationResult`: every fact it
+orchestration is in the application service (below); the command only reads the files, asks the
+questions, writes the files and prints the summary. The summary reads only the `ApplicationRequest` and the `ApplicationResult`: every fact it
 prints (the investments of the year, the units past the holding period, the used rates, the rows of
 each income form, the data sources) is a field of the result, so the service and the API show the
 same facts.
+
+**Application service** (`include/taxbroker/application_run.hpp`, library `taxbroker_service`).
+`ApplicationRun::start(request)` is the one operation behind the command and, later, the local API.
+It runs the stages one after the other, in a fixed order and on one thread: the supplied ECB rate
+files, the supplied reference files, the parsers (one per broker, the position in the request is
+the source index), the merge, the reporting-year preparation, and then the calculation of a
+`DecisionSession` (the pipeline below). A supplied rate or reference file that is not valid is a
+structured `ApplicationInputFault` and gives no run: no result exists for it. A year that is not
+supported gives a result whose four forms are failed. The run hides the data the calculation reads
+behind one pointer, so it can be moved, and its header shows only the request, the result, the
+session and the faults; answers go through `session()`. It is the one public entry point for the
+command line, the local API and later other callers. The service lives outside the core library
+because the XML writers (pugixml) link the core. Every stage stays a function of its own and is
+tested on its own.
 
 **Pipeline.** The command reads every user file into memory once and builds an
 `ApplicationRequest` (`include/taxbroker/application_request.hpp`); a file that cannot be read

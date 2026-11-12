@@ -89,6 +89,7 @@ target_link_libraries(taxbroker_unit_tests
     taxbroker_core
     taxbroker_api
     taxbroker_cli
+    taxbroker_service
     taxbroker_xml
     GTest::gtest_main
     nlohmann_json::nlohmann_json
@@ -109,6 +110,7 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 # Integration Tests
 add_executable(taxbroker_integration_tests
     integration/application_result_integration_test.cpp
+    integration/application_run_integration_test.cpp
     integration/cli_report_integration_test.cpp
     integration/corporate_action_integration_test.cpp
     integration/ecb_rate_file_integration_test.cpp
@@ -133,6 +135,7 @@ target_link_libraries(taxbroker_integration_tests
     taxbroker_core
     taxbroker_api
     taxbroker_cli
+    taxbroker_service
     taxbroker_xml
     GTest::gtest_main
     nlohmann_json::nlohmann_json

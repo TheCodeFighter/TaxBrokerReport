@@ -4,27 +4,15 @@
 #include "cli/output_files.hpp"
 #include "cli/taxpayer_file.hpp"
 #include "cli_text.hpp"
-#include "parsers/traderepublic_parser.hpp"
-#include "processors/application_summaries.hpp"
-#include "processors/failure_resolution_stage.hpp"
-#include "processors/capital_gains_report_builder.hpp"
-#include "processors/capital_report_gates.hpp"
-#include "processors/corporate_actions.hpp"
-#include "processors/fifo_matcher.hpp"
-#include "processors/income_reports.hpp"
-#include "processors/loss_eligibility.hpp"
-#include "processors/tax_classifier.hpp"
-#include "processors/tax_processor.hpp"
-#include "processors/trade_conversion.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_request.hpp"
+#include "taxbroker/application_run.hpp"
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/decision_session.hpp"
 #include "taxbroker/input_file.hpp"
 #include "taxbroker/official_rates.hpp"
 #include "taxbroker/reference_catalogue.hpp"
 #include "utils/numeric_util.hpp"
-#include "xml/report_xml_stage.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1403,241 +1391,20 @@ bool isFileOrMissing(const std::filesystem::path& aPath) {
     return !std::filesystem::exists(status) || std::filesystem::is_regular_file(status);
 }
 
-/// The ISINs that the builder blocked, for a preview of the rows of every other ISIN.
-std::vector<Isin> blockedIsins(const CapitalGainsBuildResult& aBuilt) {
-    std::vector<Isin> isins;
-
-    std::transform(aBuilt.mBlocked.begin(),
-                   aBuilt.mBlocked.end(),
-                   std::back_inserter(isins),
-                   [](const KdvpBlockedIsin& aBlocked) { return aBlocked.mIsin; });
-
-    return isins;
-}
-
-/// True when an instrument that a tax rule or the user left out has a sale in the year, or an
-/// excluded bond has matured units. Only then did the year have a disposal that is not reported.
-bool hasLeftOutDisposal(const MergedStatement& aStatement,
-                        const ReportingYearLedger& aLedger,
-                        const std::vector<ExcludedItemInput>& aExcludedItems) {
-    const auto& instruments = aStatement.mPresentation.mTradeInstruments;
-
-    for (const auto& instrument : instruments)
-    {
-        if (!aLedger.isLeftOut(instrument.mIsin))
-        {
-            continue;
-        }
-
-        const auto& trades = instrument.mTransactions;
-        const bool hasSale =
-            std::any_of(trades.begin(), trades.end(), [&aLedger](const auto& aTrade) {
-                const auto date = aTrade.mMetadata.mTaxDate;
-
-                return aTrade.mTradeSide == TradeSide::Sell && date >= aLedger.mYearStart &&
-                       date <= aLedger.mYearEnd;
-            });
-
-        if (hasSale)
-        {
-            return true;
-        }
-    }
-
-    return std::any_of(aExcludedItems.begin(),
-                       aExcludedItems.end(),
-                       [](const ExcludedItemInput& aInput) {
-                           return aInput.mItem.mBond && aInput.mItem.mBond->mMaturedUnits != 0;
-                       });
-}
-
-/// One calculation from the merged files and the answers: FIFO, the corporate-action stage, the
-/// loss rule, the builder, the gates, the choice to leave failed investments out and the XML. It
-/// keeps no state between calls: everything the summary needs goes into the input of the result.
-ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
-                                       const TaxProcessingResult& aPrepared,
-                                       const ReferenceCatalogue& aCatalogue,
-                                       const OfficialRateTable& aRates,
-                                       const ApplicationDataSources& aDataSources,
-                                       RunDecisions& aDecisions) {
-    // The year was checked with the options, so the ledger is always there. The classification
-    // comes first: the instruments it leaves out are not part of the capital stages.
-    auto ledger = aPrepared.mLedger.value();
-    const auto& statement = aPrepared.mMerged.mStatement;
-    auto classification =
-        TaxClassifier::classify(statement, ledger, aPrepared.mMerged.mDiagnostics, aDecisions);
-
-    ledger.mLeftOutIsins = classification.mLeftOutIsins;
-
-    // Foreign trades are converted to EUR before FIFO, so every later stage reads EUR prices.
-    auto conversion = convertCapitalTrades(statement, ledger, aRates);
-    const auto& convertedStatement = conversion.statement(statement);
-
-    auto pools = matchCapitalPools(convertedStatement, ledger, aDecisions);
-    auto& fifo = pools.mFifo;
-    auto& actions = pools.mActions;
-    auto& quantities = pools.mQuantities;
-
-    // The stages after the pools read the sale units after the quantity corrections.
-    const auto& capitalStatement = pools.statement(convertedStatement);
-    auto loss = LossEligibilityChecker::check(capitalStatement, ledger, fifo, aDecisions);
-    auto built = CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, {});
-    auto gateDiagnostics =
-        CapitalReportGates::check(capitalStatement, ledger, fifo, loss, built, conversion.mRates);
-
-    // Copied, not moved: every calculation of the run starts from the same diagnostics.
-    ApplicationResultInput input{
-        .mReportingYear = aRequest.mReportingYear,
-        .mMergeDiagnostics = aPrepared.mMerged.mDiagnostics,
-        .mProcessingDiagnostics = aPrepared.mDiagnostics,
-    };
-    auto& processing = input.mProcessingDiagnostics;
-
-    appendClassification(input, std::move(classification));
-    std::move(conversion.mDiagnostics.begin(),
-              conversion.mDiagnostics.end(),
-              std::back_inserter(processing));
-    std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
-    appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
-    appendStageOutput(input, std::move(quantities.mDiagnostics), std::move(quantities.mRequests));
-    appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));
-
-    const auto firstGateDiagnostic = processing.size();
-
-    std::move(gateDiagnostics.begin(), gateDiagnostics.end(), std::back_inserter(processing));
-
-    // The user may leave out every investment with an error of its own (or ask for no report).
-    const auto excluded = FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure);
-
-    if (!excluded.empty())
-    {
-        built = CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, excluded);
-    }
-
-    std::optional<CapitalGainsReportKDVP> previewWithoutBlocked;
-
-    if (!built.mReport)
-    {
-        auto leftOut = excluded;
-        const auto blocked = blockedIsins(built);
-
-        leftOut.insert(leftOut.end(), blocked.begin(), blocked.end());
-        previewWithoutBlocked =
-            CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, leftOut).mReport;
-    }
-
-    // A gate error of an excluded investment was resolved and does not stop the XML.
-    bool hasGateError = false;
-
-    for (auto position = firstGateDiagnostic; position < processing.size(); ++position)
-    {
-        const bool resolved = std::find(input.mResolvedDiagnostics.begin(),
-                                        input.mResolvedDiagnostics.end(),
-                                        position) != input.mResolvedDiagnostics.end();
-
-        hasGateError = hasGateError ||
-                       (processing[position].mSeverity == DiagnosticSeverity::Error && !resolved);
-    }
-
-    const ReportMetadata metadata{
-        .mTaxpayer = aRequest.mTaxpayer,
-        .mReportingYear = aRequest.mReportingYear,
-        .mFilingType = aRequest.mFilingType,
-    };
-
-    // A blocked ISIN always has an error (FIFO, corporate action or gate), so without a report
-    // the capital form is failed or needs input, never empty.
-    if (built.mReport && !hasGateError)
-    {
-        // The warnings of the rows that the XML lists; without XML there are none.
-        auto basisDifferences = basisDifferenceDiagnostics(capitalStatement, built);
-
-        std::move(basisDifferences.begin(), basisDifferences.end(), std::back_inserter(processing));
-
-        if (built.mReport->mLists.empty())
-        {
-            // When investments were left out, nothing is left to report, which is not the same
-            // as having no sale.
-            if (excluded.empty() && !hasLeftOutDisposal(statement, ledger, input.mExcludedItems))
-            {
-                auto& capital = input.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
-
-                capital.mNoDataReason = NoDataReason::NoSelectedYearDisposals;
-            }
-        }
-        else
-        {
-            writeReportXml(input, metadata, {.mCapitalGains = &*built.mReport});
-        }
-    }
-
-    // The income stages come last, so nothing in the capital output or its question order moves.
-    // Each form keeps its own status: a form whose stage has an error or a question is not
-    // generated, whatever the writer made, and the other forms are not touched.
-    auto income = prepareIncomeReports(input, statement, ledger, aCatalogue, aRates, aDecisions);
-
-    writeReportXml(
-        input,
-        metadata,
-        {.mDividends = &income.mDividends, .mDeposit = &income.mDeposit, .mOther = &income.mOther});
-
-    // The summary reads the preview: the report, or the rows of the ISINs without a problem.
-    const auto& preview = built.mReport ? *built.mReport : previewWithoutBlocked.value();
-
-    appendCapitalSummary(input, capitalStatement, built, preview);
-    appendCorrections(input, capitalStatement, fifo);
-    input.mUsedRates = mergedRates(std::move(conversion.mUsedRates), std::move(income.mUsedRates));
-    input.mDataSources = aDataSources;
-
-    return input;
-}
-
-/// Parses and merges the files, calculates the report in a decision session, asks the open
-/// questions, writes the output files and the summary, and returns the exit code.
+/// Asks the open questions, writes the output files and the summary, and returns the exit code.
 int runReport(const ReportOptions& aOptions,
-              const ApplicationRequest& aRequest,
-              const ReferenceCatalogue& aCatalogue,
-              const OfficialRateTable& aRates,
-              const ApplicationDataSources& aDataSources,
+              ApplicationRun& aRun,
               std::istream& aIn,
               std::ostream& aOut,
               std::ostream& aErr) {
-    tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs;
-
-    for (std::size_t index = 0; index < aRequest.mBrokerFiles.size(); ++index)
-    {
-        const auto& file = aRequest.mBrokerFiles[index];
-
-        // Trade Republic is the only broker with a parser so far.
-        if (file.mBroker != Broker::TradeRepublic)
-        {
-            throw std::logic_error("A broker file has a broker without a parser.");
-        }
-
-        inputs.push_back({index, parser.parse(file.mFile.mContent, file.mFile.mName, index)});
-    }
-
-    // Parsing, merging and the year do not depend on an answer, so they run once.
-    const auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
-        .mReportingYear = aRequest.mReportingYear,
-        .mMerged = DeterministicStatementMerger{}.merge(std::move(inputs)),
-    });
-    // The answers live only in this session, in memory, and end with this run.
-    DecisionSession session;
-
-    session.start([&](RunDecisions& aDecisions) {
-        return calculateReport(aRequest, prepared, aCatalogue, aRates, aDataSources, aDecisions);
-    });
-
     if (aOptions.mAskQuestions)
     {
-        askOpenQuestions(session, aIn, aOut);
+        askOpenQuestions(aRun.session(), aIn, aOut);
     }
 
-    // The session keeps the result of the last calculation that succeeded: a rejected answer
+    // The run keeps the result of the last calculation that succeeded: a rejected answer
     // calculates nothing.
-    const auto& result = session.result();
+    const auto& result = aRun.result();
 
     std::error_code error;
     std::filesystem::create_directories(aOptions.mOutputDirectory, error);
@@ -1681,7 +1448,7 @@ int runReport(const ReportOptions& aOptions,
     }
 
     const RunOutcome outcome{
-        .mRequest = aRequest,
+        .mRequest = aRun.request(),
         .mResult = result,
         .mKeptOldFile = keptOldFile,
     };
@@ -1756,6 +1523,54 @@ int runReport(const ReportOptions& aOptions,
     aOut << summary;
 
     return allDone ? kExitSuccess : kExitBlocked;
+}
+
+/// Writes the reason a supplied rate or reference file is not valid: the file name only, never
+/// the path.
+void writeInputFault(const ApplicationInputFault& aFault, std::ostream& aErr) {
+    const auto visitor = [&aErr](const auto& aValue) {
+        using Fault = std::decay_t<decltype(aValue)>;
+
+        if constexpr (std::is_same_v<Fault, RateFileFault>)
+        {
+            const auto& first = aValue.mDiagnostic;
+
+            aErr << "taxbroker: the ECB rate file " << first.mSourceFile << " is not valid";
+
+            if (first.mRowIndex)
+            {
+                aErr << " (row " << *first.mRowIndex << ")";
+            }
+
+            aErr << ": " << first.mMessage << '\n' << kHelpHint;
+        }
+        else
+        {
+            static_assert(std::is_same_v<Fault, ReferenceFileFault>);
+
+            // The text of a wrong or repeated file name already names the file.
+            const bool nameFault = aValue.mMessage.mKey == MessageKey::ReferenceFileUnknownName ||
+                                   aValue.mMessage.mKey == MessageKey::ReferenceFileRepeatedName;
+
+            if (nameFault)
+            {
+                aErr << "taxbroker: " << aValue.mMessage.mEnglish << '\n' << kHelpHint;
+
+                return;
+            }
+
+            aErr << "taxbroker: the reference file " << aValue.mFile << " is not valid";
+
+            if (aValue.mRow)
+            {
+                aErr << " (row " << *aValue.mRow << ")";
+            }
+
+            aErr << ": " << aValue.mMessage.mEnglish << '\n' << kHelpHint;
+        }
+    };
+
+    std::visit(visitor, aFault);
 }
 
 /// Reads each file into memory and hands it to aAdd. On the first file that cannot be read it
@@ -1859,66 +1674,18 @@ int runReportCommand(std::span<const std::string> aArguments,
         return kExitFailure;
     }
 
-    // The rate files are named by the user, so a file that is not valid fails the run: a gap
-    // would otherwise show up as a missing rate.
-    const auto rates = loadOfficialRates(request.mEcbRateFiles);
+    // A supplied rate or reference file that is not valid fails the run before anything is
+    // calculated.
+    auto started = ApplicationRun::start(std::move(request));
 
-    if (!rates.mDiagnostics.empty())
+    if (const auto* fault = std::get_if<ApplicationInputFault>(&started))
     {
-        const auto& first = rates.mDiagnostics.front();
-
-        aErr << "taxbroker: the ECB rate file " << first.mSourceFile << " is not valid";
-
-        if (first.mRowIndex)
-        {
-            aErr << " (row " << *first.mRowIndex << ")";
-        }
-
-        aErr << ": " << first.mMessage << '\n' << kHelpHint;
+        writeInputFault(*fault, aErr);
 
         return kExitFailure;
     }
 
-    // The reference files are named by the user too: a file that is not valid fails the run.
-    const auto reference = loadReferenceData(request.mReferenceFiles);
-
-    if (reference.mFault)
-    {
-        const auto& fault = *reference.mFault;
-
-        // The text of a wrong or repeated file name already names the file.
-        const bool nameFault = fault.mMessage.mKey == MessageKey::ReferenceFileUnknownName ||
-                               fault.mMessage.mKey == MessageKey::ReferenceFileRepeatedName;
-
-        if (nameFault)
-        {
-            aErr << "taxbroker: " << fault.mMessage.mEnglish << '\n' << kHelpHint;
-
-            return kExitFailure;
-        }
-
-        aErr << "taxbroker: the reference file " << fault.mFile << " is not valid";
-
-        if (fault.mRow)
-        {
-            aErr << " (row " << *fault.mRow << ")";
-        }
-
-        aErr << ": " << fault.mMessage.mEnglish << '\n' << kHelpHint;
-
-        return kExitFailure;
-    }
-
-    const auto dataSources = dataSourcesOf(reference.mOrigins, rates.mTable);
-
-    return runReport(options,
-                     request,
-                     reference.mCatalogue.value(),
-                     rates.mTable,
-                     dataSources,
-                     aIn,
-                     aOut,
-                     aErr);
+    return runReport(options, std::get<ApplicationRun>(started), aIn, aOut, aErr);
 }
 
 } // namespace

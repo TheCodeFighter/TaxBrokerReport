@@ -143,6 +143,24 @@ target_link_libraries(taxbroker_xml
     pugixml::static
 )
 
+# The application service: one run parses, merges and calculates every report and writes the XML.
+# It lives outside the core because the XML writers (pugixml) link the core.
+add_library(taxbroker_service STATIC
+    service/application_run.cpp
+)
+
+target_include_directories(taxbroker_service
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(taxbroker_service
+    PUBLIC
+    taxbroker_core
+    PRIVATE
+    taxbroker_xml
+)
+
 # Server executable
 add_executable(taxbroker_server
     main.cpp
@@ -174,10 +192,9 @@ target_include_directories(taxbroker_cli
 
 target_link_libraries(taxbroker_cli
     PUBLIC
-    taxbroker_core
+    taxbroker_service
     PRIVATE
     taxbroker_api
-    taxbroker_xml
     nlohmann_json::nlohmann_json
 )
 
