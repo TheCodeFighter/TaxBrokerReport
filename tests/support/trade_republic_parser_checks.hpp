@@ -9,8 +9,11 @@
 #include <cstddef>
 #include <exception>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -78,15 +81,16 @@ constexpr std::array kIgnoredCashTypes{
 
 /// The logical rows (header = 1) that must end as an event or an error, read with the same CSV
 /// format as the parser. A record with the header's field count and an ignored cash type is left
-/// out. Gives an empty list when the file has no category or type column or cannot be read.
-inline std::vector<std::size_t> recordRowsToCheck(const std::filesystem::path& aPath) {
+/// out. Gives an empty list when the text has no category or type column or cannot be read.
+inline std::vector<std::size_t> recordRowsToCheck(std::string_view aText) {
     std::vector<std::size_t> rows;
 
     try
     {
         csv::CSVFormat format;
         format.delimiter(',').variable_columns(csv::VariableColumnPolicy::KEEP);
-        csv::CSVReader reader(aPath.string(), format);
+        std::stringstream stream{std::string{aText}};
+        csv::CSVReader reader(stream, format);
 
         const auto names = reader.get_col_names();
         const auto hasColumn = [&names](std::string_view aName) {
@@ -125,6 +129,20 @@ inline std::vector<std::size_t> recordRowsToCheck(const std::filesystem::path& a
     { rows.clear(); }
 
     return rows;
+}
+
+/// The same for a file; an empty list when the file cannot be read.
+inline std::vector<std::size_t> recordRowsToCheck(const std::filesystem::path& aPath) {
+    std::ifstream input{aPath, std::ios::binary};
+
+    if (!input)
+    {
+        return {};
+    }
+
+    const std::string text{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+
+    return recordRowsToCheck(std::string_view{text});
 }
 
 namespace detail {

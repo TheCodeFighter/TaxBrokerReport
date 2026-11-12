@@ -1,5 +1,7 @@
 #include "taxbroker/reference_catalogue.hpp"
 
+#include "../support/large_allocation_hook.hpp"
+#include "taxbroker/input_file.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>
@@ -616,7 +618,7 @@ ReferenceFileFault payersFault(std::string_view aText) {
 }
 
 TEST(ReferenceDataTest, NoFilesGiveTheBuiltInData) {
-    const auto load = loadReferenceData({});
+    const auto load = loadReferenceData(std::vector<std::filesystem::path>{});
 
     ASSERT_TRUE(load.mCatalogue.has_value());
     EXPECT_FALSE(load.mFault.has_value());
@@ -683,8 +685,8 @@ TEST(ReferenceDataTest, EachSuppliedFileReplacesOnlyTheFileOfItsName) {
 }
 
 TEST(ReferenceDataTest, TheBuiltInListsAreSharedByEveryLoadAndByTheEmbeddedCatalogue) {
-    const auto first = loadReferenceData({});
-    const auto second = loadReferenceData({});
+    const auto first = loadReferenceData(std::vector<std::filesystem::path>{});
+    const auto second = loadReferenceData(std::vector<std::filesystem::path>{});
 
     ASSERT_TRUE(first.mCatalogue.has_value());
     ASSERT_TRUE(second.mCatalogue.has_value());
@@ -1034,6 +1036,148 @@ TEST(ReferenceCatalogueTest, TheEmbeddedFileHasOneTradeRepublicCompany) {
     EXPECT_EQ(tradeRepublic.at(0)->mTaxNumber, std::optional<std::string>{"DE307510626"});
     EXPECT_EQ(tradeRepublic.at(0)->mAddress, "Brunnenstr. 19-21, 10119 Berlin");
     EXPECT_EQ(tradeRepublic.at(0)->mCountry, "DE");
+}
+
+TEST(ReferenceDataTest, ASuppliedPayersFileInMemoryReplacesTheBuiltInFile) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "payers.csv", .mContent = kSuppliedPayers}};
+    const auto load = loadReferenceData(files);
+
+    ASSERT_TRUE(load.mCatalogue.has_value());
+    EXPECT_EQ(load.mOrigins[0], CatalogueOrigin::Supplied);
+    EXPECT_EQ(load.mOrigins[1], CatalogueOrigin::BuiltIn);
+    EXPECT_EQ(load.mOrigins[2], CatalogueOrigin::BuiltIn);
+    ASSERT_EQ(load.mCatalogue->payers().size(), 1U);
+
+    const auto found = load.mCatalogue->findPayer(kIsinA);
+
+    ASSERT_EQ(found.mStatus, PayerLookupStatus::Found);
+    EXPECT_EQ(found.mEntries.front()->mName, "Payer A");
+    EXPECT_EQ(found.mEntries.front()->mSource.mFile, "payers.csv");
+}
+
+TEST(ReferenceDataTest, AMemoryFileNameWithAFolderPartCountsByItsLastPart) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "upload/payers.csv", .mContent = kSuppliedPayers}};
+    const auto load = loadReferenceData(files);
+
+    ASSERT_TRUE(load.mCatalogue.has_value());
+    EXPECT_EQ(load.mOrigins[0], CatalogueOrigin::Supplied);
+}
+
+TEST(ReferenceDataTest, AMemoryFileNameThatIsNotOneOfTheThreeIsAFault) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "other.csv", .mContent = kSuppliedPayers}};
+    const auto load = loadReferenceData(files);
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "other.csv");
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnknownName);
+}
+
+TEST(ReferenceDataTest, ANameThatIsNotAFileNameIsAnUnknownNameFault) {
+    const std::vector<InputFile> files{InputFile{.mName = "", .mContent = kSuppliedPayers}};
+    const auto load = loadReferenceData(files);
+
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "");
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnknownName);
+    EXPECT_EQ(load.mFault->mMessage.mParams,
+              (std::vector<MessageParam>{textParam("name", "<no file name>")}));
+}
+
+TEST(ReferenceDataTest, ANameThatEndsInAFolderGivesAnUnknownNameFaultWithoutTheFolder) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "/home/user/private/", .mContent = kSuppliedPayers}};
+    const auto load = loadReferenceData(files);
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "");
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::ReferenceFileUnknownName);
+    EXPECT_EQ(load.mFault->mMessage.mParams,
+              (std::vector<MessageParam>{textParam("name", "<no file name>")}));
+}
+
+TEST(ReferenceDataTest, APayersFileInMemoryOverTheSizeLimitIsAFaultWithItsOwnMessage) {
+    const std::vector<InputFile> files{
+        InputFile{.mName = "payers.csv", .mContent = kSuppliedPayers}};
+
+    const auto load = loadReferenceData(files, kSuppliedPayers.size() - 1);
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "payers.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::InputFileTooLarge);
+    EXPECT_EQ(load.mFault->mMessage.mParams,
+              (std::vector<MessageParam>{numberParam("limitMb", 0)}));
+}
+
+TEST(ReferenceDataTest, APayersFileOnDiskOverTheSizeLimitIsNotRead) {
+    TemporaryFolder folder;
+    const auto path = folder.write("payers.csv", kSuppliedPayers);
+
+    const auto load = loadReferenceData({path}, kSuppliedPayers.size() - 1);
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "payers.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::InputFileTooLarge);
+    // The test limit is below 1 MB, so it is 0 whole megabytes.
+    EXPECT_EQ(load.mFault->mMessage.mParams,
+              (std::vector<MessageParam>{numberParam("limitMb", 0)}));
+}
+
+TEST(ReferenceDataTest, RunningOutOfMemoryIsAFaultWithItsOwnMessage) {
+    // A file of the size of a large allocation, so its text takes one.
+    const std::vector<InputFile> files{
+        InputFile{.mName = "payers.csv",
+                  .mContent = kSuppliedPayers + std::string(test::kLargeAllocationBytes, '\n')}};
+
+    ReferenceDataLoad load;
+
+    {
+        const test::ScopedAllocationFailure failure;
+
+        load = loadReferenceData(files);
+    }
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "payers.csv");
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::InputFileOutOfMemory);
+    EXPECT_EQ(load.mFault->mMessage.mEnglish,
+              "There was not enough memory to read the file. Close other programs and try again.");
+}
+
+TEST(ReferenceDataTest, RunningOutOfMemoryWhileParsingAFileNamesThatFile) {
+    // A small payers file and a large relief-statements file. The large allocations are, in
+    // order: the copy of the relief text for the loader (1st), the buffer of the CSV reader of
+    // the payers file (2nd), then the allocations for the relief file (3rd on). Failing from the
+    // 3rd means both texts were read and the parsing of the second file failed, so the fault
+    // names that file and not the first one.
+    const std::vector<InputFile> files{
+        InputFile{.mName = "payers.csv", .mContent = kSuppliedPayers},
+        InputFile{.mName = "relief_statements.csv",
+                  .mContent = "country,income,statement,source,source_revision\n" +
+                              std::string(test::kLargeAllocationBytes, '\n')}};
+
+    ReferenceDataLoad load;
+
+    {
+        const test::ScopedAllocationFailure failure{3};
+
+        load = loadReferenceData(files);
+    }
+
+    EXPECT_FALSE(load.mCatalogue.has_value());
+    ASSERT_TRUE(load.mFault.has_value());
+    EXPECT_EQ(load.mFault->mFile, "relief_statements.csv");
+    EXPECT_EQ(load.mFault->mRow, std::nullopt);
+    EXPECT_EQ(load.mFault->mMessage.mKey, MessageKey::InputFileOutOfMemory);
 }
 
 } // namespace

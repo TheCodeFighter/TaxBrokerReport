@@ -89,8 +89,8 @@ TEST(FifoMatchingIntegrationTest, PurchasesInOneFileAreMatchedToASaleInAnotherFi
     const auto purchasesPath = files.write("purchases.csv", {firstPurchase, secondPurchase});
     const auto salesPath = files.write("sales.csv", {sale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(purchasesPath)},
-                                            {1, parser.parse(salesPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(purchasesPath)},
+                                            {1, parser.parseFile(salesPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -156,8 +156,8 @@ TEST(FifoMatchingIntegrationTest, SaleInAnEarlierYearFileChangesTheOpeningInvent
     const auto purchasePath = files.write("purchase.csv", {purchase});
     const auto salesPath = files.write("sales.csv", {earlierSale, selectedSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(purchasePath)},
-                                            {1, parser.parse(salesPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(purchasePath)},
+                                            {1, parser.parseFile(salesPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -207,8 +207,8 @@ TEST(FifoMatchingIntegrationTest, MixedFilesInReverseOrderAreMatchedByDate) {
     const auto laterPath = files.write("later.csv", {latePurchase, lateSale});
     const auto earlierPath = files.write("earlier.csv", {earlyPurchase, earlySale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(laterPath)},
-                                            {1, parser.parse(earlierPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(laterPath)},
+                                            {1, parser.parseFile(earlierPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -286,8 +286,8 @@ TEST(FifoMatchingIntegrationTest, PurchaseRepeatedInOverlappingFilesCreatesOneLo
     const auto laterPath = files.write("later.csv", {latePurchase, lateSale});
     const auto earlierPath = files.write("earlier.csv", {earlyPurchase, earlySale, latePurchase});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(laterPath)},
-                                            {1, parser.parse(earlierPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(laterPath)},
+                                            {1, parser.parseFile(earlierPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -348,8 +348,8 @@ TEST(FifoMatchingIntegrationTest, ShortSaleIsReportedWithItsSourceWhileIncomeEve
     const auto oldPath = files.write("old.csv", {oldPurchase, oldSale});
     const auto newPath = files.write("new.csv", {shortSale, dividend, interest});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(oldPath)},
-                                            {1, parser.parse(newPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(oldPath)},
+                                            {1, parser.parseFile(newPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -404,8 +404,8 @@ TEST(FifoMatchingIntegrationTest,
     const auto firstPath = files.write("first.csv", {otherSale, shortSale});
     const auto secondPath = files.write("second.csv", {shortSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath)},
-                                            {1, parser.parse(secondPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(firstPath)},
+                                            {1, parser.parseFile(secondPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -454,8 +454,8 @@ TEST(FifoMatchingIntegrationTest, FilingRowsOfTwoFilesLeaveOutTheStockHeldAfterT
         files.write("history.csv", {firstPurchase, firstSale, secondPurchase, secondSale});
     const auto nextYearPath = files.write("next-year.csv", {nextYearSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)},
-                                            {1, parser.parse(nextYearPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)},
+                                            {1, parser.parseFile(nextYearPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -543,8 +543,8 @@ TEST(FifoMatchingIntegrationTest, PurchaseRepeatedInOverlappingFilesIsOneFilingR
     const auto firstPath = files.write("first.csv", {firstPurchase, firstSale});
     const auto secondPath = files.write("second.csv", {firstPurchase, secondPurchase, secondSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(firstPath)},
-                                            {1, parser.parse(secondPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(firstPath)},
+                                            {1, parser.parseFile(secondPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});

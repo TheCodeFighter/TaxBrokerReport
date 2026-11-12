@@ -390,7 +390,7 @@ int main(int aArgumentCount, char** aArguments) {
             }
         }
 
-        const auto parsed = tr::TradeRepublicParser{}.parse(aArguments[1]);
+        const auto parsed = tr::TradeRepublicParser{}.parseFile(aArguments[1]);
         const bool parseErrors =
             std::any_of(parsed.mDiagnostics.begin(),
                         parsed.mDiagnostics.end(),

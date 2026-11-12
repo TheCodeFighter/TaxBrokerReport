@@ -4371,8 +4371,8 @@ TEST(CliReportIntegrationTest, EmptyFileBlocksTheReport) {
     EXPECT_TRUE(contains(result.mOut,
                          "Doh-KDVP errors: 1\n"
                          "  diagnostic-0001 parse_error, empty.csv\n"
-                         "    The CSV file could not be opened or did not match the expected "
-                         "Trade Republic format.\n"));
+                         "    The CSV file could not be opened, or it is not in the expected "
+                         "format of the broker's export.\n"));
 }
 
 TEST(CliReportIntegrationTest, SaleOn31DecemberIsInTheYearAndSaleOn1JanuaryIsNot) {

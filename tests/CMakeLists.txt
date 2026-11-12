@@ -22,6 +22,7 @@ endif()
 
 # Unit Tests
 add_executable(taxbroker_unit_tests
+    support/large_allocation_hook.cpp
     unit/application_result_json_test.cpp
     unit/application_result_test.cpp
     unit/failure_resolution_stage_test.cpp
@@ -57,6 +58,7 @@ add_executable(taxbroker_unit_tests
     unit/interest_payments_test.cpp
     unit/other_interest_failure_test.cpp
     unit/ecb_rate_file_test.cpp
+    unit/input_file_test.cpp
     unit/official_rate_selection_test.cpp
     unit/quantity_reconciliation_test.cpp
     unit/reference_catalogue_test.cpp

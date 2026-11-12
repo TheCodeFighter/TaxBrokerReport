@@ -94,8 +94,8 @@ TEST(KdvpXmlIntegrationTest, TwoFilesWithASaleUsingTwoPurchasesWriteTheWholeDocu
     const auto purchasesPath = files.write("purchases.csv", {firstPurchase, secondPurchase});
     const auto salesPath = files.write("sales.csv", {sale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(purchasesPath)},
-                                            {1, parser.parse(salesPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(purchasesPath)},
+                                            {1, parser.parseFile(salesPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -241,8 +241,8 @@ TEST(KdvpXmlIntegrationTest, BlockedIsinLeftOutByTheUserIsNotInTheXml) {
     const auto historyPath = files.write("history.csv", {purchase, sale});
     const auto otherPath = files.write("other.csv", {saleWithoutPurchase});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)},
-                                            {1, parser.parse(otherPath, 1)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)},
+                                            {1, parser.parseFile(otherPath, 1)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -380,7 +380,7 @@ TEST(KdvpXmlIntegrationTest, PurchasePartlySoldInAnEarlierYearListsTheEarlierSal
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {purchase, firstSale, secondSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2023, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -513,7 +513,7 @@ TEST(KdvpXmlIntegrationTest, PurchasePartlySoldInAnEarlierYearListsOnlyThisYears
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {purchase, firstSale, secondSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -652,7 +652,7 @@ TEST(KdvpXmlIntegrationTest, StockLeftAfterTheYearIsNotListed2024) {
         files.write("history.csv",
                     {firstPurchase, firstSale, secondPurchase, secondSale, thirdSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -812,7 +812,7 @@ TEST(KdvpXmlIntegrationTest, StockLeftAfterTheYearIsListedInTheNextYear2025) {
         files.write("history.csv",
                     {firstPurchase, firstSale, secondPurchase, secondSale, thirdSale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2025, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -947,7 +947,7 @@ TEST(KdvpXmlIntegrationTest, SaleOfOldAndNewUnitsListsOnlyTheNewUnit2025) {
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {oldPurchase, newPurchase, sale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2025, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -1090,7 +1090,7 @@ TEST(KdvpXmlIntegrationTest, TwoInstrumentsAreTwoListsInIsinOrder) {
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {otherPurchase, otherSale, purchase, sale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -1263,7 +1263,7 @@ TEST(KdvpXmlIntegrationTest, FractionalUnitsAndPricesKeepTheirDecimals2024) {
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {firstPurchase, secondPurchase, sale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -1406,7 +1406,7 @@ TEST(KdvpXmlIntegrationTest, SelfReportForAnEarlierYearWritesItsWorkflowCode2023
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {purchase, sale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2023, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -1531,7 +1531,7 @@ TEST(KdvpXmlIntegrationTest, LossMakingSaleWithoutAnAnswerGivesNoReportAndNoXml)
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {purchase, sale});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -1587,7 +1587,7 @@ TEST(KdvpXmlIntegrationTest, AJanuaryReplacementWritesF10False) {
     const TemporaryKdvpInputs files;
     const auto historyPath = files.write("history.csv", {purchase, sale, januaryPurchase});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
@@ -1725,7 +1725,7 @@ TEST(KdvpXmlIntegrationTest, ASplitLotAndASaleInTwoRowsWriteTheRowsAfterTheSplit
     const auto historyPath =
         files.write("history.csv", {firstPurchase, secondPurchase, split, sale, replacement});
     tr::TradeRepublicParser parser;
-    std::vector<StatementMergeInput> inputs{{0, parser.parse(historyPath)}};
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(historyPath)}};
 
     const auto prepared = TaxProcessor{}.prepareReportingYear(
         {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});

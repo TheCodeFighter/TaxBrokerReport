@@ -6,10 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <filesystem>
-#include <fstream>
 #include <string>
-#include <unistd.h>
+#include <string_view>
 
 namespace {
 using namespace taxbroker;
@@ -29,25 +27,18 @@ extern "C" int LLVMFuzzerInitialize(int*, char***) {
     return 0;
 }
 
-/// Parses one input as a CSV file and stops the run when a trade has the wrong sign or a record
+/// Parses one input as CSV text and stops the run when a trade has the wrong sign or a record
 /// row has neither an event nor an error.
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* aData, std::size_t aSize) {
-    const auto path = std::filesystem::path{"/tmp"} /
-                      ("tbr-fuzz-" + std::to_string(static_cast<long>(getpid())) + ".csv");
-
-    {
-        std::ofstream file(path, std::ios::binary | std::ios::trunc);
-        file.write(reinterpret_cast<const char*>(aData), static_cast<std::streamsize>(aSize));
-    }
-
-    const auto result = tr::TradeRepublicParser{}.parse(path, 0);
+    const std::string_view text{reinterpret_cast<const char*>(aData), aSize};
+    const auto result = tr::TradeRepublicParser{}.parse(text, "fuzz.csv", 0);
 
     if (const auto message = test::tradeSignFailure(result))
     {
         fail(*message);
     }
 
-    if (const auto message = test::droppedRowFailure(result, test::recordRowsToCheck(path)))
+    if (const auto message = test::droppedRowFailure(result, test::recordRowsToCheck(text)))
     {
         fail(*message);
     }
