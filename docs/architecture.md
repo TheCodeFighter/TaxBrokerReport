@@ -538,11 +538,13 @@ user-entered official rate is shared across brokers and instruments only for tha
 broker rate is an event-specific fallback, requires an explicit frontend warning, and remains
 marked as non-official in the result.
 
-The application result also contains the selected-year informational fee summary. It groups
-preserved fees by broker and original currency. It provides a broker-rate EUR equivalent only
-when every required fee rate is available from that broker. A fee never creates an official-rate
-request. Missing fee rates leave the affected EUR totals unavailable and do not block FURS XML
-output.
+The exchange-rate request is not available yet: a missing rate is a blocking error today.
+
+The application result also contains the selected-year informational fee summary and benefit
+summary. The fee summary groups preserved fees by broker and original currency. It provides a
+broker-rate EUR equivalent only when every required fee rate is available from that broker. A
+fee never creates an official-rate request. Missing fee rates leave the affected EUR totals
+unavailable and do not block FURS XML output.
 
 Final models and result statuses are split by form: capital gains (Doh-KDVP), dividends (Doh-Div),
 bank-deposit interest (Doh-DHO), and other interest (Doh-Obr). Broker cash interest and ordinary bond

@@ -117,6 +117,92 @@ TEST(ApplicationRunIntegrationTest, OneRequestGivesAllFourForms) {
     EXPECT_EQ(result.mStatus, OverallStatus::Success);
 }
 
+// A purchase with a fee of EUR 1.00 and a sale with a fee of EUR 5.00, and a saveback.
+constexpr std::string_view kBuyWithFee =
+    R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,-1.00,,EUR,,,,,synthetic-buy-fee,,,,)";
+constexpr std::string_view kSellWithFee =
+    R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,-5.00,,EUR,,,,,synthetic-sell-fee,,,,)";
+constexpr std::string_view kBuyWithoutFee =
+    R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-fee,,,,)";
+constexpr std::string_view kSellWithoutFee =
+    R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-fee,,,,)";
+constexpr std::string_view kSaveback =
+    R"(2024-05-02T09:00:00Z,2024-05-02,DEFAULT,CASH,BENEFITS_SAVEBACK,FUND,Synthetic Reward Fund,XX1000000002,,,2.50,,,EUR,,,,,synthetic-saveback,,,,)";
+// Fees in the year before and the year after the reporting year.
+constexpr std::string_view kBuyWithFeeIn2023 =
+    R"(2023-12-31T09:00:00Z,2023-12-31,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,-1.00,,EUR,,,,,synthetic-buy-2023,,,,)";
+constexpr std::string_view kBuyWithFeeIn2025 =
+    R"(2025-01-02T09:00:00Z,2025-01-02,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,-1.00,,EUR,,,,,synthetic-buy-2025,,,,)";
+
+TEST(ApplicationRunIntegrationTest, FeesAndBenefitsAreSummarisedForTheYear) {
+    auto run = startRun(requestWithRows({kBuyWithFee, kSellWithFee, kSaveback}));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+
+    ASSERT_EQ(result.mFees.mBrokers.size(), 1U);
+    EXPECT_EQ(result.mFees.mBrokers.at(0).mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(result.mFees.mBrokers.at(0).mByCurrency.at(0).mCount, 2U);
+    // EUR 1.00 + EUR 5.00 = EUR 6.00 at four decimals.
+    EXPECT_EQ(result.mFees.mBrokers.at(0).mByCurrency.at(0).mTotal, 60'000);
+    EXPECT_EQ(result.mFees.mEurTotal, 60'000);
+
+    ASSERT_EQ(result.mBenefits.mBrokers.size(), 1U);
+    EXPECT_EQ(result.mBenefits.mBrokers.at(0).mType, BenefitType::Saveback);
+    EXPECT_EQ(result.mBenefits.mEurTotal, 25'000); // EUR 2.50
+
+    // A fee never asks for anything.
+    EXPECT_TRUE(result.mRequests.empty());
+}
+
+TEST(ApplicationRunIntegrationTest, FeesOfOtherYearsAreNotInTheSummary) {
+    auto run = startRun(requestWithRows({kBuyWithFeeIn2023, kBuyWithFeeIn2025}));
+
+    ASSERT_TRUE(run.has_value());
+
+    EXPECT_TRUE(run->result().mFees.mBrokers.empty());
+    EXPECT_FALSE(run->result().mFees.mEurTotal.has_value());
+}
+
+TEST(ApplicationRunIntegrationTest, TheSameExportTwiceCountsAFeeOnce) {
+    auto request = requestWithRows({kBuyWithFee, kSellWithFee});
+    const auto content = request.mBrokerFiles.at(0).mFile.mContent;
+
+    request.mBrokerFiles.push_back(
+        {.mBroker = Broker::TradeRepublic, .mFile = {.mName = "copy.csv", .mContent = content}});
+
+    auto run = startRun(std::move(request));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& fees = run->result().mFees;
+
+    // The two files hold the same two transactions, which merge into two events.
+    ASSERT_EQ(fees.mBrokers.size(), 1U);
+    EXPECT_EQ(fees.mBrokers.at(0).mByCurrency.at(0).mCount, 2U);
+    EXPECT_EQ(fees.mEurTotal, 60'000);
+}
+
+TEST(ApplicationRunIntegrationTest, FeesDoNotChangeTheCapitalGainsXml) {
+    // The same purchase and sale, once with fees and once without. The form uses the unit prices
+    // and the units, so the XML is the same.
+    auto withFees = startRun(requestWithRows({kBuyWithFee, kSellWithFee}));
+    auto withoutFees = startRun(requestWithRows({kBuyWithoutFee, kSellWithoutFee}));
+
+    ASSERT_TRUE(withFees.has_value());
+    ASSERT_TRUE(withoutFees.has_value());
+
+    const auto& left = withFees->result().report(ReportType::CapitalGains);
+    const auto& right = withoutFees->result().report(ReportType::CapitalGains);
+
+    ASSERT_TRUE(left.mXml.has_value());
+    ASSERT_TRUE(right.mXml.has_value());
+    EXPECT_EQ(*left.mXml, *right.mXml);
+    EXPECT_TRUE(withoutFees->result().mFees.mBrokers.empty());
+    EXPECT_EQ(withFees->result().mFees.mEurTotal, 60'000);
+}
+
 TEST(ApplicationRunIntegrationTest, ACapitalErrorBlocksOnlyDohKdvp) {
     auto run = startRun(requestWithRows({kBuy1, kBuy2, kSell, kDividend, kSellWithoutPurchase}));
 

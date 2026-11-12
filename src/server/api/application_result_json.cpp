@@ -1137,6 +1137,81 @@ std::string moneyString(Money aAmount) {
     return formatFixedPoint(aAmount, MONEY_SCALE, kDecimals);
 }
 
+std::string_view toString(BenefitType aType) {
+    switch (aType)
+    {
+    case BenefitType::Saveback:
+        return "saveback";
+    case BenefitType::StockPerk:
+        return "stock_perk";
+    case BenefitType::Bonus:
+        return "bonus";
+    case BenefitType::Referral:
+        return "referral";
+    }
+
+    return "saveback";
+}
+
+/// An amount that may not be known: the four-decimal text, or null.
+Json optionalMoneyToJson(const std::optional<Money>& aAmount) {
+    // Not Json{...}: a braced single value would become an array.
+    if (!aAmount)
+    {
+        return Json(nullptr);
+    }
+
+    return Json(moneyString(*aAmount));
+}
+
+Json currencyTotalToJson(const CurrencyTotal& aTotal) {
+    return Json{{"currency", std::string{currencyCode(aTotal.mCurrency)}},
+                {"count", aTotal.mCount},
+                {"total", optionalMoneyToJson(aTotal.mTotal)}};
+}
+
+Json currencyTotalsToJson(const std::vector<CurrencyTotal>& aTotals) {
+    Json totals = Json::array();
+
+    std::transform(aTotals.begin(), aTotals.end(), std::back_inserter(totals), currencyTotalToJson);
+
+    return totals;
+}
+
+Json feeSummaryToJson(const FeeSummary& aSummary) {
+    Json brokers = Json::array();
+
+    std::transform(aSummary.mBrokers.begin(),
+                   aSummary.mBrokers.end(),
+                   std::back_inserter(brokers),
+                   [](const BrokerFees& aBroker) {
+                       return Json{{"broker", toString(aBroker.mBroker)},
+                                   {"byCurrency", currencyTotalsToJson(aBroker.mByCurrency)},
+                                   {"totalEur", optionalMoneyToJson(aBroker.mEurTotal)},
+                                   {"brokerRateCount", aBroker.mBrokerRateCount}};
+                   });
+
+    return Json{{"brokers", std::move(brokers)},
+                {"totalEur", optionalMoneyToJson(aSummary.mEurTotal)}};
+}
+
+Json benefitSummaryToJson(const BenefitSummary& aSummary) {
+    Json rows = Json::array();
+
+    std::transform(aSummary.mBrokers.begin(),
+                   aSummary.mBrokers.end(),
+                   std::back_inserter(rows),
+                   [](const BrokerBenefits& aRow) {
+                       return Json{{"broker", toString(aRow.mBroker)},
+                                   {"type", toString(aRow.mType)},
+                                   {"byCurrency", currencyTotalsToJson(aRow.mByCurrency)},
+                                   {"totalEur", optionalMoneyToJson(aRow.mEurTotal)}};
+                   });
+
+    return Json{{"brokers", std::move(rows)},
+                {"totalEur", optionalMoneyToJson(aSummary.mEurTotal)}};
+}
+
 Json catalogueSourceToJson(const CatalogueSource& aSource) {
     return Json{{"source", aSource.mSource},
                 {"sourceRevision", aSource.mSourceRevision},
@@ -1438,6 +1513,8 @@ std::string serializeApplicationResultJson(const ApplicationResult& aResult, int
         {"capitalSummary",
          Json{{"investments", std::move(investments)}, {"longHeld", std::move(longHeld)}}},
         {"usedRates", std::move(usedRates)},
+        {"feeSummary", feeSummaryToJson(aResult.mFees)},
+        {"benefitSummary", benefitSummaryToJson(aResult.mBenefits)},
         {"corrections", std::move(corrections)},
         {"reconciliation", std::move(reconciliation)},
         {"dataSources", dataSourcesToJson(aResult.mDataSources)},

@@ -112,6 +112,8 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
       },
       "capitalSummary": {"investments": [], "longHeld": []},
       "usedRates": [],
+      "feeSummary": {"brokers": [], "totalEur": null},
+      "benefitSummary": {"brokers": [], "totalEur": null},
       "corrections": [],
       "reconciliation": [],
       "dataSources": {"referenceFiles": [], "rateFiles": []},
@@ -2942,6 +2944,100 @@ TEST(ApplicationResultJsonTest, WritesAUsedRateWithItsFileAndRow) {
     EXPECT_EQ(rate.at("file"), "exr_2024.csv");
     EXPECT_EQ(rate.at("row"), 3);
     EXPECT_EQ(rate.at("origin"), "supplied");
+}
+
+TEST(ApplicationResultJsonTest, WritesTheFeeAndBenefitSummaries) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    // Broker A: EUR 1.25 and USD 2.50 (EUR 2.00 at its own rate); broker B: EUR 0.75 and a fee of
+    // GBP 1.00 with no rate, so B and the overall EUR total are not available.
+    input.mFees = FeeSummary{
+        .mBrokers = {{.mBroker = Broker::TradeRepublic,
+                      .mByCurrency = {{.mCurrency = Currency::EUR, .mCount = 1, .mTotal = 12'500},
+                                      {.mCurrency = Currency::USD, .mCount = 1, .mTotal = 25'000}},
+                      .mEurTotal = 32'500,
+                      .mBrokerRateCount = 1},
+                     {.mBroker = Broker::InteractiveBrokers,
+                      .mByCurrency = {{.mCurrency = Currency::GBP, .mCount = 1, .mTotal = 10'000}},
+                      .mEurTotal = std::nullopt,
+                      .mBrokerRateCount = 0}},
+        .mEurTotal = std::nullopt};
+    input.mBenefits = BenefitSummary{
+        .mBrokers = {{.mBroker = Broker::TradeRepublic,
+                      .mType = BenefitType::StockPerk,
+                      .mByCurrency = {{.mCurrency = Currency::EUR, .mCount = 2, .mTotal = 55'000}},
+                      .mEurTotal = 55'000}},
+        .mEurTotal = 55'000};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+
+    const auto expectedFees = nlohmann::json::parse(R"({
+      "brokers": [
+        {
+          "broker": "trade_republic",
+          "byCurrency": [
+            {"currency": "EUR", "count": 1, "total": "1.2500"},
+            {"currency": "USD", "count": 1, "total": "2.5000"}
+          ],
+          "totalEur": "3.2500",
+          "brokerRateCount": 1
+        },
+        {
+          "broker": "interactive_brokers",
+          "byCurrency": [{"currency": "GBP", "count": 1, "total": "1.0000"}],
+          "totalEur": null,
+          "brokerRateCount": 0
+        }
+      ],
+      "totalEur": null
+    })");
+    const auto expectedBenefits = nlohmann::json::parse(R"({
+      "brokers": [
+        {
+          "broker": "trade_republic",
+          "type": "stock_perk",
+          "byCurrency": [{"currency": "EUR", "count": 2, "total": "5.5000"}],
+          "totalEur": "5.5000"
+        }
+      ],
+      "totalEur": "5.5000"
+    })");
+
+    EXPECT_EQ(json.at("feeSummary").dump(), expectedFees.dump());
+    EXPECT_EQ(json.at("benefitSummary").dump(), expectedBenefits.dump());
+}
+
+TEST(ApplicationResultJsonTest, WritesEveryBenefitTypeByItsName) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mBenefits = BenefitSummary{
+        .mBrokers = {{.mBroker = Broker::TradeRepublic,
+                      .mType = BenefitType::Saveback,
+                      .mByCurrency = {{.mCurrency = Currency::EUR, .mCount = 1, .mTotal = 10'000}},
+                      .mEurTotal = 10'000},
+                     {.mBroker = Broker::TradeRepublic,
+                      .mType = BenefitType::StockPerk,
+                      .mByCurrency = {{.mCurrency = Currency::EUR, .mCount = 1, .mTotal = 10'000}},
+                      .mEurTotal = 10'000},
+                     {.mBroker = Broker::TradeRepublic,
+                      .mType = BenefitType::Bonus,
+                      .mByCurrency = {{.mCurrency = Currency::EUR, .mCount = 1, .mTotal = 10'000}},
+                      .mEurTotal = 10'000},
+                     {.mBroker = Broker::TradeRepublic,
+                      .mType = BenefitType::Referral,
+                      .mByCurrency = {{.mCurrency = Currency::EUR, .mCount = 1, .mTotal = 10'000}},
+                      .mEurTotal = 10'000}},
+        .mEurTotal = 40'000};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& rows = json.at("benefitSummary").at("brokers");
+
+    ASSERT_EQ(rows.size(), 4U);
+    EXPECT_EQ(rows.at(0).at("type"), "saveback");
+    EXPECT_EQ(rows.at(1).at("type"), "stock_perk");
+    EXPECT_EQ(rows.at(2).at("type"), "bonus");
+    EXPECT_EQ(rows.at(3).at("type"), "referral");
+    EXPECT_EQ(json.at("benefitSummary").at("totalEur"), "4.0000");
 }
 
 TEST(ApplicationResultJsonTest, ARowWhoseKindWasNeverSetIsWrittenAsUnknownNotAsADividend) {

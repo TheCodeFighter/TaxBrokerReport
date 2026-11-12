@@ -8,6 +8,7 @@
 #include "taxbroker/application_request.hpp"
 #include "taxbroker/application_run.hpp"
 #include "taxbroker/application_result.hpp"
+#include "taxbroker/currency.hpp"
 #include "taxbroker/decision_session.hpp"
 #include "taxbroker/input_file.hpp"
 #include "taxbroker/official_rates.hpp"
@@ -1189,6 +1190,139 @@ void writeUsedRates(std::ostream& aOut, const RunOutcome& aOutcome) {
     aOut << '\n';
 }
 
+/// The benefit type as a word for the summary.
+std::string_view benefitTypeText(BenefitType aType) {
+    switch (aType)
+    {
+    case BenefitType::Saveback:
+        return "saveback";
+    case BenefitType::StockPerk:
+        return "stock perk";
+    case BenefitType::Bonus:
+        return "bonus";
+    case BenefitType::Referral:
+        return "referral";
+    }
+
+    return "benefit";
+}
+
+/// Whether an amount in a currency other than EUR is among the totals.
+bool hasForeignCurrency(const std::vector<CurrencyTotal>& aTotals) {
+    return std::ranges::any_of(aTotals, [](const CurrencyTotal& aTotal) {
+        return aTotal.mCurrency != Currency::EUR;
+    });
+}
+
+/// An EUR total, or why it is not available: a foreign amount without an EUR value (aReason), or
+/// otherwise a sum too large to keep.
+std::string
+eurTotalText(const std::optional<Money>& aTotal, bool aHasForeign, std::string_view aReason) {
+    if (aTotal)
+    {
+        return formatFixedPoint(*aTotal, MONEY_SCALE, 4) + " EUR";
+    }
+
+    return "not available (" + std::string{aHasForeign ? aReason : "the sum is too large"} + ")";
+}
+
+/// One line per currency (`Trade Republic: 2 fees, 6.0000 EUR`), then the EUR total of the row
+/// only when it has a foreign currency.
+void writeSummaryRow(std::ostream& aOut,
+                     const std::string& aLabel,
+                     const std::vector<CurrencyTotal>& aTotals,
+                     const std::optional<Money>& aEurTotal,
+                     std::string_view aNoun,
+                     std::string_view aReason) {
+    for (const auto& total : aTotals)
+    {
+        aOut << "  " << aLabel << ": " << total.mCount << ' ' << aNoun
+             << (total.mCount == 1 ? "" : "s") << ", "
+             << (total.mTotal ? formatFixedPoint(*total.mTotal, MONEY_SCALE, 4) : "not available")
+             << ' ' << currencyCode(total.mCurrency) << '\n';
+    }
+
+    if (hasForeignCurrency(aTotals))
+    {
+        aOut << "  " << aLabel << " in EUR: " << eurTotalText(aEurTotal, true, aReason) << '\n';
+    }
+}
+
+/// The overall line: `Total: 6.0000 EUR`, or `Total in EUR: not available (...)`.
+template <typename Row>
+void writeSummaryTotal(std::ostream& aOut,
+                       const std::vector<Row>& aRows,
+                       const std::optional<Money>& aEurTotal,
+                       std::string_view aReason) {
+    if (aEurTotal)
+    {
+        aOut << "  Total: " << eurTotalText(aEurTotal, false, aReason) << '\n';
+
+        return;
+    }
+
+    const bool hasForeign = std::ranges::any_of(aRows, [](const Row& aRow) {
+        return hasForeignCurrency(aRow.mByCurrency);
+    });
+
+    aOut << "  Total in EUR: " << eurTotalText(aEurTotal, hasForeign, aReason) << '\n';
+}
+
+/// The fees and the benefits of the year. They are information only and are in no form.
+void writeFeesAndBenefits(std::ostream& aOut, const RunOutcome& aOutcome) {
+    constexpr std::string_view kFeeReason = "a fee has no broker rate";
+    constexpr std::string_view kBenefitReason = "a benefit is not in EUR";
+    const auto& fees = aOutcome.mResult.mFees;
+    const auto& benefits = aOutcome.mResult.mBenefits;
+    const auto year = std::to_string(aOutcome.mRequest.mReportingYear);
+
+    aOut << "Fees in " << year << " (information only, not in any form):";
+
+    if (fees.mBrokers.empty())
+    {
+        aOut << " none\n";
+    }
+    else
+    {
+        aOut << '\n';
+
+        for (const auto& broker : fees.mBrokers)
+        {
+            writeSummaryRow(aOut,
+                            std::string{brokerName(broker.mBroker)},
+                            broker.mByCurrency,
+                            broker.mEurTotal,
+                            "fee",
+                            kFeeReason);
+        }
+
+        writeSummaryTotal(aOut, fees.mBrokers, fees.mEurTotal, kFeeReason);
+    }
+
+    aOut << "Benefits in " << year << " (information only, not in any form):";
+
+    if (benefits.mBrokers.empty())
+    {
+        aOut << " none\n";
+    }
+    else
+    {
+        aOut << '\n';
+
+        for (const auto& row : benefits.mBrokers)
+        {
+            const auto label = std::string{brokerName(row.mBroker)} + ", " +
+                               std::string{benefitTypeText(row.mType)};
+
+            writeSummaryRow(aOut, label, row.mByCurrency, row.mEurTotal, "benefit", kBenefitReason);
+        }
+
+        writeSummaryTotal(aOut, benefits.mBrokers, benefits.mEurTotal, kBenefitReason);
+    }
+
+    aOut << '\n';
+}
+
 /// The errors and the warnings of a form. The Doh-KDVP lists are always written; an income form
 /// has them only when it has a diagnostic.
 void writeFormDiagnostics(std::ostream& aOut, const RunOutcome& aOutcome, const FormInfo& aForm) {
@@ -1340,6 +1474,7 @@ std::string summaryText(const RunOutcome& aOutcome) {
     writeLongHeld(out, aOutcome);
     out << '\n';
     writeUsedRates(out, aOutcome);
+    writeFeesAndBenefits(out, aOutcome);
     writePrivateMarketEvents(out, aOutcome);
 
     for (const auto& form : kForms)

@@ -587,7 +587,7 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mUnits == aRight.mUnits && aLeft.mAmount == aRight.mAmount &&
            aLeft.mRedemptionPrice == aRight.mRedemptionPrice && aLeft.mFeePaid == aRight.mFeePaid &&
            aLeft.mTaxPaid == aRight.mTaxPaid && aLeft.mExchangeRate == aRight.mExchangeRate &&
-           aLeft.mCurrency == aRight.mCurrency;
+           aLeft.mCurrency == aRight.mCurrency && aLeft.mFeeCurrency == aRight.mFeeCurrency;
 }
 
 [[nodiscard]] bool sameEventFacts(const MergeEvent& aLeft, const MergeEvent& aRight) {

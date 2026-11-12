@@ -935,6 +935,7 @@ TEST(TradeRepublicParserTest, ParsesAMaturityActionRowAsAnEventWithUnitsOnly) {
     EXPECT_FALSE(redemption.mRedemptionPrice.has_value());
     EXPECT_FALSE(redemption.mExchangeRate.has_value());
     EXPECT_EQ(redemption.mFeePaid, 0);
+    EXPECT_EQ(redemption.mFeeCurrency, Currency::Unknown);
     EXPECT_FALSE(redemption.mTaxPaid.has_value());
     EXPECT_EQ(redemption.mCurrency, Currency::Unknown);
     EXPECT_EQ(transactionId(redemption.mMetadata), "synthetic-maturity-action");
@@ -1140,7 +1141,7 @@ TEST(TradeRepublicParserTest, ParsesAForeignMaturityPaymentWithItsBrokerRate) {
         .mShares = "",
         .mPrice = "",
         .mAmount = "920.00",
-        .mFee = "",
+        .mFee = "-0.50", // the fee column is in the currency column (EUR)
         .mTax = "",
         .mCurrency = "EUR",
         .mOriginalAmount = "1000.00",
@@ -1161,6 +1162,8 @@ TEST(TradeRepublicParserTest, ParsesAForeignMaturityPaymentWithItsBrokerRate) {
     EXPECT_EQ(redemption.mAmount,
               10'000'000); // USD 1,000.00 at 4 decimals; the EUR amount is not stored
     EXPECT_EQ(redemption.mCurrency, Currency::USD);
+    EXPECT_EQ(redemption.mFeePaid, 5'000);             // EUR 0.50 at 4 decimals, sign dropped
+    EXPECT_EQ(redemption.mFeeCurrency, Currency::EUR); // not the USD of the amount
     ASSERT_TRUE(redemption.mExchangeRate.has_value());
     EXPECT_EQ(redemption.mExchangeRate->mValue, 92'000'000); // 0.92 EUR per USD at 8 decimals
     EXPECT_EQ(redemption.mExchangeRate->mDirection, ExchangeRateDirection::EurPerForeign);

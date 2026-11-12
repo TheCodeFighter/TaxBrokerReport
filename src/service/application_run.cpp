@@ -6,6 +6,7 @@
 #include "processors/capital_report_gates.hpp"
 #include "processors/corporate_actions.hpp"
 #include "processors/failure_resolution_stage.hpp"
+#include "processors/fee_summary.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "processors/income_reports.hpp"
 #include "processors/loss_eligibility.hpp"
@@ -233,6 +234,12 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
     appendCorrections(input, capitalStatement, fifo);
     input.mUsedRates = mergedRates(std::move(conversion.mUsedRates), std::move(income.mUsedRates));
     input.mDataSources = aDataSources;
+
+    // Information only: the summaries read the merged events and never change a stage's output.
+    auto summaries = summarizeFeesAndBenefits(statement, ledger);
+
+    input.mFees = std::move(summaries.mFees);
+    input.mBenefits = std::move(summaries.mBenefits);
 
     return input;
 }

@@ -91,8 +91,8 @@ whether to exclude failed capital ISINs". The classification of trade investment
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
 `excludedItems`". The dividend and other-interest failure choices use the same stage, and the
 report command runs both stages and asks these choices and the bond type in the terminal.
-The fee summary and developer mode are not part of it yet; until developer mode exists, `unsafe`
-is `false`. XML failures are isolated per form: see "XML writer stage" below.
+Developer mode is not part of it yet; until developer mode exists, `unsafe` is `false`. XML
+failures are isolated per form: see "XML writer stage" below.
 
 ### Application request
 
@@ -120,6 +120,13 @@ These parts are informational: the XML is the truth, and they never change a sta
   codes of the exclusion for `excluded`), `listedSales`, `listedUnits`, `blockedLossUnits` (the
   listed units whose loss the 30-day rule blocks, `F10` false) and the `sales` in ledger order with
   their date and safe source. `capitalSummary.longHeld` lists the units past the holding period.
+- `feeSummary` and `benefitSummary`: the informational summaries of the selected year
+  (`calculations.md`, "Informational fee summary"). Each has `brokers` and the overall `totalEur`.
+  A fee row has the `broker`, its `byCurrency` entries (`currency`, `count`, `total`), the broker's
+  `totalEur` and `brokerRateCount` (the fees converted with their own broker rate); a benefit row
+  has the `broker`, the `type` (`saveback`, `stock_perk`, `bonus`, `referral`), `byCurrency` and
+  `totalEur`. Money is text with four decimals; a total that is not available is `null`. They
+  create no diagnostic and no request.
 - `usedRates`: the official rates that converted a trade or an income amount, by tax date, then
   currency code, with the observation date, the rate (foreign units per 1 EUR at eight decimals),
   the file, the row and whether the file is built in or supplied.
@@ -784,7 +791,7 @@ request type, and a failure-resolution question without an investment.
 
 | Type | Required question data and answer |
 | --- | --- |
-| `exchange_rates_required` | Missing currency/date pairs, usage and any verified event-specific fallback; answer with official pair rates or explicit fallback acknowledgements. |
+| `exchange_rates_required` | Planned, not available yet: no run makes this request today (a missing rate is the blocking error `missing_exchange_rate`). Missing currency/date pairs, usage and any verified event-specific fallback; answer with official pair rates or explicit fallback acknowledgements. |
 | `corporate_action_identity_required` | Candidate actions with ISIN, dates, types, ratios and all sources; answer with confirmed grouping, effective dates and order where needed. |
 | `corporate_action_ratio_required` | One request per ISIN, for the first action its pool reached: the ISIN, its name, the effective date, every source record of the action (broker, transaction ID, read-only quantity field; rows of different brokers on one date are one action) the open units of all brokers just before it, and the range of effective dates that keep them. Also asked for a split row after 31 December that a December loss window reaches, and for split rows of two brokers at most 10 days apart (`askSameEvent`, answer `separate_events` when they are two splits). Answer with positive, different whole-number new/old shares, the effective date from the announcement within the range and the confirmed previewed position, or cancel. The GUI and the CLI also accept the shares before and after and turn them into the two numbers; they warn about a reduced number above 1000. |
 | `quantity_correction_required` | One request for the first sale of an ISIN whose pool stopped for a shortage below `0.00000100` units that the discarded source digits do not prove to be rounding: the ISIN, its name, the sale (date, broker and transaction ID), its units, the units left (the proposed quantity), the unit value in EUR and the budget used. Answer with the corrected sale units (above 0, at most the units left, less than `0.00000100` below the sale, and with the roundings before it below EUR 0.01 in total) or cancel. |
@@ -1032,7 +1039,7 @@ parser codes.
 The CLI report command already emits `unsupported_tax_treatment`,
 `tax_classification_unknown` (with its request), `tax_category_not_reported`,
 `missing_exchange_rate` and `corporate_action_not_applied` for capital gains, without requests
-except the classification request (the others come with exchange-rate requests). It also runs the 30-day loss rule and the corporate-action stage in a
+except the classification request (the exchange-rate request is not available yet). It also runs the 30-day loss rule and the corporate-action stage in a
 `DecisionSession` and asks their questions in the terminal; with `--no-input`, or when the input
 ends, they stay open and the summary lists them. `unsupported_tax_treatment` is also a non-blocking warning for
 each skipped private-market event of the selected year; a rejected private-market row or a merger
@@ -1211,6 +1218,8 @@ is present; the raw CSV row is not.
   },
   "capitalSummary": { "investments": [], "longHeld": [] },
   "usedRates": [],
+  "feeSummary": { "brokers": [], "totalEur": null },
+  "benefitSummary": { "brokers": [], "totalEur": null },
   "corrections": [],
   "reconciliation": [],
   "dataSources": { "referenceFiles": [], "rateFiles": [] },

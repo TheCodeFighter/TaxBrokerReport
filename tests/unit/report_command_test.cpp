@@ -998,6 +998,9 @@ Investments with a sale in 2024: 1
 
 Units past the holding period (tax free, not in the XML): 0
 
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -1093,6 +1096,9 @@ Forms:
 Investments with a sale in 2024: 0
 
 Units past the holding period (tax free, not in the XML): 0
+
+Fees in 2024 (information only, not in any form): none
+Benefits in 2024 (information only, not in any form): none
 
 Private-market events skipped (only a cash amount, no units): 0
 

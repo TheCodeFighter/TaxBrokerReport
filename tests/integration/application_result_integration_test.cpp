@@ -1409,6 +1409,14 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
     "longHeld": []
   },
   "usedRates": [],
+  "feeSummary": {
+    "brokers": [],
+    "totalEur": null
+  },
+  "benefitSummary": {
+    "brokers": [],
+    "totalEur": null
+  },
   "corrections": [],
   "reconciliation": [],
   "dataSources": {

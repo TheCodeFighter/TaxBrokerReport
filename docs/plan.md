@@ -145,7 +145,9 @@ Apply corporate-action source warnings to relevant following-January loss-analys
 
 The same result carries missing exchange-rate requests grouped by currency and tax date. Official
 Banka Slovenije input is the default and is reused for that exact pair across the current run. A
-broker-rate fallback requires a prominent explicit warning and remains event-specific.
+broker-rate fallback requires a prominent explicit warning and remains event-specific. This
+request is not available yet: a missing rate blocks the reports that need it, and the user loads the
+ECB file of that year or leaves the investment or payment out.
 
 ## Multi-file merging
 
@@ -318,8 +320,9 @@ rates, income rows with their provenance and filing evidence, deposit interest a
 allowance, corrections and reconciliation, data sources) and the operation itself exist: an
 `ApplicationRun` (`taxbroker_service`) loads the supplied files, parses, merges, prepares the year
 and calculates every report and its XML in a decision session. The command line reads the files
-into the request, asks the questions, writes the files and prints the summary. The fee summary, the
-exchange-rate request and the developer mode come with their own tasks.
+into the request, asks the questions, writes the files and prints the summary. The fee and benefit
+summaries are in the result. The exchange-rate request and the developer mode come with their own
+tasks; until the request exists, a missing rate blocks the reports that need it.
 
 The result and its JSON boundary follow [`diagnostics.md`](diagnostics.md), including deterministic
 diagnostic ordering, safe source-row locations, independent report status, and partial success.
