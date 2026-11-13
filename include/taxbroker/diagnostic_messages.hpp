@@ -151,6 +151,8 @@ enum class MessageKey {
     SlovenianPayerTaxNumberMissing,
     DepositInterestAddOtherBanks,
     TreatyClaimDetailsMissing,
+    DeveloperExportUnavailableUnitValueTooLarge,
+    DeveloperExportUnavailableCorporateActionAfterGap,
     TaxClassificationUnknownIncomeConfirmationRequired,
     TaxClassificationUnknownIncomeCancelled,
     TaxCategoryNotReportedUserChoiceIncome,

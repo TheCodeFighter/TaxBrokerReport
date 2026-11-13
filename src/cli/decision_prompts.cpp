@@ -182,12 +182,75 @@ void writeFailureQuestion(std::ostream& aOut, const DecisionRequest& aRequest) {
          << " listed here; they are not in the\n"
             "  XML, and the summary lists them. fail: write no "
          << form << ". cancel: no answer, and no\n  " << form << ".\n";
+
+    const auto* failure = std::get_if<FailureResolutionQuestion>(&aRequest.mData);
+
+    if (failure != nullptr && failure->mDeveloperExportOffered)
+    {
+        aOut << "  developer: write an unsafe " << form
+             << " for the missing purchase history (developer mode). You\n"
+                "  confirm it once more before it is written.\n";
+    }
 }
 
-std::optional<AnswerValue> readFailureAnswer(std::istream& aIn, std::ostream& aOut) {
+/// The one combined confirmation of the developer export in the terminal: the three steps of the
+/// backend (history is missing, every name and ISIN with the risk, the explicit confirmation) are
+/// answered together.
+void writeDeveloperWarning(std::ostream& aOut, const DecisionRequest& aRequest) {
+    aOut << "Developer export (UNSAFE): the purchase history is missing for "
+         << unitsText(aRequest.mInvestments.size(), 0) << ":\n";
+
+    for (const auto& investment : aRequest.mInvestments)
+    {
+        aOut << "  " << investmentText(investment.mIsin, investment.mName) << ": "
+             << reasonCodesText(investment) << '\n';
+    }
+
+    aOut
+        << "  The Doh-KDVP will be incomplete. Its sales without purchase history have no F10 and\n"
+           "  the stock (F8) may be negative, so eDavki may reject the file or the tax result may\n"
+           "  be wrong. The errors stay in the summary and the file is marked unsafe.\n"
+           "  Do you want to write this incorrect Doh-KDVP?\n";
+}
+
+/// True for confirm, false for cancel; empty when the input has ended.
+std::optional<bool> readDeveloperConfirmation(std::istream& aIn, std::ostream& aOut) {
     while (true)
     {
-        const auto line = readLine(aIn, aOut, "Your answer (exclude, fail or cancel):");
+        const auto line = readLine(aIn, aOut, "Your answer (confirm or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "confirm")
+        {
+            return true;
+        }
+
+        if (word == "cancel")
+        {
+            return false;
+        }
+
+        aOut << "Answer confirm or cancel.\n";
+    }
+}
+
+std::optional<AnswerValue>
+readFailureAnswer(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aOut) {
+    const auto& question = std::get<FailureResolutionQuestion>(aRequest.mData);
+    const bool offered = question.mDeveloperExportOffered;
+
+    while (true)
+    {
+        const auto line = readLine(aIn,
+                                   aOut,
+                                   offered ? "Your answer (exclude, fail, developer or cancel):"
+                                           : "Your answer (exclude, fail or cancel):");
 
         if (!line)
         {
@@ -206,12 +269,33 @@ std::optional<AnswerValue> readFailureAnswer(std::istream& aIn, std::ostream& aO
             return FailureResolutionAnswer{FailureResolution::FailReport};
         }
 
+        if (word == "developer" && offered)
+        {
+            writeDeveloperWarning(aOut, aRequest);
+
+            const auto confirmed = readDeveloperConfirmation(aIn, aOut);
+
+            if (!confirmed)
+            {
+                return std::nullopt;
+            }
+
+            // A cancel goes back to the choice.
+            if (*confirmed)
+            {
+                return FailureResolutionAnswer{FailureResolution::DeveloperExport};
+            }
+
+            continue;
+        }
+
         if (word == "cancel")
         {
             return CancelAnswer{};
         }
 
-        aOut << "Answer exclude, fail or cancel.\n";
+        aOut << (offered ? "Answer exclude, fail, developer or cancel.\n"
+                         : "Answer exclude, fail or cancel.\n");
     }
 }
 
@@ -1069,7 +1153,13 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
             writeFailureQuestion(aOut, aRequest);
-            return readFailureAnswer(aIn, aOut);
+            return readFailureAnswer(aRequest, aIn, aOut);
+        }
+        else if constexpr (std::is_same_v<Question, DeveloperExportQuestion>)
+        {
+            // The one combined confirmation was given with the choice; the backend's three steps
+            // are answered one after the other without asking again.
+            return DeveloperExportConfirmAnswer{};
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
@@ -1103,6 +1193,8 @@ std::string_view failureResolutionText(FailureResolution aChoice, bool aHasBroke
     {
     case FailureResolution::ExcludeFailedInstruments:
         return aHasBrokers ? "leave the failed items out" : "leave the failed investments out";
+    case FailureResolution::DeveloperExport:
+        return "write an unsafe export (developer mode)";
     case FailureResolution::FailReport:
         break;
     }
@@ -1122,6 +1214,10 @@ std::string answerText(const AnswerValue& aAnswer, bool aHasBrokers) {
         else if constexpr (std::is_same_v<Value, CancelAnswer>)
         {
             return "cancelled";
+        }
+        else if constexpr (std::is_same_v<Value, DeveloperExportConfirmAnswer>)
+        {
+            return "confirmed";
         }
         else if constexpr (std::is_same_v<Value, NoOtherActivityAnswer>)
         {
@@ -1211,7 +1307,8 @@ bool canAsk(const QuestionData& aData) {
         {
             return false;
         }
-        else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
+        else if constexpr (std::is_same_v<Question, FailureResolutionQuestion> ||
+                           std::is_same_v<Question, DeveloperExportQuestion>)
         {
             return true;
         }
@@ -1352,6 +1449,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, FailureResolutionQuestion>)
         {
             return failedUnitsText(aQuestion.mInvestments.size(), aQuestion.mBrokers.size());
+        }
+        else if constexpr (std::is_same_v<Question, DeveloperExportQuestion>)
+        {
+            return "developer export, step " + std::to_string(aQuestion.mStep) + " of 3, " +
+                   failedUnitsText(aQuestion.mInvestments.size(), 0);
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {

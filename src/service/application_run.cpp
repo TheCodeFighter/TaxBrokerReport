@@ -38,6 +38,78 @@ std::vector<Isin> blockedIsins(const CapitalGainsBuildResult& aBuilt) {
     return isins;
 }
 
+/// The investments the developer export is offered for, and one warning for each investment with
+/// missing history that it cannot be written for.
+struct DeveloperEligibility {
+    std::vector<Isin> mIsins;
+    std::vector<ProcessingDiagnostic> mWarnings;
+};
+
+/// The warning that the developer export was left out for a pool, with the sale without history
+/// as its source.
+ProcessingDiagnostic developerUnavailableWarning(const std::vector<TradeInstrument>& aInstruments,
+                                                 std::size_t aInstrumentIndex,
+                                                 const FifoIsinResult& aPool,
+                                                 DeveloperExportCheck aCheck) {
+    const bool tooLarge = aCheck == DeveloperExportCheck::UnitValueTooLarge;
+    auto message = makeDiagnosticMessage(
+        tooLarge ? MessageKey::DeveloperExportUnavailableUnitValueTooLarge
+                 : MessageKey::DeveloperExportUnavailableCorporateActionAfterGap);
+    const auto& sale =
+        aInstruments.at(aInstrumentIndex).mTransactions.at(aPool.mStoppedAt->mEventIndex);
+
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Warning,
+        .mCode = ProcessingDiagnosticCode::DeveloperExportUnavailable,
+        .mContext =
+            {
+                .mStage = PipelineStage::HistoricalValidation,
+                .mAffectedReports = {ReportType::CapitalGains},
+                .mSources = sale.mMetadata.mSources,
+                .mTaxDate = sale.mMetadata.mTaxDate,
+                .mInstrumentName = aPool.mName,
+                .mIsin = aPool.mIsin,
+            },
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
+}
+
+/// The ISINs whose FIFO pool stopped at a sale with too few units and whose developer list can be
+/// built. Empty, and no walk over the pools, when developer mode is off.
+DeveloperEligibility developerEligibility(bool aDeveloperMode,
+                                          const std::vector<TradeInstrument>& aInstruments,
+                                          const ReportingYearLedger& aLedger,
+                                          const FifoMatchingResult& aFifo) {
+    DeveloperEligibility eligibility;
+
+    if (!aDeveloperMode)
+    {
+        return eligibility;
+    }
+
+    for (std::size_t index = 0; index < aFifo.mIsins.size(); ++index)
+    {
+        const auto& pool = aFifo.mIsins.at(index);
+
+        // A left-out instrument has no pool run, so it is never stopped for missing history.
+        const auto check = CapitalGainsReportBuilder::checkDeveloperExport(aLedger, pool, index);
+
+        if (check == DeveloperExportCheck::Possible)
+        {
+            eligibility.mIsins.push_back(pool.mIsin);
+        }
+        else if (check != DeveloperExportCheck::NotApplicable)
+        {
+            eligibility.mWarnings.push_back(
+                developerUnavailableWarning(aInstruments, index, pool, check));
+        }
+    }
+
+    return eligibility;
+}
+
 /// True when an instrument that a tax rule or the user left out has a sale in the year, or an
 /// excluded bond has matured units. Only then did the year have a disposal that is not reported.
 bool hasLeftOutDisposal(const MergedStatement& aStatement,
@@ -153,11 +225,32 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
     std::move(gateDiagnostics.begin(), gateDiagnostics.end(), std::back_inserter(processing));
 
     // The user may leave out every investment with an error of its own (or ask for no report).
-    const auto excluded = FailureResolutionStage::resolve(input, aDecisions, kCapitalFailure);
+    auto developerChoices = developerEligibility(aRequest.mDeveloperMode,
+                                                 capitalStatement.mPresentation.mTradeInstruments,
+                                                 ledger,
+                                                 fifo);
 
-    if (!excluded.empty())
+    std::move(developerChoices.mWarnings.begin(),
+              developerChoices.mWarnings.end(),
+              std::back_inserter(processing));
+
+    const auto capitalChoice = FailureResolutionStage::resolveUnits(
+        input,
+        aDecisions,
+        kCapitalFailure,
+        DeveloperOffer{.mEnabled = aRequest.mDeveloperMode,
+                       .mEligibleIsins = std::move(developerChoices.mIsins)});
+    const auto& excluded = capitalChoice.mIsins;
+    const auto& developer = capitalChoice.mDeveloperIsins;
+
+    if (!excluded.empty() || !developer.empty())
     {
-        built = CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, excluded);
+        built = CapitalGainsReportBuilder::build(capitalStatement,
+                                                 ledger,
+                                                 fifo,
+                                                 loss,
+                                                 excluded,
+                                                 developer);
     }
 
     std::optional<CapitalGainsReportKDVP> previewWithoutBlocked;

@@ -428,6 +428,12 @@ constexpr std::array kDefinitions{
         MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
     MessageDefinition{
         MessageKey::TreatyClaimDetailsMissing, "treaty_claim_details_missing", kCountry},
+    MessageDefinition{MessageKey::DeveloperExportUnavailableUnitValueTooLarge,
+                      "developer_export_unavailable.unit_value_too_large",
+                      {}},
+    MessageDefinition{MessageKey::DeveloperExportUnavailableCorporateActionAfterGap,
+                      "developer_export_unavailable.corporate_action_after_gap",
+                      {}},
     MessageDefinition{MessageKey::TaxClassificationUnknownIncomeConfirmationRequired,
                       "tax_classification_unknown.income_confirmation_required",
                       {}},

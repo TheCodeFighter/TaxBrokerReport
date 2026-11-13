@@ -321,8 +321,9 @@ allowance, corrections and reconciliation, data sources) and the operation itsel
 `ApplicationRun` (`taxbroker_service`) loads the supplied files, parses, merges, prepares the year
 and calculates every report and its XML in a decision session. The command line reads the files
 into the request, asks the questions, writes the files and prints the summary. The fee and benefit
-summaries are in the result. The exchange-rate request and the developer mode come with their own
-tasks; until the request exists, a missing rate blocks the reports that need it.
+summaries are in the result. The developer export of incomplete history is in the service and the command line. The
+exchange-rate request comes with its own task; until it exists, a missing rate blocks the reports
+that need it.
 
 The result and its JSON boundary follow [`diagnostics.md`](diagnostics.md), including deterministic
 diagnostic ordering, safe source-row locations, independent report status, and partial success.

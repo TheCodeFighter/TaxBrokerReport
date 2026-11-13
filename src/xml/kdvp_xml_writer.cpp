@@ -48,7 +48,7 @@ constexpr std::size_t kMinimumDecimals = 4;
 
 /// The exact stored value with four to eight decimals: trailing zeros are removed only down to
 /// four decimals, and nothing is rounded. `200'000'000` is `2.0000`, `12'345'678` is
-/// `0.12345678`. Only for values that are not negative.
+/// `0.12345678`, `-15'000'000` is `-0.1500`. Only F8 of a developer export is negative.
 std::string decimalText(std::int64_t aValue) {
     return formatFixedPoint(aValue, kFixedPointScale, kMinimumDecimals);
 }
@@ -95,6 +95,14 @@ void checkList(std::vector<ProcessingDiagnostic>& aDiagnostics, const KdvpInvent
         }
     };
 
+    const auto checkLossRule = [&aDiagnostics, &identity, &aList](KdvpLossRule aRule) {
+        // F10 is left out only in a developer export, where the loss check was not run.
+        if (aRule == KdvpLossRule::NotAssessed && !aList.mUnsafe)
+        {
+            addOutOfRange(aDiagnostics, kReport, "F10", identity);
+        }
+    };
+
     const auto checkDate = [&aDiagnostics, &identity](std::string_view aField, const Date& aDate) {
         if (!dateText(aDate))
         {
@@ -104,31 +112,36 @@ void checkList(std::vector<ProcessingDiagnostic>& aDiagnostics, const KdvpInvent
 
     for (const auto& row : aList.mRows)
     {
-        const auto checkEntry = [&checkNotNegative, &checkDate](const auto& aEntry) {
-            using Entry = std::decay_t<decltype(aEntry)>;
+        const auto checkEntry =
+            [&checkNotNegative, &checkDate, &checkLossRule](const auto& aEntry) {
+                using Entry = std::decay_t<decltype(aEntry)>;
 
-            if constexpr (std::is_same_v<Entry, KdvpPurchaseRow>)
-            {
-                checkDate("F1", aEntry.mDate);
-                checkNotNegative("F3", aEntry.mUnits);
-                checkNotNegative("F4", aEntry.mUnitPrice);
-            }
-            else if constexpr (std::is_same_v<Entry, KdvpSaleRow>)
-            {
-                checkDate("F6", aEntry.mDate);
-                checkNotNegative("F7", aEntry.mUnits);
-                checkNotNegative("F9", aEntry.mUnitPrice);
-            }
-            else
-            {
-                static_assert(std::is_same_v<Entry, void>, "Missing check for this KDVP row.");
-            }
-        };
+                if constexpr (std::is_same_v<Entry, KdvpPurchaseRow>)
+                {
+                    checkDate("F1", aEntry.mDate);
+                    checkNotNegative("F3", aEntry.mUnits);
+                    checkNotNegative("F4", aEntry.mUnitPrice);
+                }
+                else if constexpr (std::is_same_v<Entry, KdvpSaleRow>)
+                {
+                    checkDate("F6", aEntry.mDate);
+                    checkNotNegative("F7", aEntry.mUnits);
+                    checkNotNegative("F9", aEntry.mUnitPrice);
+                    checkLossRule(aEntry.mLossRule);
+                }
+                else
+                {
+                    static_assert(std::is_same_v<Entry, void>, "Missing check for this KDVP row.");
+                }
+            };
 
         std::visit(checkEntry, row.mEntry);
 
-        // The schema allows a negative F8, but only the developer export (#188) may write one.
-        checkNotNegative("F8", row.mStock);
+        // The schema allows a negative F8, but only the developer export may write one.
+        if (!aList.mUnsafe)
+        {
+            checkNotNegative("F8", row.mStock);
+        }
     }
 }
 
@@ -179,7 +192,12 @@ void appendRow(pugi::xml_node aSecurities, std::size_t aRowId, const KdvpRow& aR
             appendText(sale, "F6", dateText(aEntry.mDate).value());
             appendText(sale, "F7", decimalText(aEntry.mUnits));
             appendText(sale, "F9", decimalText(aEntry.mUnitPrice));
-            appendBoolean(sale, "F10", aEntry.mLossRule == KdvpLossRule::NotBlocked);
+
+            // The loss check was not run, so the optional F10 is left out.
+            if (aEntry.mLossRule != KdvpLossRule::NotAssessed)
+            {
+                appendBoolean(sale, "F10", aEntry.mLossRule == KdvpLossRule::NotBlocked);
+            }
         }
         else
         {

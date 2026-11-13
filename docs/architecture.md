@@ -1057,8 +1057,9 @@ not fit the form, one `xml_value_out_of_range` error per field and no XML.
   `00000000`; year 1000 to 9999; dates with a year from 1 to 9999; ISIN of 1 to 12 characters;
   list name of at most 100 characters and post code of at most 12 (characters, not bytes);
   every text valid UTF-8 without control characters, U+FFFE or U+FFFF; F3, F4, F7, F9 and F8 not
-  negative. The schema accepts a negative F8 and an empty ISIN, but only the planned
-  incomplete-history developer export may write a negative F8.
+  negative. The schema accepts a negative F8 and an empty ISIN, but only the
+  incomplete-history developer export (a list with `mUnsafe`) may write a negative F8 or leave
+  F10 out.
 - **An empty model** (no lists) gives a valid document without `KDVPItem`; the caller decides that
   the form has no data and writes no file.
 
@@ -1108,8 +1109,8 @@ too. The report command writes no file for a form without rows.
 
 ```text
 taxbroker report --year YYYY --taxpayer taxpayer.json [--self-report] [--no-input]
-                 [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
-                 --trade-republic FILE...
+                 [--developer-export] [--ecb-rates FILE...] [--reference-files FILE...]
+                 --out DIR --trade-republic FILE...
 ```
 
 Every input file comes after its own option, as a list: the files after `--trade-republic`,
@@ -1194,6 +1195,13 @@ date not in the form `YYYY-MM-DD`) is asked again without a session call.
   only for typed answers: broker CSV import stays strict ([`calculations.md`](calculations.md)).
   The CLI output keeps the point new logic is implemented.
 - A request without question data cannot be answered; it stays open.
+- `--developer-export` turns developer mode on: when every listed error of the capital failure
+  question is missing purchase history, the prompt also takes `developer`. The command then shows
+  one combined confirmation (the warning, every name and ISIN, the risk) and asks `confirm` or
+  `cancel` once; on `confirm` it sends the three confirmations of the service, one after the
+  other, and writes `Doh-KDVP_YYYY_UNSAFE.xml` (never the normal name) with the files' own
+  sales and an `UNSAFE` line in the summary; on `cancel` it asks the failure choice again. The
+  option cannot be used with `--no-input`, because the confirmations need a person.
 - With `--no-input`, nothing is read and the questions stay open. When the input ends, the
   current and every later question stay open. An open question keeps capital gains
   `needs_input`, a cancelled one makes it `failed`; either way no XML is written (exit 1).

@@ -78,6 +78,9 @@ enum class ProcessingDiagnosticCode {
     DepositInterestAddOtherBanks,
     /// A warning: the user fills in the treaty paragraph and article of claimed Doh-Obr rows.
     TreatyClaimDetailsMissing,
+    /// A warning: developer mode is on, but the developer export is not offered for an
+    /// investment with missing history (see the message key for the reason).
+    DeveloperExportUnavailable,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

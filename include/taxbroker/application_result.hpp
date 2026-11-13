@@ -52,6 +52,7 @@ enum class RequestType {
     DividendsFailureResolutionRequired,
     OtherInterestFailureResolutionRequired,
     DepositInterestTotalRequired,
+    DeveloperExportConfirmationRequired,
 };
 
 /// The code of the stage that found the problem; the three enums have no value in common.
@@ -102,6 +103,9 @@ struct ApplicationDiagnostic {
 enum class FailureResolution {
     ExcludeFailedInstruments,
     FailReport,
+    /// Write an unsafe Doh-KDVP for incomplete history, after the confirmations of the developer
+    /// export. Offered only in developer mode.
+    DeveloperExport,
 };
 
 /// One investment of a failure-resolution question.
@@ -129,6 +133,9 @@ struct FailedBroker {
 struct FailureResolutionQuestion {
     std::vector<FailedInvestment> mInvestments;
     std::vector<FailedBroker> mBrokers;
+    /// The developer export is a third choice: developer mode is on and every listed investment
+    /// has only incomplete history. Only Doh-KDVP offers it.
+    bool mDeveloperExportOffered{};
 
     bool operator==(const FailureResolutionQuestion&) const = default;
 };
@@ -380,6 +387,16 @@ struct InterestTreatyClaimQuestion {
     bool operator==(const InterestTreatyClaimQuestion&) const = default;
 };
 
+/// The question data of `developer_export_confirmation_required`: one of the three confirmations
+/// before an unsafe Doh-KDVP for incomplete history, with the investments it would contain. The
+/// steps are asked in order; a changed list asks step 1 again.
+struct DeveloperExportQuestion {
+    int mStep{};                                ///< 1, 2 or 3; always set by the creator.
+    std::vector<FailedInvestment> mInvestments; ///< Every affected investment, sorted by ISIN.
+
+    bool operator==(const DeveloperExportQuestion&) const = default;
+};
+
 /// The facts an answer depends on. std::monostate for a type whose processor does not define its
 /// question data yet.
 using QuestionData = std::variant<std::monostate,
@@ -393,7 +410,8 @@ using QuestionData = std::variant<std::monostate,
                                   IncomeClassificationQuestion,
                                   BondTypeQuestion,
                                   TreatyClaimQuestion,
-                                  InterestTreatyClaimQuestion>;
+                                  InterestTreatyClaimQuestion,
+                                  DeveloperExportQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
 struct DecisionQuestion {
@@ -415,6 +433,11 @@ struct FailureResolutionAnswer {
     FailureResolution mChoice{};
 
     bool operator==(const FailureResolutionAnswer&) const = default;
+};
+
+/// The user confirmed one step of the developer export. Cancelling is a CancelAnswer.
+struct DeveloperExportConfirmAnswer {
+    bool operator==(const DeveloperExportConfirmAnswer&) const = default;
 };
 
 /// The user closed the question without an answer.
@@ -544,7 +567,8 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  IncomeTreatmentAnswer,
                                  BondTypeAnswer,
                                  TreatyClaimAnswer,
-                                 InterestTreatyClaimAnswer>;
+                                 InterestTreatyClaimAnswer,
+                                 DeveloperExportConfirmAnswer>;
 
 /// What a stage hands over about an open question to the user.
 struct RequestInput {
@@ -886,6 +910,9 @@ struct ReportInput {
     /// The brokers whose cash interest is left out of this form, only with
     /// ExcludeFailedInstruments.
     std::vector<FailedBroker> mExcludedBrokers;
+    /// The investments of an unsafe developer export, only with DeveloperExport once the three
+    /// confirmations are given.
+    std::vector<FailedInvestment> mUnsafeInvestments;
     /// The rows and totals of an income form; none for Doh-KDVP.
     std::optional<IncomeSummary> mIncome;
 };
@@ -908,8 +935,12 @@ struct ReportResult {
     /// diagnostics that the exclusion resolved. Empty unless mFailureResolution is
     /// ExcludeFailedInstruments.
     std::vector<RequestBroker> mExcludedBrokers;
-    /// Always false until the developer-mode flow exists
+    /// True when the XML is a developer export of incomplete history (Generated only).
     bool mUnsafe{};
+    /// The investments of the developer export, by ISIN and name, each with the IDs of the
+    /// `incomplete_history` diagnostics that it made non-blocking. Empty unless mFailureResolution
+    /// is DeveloperExport.
+    std::vector<RequestInvestment> mUnsafeInvestments;
     /// The rows and totals of an income form; none for Doh-KDVP.
     std::optional<IncomeSummary> mIncome;
 };
