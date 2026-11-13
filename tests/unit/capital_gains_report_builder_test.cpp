@@ -54,8 +54,10 @@ void orderChronologically(MergedStatement& aStatement) {
 
 /// Prepares the real reporting-year ledger, runs the matcher and the loss rule (no answers) and
 /// builds the report from them.
-CapitalGainsBuildResult
-buildYear(StatementMergeResult& aMerged, int aYear, const std::vector<Isin>& aExcludedIsins = {}) {
+CapitalGainsBuildResult buildYear(StatementMergeResult& aMerged,
+                                  int aYear,
+                                  const std::vector<Isin>& aExcludedIsins = {},
+                                  const std::vector<Isin>& aDeveloperIsins = {}) {
     orderChronologically(aMerged.mStatement);
 
     const auto prepared = TaxProcessor{}.prepareReportingYear({aYear, aMerged});
@@ -70,7 +72,8 @@ buildYear(StatementMergeResult& aMerged, int aYear, const std::vector<Isin>& aEx
                                              prepared.mLedger.value(),
                                              fifo,
                                              loss,
-                                             aExcludedIsins);
+                                             aExcludedIsins,
+                                             aDeveloperIsins);
 }
 
 /// Like buildYear, with confirmed corporate actions that the matcher applies.
@@ -995,6 +998,232 @@ TEST(CapitalGainsReportBuilderTest, StoppedPoolsBlockWithAllSalesOfTheYear) {
                   .mReason = KdvpBlockReason::FifoStopped,
                   .mSales = {{StatementEventKind::Trade, 2, 1}, {StatementEventKind::Trade, 2, 2}},
               }));
+}
+
+TEST(CapitalGainsReportBuilderTest, DeveloperIsinWithMissingHistoryGetsAnUnsafeList) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            // The first sale needs 2 units but only 1 was bought. The pool stops there, so the
+            // sale and the later one are listed as the file says, without a FIFO match.
+            .mName = "Synthetic Share C",
+            .mIsin = "XX0000000003",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 200'000'000,       // 2 units
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-04-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'300'000'000, // EUR 13
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    const auto result = buildYear(merged, 2024, {}, {"XX0000000003"});
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
+
+    const auto& list = result.mReport->mLists[0];
+
+    EXPECT_TRUE(list.mUnsafe);
+    ASSERT_EQ(list.mRows.size(), 3U);
+
+    // The open unit of the purchase: 1 unit at EUR 10, stock 1.
+    EXPECT_EQ(purchaseAt(list, 0).mUnits, 100'000'000);
+    EXPECT_EQ(purchaseAt(list, 0).mUnitPrice, 1'000'000'000);
+    EXPECT_EQ(list.mRows[0].mStock, 100'000'000);
+
+    // The short sale in full: 2 units at EUR 12, no F10, stock 1 - 2 = -1.
+    EXPECT_EQ(saleAt(list, 1).mUnits, 200'000'000);
+    EXPECT_EQ(saleAt(list, 1).mUnitPrice, 1'200'000'000);
+    EXPECT_EQ(saleAt(list, 1).mLossRule, KdvpLossRule::NotAssessed);
+    EXPECT_EQ(list.mRows[1].mStock, -100'000'000);
+
+    // The next sale is listed too: 1 unit at EUR 13, stock -1 - 1 = -2.
+    EXPECT_EQ(saleAt(list, 2).mUnits, 100'000'000);
+    EXPECT_EQ(saleAt(list, 2).mUnitPrice, 1'300'000'000);
+    EXPECT_EQ(saleAt(list, 2).mLossRule, KdvpLossRule::NotAssessed);
+    EXPECT_EQ(list.mRows[2].mStock, -200'000'000);
+}
+
+TEST(CapitalGainsReportBuilderTest, ALossMakingSaleBeforeTheGapOfADeveloperExportHasNoF10) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            // The sale of 2024-02-20 makes a loss of EUR 5. The loss rule is not run for a pool
+            // that stopped, so the sale has no F10. The sale of 5 units on 2024-06-01 is 4 units
+            // short.
+            .mName = "Synthetic Share C",
+            .mIsin = "XX0000000003",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 200'000'000,       // 2 units
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-02-20")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 500'000'000, // EUR 5
+                     .mUnits = 100'000'000,     // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-06-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 500'000'000,       // 5 units
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    const auto result = buildYear(merged, 2024, {}, {"XX0000000003"});
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 1U);
+
+    const auto& list = result.mReport->mLists[0];
+
+    ASSERT_EQ(list.mRows.size(), 3U);
+
+    // The purchase lists the 1 unit that the February sale uses and the 1 unit still open.
+    EXPECT_EQ(purchaseAt(list, 0).mUnits, 200'000'000);
+    EXPECT_EQ(list.mRows[0].mStock, 200'000'000);
+
+    // The loss-making sale: 1 unit, stock 2 - 1 = 1, F10 not assessed.
+    EXPECT_EQ(saleAt(list, 1).mUnits, 100'000'000);
+    EXPECT_EQ(saleAt(list, 1).mLossRule, KdvpLossRule::NotAssessed);
+    EXPECT_EQ(list.mRows[1].mStock, 100'000'000);
+
+    // The short sale: 5 units, stock 1 - 5 = -4.
+    EXPECT_EQ(saleAt(list, 2).mUnits, 500'000'000);
+    EXPECT_EQ(saleAt(list, 2).mLossRule, KdvpLossRule::NotAssessed);
+    EXPECT_EQ(list.mRows[2].mStock, -400'000'000);
+}
+
+TEST(CapitalGainsReportBuilderTest, ADeveloperListKeepsEachPurchaseAndLeavesOtherIsinsNormal) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            // A fine investment: 1 unit bought at EUR 10 and sold at EUR 30.
+            .mName = "Synthetic Share A",
+            .mIsin = "XX0000000001",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 3'000'000'000, // EUR 30
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+        {
+            // Two purchases of 1 unit, then a sale of 3 units: 1 unit short. Both purchases are
+            // open when the pool stops, so both are listed with their own price.
+            .mName = "Synthetic Share B",
+            .mIsin = "XX0000000002",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-01-03")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 2'000'000'000, // EUR 20
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-04-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'500'000'000, // EUR 15
+                     .mUnits = 300'000'000,       // 3 units
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    const auto result = buildYear(merged, 2024, {}, {"XX0000000002"});
+
+    EXPECT_TRUE(result.mBlocked.empty());
+    ASSERT_TRUE(result.mReport.has_value());
+    ASSERT_EQ(result.mReport->mLists.size(), 2U);
+
+    // The fine investment has a normal list with F10 true and no unsafe mark.
+    const auto& normal = result.mReport->mLists[0];
+
+    EXPECT_FALSE(normal.mUnsafe);
+    ASSERT_EQ(normal.mRows.size(), 2U);
+    EXPECT_EQ(saleAt(normal, 1).mLossRule, KdvpLossRule::NotBlocked);
+
+    const auto& list = result.mReport->mLists[1];
+
+    EXPECT_TRUE(list.mUnsafe);
+    ASSERT_EQ(list.mRows.size(), 3U);
+
+    // Purchase of 1 unit at EUR 10: stock 1. Purchase of 1 unit at EUR 20: stock 2. Sale of 3
+    // units: stock 2 - 3 = -1.
+    EXPECT_EQ(purchaseAt(list, 0).mUnitPrice, 1'000'000'000);
+    EXPECT_EQ(list.mRows[0].mStock, 100'000'000);
+    EXPECT_EQ(purchaseAt(list, 1).mUnitPrice, 2'000'000'000);
+    EXPECT_EQ(list.mRows[1].mStock, 200'000'000);
+    EXPECT_EQ(saleAt(list, 2).mUnits, 300'000'000);
+    EXPECT_EQ(list.mRows[2].mStock, -100'000'000);
+}
+
+TEST(CapitalGainsReportBuilderTest, DeveloperIsinThatStoppedForAnotherReasonStaysBlocked) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            // A split on 2024-02-01 without a ratio stops the pool before the sale.
+            .mName = "Synthetic Share A",
+            .mIsin = "XX0000000001",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 1'000'000'000,     // 10 units
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 500'000'000,       // 5 units
+                     .mCurrency = Currency::EUR},
+                },
+            .mCorporateActions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-02-01")},
+                     .mType = CorporateActionType::Split,
+                     .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
+                },
+        },
+    };
+
+    const auto result = buildYear(merged, 2024, {}, {"XX0000000001"});
+
+    // The developer export passes only a sale with too few units, never a corporate action.
+    EXPECT_FALSE(result.mReport.has_value());
+    ASSERT_EQ(result.mBlocked.size(), 1U);
+    EXPECT_EQ(result.mBlocked[0].mIsin, "XX0000000001");
+    EXPECT_EQ(result.mBlocked[0].mReason, KdvpBlockReason::FifoStopped);
 }
 
 TEST(CapitalGainsReportBuilderTest, StoppedPoolWithoutASaleInTheYearDoesNotBlock) {
@@ -3727,6 +3956,187 @@ TEST(CapitalGainsReportBuilderTest, ALossResultWithAnotherCountOfIsinsIsAnIntern
     EXPECT_THROW((void)CapitalGainsReportBuilder{}
                      .build(merged.mStatement, prepared.mLedger.value(), fifo, loss, {}),
                  std::logic_error);
+}
+
+TEST(CapitalGainsReportBuilderTest,
+     ADeveloperExportIsPossibleForAPoolThatStoppedForMissingHistory) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            // The sale of 2 units needs one more than the 1 bought.
+            .mName = "Synthetic Share C",
+            .mIsin = "XX0000000003",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 200'000'000,       // 2 units
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(merged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto fifo = FifoMatcher{}.match(merged.mStatement, prepared.mLedger.value());
+
+    EXPECT_EQ(CapitalGainsReportBuilder::checkDeveloperExport(prepared.mLedger.value(),
+                                                              fifo.mIsins.at(0),
+                                                              0),
+              DeveloperExportCheck::Possible);
+}
+
+TEST(CapitalGainsReportBuilderTest, AMatchedPoolHasNoDeveloperExport) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            .mName = "Synthetic Share C",
+            .mIsin = "XX0000000003",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 200'000'000,       // 2 units
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                },
+        },
+    };
+
+    orderChronologically(merged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto fifo = FifoMatcher{}.match(merged.mStatement, prepared.mLedger.value());
+
+    EXPECT_EQ(CapitalGainsReportBuilder::checkDeveloperExport(prepared.mLedger.value(),
+                                                              fifo.mIsins.at(0),
+                                                              0),
+              DeveloperExportCheck::NotApplicable);
+}
+
+TEST(CapitalGainsReportBuilderTest,
+     ACorporateActionAfterTheSaleWithoutHistoryBlocksTheDeveloperExport) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            // The sale of 2 units on 2024-03-01 needs one more than the 1 bought; the split of
+            // 2024-06-03 comes after it and is never applied to a pool that stopped.
+            .mName = "Synthetic Share C",
+            .mIsin = "XX0000000003",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 200'000'000,       // 2 units
+                     .mCurrency = Currency::EUR},
+                },
+            .mCorporateActions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                     .mType = CorporateActionType::Split,
+                     .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
+                },
+        },
+    };
+
+    orderChronologically(merged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto fifo = FifoMatcher{}.match(merged.mStatement, prepared.mLedger.value());
+
+    ASSERT_EQ(fifo.mIsins.at(0).mStatus, FifoIsinStatus::InsufficientUnits);
+    EXPECT_EQ(CapitalGainsReportBuilder::checkDeveloperExport(prepared.mLedger.value(),
+                                                              fifo.mIsins.at(0),
+                                                              0),
+              DeveloperExportCheck::CorporateActionAfterGap);
+}
+
+TEST(CapitalGainsReportBuilderTest, ACorporateActionBeforeTheSaleWithoutHistoryDoesNotBlockIt) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            // The split of 2024-02-01 comes before the short sale of 2024-03-01.
+            .mName = "Synthetic Share C",
+            .mIsin = "XX0000000003",
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-01-02")},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 100'000'000,       // 1 unit
+                     .mCurrency = Currency::EUR},
+                    {.mMetadata = {.mTaxDate = day("2024-03-01")},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'200'000'000, // EUR 12
+                     .mUnits = 500'000'000,       // 5 units
+                     .mCurrency = Currency::EUR},
+                },
+            .mCorporateActions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-02-01")},
+                     .mType = CorporateActionType::Split,
+                     .mRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1}},
+                },
+        },
+    };
+
+    orderChronologically(merged.mStatement);
+
+    const auto prepared = TaxProcessor{}.prepareReportingYear({2024, merged});
+    const auto fifo = FifoMatcher::match(merged.mStatement,
+                                         prepared.mLedger.value(),
+                                         {{.mEvents = {{StatementEventKind::CorporateAction, 0, 0}},
+                                           .mRatio = {.mNewShares = 2, .mOldShares = 1},
+                                           .mEffectiveDate = day("2024-02-01")}});
+
+    ASSERT_EQ(fifo.mIsins.at(0).mStatus, FifoIsinStatus::InsufficientUnits);
+    EXPECT_EQ(CapitalGainsReportBuilder::checkDeveloperExport(prepared.mLedger.value(),
+                                                              fifo.mIsins.at(0),
+                                                              0),
+              DeveloperExportCheck::Possible);
+}
+
+TEST(CapitalGainsReportBuilderTest, AnOpenLotThatDoesNotFitF4BlocksTheDeveloperExport) {
+    // The pool stopped at the sale (event 1). Its open lot has 0.00000001 units and a basis of
+    // 10^20 ticks, which is EUR 10^12 a unit: more than a UnitPrice can hold (about 9.2 x 10^10).
+    ReportingYearLedger ledger;
+
+    ledger.mCapitalEvents = {{StatementEventKind::Trade, 0, 0}, {StatementEventKind::Trade, 0, 1}};
+
+    FifoIsinResult pool{.mIsin = "XX0000000003",
+                        .mName = "Synthetic Share C",
+                        .mStatus = FifoIsinStatus::InsufficientUnits,
+                        .mStoppedAt = StatementEventReference{StatementEventKind::Trade, 0, 1}};
+
+    pool.mOpenLots.push_back(FifoLot{
+        .mPurchase = {StatementEventKind::Trade, 0, 0},
+        .mPurchaseDate = day("2024-01-02"),
+        .mState = {.mRemainingUnits = 1,
+                   .mRemainingBasis = {std::get<ExactRational>(ExactRational::create(
+                       WideInteger{10'000'000'000} * WideInteger{10'000'000'000},
+                       WideInteger{1}))}},
+    });
+
+    EXPECT_EQ(CapitalGainsReportBuilder::checkDeveloperExport(ledger, pool, 0),
+              DeveloperExportCheck::UnitValueTooLarge);
 }
 
 } // namespace

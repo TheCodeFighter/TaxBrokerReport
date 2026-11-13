@@ -125,8 +125,8 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
-                   --trade-republic FILE...
+                   [--developer-export] [--ecb-rates FILE...] [--reference-files FILE...]
+                   --out DIR --trade-republic FILE...
   taxbroker report --help
   taxbroker --help
 
@@ -197,9 +197,9 @@ TEST(ReportCommandTest, ReportHelpStartsWithTheUsageAndEndsWithTheExample) {
     EXPECT_EQ(result.mOut.rfind("Usage:\n"
                                 "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                                 "[--no-input]\n"
-                                "                   [--ecb-rates FILE...] [--reference-files "
-                                "FILE...] --out DIR\n"
-                                "                   --trade-republic FILE...\n",
+                                "                   [--developer-export] [--ecb-rates FILE...] "
+                                "[--reference-files FILE...]\n"
+                                "                   --out DIR --trade-republic FILE...\n",
                                 0),
               0U);
     EXPECT_TRUE(contains(result.mOut,
@@ -450,6 +450,37 @@ TEST(ReportCommandTest, SelfReportGivenTwiceFails) {
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr, "taxbroker: --self-report is given twice.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, DeveloperExportGivenTwiceFails) {
+    const auto result =
+        run({"report", "--developer-export", "--year", "2024", "--developer-export"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: --developer-export is given twice.\n" + std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, DeveloperExportWithNoInputFails) {
+    // The confirmations of the developer export need a person, so the two options exclude each
+    // other. The error comes before any file is read.
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out",
+                             "--developer-export",
+                             "--no-input",
+                             "--trade-republic",
+                             "export.csv"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: --developer-export needs questions, so it cannot be used with "
+              "--no-input.\n" +
+                  std::string{kUsageHint});
 }
 
 TEST(ReportCommandTest, NoInputGivenTwiceFails) {

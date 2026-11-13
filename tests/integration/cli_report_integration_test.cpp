@@ -4719,9 +4719,9 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(general.mOut,
                          "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                          "[--no-input]\n"
-                         "                   [--ecb-rates FILE...] [--reference-files FILE...] "
-                         "--out DIR\n"
-                         "                   --trade-republic FILE...\n"));
+                         "                   [--developer-export] [--ecb-rates FILE...] "
+                         "[--reference-files FILE...]\n"
+                         "                   --out DIR --trade-republic FILE...\n"));
 
     const auto report = run({"report", "--help"});
 
@@ -5948,6 +5948,125 @@ TEST(CliReportIntegrationTest, NoInputLeavesTheExclusionQuestionOpen) {
                          "investment\n"
                          "  Run the command again in a terminal (without --no-input) to answer "
                          "them.\n"));
+}
+
+std::string readTestData(std::string_view aFolder, std::string_view aName);
+
+/// XX0000000001: 0.6 units bought in 2022, 0.25 sold in 2023, a sale of 0.5 in 2024 that is 0.15
+/// units short, 1 unit bought and 0.2 sold. Its rows are those of `developer_export.csv`.
+std::string developerExportHistory(const TemporaryCliFolder& aFolder) {
+    return aFolder.writeCsv(
+        "history.csv",
+        {
+            R"(2022-03-01T09:00:00Z,2022-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.6,100,-60,,,EUR,,,,,synthetic-buy-2022,,,,)",
+            R"(2023-08-01T09:00:00Z,2023-08-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.25,110,27.5,,,EUR,,,,,synthetic-sell-2023,,,,)",
+            R"(2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.5,120,60,,,EUR,,,,,synthetic-sell-short,,,,)",
+            R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,90,-90,,,EUR,,,,,synthetic-buy-2024,,,,)",
+            R"(2024-10-01T09:00:00Z,2024-10-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.2,95,19,,,EUR,,,,,synthetic-sell-after,,,,)",
+        });
+}
+
+TEST(CliReportIntegrationTest, TheDeveloperExportWritesAnUnsafeFileAfterOneConfirmation) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = developerExportHistory(folder);
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--developer-export",
+                             "--trade-republic",
+                             history},
+                            "developer\nconfirm\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+
+    // The file has its own name; the normal name is not written.
+    EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024_UNSAFE.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+
+    // Rows: 0.35 units open at the short sale, the short sale in full without F10 (F8 0.35 - 0.5 =
+    // -0.15), the purchase of 1 (F8 0.85) and the sale of 0.2 (F8 0.65).
+    const auto xml = folder.readOutput("Doh-KDVP_2024_UNSAFE.xml");
+
+    EXPECT_EQ(xml, readTestData("cli", "Doh-KDVP_2024_developer.golden.xml"));
+    expectValidForKdvpSchemas(xml);
+
+    // One combined question, then the three steps without asking again.
+    EXPECT_TRUE(contains(result.mOut,
+                         "Your answer (exclude, fail, developer or cancel):\n"
+                         "Developer export (UNSAFE): the purchase history is missing for 1 "
+                         "investment:\n"
+                         "  XX0000000001 Synthetic Share: incomplete_history\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  Capital gains (Doh-KDVP): generated, UNSAFE, written to "
+                         "Doh-KDVP_2024_UNSAFE.xml\n"
+                         "    UNSAFE, the purchase history is missing: XX0000000001 Synthetic "
+                         "Share\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 4\n"
+                         "  1 failed investment: write an unsafe export (developer mode)\n"
+                         "  developer export, step 1 of 3, 1 failed investment: confirmed\n"
+                         "  developer export, step 2 of 3, 1 failed investment: confirmed\n"
+                         "  developer export, step 3 of 3, 1 failed investment: confirmed\n"));
+}
+
+TEST(CliReportIntegrationTest, CancellingTheDeveloperConfirmationAsksTheChoiceAgain) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = developerExportHistory(folder);
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--developer-export",
+                             "--trade-republic",
+                             history},
+                            "developer\ncancel\nfail\n");
+
+    // The cancel wrote nothing and recorded nothing; the failure choice is asked again.
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024_UNSAFE.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Your answer (confirm or cancel):\n"
+                         "Your answer (exclude, fail, developer or cancel):\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Answered in this run: 1\n"
+                         "  1 failed investment: block the report\n"));
+}
+
+TEST(CliReportIntegrationTest, WithoutTheDeveloperFlagTheChoiceHasNoDeveloperWord) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = developerExportHistory(folder);
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "developer\nfail\n");
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut,
+                         "Your answer (exclude, fail or cancel):\n"
+                         "Answer exclude, fail or cancel.\n"));
+    EXPECT_FALSE(contains(result.mOut, "developer: write an unsafe"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024_UNSAFE.xml"));
 }
 
 TEST(CliReportIntegrationTest, NoExclusionIsSavedAndTheNextRunAsksAgain) {

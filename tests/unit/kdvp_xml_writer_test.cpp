@@ -2820,7 +2820,7 @@ TEST(KdvpXmlWriterTest, NegativeSaleUnitValueIsRejected) {
 }
 
 TEST(KdvpXmlWriterTest, NegativeStockIsRejected) {
-    // The schema allows a negative F8, but only the developer export (#188) may write one.
+    // The schema allows a negative F8, but only the developer export may write one.
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
         .mReportingYear = 2024,
@@ -2857,6 +2857,186 @@ TEST(KdvpXmlWriterTest, NegativeStockIsRejected) {
     EXPECT_EQ(diagnostic.mContext.mField, "F8");
     EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
     EXPECT_EQ(diagnostic.mMessageParams, std::vector{textParam("field", "F8")});
+}
+
+TEST(KdvpXmlWriterTest, DeveloperExportWritesANegativeStockAndLeavesOutF10) {
+    // A purchase of 0.35 units, then a sale of 0.5 units: the sale is 0.15 units short, its
+    // purchase value is unknown, so F10 is left out and F8 is 0.35 - 0.5 = -0.15.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+    const CapitalGainsReportKDVP report{
+        .mLists = {{
+            .mIsin = "XX0000000001",
+            .mName = "Example Shares",
+            .mIsFund = false,
+            .mUnsafe = true,
+            .mRows =
+                {
+                    {.mEntry =
+                         KdvpPurchaseRow{
+                             .mPurchase = {StatementEventKind::Trade, 0, 0},
+                             .mDate = day("2024-01-10"),
+                             .mMethod = KdvpPurchaseMethod::B,
+                             .mUnits = 35'000'000,         // 0.35 units
+                             .mUnitPrice = 10'000'000'000, // EUR 100
+                         },
+                     .mStock = 35'000'000}, // 0.35
+                    {.mEntry =
+                         KdvpSaleRow{
+                             .mSale = {StatementEventKind::Trade, 0, 1},
+                             .mDate = day("2024-05-01"),
+                             .mUnits = 50'000'000,         // 0.5 units
+                             .mUnitPrice = 12'000'000'000, // EUR 120
+                             .mLossRule = KdvpLossRule::NotAssessed,
+                         },
+                     .mStock = -15'000'000}, // 0.35 - 0.5
+                },
+        }}};
+
+    const auto result = KdvpXmlWriter::write(metadata, report);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_EQ(*result.mXml, R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_KDVP>
+      <KDVP>
+        <DocumentWorkflowID>O</DocumentWorkflowID>
+        <DocumentWorkflowName>Original</DocumentWorkflowName>
+        <Year>2024</Year>
+        <PeriodStart>2024-01-01</PeriodStart>
+        <PeriodEnd>2024-12-31</PeriodEnd>
+        <IsResident>true</IsResident>
+        <SecurityCount>1</SecurityCount>
+        <SecurityShortCount>0</SecurityShortCount>
+        <SecurityWithContractCount>0</SecurityWithContractCount>
+        <SecurityWithContractShortCount>0</SecurityWithContractShortCount>
+        <ShareCount>0</ShareCount>
+      </KDVP>
+      <KDVPItem>
+        <ItemID>1</ItemID>
+        <InventoryListType>PLVP</InventoryListType>
+        <Securities>
+          <ISIN>XX0000000001</ISIN>
+          <Name>Example Shares</Name>
+          <IsFond>false</IsFond>
+          <Row>
+            <ID>0</ID>
+            <Purchase>
+              <F1>2024-01-10</F1>
+              <F2>B</F2>
+              <F3>0.3500</F3>
+              <F4>100.0000</F4>
+              <F5>0.0000</F5>
+            </Purchase>
+            <F8>0.3500</F8>
+          </Row>
+          <Row>
+            <ID>1</ID>
+            <Sale>
+              <F6>2024-05-01</F6>
+              <F7>0.5000</F7>
+              <F9>120.0000</F9>
+            </Sale>
+            <F8>-0.1500</F8>
+          </Row>
+        </Securities>
+      </KDVPItem>
+    </Doh_KDVP>
+  </body>
+</Envelope>
+)xml");
+
+    expectValidForKdvpSchemas(*result.mXml);
+}
+
+TEST(KdvpXmlWriterTest, NotAssessedLossRuleOutsideADeveloperExportIsRejected) {
+    // F10 is left out only for the developer export; a normal list has to say true or false.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+    const CapitalGainsReportKDVP report{
+        .mLists = {{
+            .mIsin = "XX0000000001",
+            .mName = "Example Shares",
+            .mIsFund = false,
+            .mRows =
+                {
+                    {.mEntry =
+                         KdvpSaleRow{
+                             .mSale = {StatementEventKind::Trade, 0, 0},
+                             .mDate = day("2024-02-10"),
+                             .mUnits = 100'000'000,       // 1 unit
+                             .mUnitPrice = 1'200'000'000, // EUR 12
+                             .mLossRule = KdvpLossRule::NotAssessed,
+                         },
+                     .mStock = 0},
+                },
+        }}};
+
+    const auto result = KdvpXmlWriter::write(metadata, report);
+
+    EXPECT_FALSE(result.mXml.has_value());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::XmlValueOutOfRange);
+    EXPECT_EQ(diagnostic.mContext.mField, "F10");
+    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
+}
+
+TEST(KdvpXmlWriterTest, DeveloperExportStillRejectsANegativeUnitCount) {
+    // Only F8 may be negative in a developer export; a negative F7 is still an error.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+    const CapitalGainsReportKDVP report{
+        .mLists = {{
+            .mIsin = "XX0000000001",
+            .mName = "Example Shares",
+            .mIsFund = false,
+            .mUnsafe = true,
+            .mRows =
+                {
+                    {.mEntry =
+                         KdvpSaleRow{
+                             .mSale = {StatementEventKind::Trade, 0, 0},
+                             .mDate = day("2024-02-10"),
+                             .mUnits = -100'000'000, // -1 unit
+                             .mUnitPrice = 1'200'000'000,
+                             .mLossRule = KdvpLossRule::NotAssessed,
+                         },
+                     .mStock = 100'000'000},
+                },
+        }}};
+
+    const auto result = KdvpXmlWriter::write(metadata, report);
+
+    EXPECT_FALSE(result.mXml.has_value());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.front().mContext.mField, "F7");
 }
 
 TEST(KdvpXmlWriterTest, SeveralProblemsGiveOneDiagnosticEach) {

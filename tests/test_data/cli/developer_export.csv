@@ -1,0 +1,6 @@
+datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2022-03-01T09:00:00Z,2022-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,0.6,100,-60,,,EUR,,,,,synthetic-buy-2022,,,,
+2023-08-01T09:00:00Z,2023-08-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.25,110,27.5,,,EUR,,,,,synthetic-sell-2023,,,,
+2024-05-01T09:00:00Z,2024-05-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.5,120,60,,,EUR,,,,,synthetic-sell-short,,,,
+2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,90,-90,,,EUR,,,,,synthetic-buy-2024,,,,
+2024-10-01T09:00:00Z,2024-10-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-0.2,95,19,,,EUR,,,,,synthetic-sell-after,,,,

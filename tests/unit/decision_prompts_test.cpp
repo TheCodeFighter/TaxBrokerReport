@@ -1193,6 +1193,125 @@ TEST(DecisionPromptsTest, AnInvalidFailureAnswerIsAskedAgainAndCaseAndSpacesDoNo
               AnswerValue{FailureResolutionAnswer{FailureResolution::ExcludeFailedInstruments}});
 }
 
+DecisionQuestion developerOfferQuestion(bool aOffered) {
+    return DecisionQuestion{
+        .mType = RequestType::CapitalGainsFailureResolutionRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mData =
+            FailureResolutionQuestion{
+                .mInvestments = {{.mIsin = "XX0000000002",
+                                  .mName = "Synthetic Other",
+                                  .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}}},
+                .mDeveloperExportOffered = aOffered,
+            },
+    };
+}
+
+TEST(DecisionPromptsTest, TheDeveloperExportIsOfferedAndConfirmedOnce) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({developerOfferQuestion(true)}));
+
+    const auto output = ask(session, "developer\nconfirm\n");
+
+    EXPECT_TRUE(output.starts_with("Question request-0001: Doh-KDVP cannot include 1 investment:\n"
+                                   "  XX0000000002 Synthetic Other: incomplete_history\n"));
+    EXPECT_TRUE(contains(output,
+                         "  developer: write an unsafe Doh-KDVP for the missing purchase history "
+                         "(developer mode). You\n"
+                         "  confirm it once more before it is written.\n"
+                         "Your answer (exclude, fail, developer or cancel):\n"));
+    EXPECT_TRUE(contains(output,
+                         "Developer export (UNSAFE): the purchase history is missing for 1 "
+                         "investment:\n"
+                         "  XX0000000002 Synthetic Other: incomplete_history\n"));
+    EXPECT_TRUE(contains(output, "Do you want to write this incorrect Doh-KDVP?\n"));
+    EXPECT_TRUE(output.ends_with("Your answer (confirm or cancel):\n\n"));
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::DeveloperExport}});
+}
+
+TEST(DecisionPromptsTest, ACancelledDeveloperConfirmationGoesBackToTheChoice) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({developerOfferQuestion(true)}));
+
+    const auto output = ask(session, "developer\ncancel\nfail\n");
+
+    // The cancel records nothing: the failure choice is asked again and `fail` is the answer.
+    EXPECT_EQ(countOf(output, "Your answer (exclude, fail, developer or cancel):\n"), 2U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::FailReport}});
+}
+
+TEST(DecisionPromptsTest, AnUnreadableDeveloperConfirmationIsAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({developerOfferQuestion(true)}));
+
+    const auto output = ask(session, "developer\nyes\n  CONFIRM \n");
+
+    EXPECT_TRUE(contains(output,
+                         "Your answer (confirm or cancel):\n"
+                         "Answer confirm or cancel.\n"
+                         "Your answer (confirm or cancel):\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::DeveloperExport}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheDeveloperConfirmationLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({developerOfferQuestion(true)}));
+
+    const auto output = ask(session, "developer\n");
+
+    EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, WithoutTheOfferTheWordDeveloperIsNotAChoice) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({developerOfferQuestion(false)}));
+
+    const auto output = ask(session, "developer\nfail\n");
+
+    EXPECT_FALSE(contains(output, "  developer: write an unsafe"));
+    EXPECT_TRUE(contains(output,
+                         "Your answer (exclude, fail or cancel):\n"
+                         "Answer exclude, fail or cancel.\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{FailureResolutionAnswer{FailureResolution::FailReport}});
+}
+
+TEST(DecisionPromptsTest, TheStepsOfTheDeveloperExportAreConfirmedWithoutAskingAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::DeveloperExportConfirmationRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mData =
+            DeveloperExportQuestion{
+                .mStep = 2,
+                .mInvestments = {{.mIsin = "XX0000000002",
+                                  .mName = "Synthetic Other",
+                                  .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}}},
+            },
+    }}));
+
+    // The single confirmation was given with the choice, so the step asks nothing and reads no
+    // input.
+    const auto output = ask(session, "");
+
+    EXPECT_EQ(output, "\n");
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{DeveloperExportConfirmAnswer{}});
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "developer export, step 2 of 3, 1 failed investment: confirmed");
+}
+
 TEST(DecisionPromptsTest, ACancelledFailureQuestionRecordsTheCancel) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{
