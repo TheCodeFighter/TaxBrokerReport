@@ -9,10 +9,16 @@ How to build, check and debug TaxBrokerReport. The Docker setup itself is descri
 The C++20 build requires Boost headers for checked 256-bit exact arithmetic. The development Docker
 image installs `boost-dev`; production needs no additional Boost runtime library.
 
-Run `scripts/format.sh` before opening a pull request. To make Git reject unformatted commits and pushes locally, run `scripts/install_hooks.sh` once; it wires the repo-local hooks in `.githooks/` to `scripts/format.sh --check`.
-
-The `format-check` job of the `CI` workflow runs `scripts/format.sh --check` on every PR to `main`,
-so unformatted code will fail CI and should be fixed before merge.
+Run `scripts/format.sh` before opening a pull request. The `format-check` job of the `CI` workflow
+runs `scripts/format.sh --check` on every PR to `main` (all files, about 9 s), so unformatted code
+fails CI and should be fixed before merge. To make Git reject unformatted commits and pushes locally,
+run `scripts/install_hooks.sh` once; it wires the repo-local hooks in `.githooks/`. `pre-commit`
+checks only the staged C++ files and `pre-push` only the files changed by the pushed commits (about
+1 s), both in the working tree: a file fixed but not staged, or a push of a branch that is not
+checked out, is checked as the working tree has it, and CI catches the rest. `commit-msg` checks
+the message format. The hooks also run with the bash 3.2 that macOS ships. `scripts/format.sh`
+also takes files: `scripts/format.sh [--check] [--] FILE...` (paths from the repository root);
+`--` with no file after it runs nothing.
 
 The `CI` GitHub Actions workflow runs on every pull request to `main` and after changes reach
 `main`. It builds the development image once and compiles the Debug backend once. The tests,

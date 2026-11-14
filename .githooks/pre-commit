@@ -3,4 +3,14 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-"$repo_root/scripts/format.sh" --check
+# Only the staged files (added, copied, modified, renamed); the check reads the working tree.
+files=()
+while IFS= read -r -d '' f; do
+    files+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+if [[ ${#files[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+"$repo_root/scripts/format.sh" --check -- "${files[@]}"
