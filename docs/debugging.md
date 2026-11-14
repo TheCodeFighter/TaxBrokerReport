@@ -75,6 +75,21 @@ The legacy launch configuration selected `/usr/bin/gdb` in VS Code's environment
 built inside Docker, but the launch configuration did not explicitly put GDB or the running test
 inside Docker. The new profiles specify that connection directly.
 
+## Manual API test
+
+To try the local server by hand, start the server without a browser, so the one-time link stays unused:
+
+```bash
+scripts/run.sh --no-browser
+```
+
+The server prints `Open http://127.0.0.1:8080/#token=<64 characters> in your browser ...`. Copy
+`tests/manual/api/local_api.env.example` to `tests/manual/api/.env` (Git ignores it) and put the 64
+characters after `#token=` into `TBR_LINK_TOKEN`; `local_api.http` reads it with `{{$dotenv}}`, so
+no token is in a committed file. Then use **Send Request** on the requests in that file in order:
+the page, the login (204 and a cookie; a second try gives 401) and the session check (204 after
+the login, 401 before it).
+
 ## Troubleshooting
 
 - **Docker connection fails:** ensure Docker is running and your host user can run `docker ps`.

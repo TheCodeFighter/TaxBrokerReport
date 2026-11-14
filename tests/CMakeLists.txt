@@ -63,8 +63,12 @@ add_executable(taxbroker_unit_tests
     unit/input_file_test.cpp
     unit/official_rate_selection_test.cpp
     unit/quantity_reconciliation_test.cpp
+    unit/browser_open_test.cpp
     unit/launch_file_test.cpp
     unit/request_guard_test.cpp
+    unit/server_config_test.cpp
+    unit/server_routes_test.cpp
+    unit/state_folder_test.cpp
     unit/reference_catalogue_test.cpp
     unit/kdvp_xml_writer_test.cpp
     unit/statement_merger_property_test.cpp
@@ -95,6 +99,7 @@ target_link_libraries(taxbroker_unit_tests
     taxbroker_api
     taxbroker_cli
     taxbroker_service
+    taxbroker_server_lib
     taxbroker_server_security
     taxbroker_xml
     GTest::gtest_main
@@ -129,6 +134,7 @@ add_executable(taxbroker_integration_tests
     integration/kdvp_xml_integration_test.cpp
     integration/loss_eligibility_integration_test.cpp
     integration/reporting_year_integration_test.cpp
+    integration/server_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/statement_merger_integration_test.cpp
 )
@@ -144,6 +150,7 @@ target_link_libraries(taxbroker_integration_tests
     taxbroker_core
     taxbroker_api
     taxbroker_cli
+    taxbroker_server_lib
     taxbroker_service
     taxbroker_xml
     GTest::gtest_main
