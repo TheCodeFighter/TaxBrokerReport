@@ -23,6 +23,9 @@ struct BrokerInputFile {
 struct ApplicationRequest {
     int mReportingYear{};
     FilingType mFilingType{};
+    /// Off unless the user turns it on. Only then the capital failure question offers the
+    /// developer export of incomplete history.
+    bool mDeveloperMode{};
     TaxpayerMetadata mTaxpayer;
     /// In request order
     std::vector<BrokerInputFile> mBrokerFiles;

@@ -167,6 +167,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "deposit_interest_add_other_banks";
     case ProcessingDiagnosticCode::TreatyClaimDetailsMissing:
         return "treaty_claim_details_missing";
+    case ProcessingDiagnosticCode::DeveloperExportUnavailable:
+        return "developer_export_unavailable";
     }
 
     return "unrepresentable_value";
@@ -197,6 +199,8 @@ std::string_view toString(RequestType aType) {
         return "other_interest_failure_resolution_required";
     case RequestType::DepositInterestTotalRequired:
         return "deposit_interest_total_required";
+    case RequestType::DeveloperExportConfirmationRequired:
+        return "developer_export_confirmation_required";
     }
 
     return "tax_classification_required";
@@ -388,6 +392,8 @@ std::string_view toString(FailureResolution aResolution) {
         return "exclude_failed_instruments";
     case FailureResolution::FailReport:
         return "fail_report";
+    case FailureResolution::DeveloperExport:
+        return "developer_export";
     }
 
     return "fail_report";
@@ -430,6 +436,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
         else if constexpr (std::is_same_v<Value, CancelAnswer>)
         {
             return "cancel";
+        }
+        else if constexpr (std::is_same_v<Value, DeveloperExportConfirmAnswer>)
+        {
+            return "confirm";
         }
         else if constexpr (std::is_same_v<Value, NoOtherActivityAnswer>)
         {
@@ -871,7 +881,28 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["bondCheck"] = bondCheckToJson(*bond);
     }
 
-    if (std::holds_alternative<FailureResolutionQuestion>(aRequest.mData))
+    if (const auto* developer = std::get_if<DeveloperExportQuestion>(&aRequest.mData))
+    {
+        Json investments = Json::array();
+
+        std::transform(aRequest.mInvestments.begin(),
+                       aRequest.mInvestments.end(),
+                       std::back_inserter(investments),
+                       [](const RequestInvestment& aInvestment) {
+                           return Json{
+                               {"name", aInvestment.mName},
+                               {"isin", aInvestment.mIsin},
+                               {"reasonCodes", reasonCodesToJson(aInvestment.mReasonCodes)},
+                               {"diagnosticIds", aInvestment.mDiagnosticIds},
+                           };
+                       });
+
+        serialized["step"] = developer->mStep;
+        serialized["options"] = Json::array({"confirm"});
+        serialized["investments"] = std::move(investments);
+    }
+
+    if (const auto* failureQuestion = std::get_if<FailureResolutionQuestion>(&aRequest.mData))
     {
         Json investments = Json::array();
 
@@ -889,6 +920,13 @@ Json requestToJson(const DecisionRequest& aRequest) {
 
         serialized["options"] = Json::array({toString(FailureResolution::ExcludeFailedInstruments),
                                              toString(FailureResolution::FailReport)});
+
+        // The developer export is a third choice only when the question offers it.
+        if (failureQuestion->mDeveloperExportOffered)
+        {
+            serialized["options"].push_back(toString(FailureResolution::DeveloperExport));
+        }
+
         serialized["investments"] = std::move(investments);
 
         // Only the Doh-Obr question has brokers, so the other questions keep their data as it is.
@@ -982,6 +1020,25 @@ Json decisionToJson(const RecordedDecision& aDecision) {
         {"fromEarlierRun", aDecision.mFromEarlierRun},
         {"used", aDecision.mUsed},
     };
+
+    if (const auto* developer = std::get_if<DeveloperExportQuestion>(&aDecision.mData))
+    {
+        Json investments = Json::array();
+
+        std::transform(developer->mInvestments.begin(),
+                       developer->mInvestments.end(),
+                       std::back_inserter(investments),
+                       [](const FailedInvestment& aInvestment) {
+                           return Json{
+                               {"name", aInvestment.mName},
+                               {"isin", aInvestment.mIsin},
+                               {"reasonCodes", reasonCodesToJson(aInvestment.mReasonCodes)},
+                           };
+                       });
+
+        serialized["step"] = developer->mStep;
+        serialized["investments"] = std::move(investments);
+    }
 
     if (const auto* failure = std::get_if<FailureResolutionQuestion>(&aDecision.mData))
     {
@@ -1391,6 +1448,25 @@ Json reportToJson(ReportType aType, const ReportResult& aReport) {
     if (aReport.mFailureResolution)
     {
         serialized["failureResolution"] = toString(*aReport.mFailureResolution);
+    }
+
+    // Only Doh-KDVP has a developer export; an empty list stays out like the broker list.
+    if (!aReport.mUnsafeInvestments.empty())
+    {
+        Json unsafeInvestments = Json::array();
+
+        std::transform(aReport.mUnsafeInvestments.begin(),
+                       aReport.mUnsafeInvestments.end(),
+                       std::back_inserter(unsafeInvestments),
+                       [](const RequestInvestment& aInvestment) {
+                           return Json{
+                               {"name", aInvestment.mName},
+                               {"isin", aInvestment.mIsin},
+                               {"reasonCodes", reasonCodesToJson(aInvestment.mReasonCodes)},
+                               {"diagnosticIds", aInvestment.mDiagnosticIds},
+                           };
+                       });
+        serialized["unsafeInvestments"] = std::move(unsafeInvestments);
     }
 
     serialized["unsafe"] = aReport.mUnsafe;

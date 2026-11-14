@@ -35,6 +35,15 @@ inline constexpr FailureForm kOtherInterestFailure{
 struct ExcludedUnits {
     std::vector<Isin> mIsins;     ///< Sorted.
     std::vector<Broker> mBrokers; ///< Sorted; always empty except for Doh-Obr.
+    /// Sorted; only Doh-KDVP, after the user chose the developer export and confirmed it. These
+    /// investments are not excluded: they get the unsafe export.
+    std::vector<Isin> mDeveloperIsins;
+};
+
+/// What the capital failure question needs to offer the developer export as a third choice.
+struct DeveloperOffer {
+    bool mEnabled{};                  ///< Developer mode of the run.
+    std::vector<Isin> mEligibleIsins; ///< Investments whose FIFO pool stopped for missing history.
 };
 
 class FailureResolutionStage final {
@@ -53,9 +62,14 @@ class FailureResolutionStage final {
     /// The same, and also the brokers whose cash interest the user left out (Doh-Obr only): an
     /// error of one cash-interest payment names its broker instead of an ISIN. The recorded choice
     /// is bound to the lists of both, so a changed list asks again.
+    ///
+    /// For Doh-KDVP with developer mode on, the question offers the developer export as a third
+    /// choice when every listed error is `incomplete_history` of an eligible investment and no
+    /// other question of the form names them.
     [[nodiscard]] static ExcludedUnits resolveUnits(ApplicationResultInput& aInput,
                                                     RunDecisions& aDecisions,
-                                                    const FailureForm& aForm);
+                                                    const FailureForm& aForm,
+                                                    const DeveloperOffer& aDeveloper = {});
 };
 
 } // namespace taxbroker

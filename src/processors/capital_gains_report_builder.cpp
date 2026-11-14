@@ -264,11 +264,12 @@ struct SalePart {
 };
 
 /// Splits the listed units of a sale into runs by F10. In FIFO order, the loss units of the
-/// sale take the blocked units first; profitable units are never blocked. Neighbouring runs with
-/// the same F10 are one run.
+/// sale take the blocked units first, with aBlockedRule as their F10; profitable units are never
+/// blocked. Neighbouring runs with the same F10 are one run.
 std::vector<SalePart> salePartsOf(const FifoIsinResult& aPool,
                                   const StatementEventReference& aSale,
-                                  Units aBlockedUnits) {
+                                  Units aBlockedUnits,
+                                  KdvpLossRule aBlockedRule) {
     std::vector<SalePart> parts;
     Units blockedLeft = aBlockedUnits;
 
@@ -299,7 +300,7 @@ std::vector<SalePart> salePartsOf(const FifoIsinResult& aPool,
             match.mGainTicks.numerator() < 0 ? std::min(blockedLeft, match.mUnits) : Units{0};
 
         blockedLeft -= blocked;
-        append(blocked, KdvpLossRule::Blocked);
+        append(blocked, aBlockedRule);
         append(match.mUnits - blocked, KdvpLossRule::NotBlocked);
     }
 
@@ -358,7 +359,167 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
             const Units blockedUnits = loss != nullptr ? loss->ineligibleUnits() : Units{0};
 
             // A sale with only units past the holding period has no part and no row.
-            for (const auto& part : salePartsOf(aPool, event, blockedUnits))
+            for (const auto& part : salePartsOf(aPool, event, blockedUnits, KdvpLossRule::Blocked))
+            {
+                stock -= part.mUnits;
+                list.mRows.push_back({.mEntry = KdvpSaleRow{.mSale = event,
+                                                            .mDate = trade.mMetadata.mTaxDate,
+                                                            .mUnits = part.mUnits,
+                                                            .mUnitPrice = trade.mUnitPrice,
+                                                            .mLossRule = part.mLossRule},
+                                      .mStock = stock});
+            }
+        }
+    }
+
+    return list;
+}
+
+/// The purchase groups of a developer export: the units of the sales of the year that the pool
+/// matched, then the units still open when the pool stopped, by purchase and exact unit value.
+/// Nothing when a value does not fit F4 or cannot be made.
+std::optional<std::vector<PurchaseGroup>> developerGroupsOf(const FifoIsinResult& aPool) {
+    auto groups = purchaseGroupsOf(aPool);
+
+    for (const auto& lot : aPool.mOpenLots)
+    {
+        if (lot.mState.mRemainingUnits <= 0)
+        {
+            continue;
+        }
+
+        auto value = exactLotUnitValue(lot.mState);
+
+        if (!std::holds_alternative<ExactRational>(value))
+        {
+            return std::nullopt;
+        }
+
+        const auto& exact = std::get<ExactRational>(value);
+        const auto last =
+            std::find_if(groups.rbegin(), groups.rend(), [&lot](const PurchaseGroup& aGroup) {
+                return aGroup.mPurchaseIndex == lot.mPurchase.mEventIndex;
+            });
+
+        if (last != groups.rend() && last->mUnitValue == exact)
+        {
+            last->mUnits += lot.mState.mRemainingUnits;
+        }
+        else
+        {
+            groups.push_back({.mPurchaseIndex = lot.mPurchase.mEventIndex,
+                              .mUnitValue = exact,
+                              .mUnits = lot.mState.mRemainingUnits});
+        }
+    }
+
+    const bool allFit = std::all_of(groups.begin(), groups.end(), [](const PurchaseGroup& aGroup) {
+        return std::holds_alternative<UnitPrice>(filingUnitPriceOf(aGroup.mUnitValue));
+    });
+
+    if (!allFit)
+    {
+        return std::nullopt;
+    }
+
+    return groups;
+}
+
+/// The developer list of an ISIN whose pool stopped at a sale with too few units: normal rows
+/// before that sale (purchases also list the units still open there), then every purchase and sale
+/// in full with no F10 and F8 as the running total, which may be negative. Nothing when a unit
+/// value does not fit. The row rule is in `docs/fifo.md`, "Developer mode".
+std::optional<KdvpInventoryList>
+buildDeveloperList(const std::vector<TradeInstrument>& aInstruments,
+                   std::size_t aInstrumentIndex,
+                   const ReportingYearLedger& aLedger,
+                   const FifoIsinResult& aPool) {
+    const auto groups = developerGroupsOf(aPool);
+
+    if (!groups || aPool.mStatus != FifoIsinStatus::InsufficientUnits || !aPool.mStoppedAt)
+    {
+        return std::nullopt;
+    }
+
+    const auto gap =
+        std::find(aLedger.mCapitalEvents.begin(), aLedger.mCapitalEvents.end(), *aPool.mStoppedAt);
+
+    if (gap == aLedger.mCapitalEvents.end())
+    {
+        return std::nullopt;
+    }
+
+    const auto gapPosition = static_cast<std::size_t>(gap - aLedger.mCapitalEvents.begin());
+
+    KdvpInventoryList list{.mIsin = aPool.mIsin, .mName = aPool.mName, .mUnsafe = true};
+    Units stock = 0;
+
+    for (std::size_t position = 0; position < aLedger.mCapitalEvents.size(); ++position)
+    {
+        const auto& event = aLedger.mCapitalEvents.at(position);
+
+        if (event.mKind != StatementEventKind::Trade || event.mInstrumentIndex != aInstrumentIndex)
+        {
+            continue;
+        }
+
+        const auto& trade = aInstruments.at(aInstrumentIndex).mTransactions.at(event.mEventIndex);
+        const bool isBuy = trade.mTradeSide == TradeSide::Buy;
+
+        if (position >= gapPosition)
+        {
+            // The files' own events, in full.
+            if (isBuy)
+            {
+                stock += trade.mUnits;
+                list.mRows.push_back({.mEntry = KdvpPurchaseRow{.mPurchase = event,
+                                                                .mDate = trade.mMetadata.mTaxDate,
+                                                                .mMethod = KdvpPurchaseMethod::B,
+                                                                .mUnits = trade.mUnits,
+                                                                .mUnitPrice = trade.mUnitPrice},
+                                      .mStock = stock});
+            }
+            else
+            {
+                stock -= trade.mUnits;
+                list.mRows.push_back({.mEntry = KdvpSaleRow{.mSale = event,
+                                                            .mDate = trade.mMetadata.mTaxDate,
+                                                            .mUnits = trade.mUnits,
+                                                            .mUnitPrice = trade.mUnitPrice,
+                                                            .mLossRule = KdvpLossRule::NotAssessed},
+                                      .mStock = stock});
+            }
+
+            continue;
+        }
+
+        if (isBuy)
+        {
+            for (const auto& group : *groups)
+            {
+                if (group.mPurchaseIndex != event.mEventIndex)
+                {
+                    continue;
+                }
+
+                stock += group.mUnits;
+                list.mRows.push_back(
+                    {.mEntry = KdvpPurchaseRow{.mPurchase = event,
+                                               .mDate = trade.mMetadata.mTaxDate,
+                                               .mMethod = KdvpPurchaseMethod::B,
+                                               .mUnits = group.mUnits,
+                                               .mUnitPrice = std::get<UnitPrice>(
+                                                   filingUnitPriceOf(group.mUnitValue))},
+                     .mStock = stock});
+            }
+        }
+        else if (position >= aLedger.mHistoricalCapitalEventCount)
+        {
+            // The loss rule is not run for a stopped pool, so the loss units of a sale before the
+            // gap have no F10; a profitable unit has true.
+            const auto lossUnits = listedLossUnitsOf(aPool, event);
+
+            for (const auto& part : salePartsOf(aPool, event, lossUnits, KdvpLossRule::NotAssessed))
             {
                 stock -= part.mUnits;
                 list.mRows.push_back({.mEntry = KdvpSaleRow{.mSale = event,
@@ -376,11 +537,47 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
 
 } // namespace
 
+DeveloperExportCheck CapitalGainsReportBuilder::checkDeveloperExport(
+    const ReportingYearLedger& aLedger, const FifoIsinResult& aPool, std::size_t aInstrumentIndex) {
+    if (aPool.mStatus != FifoIsinStatus::InsufficientUnits || !aPool.mStoppedAt)
+    {
+        return DeveloperExportCheck::NotApplicable;
+    }
+
+    const auto gap =
+        std::find(aLedger.mCapitalEvents.begin(), aLedger.mCapitalEvents.end(), *aPool.mStoppedAt);
+
+    if (gap == aLedger.mCapitalEvents.end())
+    {
+        return DeveloperExportCheck::NotApplicable;
+    }
+
+    // The ledger holds the events up to 31 December, so this is the year's own end.
+    const bool actionAfterGap =
+        std::any_of(gap, aLedger.mCapitalEvents.end(), [aInstrumentIndex](const auto& aEvent) {
+            return aEvent.mKind == StatementEventKind::CorporateAction &&
+                   aEvent.mInstrumentIndex == aInstrumentIndex;
+        });
+
+    if (actionAfterGap)
+    {
+        return DeveloperExportCheck::CorporateActionAfterGap;
+    }
+
+    if (!developerGroupsOf(aPool))
+    {
+        return DeveloperExportCheck::UnitValueTooLarge;
+    }
+
+    return DeveloperExportCheck::Possible;
+}
+
 CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& aStatement,
                                                          const ReportingYearLedger& aLedger,
                                                          const FifoMatchingResult& aFifo,
                                                          const LossEligibilityResult& aLoss,
-                                                         const std::vector<Isin>& aExcludedIsins) {
+                                                         const std::vector<Isin>& aExcludedIsins,
+                                                         const std::vector<Isin>& aDeveloperIsins) {
     CapitalGainsBuildResult result;
     CapitalGainsReportKDVP report;
     std::vector<KdvpBasisDifference> basisDifferences;
@@ -424,6 +621,24 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
                 .mSales = yearSales.at(index)});
 
             continue;
+        }
+
+        const bool isDeveloper =
+            std::find(aDeveloperIsins.begin(), aDeveloperIsins.end(), pool.mIsin) !=
+            aDeveloperIsins.end();
+
+        if (blocked && isDeveloper)
+        {
+            // Incomplete history is the one stop that the developer export may pass.
+            auto developerList = buildDeveloperList(instruments, index, aLedger, pool);
+
+            if (developerList)
+            {
+                report.mLists.push_back(std::move(*developerList));
+                blocked.reset();
+
+                continue;
+            }
         }
 
         if (blocked)

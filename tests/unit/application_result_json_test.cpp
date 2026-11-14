@@ -1851,6 +1851,149 @@ TEST(ApplicationResultJsonTest, FailingTheReportListsTheChoiceAndNoInvestment) {
     EXPECT_TRUE(json.at("diagnostics").at(0).at("blocking").get<bool>());
 }
 
+ProcessingDiagnostic missingHistoryDiagnostic() {
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                     .mAffectedReports = {kCapital},
+                     .mInstrumentName = "Example Investment",
+                     .mIsin = "XX0000000001"},
+        .mMessage = "Synthetic error.",
+    };
+}
+
+TEST(ApplicationResultJsonTest, TheDeveloperExportIsAThirdOptionOnlyWhenTheQuestionOffersIt) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {missingHistoryDiagnostic()};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CapitalGainsFailureResolutionRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    FailureResolutionQuestion{
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Example Investment",
+                            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                        }},
+                        .mDeveloperExportOffered = true,
+                    },
+            },
+        .mProcessingDiagnostics = {0},
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+
+    EXPECT_EQ(json.at("requests").at(0).at("options"),
+              nlohmann::json::parse(
+                  R"(["exclude_failed_instruments", "fail_report", "developer_export"])"));
+}
+
+TEST(ApplicationResultJsonTest, ADeveloperExportStepHasItsStepOptionAndInvestments) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {missingHistoryDiagnostic()};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::DeveloperExportConfirmationRequired,
+                .mAffectedReports = {kCapital},
+                .mData =
+                    DeveloperExportQuestion{
+                        .mStep = 2,
+                        .mInvestments = {FailedInvestment{
+                            .mIsin = "XX0000000001",
+                            .mName = "Example Investment",
+                            .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                        }},
+                    },
+            },
+        .mProcessingDiagnostics = {0},
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "developer_export_confirmation_required");
+    EXPECT_EQ(request.at("step"), 2);
+    EXPECT_EQ(request.at("options"), nlohmann::json::parse(R"(["confirm"])"));
+    EXPECT_EQ(request.at("investments"), nlohmann::json::parse(R"([{
+      "name": "Example Investment",
+      "isin": "XX0000000001",
+      "reasonCodes": ["incomplete_history"],
+      "diagnosticIds": ["diagnostic-0001"]
+    }])"));
+    EXPECT_EQ(json.at("reports").at("capitalGains").at("status"), "needs_input");
+}
+
+TEST(ApplicationResultJsonTest, AnUnsafeExportIsMarkedAndListsItsInvestments) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {missingHistoryDiagnostic()};
+    input.mResolvedDiagnostics = {0};
+    input.mReports[0].mFailureResolution = FailureResolution::DeveloperExport;
+    input.mReports[0].mUnsafeInvestments = {{
+        .mIsin = "XX0000000001",
+        .mName = "Example Investment",
+        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+    }};
+    input.mReports[0].mXml = "<Envelope/>";
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& capital = json.at("reports").at("capitalGains");
+
+    EXPECT_EQ(capital.at("status"), "generated");
+    EXPECT_EQ(capital.at("failureResolution"), "developer_export");
+    EXPECT_TRUE(capital.at("unsafe").get<bool>());
+    EXPECT_TRUE(capital.at("downloadAvailable").get<bool>());
+    EXPECT_TRUE(capital.at("excludedInvestments").empty());
+    EXPECT_EQ(capital.at("unsafeInvestments"), nlohmann::json::parse(R"([{
+      "name": "Example Investment",
+      "isin": "XX0000000001",
+      "reasonCodes": ["incomplete_history"],
+      "diagnosticIds": ["diagnostic-0001"]
+    }])"));
+
+    // The error stays, and it no longer blocks.
+    EXPECT_FALSE(json.at("diagnostics").at(0).at("blocking").get<bool>());
+    EXPECT_FALSE(json.at("reports").at("dividends").at("unsafe").get<bool>());
+    EXPECT_FALSE(json.at("reports").at("dividends").contains("unsafeInvestments"));
+}
+
+TEST(ApplicationResultJsonTest, AReportWithoutADeveloperExportHasNoUnsafeInvestments) {
+    const auto json =
+        serialize(ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024}));
+
+    EXPECT_FALSE(json.at("reports").at("capitalGains").at("unsafe").get<bool>());
+    EXPECT_FALSE(json.at("reports").at("capitalGains").contains("unsafeInvestments"));
+}
+
+TEST(ApplicationResultJsonTest, ARecordedDeveloperExportAnswerIsListedWithItsStep) {
+    auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    result.mDecisions = {RecordedDecision{
+        .mId = "decision-0001",
+        .mType = RequestType::DeveloperExportConfirmationRequired,
+        .mData =
+            DeveloperExportQuestion{
+                .mStep = 3,
+                .mInvestments = {FailedInvestment{
+                    .mIsin = "XX0000000001",
+                    .mName = "Example Investment",
+                    .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                }},
+            },
+        .mAnswer = DeveloperExportConfirmAnswer{},
+    }};
+
+    const auto json = serialize(result);
+    const auto& decision = json.at("decisions").at(0);
+
+    EXPECT_EQ(decision.at("type"), "developer_export_confirmation_required");
+    EXPECT_EQ(decision.at("step"), 3);
+    EXPECT_EQ(decision.at("answer"), "confirm");
+    EXPECT_EQ(decision.at("investments").size(), 1U);
+}
+
 TEST(ApplicationResultJsonTest, AClassificationRequestHasItsOptionsAndLabels) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mRequests = {

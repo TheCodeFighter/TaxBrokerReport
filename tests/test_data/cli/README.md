@@ -36,3 +36,11 @@ For trying the questions of `taxbroker report` by hand (no test reads them):
   other sells 2 after buying 1, so its purchase history is incomplete. Run it with `--year 2024`:
   the command asks the exclusion question. exclude writes the XML with the first investment only
   and lists the other in the summary; fail and cancel block the report.
+- `developer_export.csv` and `Doh-KDVP_2024_developer.golden.xml`: 0.6 @ 100 bought in 2022, 0.25 @
+  110 sold in 2023 (0.35 left), 0.5 @ 120 sold in 2024 (0.15 short, so the purchase history is
+  incomplete), 1 @ 90 bought and 0.2 @ 95 sold. With `--developer-export`, the answer `developer`
+  and `confirm` write `Doh-KDVP_2024_UNSAFE.xml`, which equals the golden file: the purchase of
+  0.35 units open at the short sale (F8 0.35), the short sale in full without F10 (F8 0.35 - 0.5 =
+  -0.15), the purchase of 1 (F8 0.85) and the last sale of 0.2 (F8 0.65). The golden file uses the
+  minimal taxpayer of the CLI tests (`{"taxNumber": "12345678", "isResident": true}`).
+

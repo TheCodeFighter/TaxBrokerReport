@@ -91,7 +91,8 @@ whether to exclude failed capital ISINs". The classification of trade investment
 (`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
 `excludedItems`". The dividend and other-interest failure choices use the same stage, and the
 report command runs both stages and asks these choices and the bond type in the terminal.
-Developer mode is not part of it yet; until developer mode exists, `unsafe` is `false`. XML
+Developer mode is part of it: `ApplicationRequest::mDeveloperMode` (off by default) lets the
+capital failure question offer the developer export, see "Developer-mode result". XML
 failures are isolated per form: see "XML writer stage" below.
 
 ### Application request
@@ -192,10 +193,14 @@ unresolved history, rejected-row or classification problems, or change dividend/
 The boundary processor exposes source-sale presence; later report processing determines this status.
 
 `unsafe` is `false` unless the user completes the three developer-mode confirmations for
-incomplete history. Excluding an unsafe ISIN in normal mode does not make the remaining XML
-unsafe.
+incomplete history and Doh-KDVP is `generated`; a `failed` or `needs_input` result is never
+unsafe. Excluding an unsafe ISIN in normal mode does not make the remaining XML unsafe. The
+investments of an unsafe export are listed in `unsafeInvestments` of the capital-gains report
+(name, ISIN, reason codes and the IDs of their `incomplete_history` diagnostics); the field is
+absent for every other result.
 
-`failureResolution` is either `exclude_failed_instruments` or `fail_report`. It is present only
+`failureResolution` is `exclude_failed_instruments`, `fail_report` or, for Doh-KDVP in developer
+mode after the three confirmations, `developer_export`. It is present only
 after the user answers that report's `capital_gains_failure_resolution_required`,
 `dividends_failure_resolution_required` or `other_interest_failure_resolution_required`; otherwise
 it is omitted. Each report owns its own
@@ -576,8 +581,10 @@ results remain available.
 ### Developer-mode result
 
 Developer mode can bypass only incomplete history and only after the three confirmations defined
-in [`fifo.md`](fifo.md). Capital gains becomes `generated`, `unsafe` is `true`, and the blocking
-flag on the retained `incomplete_history` diagnostic becomes `false`. The output and download
+in [`fifo.md`](fifo.md). It is a switch of the whole run, off by default; with it on, the capital
+failure question offers `developer_export` as a third choice (see its request type). Capital
+gains becomes `generated`, `unsafe` is `true`, `failureResolution` is `developer_export`, and the
+blocking flag on the retained `incomplete_history` diagnostic becomes `false`. The output and download
 screen must list the affected investments.
 
 `generated` is reached only if the separate known-source-event export passes all remaining
@@ -799,7 +806,8 @@ request type, and a failure-resolution question without an investment.
 | `tax_classification_required` | One request per trade investment whose asset class is missing, not recognized or conflicting: the ISIN, its name and the class labels of its rows (question data), with the options `capital_gains` and `exclude_from_supported_reports` and no preselected choice; answer with one of them or cancel. A second kind of question is for one interest or dividend payment of unknown type (`tax_rules.md`, "Supported tax categories and user classification"): the question data is the receipt date, name, ISIN, transaction, class labels, gross amount and currency; the options are `dividends`, `bank_deposit_interest`, `other_interest` (subtype `broker_cash` or `bond_coupon`) and `exclude_from_supported_reports`, without `dividends` and `bond_coupon` when there is no ISIN. |
 | `deposit_interest_total_required` | The year and the exact imported qualifying interest in EUR (above 0, at most 1,000); answer yes (`above_limit`) or no (`not_above_limit`). It has no cancel. Without an answer the form is made as for yes, and the open request never blocks it. |
 | `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, the bond type of a bond with a sale or maturity in the year (`ordinary` or `discount_or_zero_coupon`, or a cancel), and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
-| `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. |
+| `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. In developer mode, and only when every listed error is `incomplete_history` of an investment whose FIFO pool stopped at a sale with too few units and no other question of Doh-KDVP names it, `options` has a third choice `developer_export`; the answer is rejected when it is not offered. A pool that stopped for missing history but has a corporate action after the sale without history, or a unit value that does not fit `F4`, is not exported: in developer mode it has the warning `developer_export_unavailable` (message keys `developer_export_unavailable.corporate_action_after_gap` and `developer_export_unavailable.unit_value_too_large`, no parameters). |
+| `developer_export_confirmation_required` | One request per confirmation step (`step` 1, 2 or 3) with the exact list of affected investments (name, ISIN, reason codes, diagnostic IDs), asked only after the choice `developer_export` and each step only after the one before it is confirmed; answer `confirm` or cancel. A cancel at any step asks the capital failure question again. The confirmations are bound to the exact list, belong to one run (a new run, and every new choice of the failure question, asks from step 1) and are never recorded for another run; a new run does not keep the choice `developer_export` either, so it shows the failure question first. A client that cannot show three screens (the command line) may show one combined confirmation and send the three answers; the frontend shows three. |
 | `dividends_failure_resolution_required` | Exact complete failed Doh-Div ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 | `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list and, beside it, the failed brokers whose cash interest failed (`brokers`, only when there are any), safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 
@@ -1029,6 +1037,7 @@ Additional codes and their default scope are:
 | `slovenian_coupon_tax` | Warning for Doh-Obr, one per coupon row whose payer has the residence country `SI` and whose export has a tax above 0. A Slovenian withholding is not foreign tax and gives no credit; if the payer already taxed the coupon, the user leaves it out in eDavki. The row is still made. |
 | `slovenian_payer_tax_number_missing` | Warning for the form of the row, once per ISIN of a coupon or once per broker of cash interest: the payer's reference row has the country `SI` but no valid Slovenian tax number (empty, with `SI` before the digits, or a wrong check digit). The row is still made, with its name and address and no number; the user enters the tax number in eDavki. Never blocks, never asks. |
 | `treaty_claim_details_missing` | Warning for Doh-Obr, one per payer country after the answer `claim`: the user fills in the paragraph and article of the tax treaty in the claimed rows in eDavki, because the app does not fill them in yet. The parameter `country` is the payer country; the sources and the date are those of the country's taxed payments. |
+| `developer_export_unavailable` | Warning for Doh-KDVP in developer mode, one per investment whose pool stopped for missing history but that the developer export cannot be written for: a corporate action follows the sale without history (`developer_export_unavailable.corporate_action_after_gap`) or a unit value does not fit `F4` (`developer_export_unavailable.unit_value_too_large`). No parameters; the source and the date are those of the sale without history. It does not block; the failure question keeps its two choices. |
 | `deposit_interest_add_other_banks` | Warning for Doh-DHO, once per run, after the answer `above_limit`: the form holds only the imported interest, and the user adds the interest of the other banks in eDavki. |
 
 `broker_exchange_rate_used` is also a warning. Other previously

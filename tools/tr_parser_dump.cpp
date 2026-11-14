@@ -1043,6 +1043,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "DepositInterestAddOtherBanks";
     case ProcessingDiagnosticCode::TreatyClaimDetailsMissing:
         return "TreatyClaimDetailsMissing";
+    case ProcessingDiagnosticCode::DeveloperExportUnavailable:
+        return "DeveloperExportUnavailable";
     }
 
     return "Unknown";
@@ -1367,6 +1369,8 @@ std::string_view toString(KdvpLossRule aLossRule) {
         return "NotBlocked";
     case KdvpLossRule::Blocked:
         return "Blocked";
+    case KdvpLossRule::NotAssessed:
+        return "NotAssessed";
     }
 
     return "Unknown";

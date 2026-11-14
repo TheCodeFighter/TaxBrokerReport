@@ -703,8 +703,28 @@ details; the diagnostic must not contain the raw CSV row.
 ## Developer mode
 
 Developer mode may generate a Doh-KDVP file that includes ISINs with incomplete history. This is
-an unsafe override for testing and investigation. It is disabled by default and must not be
-presented as the normal solution.
+an unsafe override for testing and investigation. It is a switch of the whole run, disabled by
+default (the command line turns it on with an option, the frontend with one button), and must not
+be presented as the normal solution. With it on, the failure question of Doh-KDVP offers the
+override as a third choice beside excluding the affected ISINs and generating no Doh-KDVP.
+
+The third choice is offered only when every listed error is `incomplete_history` of an ISIN whose
+FIFO pool stopped at a sale with too few units, and no other question of Doh-KDVP names one of
+the ISINs. A sale before a split row whose ratio was cancelled is not such a case: its pool
+stopped at the corporate action. An open quantity question is never bypassed. With another kind
+of error in the list, the question keeps its two choices.
+
+Two more cases are not exported, because the rows could not be written without guessing. In
+developer mode each gets a `developer_export_unavailable` warning (not blocking, with the sale
+without history as its source), and the question keeps its two choices:
+
+- A corporate action of the ISIN follows the sale without history, up to 31 December
+  (`developer_export_unavailable.corporate_action_after_gap`). The pool stopped at the sale, so
+  the action is never applied or asked, and the units before and after it would be listed in
+  different states.
+- A unit value of the list does not fit the field `F4`
+  (`developer_export_unavailable.unit_value_too_large`), for example a purchase still held at the
+  sale after a large reverse split.
 
 Before generating the unsafe file, the app must require three separate confirmations:
 
@@ -716,11 +736,21 @@ Before generating the unsafe file, the app must require three separate confirmat
 Each confirmation requires a separate user action. One checkbox, one dialog with repeated text, or
 a saved preference is not enough. Cancelling at any step returns to the normal choice of excluding
 the affected ISINs or adding more statements. The three confirmations apply only to the current
-run and must be repeated next time.
+run and must be repeated next time: a new run never keeps the confirmations or the choice of the
+developer export, so its failure question is shown first again. A client that cannot show three screens, such as the
+command line, may show one combined confirmation (the warning, every name and ISIN, the risk) and
+send the three confirmations of the service one after the other; the frontend shows three.
 
 After the third confirmation, rebuild a separate source-event export for every overridden ISIN.
 Include all known acquisitions needed to describe the position and all selected-year source sales,
-including the unmatched sale in full. Calculate the running quantity by applying known historical
+including the unmatched sale in full. Up to the first unmatched sale ("the gap") the rows are those
+of a normal list: the sales of the year with their matches, and each purchase row lists the units
+that those sales use plus the units still open at the gap. The 30-day loss rule is not run for a
+stopped pool, so a loss-making unit of such a sale has no `F10` (not assessed) and a profitable
+unit has `true`. From the gap on, every
+purchase and every sale of the files is listed in full, in ledger order, with the unit value of
+the file and no `F10` for a sale. When the gap is in an earlier year, that sale and every later
+one are listed too, so `F8` is always the running total of the listed rows. Calculate the running quantity by applying known historical
 and in-year events; it may become negative after a shortage. Preserve the actual acquisition dates,
 quantities and converted unit values. No fabricated acquisition date or cost is attached to an
 unmatched sale, and no guessed FIFO matches are generated after the first shortage. For an

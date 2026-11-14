@@ -826,6 +826,161 @@ TEST(DecisionSessionTest, ANewRunUsesTheRecordedAnswerVisibly) {
     EXPECT_EQ(rejections[0].mReason, AnswerRejection::StaleRevision);
 }
 
+TEST(DecisionSessionTest, TheDeveloperExportIsAChoiceOnlyWhenTheQuestionOffersIt) {
+    // The question of the first calculation does not offer the developer export, the question
+    // of the second one does.
+    bool offered = false;
+    const auto calculation = [&offered](RunDecisions& aDecisions) {
+        DecisionQuestion question{
+            .mType = RequestType::CapitalGainsFailureResolutionRequired,
+            .mAffectedReports = {kCapital},
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                    }},
+                    .mDeveloperExportOffered = offered},
+        };
+        const auto* answer = aDecisions.find(question);
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+        input.mProcessingDiagnostics = {
+            capitalIncompleteHistoryError("XX0000000001", "Synthetic Share")};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {
+                RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    const AnswerValue developerExport = FailureResolutionAnswer{FailureResolution::DeveloperExport};
+    DecisionSession notOffered;
+
+    notOffered.start(calculation);
+
+    const auto rejections = notOffered.answer({{"request-0001", 1, developerExport}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(notOffered.result().mRunRevision, 1U);
+
+    offered = true;
+
+    DecisionSession offeredSession;
+
+    offeredSession.start(calculation);
+
+    EXPECT_TRUE(offeredSession.answer({{"request-0001", 1, developerExport}}).empty());
+    EXPECT_EQ(offeredSession.result().mRunRevision, 2U);
+    EXPECT_TRUE(offeredSession.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, AConfirmationOfTheDeveloperExportIsNotKeptForANewRun) {
+    // Step 1 of the developer export is asked until it has an answer.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        DecisionQuestion question{
+            .mType = RequestType::DeveloperExportConfirmationRequired,
+            .mAffectedReports = {kCapital},
+            .mData =
+                DeveloperExportQuestion{
+                    .mStep = 1,
+                    .mInvestments = {{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                    }}},
+        };
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+        input.mProcessingDiagnostics = {
+            capitalIncompleteHistoryError("XX0000000001", "Synthetic Share")};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {
+                RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+
+    session.start(calculation);
+
+    ASSERT_TRUE(session.answer({{"request-0001", 1, DeveloperExportConfirmAnswer{}}}).empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+
+    // Another run with the same question asks again, and the confirmation is not listed.
+    const auto& result = session.start(calculation);
+
+    ASSERT_EQ(seen.size(), 3U);
+    EXPECT_EQ(seen[2], std::nullopt);
+    EXPECT_TRUE(result.mDecisions.empty());
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.mRequests[0].mType, RequestType::DeveloperExportConfirmationRequired);
+}
+
+TEST(DecisionSessionTest, TheDeveloperExportChoiceIsNotKeptForANewRun) {
+    // The failure question offers the developer export; its answer is asked until it has one.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        DecisionQuestion question{
+            .mType = RequestType::CapitalGainsFailureResolutionRequired,
+            .mAffectedReports = {kCapital},
+            .mData =
+                FailureResolutionQuestion{
+                    .mInvestments = {{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                    }},
+                    .mDeveloperExportOffered = true},
+        };
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+        input.mProcessingDiagnostics = {
+            capitalIncompleteHistoryError("XX0000000001", "Synthetic Share")};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {
+                RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = {0}}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+
+    session.start(calculation);
+
+    ASSERT_TRUE(
+        session
+            .answer(
+                {{"request-0001", 1, FailureResolutionAnswer{FailureResolution::DeveloperExport}}})
+            .empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+
+    // Another run asks the failure question again; the choice is not listed as an earlier answer.
+    const auto& result = session.start(calculation);
+
+    ASSERT_EQ(seen.size(), 3U);
+    EXPECT_EQ(seen[2], std::nullopt);
+    EXPECT_TRUE(result.mDecisions.empty());
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.mRequests[0].mType, RequestType::CapitalGainsFailureResolutionRequired);
+}
+
 TEST(DecisionSessionTest, ANewRunWithAnotherFileOrderStillMatches) {
     // The same question with other sources: first file, row 3, then second file, row 5.
     const auto run = [](std::size_t aSourceIndex, std::size_t aRow, SeenAnswers& aSeen) {

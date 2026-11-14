@@ -71,7 +71,9 @@ scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json --trade-republic 
 Give your whole history, not only the tax year. The XML and a readable summary are written to
 `runtime/report/2025/`. Use `--self-report` for a self-report (*samoprijava*) of Doh-KDVP; the
 income forms are always originals. The command asks its questions in the terminal; `--no-input`
-asks nothing and lists the open questions instead.
+asks nothing and lists the open questions instead. `--developer-export` is for developers: when a
+sale has no purchase history, it adds one more choice that writes an unsafe `Doh-KDVP_YYYY_UNSAFE.xml`
+after one confirmation (eDavki may reject it, or the tax may be wrong).
 
 More detail: [docker/docker_doc.md](docker/docker_doc.md) (the Docker setup),
 [docs/development.md](docs/development.md) (builds, tests, checks and debug dumps) and

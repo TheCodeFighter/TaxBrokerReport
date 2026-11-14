@@ -112,6 +112,7 @@ gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
 add_executable(taxbroker_integration_tests
     integration/application_result_integration_test.cpp
     integration/application_run_integration_test.cpp
+    integration/developer_export_integration_test.cpp
     integration/cli_report_integration_test.cpp
     integration/corporate_action_integration_test.cpp
     integration/ecb_rate_file_integration_test.cpp

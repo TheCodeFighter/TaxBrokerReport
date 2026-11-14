@@ -49,12 +49,16 @@ enum class KdvpPurchaseMethod {
 };
 
 /// Doh-KDVP F10 of a sale row. There is no "unresolved" value on purpose: a sale whose loss check
-/// is not resolved gets no row, so an open question is never written as a decision.
+/// is not resolved gets no row, so an open question is never written as a decision. NotAssessed is
+/// not an open question: the loss check was not run for the units, and F10 is left out.
 enum class KdvpLossRule {
     /// The sale has no loss, or the loss may reduce taxable gains.
     NotBlocked,
     /// The 30-day loss rule blocks the loss of this row's units.
     Blocked,
+    /// The loss check was not run (the purchase value is unknown, or the pool stopped later), so
+    /// F10 is left out. Only the developer export of an investment with incomplete history has it.
+    NotAssessed,
 };
 
 /// Lists only the units that sales of the year use within the holding period. A lot a split
@@ -100,6 +104,8 @@ struct KdvpInventoryList {
     std::string mName;
     /// IsFond. Always false for now; the class check belongs to the classification gate.
     bool mIsFund{};
+    /// A developer export of incomplete history: F8 may be negative and F10 may be left out.
+    bool mUnsafe{};
     std::vector<KdvpRow> mRows;
 
     bool operator==(const KdvpInventoryList&) const = default;

@@ -2046,6 +2046,171 @@ TEST(ApplicationResultRequestTest, OnlyAnExclusionListsExcludedBrokers) {
     EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(input)), std::invalid_argument);
 }
 
+TEST(ApplicationResultRequestTest, OnlyTheDeveloperExportListsUnsafeInvestments) {
+    // A list of unsafe investments without the developer export choice is a stage bug.
+    ApplicationResultInput withoutChoice{.mReportingYear = 2024};
+
+    withoutChoice.mReports[static_cast<std::size_t>(kCapital)].mFailureResolution =
+        FailureResolution::FailReport;
+    withoutChoice.mReports[static_cast<std::size_t>(kCapital)].mUnsafeInvestments = {
+        FailedInvestment{.mIsin = "XX0000000001", .mName = "Synthetic Share", .mReasonCodes = {}}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutChoice)),
+                 std::invalid_argument);
+
+    // The developer export choice without any investment is a stage bug too.
+    ApplicationResultInput withoutList{.mReportingYear = 2024};
+
+    withoutList.mReports[static_cast<std::size_t>(kCapital)].mFailureResolution =
+        FailureResolution::DeveloperExport;
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutList)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, ADeveloperExportQuestionNeedsAStepAndAnInvestment) {
+    const FailedInvestment investment{
+        .mIsin = "XX0000000001",
+        .mName = "Synthetic Share",
+        .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}};
+
+    // Step 4 does not exist.
+    ApplicationResultInput badStep{.mReportingYear = 2024};
+    badStep.mRequests = {RequestInput{
+        .mQuestion = {.mType = RequestType::DeveloperExportConfirmationRequired,
+                      .mAffectedReports = {kCapital},
+                      .mData = DeveloperExportQuestion{.mStep = 4, .mInvestments = {investment}}}}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(badStep)), std::invalid_argument);
+
+    // No investment: an answer would confirm nothing.
+    ApplicationResultInput noInvestment{.mReportingYear = 2024};
+    noInvestment.mRequests = {RequestInput{
+        .mQuestion = {.mType = RequestType::DeveloperExportConfirmationRequired,
+                      .mAffectedReports = {kCapital},
+                      .mData = DeveloperExportQuestion{.mStep = 1, .mInvestments = {}}}}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(noInvestment)),
+                 std::invalid_argument);
+
+    // The question data of another type.
+    ApplicationResultInput wrongType{.mReportingYear = 2024};
+    wrongType.mRequests = {RequestInput{
+        .mQuestion = {.mType = RequestType::CapitalGainsFailureResolutionRequired,
+                      .mAffectedReports = {kCapital},
+                      .mData = DeveloperExportQuestion{.mStep = 1, .mInvestments = {investment}}}}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(wrongType)),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, ADeveloperExportQuestionListsItsInvestmentsSortedByIsin) {
+    // The stage may list the investments in any order; the request sorts them by ISIN and name,
+    // and the reason codes in code order without repeats.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {
+        RequestInput{
+            .mQuestion =
+                {.mType = RequestType::DeveloperExportConfirmationRequired,
+                 .mAffectedReports = {kCapital},
+                 .mData =
+                     DeveloperExportQuestion{
+                         .mStep = 1,
+                         .mInvestments = {FailedInvestment{
+                                              .mIsin = "XX0000000002",
+                                              .mName = "Synthetic Other",
+                                              .mReasonCodes =
+                                                  {ProcessingDiagnosticCode::IncompleteHistory,
+                                                   ProcessingDiagnosticCode::IncompleteHistory}},
+                                          FailedInvestment{.mIsin = "XX0000000001",
+                                                           .mName = "Synthetic Share",
+                                                           .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}}}}},
+        }};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& question = std::get<DeveloperExportQuestion>(result.mRequests[0].mData);
+
+    ASSERT_EQ(question.mInvestments.size(), 2U);
+    EXPECT_EQ(question.mInvestments[0].mIsin, "XX0000000001");
+    EXPECT_EQ(question.mInvestments[1].mIsin, "XX0000000002");
+    EXPECT_EQ(question.mInvestments[1].mReasonCodes,
+              std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::IncompleteHistory});
+}
+
+TEST(ApplicationResultRequestTest, AnOpenDeveloperExportStepKeepsDohKdvpAtNeedsInput) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                     .mAffectedReports = {kCapital},
+                     .mInstrumentName = "Synthetic Share",
+                     .mIsin = "XX0000000001"},
+        .mMessage = "Synthetic capital error.",
+    }};
+    input.mRequests = {RequestInput{
+        .mQuestion = {.mType = RequestType::DeveloperExportConfirmationRequired,
+                      .mAffectedReports = {kCapital},
+                      .mData =
+                          DeveloperExportQuestion{
+                              .mStep = 1,
+                              .mInvestments = {FailedInvestment{
+                                  .mIsin = "XX0000000001",
+                                  .mName = "Synthetic Share",
+                                  .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory},
+                              }}}},
+        .mProcessingDiagnostics = {0},
+    }};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::NeedsInput);
+    EXPECT_FALSE(result.report(kCapital).mUnsafe);
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    ASSERT_EQ(result.mRequests[0].mInvestments.size(), 1U);
+    EXPECT_EQ(result.mRequests[0].mInvestments[0].mDiagnosticIds,
+              std::vector<std::string>{"diagnostic-0001"});
+}
+
+TEST(ApplicationResultRequestTest, AnUnsafeExportThatIsNotGeneratedIsNotMarkedUnsafe) {
+    // The investments of the export are listed, but another blocking error stops the form: the
+    // result has no XML and `unsafe` is false.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+                                        .mSeverity = DiagnosticSeverity::Error,
+                                        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+                                        .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                                                     .mAffectedReports = {kCapital},
+                                                     .mInstrumentName = "Synthetic Share",
+                                                     .mIsin = "XX0000000001"},
+                                        .mMessage = "Synthetic capital error.",
+                                    },
+                                    ProcessingDiagnostic{
+                                        .mSeverity = DiagnosticSeverity::Error,
+                                        .mCode = ProcessingDiagnosticCode::XmlValueOutOfRange,
+                                        .mContext = {.mStage = PipelineStage::XmlGeneration,
+                                                     .mAffectedReports = {kCapital},
+                                                     .mField = "F8"},
+                                        .mMessage = "Synthetic XML error.",
+                                    }};
+    input.mResolvedDiagnostics = {0};
+    input.mReports[static_cast<std::size_t>(kCapital)].mFailureResolution =
+        FailureResolution::DeveloperExport;
+    input.mReports[static_cast<std::size_t>(kCapital)].mUnsafeInvestments = {
+        FailedInvestment{.mIsin = "XX0000000001",
+                         .mName = "Synthetic Share",
+                         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
+    EXPECT_FALSE(result.report(kCapital).mXml.has_value());
+    EXPECT_FALSE(result.report(kCapital).mUnsafe);
+}
+
 TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {
     // A failure choice without its investment list.
     ApplicationResultInput withoutList{.mReportingYear = 2024};

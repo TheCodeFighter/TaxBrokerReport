@@ -21,10 +21,11 @@ namespace {
 /// ratio or a cancel, or, when its rows are on different dates, that they are separate events, and
 /// a quantity question a corrected quantity or a cancel. A payer choice question takes a row among
 /// its options or a skip, never a cancel, and a deposit interest total question yes or no, and a
-/// bond type question a bond type or a cancel, and a treaty claim question a valid text or no
-/// claim, and an interest treaty claim question yes or no, never a cancel. A question without
-/// question data takes no answer until its processor defines one, because all questions of its type
-/// would be the same question.
+/// bond type question a bond type or a cancel, a developer export question a confirmation or a
+/// cancel, and the developer export as a failure choice only when the question offers it, and a
+/// treaty claim question a valid text or no claim, and an interest treaty claim question yes or no,
+/// never a cancel. A question without question data takes no answer until its processor defines
+/// one, because all questions of its type would be the same question.
 [[nodiscard]] bool fitsQuestion(const QuestionData& aData, const AnswerValue& aAnswer) {
     const auto fits = [&aAnswer](const auto& aData) {
         using Data = std::decay_t<decltype(aData)>;
@@ -35,7 +36,20 @@ namespace {
         }
         else if constexpr (std::is_same_v<Data, FailureResolutionQuestion>)
         {
-            return std::holds_alternative<FailureResolutionAnswer>(aAnswer) ||
+            const auto* answer = std::get_if<FailureResolutionAnswer>(&aAnswer);
+
+            // The developer export is a choice only when the question offers it.
+            if (answer != nullptr)
+            {
+                return answer->mChoice != FailureResolution::DeveloperExport ||
+                       aData.mDeveloperExportOffered;
+            }
+
+            return std::holds_alternative<CancelAnswer>(aAnswer);
+        }
+        else if constexpr (std::is_same_v<Data, DeveloperExportQuestion>)
+        {
+            return std::holds_alternative<DeveloperExportConfirmAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
         else if constexpr (std::is_same_v<Data, LossEligibilityQuestion>)
@@ -315,6 +329,15 @@ const AnswerValue* RunDecisions::find(const DecisionQuestion& aQuestion) {
 const ApplicationResult& DecisionSession::start(RunCalculation aCalculation) {
     auto decisions = mDecisions;
 
+    // The developer export is never kept for another run: not its confirmations, and not the
+    // choice that starts them, so the failure question is shown first again.
+    std::erase_if(decisions.mEntries, [](const RunDecisions::Entry& aEntry) {
+        const auto* failure = std::get_if<FailureResolutionAnswer>(&aEntry.mAnswer);
+
+        return aEntry.mType == RequestType::DeveloperExportConfirmationRequired ||
+               (failure != nullptr && failure->mChoice == FailureResolution::DeveloperExport);
+    });
+
     // Every answer recorded so far was given in an earlier run.
     for (auto& entry : decisions.mEntries)
     {
@@ -444,6 +467,19 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
 
         entries.push_back(
             {.mType = request.mType, .mData = request.mData, .mAnswer = std::move(value)});
+    }
+
+    // A new choice for the capital failure question asks the developer export confirmations again.
+    const bool answeredCapitalFailure =
+        std::any_of(answered.begin(), answered.end(), [](const DecisionRequest* aRequest) {
+            return aRequest->mType == RequestType::CapitalGainsFailureResolutionRequired;
+        });
+
+    if (answeredCapitalFailure)
+    {
+        std::erase_if(entries, [](const RunDecisions::Entry& aEntry) {
+            return aEntry.mType == RequestType::DeveloperExportConfirmationRequired;
+        });
     }
 
     auto calculated = calculate(mCalculation, decisions);

@@ -47,8 +47,8 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
-                   --trade-republic FILE...
+                   [--developer-export] [--ecb-rates FILE...] [--reference-files FILE...]
+                   --out DIR --trade-republic FILE...
   taxbroker report --help
   taxbroker --help
 
@@ -61,8 +61,8 @@ Run 'taxbroker report --help' for the details.
 constexpr std::string_view kReportHelp =
     R"(Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
-                   --trade-republic FILE...
+                   [--developer-export] [--ecb-rates FILE...] [--reference-files FILE...]
+                   --out DIR --trade-republic FILE...
 
 Writes the forms Doh-KDVP (capital gains from selling shares and funds), Doh-Div (dividends),
 Doh-DHO (bank-deposit interest) and Doh-Obr (other interest and bond coupons) for one year
@@ -77,6 +77,11 @@ Options:
                      Only Doh-KDVP has one: the income forms are always originals.
   --no-input         Ask no questions: an open question blocks its form (see
                      "Questions" below).
+  --developer-export For developers. When a sale has no purchase history, the question about
+                     it also offers "developer": one confirmation, then Doh-KDVP_YYYY_UNSAFE.xml
+                     is written with that sale as the files say, no F10 and a negative stock
+                     where needed. eDavki may reject it or the tax may be wrong. Cannot be
+                     used with --no-input.
   --out DIR          The folder for the output files. It is created if it is missing.
   -h, --help         Show this help.
 
@@ -251,6 +256,7 @@ struct ReportOptions {
     std::filesystem::path mTaxpayerPath;
     FilingType mFilingType{FilingType::Original};
     bool mAskQuestions{true}; ///< False with --no-input: the open questions stay open.
+    bool mDeveloperMode{};    ///< --developer-export: offers the unsafe export of missing history.
     std::filesystem::path mOutputDirectory;
     std::vector<std::filesystem::path> mTradeRepublicPaths; ///< The --trade-republic files.
     std::vector<std::filesystem::path> mEcbRatePaths;       ///< The --ecb-rates files.
@@ -296,6 +302,7 @@ parseReportArguments(std::span<const std::string> aArguments) {
     std::optional<std::string> outputText;
     bool selfReport = false;
     bool noInput = false;
+    bool developerExport = false;
 
     // The list that takes the next plain arguments, its option and how many it has so far.
     std::vector<std::filesystem::path>* list = nullptr;
@@ -375,6 +382,17 @@ parseReportArguments(std::span<const std::string> aArguments) {
             continue;
         }
 
+        if (argument == "--developer-export")
+        {
+            if (developerExport)
+            {
+                return UsageError{"--developer-export is given twice."};
+            }
+
+            developerExport = true;
+            continue;
+        }
+
         std::optional<std::string>* target = nullptr;
 
         if (argument == "--year")
@@ -449,6 +467,14 @@ parseReportArguments(std::span<const std::string> aArguments) {
     options.mOutputDirectory = *outputText;
     options.mFilingType = selfReport ? FilingType::SelfReport : FilingType::Original;
     options.mAskQuestions = !noInput;
+    options.mDeveloperMode = developerExport;
+
+    // The three confirmations of the developer export need a person.
+    if (developerExport && noInput)
+    {
+        return UsageError{"--developer-export needs questions, so it cannot be used with "
+                          "--no-input."};
+    }
 
     return options;
 }
@@ -659,8 +685,11 @@ constexpr std::array<FormInfo, 4> kForms{{
     {ReportType::OtherInterest, "Doh-Obr", "Other interest"},
 }};
 
-std::string xmlFileName(const FormInfo& aForm, int aYear) {
-    return std::string{aForm.mCode} + "_" + std::to_string(aYear) + ".xml";
+/// A developer export of incomplete history has its own name, so it is never mistaken for the
+/// normal file.
+std::string xmlFileName(const FormInfo& aForm, int aYear, bool aUnsafe = false) {
+    return std::string{aForm.mCode} + "_" + std::to_string(aYear) + (aUnsafe ? "_UNSAFE" : "") +
+           ".xml";
 }
 
 std::string summaryFileName(int aYear) {
@@ -856,14 +885,21 @@ void writeForms(std::ostream& aOut, const RunOutcome& aOutcome) {
         switch (report.mStatus)
         {
         case ReportStatus::Generated:
-            aOut << "generated" << leftOutText(report);
+            aOut << (report.mUnsafe ? "generated, UNSAFE" : "generated") << leftOutText(report);
 
             if (form.mType != ReportType::CapitalGains)
             {
                 aOut << ", " << countText(rows, "row", "rows");
             }
 
-            aOut << ", written to " << xmlFileName(form, year) << '\n';
+            aOut << ", written to " << xmlFileName(form, year, report.mUnsafe) << '\n';
+
+            for (const auto& unsafe : report.mUnsafeInvestments)
+            {
+                aOut << "    UNSAFE, the purchase history is missing: "
+                     << investmentText(unsafe.mIsin, unsafe.mName) << '\n';
+            }
+
             break;
         case ReportStatus::NoData:
             aOut << "no data, " << noDataText(form, report, year) << '\n';
@@ -1095,6 +1131,10 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         {
             // It lists several investments, not one.
             return unitsText(aQuestion.mInvestments.size(), aQuestion.mBrokers.size());
+        }
+        else if constexpr (std::is_same_v<Question, DeveloperExportQuestion>)
+        {
+            return "developer export, " + unitsText(aQuestion.mInvestments.size(), 0);
         }
         else if constexpr (std::is_same_v<Question, LossEligibilityQuestion>)
         {
@@ -1562,14 +1602,16 @@ int runReport(const ReportOptions& aOptions,
     {
         const auto index = static_cast<std::size_t>(form.mType);
         const auto status = result.report(form.mType).mStatus;
-        const auto xmlPath = aOptions.mOutputDirectory / xmlFileName(form, aOptions.mYear);
+        const bool unsafe = result.report(form.mType).mUnsafe;
+        const auto xmlPath = aOptions.mOutputDirectory / xmlFileName(form, aOptions.mYear, unsafe);
         const bool generated = status == ReportStatus::Generated;
 
         allDone = allDone && (generated || status == ReportStatus::NoData);
 
         if (generated && !isFileOrMissing(xmlPath))
         {
-            aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear) << " cannot be written.\n";
+            aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear, unsafe)
+                 << " cannot be written.\n";
             return kExitFailure;
         }
 
@@ -1603,7 +1645,8 @@ int runReport(const ReportOptions& aOptions,
             continue;
         }
 
-        const auto xmlPath = aOptions.mOutputDirectory / xmlFileName(form, aOptions.mYear);
+        const auto xmlPath =
+            aOptions.mOutputDirectory / xmlFileName(form, aOptions.mYear, report.mUnsafe);
         const auto xmlTemporary = temporaryPath(xmlPath);
 
         temporaries.push_back(xmlTemporary);
@@ -1611,7 +1654,8 @@ int runReport(const ReportOptions& aOptions,
         if (!writeFile(xmlTemporary, report.mXml.value()))
         {
             removeTemporaryFiles(temporaries);
-            aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear) << " cannot be written.\n";
+            aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear, report.mUnsafe)
+                 << " cannot be written.\n";
             return kExitFailure;
         }
 
@@ -1784,6 +1828,7 @@ int runReportCommand(std::span<const std::string> aArguments,
     ApplicationRequest request{
         .mReportingYear = options.mYear,
         .mFilingType = options.mFilingType,
+        .mDeveloperMode = options.mDeveloperMode,
         .mTaxpayer = std::get<TaxpayerMetadata>(taxpayer),
     };
 

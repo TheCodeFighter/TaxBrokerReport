@@ -93,14 +93,36 @@ struct CapitalGainsBuildResult {
 basisDifferenceDiagnostics(const MergedStatement& aStatement,
                            const CapitalGainsBuildResult& aBuilt);
 
+/// Whether the developer export can be written for an investment.
+enum class DeveloperExportCheck {
+    Possible,          ///< The pool stopped for missing history and a developer list can be built.
+    NotApplicable,     ///< The pool did not stop at a sale with too few units.
+    UnitValueTooLarge, ///< A unit value of the list does not fit the Doh-KDVP field F4.
+    CorporateActionAfterGap ///< A corporate action follows the sale without history in the year.
+};
+
 class CapitalGainsReportBuilder final {
   public:
+    /// Tells whether buildDeveloperList can make the list of the pool at aInstrumentIndex. A
+    /// corporate action after the sale without history is never applied (the pool is stopped), so
+    /// the units of the rows would mix two states: such a pool is not exported.
+    [[nodiscard]] static DeveloperExportCheck
+    checkDeveloperExport(const ReportingYearLedger& aLedger,
+                         const FifoIsinResult& aPool,
+                         std::size_t aInstrumentIndex);
+
     /// Builds the Doh-KDVP filing rows from the FIFO result, without the ISINs in aExcludedIsins.
-    [[nodiscard]] static CapitalGainsBuildResult build(const MergedStatement& aStatement,
-                                                       const ReportingYearLedger& aLedger,
-                                                       const FifoMatchingResult& aFifo,
-                                                       const LossEligibilityResult& aLoss,
-                                                       const std::vector<Isin>& aExcludedIsins);
+    /// An ISIN in aDeveloperIsins whose pool stopped at a sale with too few units gets a developer
+    /// list (`mUnsafe`) instead of being blocked: the purchases and sales as the files say from
+    /// that sale on, a negative F8 where the stock goes below zero, and no F10 for those sales.
+    /// Such an ISIN that cannot get one stays blocked.
+    [[nodiscard]] static CapitalGainsBuildResult
+    build(const MergedStatement& aStatement,
+          const ReportingYearLedger& aLedger,
+          const FifoMatchingResult& aFifo,
+          const LossEligibilityResult& aLoss,
+          const std::vector<Isin>& aExcludedIsins,
+          const std::vector<Isin>& aDeveloperIsins = {});
 };
 
 } // namespace taxbroker

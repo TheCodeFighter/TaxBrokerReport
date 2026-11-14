@@ -469,6 +469,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* bond = std::get_if<BondTypeQuestion>(&aQuestion.mData);
     const auto* treaty = std::get_if<TreatyClaimQuestion>(&aQuestion.mData);
     const auto* interestTreaty = std::get_if<InterestTreatyClaimQuestion>(&aQuestion.mData);
+    const auto* developer = std::get_if<DeveloperExportQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
@@ -482,9 +483,18 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         (quantity != nullptr) != isQuantityType ||
         ((payer != nullptr || bond != nullptr || treaty != nullptr || interestTreaty != nullptr) &&
          !isIncomeDetailsType) ||
-        (deposit != nullptr) != isDepositType)
+        (deposit != nullptr) != isDepositType ||
+        (developer != nullptr) !=
+            (aQuestion.mType == RequestType::DeveloperExportConfirmationRequired))
     {
         throw std::invalid_argument("The question data does not fit the request type.");
+    }
+
+    if (developer != nullptr &&
+        (developer->mStep < 1 || developer->mStep > 3 || developer->mInvestments.empty()))
+    {
+        throw std::invalid_argument("A developer export question needs step 1, 2 or 3 and an "
+                                    "investment.");
     }
 
     if (quantity != nullptr && (quantity->mIsin.empty() || quantity->mOpenUnits <= 0 ||
@@ -616,14 +626,17 @@ investmentsOf(const QuestionData& aData,
               const std::vector<std::size_t>& aLinkedDiagnostics,
               const std::vector<ApplicationDiagnostic>& aDiagnostics) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aData);
+    const auto* developer = std::get_if<DeveloperExportQuestion>(&aData);
     std::vector<RequestInvestment> investments;
 
-    if (failure == nullptr)
+    if (failure == nullptr && developer == nullptr)
     {
         return investments;
     }
 
-    for (const auto& failed : failure->mInvestments)
+    const auto& failedList = failure != nullptr ? failure->mInvestments : developer->mInvestments;
+
+    for (const auto& failed : failedList)
     {
         RequestInvestment investment{
             .mIsin = failed.mIsin,
@@ -670,21 +683,28 @@ brokersOf(const std::vector<FailedBroker>& aBrokers,
     return brokers;
 }
 
-/// The exclusion of a form needs a non-empty list; every other choice, or none, has none.
+/// The exclusion of a form needs a non-empty list; every other choice, or none, has none. The
+/// developer export lists its unsafe investments and only Doh-KDVP has it.
 void checkFailureResolution(const ReportInput& aInput) {
     const bool excludes = aInput.mFailureResolution == FailureResolution::ExcludeFailedInstruments;
+    const bool isDeveloper = aInput.mFailureResolution == FailureResolution::DeveloperExport;
 
     if (excludes != (!aInput.mExcludedInvestments.empty() || !aInput.mExcludedBrokers.empty()))
     {
         throw std::invalid_argument("Only an exclusion lists excluded investments or brokers.");
     }
+
+    if (isDeveloper != !aInput.mUnsafeInvestments.empty())
+    {
+        throw std::invalid_argument("Only the developer export lists unsafe investments.");
+    }
 }
 
-/// The excluded investments of a form, sorted like the question, each with the IDs of the resolved
-/// diagnostics of its ISIN that affect this form, in diagnostic order. An error of the same ISIN
-/// that only another form has belongs to that form's exclusion.
+/// The investments of an exclusion or of the developer export of a form, sorted like the question,
+/// each with the IDs of the resolved diagnostics of its ISIN that affect this form, in diagnostic
+/// order. An error of the same ISIN that only another form has belongs to that form's exclusion.
 [[nodiscard]] std::vector<RequestInvestment>
-excludedInvestmentsOf(const ReportInput& aInput,
+resolvedInvestmentsOf(const std::vector<FailedInvestment>& aInvestments,
                       ReportType aType,
                       const std::vector<std::size_t>& aResolved,
                       const std::vector<std::size_t>& aProcessingToDiagnostic,
@@ -704,8 +724,7 @@ excludedInvestmentsOf(const ReportInput& aInput,
     std::sort(resolvedPositions.begin(), resolvedPositions.end());
 
     return investmentsOf(
-        normalizedData(
-            FailureResolutionQuestion{.mInvestments = aInput.mExcludedInvestments, .mBrokers = {}}),
+        normalizedData(FailureResolutionQuestion{.mInvestments = aInvestments, .mBrokers = {}}),
         resolvedPositions,
         aDiagnostics);
 }
@@ -1037,6 +1056,24 @@ QuestionData normalizedData(QuestionData aData) {
                   });
     }
 
+    if (auto* developer = std::get_if<DeveloperExportQuestion>(&aData))
+    {
+        for (auto& investment : developer->mInvestments)
+        {
+            auto& codes = investment.mReasonCodes;
+
+            std::sort(codes.begin(), codes.end());
+            codes.erase(std::unique(codes.begin(), codes.end()), codes.end());
+        }
+
+        std::sort(developer->mInvestments.begin(),
+                  developer->mInvestments.end(),
+                  [](const FailedInvestment& aLeft, const FailedInvestment& aRight) {
+                      return std::tie(aLeft.mIsin, aLeft.mName) <
+                             std::tie(aRight.mIsin, aRight.mName);
+                  });
+    }
+
     if (auto* loss = std::get_if<LossEligibilityQuestion>(&aData))
     {
         for (auto& sale : loss->mSales)
@@ -1349,11 +1386,16 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
 
         checkFailureResolution(input);
         report.mFailureResolution = input.mFailureResolution;
-        report.mExcludedInvestments = excludedInvestmentsOf(input,
+        report.mExcludedInvestments = resolvedInvestmentsOf(input.mExcludedInvestments,
                                                             type,
                                                             aInput.mResolvedDiagnostics,
                                                             processingToDiagnostic,
                                                             result.mDiagnostics);
+        report.mUnsafeInvestments = resolvedInvestmentsOf(input.mUnsafeInvestments,
+                                                          type,
+                                                          aInput.mResolvedDiagnostics,
+                                                          processingToDiagnostic,
+                                                          result.mDiagnostics);
         report.mExcludedBrokers = excludedBrokersOf(input,
                                                     type,
                                                     aInput.mResolvedDiagnostics,
@@ -1417,6 +1459,7 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
         {
             report.mStatus = ReportStatus::Generated;
             report.mXml = std::move(input.mXml);
+            report.mUnsafe = !report.mUnsafeInvestments.empty();
         }
         else
         {

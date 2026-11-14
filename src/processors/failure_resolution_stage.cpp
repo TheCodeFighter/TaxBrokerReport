@@ -1,5 +1,7 @@
 #include "processors/failure_resolution_stage.hpp"
 
+#include "processors/developer_export_stage.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
@@ -112,6 +114,51 @@ FailureResolutionQuestion questionOf(const std::vector<ProcessingDiagnostic>& aD
     return question;
 }
 
+/// True when the developer export is offered: developer mode, Doh-KDVP, only `incomplete_history`
+/// errors, each of an eligible investment, and no other open question of the form about them.
+bool offersDeveloperExport(const ApplicationResultInput& aInput,
+                           const DeveloperOffer& aDeveloper,
+                           const FailureForm& aForm,
+                           const std::vector<std::size_t>& aListed,
+                           const FailureResolutionQuestion& aQuestion) {
+    if (!aDeveloper.mEnabled || aForm.mReport != ReportType::CapitalGains ||
+        !aQuestion.mBrokers.empty())
+    {
+        return false;
+    }
+
+    const bool onlyMissingHistory =
+        std::all_of(aListed.begin(), aListed.end(), [&aInput](std::size_t aPosition) {
+            return aInput.mProcessingDiagnostics.at(aPosition).mCode ==
+                   ProcessingDiagnosticCode::IncompleteHistory;
+        });
+
+    if (!onlyMissingHistory)
+    {
+        return false;
+    }
+
+    const auto& eligible = aDeveloper.mEligibleIsins;
+
+    return std::all_of(aQuestion.mInvestments.begin(),
+                       aQuestion.mInvestments.end(),
+                       [&aInput, &eligible](const FailedInvestment& aInvestment) {
+                           const bool isEligible =
+                               std::find(eligible.begin(), eligible.end(), aInvestment.mIsin) !=
+                               eligible.end();
+                           const bool hasOpenQuestion =
+                               std::any_of(aInput.mRequests.begin(),
+                                           aInput.mRequests.end(),
+                                           [&aInvestment](const RequestInput& aRequest) {
+                                               return affects(aRequest.mQuestion.mAffectedReports,
+                                                              ReportType::CapitalGains) &&
+                                                      aRequest.mQuestion.mIsin == aInvestment.mIsin;
+                                           });
+
+                           return isEligible && !hasOpenQuestion;
+                       });
+}
+
 /// The choice in an answer to the failure question, or nothing when the user cancelled.
 std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
     const auto choice = [](const auto& aValue) -> std::optional<FailureResolution> {
@@ -139,7 +186,8 @@ std::optional<FailureResolution> choiceOf(const AnswerValue& aAnswer) {
                           std::is_same_v<Answer, IncomeTreatmentAnswer> ||
                           std::is_same_v<Answer, BondTypeAnswer> ||
                           std::is_same_v<Answer, TreatyClaimAnswer> ||
-                          std::is_same_v<Answer, InterestTreatyClaimAnswer>);
+                          std::is_same_v<Answer, InterestTreatyClaimAnswer> ||
+                          std::is_same_v<Answer, DeveloperExportConfirmAnswer>);
             // The session accepts only a failure choice or a cancel for this question.
             throw std::logic_error("Only a failure choice or a cancel can answer this question.");
         }
@@ -209,7 +257,8 @@ std::vector<Isin> FailureResolutionStage::resolve(ApplicationResultInput& aInput
 
 ExcludedUnits FailureResolutionStage::resolveUnits(ApplicationResultInput& aInput,
                                                    RunDecisions& aDecisions,
-                                                   const FailureForm& aForm) {
+                                                   const FailureForm& aForm,
+                                                   const DeveloperOffer& aDeveloper) {
     const auto& diagnostics = aInput.mProcessingDiagnostics;
     const auto linked = linkedToQuestion(aInput, aForm.mReport);
     std::vector<std::size_t> listed;
@@ -235,10 +284,14 @@ ExcludedUnits FailureResolutionStage::resolveUnits(ApplicationResultInput& aInpu
         return {};
     }
 
+    auto data = questionOf(diagnostics, listed);
+
+    data.mDeveloperExportOffered = offersDeveloperExport(aInput, aDeveloper, aForm, listed, data);
+
     DecisionQuestion question{
         .mType = aForm.mRequest,
         .mAffectedReports = {aForm.mReport},
-        .mData = questionOf(diagnostics, listed),
+        .mData = std::move(data),
     };
 
     for (const auto position : listed)
@@ -266,6 +319,52 @@ ExcludedUnits FailureResolutionStage::resolveUnits(ApplicationResultInput& aInpu
     }
 
     auto& report = aInput.mReports[static_cast<std::size_t>(aForm.mReport)];
+    const auto& asked = std::get<FailureResolutionQuestion>(question.mData);
+
+    if (choice == FailureResolution::DeveloperExport)
+    {
+        // The session accepts this choice only when the question offers it.
+        if (!asked.mDeveloperExportOffered)
+        {
+            throw std::logic_error("The developer export was not offered.");
+        }
+
+        const auto confirmed = DeveloperExportStage::confirm(aInput,
+                                                             aDecisions,
+                                                             asked.mInvestments,
+                                                             question.mSources,
+                                                             listed);
+
+        if (confirmed == DeveloperConfirmation::Cancelled)
+        {
+            // Back to the normal choice: the failure question is open again.
+            aInput.mRequests.push_back(
+                RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = listed});
+        }
+
+        if (confirmed != DeveloperConfirmation::Confirmed)
+        {
+            return {};
+        }
+
+        ExcludedUnits developer;
+
+        for (const auto& investment : asked.mInvestments)
+        {
+            developer.mDeveloperIsins.push_back(investment.mIsin);
+        }
+
+        std::sort(developer.mDeveloperIsins.begin(), developer.mDeveloperIsins.end());
+        report.mFailureResolution = choice;
+        report.mUnsafeInvestments = asked.mInvestments;
+
+        // The errors stay, but they no longer block: the export is unsafe on purpose.
+        aInput.mResolvedDiagnostics.insert(aInput.mResolvedDiagnostics.end(),
+                                           listed.begin(),
+                                           listed.end());
+
+        return developer;
+    }
 
     report.mFailureResolution = choice;
 
@@ -274,7 +373,6 @@ ExcludedUnits FailureResolutionStage::resolveUnits(ApplicationResultInput& aInpu
         return {};
     }
 
-    const auto& asked = std::get<FailureResolutionQuestion>(question.mData);
     std::set<Isin> excluded;
     std::set<Broker> excludedBrokers;
 

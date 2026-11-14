@@ -578,6 +578,299 @@ TEST(FailureResolutionStageTest, AnErrorOfAnOpenQuestionIsNotListed) {
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::NeedsInput);
 }
 
+/// A capital error `incomplete_history` of one investment.
+ProcessingDiagnostic missingHistoryError(const Isin& aIsin, const std::string& aName) {
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                     .mAffectedReports = {kCapital},
+                     .mInstrumentName = aName,
+                     .mIsin = aIsin},
+        .mMessage = "Synthetic capital error.",
+    };
+}
+
+/// Starts a session whose calculation runs the capital stage with a developer offer. aOutcome
+/// gets what the stage returned in the latest calculation.
+void startWithDeveloper(DecisionSession& aSession,
+                        InputFactory aInput,
+                        DeveloperOffer aOffer,
+                        ExcludedUnits& aOutcome) {
+    aSession.start([factory = std::move(aInput), offer = std::move(aOffer), &aOutcome](
+                       RunDecisions& aDecisions) {
+        auto input = factory();
+
+        aOutcome = FailureResolutionStage::resolveUnits(input, aDecisions, kCapitalFailure, offer);
+
+        return input;
+    });
+}
+
+bool isOffered(const DecisionSession& aSession) {
+    const auto& request = aSession.result().mRequests.at(0);
+
+    return std::get<FailureResolutionQuestion>(request.mData).mDeveloperExportOffered;
+}
+
+TEST(FailureResolutionStageTest, MissingHistoryOfEligibleIsinsOffersTheDeveloperExport) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {missingHistoryError("XX0000000001", "Synthetic Share"),
+                                        missingHistoryError("XX0000000002", "Synthetic Other")};
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+
+    startWithDeveloper(session,
+                       input,
+                       {.mEnabled = true, .mEligibleIsins = {"XX0000000001", "XX0000000002"}},
+                       outcome);
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_TRUE(isOffered(session));
+}
+
+TEST(FailureResolutionStageTest, WithoutDeveloperModeTheDeveloperExportIsNotOffered) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {missingHistoryError("XX0000000001", "Synthetic Share")};
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+
+    startWithDeveloper(session,
+                       input,
+                       {.mEnabled = false, .mEligibleIsins = {"XX0000000001"}},
+                       outcome);
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_FALSE(isOffered(session));
+}
+
+TEST(FailureResolutionStageTest, AnIsinOfAnotherErrorKindTakesTheDeveloperExportAwayFromTheList) {
+    // XX0000000002 has a missing exchange rate besides: one listed error is not missing history.
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {missingHistoryError("XX0000000001", "Synthetic Share"),
+                                        ProcessingDiagnostic{
+                                            .mSeverity = DiagnosticSeverity::Error,
+                                            .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+                                            .mContext = {.mStage = PipelineStage::FifoTax,
+                                                         .mAffectedReports = {kCapital},
+                                                         .mInstrumentName = "Synthetic Other",
+                                                         .mIsin = "XX0000000002"},
+                                            .mMessage = "Synthetic capital error.",
+                                        }};
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+
+    startWithDeveloper(session,
+                       input,
+                       {.mEnabled = true, .mEligibleIsins = {"XX0000000001", "XX0000000002"}},
+                       outcome);
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_FALSE(isOffered(session));
+}
+
+TEST(FailureResolutionStageTest, AnIsinWhoseFifoPoolStoppedForAnotherReasonIsNotEligible) {
+    // An `incomplete_history` error of an ISIN that is not in the eligible list: its pool stopped
+    // at a corporate action, so the developer export cannot pass it.
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {missingHistoryError("XX0000000001", "Synthetic Share"),
+                                        missingHistoryError("XX0000000002", "Synthetic Other")};
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+
+    startWithDeveloper(session,
+                       input,
+                       {.mEnabled = true, .mEligibleIsins = {"XX0000000001"}},
+                       outcome);
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_FALSE(isOffered(session));
+}
+
+TEST(FailureResolutionStageTest, AnOpenQuestionOfTheIsinTakesTheDeveloperExportAway) {
+    // XX0000000001 also waits for a loss answer (diagnostic 1 is linked to it).
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {
+            missingHistoryError("XX0000000001", "Synthetic Share"),
+            ProcessingDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = ProcessingDiagnosticCode::LossEligibilityUnresolved,
+                .mContext = {.mStage = PipelineStage::FifoTax,
+                             .mAffectedReports = {kCapital},
+                             .mInstrumentName = "Synthetic Share",
+                             .mIsin = "XX0000000001"},
+                .mMessage = "Synthetic capital error.",
+            }};
+        input.mRequests = {lossRequest("XX0000000001", "Synthetic Share", {1})};
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+
+    startWithDeveloper(session,
+                       input,
+                       {.mEnabled = true, .mEligibleIsins = {"XX0000000001"}},
+                       outcome);
+
+    // The failure question is the second request, after the loss question of the same ISIN.
+    ASSERT_EQ(session.result().mRequests.size(), 2U);
+
+    const auto failure = std::find_if(session.result().mRequests.begin(),
+                                      session.result().mRequests.end(),
+                                      [](const DecisionRequest& aRequest) {
+                                          return aRequest.mType ==
+                                                 RequestType::CapitalGainsFailureResolutionRequired;
+                                      });
+
+    ASSERT_NE(failure, session.result().mRequests.end());
+    EXPECT_FALSE(std::get<FailureResolutionQuestion>(failure->mData).mDeveloperExportOffered);
+}
+
+TEST(FailureResolutionStageTest, TheDeveloperExportIsNeverOfferedForAnotherForm) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Error,
+            .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {kDividends},
+                         .mInstrumentName = "Synthetic Share",
+                         .mIsin = "XX0000000001"},
+            .mMessage = "Synthetic dividend error.",
+        }};
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+
+    session.start([&input, &outcome](RunDecisions& aDecisions) {
+        auto result = input();
+
+        outcome = FailureResolutionStage::resolveUnits(
+            result,
+            aDecisions,
+            kDividendsFailure,
+            {.mEnabled = true, .mEligibleIsins = {"XX0000000001"}});
+
+        return result;
+    });
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_FALSE(isOffered(session));
+}
+
+TEST(FailureResolutionStageTest, TheDeveloperChoiceWaitsForTheThreeConfirmations) {
+    const auto input = []() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {missingHistoryError("XX0000000001", "Synthetic Share")};
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+    const AnswerValue developerExport = FailureResolutionAnswer{FailureResolution::DeveloperExport};
+    const AnswerValue confirm = DeveloperExportConfirmAnswer{};
+
+    startWithDeveloper(session,
+                       input,
+                       {.mEnabled = true, .mEligibleIsins = {"XX0000000001"}},
+                       outcome);
+
+    ASSERT_TRUE(session.answer({{"request-0001", 1, developerExport}}).empty());
+
+    // Step 1: nothing is overridden yet and the form needs the confirmation.
+    EXPECT_TRUE(outcome.mDeveloperIsins.empty());
+    EXPECT_EQ(session.result().report(kCapital).mStatus, ReportStatus::NeedsInput);
+    EXPECT_EQ(session.result().mRequests.at(0).mType,
+              RequestType::DeveloperExportConfirmationRequired);
+
+    ASSERT_TRUE(session.answer({{"request-0001", 2, confirm}}).empty());
+    EXPECT_TRUE(outcome.mDeveloperIsins.empty());
+
+    ASSERT_TRUE(session.answer({{"request-0001", 3, confirm}}).empty());
+    EXPECT_TRUE(outcome.mDeveloperIsins.empty());
+    EXPECT_EQ(std::get<DeveloperExportQuestion>(session.result().mRequests.at(0).mData).mStep, 3);
+
+    // Step 3 confirmed: the ISIN is overridden, not excluded, and its error no longer blocks.
+    ASSERT_TRUE(session.answer({{"request-0001", 4, confirm}}).empty());
+    EXPECT_EQ(outcome.mDeveloperIsins, std::vector<Isin>{"XX0000000001"});
+    EXPECT_TRUE(outcome.mIsins.empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_EQ(session.result().report(kCapital).mFailureResolution,
+              FailureResolution::DeveloperExport);
+    ASSERT_EQ(session.result().report(kCapital).mUnsafeInvestments.size(), 1U);
+    EXPECT_FALSE(session.result().mDiagnostics.at(0).mBlocking);
+}
+
+TEST(FailureResolutionStageTest, AChangedListAsksTheFailureQuestionAgainBeforeAnyStep) {
+    // Only XX0000000001 has missing history at first; later XX0000000002 has it too.
+    bool secondIsin = false;
+    const auto input = [&secondIsin]() {
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        input.mProcessingDiagnostics = {missingHistoryError("XX0000000001", "Synthetic Share")};
+
+        if (secondIsin)
+        {
+            input.mProcessingDiagnostics.push_back(
+                missingHistoryError("XX0000000002", "Synthetic Other"));
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    ExcludedUnits outcome;
+    const AnswerValue developerExport = FailureResolutionAnswer{FailureResolution::DeveloperExport};
+    const AnswerValue confirm = DeveloperExportConfirmAnswer{};
+
+    startWithDeveloper(session,
+                       input,
+                       {.mEnabled = true, .mEligibleIsins = {"XX0000000001", "XX0000000002"}},
+                       outcome);
+
+    ASSERT_TRUE(session.answer({{"request-0001", 1, developerExport}}).empty());
+    ASSERT_EQ(session.result().mRequests.at(0).mType,
+              RequestType::DeveloperExportConfirmationRequired);
+
+    // The list now has two investments: the choice and the step were given for one only.
+    secondIsin = true;
+
+    ASSERT_TRUE(session.answer({{"request-0001", 2, confirm}}).empty());
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRequests.at(0).mType,
+              RequestType::CapitalGainsFailureResolutionRequired);
+    EXPECT_EQ(session.result().mRequests.at(0).mInvestments.size(), 2U);
+    EXPECT_TRUE(outcome.mDeveloperIsins.empty());
+    EXPECT_TRUE(outcome.mIsins.empty());
+}
+
 // The answers.
 
 TEST(FailureResolutionStageTest, ExcludingLeavesOutEveryListedIsinAndResolvesItsErrors) {
