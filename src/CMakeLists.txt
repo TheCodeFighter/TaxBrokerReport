@@ -163,6 +163,22 @@ target_link_libraries(taxbroker_service
     taxbroker_xml
 )
 
+# The checks and files of the local server login that need no HTTP library: loopback Host and
+# Origin, tokens, session cookie, security headers and the private launch file.
+add_library(taxbroker_server_security STATIC
+    server/request_guard.cpp
+    server/launch_file.cpp
+)
+
+target_include_directories(taxbroker_server_security
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+if(WIN32)
+    target_link_libraries(taxbroker_server_security PRIVATE bcrypt)
+endif()
+
 # Server executable
 add_executable(taxbroker_server
     main.cpp
@@ -176,6 +192,7 @@ target_include_directories(taxbroker_server PRIVATE
 target_link_libraries(taxbroker_server PRIVATE
     taxbroker_core
     taxbroker_api
+    taxbroker_server_security
 )
 
 # The command line: the report command of the walking skeleton. The library holds the whole

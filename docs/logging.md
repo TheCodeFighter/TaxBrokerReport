@@ -88,6 +88,8 @@ Logs are written to:
 logs/taxbroker.log
 ```
 
+Tokens, the launch file path and the `Cookie` header are never logged.
+
 ---
 
 ### Stdout logging (optional)

@@ -332,6 +332,11 @@ Exercise this complete operation through unit and integration tests before expos
 local HTTP API. The API serializes the application result but does not contain parsing, tax, or XML
 business logic.
 
+The security rules of the local service (loopback bind, a one-time browser link and a session
+cookie, `Host` and `Origin` checks, no CORS, security headers, uploads in memory) are in
+[`architecture.md`](architecture.md), "Local service security". They hold before any endpoint
+accepts files.
+
 ## Frontend
 
 Build the minimum usable local frontend against the tested API contract. It must allow the user to:

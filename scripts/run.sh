@@ -5,6 +5,13 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$script_dir/lib.sh"
 
+# Docker older than 28.0 lets other computers on the network reach a port published on 127.0.0.1.
+docker_version="$(docker version --format '{{.Server.Version}}')"
+if [[ "${docker_version%%.*}" -lt 28 ]]; then
+	echo "==> Docker Engine 28.0 or later is needed (found $docker_version): older versions expose the 127.0.0.1 port to the local network" >&2
+	exit 1
+fi
+
 "$script_dir/build.sh" dev
 
 echo "==> Running taxbroker_server in development mode on port 8080..."

@@ -63,6 +63,8 @@ add_executable(taxbroker_unit_tests
     unit/input_file_test.cpp
     unit/official_rate_selection_test.cpp
     unit/quantity_reconciliation_test.cpp
+    unit/launch_file_test.cpp
+    unit/request_guard_test.cpp
     unit/reference_catalogue_test.cpp
     unit/kdvp_xml_writer_test.cpp
     unit/statement_merger_property_test.cpp
@@ -91,6 +93,7 @@ target_link_libraries(taxbroker_unit_tests
     taxbroker_api
     taxbroker_cli
     taxbroker_service
+    taxbroker_server_security
     taxbroker_xml
     GTest::gtest_main
     nlohmann_json::nlohmann_json
