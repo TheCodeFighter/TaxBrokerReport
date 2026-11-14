@@ -78,9 +78,10 @@ The application JSON contract is version 2 because replacing the previously docu
 `interest` result changes its shape and API values. Parser diagnostics JSON is a developer format
 with `schemaVersion` 1 and no compatibility promise before the beta.
 
-The core of this contract is implemented in `ApplicationResultBuilder`
+This contract is implemented in `ApplicationResultBuilder`
 (`include/taxbroker/application_result.hpp`) and `serializeApplicationResultJson`: diagnostic
-adapters, report scope, deterministic order and IDs, report and overall status, and the JSON. The
+adapters, report scope, deterministic order and IDs, report and overall status, the summaries,
+the `unsafe` marker with `unsafeInvestments`, and the JSON. The
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
 (`include/taxbroker/decision_session.hpp`); of the eleven request types only the three
 failure-resolution types, the loss question, the ratio question, the classification question of
@@ -215,12 +216,14 @@ order:
 1. If any report is `needs_input`, use `needs_input`.
 2. Otherwise, if all four reports are `failed`, use `failed`.
 3. Otherwise, if at least one report is `failed`, use `partial_success`.
-4. Otherwise, if there is a warning, a confirmed exclusion, an unsafe output, or a non-blocking
-   error, use `completed_with_warnings`.
+4. Otherwise, if there is a warning, an exclusion the user chose, an unsafe output, or a
+   non-blocking error, use `completed_with_warnings`.
 5. Otherwise, use `success`.
 
-`generated` and `no_data` are both successful report results. Four `no_data` results with no warnings, exclusions or retained errors
-produce overall `success`. A `no_data` report does not make a failure in another report disappear;
+`generated` and `no_data` are both successful report results. Four `no_data` results with no warnings, exclusions the user chose or retained errors
+produce overall `success`. An entry in `excludedItems` that follows a tax rule (a bond, crypto, a
+Slovenian dividend payer) has no warning and alone keeps `success`; a user's exclusion always keeps
+the error it resolved, as a non-blocking error. A `no_data` report does not make a failure in another report disappear;
 that combination produces `partial_success`.
 
 ## Application diagnostic
@@ -297,7 +300,10 @@ processing and is not a substitute for the source ID. Without a label, the file 
 required fallback.
 
 A source name that cannot be reduced to a plain filename (for example `exports/`) is left out of
-the JSON; the source ID and the row remain.
+the JSON; the source ID and the row remain. Both `/` and `\` separate folders, so a Windows path
+(`C:\Users\a\x.csv`, `\\server\share\x.csv`) gives `x.csv`. On Windows, a drive in front of
+the name (`C:x.csv`) is removed too, and `C:` alone is not a filename; on Linux and macOS such a
+name is a legal file name and is kept.
 
 The backend must not send `2022/taxreport.csv`, `2023/taxreport.csv`, an absolute path, or a parent
 folder name to distinguish the files. A browser may not provide a real path, and a directory name

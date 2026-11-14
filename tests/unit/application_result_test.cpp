@@ -583,6 +583,32 @@ TEST(ApplicationResultStatusTest, NoDataKeepsItsReasonAndIsASuccess) {
     EXPECT_FALSE(result.report(kDividends).mNoDataReason.has_value());
 }
 
+TEST(ApplicationResultStatusTest, ATaxRuleExclusionAloneIsASuccess) {
+    // A Slovenian payer settles its own tax: the dividends are left out on purpose, with no
+    // warning. The item is listed in excludedItems, and the run stays a plain success.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mReports[static_cast<std::size_t>(kDividends)].mXml = "<dividends/>";
+    input.mExcludedItems = {ExcludedItemInput{
+        .mItem = {.mIsin = "SI0000000001",
+                  .mName = "Synthetic Payer",
+                  .mCategory = ExcludedCategory::Dividend,
+                  .mReason = ExcludedReason::SlovenianTaxSettled},
+        .mSources = {},
+        .mProcessingDiagnostics = {},
+    }};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.mStatus, OverallStatus::Success);
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::Generated);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+
+    ASSERT_EQ(result.mExcludedItems.size(), 1U);
+
+    EXPECT_EQ(result.mExcludedItems[0].mIsin, "SI0000000001");
+    EXPECT_TRUE(result.mExcludedItems[0].mDiagnosticIds.empty());
+}
+
 // Report scope of diagnostics. The rules are in diagnostics.md, "Failure scope".
 
 TEST(ApplicationResultScopeTest, ARejectedTradeRowAffectsCapitalGainsOnly) {
@@ -2209,6 +2235,41 @@ TEST(ApplicationResultRequestTest, AnUnsafeExportThatIsNotGeneratedIsNotMarkedUn
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Failed);
     EXPECT_FALSE(result.report(kCapital).mXml.has_value());
     EXPECT_FALSE(result.report(kCapital).mUnsafe);
+}
+
+TEST(ApplicationResultRequestTest, AnUnsafeExportMakesTheRunCompleteWithWarnings) {
+    // The incomplete_history error of the investment stays an error, but the export is written
+    // on purpose: it no longer blocks, and the run is not a plain success.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::IncompleteHistory,
+        .mContext = {.mStage = PipelineStage::HistoricalValidation,
+                     .mAffectedReports = {kCapital},
+                     .mInstrumentName = "Synthetic Share",
+                     .mIsin = "XX0000000001"},
+        .mMessage = "Synthetic capital error.",
+    }};
+    input.mResolvedDiagnostics = {0};
+    input.mReports[static_cast<std::size_t>(kCapital)].mXml = "<capital/>";
+    input.mReports[static_cast<std::size_t>(kCapital)].mFailureResolution =
+        FailureResolution::DeveloperExport;
+    input.mReports[static_cast<std::size_t>(kCapital)].mUnsafeInvestments = {
+        FailedInvestment{.mIsin = "XX0000000001",
+                         .mName = "Synthetic Share",
+                         .mReasonCodes = {ProcessingDiagnosticCode::IncompleteHistory}}};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_TRUE(result.report(kCapital).mUnsafe);
+    EXPECT_EQ(result.report(kCapital).mXml, "<capital/>");
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_FALSE(result.mDiagnostics[0].mBlocking);
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
 TEST(ApplicationResultRequestTest, QuestionDataMustFitTheRequestType) {

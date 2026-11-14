@@ -71,12 +71,35 @@ TEST(SourceFilenameTest, RetainsOnlyTheBasenameAcrossPathStyles) {
     EXPECT_EQ(SourceFilename::fromPath("/private/user/export.csv").value(), "export.csv");
     EXPECT_EQ(SourceFilename::fromPath(R"(C:\Users\person\export.csv)").value(), "export.csv");
     EXPECT_EQ(SourceFilename::fromPath("export.csv").value(), "export.csv");
+    EXPECT_EQ(SourceFilename::fromPath(R"(\\server\share\export.csv)").value(), "export.csv");
+    EXPECT_EQ(SourceFilename::fromPath(R"(C:/Users\person/export.csv)").value(), "export.csv");
 }
+
+#ifdef _WIN32
+TEST(SourceFilenameTest, DropsTheDriveOfADriveRelativeName) {
+    EXPECT_EQ(SourceFilename::fromPath("C:export.csv").value(), "export.csv");
+    EXPECT_EQ(SourceFilename::fromPath("z:export.csv").value(), "export.csv");
+
+    // A colon that is not after a single drive letter stays part of the name.
+    EXPECT_EQ(SourceFilename::fromPath("1:export.csv").value(), "1:export.csv");
+    EXPECT_EQ(SourceFilename::fromPath("ab:export.csv").value(), "ab:export.csv");
+
+    // Nothing is left after the drive.
+    EXPECT_FALSE(SourceFilename::tryFromPath("C:").has_value());
+}
+#else
+TEST(SourceFilenameTest, KeepsADriveLikeNameOutsideWindows) {
+    // On Linux and macOS a colon is a legal part of a file name.
+    EXPECT_EQ(SourceFilename::fromPath("C:export.csv").value(), "C:export.csv");
+    EXPECT_EQ(SourceFilename::fromPath("C:").value(), "C:");
+}
+#endif
 
 TEST(SourceFilenameTest, RejectsPathsWithoutABasename) {
     EXPECT_THROW((void)SourceFilename::fromPath("/private/user/"), std::invalid_argument);
     EXPECT_THROW((void)SourceFilename::fromPath(".."), std::invalid_argument);
     EXPECT_THROW((void)SourceFilename::fromPath(""), std::invalid_argument);
+    EXPECT_THROW((void)SourceFilename::fromPath(R"(C:\Users\person\)"), std::invalid_argument);
 }
 
 TEST(EventMetadataTest, ExactEqualityIncludesEveryMetadataField) {

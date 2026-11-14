@@ -410,6 +410,38 @@ TEST(ApplicationResultJsonTest, AnUnusableFilenameIsOmittedButTheSourceIdAndRowR
     EXPECT_EQ(source.at("row"), 42);
 }
 
+TEST(ApplicationResultJsonTest, ANetworkPathIsWrittenAsItsFilenameOnly) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mMergeDiagnostics = {
+        SourcedParseDiagnostic{
+            .mSourceIndex = 0,
+            .mBroker = Broker::TradeRepublic,
+            .mDiagnostic =
+                ParseDiagnostic{
+                    .mSeverity = DiagnosticSeverity::Error,
+                    .mCode = DiagnosticCode::MissingField,
+                    .mSourceFile = R"(\\server\share\2023\taxreport.csv)",
+                    .mRowIndex = 42,
+                    .mField = "amount",
+                    .mMessage = "Synthetic parser message.",
+                    .mRowKind = ParsedRowKind::Trade,
+                },
+        },
+    };
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& source = json.at("diagnostics").at(0).at("sources").at(0);
+
+    EXPECT_EQ(source.at("file"), "taxreport.csv");
+
+    // No part of the folders is written anywhere.
+    const auto text = json.dump();
+
+    EXPECT_EQ(text.find("server"), std::string::npos);
+    EXPECT_EQ(text.find("share"), std::string::npos);
+    EXPECT_EQ(text.find("2023"), std::string::npos);
+}
+
 TEST(ApplicationResultJsonTest, TheTenThousandthFileGetsAFiveDigitSourceId) {
     // Request index 9999 is the 10,000th file.
     ApplicationResultInput input{.mReportingYear = 2024};
