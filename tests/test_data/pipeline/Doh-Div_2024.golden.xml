@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:name>Synthetic Taxpayer</edp:name>
+      <edp:address1>Synthetic Street 1</edp:address1>
+      <edp:city>Synthetic City</edp:city>
+      <edp:postNumber>1000</edp:postNumber>
+      <edp:postName>Synthetic City</edp:postName>
+      <edp:birthDate>1990-01-31</edp:birthDate>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <Doh_Div>
+      <Period>2024</Period>
+      <EmailAddress>taxpayer@example.com</EmailAddress>
+      <PhoneNumber>+38600000000</PhoneNumber>
+      <IsResident>true</IsResident>
+      <SelfReport>false</SelfReport>
+    </Doh_Div>
+    <Dividend>
+      <Date>2024-03-14</Date>
+      <PayerIdentificationNumber>942404110</PayerIdentificationNumber>
+      <PayerName>Apple Inc</PayerName>
+      <PayerAddress>1 Infinite Loop, Cupertino, CA 95014</PayerAddress>
+      <PayerCountry>US</PayerCountry>
+      <Type>1</Type>
+      <Value>10.00</Value>
+      <ForeignTax>0.00</ForeignTax>
+      <SourceCountry>US</SourceCountry>
+      <ReliefStatement>false</ReliefStatement>
+    </Dividend>
+  </body>
+</Envelope>

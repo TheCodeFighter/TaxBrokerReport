@@ -18,9 +18,11 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace taxbroker {
@@ -363,59 +365,20 @@ StatementMergeResult parseAndMerge(const std::vector<BrokerInputFile>& aFiles) {
     return DeterministicStatementMerger{}.merge(std::move(inputs));
 }
 
-} // namespace
-
-/// The data a run owns. It stays at one address, so the calculation of the session may point at
-/// its members while the run itself is moved.
-struct ApplicationRun::Impl {
+/// What a request loads before any calculation: the files, the data sources and the merged
+/// statement of the year.
+struct RunData {
     ApplicationRequest mRequest;
     OfficialRateTable mRates;
     ReferenceCatalogue mCatalogue;
     ApplicationDataSources mDataSources;
     /// Parsed, merged and prepared once; every calculation of the session reads it.
     TaxProcessingResult mPrepared;
-    DecisionSession mSession;
-
-    // clang-format off
-    Impl(ApplicationRequest aRequest, OfficialRateTable aRates, ReferenceCatalogue aCatalogue,
-         ApplicationDataSources aDataSources, TaxProcessingResult aPrepared)
-        : mRequest(std::move(aRequest)), mRates(std::move(aRates)),
-          mCatalogue(std::move(aCatalogue)), mDataSources(std::move(aDataSources)),
-          mPrepared(std::move(aPrepared)) {
-        // lambda of this
-        mSession.start([this](RunDecisions& aDecisions) {
-            return calculateReport(mRequest, mPrepared, mCatalogue, mRates,
-                                   mDataSources, aDecisions);
-        });
-    }
-    // clang-format on
-
-    Impl(const Impl&) = delete;
-    Impl& operator=(const Impl&) = delete;
 };
 
-ApplicationRun::ApplicationRun(std::unique_ptr<Impl> aImpl) : mImpl(std::move(aImpl)) {}
-
-ApplicationRun::ApplicationRun(ApplicationRun&&) noexcept = default;
-
-ApplicationRun& ApplicationRun::operator=(ApplicationRun&&) noexcept = default;
-
-ApplicationRun::~ApplicationRun() = default;
-
-const ApplicationRequest& ApplicationRun::request() const {
-    return mImpl->mRequest;
-}
-
-const ApplicationResult& ApplicationRun::result() const {
-    return mImpl->mSession.result();
-}
-
-DecisionSession& ApplicationRun::session() {
-    return mImpl->mSession;
-}
-
-std::variant<ApplicationInputFault, ApplicationRun>
-ApplicationRun::start(ApplicationRequest aRequest) {
+/// Loads the rate and reference files of the request and prepares the year. A supplied file that
+/// is not valid gives a fault. Parsing, merging and the year do not depend on an answer.
+std::variant<ApplicationInputFault, RunData> loadRunData(ApplicationRequest aRequest) {
     // The files are named by the user, so a file that is not valid fails the run.
     auto rates = loadOfficialRates(aRequest.mEcbRateFiles);
 
@@ -432,18 +395,99 @@ ApplicationRun::start(ApplicationRequest aRequest) {
     }
 
     auto dataSources = dataSourcesOf(reference.mOrigins, rates.mTable);
-
-    // Parsing, merging and the year do not depend on an answer, so they run once.
     auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
         .mReportingYear = aRequest.mReportingYear,
         .mMerged = parseAndMerge(aRequest.mBrokerFiles),
     });
 
-    return ApplicationRun{std::make_unique<Impl>(std::move(aRequest),
-                                                 std::move(rates.mTable),
-                                                 std::move(reference.mCatalogue.value()),
-                                                 std::move(dataSources),
-                                                 std::move(prepared))};
+    return RunData{.mRequest = std::move(aRequest),
+                   .mRates = std::move(rates.mTable),
+                   .mCatalogue = std::move(reference.mCatalogue.value()),
+                   .mDataSources = std::move(dataSources),
+                   .mPrepared = std::move(prepared)};
+}
+
+} // namespace
+
+/// The data a run owns, and its decision session.
+struct ApplicationRun::Impl {
+    /// The data of the current run. The calculation of the session holds its own share of them.
+    std::shared_ptr<const RunData> mData;
+    DecisionSession mSession;
+
+    explicit Impl(RunData aData) : mData(std::make_shared<const RunData>(std::move(aData))) {
+        mSession.start(calculationOn(mData));
+    }
+
+    /// Starts a new run on the new data and keeps the recorded answers. If the calculation
+    /// throws, the run keeps its previous data and the session stays as it was.
+    void restart(RunData aData) {
+        auto data = std::make_shared<const RunData>(std::move(aData));
+
+        mSession.start(calculationOn(data));
+        mData = std::move(data);
+    }
+
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+
+  private:
+    /// One calculation from the given data; it keeps them alive for as long as the session does.
+    static RunCalculation calculationOn(std::shared_ptr<const RunData> aData) {
+        return [data = std::move(aData)](RunDecisions& aDecisions) {
+            return calculateReport(data->mRequest,
+                                   data->mPrepared,
+                                   data->mCatalogue,
+                                   data->mRates,
+                                   data->mDataSources,
+                                   aDecisions);
+        };
+    }
+};
+
+ApplicationRun::ApplicationRun(std::unique_ptr<Impl> aImpl) : mImpl(std::move(aImpl)) {}
+
+ApplicationRun::ApplicationRun(ApplicationRun&&) noexcept = default;
+
+ApplicationRun& ApplicationRun::operator=(ApplicationRun&&) noexcept = default;
+
+ApplicationRun::~ApplicationRun() = default;
+
+const ApplicationRequest& ApplicationRun::request() const {
+    return mImpl->mData->mRequest;
+}
+
+const ApplicationResult& ApplicationRun::result() const {
+    return mImpl->mSession.result();
+}
+
+DecisionSession& ApplicationRun::session() {
+    return mImpl->mSession;
+}
+
+std::variant<ApplicationInputFault, ApplicationRun>
+ApplicationRun::start(ApplicationRequest aRequest) {
+    auto loaded = loadRunData(std::move(aRequest));
+
+    if (auto* fault = std::get_if<ApplicationInputFault>(&loaded))
+    {
+        return std::move(*fault);
+    }
+
+    return ApplicationRun{std::make_unique<Impl>(std::move(std::get<RunData>(loaded)))};
+}
+
+std::optional<ApplicationInputFault> ApplicationRun::restart(ApplicationRequest aRequest) {
+    auto loaded = loadRunData(std::move(aRequest));
+
+    if (auto* fault = std::get_if<ApplicationInputFault>(&loaded))
+    {
+        return std::move(*fault);
+    }
+
+    mImpl->restart(std::move(std::get<RunData>(loaded)));
+
+    return std::nullopt;
 }
 
 } // namespace taxbroker

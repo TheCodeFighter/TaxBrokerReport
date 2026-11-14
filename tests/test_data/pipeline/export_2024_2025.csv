@@ -1,0 +1,10 @@
+datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2024-02-01T09:00:00Z,2024-02-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share A,XX0000000101,-15,30,450,-1.00,,EUR,,,,,p-sell-1,,,,
+2024-02-14T16:00:00.000001Z,2024-02-14,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond 2030,XS0000000002,,,16.67,,,EUR,20.00,USD,0.833333,Interest Payment for ISIN XS0000000002,p-coupon-1,,,,
+2024-02-29T10:00:00Z,2024-02-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,0.33,,,EUR,,,,Synthetic bank interest,p-int-2,,,,
+2024-03-14T09:00:00Z,2024-03-14,DEFAULT,CASH,DIVIDEND,STOCK,Apple Inc,US0378331005,,,10.00,,,EUR,12.50,USD,0.800000,,p-div-apple,,,,
+2024-03-28T10:00:00Z,2024-03-28,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,0.34,,,EUR,,,,Synthetic bank interest,p-int-3,,,,
+2024-04-02T09:00:00Z,2024-04-02,DEFAULT,CASH,DIVIDEND,STOCK,Krka d.d.,SI0031102120,,,3.00,,,EUR,,,,,p-div-krka,,,,
+2024-05-02T09:00:00Z,2024-05-02,DEFAULT,CASH,BENEFITS_SAVEBACK,FUND,Synthetic Reward Fund,XX1000000002,,,2.50,,,EUR,,,,,p-saveback,,,,
+2024-08-14T15:00:00.000001Z,2024-08-14,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond 2030,XS0000000002,,,14.29,,,EUR,20.00,USD,0.714286,Interest Payment for ISIN XS0000000002,p-coupon-2,,,,
+2025-02-03T09:00:00Z,2025-02-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share A,XX0000000101,-5,40,200,,,EUR,,,,,p-sell-2,,,,

@@ -1,0 +1,10 @@
+datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2023-03-01T09:00:00Z,2023-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share A,XX0000000101,10,10,-100,-1.00,,EUR,,,,,p-buy-1,,,,
+2023-09-01T09:00:00Z,2023-09-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share A,XX0000000101,10,20,-200,,,EUR,,,,,p-buy-2,,,,
+2024-01-10T10:00:00.100Z,2024-01-10,DEFAULT,TRADING,BUY,BOND,Synthetic Bond 2030,XS0000000002,1000.0000000000,0.9000000000,-900.00,-1.00,,EUR,,,,Buy trade XS0000000002 SYNTHETIC BOND,p-bond-buy,,,,
+2024-01-31T10:00:00Z,2024-01-31,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,0.33,,,EUR,,,,Synthetic bank interest,p-int-1,,,,
+2024-02-01T09:00:00Z,2024-02-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share A,XX0000000101,-15,30,450,-1.00,,EUR,,,,,p-sell-1,,,,
+2024-02-14T16:00:00.000001Z,2024-02-14,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond 2030,XS0000000002,,,16.67,,,EUR,20.00,USD,0.833333,Interest Payment for ISIN XS0000000002,p-coupon-1,,,,
+2024-02-29T10:00:00Z,2024-02-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,0.33,,,EUR,,,,Synthetic bank interest,p-int-2,,,,
+2024-03-14T09:00:00Z,2024-03-14,DEFAULT,CASH,DIVIDEND,STOCK,Apple Inc,US0378331005,,,10.00,,,EUR,12.50,USD,0.800000,,p-div-apple,,,,
+2024-03-28T10:00:00Z,2024-03-28,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,0.34,,,EUR,,,,Synthetic bank interest,p-int-3,,,,

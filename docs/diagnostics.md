@@ -669,6 +669,12 @@ rules:
   revision), each with its question data, its answer, `fromEarlierRun` and `used` (asked and
   applied in this calculation), so a recorded answer is a visible default, never a silent one.
   A decision has no sources, because they are run-local.
+- **Restart with new input.** The application service can start a new run with new files on the
+  same session (`restart`). The recorded answers stay and are marked `fromEarlierRun`; an answer
+  applies again only to the same question, the developer export choice and its confirmations are
+  dropped, and the revision goes up by 1, so an answer given for the revision before the restart is
+  rejected as stale. A supplied rate or reference file that is not valid gives the fault and leaves
+  the run as it was.
 - **Deleting answers.** The user deletes some recorded answers by ID, or all of them, naming the
   current revision. A call with an older revision (`answer_rejected.stale_revision_delete`), an ID
   that is not listed (`answer_rejected.unknown_decision`) or the same ID twice

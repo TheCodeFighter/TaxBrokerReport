@@ -117,6 +117,7 @@ add_executable(taxbroker_integration_tests
     integration/corporate_action_integration_test.cpp
     integration/ecb_rate_file_integration_test.cpp
     integration/fifo_matching_integration_test.cpp
+    integration/full_pipeline_integration_test.cpp
     integration/historical_scenario_integration_test.cpp
     integration/income_reports_integration_test.cpp
     integration/income_xml_integration_test.cpp
