@@ -13,4 +13,5 @@ chmod u+x \
 git config core.hooksPath "$hooks_dir"
 
 echo "Git hooks installed from: $hooks_dir"
-echo "Formatting will now be checked on commit and push."
+echo "The commit message is checked on commit; formatting is checked on commit and push, for the changed files only."
+echo "CI checks all files. Run scripts/format.sh to format locally."

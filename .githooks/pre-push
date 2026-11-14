@@ -2,5 +2,51 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+zero="0000000000000000000000000000000000000000"
+remote_name="${1:-origin}"
 
-"$repo_root/scripts/format.sh" --check
+# Only the files changed by the pushed commits: since the remote branch, or for a new branch since
+# the merge base with <remote>/main (origin/main if that is missing). If no base is found, the whole tree is checked.
+# Plain arrays only (no associative arrays): macOS ships bash 3.2.
+changed=()
+check_all=false
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    if [[ "$local_sha" == "$zero" ]]; then
+        continue
+    fi
+
+    base=""
+    if [[ "$remote_sha" != "$zero" ]] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+        base="$(git merge-base "$remote_sha" "$local_sha" 2>/dev/null || true)"
+    else
+        base="$(git merge-base "$remote_name/main" "$local_sha" 2>/dev/null ||
+            git merge-base origin/main "$local_sha" 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$base" ]]; then
+        check_all=true
+        continue
+    fi
+
+    while IFS= read -r -d '' f; do
+        changed+=("$f")
+    done < <(git diff --name-only --diff-filter=ACMR -z "$base" "$local_sha")
+done
+
+if [[ "$check_all" == true ]]; then
+    "$repo_root/scripts/format.sh" --check
+    exit 0
+fi
+
+if [[ ${#changed[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+# Several pushed refs can name the same file; each file is checked once.
+files=()
+while IFS= read -r -d '' f; do
+    files+=("$f")
+done < <(printf '%s\0' "${changed[@]}" | sort -zu)
+
+"$repo_root/scripts/format.sh" --check -- "${files[@]}"
