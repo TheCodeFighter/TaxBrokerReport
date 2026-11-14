@@ -2,7 +2,7 @@
 
 #include "taxbroker/application_request.hpp"
 #include "taxbroker/processing_diagnostics.hpp"
-#include "taxbroker/statement_merger.hpp"
+#include "processors/statement_merger.hpp"
 
 #include <cstddef>
 #include <optional>

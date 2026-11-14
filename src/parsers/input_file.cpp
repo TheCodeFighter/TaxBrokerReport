@@ -1,7 +1,7 @@
 #include "taxbroker/input_file.hpp"
 
 #include "taxbroker/diagnostic_messages.hpp"
-#include "utils/logger.hpp"
+#include "taxbroker/logging.hpp"
 
 #include <fstream>
 #include <new>

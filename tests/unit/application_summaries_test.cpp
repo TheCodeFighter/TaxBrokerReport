@@ -1,5 +1,5 @@
 #include "processors/application_summaries.hpp"
-#include "taxbroker/official_rates.hpp"
+#include "parsers/ecb_rate_file.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>

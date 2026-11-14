@@ -85,6 +85,8 @@ add_executable(taxbroker_unit_tests
 
 target_include_directories(taxbroker_unit_tests PRIVATE 
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CSV_PARSER_INCLUDE_DIR}
 )
 
 target_link_libraries(taxbroker_unit_tests
@@ -134,6 +136,7 @@ add_executable(taxbroker_integration_tests
 target_include_directories(taxbroker_integration_tests PRIVATE 
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
+    ${CSV_PARSER_INCLUDE_DIR}
 )
 
 target_link_libraries(taxbroker_integration_tests
@@ -169,3 +172,43 @@ add_test(NAME CliReport.Binary
         -P ${CMAKE_SOURCE_DIR}/tests/support/check_cli_report.cmake
 )
 set_tests_properties(CliReport.Binary PROPERTIES LABELS integration)
+
+# The public API boundary. Each probe is one file that includes an internal header, built with the
+# include directories and libraries of the real target (read from it, so they cannot drift). The
+# probe is not part of the normal build; the test builds it and passes only when the compiler
+# reports that very header as missing, so a build that fails for another reason does not pass.
+# The label is boundary, not unit: the test runs cmake --build, which would rebuild the backend
+# from a restored build tree in CI, so CI runs it right after the build (see ci.yml).
+# One lock: two builds in the same build folder must not run at the same time.
+set(BOUNDARY_PROBES
+    "CliCannotIncludeInternal|taxbroker_cli|cli_includes_internal|fifo_matcher"
+    "ServerCannotIncludeInternal|taxbroker_server|server_includes_internal|traderepublic_parser"
+)
+
+foreach(PROBE ${BOUNDARY_PROBES})
+    string(REPLACE "|" ";" PROBE_PARTS ${PROBE})
+    list(GET PROBE_PARTS 0 PROBE_TEST)
+    list(GET PROBE_PARTS 1 PROBE_TARGET)
+    list(GET PROBE_PARTS 2 PROBE_SOURCE)
+    list(GET PROBE_PARTS 3 PROBE_HEADER)
+    set(PROBE_NAME boundary_${PROBE_SOURCE})
+    # The "header missing" text of Clang, GCC and MSVC; the test passes when one matches.
+    set(PROBE_PATTERNS
+        "${PROBE_HEADER}\\.hpp'? file not found"
+        "${PROBE_HEADER}\\.hpp: No such file"
+        "Cannot open include file: '[a-z]+/${PROBE_HEADER}"
+    )
+
+    add_library(${PROBE_NAME} OBJECT EXCLUDE_FROM_ALL boundary/${PROBE_SOURCE}.cpp)
+    target_include_directories(${PROBE_NAME} PRIVATE
+        "$<TARGET_PROPERTY:${PROBE_TARGET},INCLUDE_DIRECTORIES>")
+    target_link_libraries(${PROBE_NAME} PRIVATE
+        "$<TARGET_PROPERTY:${PROBE_TARGET},LINK_LIBRARIES>")
+
+    add_test(NAME PublicApiBoundary.${PROBE_TEST}
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${PROBE_NAME})
+    set_tests_properties(PublicApiBoundary.${PROBE_TEST} PROPERTIES
+        LABELS boundary
+        RESOURCE_LOCK boundary_build
+        PASS_REGULAR_EXPRESSION "${PROBE_PATTERNS}")
+endforeach()

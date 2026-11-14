@@ -1,5 +1,5 @@
 #include "xml/report_xml_stage.hpp"
-#include "utils/logger.hpp"
+#include "taxbroker/logging.hpp"
 #include "xml/dho_xml_writer.hpp"
 #include "xml/div_xml_writer.hpp"
 #include "xml/kdvp_xml_writer.hpp"

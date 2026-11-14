@@ -1,7 +1,7 @@
 #include "processors/income_classifier.hpp"
 
 #include "processors/interest_payments.hpp"
-#include "taxbroker/reference_catalogue.hpp"
+#include "parsers/reference_catalogue.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>

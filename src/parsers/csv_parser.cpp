@@ -2,7 +2,7 @@
 
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/input_file.hpp"
-#include "utils/logger.hpp"
+#include "taxbroker/logging.hpp"
 
 #include <string>
 #include <utility>

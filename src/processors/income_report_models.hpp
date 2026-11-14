@@ -1,8 +1,8 @@
 #pragma once
 
 #include "taxbroker/event_metadata.hpp"
-#include "taxbroker/reference_catalogue.hpp"
-#include "taxbroker/statement_merger.hpp"
+#include "parsers/reference_catalogue.hpp"
+#include "processors/statement_merger.hpp"
 #include "taxbroker/types.hpp"
 
 #include <optional>

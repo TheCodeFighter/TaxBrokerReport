@@ -10,12 +10,6 @@
 
 namespace taxbroker {
 
-// The source index is the file's request position, independent of parser completion order.
-struct StatementMergeInput {
-    std::size_t mSourceIndex{};
-    ParseResult mParseResult;
-};
-
 enum class StatementEventKind {
     Trade,
     CorporateAction,
@@ -26,19 +20,13 @@ enum class StatementEventKind {
     BondRedemption,
 };
 
-// Addresses one event owned by MergedStatement::mPresentation.
+/// Addresses one event of the merged statement (its presentation lists).
 struct StatementEventReference {
     StatementEventKind mKind{};
     std::optional<std::size_t> mInstrumentIndex;
     std::size_t mEventIndex{};
 
     bool operator==(const StatementEventReference&) const = default;
-};
-
-struct MergedStatement {
-    BrokerStatement mPresentation;
-    // Cross-collection chronology; same-day split priority belongs to tax processing.
-    std::vector<StatementEventReference> mChronologicalOrder;
 };
 
 struct SourcedParseDiagnostic {
@@ -98,30 +86,5 @@ diagnosticStage(const StatementMergeDiagnostic& aDiagnostic) noexcept {
                ? StatementDiagnosticStage::Parsing
                : StatementDiagnosticStage::Merging;
 }
-
-/// Builds the chronological order of the statement again from its events, for a stage that moves
-/// or removes events.
-void rebuildChronologicalOrder(MergedStatement& aStatement);
-
-struct StatementMergeResult {
-    MergedStatement mStatement;
-    std::vector<StatementMergeDiagnostic> mDiagnostics;
-};
-
-class StatementMerger {
-  public:
-    virtual ~StatementMerger() = default;
-
-    [[nodiscard("Merged statement data and diagnostics should not be "
-                "ignored")]] virtual StatementMergeResult
-    merge(std::vector<StatementMergeInput>&& aInputs) const = 0;
-};
-
-class DeterministicStatementMerger final : public StatementMerger {
-  public:
-    [[nodiscard("Merged statement data and diagnostics should not be "
-                "ignored")]] StatementMergeResult
-    merge(std::vector<StatementMergeInput>&& aInputs) const override;
-};
 
 } // namespace taxbroker

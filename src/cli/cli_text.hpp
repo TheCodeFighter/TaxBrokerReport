@@ -3,7 +3,7 @@
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/types.hpp"
-#include "utils/numeric_util.hpp"
+#include "taxbroker/text_format.hpp"
 
 #include <cstddef>
 #include <string>

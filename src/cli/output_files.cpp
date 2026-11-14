@@ -1,4 +1,4 @@
-#include "cli/output_files.hpp"
+#include "output_files.hpp"
 
 #include <algorithm>
 #include <iterator>

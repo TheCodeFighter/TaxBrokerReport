@@ -1,4 +1,4 @@
-#include "taxbroker/statement_merger.hpp"
+#include "processors/statement_merger.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 
 #include <algorithm>

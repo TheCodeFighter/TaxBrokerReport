@@ -4,8 +4,8 @@
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/decision_session.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
-#include "taxbroker/income_report_models.hpp"
-#include "taxbroker/reference_catalogue.hpp"
+#include "processors/income_report_models.hpp"
+#include "parsers/reference_catalogue.hpp"
 
 #include <map>
 #include <optional>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "taxbroker/income_report_models.hpp"
+#include "processors/income_report_models.hpp"
 #include "taxbroker/report_models.hpp"
 #include "xml/xml_write_result.hpp"
 

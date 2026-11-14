@@ -5,7 +5,7 @@
 #include "taxbroker/input_file.hpp"
 #include "taxbroker/types.hpp"
 #include "utils/date_utils.hpp"
-#include "utils/logger.hpp"
+#include "taxbroker/logging.hpp"
 #include "utils/numeric_util.hpp"
 
 #include <algorithm>

@@ -99,7 +99,7 @@ compose run --rm -T dev cppcheck \
 
 echo "==> Checking standalone project headers..."
 compose run --rm -T dev sh -c '
-    find /workspace/include -type f \( -name "*.hpp" -o -name "*.h" \) -print0 |
+    find /workspace/include /workspace/src -type f \( -name "*.hpp" -o -name "*.h" \) -print0 |
         xargs -0 -r cppcheck \
             --check-level=exhaustive \
             --enable=warning,style,performance,portability \
@@ -113,5 +113,6 @@ compose run --rm -T dev sh -c '
             --template=gcc \
             --relative-paths=/workspace \
             -D__SIZEOF_INT128__=16 \
-            -I /workspace/include
+            -I /workspace/include \
+            -I /workspace/src
 '

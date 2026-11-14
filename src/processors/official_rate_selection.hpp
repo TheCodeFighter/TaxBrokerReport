@@ -1,7 +1,7 @@
 #pragma once
 
 #include "taxbroker/exact_arithmetic.hpp"
-#include "taxbroker/official_rates.hpp"
+#include "parsers/ecb_rate_file.hpp"
 #include "taxbroker/processing_diagnostics.hpp"
 
 #include <map>

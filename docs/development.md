@@ -65,9 +65,9 @@ scripts/cppcheck.sh
 ```
 
 The analysis uses CMake's compile database to cover `src/`, `tests/`, `tools/`, and all headers they
-include. It also checks every file in `include/` directly so currently unreferenced headers are not
-missed. Third-party dependencies and the deprecated `legacy-QT-GUI/` tree are intentionally
-excluded. Cppcheck findings fail the `Cppcheck` job of the `CI` workflow.
+include. It also checks every header in `include/` and `src/` directly so currently unreferenced
+headers are not missed. Third-party dependencies and the deprecated `legacy-QT-GUI/` tree are
+intentionally excluded. Cppcheck findings fail the `Cppcheck` job of the `CI` workflow.
 
 The script configures `build/cppcheck` from scratch to create the compile database. With
 `scripts/cppcheck.sh --reuse-build` it uses the compile database of the existing `build/dev`
@@ -133,6 +133,7 @@ scripts/test.sh
 scripts/test.sh --suite unit
 scripts/test.sh --suite integration
 scripts/test.sh --suite integration StatementMergerIntegrationTest
+scripts/test.sh --suite boundary
 ```
 
 `scripts/test.sh` builds `build/dev` from scratch first. Add `--reuse-build` (for example
@@ -142,7 +143,9 @@ compiling.
 Inside the development container, `ctest --test-dir /workspace/build/dev -L unit` and
 `ctest --test-dir /workspace/build/dev -L integration` select the same suites. CI runs them in
 separate steps on the shared build, including integration tests after a unit-test failure when the
-build was loaded. The **Required tests** check still requires both suites to pass.
+build was loaded. The **Required tests** check still requires both suites to pass. The two
+`boundary` tests of the public API call `cmake --build` on a probe file, so CI runs them in the
+build job, after the build tree is uploaded, where the tree is fresh.
 
 ### Property tests
 

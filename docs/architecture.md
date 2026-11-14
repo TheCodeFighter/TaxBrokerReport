@@ -8,6 +8,43 @@ The repository does not currently define a frontend framework or an HTTP transpo
 therefore keep domain results independent of JSON and avoid designing transport-specific endpoint
 classes prematurely.
 
+## Public API and internal libraries
+
+The application service is the only public API of the backend. The command line, the local
+server and, later, a Python binding reach the backend through it and nothing else. The folders
+show the rule:
+
+- `include/taxbroker/` holds the public headers: the service (`application_run.hpp`), its request,
+  result and decision session, the diagnostics and messages, the input file type, the report
+  models, the shared types, the JSON of the result (`api/`), and two small helpers:
+  `text_format.hpp` (date and fixed-point text and the strict number import, shared with the
+  frontend later, so a date or an amount is read and shown the same way everywhere) and
+  `logging.hpp` (the logger and the `LOG_*` macros). A public header names no stage, parser or
+  writer.
+- `src/parsers/`, `src/processors/`, `src/xml/` and `src/utils/` hold the headers of the
+  stages, beside their sources. A type that the result shows stays in a public header; the stage
+  part moved out of a mixed header: the statement merger (`processors/statement_merger.hpp`), the
+  reference file loader (`parsers/reference_catalogue.hpp`) and the ECB rate file loader
+  (`parsers/ecb_rate_file.hpp`).
+- `src/cli/` and `src/server/` hold the headers of the command line and the server (the request
+  guard and the launch file), beside their sources.
+
+`src/` is a private include folder of the backend libraries (`taxbroker_core`, `taxbroker_xml`,
+`taxbroker_service`, `taxbroker_api`) and of the tests and debug tools, which may use internals.
+The command line gets only `include/` (through the service) and its own `src/cli/`; the server
+gets only `include/`. The service links `taxbroker_core` privately.
+
+Two checks keep the rule, both in the normal build and test run:
+
+- `taxbroker_public_header_check` compiles every public header alone with only `include/`, so a
+  public header cannot need an internal one.
+- `PublicApiBoundary.CliCannotIncludeInternal` and `PublicApiBoundary.ServerCannotIncludeInternal`
+  build a file that includes an internal header, with the include folders and libraries read from
+  the real `taxbroker_cli` and `taxbroker_server` targets. They pass only when the compiler
+  reports that header as missing. They have the CTest label `boundary`, and CI runs them in
+  the build job after the build tree is uploaded, where the tree is fresh (a restored tree would
+  be rebuilt by them).
+
 ## Imported event metadata
 
 Every imported trade, corporate action, dividend, interest payment, benefit, private-market event
@@ -659,7 +696,7 @@ Doh-KDVP filing rows are built from the matches as described in "Doh-KDVP report
 
 ### Corporate-action contract
 
-`CorporateActionResolver::resolve` (`include/processors/corporate_actions.hpp`) takes the merged
+`CorporateActionResolver::resolve` (`src/processors/corporate_actions.hpp`) takes the merged
 statement, the reporting-year ledger, the FIFO result of the same run, the confirmed actions that
 FIFO applied and the session's `RunDecisions`, and changes nothing in its inputs.
 `matchCapitalPools` runs the two in turns: match, resolve, and when the resolver found a new
@@ -750,7 +787,7 @@ from one broker.
 
 ### Loss eligibility contract
 
-`LossEligibilityChecker::check` (`include/processors/loss_eligibility.hpp`) takes the merged
+`LossEligibilityChecker::check` (`src/processors/loss_eligibility.hpp`) takes the merged
 statement, the reporting-year ledger, the FIFO result of the same run and the session's
 `RunDecisions`. It applies the 30-day loss rule as [`tax_rules.md`](tax_rules.md), "How the app
 applies the rule", describes it, and changes nothing in its inputs. ISINs whose pool stopped are
@@ -874,7 +911,7 @@ answer to the builder.
 
 ### Income report model contract
 
-The income models are in `include/taxbroker/income_report_models.hpp`. Like the Doh-KDVP model they
+The income models are in `src/processors/income_report_models.hpp`. Like the Doh-KDVP model they
 are broker-neutral, hold no CSV, JSON, HTTP, frontend or XML fields and need no XML library. The
 taxpayer and the year are not repeated: a writer gets `ReportMetadata` beside the model of its form.
 The processors build the models. The Doh-Div, Doh-DHO and Doh-Obr writers (`DivXmlWriter`,
@@ -919,7 +956,7 @@ The processors build the models. The Doh-Div, Doh-DHO and Doh-Obr writers (`DivX
 
 ### Dividend stage
 
-`prepareDividendPayments` (`include/processors/dividend_payments.hpp`) turns the dividends of the
+`prepareDividendPayments` (`src/processors/dividend_payments.hpp`) turns the dividends of the
 reporting year into the Doh-Div model. It is a stage of its own, run by the income reports stage
 below. It reads the merged statement in ledger order, the payer catalogue, the official rates and
 the recorded decisions, and returns the `DividendReportDiv` rows, the excluded items, the open
@@ -953,10 +990,10 @@ payer questions, the diagnostics and the rates it used.
 
 ### Interest stage
 
-`prepareInterestPayments` (`include/processors/interest_payments.hpp`) sorts the interest of the
+`prepareInterestPayments` (`src/processors/interest_payments.hpp`) sorts the interest of the
 reporting year into the Doh-DHO and Doh-Obr models. Like the dividend stage it is run by the income
 reports stage below; both share the payer, rate and exclusion helpers of
-`include/processors/income_payers.hpp`.
+`src/processors/income_payers.hpp`.
 
 - **Route by who holds the cash.** Each payment has one route. A bond coupon is a Doh-Obr row.
   The parser sets `mCashHolder` on every payment of interest on cash (`CashHolder`, in the common
@@ -995,7 +1032,7 @@ reports stage below; both share the payer, rate and exclusion helpers of
 
 ### Income reports stage
 
-`prepareIncomeReports` (`include/processors/income_reports.hpp`) chains the income stages for the
+`prepareIncomeReports` (`src/processors/income_reports.hpp`) chains the income stages for the
 reporting year and returns the three models (`IncomeReports`: Doh-Div, Doh-DHO, and Doh-Obr with
 cash interest and coupons together) and the rates it used. It makes no XML. The order is fixed:
 
@@ -1015,7 +1052,7 @@ the terminal, and the income models are not written to files until the income XM
 
 ### XML writer stage
 
-`writeReportXml` (`include/xml/report_xml_stage.hpp`, in `taxbroker_xml`) is the one place that
+`writeReportXml` (`src/xml/report_xml_stage.hpp`, in `taxbroker_xml`) is the one place that
 calls the four writers. It runs each writer for a form whose model has rows and guards it on its
 own: a writer that throws gives one `xml_serialization_failed` error for its form and a log line,
 and the other forms keep their XML. The `taxbroker report` command calls it with the capital model
@@ -1023,7 +1060,7 @@ only; the income models are added with the income files. See "XML writer stage" 
 
 ### Doh-KDVP XML writer
 
-`KdvpXmlWriter::write` (`include/xml/kdvp_xml_writer.hpp`) turns `ReportMetadata` and
+`KdvpXmlWriter::write` (`src/xml/kdvp_xml_writer.hpp`) turns `ReportMetadata` and
 `CapitalGainsReportKDVP` into one Doh-KDVP document. It lives in its own `taxbroker_xml` target,
 the only one that links pugixml, so `taxbroker_core` stays free of XML. It only formats and
 checks: it never recalculates FIFO, stock, loss eligibility or holding periods, and never shortens,
@@ -1083,7 +1120,7 @@ import accepted the Doh-Div, Doh-DHO and Doh-Obr files (2026-11-10, `verificatio
 
 ### Doh-DHO XML writer
 
-`DhoXmlWriter::write` (`include/xml/dho_xml_writer.hpp`) turns `ReportMetadata` and
+`DhoXmlWriter::write` (`src/xml/dho_xml_writer.hpp`) turns `ReportMetadata` and
 `DepositInterestReportDHO` into one Doh-DHO document, in the `taxbroker_xml` target with the
 shared helpers of `xml_common` (amount rounding, country and text checks, header). It checks the
 whole model first and writes nothing when a value does not fit the form (one
@@ -1094,7 +1131,7 @@ writes no file for a form without rows.
 
 ### Doh-Obr XML writer
 
-`ObrXmlWriter::write` (`include/xml/obr_xml_writer.hpp`) turns `ReportMetadata` and
+`ObrXmlWriter::write` (`src/xml/obr_xml_writer.hpp`) turns `ReportMetadata` and
 `OtherInterestReportObr` into one Doh-Obr document with both subtypes, cash interest and bond
 coupons, one `Interest` row per payment. Like the other income writers it checks the whole model
 first and writes nothing when a value does not fit the form (one `xml_value_out_of_range` error per
@@ -1102,7 +1139,7 @@ field, with the payer name and, for a coupon, its ISIN); the rules are in `tax_r
 form contract". The interest stage finds the row problems first, so that the user can leave out the
 failing coupon's ISIN or the failing broker's cash interest; the writer is a guard for the
 document and repeats those checks. The shared checks and number helpers are in `xml_common`; the
-text check `xmlTextLength` is in the core (`include/utils/xml_text.hpp`), because the stage uses it
+text check `xmlTextLength` is in the core (`src/utils/xml_text.hpp`), because the stage uses it
 too. The report command writes no file for a form without rows.
 
 ### CLI report command (walking skeleton)
@@ -1166,7 +1203,7 @@ the application result, which gives each form its status.
 A loss that the files decide in full is written as they decide it. A sale whose blocked units are
 only part of its listed units is written in several rows.
 
-**Questions** (`include/cli/decision_prompts.hpp`). After the first calculation the command asks
+**Questions** (`src/cli/decision_prompts.hpp`). After the first calculation the command asks
 the open loss and ratio questions in the terminal, one at a time in request order, and the
 exclusion question after the questions of investments it does not list (an answer to one of
 those can add an investment to its list) and before those of the investments it lists (exclude
@@ -1219,7 +1256,7 @@ investments`, lists each excluded investment with its reason codes under "Exclud
 (not in the XML)", and marks the resolved errors. If nothing is left, the status is `no data` (exit 0). `fail` and `cancel` write no XML
 (exit 1). Like every answer, it is used only in that run.
 
-**Classification** (`TaxClassifier::classify`, `include/processors/tax_classifier.hpp`). It runs
+**Classification** (`TaxClassifier::classify`, `src/processors/tax_classifier.hpp`). It runs
 first in each calculation, from the merged statement, the ledger, the parse and merge diagnostics
 and the answers, and returns diagnostics, requests, `excludedItems` and the set of left-out
 ISINs that the command copies into a copy of the ledger (`mLeftOutIsins`). The FIFO
@@ -1246,7 +1283,7 @@ and the `instrument_asset_class_conflict`) are the exception: the classification
 them.
 An event the merger rejected is not in the ledger, so only this rule blocks it.
 
-**Capital report gates** (`CapitalReportGates::check`, `include/processors/capital_report_gates.hpp`).
+**Capital report gates** (`CapitalReportGates::check`, `src/processors/capital_report_gates.hpp`).
 They look only at ISINs with a sale in the selected year, as the builder does. All errors affect
 capital gains only and carry no units, amounts or prices:
 
@@ -1330,8 +1367,7 @@ problem with file names only, never a folder.
 The local HTTP server (`taxbroker_server`) accepts the user's broker files, so these rules hold
 before any endpoint accepts a file. The server is a presentation layer over the application
 service; it holds no tax logic. The request checks and the launch file are the functions of
-`include/taxbroker/server/request_guard.hpp` and `include/taxbroker/server/launch_file.hpp`,
-which the endpoints call.
+`src/server/request_guard.hpp` and `src/server/launch_file.hpp`, which the endpoints call.
 
 How the login works: at start the server makes a one-time link token and a session token. It
 writes a private launch file that redirects to `http://127.0.0.1:<port>/#token=<link token>` and
@@ -1388,11 +1424,11 @@ only the rates of the supplied files; `find` and `publicationDays()` look in bot
 that replaced a built-in year has `mReplacesBuiltIn`.
 
 - The table is found by exact currency code and date (`find`); there is no nearby-date lookup.
-- `selectOfficialRates` (`include/processors/official_rate_selection.hpp`) takes the rate needs
+- `selectOfficialRates` (`src/processors/official_rate_selection.hpp`) takes the rate needs
   of a run (currency, tax date, report, sources) and the table. It returns one rate per currency
   and tax date, takes the last earlier rate (at most 4 days back) with a warning, and gives one
   blocking `missing_exchange_rate` error per pair it cannot fill, also kept per pair in
-  `mMissing`. The conversion stage (`convertCapitalTrades`, `include/processors/trade_conversion.hpp`) calls it for
+  `mMissing`. The conversion stage (`convertCapitalTrades`, `src/processors/trade_conversion.hpp`) calls it for
   the foreign trades of the capital pools and gives the missing-pair errors to the gates.
 - Each `OfficialRate` keeps its value (foreign units per 1 EUR, eight decimals), observation date,
   series key, origin, display name and logical row.
@@ -1415,7 +1451,7 @@ the files the user passes in and a copy of the catalogue copies no entry.
 
 CSV files that are not broker exports (the supplied ECB rate files, the reference files and the
 diagnostic message table; the built-in compact rate files have their own reader) are read by
-`readCsvText` (`include/utils/csv_text_reader.hpp`). It checks an unclosed quote, a missing or repeated required column, a line break inside a field and the field count of each row,
+`readCsvText` (`src/utils/csv_text_reader.hpp`). It checks an unclosed quote, a missing or repeated required column, a line break inside a field and the field count of each row,
 and numbers the rows logically (header = 1). It returns the rows before the first fault and that
 fault; each caller maps the fault to its own message. The Trade Republic parser has its own
 reading.

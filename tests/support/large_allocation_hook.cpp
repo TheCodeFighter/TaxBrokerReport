@@ -1,7 +1,7 @@
 #include "large_allocation_hook.hpp"
 
 #include "taxbroker/diagnostic_messages.hpp"
-#include "taxbroker/reference_catalogue.hpp"
+#include "parsers/reference_catalogue.hpp"
 
 #include <atomic>
 #include <cstdlib>
