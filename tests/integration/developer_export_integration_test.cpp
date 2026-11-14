@@ -513,6 +513,28 @@ TEST(DeveloperExportIntegrationTest, AnotherRunAsksTheFailureQuestionAgain) {
     EXPECT_EQ(second->result().report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
 }
 
+TEST(DeveloperExportIntegrationTest, ARestartAsksTheFailureQuestionAgainWithoutTheDeveloperExport) {
+    const auto rows =
+        std::vector<std::string_view>{kBuy2022, kSell2023, kShortSale, kBuy2024, kSellAfter};
+    auto run = startRun(requestWithRows(rows, true));
+
+    ASSERT_TRUE(run.has_value());
+    chooseAndConfirmDeveloperExport(*run);
+    ASSERT_TRUE(run->result().report(ReportType::CapitalGains).mUnsafe);
+
+    // The same files again: neither the choice nor its confirmations are kept.
+    EXPECT_FALSE(run->restart(requestWithRows(rows, true)).has_value());
+
+    const auto& result = run->result();
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.mRequests[0].mType, RequestType::CapitalGainsFailureResolutionRequired);
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+    EXPECT_FALSE(result.report(ReportType::CapitalGains).mUnsafe);
+    EXPECT_FALSE(result.report(ReportType::CapitalGains).mXml.has_value());
+    EXPECT_TRUE(result.mDecisions.empty());
+}
+
 TEST(DeveloperExportIntegrationTest, ASplitAfterTheGapTakesTheDeveloperExportAwayWithAWarning) {
     // The split of 2024-06-03 follows the short sale of 2024-05-01. The pool stopped at the sale,
     // so the split is never applied and the rows would mix units before and after it.

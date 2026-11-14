@@ -7,6 +7,7 @@
 #include "taxbroker/reference_catalogue.hpp"
 
 #include <memory>
+#include <optional>
 #include <variant>
 
 namespace taxbroker {
@@ -32,12 +33,18 @@ class ApplicationRun final {
     [[nodiscard]] static std::variant<ApplicationInputFault, ApplicationRun>
     start(ApplicationRequest aRequest);
 
+    /// A new run with new input. The recorded answers stay and are marked as from an earlier run,
+    /// and an answer given for the revision before it is stale. A supplied file that is not valid
+    /// gives the fault and the run stays as it was; an empty optional means success.
+    [[nodiscard]] std::optional<ApplicationInputFault> restart(ApplicationRequest aRequest);
+
     ApplicationRun(const ApplicationRun&) = delete;
     ApplicationRun& operator=(const ApplicationRun&) = delete;
     ApplicationRun(ApplicationRun&&) noexcept;
     ApplicationRun& operator=(ApplicationRun&&) noexcept;
     ~ApplicationRun();
 
+    /// The request of the current run; a successful restart ends the life of an earlier reference.
     [[nodiscard]] const ApplicationRequest& request() const;
 
     /// The result of the last calculation that succeeded.
@@ -47,7 +54,7 @@ class ApplicationRun final {
     [[nodiscard]] DecisionSession& session();
 
   private:
-    /// Everything the calculation reads, at one address; defined in the source file.
+    /// The data of the current run and its decision session; defined in the source file.
     struct Impl;
 
     explicit ApplicationRun(std::unique_ptr<Impl> aImpl);

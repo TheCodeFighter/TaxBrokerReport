@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
+  <edp:Header>
+    <edp:taxpayer>
+      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxpayerType>FO</edp:taxpayerType>
+      <edp:name>Synthetic Taxpayer</edp:name>
+      <edp:address1>Synthetic Street 1</edp:address1>
+      <edp:city>Synthetic City</edp:city>
+      <edp:postNumber>1000</edp:postNumber>
+      <edp:postName>Synthetic City</edp:postName>
+      <edp:birthDate>1990-01-31</edp:birthDate>
+      <edp:resident>true</edp:resident>
+    </edp:taxpayer>
+    <edp:Workflow>
+      <edp:DocumentWorkflowID>O</edp:DocumentWorkflowID>
+      <edp:DocumentWorkflowName>Original</edp:DocumentWorkflowName>
+    </edp:Workflow>
+  </edp:Header>
+  <edp:Signatures />
+  <body>
+    <edp:bodyContent />
+    <Doh_DHO>
+      <Doh_DHO_TaxPayerData>
+        <Email>taxpayer@example.com</Email>
+        <PhoneNumber>+38600000000</PhoneNumber>
+        <SelfReport>false</SelfReport>
+        <IsResident>true</IsResident>
+      </Doh_DHO_TaxPayerData>
+      <Doh_DHO_InterestEarned>
+        <IDeu>DE307510626</IDeu>
+        <Title>Trade Republic Bank GmbH</Title>
+        <Address>Brunnenstr. 19-21, 10119 Berlin</Address>
+        <PayerCountryCode>DE</PayerCountryCode>
+        <InterestType>1</InterestType>
+        <InterestEarned>1.00</InterestEarned>
+        <ForeignTaxPaid>0.00</ForeignTaxPaid>
+        <SourceCountryCode>DE</SourceCountryCode>
+      </Doh_DHO_InterestEarned>
+      <Doh_DHO_Totals>
+        <TotalInterestEarned>1.00</TotalInterestEarned>
+        <TotalForeignTaxPaid>0.00</TotalForeignTaxPaid>
+        <Year>2024</Year>
+      </Doh_DHO_Totals>
+    </Doh_DHO>
+  </body>
+</Envelope>

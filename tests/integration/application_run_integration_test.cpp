@@ -269,6 +269,10 @@ TEST(ApplicationRunIntegrationTest, AnAnswerThroughTheSessionRecalculates) {
 
     EXPECT_EQ(result.report(ReportType::Dividends).mStatus, ReportStatus::Generated);
     EXPECT_TRUE(result.mRequests.empty());
+
+    // The user's exclusion keeps the error it resolved, which makes the run a completed one with
+    // warnings.
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
 TEST(ApplicationRunIntegrationTest, TheSameRequestGivesTheSameJson) {
