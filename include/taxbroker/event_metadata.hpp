@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <compare>
 #include <cstddef>
@@ -49,10 +50,19 @@ class SourceFilename {
     SourceFilename() = default;
 
     /// The last part of the path, or nothing when it is empty, `.` or `..` (for example for a
-    /// path that ends in a separator).
+    /// path that ends in a separator). On Windows, a drive in front of the name (`C:name.csv`) is
+    /// dropped too; elsewhere such a name is a legal file name and is kept.
     [[nodiscard]] static std::optional<SourceFilename> tryFromPath(std::string_view aPath) {
         const auto separator = aPath.find_last_of("/\\");
-        const auto basename = aPath.substr(separator == std::string_view::npos ? 0 : separator + 1);
+        auto basename = aPath.substr(separator == std::string_view::npos ? 0 : separator + 1);
+
+#ifdef _WIN32
+        if (separator == std::string_view::npos && basename.size() >= 2 && basename[1] == ':' &&
+            std::isalpha(static_cast<unsigned char>(basename[0])) != 0)
+        {
+            basename.remove_prefix(2);
+        }
+#endif
 
         if (basename.empty() || basename == "." || basename == "..")
         {
