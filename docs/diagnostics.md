@@ -87,9 +87,9 @@ decision lifecycle (run revision, answers, recalculation) is in `DecisionSession
 failure-resolution types, the loss question, the ratio question, the classification question of
 a trade investment, the payer choice, the treaty claim, the deposit interest question and the bond
 type question have question data and answers so far. The capital failure choice is applied
-(`FailureResolutionStage`, `include/processors/failure_resolution_stage.hpp`): see "Choosing
+(`FailureResolutionStage`, `src/processors/failure_resolution_stage.hpp`): see "Choosing
 whether to exclude failed capital ISINs". The classification of trade investments is applied
-(`TaxClassifier`, `include/processors/tax_classifier.hpp`): see "Classification and
+(`TaxClassifier`, `src/processors/tax_classifier.hpp`): see "Classification and
 `excludedItems`". The dividend and other-interest failure choices use the same stage, and the
 report command runs both stages and asks these choices and the bond type in the terminal.
 Developer mode is part of it: `ApplicationRequest::mDeveloperMode` (off by default) lets the
@@ -401,7 +401,7 @@ calculated, but another ISIN and both income reports continue.
 
 ### XML writer stage
 
-`writeReportXml` (`include/xml/report_xml_stage.hpp`) runs the four XML writers one after the
+`writeReportXml` (`src/xml/report_xml_stage.hpp`) runs the four XML writers one after the
 other, for each form whose model has rows, and stores each XML and its errors in the application
 input. Each writer is guarded on its own:
 

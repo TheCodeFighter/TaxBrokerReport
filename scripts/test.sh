@@ -7,10 +7,11 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF'
-Usage: test.sh [--reuse-build] [--suite unit|integration] [ctest-regex]
+Usage: test.sh [--reuse-build] [--suite unit|integration|boundary] [ctest-regex]
 
   With no arguments, builds build/dev from scratch and runs the full test suite.
-  --reuse-build runs the existing build/dev as it is and compiles nothing.
+  --reuse-build runs the existing build/dev as it is and compiles nothing (the boundary
+  tests still try to compile their one probe file each).
   --suite selects tests by their CTest label.
   An optional regular expression further filters tests by name.
   The options and the regular expression can come in any order.
@@ -32,8 +33,8 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --suite)
-            if [[ $# -lt 2 || ( "$2" != "unit" && "$2" != "integration" ) ]]; then
-                echo "--suite requires unit or integration." >&2
+            if [[ $# -lt 2 || ! "$2" =~ ^(unit|integration|boundary)$ ]]; then
+                echo "--suite requires unit, integration or boundary." >&2
                 usage >&2
                 exit 1
             fi

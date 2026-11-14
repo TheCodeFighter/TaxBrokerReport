@@ -5,6 +5,7 @@ add_executable(traderepublic_parser_fuzz traderepublic_parser_fuzz.cpp)
 
 target_include_directories(traderepublic_parser_fuzz PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
     ${CSV_PARSER_INCLUDE_DIR}
 )
 

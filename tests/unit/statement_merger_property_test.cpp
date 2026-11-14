@@ -1,6 +1,6 @@
 #include "../support/property_random.hpp"
 #include "../support/statement_merge_assertions.hpp"
-#include "taxbroker/statement_merger.hpp"
+#include "processors/statement_merger.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>

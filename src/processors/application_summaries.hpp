@@ -3,8 +3,8 @@
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "taxbroker/application_result.hpp"
-#include "taxbroker/official_rates.hpp"
-#include "taxbroker/reference_catalogue.hpp"
+#include "parsers/ecb_rate_file.hpp"
+#include "parsers/reference_catalogue.hpp"
 
 #include <array>
 

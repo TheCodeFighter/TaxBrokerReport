@@ -1,6 +1,6 @@
 #include "processors/official_rate_selection.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
-#include "taxbroker/official_rates.hpp"
+#include "parsers/ecb_rate_file.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>

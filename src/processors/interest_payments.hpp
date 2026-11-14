@@ -3,8 +3,8 @@
 #include "processors/trade_conversion.hpp"
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/decision_session.hpp"
-#include "taxbroker/income_report_models.hpp"
-#include "taxbroker/reference_catalogue.hpp"
+#include "processors/income_report_models.hpp"
+#include "parsers/reference_catalogue.hpp"
 
 #include <optional>
 #include <vector>

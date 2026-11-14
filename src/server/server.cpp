@@ -1,5 +1,5 @@
-#include "server/server.hpp"
-#include "utils/logger.hpp"
+#include "server.hpp"
+#include "taxbroker/logging.hpp"
 
 namespace taxbroker {
 

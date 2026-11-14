@@ -1,7 +1,8 @@
 #pragma once
 
-#include "taxbroker/types.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
+#include "taxbroker/text_format.hpp"
+#include "taxbroker/types.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -38,34 +39,6 @@ std::optional<ScaledType> parseScaledNumber(std::string_view aValue) {
 }
 
 namespace taxbroker {
-
-/// Stored value plus source facts that would otherwise be lost during import rounding.
-struct ParsedFixedPoint {
-    std::int64_t mValue{};
-    bool mSourceNegative{};
-    bool mSourceNonzero{};
-    std::size_t mFractionalDigits{};
-    std::string mDiscardedDigits;
-    std::string mCanonicalValue; ///< Exact signed source decimal without redundant zeros.
-    bool mRoundedAwayFromZero{}; ///< Import rounding increased the magnitude.
-};
-
-/// Accepts only `[+|-]digits[.digits]` with optional surrounding spaces: no digit grouping, no
-/// decimal comma and no accounting parentheses.
-/// Rounds once, halves away from zero; optionally rejects excess precision or nonzero-to-zero loss.
-[[nodiscard]] NumericResult<ParsedFixedPoint>
-importFixedPoint(std::string_view aValue,
-                 std::int64_t aScale,
-                 ValuePolicy aPolicy = ValuePolicy::Signed,
-                 bool aRejectNonzeroRoundedToZero = true,
-                 bool aAllowExtraPrecision = true);
-
-/// The exact text of a value stored at `aScale` (a power of ten). Trailing zeros are removed only
-/// down to `aMinimumDecimals`, and nothing is rounded. At UNITS_SCALE, `150'000'000` is
-/// `1.50000000` with 8 and `1.5000` with 4. Throws `std::invalid_argument` when `aScale` is not a
-/// power of ten or `aMinimumDecimals` is more than the decimals it stores.
-[[nodiscard]] std::string
-formatFixedPoint(std::int64_t aValue, std::int64_t aScale, std::size_t aMinimumDecimals);
 
 /// Requires a positive rate; extra precision needs explicit rounding permission.
 [[nodiscard]] NumericResult<ExchangeRate> importExchangeRate(std::string_view aValue,

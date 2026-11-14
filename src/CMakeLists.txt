@@ -18,11 +18,11 @@ set(RESOURCES_DIR ${CMAKE_SOURCE_DIR}/resources)
 embed_text_file(${RESOURCES_DIR}/i18n/diagnostic_messages.csv diagnosticMessagesCsv
     taxbroker/diagnostic_messages.hpp ${EMBEDDED_DIR}/diagnostic_messages_table.cpp)
 embed_text_file(${RESOURCES_DIR}/reference/payers.csv embeddedPayersCsv
-    taxbroker/reference_catalogue.hpp ${EMBEDDED_DIR}/payers_csv.cpp)
+    parsers/reference_catalogue.hpp ${EMBEDDED_DIR}/payers_csv.cpp)
 embed_text_file(${RESOURCES_DIR}/reference/relief_statements.csv embeddedReliefStatementsCsv
-    taxbroker/reference_catalogue.hpp ${EMBEDDED_DIR}/relief_statements_csv.cpp)
+    parsers/reference_catalogue.hpp ${EMBEDDED_DIR}/relief_statements_csv.cpp)
 embed_text_file(${RESOURCES_DIR}/reference/broker_payers.csv embeddedBrokerPayersCsv
-    taxbroker/reference_catalogue.hpp ${EMBEDDED_DIR}/broker_payers_csv.cpp)
+    parsers/reference_catalogue.hpp ${EMBEDDED_DIR}/broker_payers_csv.cpp)
 
 # The compact ECB rate files of the calendar years built into the application, one file
 # resources/ecb/rates_<year>.csv per year. A new year is a new file and a new entry here.
@@ -92,8 +92,14 @@ add_library(taxbroker_core STATIC
     utils/xml_text.cpp
 )
 
-target_include_directories(taxbroker_core PUBLIC 
+# Only include/ is public. The headers of the stages, parsers, writers and utilities are in src/
+# and are private to the backend libraries, so a consumer reaches the backend through the
+# application service.
+target_include_directories(taxbroker_core
+    PUBLIC
     ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
     ${CSV_PARSER_INCLUDE_DIR}
 )
 
@@ -114,6 +120,8 @@ add_library(taxbroker_api STATIC
 target_include_directories(taxbroker_api
     PUBLIC
     ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(taxbroker_api
@@ -136,6 +144,8 @@ add_library(taxbroker_xml STATIC
 target_include_directories(taxbroker_xml
     PUBLIC
     ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(taxbroker_xml
@@ -154,12 +164,18 @@ add_library(taxbroker_service STATIC
 target_include_directories(taxbroker_service
     PUBLIC
     ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
 )
 
+# The core is an implementation detail of the service (a static library still links it into the
+# consumer). Boost (exact arithmetic header) and spdlog (logging macros) are in public headers.
 target_link_libraries(taxbroker_service
     PUBLIC
-    taxbroker_core
+    Boost::headers
+    spdlog::spdlog
     PRIVATE
+    taxbroker_core
     taxbroker_xml
 )
 
@@ -170,23 +186,14 @@ add_library(taxbroker_server_security STATIC
     server/launch_file.cpp
 )
 
-target_include_directories(taxbroker_server_security
-    PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
-)
-
 if(WIN32)
     target_link_libraries(taxbroker_server_security PRIVATE bcrypt)
 endif()
 
 # Server executable
 add_executable(taxbroker_server
-    main.cpp
+    server/main.cpp
     server/server.cpp
-)
-
-target_include_directories(taxbroker_server PRIVATE 
-    ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(taxbroker_server PRIVATE
@@ -204,9 +211,11 @@ add_library(taxbroker_cli STATIC
     cli/taxpayer_file.cpp
 )
 
+# The CLI sees its own headers (src/cli) and the public headers it gets from the service; it
+# cannot include a stage, parser, writer or utility header.
 target_include_directories(taxbroker_cli
-    PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/cli
 )
 
 target_link_libraries(taxbroker_cli
@@ -223,6 +232,32 @@ add_executable(taxbroker
 
 target_link_libraries(taxbroker PRIVATE
     taxbroker_cli
+)
+
+# Every public header must compile alone, with only include/ and the third-party headers the
+# public headers name (Boost for the exact arithmetic, spdlog for the logging macros). A public
+# header that needs a src/ header fails this check. The files are generated, one per header, and
+# the objects are not linked into anything.
+file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/include/taxbroker/*.hpp)
+set(PUBLIC_HEADER_CHECK_SOURCES "")
+
+foreach(PUBLIC_HEADER ${PUBLIC_HEADERS})
+    file(RELATIVE_PATH PUBLIC_HEADER_PATH ${CMAKE_SOURCE_DIR}/include ${PUBLIC_HEADER})
+    string(REPLACE "/" "_" PUBLIC_HEADER_NAME ${PUBLIC_HEADER_PATH})
+    set(PUBLIC_HEADER_CHECK_FILE
+        ${CMAKE_CURRENT_BINARY_DIR}/public_header_check/${PUBLIC_HEADER_NAME}.cpp)
+    file(GENERATE OUTPUT ${PUBLIC_HEADER_CHECK_FILE}
+        CONTENT "#include \"${PUBLIC_HEADER_PATH}\"\n")
+    list(APPEND PUBLIC_HEADER_CHECK_SOURCES ${PUBLIC_HEADER_CHECK_FILE})
+endforeach()
+
+add_library(taxbroker_public_header_check OBJECT ${PUBLIC_HEADER_CHECK_SOURCES})
+
+target_include_directories(taxbroker_public_header_check PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+target_link_libraries(taxbroker_public_header_check PRIVATE
+    Boost::headers
+    spdlog::spdlog
 )
 
 # The production build (docker/Dockerfile) links both executables fully static: the Alpine build

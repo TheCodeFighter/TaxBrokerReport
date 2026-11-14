@@ -1,6 +1,6 @@
 #include "parsers/traderepublic_parser.hpp"
-#include "taxbroker/fifo_basis.hpp"
-#include "taxbroker/statement_merger.hpp"
+#include "processors/fifo_basis.hpp"
+#include "processors/statement_merger.hpp"
 #include "utils/numeric_util.hpp"
 
 #include <algorithm>

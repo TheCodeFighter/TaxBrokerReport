@@ -1,11 +1,10 @@
-#include "cli/decision_prompts.hpp"
+#include "decision_prompts.hpp"
 
 #include "cli_text.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/currency.hpp"
 #include "taxbroker/split_ratio.hpp"
-#include "utils/date_utils.hpp"
-#include "utils/numeric_util.hpp"
+#include "taxbroker/text_format.hpp"
 
 #include <algorithm>
 #include <cctype>

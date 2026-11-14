@@ -1,8 +1,8 @@
-#include "cli/report_command.hpp"
+#include "report_command.hpp"
 
-#include "cli/decision_prompts.hpp"
-#include "cli/output_files.hpp"
-#include "cli/taxpayer_file.hpp"
+#include "decision_prompts.hpp"
+#include "output_files.hpp"
+#include "taxpayer_file.hpp"
 #include "cli_text.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_request.hpp"
@@ -13,7 +13,7 @@
 #include "taxbroker/input_file.hpp"
 #include "taxbroker/official_rates.hpp"
 #include "taxbroker/reference_catalogue.hpp"
-#include "utils/numeric_util.hpp"
+#include "taxbroker/text_format.hpp"
 
 #include <algorithm>
 #include <array>

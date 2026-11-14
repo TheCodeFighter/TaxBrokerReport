@@ -6,9 +6,9 @@
 #include "taxbroker/api/diagnostics_json.hpp"
 #include "taxbroker/currency.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
-#include "taxbroker/statement_merger.hpp"
+#include "processors/statement_merger.hpp"
 #include "taxbroker/types.hpp"
-#include "utils/logger.hpp"
+#include "taxbroker/logging.hpp"
 #include "utils/numeric_util.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 

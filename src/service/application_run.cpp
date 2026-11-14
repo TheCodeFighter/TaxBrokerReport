@@ -13,7 +13,7 @@
 #include "processors/tax_classifier.hpp"
 #include "processors/tax_processor.hpp"
 #include "processors/trade_conversion.hpp"
-#include "taxbroker/official_rates.hpp"
+#include "parsers/ecb_rate_file.hpp"
 #include "xml/report_xml_stage.hpp"
 
 #include <algorithm>

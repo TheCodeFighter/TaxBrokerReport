@@ -3,8 +3,8 @@
 #include "processors/tax_processor.hpp"
 #include "taxbroker/currency.hpp"
 #include "taxbroker/decision_session.hpp"
-#include "taxbroker/official_rates.hpp"
-#include "taxbroker/reference_catalogue.hpp"
+#include "parsers/ecb_rate_file.hpp"
+#include "parsers/reference_catalogue.hpp"
 #include "utils/date_utils.hpp"
 
 #include <gtest/gtest.h>

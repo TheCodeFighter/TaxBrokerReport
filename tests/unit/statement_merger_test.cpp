@@ -1,4 +1,4 @@
-#include "taxbroker/statement_merger.hpp"
+#include "processors/statement_merger.hpp"
 #include "../support/statement_merge_assertions.hpp"
 
 #include <gtest/gtest.h>

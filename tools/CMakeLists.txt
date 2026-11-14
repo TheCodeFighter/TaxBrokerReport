@@ -2,6 +2,8 @@ add_executable(taxbroker_tr_dump
     tr_parser_dump.cpp
 )
 
+target_include_directories(taxbroker_tr_dump PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 target_link_libraries(taxbroker_tr_dump PRIVATE
     taxbroker_core
     taxbroker_api
@@ -9,6 +11,7 @@ target_link_libraries(taxbroker_tr_dump PRIVATE
 )
 
 add_executable(taxbroker_exact_dump exact_arithmetic_dump.cpp)
+target_include_directories(taxbroker_exact_dump PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(taxbroker_exact_dump PRIVATE taxbroker_core)
 
 add_test(NAME ExactArithmeticDump.LocalTransactions
@@ -21,4 +24,5 @@ add_test(NAME ExactArithmeticDump.LocalTransactions
 set_tests_properties(ExactArithmeticDump.LocalTransactions PROPERTIES LABELS debug)
 
 add_executable(taxbroker_ecb_dump ecb_rates_dump.cpp)
+target_include_directories(taxbroker_ecb_dump PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(taxbroker_ecb_dump PRIVATE taxbroker_core)
