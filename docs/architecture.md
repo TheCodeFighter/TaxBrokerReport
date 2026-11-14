@@ -1325,6 +1325,49 @@ stderr name the files that could not be restored. The summary's lines `ECB rate 
 output file is changed (a missing output folder may already be created) and stderr names the
 problem with file names only, never a folder.
 
+## Local service security
+
+The local HTTP server (`taxbroker_server`) accepts the user's broker files, so these rules hold
+before any endpoint accepts a file. The server is a presentation layer over the application
+service; it holds no tax logic. The request checks and the launch file are the functions of
+`include/taxbroker/server/request_guard.hpp` and `include/taxbroker/server/launch_file.hpp`,
+which the endpoints call.
+
+How the login works: at start the server makes a one-time link token and a session token. It
+writes a private launch file that redirects to `http://127.0.0.1:<port>/#token=<link token>` and
+opens that file in the default browser. The frontend sends the link token once in
+`POST /api/session`; the server answers with an `HttpOnly; SameSite=Strict` session cookie. Every
+later request is checked with the session cookie, `Host`, `Origin` and the client header.
+
+| # | Rule | Proof |
+| --- | --- | --- |
+| R1 | A native launch binds `127.0.0.1` only, never `0.0.0.0` or `::`. `TBR_SERVER_HOST` can change the host; a non-loopback host prints one warning line at start. | Server test: the default bind address is `127.0.0.1`. |
+| R2 | A native launch binds port 0 (a random free port) and reads the port back. `TBR_SERVER_PORT` sets a fixed one; Docker uses `8080`. | Server test: port 0 gives a non-zero port. |
+| R3 | In Docker the server listens on `0.0.0.0`, which is safe only because `docker/docker-compose.yml` publishes `127.0.0.1:8080:8080` for `dev` and `prod` (host address `127.0.0.1`, host port `8080`, container port `8080`). The host port must equal `TBR_SERVER_PORT`, because the `Host` and `Origin` checks compare with the server's own port. It needs Docker Engine 28.0 or later: older versions let other computers on the same network reach a port published on `127.0.0.1` (`scripts/run.sh` checks this). | `docker compose -f docker/docker-compose.yml config` shows `host_ip: 127.0.0.1` for both services; `ss -ltn` on the host shows `127.0.0.1:8080` and no `0.0.0.0:8080`. |
+| R4 | Two secret tokens per launch, a link token (redeemed once, valid for 120 seconds: `LinkToken`) and a session token. Each is 32 bytes from the operating system random source (`getentropy`, Windows `BCryptGenRandom`; no fallback generator, a failure stops the launch), as 64 hex characters (`makeToken`). Both are kept only in memory and never logged. | `RequestGuardTest` (length, two tokens differ, redeem once, redeem at 119 and 120 seconds, a wrong token does not use it up); server test: the log has no token. |
+| R5 | Every `/api/` request except `POST /api/session` needs the session cookie `tbr_session_<port>` (`HttpOnly; SameSite=Strict; Path=/`, found by `findSessionToken`), compared in constant time (`tokenMatches`). The link token is accepted only in `POST /api/session`, once. A missing or wrong token gives 401 with no detail. The port in the cookie name keeps launches apart, because cookies are kept per host name, not per port. | `RequestGuardTest` (equal, different, shorter, cookie text, cookie lookup); server tests: missing, wrong and right cookie, a second redeem, a redeem after 120 seconds. |
+| R6 | The browser gets the link token once, in the URL fragment of the launch page (`http://127.0.0.1:<port>/#token=...`). A fragment is not sent to the server, so it is not in server logs. The server opens the launch file in the default browser; the link is never a command argument, because on Linux every user can read `/proc/<pid>/cmdline`. When no browser can be opened (Docker), the server prints the link instead; it works once and for 120 seconds. The frontend sends the token in `POST /api/session` and removes the fragment with `history.replaceState`. | Frontend test: the exchange and the removed fragment; server test: the cookie is set only after a right link token. |
+| R7 | `Host` must be exactly `127.0.0.1:<port>` or `localhost:<port>`, the name compared without case (`isAllowedHost`). Anything else is rejected (against DNS rebinding). | `RequestGuardTest` (own host, `localhost`, other port, foreign name, empty, upper case); server test: a rejected `Host`. |
+| R8 | `Origin`, when present, must be `http://127.0.0.1:<port>` or `http://localhost:<port>` (`isAllowedOrigin`). A state-changing request (`isStateChangingMethod`: any method other than GET, HEAD and OPTIONS) without `Origin` is rejected. | `RequestGuardTest` (foreign, `null`, missing on a state-changing and on a safe request, the method names); server test: POST without `Origin`. |
+| R9 | No CORS headers at all: `Access-Control-Allow-Origin` is never sent. The frontend is served from the same origin. | Server test: an `OPTIONS` preflight gets no allow headers. |
+| R10 | Uploads stay in memory (`InputFile`). The server never writes an upload to disk and never takes a host path from a request. | Server test: a request with a `path` field is rejected; code review item. |
+| R11 | Only the per-file limit applies: each file keeps `kMaxInputFileBytes` (100 MiB). There is no total request limit. A larger file gets 413. | Server test: one byte over the limit gives 413. |
+| R12 | A response holds no absolute path, raw row or money value outside the result fields. Source names are sanitized when the result is serialized. | The JSON serializer tests and the server contract tests. |
+| R13 | A log line holds no money value, raw row, absolute path or token (`diagnostics.md`). | Review of the log lines of the server. |
+| R14 | The per-user state folder holds the log and the launch file: Linux `$XDG_STATE_HOME/taxbroker/` (an absolute path only), else `~/.local/state/taxbroker/`; macOS `~/Library/Application Support/TaxBrokerReport/`; Windows `%LOCALAPPDATA%\TaxBrokerReport\`. On POSIX the folder is created with mode `0700`. In Docker the log lives in `/var/log/taxbroker`. The log rotates at 5 MiB and keeps 3 files. | Logger test of the rotation; server test: the folder mode. |
+| R15 | The server runs as a normal user; the `prod` image runs as `app`. | `docker/Dockerfile` (`USER app`). |
+| R16 | Accepted risks. (a) A process of the same user can read the input files directly, so no token can protect against it. (b) A browser extension with access to all sites can read the page. (c) Another local program on `127.0.0.1` receives the cookie, because cookies are per host name, not per port; every request is still checked for the session token. (d) No TLS on the loopback: reading loopback traffic needs root, which can read the process memory anyway, and browsers treat `http://127.0.0.1` as a secure context. A desktop window without a port (webview) would remove (b) and (c); it needs a different web engine per platform and a non-static Linux build, so it is not used. | Accepted risk. |
+| R17 | Every `/api/` request needs the header `X-TaxBroker: 1` (`kClientHeaderName`, `kClientHeaderValue`), else 403. A foreign page cannot send it without CORS. | `RequestGuardTest` (the constants); server test: a request without the header gets 403. |
+| R18 | Every response carries the seven security headers of `securityHeaders()`: content policy, `nosniff`, no referrer, no framing, same-origin opener and resource policy, and `Cache-Control: no-store`. `script-src` never allows `'unsafe-inline'` or a foreign host. | `RequestGuardTest` (the seven names and values); server test: headers on a success and on an error. |
+| R19 | The launch file is readable by the user only (mode `0600` on POSIX, also when it existed), is never written through a symbolic link (`writeLaunchFile`) and is deleted after the exchange and at shutdown. | `LaunchFileTest` (mode, replaced file, symbolic link, missing folder); server test: the file is gone after the exchange. |
+| R20 | The frontend is bundled into the server: no CDN, no foreign script, no analytics. | Frontend build check: the output holds no foreign host. |
+
+Implementation status: the server is still a stub that does not listen. R3 (compose), the pure
+checks of R4, R5, R7, R8, R17 and R18 (`request_guard.hpp`) and the launch page and file of R6 and
+R19 (`launch_file.hpp`) exist and are tested. The other rules are tests of the server that adds
+the endpoints; each row names the test it must add. R14 is built with the log lines of the
+server.
+
 ## Official rate files
 
 `loadEcbRateFiles` (`include/taxbroker/official_rates.hpp`, `src/parsers/ecb_rate_file.cpp`) reads

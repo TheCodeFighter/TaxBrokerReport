@@ -1183,6 +1183,7 @@ It must never include:
 - the contents of a raw CSV row or a copy of all fields from that row;
 - unrelated prices, quantities, balances, fees, income, tax, or calculated totals;
 - taxpayer identifiers inside diagnostic messages;
+- a link token or a session token;
 - generated XML inside a diagnostic; or
 - raw exception text, stack traces, library errors, or operating-system errors.
 

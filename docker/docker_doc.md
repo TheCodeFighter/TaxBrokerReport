@@ -82,8 +82,15 @@ nothing, and fails with a hint when `build/dev` does not exist:
 `*LargeInputTest` unit test suites, only those suites, or both.
 
 ### 4. Run the Server
-Builds `build/dev` from scratch, then starts the backend server and maps port 8080 to your host
-machine:
+Builds `build/dev` from scratch, then starts the backend server and publishes port 8080 on the
+loopback address `127.0.0.1` of your host only, so no other computer on the network can reach it.
+Inside the container the server listens on `0.0.0.0` (`TBR_SERVER_HOST`), because Docker forwards
+the published port to the container's own network address; this is safe only because of the
+`127.0.0.1` in the port mapping of `docker/docker-compose.yml`. Do not remove it. This needs
+Docker Engine 28.0 or later: older versions let other computers on the same network reach a port
+published on `127.0.0.1`, so `scripts/run.sh` stops with an error on them. In Docker no browser
+opens, so the server prints a one-time link; open it within 2 minutes. It works once. Start the
+server with:
 ```bash
 ./scripts/run.sh
 ```
