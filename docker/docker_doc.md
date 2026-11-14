@@ -88,12 +88,17 @@ Inside the container the server listens on `0.0.0.0` (`TBR_SERVER_HOST`), becaus
 the published port to the container's own network address; this is safe only because of the
 `127.0.0.1` in the port mapping of `docker/docker-compose.yml`. Do not remove it. This needs
 Docker Engine 28.0 or later: older versions let other computers on the same network reach a port
-published on `127.0.0.1`, so `scripts/run.sh` stops with an error on them. In Docker no browser
-opens, so the server prints a one-time link; open it within 2 minutes. It works once. Start the
+published on `127.0.0.1`, so `scripts/run.sh` stops with an error on them. A browser cannot start
+inside the container, so the server writes a launch file (`runtime/launch/launch.html`,
+`TBR_LAUNCH_FILE`) and prints the one-time link; `scripts/run.sh` waits on the host for the file
+and opens it with `xdg-open` (when the host has it). The link works once, for 2 minutes. Start the
 server with:
 ```bash
 ./scripts/run.sh
 ```
+`./scripts/run.sh --no-browser` does not open the file, so the link stays unused and can be
+redeemed by hand (see "Manual API test" in `docs/debugging.md`). `--reuse-build` runs the existing
+`build/dev` without compiling, and `--help` lists the options.
 
 ### Build folders
 

@@ -92,6 +92,7 @@ compose run --rm -T dev cppcheck \
     --relative-paths=/workspace \
     "-DTEST(test_suite_name,test_name)=void cppcheck_test()" \
     "-DTEST_P(test_suite_name,test_name)=void cppcheck_parameterized_test()" \
+    "-DTEST_F(test_fixture,test_name)=void cppcheck_fixture_test()" \
     "-DINSTANTIATE_TEST_SUITE_P(...)= " \
     -D__SIZEOF_INT128__=16 \
     -D__cpp_exceptions=199711L \

@@ -111,7 +111,21 @@ jobs:
             -DOUTPUT_DIR="$RUNNER_TEMP/cli-check" \
             -P tests/support/check_cli_report.cmake
 
-          build/static/taxbroker_server
+          # The server serves until a signal: start it, wait for the page, then stop it. Its
+          # output (the one-time link of this throwaway run) is not kept.
+          launch_file="$RUNNER_TEMP/launch/launch.html"
+          mkdir -p "$(dirname "$launch_file")"
+          TBR_LAUNCH_FILE="$launch_file" TBR_SERVER_PORT=18080 \
+            build/static/taxbroker_server >/dev/null &
+          server_pid=$!
+
+          # A 200 proves that it serves, so its SIGTERM handler is set already.
+          curl --silent --show-error --fail --output /dev/null \
+            --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:18080/
+
+          kill -TERM "$server_pid"
+          wait "$server_pid"
+          test ! -e "$launch_file"
 
       # Only a push to main uploads the binaries; pull requests only build and check them.
       - name: Package the static binaries

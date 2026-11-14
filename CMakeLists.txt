@@ -49,6 +49,9 @@ FetchContent_Declare(
     GIT_TAG v1.15.3
 )
 
+# The log file is opened close-on-exec, so the browser that the server starts does not keep it.
+set(SPDLOG_PREVENT_CHILD_FD ON CACHE BOOL "" FORCE)
+
 FetchContent_MakeAvailable(spdlog)
 
 FetchContent_Declare(

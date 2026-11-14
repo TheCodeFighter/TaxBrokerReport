@@ -3,3 +3,4 @@ coverage/
 logs/
 runtime/
 tmp/
+tests/manual/api/.env

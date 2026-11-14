@@ -190,16 +190,36 @@ if(WIN32)
     target_link_libraries(taxbroker_server_security PRIVATE bcrypt)
 endif()
 
+# The local HTTP server: options, folders, browser launch, routes and the Beast server. It reaches
+# the backend only through the public headers (the service); the logger comes with the service.
+add_library(taxbroker_server_lib STATIC
+    server/browser_open.cpp
+    server/http_server.cpp
+    server/routes.cpp
+    server/server.cpp
+    server/server_config.cpp
+    server/state_folder.cpp
+)
+
+find_package(Threads REQUIRED)
+
+target_link_libraries(taxbroker_server_lib
+    PUBLIC
+    taxbroker_service
+    PRIVATE
+    taxbroker_server_security
+    nlohmann_json::nlohmann_json
+    Threads::Threads
+)
+
 # Server executable
 add_executable(taxbroker_server
     server/main.cpp
-    server/server.cpp
 )
 
 target_link_libraries(taxbroker_server PRIVATE
-    taxbroker_core
+    taxbroker_server_lib
     taxbroker_api
-    taxbroker_server_security
 )
 
 # The command line: the report command of the walking skeleton. The library holds the whole

@@ -137,11 +137,15 @@ run_valgrind \
 
 run_allocation_hook_tests
 
+# Valgrind emulates the open-file limit: the system accepts a queued connection and Valgrind then
+# closes it, where Linux alone leaves it waiting. The test of that wait runs natively only.
 run_valgrind \
     /workspace/build/dev/tests/taxbroker_integration_tests \
-    --gtest_brief=1
+    --gtest_brief=1 \
+    '--gtest_filter=-*RunsOutOfFileHandles*'
 
-run_valgrind /workspace/build/dev/src/taxbroker_server
+# taxbroker_server serves until a signal, so it is not run here; ServerTest above runs its start,
+# requests and stop under Valgrind.
 
 run_valgrind \
     /workspace/build/dev/src/taxbroker \

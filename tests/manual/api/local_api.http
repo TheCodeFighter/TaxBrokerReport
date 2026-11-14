@@ -1,0 +1,28 @@
+# Manual test of the local server API with the VS Code extension.
+# Start the server without a browser, so the one-time link stays unused:
+#
+#   scripts/run.sh --no-browser
+#
+# The server prints a line like
+#   Open http://127.0.0.1:8080/#token=<64 characters> in your browser (it works once, for 2 minutes).
+# Put the 64 characters after "#token=" into the file tests/manual/api/.env (Git ignores it), as
+#   TBR_LINK_TOKEN=<64 characters>
+# The file local_api.env.example shows the format.
+
+@port = 8080
+@token = {{$dotenv TBR_LINK_TOKEN}}
+
+### 1. The placeholder page (no login needed)
+GET http://127.0.0.1:{{port}}/
+
+### 2. Log in with the link token: 204 and a Set-Cookie header (a second try gives 401)
+POST http://127.0.0.1:{{port}}/api/session
+Origin: http://127.0.0.1:{{port}}
+X-TaxBroker: 1
+Content-Type: application/json
+
+{"token":"{{token}}"}
+
+### 3. Am I logged in? 204 after step 2, 401 before it
+GET http://127.0.0.1:{{port}}/api/session
+X-TaxBroker: 1

@@ -180,6 +180,7 @@ _tbr_valgrind() {
     _tbr_complete --reuse-build "--part=words:regular csv ecb reference messages all" --help
 }
 _tbr_fuzz() { _tbr_complete --seconds=none --replay=file --help; }
+_tbr_run() { _tbr_complete --reuse-build --no-browser --help; }
 _tbr_format() { _tbr_complete --check --help; }
 _tbr_test() { _tbr_complete --reuse-build "--suite=words:unit integration" --help :: none; }
 _tbr_debug_tests() { _tbr_complete --help :: "words:build" "words:unit integration"; }
@@ -206,7 +207,7 @@ _tbr_report() {
 
 _tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse
     dump_tr_merge dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_ecb_rates dump_exact_arithmetic
-    report)
+    report run)
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     # The shared functions above expect bash's zero-based arrays.
