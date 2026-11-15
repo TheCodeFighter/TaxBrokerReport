@@ -170,7 +170,14 @@ development container:
 scripts/fuzz.sh                  # 60 seconds, fixed libFuzzer seed 1
 scripts/fuzz.sh --seconds 600
 scripts/fuzz.sh --replay runtime/fuzz/crash-<hash>
+scripts/fuzz.sh --target multipart   # the multipart reader of the local server
+scripts/fuzz.sh --target answers     # the JSON readers of the answer, delete and upload calls
 ```
+
+The two server targets take untrusted bytes from the browser. They are run by hand (the CI job
+fuzzes the parser only); a crash or a sanitizer report is the finding. `multipart` also stops
+when a part lies outside the body, a file part is over the limit or there are more than 33 parts.
+Replay a finding with the same `--target`.
 
 A finding prints a `Replay with:` line for each saved input. `--replay` also takes the
 `/workspace/runtime/fuzz/...` path that libFuzzer prints and an absolute path on the host.

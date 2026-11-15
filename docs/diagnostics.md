@@ -99,7 +99,8 @@ failures are isolated per form: see "XML writer stage" below.
 ### Application request
 
 An application run starts from an `ApplicationRequest` (`include/taxbroker/application_request.hpp`),
-which needs neither HTTP nor JSON:
+which needs neither HTTP nor JSON (the HTTP API builds it from an upload, see `architecture.md`,
+"Local HTTP API"):
 
 - the reporting year and the filing type;
 - the taxpayer metadata;
@@ -627,7 +628,17 @@ rules:
   into its question data exactly the facts its answer depends on, such as a currency and date, or
   an action with the broker and transaction ID of every source. A different value is a different
   question.
-- **Answering.** One call takes the answers to any open requests of the current revision. It is
+- **Answering.** One call takes the answers to any open requests of the current revision. Over
+  HTTP the body is `{"runRevision":2,"answers":[{"requestId":"request-0001","answer":"..."}]}`
+  (`POST /api/run/answers`); the form of `answer` is the one of `decisions[].answer`, and the route
+  reads it by the type and question data of the request it names. A rejection is a 422 with
+  `{"rejections":[{"index":0,"messageKey":"answer_rejected.stale_revision","messageParams":
+  {"requestId":"request-0001"}}]}`: the position of the answer, the key and its parameters, and no
+  English sentence. An answer whose JSON does not fit the question is rejected at its position with
+  `answer_rejected.answer_does_not_fit` before it reaches the session; such a 422 lists only these
+  entries, and the session's own checks run once every answer fits. Units are a text with at most 8
+  decimals (`"6"` or `"0.99999998"`), never a JSON number; `newShares` and `oldShares` are whole numbers;
+  `effectiveDate` is `YYYY-MM-DD`. It is
   rejected as a whole, and nothing changes, when one answer names an older revision
   (`answer_rejected.stale_revision`), a request that is not open (`answer_rejected.unknown_request`),
   a request answered twice in the call (`answer_rejected.duplicate_answer`), or an answer that does
@@ -680,7 +691,9 @@ rules:
   that is not listed (`answer_rejected.unknown_decision`) or the same ID twice
   (`answer_rejected.duplicate_delete`) is rejected as a whole; these keys have the `decisionId`
   parameter (`all` when everything was to be deleted). Otherwise the run is recalculated and the
-  questions are asked again.
+  questions are asked again. Over HTTP (`POST /api/run/decisions/delete`) the body is
+  `{"runRevision":3,"decisionIds":["decision-0001"]}` or `{"runRevision":3,"all":true}`, and a
+  rejection has the form above.
 - **Cancellation and missing answers.** Cancel is an answer for every type with question data and
   is recorded on the question; the stage applies the documented rule of its type. For the
   capital failure question the question is closed, its errors stay blocking, capital gains is
