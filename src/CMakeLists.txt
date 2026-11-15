@@ -198,6 +198,7 @@ endif()
 # the backend only through the public headers (the service); the logger comes with the service.
 add_library(taxbroker_server_lib STATIC
     server/browser_open.cpp
+    server/exception_kind.cpp
     server/http_message.cpp
     server/http_server.cpp
     server/multipart.cpp

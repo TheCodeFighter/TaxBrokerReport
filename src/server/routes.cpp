@@ -21,68 +21,15 @@ constexpr std::string_view kPlaceholderPage =
     "<p lang=\"en\">TaxBrokerReport is running. The user interface comes in a later "
     "version.</p></body></html>\n";
 
-/// ASCII lower case of one character.
-char toLowerAscii(char aCharacter) {
-    if (aCharacter >= 'A' && aCharacter <= 'Z')
-    {
-        return static_cast<char>(aCharacter - 'A' + 'a');
-    }
-
-    return aCharacter;
-}
-
-/// True when the two names are equal without regard to case (header names).
-bool sameName(std::string_view aFirst, std::string_view aSecond) {
-    return std::equal(
-        aFirst.begin(),
-        aFirst.end(),
-        aSecond.begin(),
-        aSecond.end(),
-        [](char aLeft, char aRight) { return toLowerAscii(aLeft) == toLowerAscii(aRight); });
-}
-
-/// The values of every header with this name, in the order sent.
-std::vector<std::string_view> headerValues(const HttpRequest& aRequest, std::string_view aName) {
-    std::vector<std::string_view> values;
-
-    for (const HttpField& field : aRequest.mHeaders)
-    {
-        if (sameName(field.mName, aName))
-        {
-            values.push_back(field.mValue);
-        }
-    }
-
-    return values;
-}
-
-/// A response with the security headers (R18) first. No `Access-Control-*` header is ever added
-/// (R9).
-HttpResponse makeResponse(unsigned aStatus, std::string aBody = {}) {
-    HttpResponse response;
-    response.mStatus = aStatus;
-    response.mBody = std::move(aBody);
-
-    for (const HttpHeader& header : securityHeaders())
-    {
-        response.mHeaders.push_back({std::string(header.mName), std::string(header.mValue)});
-    }
-
-    return response;
-}
-
-HttpResponse makeNotAllowedResponse(std::string_view aAllow) {
-    HttpResponse response = makeResponse(405);
-    response.mHeaders.push_back({"Allow", std::string(aAllow)});
-
-    return response;
-}
-
 HttpResponse makeBadRequestResponse() {
-    HttpResponse response = makeResponse(400, R"({"error":"bad_request"})");
-    response.mHeaders.push_back({"Content-Type", "application/json"});
+    return makeErrorCodeResponse(400, "bad_request");
+}
 
-    return response;
+/// One warning for a request that the guard (or an unknown API path) refused: the status and a
+/// fixed reason word. Never a header value, a target or a token, so the line can be sent with a
+/// bug report.
+void logRefusal(unsigned aStatus, std::string_view aReason) {
+    LOG_WARNING("Request refused: {} {}", aStatus, aReason);
 }
 
 /// The Cookie headers as one text; a browser sends one, a client may send several.
@@ -102,6 +49,19 @@ std::string joinedCookies(const HttpRequest& aRequest) {
     return joined;
 }
 
+/// The path of a request target: the text before the `?`.
+std::string_view pathOf(const std::string& aTarget) {
+    return std::string_view(aTarget).substr(0, aTarget.find('?'));
+}
+
+/// The text after the `?` of a request target, or empty.
+std::string_view queryOf(const std::string& aTarget) {
+    const std::size_t mark = aTarget.find('?');
+
+    return mark == std::string::npos ? std::string_view{}
+                                     : std::string_view(aTarget).substr(mark + 1);
+}
+
 /// True for "/api" and every path below "/api/".
 bool isApiPath(std::string_view aPath) {
     return aPath == "/api" || aPath.starts_with("/api/");
@@ -109,39 +69,123 @@ bool isApiPath(std::string_view aPath) {
 
 } // namespace
 
-HttpResponse makeErrorResponse(unsigned aStatus) {
-    return makeResponse(aStatus);
-}
-
 Routes::Routes(std::uint16_t aPort,
                std::string aLinkToken,
                std::string aSessionToken,
                std::filesystem::path aLaunchFile,
-               Clock aClock)
+               Clock aClock,
+               std::size_t aMaxFileBytes)
     : mPort(aPort), mLinkToken(std::move(aLinkToken), aClock()),
       mSessionToken(std::move(aSessionToken)), mLaunchFile(std::move(aLaunchFile)),
-      mClock(std::move(aClock)) {}
+      mClock(std::move(aClock)), mRunRoutes(aMaxFileBytes) {}
 
-HttpResponse Routes::handle(const HttpRequest& aRequest) {
+Routes::Verdict Routes::check(const HttpRequest& aRequest) const {
     // Step 1: the Host header (R7).
     const std::vector<std::string_view> hosts = headerValues(aRequest, "Host");
 
     if (hosts.size() != 1 || !isAllowedHost(hosts.front(), mPort))
     {
-        return makeResponse(403);
+        return {Target::Refused, makeResponse(403), "host_not_allowed"};
     }
 
     // The origin form is the only one a browser sends to a server; "*" and a full URL are not.
     if (aRequest.mTarget.empty() || aRequest.mTarget.front() != '/')
     {
-        return makeBadRequestResponse();
+        return {Target::Refused, makeBadRequestResponse(), "bad_target"};
     }
 
-    const std::string_view path =
-        std::string_view(aRequest.mTarget).substr(0, aRequest.mTarget.find('?'));
-
     // Step 2: the page and unknown paths need no login.
+    const std::string_view path = pathOf(aRequest.mTarget);
+
     if (!isApiPath(path))
+    {
+        return {Target::Page, {}};
+    }
+
+    // Step 3: the Origin header (R8). Two Origin headers are never sent by a browser.
+    const std::vector<std::string_view> origins = headerValues(aRequest, "Origin");
+
+    if (origins.size() > 1)
+    {
+        return {Target::Refused, makeResponse(403), "origin_repeated"};
+    }
+
+    std::optional<std::string_view> origin;
+
+    if (!origins.empty())
+    {
+        origin = origins.front();
+    }
+
+    if (!isAllowedOrigin(origin, mPort, isStateChangingMethod(aRequest.mMethod)))
+    {
+        return {Target::Refused,
+                makeResponse(403),
+                origin.has_value() ? "origin_not_allowed" : "origin_missing"};
+    }
+
+    // Step 4: the client header (R17).
+    const std::vector<std::string_view> clients = headerValues(aRequest, kClientHeaderName);
+
+    if (clients.size() != 1 || clients.front() != kClientHeaderValue)
+    {
+        return {Target::Refused, makeResponse(403), "client_header"};
+    }
+
+    // Step 5: the login is the one API call without a session.
+    if (path == "/api/session" && aRequest.mMethod == "POST")
+    {
+        return {Target::Login, {}};
+    }
+
+    // Step 6: every other API call needs the session cookie (R5). An unknown path without it is
+    // 401, not 404, so the paths cannot be discovered.
+    const std::string cookies = joinedCookies(aRequest);
+    const std::optional<std::string_view> session = findSessionToken(cookies, mPort);
+
+    if (!session.has_value())
+    {
+        return {Target::Refused, makeResponse(401), "no_session"};
+    }
+
+    if (!tokenMatches(mSessionToken, *session))
+    {
+        return {Target::Refused, makeResponse(401), "session_wrong"};
+    }
+
+    return {Target::Api, {}};
+}
+
+BodyPolicy Routes::bodyPolicy(const HttpRequest& aHeaderOnly) const {
+    const Verdict verdict = check(aHeaderOnly);
+
+    if (verdict.mTarget == Target::Refused)
+    {
+        return {kDefaultBodyLimit, false};
+    }
+
+    if (verdict.mTarget == Target::Api && aHeaderOnly.mMethod == "POST" &&
+        pathOf(aHeaderOnly.mTarget) == "/api/run")
+    {
+        return {mRunRoutes.uploadBodyLimit(), true};
+    }
+
+    return {kDefaultBodyLimit, true};
+}
+
+HttpResponse Routes::handle(const HttpRequest& aRequest) {
+    const Verdict verdict = check(aRequest);
+
+    if (verdict.mTarget == Target::Refused)
+    {
+        logRefusal(verdict.mRefusal.mStatus, verdict.mReason);
+
+        return verdict.mRefusal;
+    }
+
+    const std::string_view path = pathOf(aRequest.mTarget);
+
+    if (verdict.mTarget == Target::Page)
     {
         if (path != "/")
         {
@@ -164,58 +208,28 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
         return page;
     }
 
-    // Step 3: the Origin header (R8). Two Origin headers are never sent by a browser.
-    const std::vector<std::string_view> origins = headerValues(aRequest, "Origin");
-
-    if (origins.size() > 1)
-    {
-        return makeResponse(403);
-    }
-
-    std::optional<std::string_view> origin;
-
-    if (!origins.empty())
-    {
-        origin = origins.front();
-    }
-
-    if (!isAllowedOrigin(origin, mPort, isStateChangingMethod(aRequest.mMethod)))
-    {
-        return makeResponse(403);
-    }
-
-    // Step 4: the client header (R17).
-    const std::vector<std::string_view> clients = headerValues(aRequest, kClientHeaderName);
-
-    if (clients.size() != 1 || clients.front() != kClientHeaderValue)
-    {
-        return makeResponse(403);
-    }
-
-    // Step 5: the login is the one API call without a session.
-    if (path == "/api/session" && aRequest.mMethod == "POST")
+    if (verdict.mTarget == Target::Login)
     {
         return login(aRequest);
     }
 
-    // Step 6: every other API call needs the session cookie (R5). An unknown path without it is
-    // 401, not 404, so the paths cannot be discovered.
-    const std::string cookies = joinedCookies(aRequest);
-    const std::optional<std::string_view> session = findSessionToken(cookies, mPort);
-
-    if (!session.has_value() || !tokenMatches(mSessionToken, *session))
+    // Step 7: the routes.
+    if (path == "/api/run" || path.starts_with("/api/run/"))
     {
-        return makeResponse(401);
+        return mRunRoutes.handle(aRequest, path, queryOf(aRequest.mTarget));
     }
 
-    // Step 7: the routes.
     if (path != "/api/session")
     {
+        logRefusal(404, "not_found");
+
         return makeResponse(404);
     }
 
     if (aRequest.mMethod != "GET")
     {
+        logRefusal(405, "method_not_allowed");
+
         return makeNotAllowedResponse("GET, POST");
     }
 
@@ -227,11 +241,18 @@ HttpResponse Routes::login(const HttpRequest& aRequest) {
 
     if (!body.is_object() || !body.contains("token") || !body["token"].is_string())
     {
+        LOG_WARNING("Login refused: 400 bad_request");
+
         return makeBadRequestResponse();
     }
 
-    if (!mLinkToken.redeem(body["token"].get<std::string>(), mClock()))
+    const LinkRedeem redeemed = mLinkToken.redeem(body["token"].get<std::string>(), mClock());
+
+    if (redeemed != LinkRedeem::Redeemed)
     {
+        // Used, expired or wrong: the word tells the user which link problem to look for.
+        LOG_WARNING("Login refused: 401 {}", linkRedeemWord(redeemed));
+
         return makeResponse(401);
     }
 

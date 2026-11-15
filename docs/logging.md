@@ -128,6 +128,31 @@ ignored and the default is used. The logger writes one warning with the name of 
 
 ---
 
+## What the server logs
+
+A bug report is the log file. Every line holds fixed words, counts, statuses and message keys, and
+never a value, a name, an ISIN, a file name, a path, a query or a token (R13 in `architecture.md`).
+
+| Level | Line | When |
+| --- | --- | --- |
+| info | `Server listening on <host>:<port>`, `Server stopped` | start and stop |
+| info / warning | `The browser program was started` / `The browser program could not be started; the link in the output works` | the opener of the launch file |
+| warning | `Log setting <name> is not valid and is ignored: the default is used` | a wrong `TBR_LOG_*` variable |
+| warning | `Request refused: <status> <word>` | the guard: `host_not_allowed`, `bad_target`, `origin_repeated`, `origin_missing`, `origin_not_allowed`, `client_header`, `no_session`, `session_wrong`; an unknown API path (`not_found`) or method (`method_not_allowed`) |
+| info / warning | `Browser login done` / `Login refused: <status> <word>` | the login: `link_used`, `link_expired`, `link_wrong`, `bad_request` |
+| warning | `Run request refused: <status> <code> [(<limit or reason>)]` | every refusal of the run API |
+| info | `Run started: year, filing, developer mode, brokers [<broker> x<n>], ecb rate files, reference files` (`Run restarted: ...`) | an upload |
+| info | `Run result: revision=<n> status=<s> capitalGains=<s> dividends=<s> bankInterest=<s> otherInterest=<s> requests=<n> errors=<n> warnings=<n>` | after an upload, answers or deletes |
+| info | `Run details: requests [<type> x<n>]; errors [<code> x<n>]; warnings [<code> x<n>]` | the same moments: which questions are open and which diagnostic codes were raised |
+| info | `Answers accepted: <n>`, `Answers deleted: <n or all>`, `Report downloaded: <report>, revision <n>, <bytes> bytes[, unsafe developer export]` | the steps of the run API |
+| debug | `Run result requested: revision <n>` | `GET /api/run` |
+| error | `Run request failed: <route> (<exception type>)`, `A request handler failed: <verb> <step> (<exception type>)` | a handler threw; the text of the exception is never logged |
+
+The parser, the input-file checks and the XML writers log their own errors (source index and row
+number, never the row). The processors and the command line write no log line of their own yet.
+
+---
+
 ## Usage
 
 Logging macros:

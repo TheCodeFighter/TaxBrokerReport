@@ -1,5 +1,7 @@
 #include "request_guard.hpp"
 
+#include "ascii_text.hpp"
+
 #include <array>
 #include <cstddef>
 #include <stdexcept>
@@ -44,56 +46,12 @@ void fillRandomBytes(std::array<unsigned char, kTokenBytes>& aBuffer) {
     }
 }
 
-/// ASCII lower case of one character; other bytes are unchanged.
-char toLowerAscii(char aCharacter) {
-    if (aCharacter >= 'A' && aCharacter <= 'Z')
-    {
-        return static_cast<char>(aCharacter - 'A' + 'a');
-    }
-
-    return aCharacter;
-}
-
-/// True when the two texts are equal when ASCII letters are compared without case.
-bool equalsIgnoringCase(std::string_view aFirst, std::string_view aSecond) {
-    if (aFirst.size() != aSecond.size())
-    {
-        return false;
-    }
-
-    for (std::size_t index = 0; index < aFirst.size(); ++index)
-    {
-        if (toLowerAscii(aFirst[index]) != toLowerAscii(aSecond[index]))
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 /// True when aValue is aPrefix + "127.0.0.1:" or "localhost:" + aPort, without case.
 bool isLoopbackAuthority(std::string_view aValue, std::string_view aPrefix, std::uint16_t aPort) {
     const std::string port = std::to_string(aPort);
 
-    return equalsIgnoringCase(aValue, std::string(aPrefix) + "127.0.0.1:" + port) ||
-           equalsIgnoringCase(aValue, std::string(aPrefix) + "localhost:" + port);
-}
-
-/// Removes spaces and tabs at both ends.
-std::string_view trimBlanks(std::string_view aText) {
-    constexpr std::string_view kBlanks = " \t";
-
-    const std::size_t first = aText.find_first_not_of(kBlanks);
-
-    if (first == std::string_view::npos)
-    {
-        return {};
-    }
-
-    const std::size_t last = aText.find_last_not_of(kBlanks);
-
-    return aText.substr(first, last - first + 1);
+    return equalsIgnoringAsciiCase(aValue, std::string(aPrefix) + "127.0.0.1:" + port) ||
+           equalsIgnoringAsciiCase(aValue, std::string(aPrefix) + "localhost:" + port);
 }
 
 } // namespace
@@ -143,15 +101,41 @@ const std::string& LinkToken::value() const {
     return mValue;
 }
 
-bool LinkToken::redeem(std::string_view aGiven, std::chrono::steady_clock::time_point aNow) {
-    if (mRedeemed || aNow - mIssuedAt >= kLinkTokenLifetime || !tokenMatches(mValue, aGiven))
+LinkRedeem LinkToken::redeem(std::string_view aGiven, std::chrono::steady_clock::time_point aNow) {
+    if (mRedeemed)
     {
-        return false;
+        return LinkRedeem::AlreadyUsed;
+    }
+
+    if (aNow - mIssuedAt >= kLinkTokenLifetime)
+    {
+        return LinkRedeem::Expired;
+    }
+
+    if (!tokenMatches(mValue, aGiven))
+    {
+        return LinkRedeem::Wrong;
     }
 
     mRedeemed = true;
 
-    return true;
+    return LinkRedeem::Redeemed;
+}
+
+std::string_view linkRedeemWord(LinkRedeem aResult) {
+    switch (aResult)
+    {
+    case LinkRedeem::Redeemed:
+        return "redeemed";
+    case LinkRedeem::AlreadyUsed:
+        return "link_used";
+    case LinkRedeem::Expired:
+        return "link_expired";
+    case LinkRedeem::Wrong:
+        return "link_wrong";
+    }
+
+    return "link_wrong";
 }
 
 std::string sessionCookieName(std::uint16_t aPort) {

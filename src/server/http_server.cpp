@@ -1,5 +1,7 @@
 #include "http_server.hpp"
 
+#include "exception_kind.hpp"
+
 #include "taxbroker/logging.hpp"
 
 #include <boost/asio.hpp>
@@ -10,6 +12,8 @@
 #include <exception>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #if !defined(_WIN32)
@@ -27,6 +31,9 @@ using tcp = asio::ip::tcp;
 
 /// The wait before the next accept after an accept error.
 constexpr std::chrono::milliseconds kAcceptRetryDelay{100};
+
+/// The interim response that tells a client to send the body.
+constexpr std::string_view kContinueResponse = "HTTP/1.1 100 Continue\r\n\r\n";
 
 /// True when the error comes from the HTTP parser (a bad request), not from the socket.
 bool isParserError(const beast::error_code& aError) {
@@ -57,8 +64,10 @@ class Connection : public std::enable_shared_from_this<Connection> {
   public:
     Connection(tcp::socket&& aSocket,
                const HttpServerOptions& aOptions,
-               std::shared_ptr<const HttpServer::Handler> aHandler)
-        : mStream(std::move(aSocket)), mOptions(aOptions), mHandler(std::move(aHandler)) {}
+               std::shared_ptr<const HttpServer::Handler> aHandler,
+               std::shared_ptr<const HttpServer::BodyPolicyFunction> aBodyPolicy)
+        : mStream(std::move(aSocket)), mOptions(aOptions), mHandler(std::move(aHandler)),
+          mBodyPolicy(std::move(aBodyPolicy)) {}
 
     void start() {
         read();
@@ -68,25 +77,131 @@ class Connection : public std::enable_shared_from_this<Connection> {
     void read() {
         mParser.emplace();
         mParser->header_limit(static_cast<std::uint32_t>(mOptions.mHeaderLimit));
-        mParser->body_limit(mOptions.mBodyLimit);
+
+        // The body limit comes from the body policy after the header is read, and Beast checks a
+        // declared length against the limit while it reads the header: no limit until then.
+        mParser->body_limit(boost::none);
+        mRequest = HttpRequest{};
+
+        // The header has the whole timeout; the body gets it again for every chunk.
         mStream.expires_after(mOptions.mTimeout);
 
-        http::async_read(mStream,
-                         mBuffer,
-                         *mParser,
-                         [self = shared_from_this()](beast::error_code aError, std::size_t) {
-                             self->onRead(aError);
-                         });
+        http::async_read_header(mStream,
+                                mBuffer,
+                                *mParser,
+                                [self = shared_from_this()](beast::error_code aError, std::size_t) {
+                                    self->onHeader(aError);
+                                });
     }
 
-    void onRead(beast::error_code aError) {
-        if (!aError)
+    void onHeader(beast::error_code aError) {
+        if (aError)
+        {
+            onReadError(aError);
+
+            return;
+        }
+
+        const http::request<http::string_body>& message = mParser->get();
+
+        mRequest.mMethod = std::string(message.method_string());
+        mRequest.mTarget = std::string(message.target());
+
+        for (const auto& field : message)
+        {
+            mRequest.mHeaders.push_back(
+                {std::string(field.name_string()), std::string(field.value())});
+        }
+
+        // The limit comes from the header alone, so the body of a caller without a session is
+        // never held beyond the default limit.
+        BodyPolicy policy{mOptions.mBodyLimit, true};
+
+        if (*mBodyPolicy)
+        {
+            try
+            { policy = (*mBodyPolicy)(mRequest); } catch (...)
+            {
+                // The verb is the library's name for it; the target and the text are the caller's.
+                LOG_ERROR("A request handler failed: {} body_policy ({})",
+                          http::to_string(message.method()),
+                          currentExceptionKind());
+                write(makeErrorResponse(500), 11, false);
+
+                return;
+            }
+        }
+
+        mParser->body_limit(policy.mLimit);
+
+        // A declared length over the limit is refused at once, without waiting for the body.
+        const auto declaredLength = mParser->content_length();
+
+        if (declaredLength && *declaredLength > policy.mLimit)
+        {
+            // Only the fixed limit: the declared length and the target are the caller's.
+            LOG_WARNING("Request refused: 413 body_over_the_limit (limit {})", policy.mLimit);
+            write(makeErrorResponse(413), 11, false);
+
+            return;
+        }
+
+        if (mParser->is_done())
         {
             answer();
 
             return;
         }
 
+        if (beast::iequals(message[http::field::expect], "100-continue") && policy.mGuardPassed)
+        {
+            asio::async_write(
+                mStream,
+                asio::buffer(kContinueResponse),
+                [self = shared_from_this()](beast::error_code aWriteError, std::size_t) {
+                    if (aWriteError)
+                    {
+                        self->close();
+
+                        return;
+                    }
+
+                    self->readBody();
+                });
+
+            return;
+        }
+
+        readBody();
+    }
+
+    /// Reads the body in chunks; every chunk that arrives renews the idle timeout.
+    void readBody() {
+        mStream.expires_after(mOptions.mTimeout);
+
+        http::async_read_some(mStream,
+                              mBuffer,
+                              *mParser,
+                              [self = shared_from_this()](beast::error_code aError, std::size_t) {
+                                  if (aError)
+                                  {
+                                      self->onReadError(aError);
+
+                                      return;
+                                  }
+
+                                  if (self->mParser->is_done())
+                                  {
+                                      self->answer();
+
+                                      return;
+                                  }
+
+                                  self->readBody();
+                              });
+    }
+
+    void onReadError(beast::error_code aError) {
         // A timeout, a closed or reset connection: nothing to answer.
         if (!isParserError(aError) || aError == http::error::end_of_stream ||
             aError == http::error::partial_message)
@@ -107,38 +222,37 @@ class Connection : public std::enable_shared_from_this<Connection> {
             status = 413;
         }
 
+        LOG_WARNING("Request refused: {} unreadable_request", status);
+
         // The rest of the message was not read, so the connection cannot be used again.
         write(makeErrorResponse(status), 11, false);
     }
 
     void answer() {
-        const http::request<http::string_body>& request = mParser->get();
+        http::request<http::string_body> message = mParser->release();
 
-        HttpRequest converted;
-        converted.mMethod = std::string(request.method_string());
-        converted.mTarget = std::string(request.target());
-        converted.mBody = request.body();
-
-        for (const auto& field : request)
-        {
-            converted.mHeaders.push_back(
-                {std::string(field.name_string()), std::string(field.value())});
-        }
+        // The body moves out of the parser: it is never copied.
+        mRequest.mBody = std::move(message.body());
 
         HttpResponse response;
 
         try
         {
             // The one place where business code runs for a request.
-            response = (*mHandler)(converted);
-        } catch (const std::exception&)
+            response = (*mHandler)(mRequest);
+        } catch (...)
         {
-            // No detail in the log: an exception text can hold a path or a value.
-            LOG_ERROR("A request handler failed");
+            // The kind of the exception only: its text can hold a path or a value.
+            LOG_ERROR("A request handler failed: {} handler ({})",
+                      http::to_string(message.method()),
+                      currentExceptionKind());
             response = makeErrorResponse(500);
         }
 
-        write(std::move(response), request.version(), request.keep_alive());
+        // The request is not needed any more: free the body before the response is written.
+        mRequest = HttpRequest{};
+
+        write(std::move(response), message.version(), message.keep_alive());
     }
 
     void write(HttpResponse aResponse, unsigned aVersion, bool aKeepAlive) {
@@ -180,8 +294,10 @@ class Connection : public std::enable_shared_from_this<Connection> {
     beast::tcp_stream mStream;
     beast::flat_buffer mBuffer;
     std::optional<http::request_parser<http::string_body>> mParser;
+    HttpRequest mRequest; ///< The request being read: the header first, the body at the end.
     HttpServerOptions mOptions;
     std::shared_ptr<const HttpServer::Handler> mHandler;
+    std::shared_ptr<const HttpServer::BodyPolicyFunction> mBodyPolicy;
 };
 
 } // namespace
@@ -233,7 +349,8 @@ struct HttpServer::Impl {
                 return;
             }
 
-            std::make_shared<Connection>(std::move(aSocket), mOptions, mHandler)->start();
+            std::make_shared<Connection>(std::move(aSocket), mOptions, mHandler, mBodyPolicy)
+                ->start();
             accept();
         });
     }
@@ -243,6 +360,7 @@ struct HttpServer::Impl {
     tcp::acceptor mAcceptor;
     asio::steady_timer mRetryTimer; ///< Waits after an accept error.
     std::shared_ptr<const HttpServer::Handler> mHandler;
+    std::shared_ptr<const HttpServer::BodyPolicyFunction> mBodyPolicy;
 };
 
 HttpServer::HttpServer(const std::string& aHost,
@@ -256,8 +374,9 @@ std::uint16_t HttpServer::port() const {
     return mImpl->mAcceptor.local_endpoint().port();
 }
 
-void HttpServer::run(Handler aHandler) {
+void HttpServer::run(Handler aHandler, BodyPolicyFunction aBodyPolicy) {
     mImpl->mHandler = std::make_shared<const Handler>(std::move(aHandler));
+    mImpl->mBodyPolicy = std::make_shared<const BodyPolicyFunction>(std::move(aBodyPolicy));
 
     std::optional<asio::signal_set> signals;
 

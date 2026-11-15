@@ -3,6 +3,7 @@
 #include "browser_open.hpp"
 #include "server_config.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iosfwd>
@@ -16,6 +17,9 @@ struct ServerHooks {
     /// may be called from any thread. May be empty.
     std::function<void(std::uint16_t, std::function<void()>)> mOnListening;
     bool mHandleSignals{}; ///< True: SIGINT and SIGTERM stop the server. Always set.
+    /// The longest file of an upload in bytes; a longer one is refused. Always set (the server
+    /// passes `kMaxInputFileBytes`; a test passes a small one).
+    std::size_t mMaxFileBytes{};
 };
 
 /// Starts the local server and serves until it is stopped. Prints the browser link to aOut (also
