@@ -24,7 +24,6 @@ namespace {
 
 constexpr std::chrono::seconds kRequestTimeout{30};
 constexpr std::size_t kHeaderLimit = 8 * 1024;
-constexpr std::uint64_t kBodyLimit = 1024 * 1024;
 
 /// Writes the error line and logs it. The text never holds a path or a value.
 int fail(std::ostream& aErr, const std::string& aMessage) {
@@ -56,8 +55,10 @@ int StartServer(const EnvLookup& aEnv,
     }
 
     std::filesystem::path launchFile;
-    std::unique_ptr<HttpServer> server;
+    // Declared in this order on purpose: members die in reverse, so the server (and the
+    // connections still holding the handler lambdas that point at `routes`) goes first.
     std::unique_ptr<Routes> routes;
+    std::unique_ptr<HttpServer> server;
     std::string linkToken;
 
     try
@@ -65,7 +66,7 @@ int StartServer(const EnvLookup& aEnv,
         HttpServerOptions options;
         options.mTimeout = kRequestTimeout;
         options.mHeaderLimit = kHeaderLimit;
-        options.mBodyLimit = kBodyLimit;
+        options.mBodyLimit = kDefaultBodyLimit;
         options.mHandleSignals = aHooks.mHandleSignals;
 
         // Bind first: the port may be random, and the tokens and the link need the real one.
@@ -74,9 +75,13 @@ int StartServer(const EnvLookup& aEnv,
         // Two secrets (R4); they are kept in memory only.
         linkToken = makeToken();
         launchFile = launchFilePath(config, aEnv);
-        routes = std::make_unique<Routes>(server->port(), linkToken, makeToken(), launchFile, []() {
-            return std::chrono::steady_clock::now();
-        });
+        routes = std::make_unique<Routes>(
+            server->port(),
+            linkToken,
+            makeToken(),
+            launchFile,
+            []() { return std::chrono::steady_clock::now(); },
+            aHooks.mMaxFileBytes);
 
         // A TBR_LAUNCH_FILE folder is made by the caller (Docker: scripts/run.sh).
         if (!config.mLaunchFile.has_value())
@@ -97,7 +102,15 @@ int StartServer(const EnvLookup& aEnv,
     // fail later (no desktop), so the link is printed in both cases.
     if (!config.mLaunchFile.has_value())
     {
-        (void)aHooks.mOpener(launchFile);
+        // The file name is not in the line: only whether the program started.
+        if (aHooks.mOpener(launchFile))
+        {
+            LOG_INFO("The browser program was started");
+        }
+        else
+        {
+            LOG_WARNING("The browser program could not be started; the link in the output works");
+        }
     }
 
     // The link is for the user, so it goes to the output, never to the log (R4, R13). Flushed at
@@ -113,7 +126,8 @@ int StartServer(const EnvLookup& aEnv,
         aHooks.mOnListening(port, [&server]() { server->stop(); });
     }
 
-    server->run([&routes](const HttpRequest& aRequest) { return routes->handle(aRequest); });
+    server->run([&routes](const HttpRequest& aRequest) { return routes->handle(aRequest); },
+                [&routes](const HttpRequest& aHeader) { return routes->bodyPolicy(aHeader); });
 
     std::error_code ignored;
     std::filesystem::remove(launchFile, ignored);

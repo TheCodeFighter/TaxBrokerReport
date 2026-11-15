@@ -137,37 +137,61 @@ TEST(RequestGuardTest, LinkTokenIsRedeemedOnce) {
     const auto issuedAt = std::chrono::steady_clock::time_point{std::chrono::seconds{1000}};
     LinkToken token{"ab12", issuedAt};
 
-    EXPECT_TRUE(token.redeem("ab12", issuedAt + std::chrono::seconds{1}));
-    EXPECT_FALSE(token.redeem("ab12", issuedAt + std::chrono::seconds{2}));
+    EXPECT_EQ(token.redeem("ab12", issuedAt + std::chrono::seconds{1}), LinkRedeem::Redeemed);
+    EXPECT_EQ(token.redeem("ab12", issuedAt + std::chrono::seconds{2}), LinkRedeem::AlreadyUsed);
 }
 
 TEST(RequestGuardTest, LinkTokenIsRedeemedJustBeforeItsLifetimeEnds) {
     const auto issuedAt = std::chrono::steady_clock::time_point{std::chrono::seconds{1000}};
     LinkToken token{"ab12", issuedAt};
 
-    EXPECT_TRUE(token.redeem("ab12", issuedAt + std::chrono::seconds{119}));
+    EXPECT_EQ(token.redeem("ab12", issuedAt + std::chrono::seconds{119}), LinkRedeem::Redeemed);
 }
 
 TEST(RequestGuardTest, LinkTokenExpiresAfter120Seconds) {
     const auto issuedAt = std::chrono::steady_clock::time_point{std::chrono::seconds{1000}};
     LinkToken token{"ab12", issuedAt};
 
-    EXPECT_FALSE(token.redeem("ab12", issuedAt + std::chrono::seconds{120}));
+    EXPECT_EQ(token.redeem("ab12", issuedAt + std::chrono::seconds{120}), LinkRedeem::Expired);
 }
 
 TEST(RequestGuardTest, WrongLinkTokenDoesNotUseItUp) {
     const auto issuedAt = std::chrono::steady_clock::time_point{std::chrono::seconds{1000}};
     LinkToken token{"ab12", issuedAt};
 
-    EXPECT_FALSE(token.redeem("ab13", issuedAt + std::chrono::seconds{1}));
-    EXPECT_TRUE(token.redeem("ab12", issuedAt + std::chrono::seconds{2}));
+    EXPECT_EQ(token.redeem("ab13", issuedAt + std::chrono::seconds{1}), LinkRedeem::Wrong);
+    EXPECT_EQ(token.redeem("ab12", issuedAt + std::chrono::seconds{2}), LinkRedeem::Redeemed);
+}
+
+TEST(RequestGuardTest, AUsedAndExpiredTokenGivesTheUsedFaultFirst) {
+    const auto issuedAt = std::chrono::steady_clock::time_point{std::chrono::seconds{1000}};
+    LinkToken token{"ab12", issuedAt};
+
+    EXPECT_EQ(token.redeem("ab12", issuedAt + std::chrono::seconds{1}), LinkRedeem::Redeemed);
+
+    // Used and also past its lifetime: the first fault that applies is AlreadyUsed.
+    EXPECT_EQ(token.redeem("wrong", issuedAt + std::chrono::seconds{500}), LinkRedeem::AlreadyUsed);
+}
+
+TEST(RequestGuardTest, AnExpiredTokenWithAWrongTextIsExpired) {
+    const auto issuedAt = std::chrono::steady_clock::time_point{std::chrono::seconds{1000}};
+    LinkToken token{"ab12", issuedAt};
+
+    EXPECT_EQ(token.redeem("ab13", issuedAt + std::chrono::seconds{120}), LinkRedeem::Expired);
+}
+
+TEST(RequestGuardTest, LinkRedeemWordsAreFixed) {
+    EXPECT_EQ(linkRedeemWord(LinkRedeem::Redeemed), "redeemed");
+    EXPECT_EQ(linkRedeemWord(LinkRedeem::AlreadyUsed), "link_used");
+    EXPECT_EQ(linkRedeemWord(LinkRedeem::Expired), "link_expired");
+    EXPECT_EQ(linkRedeemWord(LinkRedeem::Wrong), "link_wrong");
 }
 
 TEST(RequestGuardTest, EmptyLinkTokenNeverRedeems) {
     const auto issuedAt = std::chrono::steady_clock::time_point{std::chrono::seconds{1000}};
     LinkToken token{"", issuedAt};
 
-    EXPECT_FALSE(token.redeem("", issuedAt));
+    EXPECT_EQ(token.redeem("", issuedAt), LinkRedeem::Wrong);
 }
 
 TEST(RequestGuardTest, LinkTokenKeepsItsValue) {

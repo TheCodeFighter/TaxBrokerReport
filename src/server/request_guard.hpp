@@ -29,6 +29,18 @@ isAllowedOrigin(std::optional<std::string_view> aOrigin, std::uint16_t aPort, bo
 /// How long a link token can be redeemed after it was made.
 inline constexpr std::chrono::seconds kLinkTokenLifetime{120};
 
+/// The result of redeeming the link token.
+enum class LinkRedeem {
+    Redeemed,    ///< The token matched and is used up now.
+    AlreadyUsed, ///< It was redeemed before.
+    Expired,     ///< kLinkTokenLifetime or more has passed since the issue time.
+    Wrong,       ///< The given text is not the token.
+};
+
+/// The fixed word of a refused result for the log: `link_used`, `link_expired` or `link_wrong`.
+/// Redeemed has none and gives `redeemed`.
+[[nodiscard]] std::string_view linkRedeemWord(LinkRedeem aResult);
+
 /// The one-time token of the browser link. It can be redeemed once, before its lifetime ends.
 class LinkToken {
   public:
@@ -38,9 +50,11 @@ class LinkToken {
     /// The token text for the launch page.
     [[nodiscard]] const std::string& value() const;
 
-    /// True once: when aGiven matches, it was not redeemed before and aNow is less than
-    /// kLinkTokenLifetime after the issue time. A wrong token does not use it up.
-    [[nodiscard]] bool redeem(std::string_view aGiven, std::chrono::steady_clock::time_point aNow);
+    /// Redeemed once: when aGiven matches, it was not redeemed before and aNow is less than
+    /// kLinkTokenLifetime after the issue time. Otherwise the first fault that applies, in the
+    /// order AlreadyUsed, Expired, Wrong. A wrong token does not use it up.
+    [[nodiscard]] LinkRedeem redeem(std::string_view aGiven,
+                                    std::chrono::steady_clock::time_point aNow);
 
   private:
     std::string mValue;

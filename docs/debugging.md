@@ -87,8 +87,10 @@ The server prints `Open http://127.0.0.1:8080/#token=<64 characters> in your bro
 `tests/manual/api/local_api.env.example` to `tests/manual/api/.env` (Git ignores it) and put the 64
 characters after `#token=` into `TBR_LINK_TOKEN`; `local_api.http` reads it with `{{$dotenv}}`, so
 no token is in a committed file. Then use **Send Request** on the requests in that file in order:
-the page, the login (204 and a cookie; a second try gives 401) and the session check (204 after
-the login, 401 before it).
+the page, the login (204 and a cookie; a second try gives 401), the session check (204 after
+the login, 401 before it) and the run: the upload of the synthetic pipeline files (a
+`multipart/form-data` body whose files the extension reads with `< ../../test_data/...`), the
+result, an answer, a stale answer (422), the XML download and the deletion of the answer.
 
 ## Troubleshooting
 

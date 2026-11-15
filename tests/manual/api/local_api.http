@@ -1,4 +1,7 @@
-# Manual test of the local server API with the VS Code extension.
+# Manual test of the local server API with the VS Code extension "REST Client"
+# (id humao.rest-client, install it from the Extensions view). It adds a "Send Request" link above
+# every "###" block of this file; click it (or press Ctrl+Alt+R inside a block) and the answer opens
+# in a pane on the right. Run the blocks in order, 1 to 9.
 # Start the server without a browser, so the one-time link stays unused:
 #
 #   scripts/run.sh --no-browser
@@ -26,3 +29,69 @@ Content-Type: application/json
 ### 3. Am I logged in? 204 after step 2, 401 before it
 GET http://127.0.0.1:{{port}}/api/session
 X-TaxBroker: 1
+
+### 4. Upload the synthetic pipeline files for 2024: 200 and the whole result (schema 2)
+# The extension keeps the session cookie of step 2. The files are read from the repository next to
+# this file. The result has runRevision 1 and one open request, the deposit interest total.
+POST http://127.0.0.1:{{port}}/api/run
+Origin: http://127.0.0.1:{{port}}
+X-TaxBroker: 1
+Content-Type: multipart/form-data; boundary=tbrBoundary7MA4YWxk
+
+--tbrBoundary7MA4YWxk
+Content-Disposition: form-data; name="request"
+Content-Type: application/json
+
+{"reportingYear":2024,"filingType":"original","developerMode":false,
+ "taxpayer":{"taxNumber":"12345678","isResident":true,"name":"Synthetic Taxpayer"},
+ "files":[{"part":"file0","kind":"broker","broker":"trade_republic"},
+          {"part":"file1","kind":"broker","broker":"trade_republic"},
+          {"part":"file2","kind":"ecb_rates"}]}
+--tbrBoundary7MA4YWxk
+Content-Disposition: form-data; name="file0"; filename="export_2023_2024.csv"
+Content-Type: text/csv
+
+< ../../test_data/pipeline/export_2023_2024.csv
+--tbrBoundary7MA4YWxk
+Content-Disposition: form-data; name="file1"; filename="export_2024_2025.csv"
+Content-Type: text/csv
+
+< ../../test_data/pipeline/export_2024_2025.csv
+--tbrBoundary7MA4YWxk
+Content-Disposition: form-data; name="file2"; filename="report_ecb_rates.csv"
+Content-Type: text/csv
+
+< ../../test_data/cli/report_ecb_rates.csv
+--tbrBoundary7MA4YWxk--
+
+### 5. The result again (404 {"error":"no_run"} before step 4)
+GET http://127.0.0.1:{{port}}/api/run
+X-TaxBroker: 1
+
+### 6. Answer the deposit question for revision 1: 200, runRevision 2
+POST http://127.0.0.1:{{port}}/api/run/answers
+Origin: http://127.0.0.1:{{port}}
+X-TaxBroker: 1
+Content-Type: application/json
+
+{"runRevision":1,"answers":[{"requestId":"request-0001","answer":"above_limit"}]}
+
+### 7. The same answer again: 422, answer_rejected.stale_revision, nothing changes
+POST http://127.0.0.1:{{port}}/api/run/answers
+Origin: http://127.0.0.1:{{port}}
+X-TaxBroker: 1
+Content-Type: application/json
+
+{"runRevision":1,"answers":[{"requestId":"request-0001","answer":"above_limit"}]}
+
+### 8. Download Doh-KDVP for revision 2: 200 and Doh-KDVP_2024.xml (revision=1 gives 409)
+GET http://127.0.0.1:{{port}}/api/run/reports/capitalGains/xml?revision=2
+X-TaxBroker: 1
+
+### 9. Delete the recorded answer: 200, runRevision 3, the deposit question is open again
+POST http://127.0.0.1:{{port}}/api/run/decisions/delete
+Origin: http://127.0.0.1:{{port}}
+X-TaxBroker: 1
+Content-Type: application/json
+
+{"runRevision":2,"decisionIds":["decision-0001"]}

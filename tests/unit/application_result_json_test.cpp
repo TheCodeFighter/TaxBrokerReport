@@ -3226,4 +3226,93 @@ TEST(ApplicationResultJsonTest, ARowWhoseKindWasNeverSetIsWrittenAsUnknownNotAsA
               "unknown");
 }
 
+TEST(ApplicationResultJsonTest, TheLogSummaryHoldsStatusesAndCountsOnly) {
+    ApplicationResult result;
+
+    result.mRunRevision = 3;
+    result.mStatus = OverallStatus::NeedsInput;
+    result.mReports[static_cast<std::size_t>(ReportType::CapitalGains)].mStatus =
+        ReportStatus::NeedsInput;
+    result.mReports[static_cast<std::size_t>(ReportType::Dividends)].mStatus =
+        ReportStatus::Generated;
+    result.mReports[static_cast<std::size_t>(ReportType::BankDepositInterest)].mStatus =
+        ReportStatus::NoData;
+    result.mReports[static_cast<std::size_t>(ReportType::OtherInterest)].mStatus =
+        ReportStatus::Failed;
+
+    result.mRequests.push_back(
+        DecisionRequest{.mId = "request-0001",
+                        .mType = RequestType::LossEligibilityConfirmationRequired,
+                        .mRunRevision = 3});
+
+    // One error and two warnings; the warnings share a code.
+    result.mDiagnostics.push_back(
+        ApplicationDiagnostic{.mSeverity = DiagnosticSeverity::Error,
+                              .mCode = ProcessingDiagnosticCode::IncompleteHistory});
+    result.mDiagnostics.push_back(
+        ApplicationDiagnostic{.mSeverity = DiagnosticSeverity::Warning,
+                              .mCode = ProcessingDiagnosticCode::MissingExchangeRate});
+    result.mDiagnostics.push_back(
+        ApplicationDiagnostic{.mSeverity = DiagnosticSeverity::Warning,
+                              .mCode = ProcessingDiagnosticCode::MissingExchangeRate});
+
+    EXPECT_EQ(api::resultLogSummary(result),
+              "revision=3 status=needs_input capitalGains=needs_input dividends=generated "
+              "bankInterest=no_data otherInterest=failed requests=1 errors=1 warnings=2");
+    EXPECT_EQ(api::resultLogDetails(result),
+              "requests [loss_eligibility_confirmation_required x1]; errors [incomplete_history "
+              "x1]; warnings [missing_exchange_rate x2]; excluded [none]; no data [none]; "
+              "answered [none]");
+}
+
+TEST(ApplicationResultJsonTest, TheLogDetailsOfAnEmptyResultAreNone) {
+    const ApplicationResult result;
+
+    EXPECT_EQ(api::resultLogDetails(result),
+              "requests [none]; errors [none]; warnings [none]; excluded [none]; no data "
+              "[none]; answered [none]");
+}
+
+TEST(ApplicationResultJsonTest, TheLogDetailsSortTheCodesByNameAndCountTheRequestTypes) {
+    ApplicationResult result;
+
+    result.mRequests.push_back(DecisionRequest{.mType = RequestType::TaxClassificationRequired});
+    result.mRequests.push_back(
+        DecisionRequest{.mType = RequestType::LossEligibilityConfirmationRequired});
+    result.mRequests.push_back(DecisionRequest{.mType = RequestType::TaxClassificationRequired});
+
+    result.mDiagnostics.push_back(
+        ApplicationDiagnostic{.mSeverity = DiagnosticSeverity::Error,
+                              .mCode = ProcessingDiagnosticCode::MissingExchangeRate});
+    result.mDiagnostics.push_back(
+        ApplicationDiagnostic{.mSeverity = DiagnosticSeverity::Error,
+                              .mCode = MergeDiagnosticCode::ConflictingDuplicate});
+
+    // Alphabetical, so the line is the same for the same result.
+    EXPECT_EQ(api::resultLogDetails(result),
+              "requests [loss_eligibility_confirmation_required x1, tax_classification_required "
+              "x2]; errors [conflicting_duplicate x1, missing_exchange_rate x1]; warnings [none]; "
+              "excluded [none]; no data [none]; answered [none]");
+}
+
+TEST(ApplicationResultJsonTest, TheLogDetailsNameTheExclusionsTheNoDataReasonsAndTheAnswers) {
+    ApplicationResult result;
+
+    // Two excluded items with the same reason and one with another.
+    result.mExcludedItems.push_back(ExcludedItem{.mReason = ExcludedReason::SlovenianTaxSettled});
+    result.mExcludedItems.push_back(ExcludedItem{.mReason = ExcludedReason::UserChoice});
+    result.mExcludedItems.push_back(ExcludedItem{.mReason = ExcludedReason::SlovenianTaxSettled});
+
+    ReportResult& capital = result.mReports[static_cast<std::size_t>(ReportType::CapitalGains)];
+    capital.mNoDataReason = NoDataReason::NoSelectedYearDisposals;
+
+    ReportResult& dividends = result.mReports[static_cast<std::size_t>(ReportType::Dividends)];
+    dividends.mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+
+    EXPECT_EQ(api::resultLogDetails(result),
+              "requests [none]; errors [none]; warnings [none]; excluded [slovenian_tax_settled "
+              "x2, user_choice x1]; no data [capitalGains no_selected_year_disposals x1]; "
+              "answered [dividends exclude_failed_instruments x1]");
+}
+
 } // namespace

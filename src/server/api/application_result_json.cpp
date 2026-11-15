@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <iterator>
+#include <map>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -1497,6 +1498,100 @@ std::string_view diagnosticCodeName(const ApplicationDiagnosticCode& aCode) {
 
 std::string_view requestTypeName(RequestType aType) {
     return toString(aType);
+}
+
+std::string resultLogSummary(const ApplicationResult& aResult) {
+    std::size_t errors = 0;
+    std::size_t warnings = 0;
+
+    for (const ApplicationDiagnostic& diagnostic : aResult.mDiagnostics)
+    {
+        if (diagnostic.mSeverity == DiagnosticSeverity::Error)
+        {
+            ++errors;
+        }
+        else
+        {
+            ++warnings;
+        }
+    }
+
+    std::string summary = "revision=" + std::to_string(aResult.mRunRevision) +
+                          " status=" + std::string{toString(aResult.mStatus)};
+
+    for (std::size_t index = 0; index < aResult.mReports.size(); ++index)
+    {
+        summary += ' ';
+        summary += reportKey(static_cast<ReportType>(index));
+        summary += '=';
+        summary += toString(aResult.mReports[index].mStatus);
+    }
+
+    summary += " requests=" + std::to_string(aResult.mRequests.size()) +
+               " errors=" + std::to_string(errors) + " warnings=" + std::to_string(warnings);
+
+    return summary;
+}
+
+std::string resultLogDetails(const ApplicationResult& aResult) {
+    std::map<std::string_view, std::size_t> requests;
+    std::map<std::string_view, std::size_t> errors;
+    std::map<std::string_view, std::size_t> warnings;
+    std::map<std::string_view, std::size_t> excluded;
+    std::map<std::string, std::size_t> noData;
+    std::map<std::string, std::size_t> resolved;
+
+    for (const DecisionRequest& request : aResult.mRequests)
+    {
+        ++requests[toString(request.mType)];
+    }
+
+    for (const ApplicationDiagnostic& diagnostic : aResult.mDiagnostics)
+    {
+        auto& counts = diagnostic.mSeverity == DiagnosticSeverity::Error ? errors : warnings;
+
+        ++counts[codeString(diagnostic.mCode)];
+    }
+
+    for (const ExcludedItem& item : aResult.mExcludedItems)
+    {
+        ++excluded[toString(item.mReason)];
+    }
+
+    // "<report> <reason>" and "<report> <answer>": fixed words, so a report that is empty or
+    // shorter than expected can be explained from the log.
+    for (std::size_t index = 0; index < aResult.mReports.size(); ++index)
+    {
+        const ReportResult& report = aResult.mReports[index];
+        const std::string key{reportKey(static_cast<ReportType>(index))};
+
+        if (report.mNoDataReason.has_value())
+        {
+            ++noData[key + " " + std::string{toString(*report.mNoDataReason)}];
+        }
+
+        if (report.mFailureResolution.has_value())
+        {
+            ++resolved[key + " " + std::string{toString(*report.mFailureResolution)}];
+        }
+    }
+
+    const auto list = [](const auto& aCounts) {
+        std::string text = "[";
+
+        for (const auto& [name, count] : aCounts)
+        {
+            text += text.size() > 1 ? ", " : "";
+            text += name;
+            text += " x" + std::to_string(count);
+        }
+
+        return aCounts.empty() ? std::string{"[none]"} : text + "]";
+    };
+
+    return "requests " + list(requests) + "; errors " + list(errors) + "; warnings " +
+           list(warnings) + "; excluded " + list(excluded) + "; no data " + list(noData) +
+           "; answered " + list(resolved);
 }
 
 std::string serializeApplicationResultJson(const ApplicationResult& aResult, int aIndent) {

@@ -5,6 +5,7 @@
 #include "taxpayer_file.hpp"
 #include "cli_text.hpp"
 #include "taxbroker/api/application_result_json.hpp"
+#include "taxbroker/api/report_files.hpp"
 #include "taxbroker/application_request.hpp"
 #include "taxbroker/application_run.hpp"
 #include "taxbroker/application_result.hpp"
@@ -670,26 +671,24 @@ struct RunOutcome {
     std::array<bool, 4> mKeptOldFile{};
 };
 
-/// One tax form of the report: its result type, its code in the file name and its label.
+/// One tax form of the report: its result type and its label. The form code comes from
+/// `api::reportFormCode`.
 struct FormInfo {
     ReportType mType{};      ///< Always set by the creator.
-    std::string_view mCode;  ///< For example "Doh-KDVP".
     std::string_view mLabel; ///< For example "Capital gains".
 };
 
 /// The forms in the fixed order of the report types.
 constexpr std::array<FormInfo, 4> kForms{{
-    {ReportType::CapitalGains, "Doh-KDVP", "Capital gains"},
-    {ReportType::Dividends, "Doh-Div", "Dividends"},
-    {ReportType::BankDepositInterest, "Doh-DHO", "Bank-deposit interest"},
-    {ReportType::OtherInterest, "Doh-Obr", "Other interest"},
+    {ReportType::CapitalGains, "Capital gains"},
+    {ReportType::Dividends, "Dividends"},
+    {ReportType::BankDepositInterest, "Bank-deposit interest"},
+    {ReportType::OtherInterest, "Other interest"},
 }};
 
-/// A developer export of incomplete history has its own name, so it is never mistaken for the
-/// normal file.
+/// The XML file name of a form, the same as the HTTP download (`api::reportXmlFileName`).
 std::string xmlFileName(const FormInfo& aForm, int aYear, bool aUnsafe = false) {
-    return std::string{aForm.mCode} + "_" + std::to_string(aYear) + (aUnsafe ? "_UNSAFE" : "") +
-           ".xml";
+    return api::reportXmlFileName(aForm.mType, aYear, aUnsafe);
 }
 
 std::string summaryFileName(int aYear) {
@@ -880,7 +879,7 @@ void writeForms(std::ostream& aOut, const RunOutcome& aOutcome) {
         const auto index = static_cast<std::size_t>(form.mType);
         const auto rows = report.mIncome ? report.mIncome->mRows.size() : std::size_t{0};
 
-        aOut << "  " << form.mLabel << " (" << form.mCode << "): ";
+        aOut << "  " << form.mLabel << " (" << api::reportFormCode(form.mType) << "): ";
 
         switch (report.mStatus)
         {
@@ -977,7 +976,8 @@ void writeExcluded(std::ostream& aOut, const RunOutcome& aOutcome) {
         {
             // The capital list keeps its own heading: the form is the one of the summary.
             aOut << "Excluded investments (not in "
-                 << (form.mType == ReportType::CapitalGains ? "the XML" : form.mCode)
+                 << (form.mType == ReportType::CapitalGains ? "the XML"
+                                                            : api::reportFormCode(form.mType))
                  << "): " << report.mExcludedInvestments.size() << '\n';
 
             for (const auto& investment : report.mExcludedInvestments)
@@ -991,7 +991,7 @@ void writeExcluded(std::ostream& aOut, const RunOutcome& aOutcome) {
 
         if (!report.mExcludedBrokers.empty())
         {
-            aOut << "Excluded brokers (not in " << form.mCode << "): ";
+            aOut << "Excluded brokers (not in " << api::reportFormCode(form.mType) << "): ";
 
             for (std::size_t index = 0; index < report.mExcludedBrokers.size(); ++index)
             {
@@ -1385,7 +1385,7 @@ void writeFormDiagnostics(std::ostream& aOut, const RunOutcome& aOutcome, const 
         return;
     }
 
-    const std::string code{aForm.mCode};
+    const std::string code{api::reportFormCode(aForm.mType)};
 
     aOut << '\n';
     writeDiagnostics(aOut, code + " errors", errors, false, aForm.mType);

@@ -328,9 +328,10 @@ that need it.
 The result and its JSON boundary follow [`diagnostics.md`](diagnostics.md), including deterministic
 diagnostic ordering, safe source-row locations, independent report status, and partial success.
 
-Exercise this complete operation through unit and integration tests before exposing it through the
-local HTTP API. The API serializes the application result but does not contain parsing, tax, or XML
-business logic.
+This operation was exercised through unit and integration tests before it was exposed through the
+local HTTP API. The API (`POST /api/run`, `GET /api/run`, answers, deleting answers and the XML
+downloads, see [`architecture.md`](architecture.md), "Local HTTP API") serializes the application
+result but does not contain parsing, tax, or XML business logic.
 
 The security rules of the local service (loopback bind, a one-time browser link and a session
 cookie, `Host` and `Origin` checks, no CORS, security headers, uploads in memory) are in

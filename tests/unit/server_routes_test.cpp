@@ -1,3 +1,4 @@
+#include "../support/log_capture.hpp"
 #include "server/routes.hpp"
 
 #include <gtest/gtest.h>
@@ -71,7 +72,7 @@ class ServerRoutesTest : public ::testing::Test {
                    ::testing::UnitTest::GetInstance()->current_test_info()->name())),
           mLaunchFile(mFolder / "launch.html"),
           mStart(std::chrono::steady_clock::time_point{} + std::chrono::hours(1)), mNow(mStart),
-          mRoutes(8080, kLink, kSession, mLaunchFile, [this]() { return mNow; }) {}
+          mRoutes(8080, kLink, kSession, mLaunchFile, [this]() { return mNow; }, 1000) {}
 
     void SetUp() override {
         std::filesystem::remove_all(mFolder);
@@ -146,7 +147,7 @@ TEST_F(ServerRoutesTest, LinkTokenWorksAt119SecondsAndNotAt120Seconds) {
                               .mTarget = "/api/session",
                               .mHeaders = {kHost, kOrigin, kClient},
                               .mBody = loginBody(kLink)};
-    Routes second(8080, kLink, kSession, mLaunchFile, [this]() { return mNow; });
+    Routes second(8080, kLink, kSession, mLaunchFile, [this]() { return mNow; }, 1000);
 
     mNow = mStart + std::chrono::seconds(119);
     EXPECT_EQ(mRoutes.handle(request).mStatus, 204U);
@@ -574,6 +575,145 @@ TEST(ServerRoutesErrorTest, ErrorResponseHasTheStatusTheHeadersAndNoBody) {
     expectSecurityHeaders(response);
 }
 
+// ---- Log lines of the refusals (R13)
+
+TEST_F(ServerRoutesTest, ARefusedHostLogsOneWarningEvenWhenTheBodyLimitIsAskedFirst) {
+    LogCapture log;
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/session",
+                              .mHeaders = {{"Host", "evil.example:8080"}, kClient, kCookie}};
+
+    // The server asks for the body limit before it handles the request: one line, not two.
+    (void)mRoutes.bodyPolicy(request);
+    EXPECT_EQ(mRoutes.handle(request).mStatus, 403U);
+
+    EXPECT_EQ(log.count("Request refused: 403 host_not_allowed"), 1U);
+    EXPECT_EQ(log.count("Request refused"), 1U);
+    EXPECT_EQ(log.text().find("evil.example"), std::string::npos);
+}
+
+TEST_F(ServerRoutesTest, ARefusedTargetOriginAndClientHeaderEachLogTheirReason) {
+    LogCapture log;
+    const HttpRequest absoluteTarget{.mMethod = "GET",
+                                     .mTarget = "http://127.0.0.1:8080/api/session",
+                                     .mHeaders = {kHost}};
+    const HttpRequest twoOrigins{.mMethod = "GET",
+                                 .mTarget = "/api/session",
+                                 .mHeaders = {kHost, kOrigin, kOrigin, kClient, kCookie}};
+    const HttpRequest noOrigin{.mMethod = "POST",
+                               .mTarget = "/api/session",
+                               .mHeaders = {kHost, kClient},
+                               .mBody = loginBody(kLink)};
+    const HttpRequest foreignOrigin{.mMethod = "POST",
+                                    .mTarget = "/api/session",
+                                    .mHeaders = {kHost, {"Origin", "http://evil.example"}, kClient},
+                                    .mBody = loginBody(kLink)};
+    const HttpRequest noClient{.mMethod = "GET",
+                               .mTarget = "/api/session",
+                               .mHeaders = {kHost, kCookie}};
+
+    EXPECT_EQ(mRoutes.handle(absoluteTarget).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(twoOrigins).mStatus, 403U);
+    EXPECT_EQ(mRoutes.handle(noOrigin).mStatus, 403U);
+    EXPECT_EQ(mRoutes.handle(foreignOrigin).mStatus, 403U);
+    EXPECT_EQ(mRoutes.handle(noClient).mStatus, 403U);
+
+    EXPECT_EQ(log.count("Request refused: 400 bad_target"), 1U);
+    EXPECT_EQ(log.count("Request refused: 403 origin_repeated"), 1U);
+    EXPECT_EQ(log.count("Request refused: 403 origin_missing"), 1U);
+    EXPECT_EQ(log.count("Request refused: 403 origin_not_allowed"), 1U);
+    EXPECT_EQ(log.count("Request refused: 403 client_header"), 1U);
+    EXPECT_EQ(log.count("Request refused"), 5U);
+    EXPECT_EQ(log.text().find("evil.example"), std::string::npos);
+}
+
+TEST_F(ServerRoutesTest, AMissingAndAWrongSessionLogDifferentReasonsWithoutTheToken) {
+    LogCapture log;
+    const HttpRequest noCookie{.mMethod = "GET",
+                               .mTarget = "/api/session",
+                               .mHeaders = {kHost, kClient}};
+    const HttpRequest wrongToken{
+        .mMethod = "GET",
+        .mTarget = "/api/session",
+        .mHeaders = {kHost, kClient, {"Cookie", "tbr_session_8080=" + kZeroToken}}};
+
+    EXPECT_EQ(mRoutes.handle(noCookie).mStatus, 401U);
+    EXPECT_EQ(mRoutes.handle(wrongToken).mStatus, 401U);
+
+    EXPECT_EQ(log.count("Request refused: 401 no_session"), 1U);
+    EXPECT_EQ(log.count("Request refused: 401 session_wrong"), 1U);
+    EXPECT_EQ(log.text().find(kZeroToken), std::string::npos);
+    EXPECT_EQ(log.text().find(kSession), std::string::npos);
+}
+
+TEST_F(ServerRoutesTest, UnknownApiPathAndWrongSessionMethodLogTheirStatus) {
+    LogCapture log;
+    const HttpRequest unknownPath{.mMethod = "GET",
+                                  .mTarget = "/api/nothing",
+                                  .mHeaders = {kHost, kClient, kCookie}};
+    const HttpRequest putSession{.mMethod = "PUT",
+                                 .mTarget = "/api/session",
+                                 .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    EXPECT_EQ(mRoutes.handle(unknownPath).mStatus, 404U);
+    EXPECT_EQ(mRoutes.handle(putSession).mStatus, 405U);
+
+    EXPECT_EQ(log.count("Request refused: 404 not_found"), 1U);
+    EXPECT_EQ(log.count("Request refused: 405 method_not_allowed"), 1U);
+}
+
+TEST_F(ServerRoutesTest, APageRequestWritesNoRefusalLine) {
+    LogCapture log;
+    const HttpRequest page{.mMethod = "GET", .mTarget = "/favicon.ico", .mHeaders = {kHost}};
+
+    EXPECT_EQ(mRoutes.handle(page).mStatus, 404U);
+
+    EXPECT_EQ(log.count("refused"), 0U);
+}
+
+TEST_F(ServerRoutesTest, LoginRefusalsLogTheLinkProblemWithoutTheToken) {
+    const HttpRequest right{.mMethod = "POST",
+                            .mTarget = "/api/session",
+                            .mHeaders = {kHost, kOrigin, kClient},
+                            .mBody = loginBody(kLink)};
+    const HttpRequest wrong{.mMethod = "POST",
+                            .mTarget = "/api/session",
+                            .mHeaders = {kHost, kOrigin, kClient},
+                            .mBody = loginBody(kZeroToken)};
+    const HttpRequest noJson{.mMethod = "POST",
+                             .mTarget = "/api/session",
+                             .mHeaders = {kHost, kOrigin, kClient},
+                             .mBody = "token=abc"};
+    LogCapture log;
+
+    EXPECT_EQ(mRoutes.handle(noJson).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(wrong).mStatus, 401U);
+    EXPECT_EQ(mRoutes.handle(right).mStatus, 204U);
+    EXPECT_EQ(mRoutes.handle(right).mStatus, 401U);
+
+    EXPECT_EQ(log.count("Login refused: 400 bad_request"), 1U);
+    EXPECT_EQ(log.count("Login refused: 401 link_wrong"), 1U);
+    EXPECT_EQ(log.count("Browser login done"), 1U);
+    EXPECT_EQ(log.count("Login refused: 401 link_used"), 1U);
+    EXPECT_EQ(log.count("Login refused"), 3U);
+    EXPECT_EQ(log.text().find(kLink), std::string::npos);
+    EXPECT_EQ(log.text().find(kSession), std::string::npos);
+}
+
+TEST_F(ServerRoutesTest, AnExpiredLinkLogsLinkExpired) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/session",
+                              .mHeaders = {kHost, kOrigin, kClient},
+                              .mBody = loginBody(kLink)};
+    LogCapture log;
+
+    mNow = mStart + std::chrono::seconds(120);
+
+    EXPECT_EQ(mRoutes.handle(request).mStatus, 401U);
+
+    EXPECT_EQ(log.count("Login refused: 401 link_expired"), 1U);
+}
+
 // ---- Secrets (R4)
 
 TEST_F(ServerRoutesTest, NoBodyHoldsTheLinkTokenOrTheSessionToken) {
@@ -600,6 +740,195 @@ TEST_F(ServerRoutesTest, NoBodyHoldsTheLinkTokenOrTheSessionToken) {
         EXPECT_EQ(response.mBody.find(kLink), std::string::npos);
         EXPECT_EQ(response.mBody.find(kSession), std::string::npos);
     }
+}
+
+// ---- Body policy and the run routes
+
+TEST_F(ServerRoutesTest, UploadWithASessionMayHaveThirtyThreeFilesOfBody) {
+    const HttpRequest header{.mMethod = "POST",
+                             .mTarget = "/api/run",
+                             .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    const BodyPolicy policy = mRoutes.bodyPolicy(header);
+
+    // The file limit of this fixture is 1000 bytes: the request part and 32 files, 33 x 1000.
+    EXPECT_EQ(policy.mLimit, 33000U);
+    EXPECT_TRUE(policy.mGuardPassed);
+    EXPECT_FALSE(policy.mRefusal.has_value());
+}
+
+TEST_F(ServerRoutesTest, UploadWithoutTheCookieGetsTheDefaultLimitAndNoPass) {
+    const HttpRequest header{.mMethod = "POST",
+                             .mTarget = "/api/run",
+                             .mHeaders = {kHost, kOrigin, kClient}};
+
+    const BodyPolicy policy = mRoutes.bodyPolicy(header);
+
+    EXPECT_EQ(policy.mLimit, 1024U * 1024U);
+    EXPECT_FALSE(policy.mGuardPassed);
+
+    // The guard's own answer and its word travel with the policy, for the log of the server.
+    ASSERT_TRUE(policy.mRefusal.has_value());
+
+    EXPECT_EQ(policy.mRefusal->mStatus, 401U);
+    EXPECT_EQ(policy.mReason, "no_session");
+}
+
+TEST_F(ServerRoutesTest, UploadWithAWrongSessionCarriesTheWrongSessionRefusal) {
+    // A tab that was open before a restart of the server sends the old session token.
+    const HttpRequest header{
+        .mMethod = "POST",
+        .mTarget = "/api/run",
+        .mHeaders = {kHost, kOrigin, kClient, {"Cookie", "tbr_session_8080=" + kZeroToken}}};
+
+    const BodyPolicy policy = mRoutes.bodyPolicy(header);
+
+    ASSERT_TRUE(policy.mRefusal.has_value());
+
+    EXPECT_EQ(policy.mRefusal->mStatus, 401U);
+    EXPECT_EQ(policy.mReason, "session_wrong");
+}
+
+TEST_F(ServerRoutesTest, UploadWithAForeignOriginGetsTheDefaultLimitAndNoPass) {
+    const HttpRequest header{
+        .mMethod = "POST",
+        .mTarget = "/api/run",
+        .mHeaders = {kHost, {"Origin", "http://evil.example"}, kClient, kCookie}};
+
+    const BodyPolicy policy = mRoutes.bodyPolicy(header);
+
+    EXPECT_EQ(policy.mLimit, 1024U * 1024U);
+    EXPECT_FALSE(policy.mGuardPassed);
+
+    ASSERT_TRUE(policy.mRefusal.has_value());
+
+    EXPECT_EQ(policy.mRefusal->mStatus, 403U);
+    EXPECT_EQ(policy.mReason, "origin_not_allowed");
+}
+
+TEST_F(ServerRoutesTest, GetResultWithASessionGetsTheDefaultLimitAndAPass) {
+    const HttpRequest header{.mMethod = "GET",
+                             .mTarget = "/api/run",
+                             .mHeaders = {kHost, kClient, kCookie}};
+
+    const BodyPolicy policy = mRoutes.bodyPolicy(header);
+
+    EXPECT_EQ(policy.mLimit, 1024U * 1024U);
+    EXPECT_TRUE(policy.mGuardPassed);
+}
+
+TEST_F(ServerRoutesTest, AnswerCallWithASessionGetsTheDefaultLimit) {
+    const HttpRequest header{.mMethod = "POST",
+                             .mTarget = "/api/run/answers",
+                             .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    EXPECT_EQ(mRoutes.bodyPolicy(header).mLimit, 1024U * 1024U);
+}
+
+TEST_F(ServerRoutesTest, LoginAndPageGetTheDefaultLimitAndAPass) {
+    const HttpRequest login{.mMethod = "POST",
+                            .mTarget = "/api/session",
+                            .mHeaders = {kHost, kOrigin, kClient}};
+    const HttpRequest page{.mMethod = "GET", .mTarget = "/", .mHeaders = {kHost}};
+
+    EXPECT_EQ(mRoutes.bodyPolicy(login).mLimit, 1024U * 1024U);
+    EXPECT_TRUE(mRoutes.bodyPolicy(login).mGuardPassed);
+    EXPECT_EQ(mRoutes.bodyPolicy(page).mLimit, 1024U * 1024U);
+    EXPECT_TRUE(mRoutes.bodyPolicy(page).mGuardPassed);
+}
+
+TEST_F(ServerRoutesTest, BodyPolicyDoesNotRedeemTheLinkToken) {
+    const HttpRequest login{.mMethod = "POST",
+                            .mTarget = "/api/session",
+                            .mHeaders = {kHost, kOrigin, kClient},
+                            .mBody = loginBody(kLink)};
+
+    (void)mRoutes.bodyPolicy(login);
+
+    EXPECT_EQ(mRoutes.handle(login).mStatus, 204U);
+}
+
+TEST_F(ServerRoutesTest, DownloadWithoutARunIsNotFound) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/run/reports/capitalGains/xml?revision=x",
+                              .mHeaders = {kHost, kClient, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 404U);
+    EXPECT_EQ(response.mBody, R"({"error":"no_run"})");
+}
+
+TEST_F(ServerRoutesTest, DownloadWithARevisionThatIsNotANumberIsBadRequest) {
+    // An upload with one file that holds only the header: a run with nothing to report.
+    const std::string body =
+        "--b\r\nContent-Disposition: form-data; name=\"request\"\r\n\r\n"
+        R"({"reportingYear":2024,"filingType":"original","taxpayer":{"taxNumber":"12345678","isResident":true},)"
+        R"("files":[{"part":"file0","kind":"broker","broker":"trade_republic"}]})"
+        "\r\n--b\r\nContent-Disposition: form-data; name=\"file0\"; filename=\"empty.csv\"\r\n\r\n"
+        "datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,"
+        "tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,"
+        "counterparty_name,counterparty_iban,payment_reference,mcc_code\n"
+        "\r\n--b--\r\n";
+    const HttpRequest upload{.mMethod = "POST",
+                             .mTarget = "/api/run",
+                             .mHeaders = {kHost,
+                                          kOrigin,
+                                          kClient,
+                                          kCookie,
+                                          {"Content-Type", "multipart/form-data; boundary=b"}},
+                             .mBody = body};
+
+    ASSERT_EQ(mRoutes.handle(upload).mStatus, 200U);
+
+    const HttpRequest download{.mMethod = "GET",
+                               .mTarget = "/api/run/reports/capitalGains/xml?revision=x",
+                               .mHeaders = {kHost, kClient, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(download);
+
+    EXPECT_EQ(response.mStatus, 400U);
+    EXPECT_EQ(response.mBody, R"({"error":"bad_request"})");
+}
+
+TEST_F(ServerRoutesTest, OtherMethodsOnRunPathsAreNotAllowed) {
+    const HttpRequest put{.mMethod = "PUT",
+                          .mTarget = "/api/run",
+                          .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+    const HttpRequest getAnswers{.mMethod = "GET",
+                                 .mTarget = "/api/run/answers",
+                                 .mHeaders = {kHost, kClient, kCookie}};
+    const HttpRequest getDelete{.mMethod = "GET",
+                                .mTarget = "/api/run/decisions/delete",
+                                .mHeaders = {kHost, kClient, kCookie}};
+    const HttpRequest postDownload{.mMethod = "POST",
+                                   .mTarget = "/api/run/reports/capitalGains/xml?revision=1",
+                                   .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    EXPECT_EQ(mRoutes.handle(put).mStatus, 405U);
+    EXPECT_EQ(headerOf(mRoutes.handle(put), "Allow"), "GET, POST");
+    EXPECT_EQ(mRoutes.handle(getAnswers).mStatus, 405U);
+    EXPECT_EQ(headerOf(mRoutes.handle(getAnswers), "Allow"), "POST");
+    EXPECT_EQ(mRoutes.handle(getDelete).mStatus, 405U);
+    EXPECT_EQ(headerOf(mRoutes.handle(getDelete), "Allow"), "POST");
+    EXPECT_EQ(mRoutes.handle(postDownload).mStatus, 405U);
+    EXPECT_EQ(headerOf(mRoutes.handle(postDownload), "Allow"), "GET");
+}
+
+TEST_F(ServerRoutesTest, UnknownPathBelowRunIsNotFound) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/run/nothing",
+                              .mHeaders = {kHost, kClient, kCookie}};
+
+    EXPECT_EQ(mRoutes.handle(request).mStatus, 404U);
+}
+
+TEST_F(ServerRoutesTest, RunPathWithoutTheCookieIsUnauthorized) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/run/nothing",
+                              .mHeaders = {kHost, kClient}};
+
+    EXPECT_EQ(mRoutes.handle(request).mStatus, 401U);
 }
 
 } // namespace

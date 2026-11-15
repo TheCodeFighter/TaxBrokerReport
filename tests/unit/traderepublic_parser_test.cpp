@@ -1,4 +1,5 @@
 #include "../support/large_allocation_hook.hpp"
+#include "../support/log_capture.hpp"
 #include "parsers/traderepublic_parser.hpp"
 #include "taxbroker/diagnostics.hpp"
 #include "taxbroker/exact_arithmetic.hpp"
@@ -22298,6 +22299,87 @@ TEST(TradeRepublicParserTest, ARowOfUnknownTypeHasNoRowKind) {
 
     EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnknownRowType);
     EXPECT_FALSE(result.mDiagnostics[0].mRowKind.has_value());
+}
+
+TEST(TradeRepublicParserTest, TheLogLineOfAnUnknownTypeHoldsTheMessageKeyAndNoCellText) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "SECRET_CATEGORY",
+        // A quoted cell with a line break: in the log it would look like a second line.
+        .mType = "SECRET_TYPE\n[2026-11-15 10:00:00.000] [info] forged",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "5",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-test-transaction",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const LogCapture log;
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnknownRowType);
+
+    // Source 0, logical row 2 (the header is row 1); the key, not the sentence.
+    EXPECT_NE(log.text().find("Trade Republic CSV source 0 row 2: unknown_row_type"),
+              std::string::npos);
+    EXPECT_EQ(log.text().find("SECRET"), std::string::npos);
+    EXPECT_EQ(log.text().find("forged"), std::string::npos);
+}
+
+TEST(TradeRepublicParserTest, TheLogLineOfAnInvalidAmountNamesTheColumnAndNoCellText) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2025-03-14T10:00:00.000Z",
+        .mDate = "2025-03-14",
+        .mAccountType = "DEFAULT",
+        .mCategory = "CASH",
+        .mType = "FINAL_MATURITY",
+        .mAssetClass = "BOND",
+        .mName = "Synthetic Bond 2025",
+        .mSymbol = "XS0000000000",
+        .mShares = "10.0000000000",
+        .mPrice = "",
+        // Not a number: the cell text is SECRET_AMOUNT and must stay out of the log.
+        .mAmount = "SECRET_AMOUNT",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-invalid-amount",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+
+    const LogCapture log;
+    const ParseResult result = parseRows({row});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "amount");
+
+    // Source 0, logical row 2 (the header is row 1); the message key and the column.
+    EXPECT_NE(log.text().find("Trade Republic CSV source 0 row 2: invalid_value.field (amount)"),
+              std::string::npos);
+    EXPECT_EQ(log.text().find("SECRET"), std::string::npos);
 }
 
 TEST(TradeRepublicParserTest, ARecognizedUnsupportedRowHasNoRowKind) {

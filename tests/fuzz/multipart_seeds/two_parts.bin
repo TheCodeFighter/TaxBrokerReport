@@ -1,0 +1,12 @@
+--XyZ
+Content-Disposition: form-data; name="request"
+
+{}
+--XyZ
+Content-Disposition: form-data; name="file0"; filename="export.csv"
+Content-Type: text/csv
+
+a,b
+1,2
+
+--XyZ--

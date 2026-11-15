@@ -363,19 +363,29 @@ void TradeRepublicParser::RowContext::addDiagnostic(DiagnosticSeverity aSeverity
                                                     DiagnosticCode aCode,
                                                     DiagnosticMessage aMessage,
                                                     std::optional<std::string> aField) const {
+    // The stable message key, never the English sentence: for an unknown type, category or asset
+    // class the sentence holds the raw cell text, which could be a name or a line break. The
+    // column name is one of our own fixed names, so it may follow the key.
+    std::string messageKey{messageDefinition(aMessage.mKey).mId};
+
+    if (aField.has_value())
+    {
+        messageKey += " (" + *aField + ")";
+    }
+
     if (aSeverity == DiagnosticSeverity::Warning)
     {
         LOG_WARNING("Trade Republic CSV source {} row {}: {}",
                     mInputSequence.mSourceIndex,
                     mRowIndex,
-                    aMessage.mEnglish);
+                    messageKey);
     }
     else
     {
         LOG_ERROR("Trade Republic CSV source {} row {}: {}",
                   mInputSequence.mSourceIndex,
                   mRowIndex,
-                  aMessage.mEnglish);
+                  messageKey);
     }
 
     std::optional<std::string> storedTransactionId;

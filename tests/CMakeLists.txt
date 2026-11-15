@@ -23,6 +23,7 @@ endif()
 # Unit Tests
 add_executable(taxbroker_unit_tests
     support/large_allocation_hook.cpp
+    unit/answer_json_test.cpp
     unit/application_result_json_test.cpp
     unit/application_result_test.cpp
     unit/application_summaries_test.cpp
@@ -65,11 +66,18 @@ add_executable(taxbroker_unit_tests
     unit/quantity_reconciliation_test.cpp
     unit/browser_open_test.cpp
     unit/launch_file_test.cpp
+    unit/logger_settings_test.cpp
+    unit/exception_kind_test.cpp
+    unit/multipart_test.cpp
     unit/request_guard_test.cpp
     unit/server_config_test.cpp
     unit/server_routes_test.cpp
     unit/state_folder_test.cpp
     unit/reference_catalogue_test.cpp
+    unit/rejection_json_test.cpp
+    unit/run_routes_test.cpp
+    unit/report_file_name_test.cpp
+    unit/request_json_test.cpp
     unit/kdvp_xml_writer_test.cpp
     unit/statement_merger_property_test.cpp
     unit/statement_merger_test.cpp
@@ -77,6 +85,7 @@ add_executable(taxbroker_unit_tests
     unit/tax_classifier_test.cpp
     unit/tax_processor_test.cpp
     unit/taxpayer_file_test.cpp
+    unit/taxpayer_json_test.cpp
     unit/trade_conversion_test.cpp
     unit/trade_republic_parser_checks_test.cpp
     unit/traderepublic_parser_test.cpp
@@ -134,6 +143,7 @@ add_executable(taxbroker_integration_tests
     integration/kdvp_xml_integration_test.cpp
     integration/loss_eligibility_integration_test.cpp
     integration/reporting_year_integration_test.cpp
+    integration/server_run_test.cpp
     integration/server_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/statement_merger_integration_test.cpp

@@ -95,7 +95,7 @@ the reference files have both forms too (`loadEcbRateFiles`, `loadOfficialRates`
 `loadReferenceData` take a list of `InputFile` (display name and bytes) as well as a list of
 paths). A rate file without a valid name gives the same `parse_error.invalid_filename`; the
 reference loader reports a name that is not one of its three files as `ReferenceFileUnknownName`. The taxpayer file already has both forms
-(`parseTaxpayerJson` and `readTaxpayerFile`).
+(`api::parseTaxpayerJson` and `cli::readTaxpayerFile`).
 
 **Size limit and memory.** A user file is at most 100 MB (`kMaxInputFileBytes`,
 `include/taxbroker/input_file.hpp`); a bigger file is a wrong file. The path wrappers check the size
@@ -1387,10 +1387,10 @@ later request is checked with the session cookie, `Host`, `Origin` and the clien
 | R7 | `Host` must be exactly `127.0.0.1:<port>` or `localhost:<port>`, the name compared without case (`isAllowedHost`). Anything else is rejected (against DNS rebinding). | `RequestGuardTest` (own host, `localhost`, other port, foreign name, empty, upper case); server test: a rejected `Host`. |
 | R8 | `Origin`, when present, must be `http://127.0.0.1:<port>` or `http://localhost:<port>` (`isAllowedOrigin`). A state-changing request (`isStateChangingMethod`: any method other than GET, HEAD and OPTIONS) without `Origin` is rejected. | `RequestGuardTest` (foreign, `null`, missing on a state-changing and on a safe request, the method names); server test: POST without `Origin`. |
 | R9 | No CORS headers at all: `Access-Control-Allow-Origin` is never sent. The frontend is served from the same origin. | Server test: an `OPTIONS` preflight gets no allow headers. |
-| R10 | Uploads stay in memory (`InputFile`). The server never writes an upload to disk and never takes a host path from a request. | Server test: a request with a `path` field is rejected; code review item. |
-| R11 | Only the per-file limit applies: each file keeps `kMaxInputFileBytes` (100 MiB). There is no total request limit. A larger file gets 413. | Server test: one byte over the limit gives 413. |
-| R12 | A response holds no absolute path, raw row or money value outside the result fields. Source names are sanitized when the result is serialized. | The JSON serializer tests and the server contract tests. |
-| R13 | A log line holds no money value, raw row, absolute path or token (`diagnostics.md`). | Review of the log lines of the server. |
+| R10 | Uploads stay in memory (`InputFile`). The server never writes an upload to disk and never takes a host path from a request. | `RequestJsonTest` and `AnswerCallJsonTest` (a `path` key anywhere is refused); `ServerRunTest.ASuccessfulRunWritesNoFile` (an upload, an answer and a download leave the same files in the test's state, runtime and launch folders) and `APathKeyIsRefusedAndTheServerWritesNothing` (a `path` key gives 400 and the same files); code review item. |
+| R11 | Only the per-file limit applies: each file keeps `kMaxInputFileBytes` (100 MiB). There is no total request limit besides what follows from it: an upload may have the request part and 32 files, so its body is read up to 33 times the file limit, and only for a request that passed the guard (see "Local HTTP server"). A larger file gets 413, also a file part sent without a file name. The `request` part is small and is limited to `kDefaultBodyLimit` (1 MiB); a longer one gets 413 `request_too_large` before it is parsed. | `MultipartTest` (limit and limit + 1); `ServerRunTest` (a file over the limit gives 413, one of exactly the limit is accepted); `RunRoutesTest` (a file part without a file name of 11 bytes under a 10-byte limit gives 413, one of 10 bytes does not; a `request` part of 1048577 bytes gives 413, one of 1048576 bytes is not refused for its size); `ServerTest` (the body of a caller without a session is refused above 1 MiB before it is read). |
+| R12 | A response holds no absolute path, raw row or money value outside the result fields. Source names are sanitized when the result is serialized. | The JSON serializer tests, `InputFaultJsonTest` and `ServerRunTest` (no response body holds `/home/`, `/tmp/`, `/workspace/` or `C:\`, also for file names that are paths). |
+| R13 | A log line holds no money value, raw row, name, ISIN, absolute path, query or token (`diagnostics.md`). Every refusal writes one warning with the status and a fixed word: `Request refused: 403 host_not_allowed` (the guard: `host_not_allowed`, `bad_target`, `origin_repeated`, `origin_missing`, `origin_not_allowed`, `client_header`, `no_session`, `session_wrong`), `Login refused: 401 link_used` (`link_used`, `link_expired`, `link_wrong`, or 400 `bad_request`) and `Run request refused: 400 too_many_files (limit 32)` (the run API: the limit for a size or count refusal, a reason word or message key where a code has several causes). A step that works writes one info line with counts and statuses only (`Run started`, `Run restarted`, `Run result`, `Run details`, `Answers accepted` with the question types, `Answers deleted`, `Report downloaded`), so a bug report shows what ran. A body that stops writes `Request not finished: timeout` or `Request not finished: connection_closed`. A handler that throws writes `Run request failed: <route> (<exception type>)` and the HTTP layer writes `A request handler failed: <verb> <step> (<exception type>)`, never the exception text. | Review of the log lines of the server; `ServerRoutesTest` (one line per guard and login refusal, one line when the body limit is asked first, no token in the log); `RunRoutesTest` (one line per refusal, the limit in it, no file name or content in it; the start, result, answer, delete and download lines with no ISIN, name, request ID or file name; the failure line); `ExceptionKindTest`; `ApplicationResultJsonTest` (the summary and the details); `ServerTest` (the 413 lines of the HTTP layer, the guard's own line for a large or chunked refused body, the `Request not finished` lines and none for an idle connection, one `Accept failed` line per series, the failed-handler lines, the browser program line); `TradeRepublicParserTest` (the row line holds the message key, not the cell text). |
 | R14 | The per-user state folder holds the log: Linux `$XDG_STATE_HOME/taxbroker/` (an absolute path only), else `~/.local/state/taxbroker/`; macOS `~/Library/Application Support/TaxBrokerReport/`; Windows `%LOCALAPPDATA%\TaxBrokerReport\`. On POSIX the folder is created with mode `0700`. The launch file is in `$XDG_RUNTIME_DIR/taxbroker/` when `XDG_RUNTIME_DIR` is an absolute path (a per-user folder that is cleared at logout, and a folder that a browser installed as a snap can read, unlike the hidden state folder; tried on Ubuntu with Brave installed as a snap, started by `xdg-open` from the static `taxbroker_server`), else in the state folder. In Docker the log lives in `/var/log/taxbroker` and the launch file is `TBR_LAUNCH_FILE`. The log rotates at 5 MiB and keeps 3 files. | Logger test of the rotation (with the log file, not yet built); server tests: the mode of the launch folder, `StateFolderTest` (the folder choice and `0700`). |
 | R15 | The server runs as a normal user; the `prod` image runs as `app`. | `docker/Dockerfile` (`USER app`). |
 | R16 | Accepted risks. (a) A process of the same user can read the input files directly, so no token can protect against it. (b) A browser extension with access to all sites can read the page. (c) Another local program on `127.0.0.1` receives the cookie, because cookies are per host name, not per port; every request is still checked for the session token. (d) No TLS on the loopback: reading loopback traffic needs root, which can read the process memory anyway, and browsers treat `http://127.0.0.1` as a secure context. A desktop window without a port (webview) would remove (b) and (c); it needs a different web engine per platform and a non-static Linux build, so it is not used. | Accepted risk. |
@@ -1400,11 +1400,11 @@ later request is checked with the session cookie, `Host`, `Origin` and the clien
 | R20 | The frontend is bundled into the server: no CDN, no foreign script, no analytics. | Frontend build check: the output holds no foreign host. |
 
 Implementation status: the server listens (`taxbroker_server`, library `taxbroker_server_lib`),
-logs the user in and serves a placeholder page; no endpoint takes a file yet. Proven by tests:
-R1, R2, R4 (the log holds no token), R5 to R9, R13 (the server log lines), R17, R18 and R19 by
-`ServerRoutesTest` and `ServerTest`; R6 (the launch and the link output) and the launch folder
-of R14 by `ServerTest` and `StateFolderTest`. R3 is the compose file. R10 to R12 come with the
-run API; the log file of R14 and R20 come later.
+logs the user in, serves a placeholder page and the run API ("Local HTTP API" below). Proven by
+tests: R1, R2, R4 (the log holds no token), R5 to R9, R13 (the server log lines), R17, R18 and R19
+by `ServerRoutesTest` and `ServerTest`; R6 (the launch and the link output) and the launch folder
+of R14 by `ServerTest` and `StateFolderTest`; R10 to R12 by `ServerRunTest` (uploads, answers and
+downloads over real sockets). R3 is the compose file. The log file of R14 and R20 come later.
 
 ### Local HTTP server
 
@@ -1415,10 +1415,19 @@ through the public headers. The routes are unit-tested by calling `Routes::handl
 are tested with real connections on `127.0.0.1`.
 
 One thread runs the `io_context`, so many connections can be open (a browser keeps several
-alive), but only one handler runs at a time and the business code stays single-threaded. A read
-or write that takes longer than 30 seconds closes the connection; the header block is limited to
-8 KiB (431) and the body to 1 MiB (413) until the run API sets its own limit. A bad request gets
-400 and a failing handler 500, with no detail.
+alive), but only one handler runs at a time and the business code stays single-threaded. A
+header read, a write or a wait between two body chunks that takes longer than 30 seconds closes
+the connection; the header block is limited to
+8 KiB (431). A bad request gets 400 and a failing handler 500, with no detail.
+
+The header is read first. Then `Routes::bodyPolicy` decides the body limit from the header alone:
+`POST /api/run` that passes the guard (steps 1 to 7 below, with the session cookie; no token is redeemed) may send
+33 times the file limit (the `request` part and 32 files); every other request, also one that
+fails the guard, may send 1 MiB (413 above, at once when `Content-Length` says so). So a caller
+without a session cannot make the server hold a large body. `Expect: 100-continue` gets
+`100 Continue` only when the guard passed. The body is read in chunks; the 30 seconds apply to the
+header, and to the wait between two chunks of the body, so a slow upload is not cut off while
+bytes still arrive. The body is moved out of the parser into the request, not copied.
 
 Start order: read the options; bind and read the port back; make the two tokens; choose the
 launch file (`TBR_LAUNCH_FILE`, else the runtime folder, else the state folder) and make its
@@ -1437,11 +1446,60 @@ SIGINT, SIGTERM or `stop` the server closes the port and deletes the launch file
 | 5 | Exactly one `X-TaxBroker: 1` header (R17) | 403, no body |
 | 6 | `POST /api/session`: the body is JSON with a string `token`; `LinkToken::redeem` (R4, R5); success is 204 with `Set-Cookie`, the launch file is deleted (R19) | 400 `{"error":"bad_request"}` or 401 |
 | 7 | The session cookie (several `Cookie` headers are joined) passes `tokenMatches` (R5) | 401, no body |
-| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; an unknown path is 404 | |
+| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
 
 The guard runs before the route lookup, so an unknown `/api/` path without a cookie gives 401,
 not 404: the paths cannot be discovered. Every response carries the seven `securityHeaders()`
 (R18) and never an `Access-Control-*` header (R9).
+
+### Local HTTP API
+
+`RunRoutes` (`src/server/run_routes.hpp`) holds the one run of the server (an
+`ApplicationRun`) and only converts HTTP and JSON to the service types and back; every check of
+an answer, every recalculation and every status stays in the service. All routes are behind the
+guard and the session cookie. The JSON readers and writers are in `taxbroker_api`
+(`request_json`, `answer_json`, `taxpayer_json`, `report_files`); the multipart reader is
+`src/server/multipart.hpp`.
+
+| Route | Body | Success | Errors |
+| --- | --- | --- | --- |
+| `POST /api/run` | `multipart/form-data`: the part `request` (JSON) and one part per file | 200 and the result JSON (schema 2); a second upload restarts the run, keeps the answers and raises the revision | 400 `{"error":"<code>"}`; 413 `file_too_large` or `request_too_large`; 422 `{"inputFault":{...}}` |
+| `GET /api/run` | none | 200 and the result JSON | 404 `no_run` |
+| `POST /api/run/answers` | `{"runRevision":2,"answers":[{"requestId":"request-0001","answer":"above_limit"}]}` | 200 and the result JSON | 400; 404 `no_run`; 422 `{"rejections":[...]}` |
+| `POST /api/run/decisions/delete` | `{"runRevision":3,"decisionIds":["decision-0001"]}` or `{"runRevision":3,"all":true}` | 200 and the result JSON | as above |
+| `GET /api/run/reports/<report>/xml?revision=<n>` | none | 200, `application/xml; charset=utf-8`, `Content-Disposition: attachment; filename="Doh-KDVP_2024.xml"` | 400 no valid `revision`; 404 no run, unknown report or no XML; 409 another revision |
+
+- `<report>` is the key of the result JSON: `capitalGains`, `dividends`, `bankInterest`,
+  `otherInterest`. The file names are those of the command line (`reportXmlFileName`), with
+  `_UNSAFE` for a developer export.
+- Another method on a run path is 405 with `Allow`. A request that throws is the 500 of the HTTP
+  layer (empty body) and leaves the run as it was.
+- The `request` part: `reportingYear`, `filingType` (`original` or `self_report`), optional
+  `developerMode`, the `taxpayer` object (the keys of the taxpayer file) and `files`, a list of
+  `{"part":"file0","kind":"broker","broker":"trade_republic"}`, `"kind":"ecb_rates"` or
+  `"kind":"reference"` (up to 32; more is `too_many_files`). An unknown key is `bad_request`. The broker name is looked up in
+  one table of `request_json.cpp`; no route branches on a broker. The file name of a part is
+  reduced to its last path part.
+- 400 codes: `bad_request`, `path_not_allowed` (a key named `path` anywhere, R10), `no_broker_file`
+  (an input check for the frontend, not a tax rule), `missing_part`, `unreferenced_part`,
+  `duplicate_part`, `too_many_files` (more than 32 files in the list, or more than 33 parts in the
+  upload), `unsupported_broker`, `bad_multipart`. Every refusal, also a 404, 405, 409 and 422,
+  writes one warning to the log with its status and code (R13), so a bug report with the log line
+  names the cause. Where one code has several causes, the line adds a fixed word in brackets:
+  `bad_multipart (content_type|body|part_header)`, `input_fault (rate_file|reference_file <message
+  key>)` and `answer_rejected (<count>: <message key> x<n>, ...)`. A step that works writes an
+  info line (`docs/logging.md`, "What the server logs").
+- The type of an answer comes from the request: the route looks up each `requestId` in the current
+  result and reads the answer by that request's type and question data (`parseAnswerJson`). A
+  shape that does not fit gives 422 with `answer_rejected.answer_does_not_fit` at that index and
+  nothing reaches the session. A request that is not open in the current revision gets a
+  placeholder answer, so the session's own checks give `stale_revision` or `unknown_request`.
+  Values inside a fitting shape (a ratio of 0, a correction above the open units) are checked by
+  the session, with its own keys.
+- A 422 body holds no English sentence: each entry is `{"index":0,"messageKey":"...",
+  "messageParams":{...}}`. An input fault is `{"inputFault":{"kind":"ecb_rate_file"` or
+  `"reference_file","messageKey":"...","messageParams":{...},"source":{"file":"rates.csv","row":3}}}`,
+  with the file name only (R12).
 
 ## Official rate files
 

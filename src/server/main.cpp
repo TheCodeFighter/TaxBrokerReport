@@ -2,6 +2,7 @@
 #include "server.hpp"
 #include "server_config.hpp"
 
+#include "taxbroker/input_file.hpp"
 #include "taxbroker/logging.hpp"
 
 #include <spdlog/spdlog.h>
@@ -18,6 +19,7 @@ int main(int aArgc, char** aArgv) {
     taxbroker::ServerHooks hooks;
     hooks.mOpener = taxbroker::openInBrowser;
     hooks.mHandleSignals = true;
+    hooks.mMaxFileBytes = taxbroker::kMaxInputFileBytes;
 
     const int exitCode =
         taxbroker::StartServer(taxbroker::systemEnvironment(), std::cout, std::cerr, hooks);

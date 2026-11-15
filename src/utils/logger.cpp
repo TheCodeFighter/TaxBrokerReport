@@ -217,6 +217,29 @@ std::optional<std::string> GetLogFilePath(const std::shared_ptr<spdlog::logger>&
 
 namespace taxbroker {
 
+std::vector<std::string> InvalidLogSettings() {
+    std::vector<std::string> invalid;
+
+    const auto check = [&invalid](const char* aName, bool aIsValid) {
+        if (GetEnvironmentValue(aName) != nullptr && !aIsValid)
+        {
+            invalid.emplace_back(aName);
+        }
+    };
+
+    check("TBR_LOG_LEVEL", ParseLogLevel(GetEnvironmentValue("TBR_LOG_LEVEL")).has_value());
+    check("TBR_LOG_FILE_MODE",
+          ParseLogFileMode(GetEnvironmentValue("TBR_LOG_FILE_MODE")).has_value());
+    check("TBR_LOG_ASYNC", ParseLogBool(GetEnvironmentValue("TBR_LOG_ASYNC")).has_value());
+    check("TBR_LOG_QUEUE_SIZE",
+          ParseSizeT(GetEnvironmentValue("TBR_LOG_QUEUE_SIZE"), kMaxAsyncQueueSize).has_value());
+    check("TBR_LOG_THREADS",
+          ParseSizeT(GetEnvironmentValue("TBR_LOG_THREADS"), kMaxAsyncThreadCount).has_value());
+    check("TBR_LOG_STDOUT", ParseLogBool(GetEnvironmentValue("TBR_LOG_STDOUT")).has_value());
+
+    return invalid;
+}
+
 void InitializeLogger() {
     static std::once_flag sInitializeOnce;
     std::call_once(sInitializeOnce, []() {
@@ -283,6 +306,12 @@ void InitializeLogger() {
         spdlog::flush_every(std::chrono::seconds(1));
 
         spdlog::set_pattern(kDefaultPattern);
+
+        // A wrong setting is ignored, but the log says so. Names only: a value may be a path.
+        for (const std::string& name : InvalidLogSettings())
+        {
+            LOG_WARNING("Log setting {} is not valid and is ignored: the default is used", name);
+        }
     });
 }
 
