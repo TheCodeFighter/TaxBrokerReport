@@ -1,23 +1,16 @@
 #pragma once
 
+#include "taxbroker/api/taxpayer_json.hpp"
 #include "taxbroker/report_models.hpp"
 
 #include <filesystem>
-#include <string>
-#include <string_view>
 #include <variant>
 
 namespace taxbroker::cli {
 
-struct TaxpayerFileError {
-    std::string mMessage;
+using TaxpayerFileError = api::TaxpayerJsonError;
 
-    bool operator==(const TaxpayerFileError&) const = default;
-};
-
-[[nodiscard]] std::variant<TaxpayerMetadata, TaxpayerFileError>
-parseTaxpayerJson(std::string_view aText);
-
+/// Reads the taxpayer file at aPath and parses it with `api::parseTaxpayerJson`.
 [[nodiscard]] std::variant<TaxpayerMetadata, TaxpayerFileError>
 readTaxpayerFile(const std::filesystem::path& aPath);
 
