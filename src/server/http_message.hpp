@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -9,12 +10,6 @@ namespace taxbroker {
 
 /// The longest body of any request except an upload: the login and the answers are small.
 inline constexpr std::uint64_t kDefaultBodyLimit = 1024 * 1024;
-
-/// How much body the server may read for a request, decided from its header alone.
-struct BodyPolicy {
-    std::uint64_t mLimit{}; ///< Longest body in bytes; always set.
-    bool mGuardPassed{}; ///< The guard accepts the header, so `Expect: 100-continue` is answered.
-};
 
 /// One header of a request or a response.
 struct HttpField {
@@ -35,6 +30,17 @@ struct HttpResponse {
     unsigned mStatus{};              ///< HTTP status code; always set by the creator.
     std::vector<HttpField> mHeaders; ///< Security headers first, then the route's own.
     std::string mBody;               ///< The body; empty when there is none.
+};
+
+/// How much body the server may read for a request, decided from its header alone.
+struct BodyPolicy {
+    std::uint64_t mLimit{}; ///< Longest body in bytes; always set.
+    bool mGuardPassed{}; ///< The guard accepts the header, so `Expect: 100-continue` is answered.
+    /// The guard's own answer. The server sends it, instead of a 413, when the body is large or
+    /// has no declared length, so it never reads the body of a refused request. Empty: none.
+    std::optional<HttpResponse> mRefusal;
+    /// The fixed word of the refusal for the log (`session_wrong`, ...); empty without a refusal.
+    std::string_view mReason{};
 };
 
 /// A response with the security headers (R18) first. No `Access-Control-*` header is ever added

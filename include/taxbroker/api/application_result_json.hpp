@@ -22,9 +22,10 @@ inline constexpr unsigned kApplicationResultSchemaVersion = 2;
 /// errors=0 warnings=2`. Only fixed words and counts: no name, ISIN, amount or file name.
 [[nodiscard]] std::string resultLogSummary(const ApplicationResult& aResult);
 
-/// The open question types, error codes and warning codes of a result with their counts, sorted by
-/// name, for example `requests [loss_eligibility_confirmation_required x1]; errors
-/// [incomplete_history x1]; warnings [none]`. Only fixed words and counts.
+/// The open question types, error codes, warning codes, exclusion reasons, no-data reasons and
+/// answered failure questions of a result with their counts, sorted by name, for example
+/// `requests [none]; errors [incomplete_history x1]; warnings [none]; excluded [none]; no data
+/// [none]; answered [none]`. Only fixed words and counts.
 [[nodiscard]] std::string resultLogDetails(const ApplicationResult& aResult);
 
 /// Produces the application result object that the HTTP API returns.

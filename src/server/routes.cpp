@@ -161,7 +161,8 @@ BodyPolicy Routes::bodyPolicy(const HttpRequest& aHeaderOnly) const {
 
     if (verdict.mTarget == Target::Refused)
     {
-        return {kDefaultBodyLimit, false};
+        // The server may send this answer at once for a large body; it writes the log line then.
+        return {kDefaultBodyLimit, false, verdict.mRefusal, verdict.mReason};
     }
 
     if (verdict.mTarget == Target::Api && aHeaderOnly.mMethod == "POST" &&

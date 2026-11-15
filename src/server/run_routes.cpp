@@ -165,15 +165,55 @@ HttpResponse noRunResponse() {
     return refuse(404, "no_run");
 }
 
-/// The log line holds the number of rejections and the stable message keys, in call order; never
-/// an answer value or a decision ID.
+/// The question types of the answers with their counts. An ID that is not in the result is left
+/// out.
+std::string answeredTypesLogText(const ApplicationResult& aResult,
+                                 const std::vector<DecisionAnswer>& aAnswers) {
+    std::map<std::string_view, std::size_t> types;
+
+    for (const DecisionAnswer& answer : aAnswers)
+    {
+        const auto request = std::find_if(aResult.mRequests.begin(),
+                                          aResult.mRequests.end(),
+                                          [&answer](const DecisionRequest& aRequest) {
+                                              return aRequest.mId == answer.mRequestId;
+                                          });
+
+        if (request != aResult.mRequests.end())
+        {
+            ++types[api::requestTypeName(request->mType)];
+        }
+    }
+
+    std::string text = "[";
+
+    for (const auto& [name, count] : types)
+    {
+        text += text.size() > 1 ? ", " : "";
+        text += name;
+        text += " x" + std::to_string(count);
+    }
+
+    return text + "]";
+}
+
+/// The log line holds the number of rejections and each stable message key once with its count,
+/// sorted by key (a call can hold thousands of answers); never an answer value or a decision ID.
 HttpResponse rejectedResponse(const std::vector<RejectedAnswer>& aRejections) {
-    std::string keys;
+    std::map<std::string_view, std::size_t> counts;
 
     for (const RejectedAnswer& rejection : aRejections)
     {
+        ++counts[messageDefinition(rejection.mMessageKey).mId];
+    }
+
+    std::string keys;
+
+    for (const auto& [key, count] : counts)
+    {
         keys += keys.empty() ? "" : ", ";
-        keys += messageDefinition(rejection.mMessageKey).mId;
+        keys += key;
+        keys += " x" + std::to_string(count);
     }
 
     LOG_WARNING("Run request refused: 422 answer_rejected ({}: {})", aRejections.size(), keys);
@@ -413,6 +453,9 @@ HttpResponse RunRoutes::answers(const HttpRequest& aRequest) {
         return rejectedResponse(answerCall.mShapeRejections);
     }
 
+    // The question types are read before the answers change the result: the log says which
+    // questions were answered, never the answers.
+    const std::string answeredTypes = answeredTypesLogText(mRun->result(), answerCall.mAnswers);
     const std::size_t answerCount = answerCall.mAnswers.size();
     const std::vector<RejectedAnswer> rejections =
         mRun->session().answer(std::move(answerCall.mAnswers));
@@ -422,7 +465,7 @@ HttpResponse RunRoutes::answers(const HttpRequest& aRequest) {
         return rejectedResponse(rejections);
     }
 
-    LOG_INFO("Answers accepted: {}", answerCount);
+    LOG_INFO("Answers accepted: {} {}", answerCount, answeredTypes);
     logResult(mRun->result());
 
     return resultResponse(mRun->result());

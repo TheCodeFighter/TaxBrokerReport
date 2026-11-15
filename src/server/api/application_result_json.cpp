@@ -1537,6 +1537,9 @@ std::string resultLogDetails(const ApplicationResult& aResult) {
     std::map<std::string_view, std::size_t> requests;
     std::map<std::string_view, std::size_t> errors;
     std::map<std::string_view, std::size_t> warnings;
+    std::map<std::string_view, std::size_t> excluded;
+    std::map<std::string, std::size_t> noData;
+    std::map<std::string, std::size_t> resolved;
 
     for (const DecisionRequest& request : aResult.mRequests)
     {
@@ -1550,7 +1553,30 @@ std::string resultLogDetails(const ApplicationResult& aResult) {
         ++counts[codeString(diagnostic.mCode)];
     }
 
-    const auto list = [](const std::map<std::string_view, std::size_t>& aCounts) {
+    for (const ExcludedItem& item : aResult.mExcludedItems)
+    {
+        ++excluded[toString(item.mReason)];
+    }
+
+    // "<report> <reason>" and "<report> <answer>": fixed words, so a report that is empty or
+    // shorter than expected can be explained from the log.
+    for (std::size_t index = 0; index < aResult.mReports.size(); ++index)
+    {
+        const ReportResult& report = aResult.mReports[index];
+        const std::string key{reportKey(static_cast<ReportType>(index))};
+
+        if (report.mNoDataReason.has_value())
+        {
+            ++noData[key + " " + std::string{toString(*report.mNoDataReason)}];
+        }
+
+        if (report.mFailureResolution.has_value())
+        {
+            ++resolved[key + " " + std::string{toString(*report.mFailureResolution)}];
+        }
+    }
+
+    const auto list = [](const auto& aCounts) {
         std::string text = "[";
 
         for (const auto& [name, count] : aCounts)
@@ -1564,7 +1590,8 @@ std::string resultLogDetails(const ApplicationResult& aResult) {
     };
 
     return "requests " + list(requests) + "; errors " + list(errors) + "; warnings " +
-           list(warnings);
+           list(warnings) + "; excluded " + list(excluded) + "; no data " + list(noData) +
+           "; answered " + list(resolved);
 }
 
 std::string serializeApplicationResultJson(const ApplicationResult& aResult, int aIndent) {

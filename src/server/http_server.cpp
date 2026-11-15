@@ -97,7 +97,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
     void onHeader(beast::error_code aError) {
         if (aError)
         {
-            onReadError(aError);
+            onReadError(aError, false);
 
             return;
         }
@@ -134,9 +134,21 @@ class Connection : public std::enable_shared_from_this<Connection> {
 
         mParser->body_limit(policy.mLimit);
 
-        // A declared length over the limit is refused at once, without waiting for the body.
         const auto declaredLength = mParser->content_length();
 
+        // A refused request with a body that is large or of unknown length gets the guard's own
+        // answer at once: a 413 would hide the reason (a wrong session, for example). A small body
+        // is read, and the handler refuses it.
+        if (policy.mRefusal.has_value() && !mParser->is_done() &&
+            (!declaredLength || *declaredLength > policy.mLimit))
+        {
+            LOG_WARNING("Request refused: {} {}", policy.mRefusal->mStatus, policy.mReason);
+            write(std::move(*policy.mRefusal), message.version(), false);
+
+            return;
+        }
+
+        // A declared length over the limit is refused at once, without waiting for the body.
         if (declaredLength && *declaredLength > policy.mLimit)
         {
             // Only the fixed limit: the declared length and the target are the caller's.
@@ -185,7 +197,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
                               [self = shared_from_this()](beast::error_code aError, std::size_t) {
                                   if (aError)
                                   {
-                                      self->onReadError(aError);
+                                      self->onReadError(aError, true);
 
                                       return;
                                   }
@@ -201,11 +213,19 @@ class Connection : public std::enable_shared_from_this<Connection> {
                               });
     }
 
-    void onReadError(beast::error_code aError) {
-        // A timeout, a closed or reset connection: nothing to answer.
+    /// An error while reading. A closed or timed-out connection gets no answer; one in the body
+    /// leaves a warning, because an upload that stops is otherwise invisible. An idle keep-alive
+    /// connection that ends (error in the header) is normal and writes nothing.
+    void onReadError(beast::error_code aError, bool aInBody) {
         if (!isParserError(aError) || aError == http::error::end_of_stream ||
             aError == http::error::partial_message)
         {
+            if (aInBody)
+            {
+                LOG_WARNING("Request not finished: {}",
+                            aError == beast::error::timeout ? "timeout" : "connection_closed");
+            }
+
             close();
 
             return;
@@ -336,6 +356,14 @@ struct HttpServer::Impl {
 
             if (aError)
             {
+                // One warning for a series of failures, not one per try. The text is the system
+                // message of the error, for example "Too many open files".
+                if (!mAcceptFailing)
+                {
+                    LOG_WARNING("Accept failed: {}; trying again", aError.message());
+                    mAcceptFailing = true;
+                }
+
                 // Out of file handles, for example: the waiting connection stays queued, so an
                 // accept at once would fail again and again at full CPU. Wait, then try again.
                 mRetryTimer.expires_after(kAcceptRetryDelay);
@@ -349,6 +377,8 @@ struct HttpServer::Impl {
                 return;
             }
 
+            mAcceptFailing = false;
+
             std::make_shared<Connection>(std::move(aSocket), mOptions, mHandler, mBodyPolicy)
                 ->start();
             accept();
@@ -359,6 +389,7 @@ struct HttpServer::Impl {
     asio::io_context mContext{1};
     tcp::acceptor mAcceptor;
     asio::steady_timer mRetryTimer; ///< Waits after an accept error.
+    bool mAcceptFailing{};          ///< True after a failed accept, until one works; for the log.
     std::shared_ptr<const HttpServer::Handler> mHandler;
     std::shared_ptr<const HttpServer::BodyPolicyFunction> mBodyPolicy;
 };
