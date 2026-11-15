@@ -122,6 +122,10 @@ Default:
 * `TBR_LOG_THREADS` = async worker threads
 * `TBR_LOG_STDOUT` = enable stdout logging
 
+A value that is not valid (an unknown level, a queue size over 65536, more than 8 threads, ...) is
+ignored and the default is used. The logger writes one warning with the name of the variable
+(never its value).
+
 ---
 
 ## Usage

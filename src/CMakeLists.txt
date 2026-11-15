@@ -112,9 +112,13 @@ target_link_libraries(taxbroker_core
 # JSON is an API/presentation concern. Keeping it in a separate target prevents the parser and
 # tax-processing core from depending on a wire format.
 add_library(taxbroker_api STATIC
+    server/api/answer_json.cpp
     server/api/application_result_json.cpp
     server/api/diagnostics_json.cpp
     server/api/json_strings.cpp
+    server/api/report_files.cpp
+    server/api/request_json.cpp
+    server/api/taxpayer_json.cpp
 )
 
 target_include_directories(taxbroker_api
@@ -194,8 +198,11 @@ endif()
 # the backend only through the public headers (the service); the logger comes with the service.
 add_library(taxbroker_server_lib STATIC
     server/browser_open.cpp
+    server/http_message.cpp
     server/http_server.cpp
+    server/multipart.cpp
     server/routes.cpp
+    server/run_routes.cpp
     server/server.cpp
     server/server_config.cpp
     server/state_folder.cpp
@@ -207,6 +214,7 @@ target_link_libraries(taxbroker_server_lib
     PUBLIC
     taxbroker_service
     PRIVATE
+    taxbroker_api
     taxbroker_server_security
     nlohmann_json::nlohmann_json
     Threads::Threads

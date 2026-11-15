@@ -16,7 +16,7 @@ inline constexpr unsigned kApplicationResultSchemaVersion = 2;
 /// The request type as in the JSON: `loss_eligibility_confirmation_required`.
 [[nodiscard]] std::string_view requestTypeName(RequestType aType);
 
-/// Produces the application result object that the future HTTP API returns.
+/// Produces the application result object that the HTTP API returns.
 [[nodiscard]] std::string serializeApplicationResultJson(const ApplicationResult& aResult,
                                                          int aIndent = -1);
 

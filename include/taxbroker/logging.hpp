@@ -6,9 +6,17 @@
 
 #include <spdlog/spdlog.h>
 
+#include <string>
+#include <vector>
+
 namespace taxbroker {
 
 void InitializeLogger();
+
+/// The names of the `TBR_LOG_*` environment variables that are set but not valid, so the logger
+/// ignores them and uses the default. Names only, never the values. `InitializeLogger` writes one
+/// warning for each.
+[[nodiscard]] std::vector<std::string> InvalidLogSettings();
 
 } // namespace taxbroker
 
