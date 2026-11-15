@@ -1,6 +1,7 @@
 #include "server/browser_open.hpp"
 #include "server/http_server.hpp"
 #include "server/server.hpp"
+#include "server_test_support.hpp"
 
 #include <gtest/gtest.h>
 
@@ -43,12 +44,7 @@
 namespace {
 using namespace taxbroker;
 
-namespace asio = boost::asio;
-namespace beast = boost::beast;
-namespace http = beast::http;
-using tcp = asio::ip::tcp;
-
-using Response = http::response<http::string_body>;
+using namespace taxbroker::servertest;
 
 /// The permission bits of a file or folder.
 unsigned modeOf(const std::filesystem::path& aPath) {
@@ -58,205 +54,15 @@ unsigned modeOf(const std::filesystem::path& aPath) {
     return info.st_mode & 0777U;
 }
 
-/// The whole content of a file.
-std::string readAll(const std::filesystem::path& aPath) {
-    std::ifstream file(aPath, std::ios::binary);
-    std::ostringstream content;
-    content << file.rdbuf();
-
-    return content.str();
-}
-
-/// An environment made of a map, so the test names every variable it sets.
-EnvLookup envOf(std::map<std::string, std::string> aValues) {
-    return [aValues](std::string_view aName) -> std::optional<std::string> {
-        const auto found = aValues.find(std::string(aName));
-
-        if (found == aValues.end())
-        {
-            return std::nullopt;
-        }
-
-        return found->second;
-    };
-}
-
-/// A blocking client for one connection.
-class Client {
-  public:
-    /// Connects; check `connected()`.
-    explicit Client(std::uint16_t aPort, const std::string& aAddress = "127.0.0.1")
-        : mSocket(mContext) {
-        beast::error_code error;
-        mSocket.connect(tcp::endpoint(asio::ip::make_address(aAddress), aPort), error);
-        mConnected = !error;
-    }
-
-    [[nodiscard]] bool connected() const {
-        return mConnected;
-    }
-
-    void send(const std::string& aRaw) {
-        asio::write(mSocket, asio::buffer(aRaw));
-    }
-
-    /// Reads one response; nothing when the connection closed or broke before it was complete.
-    std::optional<Response> readResponse() {
-        beast::error_code error;
-        Response response;
-        http::read(mSocket, mBuffer, response, error);
-
-        if (error)
-        {
-            return std::nullopt;
-        }
-
-        return response;
-    }
-
-    /// True when reading ends with a closed or reset connection and no more data.
-    bool readsUntilClosed() {
-        beast::error_code error;
-        char scratch[256];
-
-        do
-        {
-            mSocket.read_some(asio::buffer(scratch), error);
-        } while (!error);
-
-        return error == asio::error::eof || error == asio::error::connection_reset;
-    }
-
-  private:
-    asio::io_context mContext;
-    tcp::socket mSocket;
-    beast::flat_buffer mBuffer;
-    bool mConnected = false; ///< Set by the constructor.
-};
-
-/// A request without a body.
-std::string getRequest(std::uint16_t aPort, const std::string& aTarget) {
-    return "GET " + aTarget + " HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(aPort) + "\r\n\r\n";
-}
-
-/// The login request with the given token in the body.
-std::string loginRequest(std::uint16_t aPort, const std::string& aToken) {
-    const std::string body = "{\"token\":\"" + aToken + "\"}";
-
-    return "POST /api/session HTTP/1.1\r\n"
-           "Host: 127.0.0.1:" +
-           std::to_string(aPort) +
-           "\r\n"
-           "Origin: http://127.0.0.1:" +
-           std::to_string(aPort) +
-           "\r\n"
-           "X-TaxBroker: 1\r\n"
-           "Content-Type: application/json\r\n"
-           "Content-Length: " +
-           std::to_string(body.size()) + "\r\n\r\n" + body;
-}
-
-/// The check request with the session cookie.
-std::string sessionRequest(std::uint16_t aPort, const std::string& aSessionToken) {
-    return "GET /api/session HTTP/1.1\r\n"
-           "Host: 127.0.0.1:" +
-           std::to_string(aPort) +
-           "\r\n"
-           "X-TaxBroker: 1\r\n"
-           "Cookie: tbr_session_" +
-           std::to_string(aPort) + "=" + aSessionToken + "\r\n\r\n";
-}
-
-/// The 64 hex characters after `#token=` in a text.
-std::string tokenIn(const std::string& aText) {
-    const std::string marker = "#token=";
-    const std::size_t start = aText.find(marker);
-
-    if (start == std::string::npos)
-    {
-        return "";
-    }
-
-    return aText.substr(start + marker.size(), 64);
-}
-
-/// StartServer on its own thread, until `stop` or the destructor.
-class RunningServer {
-  public:
-    RunningServer(const EnvLookup& aEnv, const BrowserOpener& aOpener) {
-        mThread = std::thread([this, aEnv, aOpener]() {
-            ServerHooks hooks;
-            hooks.mOpener = aOpener;
-            hooks.mHandleSignals = false;
-            hooks.mOnListening = [this](std::uint16_t aPort, std::function<void()> aStop) {
-                const std::lock_guard<std::mutex> lock(mMutex);
-                mPort = aPort;
-                mStop = std::move(aStop);
-                mChanged.notify_all();
-            };
-
-            const int exitCode = StartServer(aEnv, mOut, mErr, hooks);
-
-            const std::lock_guard<std::mutex> lock(mMutex);
-            mExitCode = exitCode;
-            mFinished = true;
-            mChanged.notify_all();
-        });
-
-        std::unique_lock<std::mutex> lock(mMutex);
-        mChanged.wait(lock, [this]() { return mPort != 0 || mFinished; });
-    }
-
-    ~RunningServer() {
-        (void)stop();
-    }
-
-    /// The listening port; 0 when the start failed.
-    [[nodiscard]] std::uint16_t port() const {
-        return mPort;
-    }
-
-    /// Stops the server, waits for it and returns the exit code.
-    int stop() {
-        if (mThread.joinable())
-        {
-            if (mStop)
-            {
-                mStop();
-            }
-
-            mThread.join();
-        }
-
-        return mExitCode;
-    }
-
-    [[nodiscard]] std::string out() const {
-        return mOut.str();
-    }
-
-    [[nodiscard]] std::string err() const {
-        return mErr.str();
-    }
-
-  private:
-    std::thread mThread;
-    std::mutex mMutex;
-    std::condition_variable mChanged;
-    std::uint16_t mPort = 0; ///< 0 until the server listens.
-    std::function<void()> mStop;
-    bool mFinished = false; ///< True when StartServer returned.
-    int mExitCode = -1;     ///< Set when StartServer returned.
-    std::ostringstream mOut;
-    std::ostringstream mErr;
-};
-
 /// An HttpServer on its own thread.
 class RunningHttpServer {
   public:
-    RunningHttpServer(const HttpServerOptions& aOptions, HttpServer::Handler aHandler)
+    RunningHttpServer(const HttpServerOptions& aOptions,
+                      HttpServer::Handler aHandler,
+                      HttpServer::BodyPolicyFunction aBodyPolicy = {})
         : mServer("127.0.0.1", 0, aOptions) {
-        mThread = std::thread([this, aHandler]() { mServer.run(aHandler); });
+        mThread =
+            std::thread([this, aHandler, aBodyPolicy]() { mServer.run(aHandler, aBodyPolicy); });
     }
 
     ~RunningHttpServer() {
@@ -721,11 +527,26 @@ TEST_F(ServerTest, LogHoldsNeitherTokenNorPath) {
 
     EXPECT_NE(log.find("Server listening on 127.0.0.1:"), std::string::npos);
     EXPECT_NE(log.find("Browser login done"), std::string::npos);
+    EXPECT_NE(log.find("The browser program could not be started"), std::string::npos);
     EXPECT_NE(log.find("Server stopped"), std::string::npos);
     EXPECT_EQ(log.find(link), std::string::npos);
     EXPECT_EQ(log.find(session), std::string::npos);
     EXPECT_EQ(log.find(mFolder.string()), std::string::npos);
     EXPECT_EQ(log.find("/tmp"), std::string::npos);
+}
+
+TEST_F(ServerTest, ABrowserProgramThatStartsIsLoggedWithoutTheFileName) {
+    {
+        RunningServer server(standardEnv(), [](const std::filesystem::path&) { return true; });
+
+        ASSERT_GT(server.port(), 0);
+    }
+
+    const std::string log = mLog.str();
+
+    EXPECT_NE(log.find("The browser program was started"), std::string::npos);
+    EXPECT_EQ(log.find("could not be started"), std::string::npos);
+    EXPECT_EQ(log.find("launch.html"), std::string::npos);
 }
 
 // ---- HTTP layer
@@ -835,6 +656,283 @@ TEST_F(ServerTest, BodyAboveTheLimitIsRefused) {
     ASSERT_TRUE(response.has_value());
 
     EXPECT_EQ(response->result_int(), 413U);
+    EXPECT_NE(mLog.str().find("Request refused: 413 body_over_the_limit (limit 10)"),
+              std::string::npos);
+}
+
+/// The body policy of the body-limit tests: a request with a Cookie header passed the guard and may
+/// send 2'500'000 bytes; any other may send 1 MiB.
+BodyPolicy cookieBodyPolicy(const HttpRequest& aHeader) {
+    const bool hasCookie =
+        std::any_of(aHeader.mHeaders.begin(), aHeader.mHeaders.end(), [](const HttpField& aField) {
+            return aField.mName == "Cookie";
+        });
+
+    return hasCookie ? BodyPolicy{2'500'000, true} : BodyPolicy{1024 * 1024, false};
+}
+
+/// 401 for a request without a Cookie header, else 200 with the length of the body as text.
+HttpResponse cookieHandler(const HttpRequest& aRequest) {
+    const bool hasCookie =
+        std::any_of(aRequest.mHeaders.begin(),
+                    aRequest.mHeaders.end(),
+                    [](const HttpField& aField) { return aField.mName == "Cookie"; });
+
+    HttpResponse response;
+    response.mStatus = hasCookie ? 200 : 401;
+    response.mBody = std::to_string(aRequest.mBody.size());
+
+    return response;
+}
+
+TEST_F(ServerTest, LargeBodyWithoutTheGuardIsRefusedBeforeItIsRead) {
+    RunningHttpServer server(testOptions(), cookieHandler, cookieBodyPolicy);
+
+    // Only the header is sent: the 413 comes without a body to read.
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2000000\r\n\r\n");
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 413U);
+    EXPECT_TRUE(client.readsUntilClosed());
+}
+
+TEST_F(ServerTest, ChunkedBodyAboveTheLimitIsRefused) {
+    // A chunked body has no declared length, so the limit is checked while the body is read.
+    HttpServerOptions options = testOptions();
+    options.mBodyLimit = 10;
+    RunningHttpServer server(options, okHandler);
+
+    Client client(server.port());
+    client.send("POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "b\r\n01234567890\r\n0\r\n\r\n");
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 413U);
+    EXPECT_NE(mLog.str().find("Request refused: 413 unreadable_request"), std::string::npos);
+}
+
+TEST_F(ServerTest, FailingBodyPolicyGivesInternalErrorWithoutDetail) {
+    RunningHttpServer server(testOptions(), okHandler, [](const HttpRequest&) -> BodyPolicy {
+        throw std::runtime_error("secret detail of /home/someone");
+    });
+
+    Client client(server.port());
+    client.send(getRequest(server.port(), "/"));
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 500U);
+    EXPECT_EQ(response->body(), "");
+    // The verb, the step and the kind of the exception; never its text.
+    EXPECT_NE(mLog.str().find("A request handler failed: GET body_policy (std::runtime_error)"),
+              std::string::npos);
+    EXPECT_EQ(mLog.str().find("secret"), std::string::npos);
+}
+
+TEST_F(ServerTest, SmallBodyWithoutTheGuardStillGetsItsAnswer) {
+    RunningHttpServer server(testOptions(), cookieHandler, cookieBodyPolicy);
+
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 10\r\n\r\n0123456789");
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 401U);
+}
+
+/// A body policy for a request that failed the guard: the 401 and the word `session_wrong`.
+BodyPolicy refusingBodyPolicy(const HttpRequest&) {
+    BodyPolicy policy{1024 * 1024, false};
+
+    policy.mRefusal = makeResponse(401);
+    policy.mReason = "session_wrong";
+
+    return policy;
+}
+
+TEST_F(ServerTest, LargeBodyOfARefusedRequestGetsTheGuardAnswerAndItsReason) {
+    RunningHttpServer server(testOptions(), okHandler, refusingBodyPolicy);
+
+    // Only the header is sent: the answer is the guard's 401, not a 413, and the handler is not
+    // called (it would answer 200).
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2000000\r\n\r\n");
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 401U);
+    EXPECT_TRUE(client.readsUntilClosed());
+
+    const std::string log = mLog.str();
+
+    EXPECT_NE(log.find("Request refused: 401 session_wrong"), std::string::npos);
+    EXPECT_EQ(log.find("body_over_the_limit"), std::string::npos);
+}
+
+TEST_F(ServerTest, ChunkedBodyOfARefusedRequestGetsTheGuardAnswerAndItsReason) {
+    RunningHttpServer server(testOptions(), okHandler, refusingBodyPolicy);
+
+    // A chunked body has no declared length, so its size is not known before it is read.
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+                "4\r\nabcd\r\n");
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 401U);
+    EXPECT_NE(mLog.str().find("Request refused: 401 session_wrong"), std::string::npos);
+}
+
+TEST_F(ServerTest, SmallBodyOfARefusedRequestStillReachesTheHandler) {
+    RunningHttpServer server(testOptions(), okHandler, refusingBodyPolicy);
+
+    // A small body is read, and the handler refuses it (here it answers 200 to show it ran). The
+    // guard's answer is sent at once only for a body that is large or of unknown size.
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 4\r\n\r\nabcd");
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 200U);
+    EXPECT_EQ(mLog.str().find("Request refused"), std::string::npos);
+}
+
+TEST_F(ServerTest, RefusedRequestWithoutABodyReachesTheHandler) {
+    RunningHttpServer server(testOptions(), okHandler, refusingBodyPolicy);
+
+    Client client(server.port());
+    client.send(getRequest(server.port(), "/"));
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 200U);
+}
+
+TEST_F(ServerTest, LargeBodyWithTheGuardReachesTheHandler) {
+    RunningHttpServer server(testOptions(), cookieHandler, cookieBodyPolicy);
+
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: a=b\r\n"
+                "Content-Length: 2000000\r\n\r\n" +
+                std::string(2000000, 'x'));
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 200U);
+    EXPECT_EQ(response->body(), "2000000");
+}
+
+TEST_F(ServerTest, SlowBodyIsReadWhileBytesKeepComing) {
+    HttpServerOptions options = testOptions();
+    options.mTimeout = std::chrono::milliseconds(200);
+    RunningHttpServer server(options, cookieHandler, cookieBodyPolicy);
+
+    // Four chunks 150 ms apart take 600 ms, three times the idle timeout, but no wait is longer
+    // than the timeout.
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: a=b\r\n"
+                "Content-Length: 4\r\n\r\n");
+
+    for (const char* chunk : {"a", "b", "c", "d"})
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        client.send(chunk);
+    }
+
+    const std::optional<Response> response = client.readResponse();
+
+    ASSERT_TRUE(response.has_value());
+
+    EXPECT_EQ(response->result_int(), 200U);
+    EXPECT_EQ(response->body(), "4");
+}
+
+TEST_F(ServerTest, BodyThatStopsIsClosedAfterTheIdleTimeout) {
+    HttpServerOptions options = testOptions();
+    options.mTimeout = std::chrono::milliseconds(200);
+
+    {
+        RunningHttpServer server(options, cookieHandler, cookieBodyPolicy);
+
+        // Four bytes are promised and one arrives.
+        Client client(server.port());
+        client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: a=b\r\n"
+                    "Content-Length: 4\r\n\r\na");
+
+        EXPECT_TRUE(client.readsUntilClosed());
+    }
+
+    // The timeout closes the socket before the handler writes its line, so the log is read after
+    // the server has stopped.
+    EXPECT_NE(mLog.str().find("Request not finished: timeout"), std::string::npos);
+}
+
+TEST_F(ServerTest, BodyThatIsCutByTheClientIsLogged) {
+    RunningHttpServer server(testOptions(), cookieHandler, cookieBodyPolicy);
+
+    // Four bytes are promised, one arrives, then the client ends its stream.
+    Client client(server.port());
+    client.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: a=b\r\n"
+                "Content-Length: 4\r\n\r\na");
+    client.finishSending();
+
+    EXPECT_TRUE(client.readsUntilClosed());
+    EXPECT_NE(mLog.str().find("Request not finished: connection_closed"), std::string::npos);
+}
+
+TEST_F(ServerTest, AnIdleConnectionThatEndsWritesNoLine) {
+    RunningHttpServer server(testOptions(), cookieHandler, cookieBodyPolicy);
+
+    // Nothing is sent: the connection ends while the server waits for a header.
+    Client client(server.port());
+    client.finishSending();
+
+    EXPECT_TRUE(client.readsUntilClosed());
+    EXPECT_EQ(mLog.str().find("Request not finished"), std::string::npos);
+}
+
+TEST_F(ServerTest, ExpectContinueGetsTheContinueOnlyWhenTheGuardPassed) {
+    RunningHttpServer server(testOptions(), cookieHandler, cookieBodyPolicy);
+
+    // With the guard passed: the server answers 100 before the body is sent.
+    Client withGuard(server.port());
+    withGuard.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: a=b\r\n"
+                   "Expect: 100-continue\r\nContent-Length: 4\r\n\r\n");
+    const std::optional<Response> interim = withGuard.readResponse();
+
+    ASSERT_TRUE(interim.has_value());
+
+    EXPECT_EQ(interim->result_int(), 100U);
+
+    withGuard.send("abcd");
+    const std::optional<Response> final = withGuard.readResponse();
+
+    ASSERT_TRUE(final.has_value());
+
+    EXPECT_EQ(final->result_int(), 200U);
+    EXPECT_EQ(final->body(), "4");
+
+    // Without the guard: no 100, the first and only answer is the 401.
+    Client withoutGuard(server.port());
+    withoutGuard.send("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                      "Expect: 100-continue\r\nContent-Length: 4\r\n\r\nabcd");
+    const std::optional<Response> refused = withoutGuard.readResponse();
+
+    ASSERT_TRUE(refused.has_value());
+
+    EXPECT_EQ(refused->result_int(), 401U);
 }
 
 TEST_F(ServerTest, FailingHandlerGivesInternalErrorWithoutDetail) {
@@ -851,7 +949,8 @@ TEST_F(ServerTest, FailingHandlerGivesInternalErrorWithoutDetail) {
     EXPECT_EQ(response->result_int(), 500U);
     EXPECT_EQ(response->body(), "");
     EXPECT_EQ((*response)["Cache-Control"], "no-store");
-    EXPECT_NE(mLog.str().find("A request handler failed"), std::string::npos);
+    EXPECT_NE(mLog.str().find("A request handler failed: GET handler (std::runtime_error)"),
+              std::string::npos);
     EXPECT_EQ(mLog.str().find("secret"), std::string::npos);
 }
 
@@ -916,6 +1015,14 @@ TEST_F(ServerTest, AcceptWaitsAndThenRecoversWhenTheProcessRunsOutOfFileHandles)
     ::close(client);
 
     EXPECT_EQ(received.rfind("HTTP/1.1 200", 0), 0U);
+
+    // Several tries failed in the 0.2 s above, but the log has one warning for the series.
+    const std::string log = mLog.str();
+    const std::size_t first = log.find("Accept failed: ");
+
+    ASSERT_NE(first, std::string::npos);
+
+    EXPECT_EQ(log.find("Accept failed: ", first + 1), std::string::npos);
 }
 
 TEST_F(ServerTest, SigtermStopsTheServerWhenSignalsAreHandled) {
