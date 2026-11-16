@@ -106,6 +106,10 @@ export const uiTexts = {
     sl: "Vnesite osem števk davčne številke.",
     en: "Enter the eight digits of the tax number.",
   },
+  taxpayerHintTaxNumberCheckDigit: {
+    sl: "Kontrolna številka ni pravilna. Preverite davčno številko; poročila lahko kljub temu ustvarite.",
+    en: "The check digit is not correct. Check the tax number; you can still create the reports.",
+  },
   taxpayerErrorBirthDate: { sl: "Vnesite veljaven datum.", en: "Enter a valid date." },
   taxpayerErrorField: { sl: "Preverite to polje.", en: "Check this field." },
   taxpayerErrorGeneral: {

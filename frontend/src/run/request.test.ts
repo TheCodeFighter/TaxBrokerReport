@@ -8,7 +8,7 @@ function inputsWithFiles() {
 
   inputs.brokerFiles.trade_republic = [new File(["1"], "a.csv"), new File(["2"], "b.csv")];
   inputs.rateFiles = [new File(["3"], "r.csv")];
-  inputs.taxpayer.taxNumber = "12345678";
+  inputs.taxpayer.taxNumber = "12345679";
   inputs.taxpayer.name = "Synthetic Taxpayer";
 
   return inputs;
@@ -22,7 +22,7 @@ describe("buildRunRequest", () => {
     expect(JSON.parse(form.get("request") as string)).toEqual({
       reportingYear: 2025,
       filingType: "original",
-      taxpayer: { taxNumber: "12345678", name: "Synthetic Taxpayer", isResident: true },
+      taxpayer: { taxNumber: "12345679", name: "Synthetic Taxpayer", isResident: true },
       files: [
         { part: "file0", kind: "broker", broker: "trade_republic" },
         { part: "file1", kind: "broker", broker: "trade_republic" },

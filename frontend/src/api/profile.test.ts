@@ -8,12 +8,12 @@ const answer = (status: number, body = "") =>
 
 describe("loadProfile", () => {
   it("returns the answer of the server", async () => {
-    const body = '{"saved":true,"location":"~/x","taxpayer":{"taxNumber":"12345678"}}';
+    const body = '{"saved":true,"location":"~/x","taxpayer":{"taxNumber":"12345679"}}';
 
     expect(await loadProfile(answer(200, body))).toEqual({
       saved: true,
       location: "~/x",
-      taxpayer: { taxNumber: "12345678" },
+      taxpayer: { taxNumber: "12345679" },
     });
   });
 
@@ -28,12 +28,12 @@ describe("saveProfile", () => {
   it("sends the taxpayer as JSON and reports a 204 as saved", async () => {
     const fetchFunction = answer(204);
 
-    expect(await saveProfile(fetchFunction, { taxNumber: "12345678", isResident: true })).toEqual({ kind: "saved" });
+    expect(await saveProfile(fetchFunction, { taxNumber: "12345679", isResident: true })).toEqual({ kind: "saved" });
 
     expect(fetchFunction).toHaveBeenCalledWith("/api/profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: '{"taxNumber":"12345678","isResident":true}',
+      body: '{"taxNumber":"12345679","isResident":true}',
     });
   });
 

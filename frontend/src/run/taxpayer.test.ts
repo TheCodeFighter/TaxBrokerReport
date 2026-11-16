@@ -6,7 +6,7 @@ describe("taxpayerObject", () => {
   it("trims the text and leaves out empty fields", () => {
     const taxpayer = taxpayerObject({
       ...emptyTaxpayerForm,
-      taxNumber: " 12345678 ",
+      taxNumber: " 12345679 ",
       name: "Synthetic Taxpayer",
       address: "",
       city: "  ",
@@ -15,7 +15,7 @@ describe("taxpayerObject", () => {
     });
 
     expect(taxpayer).toEqual({
-      taxNumber: "12345678",
+      taxNumber: "12345679",
       name: "Synthetic Taxpayer",
       birthDate: "1990-01-31",
       isResident: true,
@@ -73,7 +73,7 @@ describe("taxpayerObject with Slovenian letters and long text", () => {
     const longName = "Š".repeat(1000);
     const taxpayer = taxpayerObject({
       ...emptyTaxpayerForm,
-      taxNumber: "12345678",
+      taxNumber: "12345679",
       name: longName,
       address: "Črnuška cesta 12, Šmartno ob Paki",
       city: "Črnomelj",
@@ -82,7 +82,7 @@ describe("taxpayerObject with Slovenian letters and long text", () => {
     });
 
     expect(taxpayer).toEqual({
-      taxNumber: "12345678",
+      taxNumber: "12345679",
       name: longName,
       address: "Črnuška cesta 12, Šmartno ob Paki",
       city: "Črnomelj",

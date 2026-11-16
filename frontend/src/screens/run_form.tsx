@@ -6,6 +6,7 @@ import { addFiles, moveFile, removeFile, type FilingType, type RunInputs } from 
 import { brokerKinds } from "../run/input_kinds";
 import { inputLabels } from "../run/file_labels";
 import { taxpayerFields, type TaxpayerForm } from "../run/taxpayer";
+import { hasWrongCheckDigit } from "../run/tax_number";
 import {
   FIRST_BUILT_IN_RATE_YEAR,
   LAST_BUILT_IN_RATE_YEAR,
@@ -220,6 +221,10 @@ export function RunForm({
           {taxpayerFields.map((spec) => {
             const invalid = fieldError?.field === spec.key;
             const errorId = `error-${spec.key}`;
+            const hintId = `hint-${spec.key}`;
+            // A soft hint: it never blocks the button, the server only warns.
+            const checkDigitHint =
+              spec.key === "taxNumber" && !invalid && hasWrongCheckDigit(inputs.taxpayer.taxNumber);
 
             return (
               <label key={spec.key} class="field">
@@ -231,12 +236,17 @@ export function RunForm({
                   maxLength={spec.maxLength}
                   required={spec.required}
                   aria-invalid={invalid ? "true" : undefined}
-                  aria-describedby={invalid ? errorId : undefined}
+                  aria-describedby={invalid ? errorId : checkDigitHint ? hintId : undefined}
                   onInput={(event) => setTaxpayer(spec.key, event.currentTarget.value)}
                 />
                 {invalid ? (
                   <span class="field-error" id={errorId}>
                     {fieldError?.text}
+                  </span>
+                ) : null}
+                {checkDigitHint ? (
+                  <span class="hint" id={hintId}>
+                    {uiText(language, "taxpayerHintTaxNumberCheckDigit")}
                   </span>
                 ) : null}
               </label>
