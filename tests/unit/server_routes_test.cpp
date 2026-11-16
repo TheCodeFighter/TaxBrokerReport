@@ -164,7 +164,8 @@ TEST_F(ServerRoutesTest, LinkTokenWorksAt119SecondsAndNotAt120Seconds) {
         mLaunchFile,
         [this]() { return mNow; },
         1000,
-        placeholderStaticFiles());
+        placeholderStaticFiles(),
+        "9.8.7");
 
     mNow = mStart + std::chrono::seconds(119);
     EXPECT_EQ(mRoutes.handle(request).mStatus, 204U);
