@@ -1,5 +1,6 @@
 #include "routes.hpp"
 
+#include "taxbroker/api/messages_json.hpp"
 #include "taxbroker/logging.hpp"
 
 #include <nlohmann/json.hpp>
@@ -13,13 +14,6 @@
 namespace taxbroker {
 
 namespace {
-
-constexpr std::string_view kPlaceholderPage =
-    "<!doctype html>\n"
-    "<html lang=\"sl\"><head><meta charset=\"utf-8\"><title>TaxBrokerReport</title></head>\n"
-    "<body><p>TaxBrokerReport teče. Uporabniški vmesnik pride v naslednji različici.</p>\n"
-    "<p lang=\"en\">TaxBrokerReport is running. The user interface comes in a later "
-    "version.</p></body></html>\n";
 
 HttpResponse makeBadRequestResponse() {
     return makeErrorCodeResponse(400, "bad_request");
@@ -74,10 +68,11 @@ Routes::Routes(std::uint16_t aPort,
                std::string aSessionToken,
                std::filesystem::path aLaunchFile,
                Clock aClock,
-               std::size_t aMaxFileBytes)
+               std::size_t aMaxFileBytes,
+               std::span<const StaticFile> aStaticFiles)
     : mPort(aPort), mLinkToken(std::move(aLinkToken), aClock()),
       mSessionToken(std::move(aSessionToken)), mLaunchFile(std::move(aLaunchFile)),
-      mClock(std::move(aClock)), mRunRoutes(aMaxFileBytes) {}
+      mClock(std::move(aClock)), mRunRoutes(aMaxFileBytes), mStaticFiles(aStaticFiles) {}
 
 Routes::Verdict Routes::check(const HttpRequest& aRequest) const {
     // Step 1: the Host header (R7).
@@ -188,25 +183,7 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
 
     if (verdict.mTarget == Target::Page)
     {
-        if (path != "/")
-        {
-            return makeResponse(404);
-        }
-
-        if (aRequest.mMethod != "GET" && aRequest.mMethod != "HEAD")
-        {
-            return makeNotAllowedResponse("GET, HEAD");
-        }
-
-        HttpResponse page = makeResponse(200);
-        page.mHeaders.push_back({"Content-Type", "text/html; charset=utf-8"});
-
-        if (aRequest.mMethod == "GET")
-        {
-            page.mBody = std::string(kPlaceholderPage);
-        }
-
-        return page;
+        return staticFile(aRequest, path);
     }
 
     if (verdict.mTarget == Target::Login)
@@ -218,6 +195,18 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
     if (path == "/api/run" || path.starts_with("/api/run/"))
     {
         return mRunRoutes.handle(aRequest, path, queryOf(aRequest.mTarget));
+    }
+
+    if (path == "/api/messages")
+    {
+        if (aRequest.mMethod != "GET")
+        {
+            logRefusal(405, "method_not_allowed");
+
+            return makeNotAllowedResponse("GET");
+        }
+
+        return makeJsonResponse(200, api::messagesJson());
     }
 
     if (path != "/api/session")
@@ -235,6 +224,37 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
     }
 
     return makeResponse(204);
+}
+
+HttpResponse Routes::staticFile(const HttpRequest& aRequest, std::string_view aPath) const {
+    // The path must match exactly: "/" is the page, and "/index.html" is not a second name for it.
+    // There is no normalising, so "/assets/../assets/app.js" is not found.
+    constexpr std::string_view kPage = "index.html";
+    const std::string_view name = aPath == "/" ? kPage : aPath.substr(1);
+    const auto found =
+        std::find_if(mStaticFiles.begin(), mStaticFiles.end(), [name](const StaticFile& aFile) {
+            return aFile.mPath == name;
+        });
+
+    if (found == mStaticFiles.end() || (aPath != "/" && name == kPage))
+    {
+        return makeResponse(404);
+    }
+
+    if (aRequest.mMethod != "GET" && aRequest.mMethod != "HEAD")
+    {
+        return makeNotAllowedResponse("GET, HEAD");
+    }
+
+    HttpResponse response = makeResponse(200);
+    response.mHeaders.push_back({"Content-Type", std::string{contentTypeFor(found->mPath)}});
+
+    if (aRequest.mMethod == "GET")
+    {
+        response.mBody = std::string(found->mBody);
+    }
+
+    return response;
 }
 
 HttpResponse Routes::login(const HttpRequest& aRequest) {

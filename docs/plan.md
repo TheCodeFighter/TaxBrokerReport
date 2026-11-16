@@ -340,7 +340,9 @@ accepts files.
 
 ## Frontend
 
-Build the minimum usable local frontend against the tested API contract. It must allow the user to:
+Build the minimum usable local frontend against the tested API contract, with the stack of
+[`architecture.md`](architecture.md), "Frontend" (Preact, TypeScript and Vite, embedded in the
+server). It must allow the user to:
 
 - select one or more broker files;
 - select the reporting tax year;

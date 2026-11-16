@@ -1,0 +1,45 @@
+/* Design tokens. The colors come from the project icon (docs/assets/icon.jpg): green #304C44,
+   dark green #304641, near-black #0B1314, light grey #E0E5E6 and grey #7D8081. Text on its
+   background is at least 4.5:1 (WCAG AA); the muted text of the light theme is the grey darkened
+   for that. System fonts only: no web font and no icon pack.
+
+   The theme is the attribute data-theme of <html> (light by default, set by the page): the tokens
+   below are the light ones, and :root[data-theme="dark"] overrides the colors. The system setting
+   (prefers-color-scheme) is not used. */
+:root {
+  color-scheme: light;
+
+  --color-primary: #304c44;
+  --color-on-primary: #e0e5e6;
+  --color-background: #e0e5e6;
+  --color-surface: #ffffff;
+  --color-text: #0b1314;
+  --color-text-muted: #4b5455;
+  --color-border: #7d8081;
+  --color-focus: #304c44;
+
+  --font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-size-base: 1rem;
+  --font-size-large: 1.5rem;
+  --line-height: 1.5;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.5rem;
+
+  --radius: 0.5rem;
+  --width-content: 36rem;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-background: #0b1314;
+  --color-surface: #0b1314;
+  --color-text: #e0e5e6;
+  --color-text-muted: #7d8081;
+  --color-border: #304641;
+  --color-focus: #e0e5e6;
+}

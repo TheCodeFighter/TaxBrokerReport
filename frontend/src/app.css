@@ -1,0 +1,120 @@
+* {
+  box-sizing: border-box;
+}
+
+/* The page color also fills the part of the window below the content. */
+html {
+  background: var(--color-background);
+}
+
+body {
+  margin: 0;
+  min-width: 20rem;
+  min-height: 100vh;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.logo {
+  border-radius: 50%;
+}
+
+.brand-name {
+  font-weight: 600;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.language-switch {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.language-switch button,
+.theme-toggle {
+  min-width: 2.75rem;
+  min-height: 2.25rem;
+  border: 1px solid var(--color-on-primary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-on-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  padding: 0;
+}
+
+.language-switch button:hover,
+.theme-toggle:hover {
+  box-shadow: inset 0 0 0 1px var(--color-on-primary);
+}
+
+.language-switch button[aria-pressed="true"] {
+  background: var(--color-on-primary);
+  color: var(--color-primary);
+}
+
+/* The header is green in both themes, so its focus ring is light. */
+.header :focus-visible {
+  outline-color: var(--color-on-primary);
+}
+
+.screen {
+  max-width: var(--width-content);
+  margin: var(--space-5) auto;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+@media (max-width: 40rem) {
+  .screen {
+    margin: var(--space-3);
+  }
+}
+
+.screen h1 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-large);
+  line-height: 1.25;
+}
+
+.screen p {
+  margin: 0;
+  color: var(--color-text-muted);
+}

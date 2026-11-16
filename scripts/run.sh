@@ -7,18 +7,26 @@ source "$script_dir/lib.sh"
 
 usage() {
 	cat <<'EOF'
-Usage: run.sh [--reuse-build] [--no-browser]
+Usage: run.sh [--reuse-build-backend] [--reuse-build-frontend] [--reuse-build] [--no-browser]
 
-  With no arguments, builds build/dev from scratch, then runs taxbroker_server in the
-  development container on 127.0.0.1:8080 and opens the launch file in the default browser
-  of the host.
-  --reuse-build runs the existing build/dev as it is and compiles nothing.
-  --no-browser does not open the launch file, so the one-time link printed by the server stays
-  unused and can be redeemed by hand (see "Manual API test" in docs/debugging.md).
+  With no build flag, builds build/dev from scratch and the frontend (scripts/frontend.sh build),
+  embeds the frontend in taxbroker_server, runs it in the development container on
+  127.0.0.1:8080 and opens the launch file in the default browser of the host.
+  --reuse-build-backend  keeps the existing build/dev (no build from scratch). The frontend is
+                         built again and the server is rebuilt with it (only what changed is
+                         compiled). Use it after a change in frontend/src.
+  --reuse-build-frontend keeps the existing build/frontend/dist (no frontend build). build/dev is
+                         built from scratch and embeds that frontend. Use it after a C++ change.
+  --reuse-build          both of the above: nothing is built, the existing server runs as it is.
+                         It needs a server that run.sh built before.
+  --no-browser           does not open the launch file, so the one-time link printed by the
+                         server stays unused and can be redeemed by hand (see "Manual API test"
+                         in docs/debugging.md).
 EOF
 }
 
-reuse_build=false
+reuse_backend=false
+reuse_frontend=false
 open_browser=true
 
 while [[ $# -gt 0 ]]; do
@@ -27,8 +35,17 @@ while [[ $# -gt 0 ]]; do
 			usage
 			exit 0
 			;;
+		--reuse-build-backend)
+			reuse_backend=true
+			shift
+			;;
+		--reuse-build-frontend)
+			reuse_frontend=true
+			shift
+			;;
 		--reuse-build)
-			reuse_build=true
+			reuse_backend=true
+			reuse_frontend=true
 			shift
 			;;
 		--no-browser)
@@ -50,7 +67,46 @@ if [[ "${docker_version%%.*}" -lt 28 ]]; then
 	exit 1
 fi
 
-prepare_dev_build "$reuse_build"
+frontend_index="$repo_root/build/frontend/dist/index.html"
+server_binary="$dev_build_dir/src/taxbroker_server"
+
+# Backend: build/dev from scratch, or the existing one.
+if [[ "$reuse_backend" == true ]]; then
+	ensure_dev_image
+	ensure_build_tree_writable
+	ensure_dev_build_exists
+	echo "==> Reusing build/dev (no build from scratch)."
+else
+	"$script_dir/build.sh" dev
+fi
+
+# Frontend: build it, or use the existing build/frontend/dist.
+if [[ "$reuse_frontend" == true ]]; then
+	if [[ ! -f "$frontend_index" ]]; then
+		echo "==> build/frontend/dist has no frontend. Build it with: scripts/frontend.sh build" >&2
+		exit 1
+	fi
+	echo "==> Reusing build/frontend/dist (the frontend is not built)."
+else
+	"$script_dir/frontend.sh" build
+fi
+
+# The server embeds the four frontend files. A configure with the same folder again rebuilds
+# only what changed: the frontend files, the generated source and the server. With both parts
+# reused nothing changed, so the existing server runs as it is.
+if [[ "$reuse_backend" == true && "$reuse_frontend" == true ]]; then
+	if [[ ! -x "$server_binary" ]] || ! grep -q '^TAXBROKER_FRONTEND_DIR:PATH=.\+' "$dev_build_dir/CMakeCache.txt"; then
+		echo "==> build/dev has no taxbroker_server with the embedded frontend. Build it with: scripts/run.sh" >&2
+		exit 1
+	fi
+else
+	echo "==> Embedding the frontend in taxbroker_server..."
+	retry_configure compose run --rm -T -e CC=clang -e CXX=clang++ dev sh -lc \
+		'cmake -S /workspace -B /workspace/build/dev -DTAXBROKER_FRONTEND_DIR=/workspace/build/frontend/dist'
+	compose run --rm -T -e CC=clang -e CXX=clang++ dev sh -lc \
+		'cmake --build /workspace/build/dev --target taxbroker_server --parallel'
+fi
+ensure_build_outputs_executable
 
 echo "==> Running taxbroker_server in development mode on port 8080..."
 TBR_LOG_FILE="${TBR_LOG_FILE:-/var/log/taxbroker/taxbroker.log}"

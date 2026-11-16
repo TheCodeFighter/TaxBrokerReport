@@ -1,12 +1,9 @@
 # Architecture
 
 TaxBrokerReport is intended to run entirely on the user's machine. The C++20 backend owns broker
-parsing, validation, tax processing, and XML generation. A browser frontend will call the local
-backend once an HTTP framework and frontend stack are selected.
-
-The repository does not currently define a frontend framework or an HTTP transport. Code should
-therefore keep domain results independent of JSON and avoid designing transport-specific endpoint
-classes prematurely.
+parsing, validation, tax processing, and XML generation. A browser frontend (Preact, see
+"Frontend" below) calls the local backend over HTTP on `127.0.0.1`. Domain results stay
+independent of JSON and HTTP: only `taxbroker_api` and the server know the wire format.
 
 ## Public API and internal libraries
 
@@ -1383,7 +1380,7 @@ later request is checked with the session cookie, `Host`, `Origin` and the clien
 | R3 | In Docker the server listens on `0.0.0.0`, which is safe only because `docker/docker-compose.yml` publishes `127.0.0.1:8080:8080` for `dev` and `prod` (host address `127.0.0.1`, host port `8080`, container port `8080`). The host port must equal `TBR_SERVER_PORT`, because the `Host` and `Origin` checks compare with the server's own port. It needs Docker Engine 28.0 or later: older versions let other computers on the same network reach a port published on `127.0.0.1` (`scripts/run.sh` checks this). | `docker compose -f docker/docker-compose.yml config` shows `host_ip: 127.0.0.1` for both services; `ss -ltn` on the host shows `127.0.0.1:8080` and no `0.0.0.0:8080`. |
 | R4 | Two secret tokens per launch, a link token (redeemed once, valid for 120 seconds: `LinkToken`) and a session token. Each is 32 bytes from the operating system random source (`getentropy`, Windows `BCryptGenRandom`; no fallback generator, a failure stops the launch), as 64 hex characters (`makeToken`). Both are kept only in memory and never logged. | `RequestGuardTest` (length, two tokens differ, redeem once, redeem at 119 and 120 seconds, a wrong token does not use it up); server test: the log has no token. |
 | R5 | Every `/api/` request except `POST /api/session` needs the session cookie `tbr_session_<port>` (`HttpOnly; SameSite=Strict; Path=/`, found by `findSessionToken`), compared in constant time (`tokenMatches`). The link token is accepted only in `POST /api/session`, once. A missing or wrong token gives 401 with no detail. The port in the cookie name keeps launches apart, because cookies are kept per host name, not per port. | `RequestGuardTest` (equal, different, shorter, cookie text, cookie lookup); server tests: missing, wrong and right cookie, a second redeem, a redeem after 120 seconds. |
-| R6 | The browser gets the link token once, in the URL fragment of the launch page (`http://127.0.0.1:<port>/#token=...`). A fragment is not sent to the server, so it is not in server logs. The server opens the launch file in the default browser (`xdg-open <file>` without a shell); the link is never a command argument, because on Linux every user can read `/proc/<pid>/cmdline`. In Docker the server cannot start a browser: `TBR_LAUNCH_FILE` names a file in the shared workspace, and `scripts/run.sh` waits on the host for that file and opens it (`--no-browser` skips this). The server always prints the link too, also after a native start, because `xdg-open` may fail later (no desktop, SSH); it works once and for 120 seconds. The frontend sends the token in `POST /api/session` and removes the fragment with `history.replaceState`. | Frontend test: the exchange and the removed fragment; server test: the cookie is set only after a right link token. |
+| R6 | The browser gets the link token once, in the URL fragment of the launch page (`http://127.0.0.1:<port>/#token=...`). A fragment is not sent to the server, so it is not in server logs. The server opens the launch file in the default browser (`xdg-open <file>` without a shell); the link is never a command argument, because on Linux every user can read `/proc/<pid>/cmdline`. In Docker the server cannot start a browser: `TBR_LAUNCH_FILE` names a file in the shared workspace, and `scripts/run.sh` waits on the host for that file and opens it (`--no-browser` skips this). The server always prints the link too, also after a native start, because `xdg-open` may fail later (no desktop, SSH); it works once and for 120 seconds. The frontend sends the token in `POST /api/session` and removes the fragment with `history.replaceState`. | Frontend test (`login.test.ts`): the exchange and the removed fragment, also when the exchange fails; server test: the cookie is set only after a right link token. |
 | R7 | `Host` must be exactly `127.0.0.1:<port>` or `localhost:<port>`, the name compared without case (`isAllowedHost`). Anything else is rejected (against DNS rebinding). | `RequestGuardTest` (own host, `localhost`, other port, foreign name, empty, upper case); server test: a rejected `Host`. |
 | R8 | `Origin`, when present, must be `http://127.0.0.1:<port>` or `http://localhost:<port>` (`isAllowedOrigin`). A state-changing request (`isStateChangingMethod`: any method other than GET, HEAD and OPTIONS) without `Origin` is rejected. | `RequestGuardTest` (foreign, `null`, missing on a state-changing and on a safe request, the method names); server test: POST without `Origin`. |
 | R9 | No CORS headers at all: `Access-Control-Allow-Origin` is never sent. The frontend is served from the same origin. | Server test: an `OPTIONS` preflight gets no allow headers. |
@@ -1397,14 +1394,16 @@ later request is checked with the session cookie, `Host`, `Origin` and the clien
 | R17 | Every `/api/` request needs the header `X-TaxBroker: 1` (`kClientHeaderName`, `kClientHeaderValue`), else 403. A foreign page cannot send it without CORS. | `RequestGuardTest` (the constants); server test: a request without the header gets 403. |
 | R18 | Every response carries the seven security headers of `securityHeaders()`: content policy, `nosniff`, no referrer, no framing, same-origin opener and resource policy, and `Cache-Control: no-store`. `script-src` never allows `'unsafe-inline'` or a foreign host. | `RequestGuardTest` (the seven names and values); server test: headers on a success and on an error. |
 | R19 | The launch file is readable by the user only (mode `0600` on POSIX, also when it existed), is never written through a symbolic link (`writeLaunchFile`) and is deleted after the exchange and at shutdown. | `LaunchFileTest` (mode, replaced file, symbolic link, missing folder); server test: the file is gone after the exchange. |
-| R20 | The frontend is bundled into the server: no CDN, no foreign script, no analytics. | Frontend build check: the output holds no foreign host. |
+| R20 | The frontend is bundled into the server: no CDN, no foreign script, no analytics. | `scripts/frontend.sh check`: the build holds exactly four files, no foreign address, no inline script or style (with a self-test that each rule fails on a damaged copy); `ServerStaticFilesTest`. |
 
 Implementation status: the server listens (`taxbroker_server`, library `taxbroker_server_lib`),
-logs the user in, serves a placeholder page and the run API ("Local HTTP API" below). Proven by
+logs the user in, serves the frontend files, the message texts and the run API ("Local HTTP API"
+below). Proven by
 tests: R1, R2, R4 (the log holds no token), R5 to R9, R13 (the server log lines), R17, R18 and R19
 by `ServerRoutesTest` and `ServerTest`; R6 (the launch and the link output) and the launch folder
 of R14 by `ServerTest` and `StateFolderTest`; R10 to R12 by `ServerRunTest` (uploads, answers and
-downloads over real sockets). R3 is the compose file. The log file of R14 and R20 come later.
+downloads over real sockets); R20 by the frontend build check and `ServerStaticFilesTest`. R3 is
+the compose file. The log file of R14 comes later.
 
 ### Local HTTP server
 
@@ -1441,16 +1440,62 @@ SIGINT, SIGTERM or `stop` the server closes the port and deletes the launch file
 | --- | --- | --- |
 | 1 | Exactly one `Host` header that passes `isAllowedHost` (R7) | 403, no body |
 | 2 | The target starts with `/` (the query is cut off) | 400 |
-| 3 | A path outside `/api`: `GET` and `HEAD` of `/` give the placeholder page (200); another method on `/` gives 405 with `Allow`; another path gives 404 | |
+| 3 | A path outside `/api`: `GET` and `HEAD` of the exact path of a frontend file (`/` is `index.html`) give the file (200); another method on it gives 405 with `Allow`; another path, also `/index.html` and a path with `..`, gives 404. A build without the frontend serves only a placeholder page at `/` | |
 | 4 | At most one `Origin` header that passes `isAllowedOrigin` (R8) | 403, no body |
 | 5 | Exactly one `X-TaxBroker: 1` header (R17) | 403, no body |
 | 6 | `POST /api/session`: the body is JSON with a string `token`; `LinkToken::redeem` (R4, R5); success is 204 with `Set-Cookie`, the launch file is deleted (R19) | 400 `{"error":"bad_request"}` or 401 |
 | 7 | The session cookie (several `Cookie` headers are joined) passes `tokenMatches` (R5) | 401, no body |
-| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
+| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; `GET /api/messages` is the message texts (JSON, see "Frontend"), another method on it is 405; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
 
 The guard runs before the route lookup, so an unknown `/api/` path without a cookie gives 401,
 not 404: the paths cannot be discovered. Every response carries the seven `securityHeaders()`
 (R18) and never an `Access-Control-*` header (R9).
+
+### Frontend
+
+`frontend/` is a Preact 10 and TypeScript project built with Vite. It has no business logic: the
+backend decides every tax fact, status and question, and the frontend only shows them and sends
+the answers. `package.json` names exact versions (no `^`), `package-lock.json` is committed, and
+every install is `npm ci --ignore-scripts`, so no install script of a dependency ever runs.
+
+- **Four files.** The build writes `index.html`, `assets/app.js`, `assets/app.css` and
+  `assets/logo.webp` to `build/frontend/dist`, with fixed names (no hash; every response is
+  `Cache-Control: no-store`). With the CMake option `TAXBROKER_FRONTEND_DIR` set to that folder
+  the four files are embedded in `taxbroker_server` as byte arrays (the configure fails when one
+  is missing), so the application reads no file at run time. Without the option the server
+  serves only a placeholder page, so the C++ builds and tests need no Node. `scripts/run.sh` and
+  the production image always embed the frontend.
+- **Content policy.** The page has one `<script type="module" src>` and one stylesheet link, no
+  inline script, style or `style=` attribute, no web font and no foreign address (R18, R20).
+  `scripts/frontend.sh check` fails the build when the output has another file, when a file is
+  over its size budget (`app.js` 40 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
+  compressed), when an address other than an XML namespace name appears in a file, or when
+  `index.html` has an inline script or style.
+- **Login.** The link `/#token=...` is exchanged once with `POST /api/session` and the fragment
+  is removed with `history.replaceState`, also when the exchange fails (R6). A page without a
+  fragment (a reload) asks `GET /api/session`; so does a refused exchange (401), because a used
+  link in a second tab may still have a working cookie. The states are `ready`, `link_invalid`
+  (401 on the exchange and no cookie) and `session_ended` (401 or no server). Every other call
+  goes through one client that adds `X-TaxBroker: 1` (R17); a 401 or a lost server ends the
+  session in that one place, and no more call is sent.
+- **Texts.** The language is Slovenian by default, English can be chosen (kept in the browser as
+  `tbr.language`, only `sl` or `en`). The texts of the interface are in
+  `frontend/src/i18n/ui_texts.ts`, typed so that a missing language fails the type check. The
+  texts of the diagnostics are not copied: `GET /api/messages` (behind the session, built once
+  per process from the embedded table) returns `messages` (every key with `en`, `sl` and its
+  `params` of name and kind `number`, `text` or `term`) and `terms` (every term id with `en` and
+  `sl`). The frontend fills `{name}` from `messageParams`, translates a `term` parameter from
+  `terms` and shows the "unknown message" text with the key for a key it does not know. It never
+  shows the English `message`.
+- **Quality goal.** Plain screens with one message and one action, a small set of design tokens
+  (`theme.css`: colors of the project icon, system fonts), no heavy library, and no polling in the
+  shell. The header has a dark/light icon button (inline SVG, no icon pack). The theme is the
+  attribute `data-theme` of `<html>`, light by default and kept in the browser as `tbr.theme`; the
+  system setting is not used, because it does not work on every Linux desktop. A later screen
+  that polls must back off and stop while the tab is hidden (`document.visibilityState`).
+- **Tests.** Vitest tests of the login, the client, the language, the theme and the message
+  texts; the browser functions (`location`, `history`, `fetch`, storage) are arguments, so they
+  need no DOM.
 
 ### Local HTTP API
 
@@ -1614,7 +1659,8 @@ file-level parsing failure. Optional location fields are omitted when unavailabl
 as `null`.
 
 `message` is the English sentence for logs and developer tools. The frontend builds its text from
-`messageKey` and `messageParams`; it never parses `message`.
+`messageKey` and `messageParams`; it never parses `message`. The texts come from
+`GET /api/messages` ("Frontend").
 
 The strings used by `severity`, `code`, `messageKey`, `broker`, and `status` are API values for the
 frontend. No JSON contract is frozen before the beta: `schemaVersion` stays 1, and a field may

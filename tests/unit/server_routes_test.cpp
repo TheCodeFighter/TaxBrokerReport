@@ -1,7 +1,9 @@
 #include "../support/log_capture.hpp"
 #include "server/routes.hpp"
+#include "server/static_files.hpp"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -72,7 +74,14 @@ class ServerRoutesTest : public ::testing::Test {
                    ::testing::UnitTest::GetInstance()->current_test_info()->name())),
           mLaunchFile(mFolder / "launch.html"),
           mStart(std::chrono::steady_clock::time_point{} + std::chrono::hours(1)), mNow(mStart),
-          mRoutes(8080, kLink, kSession, mLaunchFile, [this]() { return mNow; }, 1000) {}
+          mRoutes(
+              8080,
+              kLink,
+              kSession,
+              mLaunchFile,
+              [this]() { return mNow; },
+              1000,
+              placeholderStaticFiles()) {}
 
     void SetUp() override {
         std::filesystem::remove_all(mFolder);
@@ -147,7 +156,14 @@ TEST_F(ServerRoutesTest, LinkTokenWorksAt119SecondsAndNotAt120Seconds) {
                               .mTarget = "/api/session",
                               .mHeaders = {kHost, kOrigin, kClient},
                               .mBody = loginBody(kLink)};
-    Routes second(8080, kLink, kSession, mLaunchFile, [this]() { return mNow; }, 1000);
+    Routes second(
+        8080,
+        kLink,
+        kSession,
+        mLaunchFile,
+        [this]() { return mNow; },
+        1000,
+        placeholderStaticFiles());
 
     mNow = mStart + std::chrono::seconds(119);
     EXPECT_EQ(mRoutes.handle(request).mStatus, 204U);
@@ -438,6 +454,48 @@ TEST_F(ServerRoutesTest, RootPageIsThePlaceholder) {
     EXPECT_EQ(headerOf(response, "Content-Type"), "text/html; charset=utf-8");
     EXPECT_NE(response.mBody.find("TaxBrokerReport is running"), std::string::npos);
     EXPECT_EQ(response.mBody.find("<script"), std::string::npos);
+}
+
+TEST_F(ServerRoutesTest, MessagesNeedTheSession) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/messages",
+                              .mHeaders = {kHost, kOrigin, kClient}};
+    LogCapture log;
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 401U);
+    EXPECT_EQ(log.count("Request refused: 401 no_session"), 1U);
+}
+
+TEST_F(ServerRoutesTest, MessagesWithTheSessionAreJson) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/messages",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 200U);
+    EXPECT_EQ(headerOf(response, "Content-Type"), "application/json");
+    expectSecurityHeaders(response);
+
+    const nlohmann::json body = nlohmann::json::parse(response.mBody);
+
+    EXPECT_TRUE(body.at("messages").contains("parse_error.unclosed_quote"));
+    EXPECT_EQ(body.at("terms").size(), 9U);
+}
+
+TEST_F(ServerRoutesTest, PostToMessagesIsNotAllowed) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/messages",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+    LogCapture log;
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 405U);
+    EXPECT_EQ(headerOf(response, "Allow"), "GET");
+    EXPECT_EQ(log.count("Request refused: 405 method_not_allowed"), 1U);
 }
 
 TEST_F(ServerRoutesTest, HeadRootHasNoBody) {
