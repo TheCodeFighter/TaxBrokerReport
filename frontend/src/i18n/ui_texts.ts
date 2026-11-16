@@ -14,6 +14,45 @@ export const uiTexts = {
   languageLabel: { sl: "Jezik", en: "Language" },
   themeToLight: { sl: "Preklopi na svetlo temo", en: "Switch to the light theme" },
   themeToDark: { sl: "Preklopi na temno temo", en: "Switch to the dark theme" },
+  navLabel: { sl: "Glavni meni", en: "Main menu" },
+  navHome: { sl: "Domov", en: "Home" },
+  navReport: { sl: "Poročilo", en: "Report" },
+  navManual: { sl: "Navodila", en: "Manual" },
+  navAbout: { sl: "O aplikaciji", en: "About" },
+  welcomeLine: {
+    sl: "Iz izvozov posrednikov pripravi datoteke XML za eDavke.",
+    en: "Turns broker exports into XML files for eDavki.",
+  },
+  welcomeStart: { sl: "Začni", en: "Start" },
+  disclaimerTitle: { sl: "Opozorilo", en: "Disclaimer" },
+  disclaimerText: {
+    sl: "To je neuradno orodje skupnosti. Ni davčni nasvet in ni povezano s FURS ali s katerim koli posrednikom. Sami ste odgovorni za preverjanje vseh vrednosti v ustvarjenih datotekah in za oddajo napovedi v eDavkih. Program je na voljo »tak, kot je«, pod licenco MIT, brez kakršnega koli jamstva. Razvijalec ne odgovarja za davčne napake, globe ali opustitve.",
+    en: "This is an unofficial community tool. It is not tax advice and is not affiliated with FURS or any broker. You are responsible for checking every value in the generated files and for filing the forms in eDavki. The software is provided \"as is\", under the MIT License, without warranty of any kind. The developer is not liable for tax errors, fines or omissions.",
+  },
+  manualTitle: { sl: "Navodila", en: "Manual" },
+  manualLater: {
+    sl: "Navodila bodo na voljo v eni od naslednjih različic.",
+    en: "The manual comes in a later version.",
+  },
+  aboutTitle: { sl: "O aplikaciji", en: "About" },
+  versionLabel: { sl: "Različica {version}", en: "Version {version}" },
+  aboutLicense: {
+    sl: "Odprtokodni program pod licenco MIT. Celotno besedilo je v datoteki LICENSE ob programu.",
+    en: "Open-source software under the MIT License. The full text is in the LICENSE file beside the program.",
+  },
+  aboutPrivacy: {
+    sl: "Vaše datoteke ostanejo na tem računalniku. Program teče lokalno in ničesar ne pošilja na internet.",
+    en: "Your files stay on this computer. The program runs locally and sends nothing to the internet.",
+  },
+  aboutSource: {
+    sl: "Izvorna koda, prijava napak in predlogi:",
+    en: "Source code, bug reports and suggestions:",
+  },
+  aboutSourceLink: { sl: "projekt na GitHubu", en: "the project on GitHub" },
+  aboutThirdParty: {
+    sl: "Program uporablja odprtokodne komponente; njihove licence so v datoteki THIRD_PARTY_NOTICES.txt ob programu.",
+    en: "The program uses open-source components; their licenses are in the THIRD_PARTY_NOTICES.txt file beside the program.",
+  },
   checkingTitle: { sl: "Povezovanje …", en: "Connecting …" },
   checkingBody: {
     sl: "Preverjam, ali je aplikacija pripravljena.",

@@ -498,6 +498,46 @@ TEST_F(ServerRoutesTest, PostToMessagesIsNotAllowed) {
     EXPECT_EQ(log.count("Request refused: 405 method_not_allowed"), 1U);
 }
 
+TEST_F(ServerRoutesTest, VersionNeedsTheSession) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/version",
+                              .mHeaders = {kHost, kOrigin, kClient}};
+    LogCapture log;
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 401U);
+    EXPECT_EQ(log.count("Request refused: 401 no_session"), 1U);
+}
+
+TEST_F(ServerRoutesTest, VersionWithTheSessionIsJson) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/version",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 200U);
+    EXPECT_EQ(headerOf(response, "Content-Type"), "application/json");
+    expectSecurityHeaders(response);
+
+    // The project version in CMakeLists.txt.
+    EXPECT_EQ(response.mBody, R"({"version":"2.0.0"})");
+}
+
+TEST_F(ServerRoutesTest, PostToVersionIsNotAllowed) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/version",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+    LogCapture log;
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 405U);
+    EXPECT_EQ(headerOf(response, "Allow"), "GET");
+    EXPECT_EQ(log.count("Request refused: 405 method_not_allowed"), 1U);
+}
+
 TEST_F(ServerRoutesTest, HeadRootHasNoBody) {
     const HttpRequest request{.mMethod = "HEAD", .mTarget = "/", .mHeaders = {kHost}};
 

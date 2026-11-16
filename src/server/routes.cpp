@@ -209,6 +209,18 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
         return makeJsonResponse(200, api::messagesJson());
     }
 
+    if (path == "/api/version")
+    {
+        if (aRequest.mMethod != "GET")
+        {
+            logRefusal(405, "method_not_allowed");
+
+            return makeNotAllowedResponse("GET");
+        }
+
+        return makeJsonResponse(200, std::string{"{\"version\":\""} + TAXBROKER_VERSION + "\"}");
+    }
+
     if (path != "/api/session")
     {
         logRefusal(404, "not_found");

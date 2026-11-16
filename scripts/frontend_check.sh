@@ -8,13 +8,16 @@ set -euo pipefail
 # The four files the server embeds, with their size budget in bytes (not compressed).
 declare -A budget=(
     ["index.html"]=4096
-    ["assets/app.js"]=40960
+    ["assets/app.js"]=49152
     ["assets/app.css"]=15360
     ["assets/logo.webp"]=12288
 )
 
-# The only URLs allowed in the files: XML namespace names, which are not addresses to fetch.
+# The only URLs allowed in the files: XML namespace names, which are not addresses to fetch, and
+# the address of the project's repository, which is only a link on the About page that the user
+# opens (the page never fetches it).
 allowed_urls=(
+    "https://github.com/TheCodeFighter/TaxBrokerReport"
     "http://www.w3.org/2000/svg"
     "http://www.w3.org/1999/xlink"
     "http://www.w3.org/1998/Math/MathML"
@@ -120,7 +123,7 @@ self_test() {
     expect_failure "an inline style" "$work/inline_style" || failed=1
 
     cp -r "$dist" "$work/big_script" &&
-        head -c 40961 /dev/zero | tr '\0' 'a' >>"$work/big_script/assets/app.js"
+        head -c 49153 /dev/zero | tr '\0' 'a' >>"$work/big_script/assets/app.js"
     expect_failure "an app.js over the budget" "$work/big_script" || failed=1
 
     return "$failed"
