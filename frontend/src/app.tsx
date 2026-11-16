@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { createApiClient } from "./api/client";
 import { readLanguage, saveLanguage } from "./i18n/language";
-import { createMessageLoader } from "./i18n/messages";
+import { createMessageLoader, type MessageCatalogue } from "./i18n/messages";
 import { uiText, type Language, type UiTextKey } from "./i18n/ui_texts";
+import { RunScreen } from "./screens/run_screen";
 import { startSession, type SessionState } from "./session/login";
 import { otherTheme, readTheme, saveTheme, type Theme } from "./theme/theme";
 import logoUrl from "./assets/logo.webp";
@@ -11,9 +12,8 @@ import logoUrl from "./assets/logo.webp";
 type Screen = "checking" | SessionState;
 
 /** The title and the text of each screen; one message and one action per screen. */
-const screenTexts: Record<Screen, { title: UiTextKey; body: UiTextKey }> = {
+const screenTexts: Record<Exclude<Screen, "ready">, { title: UiTextKey; body: UiTextKey }> = {
   checking: { title: "checkingTitle", body: "checkingBody" },
-  ready: { title: "readyTitle", body: "readyBody" },
   session_ended: { title: "sessionEndedTitle", body: "sessionEndedBody" },
   link_invalid: { title: "linkInvalidTitle", body: "linkInvalidBody" },
 };
@@ -44,6 +44,7 @@ export function App() {
   const [language, setLanguage] = useState<Language>(() => readLanguage(browserStorage));
   const [theme, setTheme] = useState<Theme>(() => readTheme(browserStorage));
   const [screen, setScreen] = useState<Screen>("checking");
+  const [catalogue, setCatalogue] = useState<MessageCatalogue | undefined>();
 
   // One client for the page: a 401 or a lost server anywhere ends the session here.
   const client = useMemo(
@@ -77,7 +78,7 @@ export function App() {
   // The message texts load once after the login; the screens with diagnostics use them.
   useEffect(() => {
     if (screen === "ready") {
-      loadCatalogue().catch(() => undefined);
+      loadCatalogue().then(setCatalogue, () => undefined);
     }
   }, [screen, loadCatalogue]);
 
@@ -93,7 +94,7 @@ export function App() {
     saveTheme(browserStorage, chosen);
   };
 
-  const texts = screenTexts[screen];
+  const texts = screen === "ready" ? undefined : screenTexts[screen];
   const themeLabel = uiText(language, theme === "dark" ? "themeToLight" : "themeToDark");
 
   return (
@@ -128,11 +129,17 @@ export function App() {
           </button>
         </div>
       </header>
-      <main class="screen">
-        <h1>{uiText(language, texts.title)}</h1>
-        {/* One live region for every screen, so a screen reader also reads the result. */}
-        <p role="status">{uiText(language, texts.body)}</p>
-      </main>
+      {texts === undefined ? (
+        <main class="screen screen-wide">
+          <RunScreen language={language} apiFetch={client.apiFetch} catalogue={catalogue} />
+        </main>
+      ) : (
+        <main class="screen">
+          <h1>{uiText(language, texts.title)}</h1>
+          {/* One live region for every screen, so a screen reader also reads the result. */}
+          <p role="status">{uiText(language, texts.body)}</p>
+        </main>
+      )}
     </>
   );
 }

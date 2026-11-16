@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { uiText, uiTexts, type UiTextKey } from "./ui_texts";
+import { uiText, uiTexts, uiTextWith, type UiTextKey } from "./ui_texts";
 
 describe("uiTexts", () => {
   it("has a non-empty Slovenian and English text for every key", () => {
@@ -17,5 +17,13 @@ describe("uiTexts", () => {
   it("returns the text of the language", () => {
     expect(uiText("sl", "unknownMessage")).toBe("Neznano sporočilo");
     expect(uiText("en", "unknownMessage")).toBe("Unknown message");
+  });
+
+  it("fills the places of a text", () => {
+    expect(uiTextWith("en", "resultCounts", { errors: 1, warnings: 2 })).toBe("Errors: 1, warnings: 2");
+    expect(uiTextWith("sl", "fileSuffix", { n: 2 })).toBe(" (datoteka 2)");
+    expect(uiTextWith("en", "rateFilesHint", { first: 2016, last: 2025 })).toBe(
+      "For trades not in EUR. The rates of the years 2016 to 2025 are already in the application.",
+    );
   });
 });
