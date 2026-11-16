@@ -71,7 +71,9 @@ add_executable(taxbroker_unit_tests
     unit/multipart_test.cpp
     unit/request_guard_test.cpp
     unit/server_config_test.cpp
+    unit/messages_json_test.cpp
     unit/server_routes_test.cpp
+    unit/server_static_files_test.cpp
     unit/state_folder_test.cpp
     unit/reference_catalogue_test.cpp
     unit/rejection_json_test.cpp

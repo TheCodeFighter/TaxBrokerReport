@@ -21,6 +21,8 @@ RUN apk add --no-cache \
     valgrind \
     linux-headers \
     make \
+    nodejs \
+    npm \
     perl
 
 # lcov 1.16 comes from its release archive, checked by SHA-256. lcov 2 (up to 2.6) rejects GCC 15
@@ -44,7 +46,21 @@ WORKDIR /workspace
 
 CMD ["/bin/bash"]
 
-# Stage 2: Builder. Only what the static release build needs.
+# Stage 2: Frontend. Builds the four files that the server embeds (see frontend/).
+# `npm ci --ignore-scripts` installs exactly the versions of package-lock.json and never runs an
+# install script of a dependency. The files are written to /workspace/build/frontend/dist.
+FROM alpine:3.24 AS frontend
+
+RUN apk add --no-cache nodejs npm
+
+WORKDIR /workspace/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 3: Builder. Only what the static release build needs.
 FROM alpine:3.24 AS builder
 
 RUN apk add --no-cache \
@@ -59,13 +75,15 @@ RUN apk add --no-cache \
 
 WORKDIR /workspace
 COPY . /workspace
+COPY --from=frontend /workspace/build/frontend/dist /workspace/frontend-dist
 
 # The dependency downloads (FetchContent) go to a BuildKit cache folder, so a rebuild after a
 # source change does not download them again. COPY above changes with every source change.
 RUN --mount=type=cache,target=/deps \
     for wait_seconds in 30 90 0; do \
         CC=clang CXX=clang++ cmake -B build -G Ninja -S . -DCMAKE_BUILD_TYPE=Release \
-            -DTAXBROKER_STATIC=ON -DTAXBROKER_BUILD_TESTS=OFF -DFETCHCONTENT_BASE_DIR=/deps && \
+            -DTAXBROKER_STATIC=ON -DTAXBROKER_BUILD_TESTS=OFF \
+            -DTAXBROKER_FRONTEND_DIR=/workspace/frontend-dist -DFETCHCONTENT_BASE_DIR=/deps && \
             break; \
         [ "$wait_seconds" -gt 0 ] || exit 1; \
         echo "Configure failed, maybe a dependency download. Retrying in $wait_seconds s..."; \
@@ -74,7 +92,7 @@ RUN --mount=type=cache,target=/deps \
     cmake --build build --target taxbroker taxbroker_server -j$(nproc) && \
     strip build/src/taxbroker build/src/taxbroker_server
 
-# Stage 3: Production
+# Stage 4: Production
 FROM alpine:3.24 AS prod
 # The executables are static, so no runtime libraries are needed.
 RUN apk add --no-cache ca-certificates && \

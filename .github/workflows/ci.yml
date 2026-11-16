@@ -123,6 +123,11 @@ jobs:
           curl --silent --show-error --fail --output /dev/null \
             --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:18080/
 
+          # The frontend of the production image is embedded: its script and style are served.
+          for asset in assets/app.js assets/app.css assets/logo.webp; do
+            curl --silent --show-error --fail --output /dev/null "http://127.0.0.1:18080/$asset"
+          done
+
           kill -TERM "$server_pid"
           wait "$server_pid"
           test ! -e "$launch_file"
@@ -349,6 +354,53 @@ jobs:
 
       - name: Validate code formatting
         run: scripts/format.sh --check
+
+  # The frontend (frontend/) is built and checked in the dev image: npm ci (no install scripts),
+  # type check, tests, build and the size and content check. A pull request runs the steps only
+  # when a frontend file, the script or the Docker files change; a push to main always runs them.
+  # The job itself always runs and reports success when the steps are skipped, so the main-branch
+  # protection rule can require it. The production image builds the frontend again in its own
+  # stage.
+  frontend:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Frontend
+    needs: dev-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for related changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          watched='^(frontend/.*|scripts/frontend(_check)?\.sh|scripts/lib\.sh|docker/.*'
+          watched+='|resources/i18n/.*|\.github/workflows/ci\.yml)$'
+
+          if git diff --name-only "$BASE_SHA...HEAD" | grep -Eq "$watched"; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+              echo "Skipped: no change that the frontend depends on."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Load development image
+        if: steps.changes.outputs.run == 'true'
+        uses: ./.github/actions/load-dev-image
+
+      - name: Build and check the frontend
+        if: steps.changes.outputs.run == 'true'
+        run: scripts/frontend.sh
 
   # The pull-request commit and its base commit are measured in parallel, each from a clean
   # coverage build. The coverage job then compares them.

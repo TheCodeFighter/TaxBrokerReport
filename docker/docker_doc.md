@@ -97,8 +97,22 @@ server with:
 ./scripts/run.sh
 ```
 `./scripts/run.sh --no-browser` does not open the file, so the link stays unused and can be
-redeemed by hand (see "Manual API test" in `docs/debugging.md`). `--reuse-build` runs the existing
-`build/dev` without compiling, and `--help` lists the options.
+redeemed by hand (see "Manual API test" in `docs/debugging.md`). With no build flag, `run.sh`
+builds `build/dev` and the frontend (`scripts/frontend.sh build`) and embeds the frontend in the
+server. `--reuse-build-backend` keeps `build/dev` (the frontend and the server are rebuilt),
+`--reuse-build-frontend` keeps `build/frontend/dist`, `--reuse-build` keeps both and builds
+nothing, and `--help` lists the options.
+
+### 5. Build and check the frontend
+The dev image has Node and npm. `scripts/frontend.sh` runs in the container: `install`
+(`npm ci --ignore-scripts`), `typecheck`, `test`, `build` (to `build/frontend/dist`) and `check`
+(size budget, no foreign address, no inline script; with a self-test). With no argument it runs
+all five. `--rebuild-all` runs `npm ci` first even when `node_modules` looks current; `build` also
+installs on its own when `package-lock.json` is newer than `node_modules`.
+`docs/development.md` describes the frontend.
+```bash
+./scripts/frontend.sh
+```
 
 ### Build folders
 
@@ -113,6 +127,7 @@ redeemed by hand (see "Manual API test" in `docs/debugging.md`). `--reuse-build`
 | `build/fuzz` | `fuzz.sh` (Clang with sanitizers, only the fuzz target) |
 | `build/test-debug` | `debug_tests.sh` (VS Code), incremental on purpose |
 | `build/static` | `build.sh prod` (the static binaries copied out of the production image) |
+| `build/frontend` | `frontend.sh build` (`dist` holds the four files the server embeds) |
 
 ---
 
@@ -128,6 +143,7 @@ Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reus
            │                     │                   when related files change, not required)
            │                     └─ Cppcheck         (cppcheck.sh --reuse-build)
            ├─ format-check                  (pull requests only)
+           ├─ Frontend                      (frontend.sh, only when frontend files change)
            ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 240 s, own sanitizer build)
            └─ Coverage (current) ─┬─ coverage      (pull requests only)
               Coverage (baseline) ┘
@@ -140,15 +156,22 @@ Production image                   (own Release build inside the Dockerfile)
   archive (it keeps the executable bits; the artifact upload alone does not).
 - Artifacts are kept for one day, except the static binaries (30 days). A new push to a pull
   request cancels its older run.
+- The `Frontend` job runs `scripts/frontend.sh` in the dev image. A pull request runs it only when
+  `frontend/`, the two frontend scripts, `scripts/lib.sh`, `docker/`, `resources/i18n/` or the
+  workflow change; a push
+  to `main` always runs it. The job always reports a result (it succeeds when the steps are
+  skipped), so it is a required check like the others.
 - The coverage jobs measure the pull-request commit and its base commit in parallel, each from a
   clean GCC build, and `coverage` compares the two reports. lcov runs `gcov` on one core, so
   `coverage.sh` splits the coverage files into one list per core, captures the lists in parallel
   and merges them; the result is the same as one capture.
 - The `Production image` job is its own Release build and shares nothing; it is the shipped image.
-  It checks the static binaries on the Ubuntu runner (so outside Alpine): both are statically
-  linked, the CLI passes `tests/support/check_cli_report.cmake` (golden XML) and the server exits
-  with 0. On a push to `main` it uploads `taxbroker-linux-x86_64.tar.gz` (both binaries,
-  `LICENSE` and `THIRD_PARTY_NOTICES.txt`) as the artifact
+  Its `frontend` stage builds the frontend (`npm ci --ignore-scripts`, `npm run build`), and the
+  builder stage embeds the four files (`TAXBROKER_FRONTEND_DIR`). It checks the static binaries
+  on the Ubuntu runner (so outside Alpine): both are statically linked, the CLI passes
+  `tests/support/check_cli_report.cmake` (golden XML), the server serves `/` and its three
+  assets, and it exits with 0. On a push to `main` it uploads `taxbroker-linux-x86_64.tar.gz`
+  (both binaries, `LICENSE` and `THIRD_PARTY_NOTICES.txt`) as the artifact
   `taxbroker-linux-x86_64-<short commit>`, kept for 30 days.
 
 ---

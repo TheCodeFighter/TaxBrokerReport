@@ -17,3 +17,4 @@ legacy-QT-GUI/tmp/
 **/*.ninja
 **/*.ninja.deps
 **/*.ninja.log
+frontend/node_modules/

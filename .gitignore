@@ -4,3 +4,4 @@ logs/
 runtime/
 tmp/
 tests/manual/api/.env
+frontend/node_modules/

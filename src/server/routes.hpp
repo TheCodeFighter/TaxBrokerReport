@@ -3,32 +3,37 @@
 #include "http_message.hpp"
 #include "request_guard.hpp"
 #include "run_routes.hpp"
+#include "static_files.hpp"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <span>
 #include <string>
 #include <string_view>
 
 namespace taxbroker {
 
-/// The routes of the local server: the browser login, the placeholder page and the run API. They
-/// have no sockets, so the tests call `handle` directly. The calls come from one thread.
+/// The routes of the local server: the browser login, the frontend files, the message texts and
+/// the run API. They have no sockets, so the tests call `handle` directly. The calls come from one
+/// thread.
 class Routes {
   public:
     /// Returns the current time; the tests pass a fake clock.
     using Clock = std::function<std::chrono::steady_clock::time_point()>;
 
     /// The link token is issued now. The launch file is deleted after the login. aMaxFileBytes is
-    /// the longest file of an upload.
+    /// the longest file of an upload. aStaticFiles are the pages and assets served without a login;
+    /// the table must outlive the routes.
     Routes(std::uint16_t aPort,
            std::string aLinkToken,
            std::string aSessionToken,
            std::filesystem::path aLaunchFile,
            Clock aClock,
-           std::size_t aMaxFileBytes);
+           std::size_t aMaxFileBytes,
+           std::span<const StaticFile> aStaticFiles);
 
     /// The body limit for a request whose header is read and whose body is not: the upload limit
     /// for `POST /api/run` that passes the guard, else `kDefaultBodyLimit`. It has no side effect
@@ -43,7 +48,7 @@ class Routes {
     /// What the checks of the guard decided.
     enum class Target {
         Refused, ///< The request fails a check; mRefusal is the answer.
-        Page,    ///< The placeholder page or an unknown path: no login needed.
+        Page,    ///< A frontend file or an unknown path: no login needed.
         Login,   ///< `POST /api/session`: the one API call without a session.
         Api,     ///< An API call with a valid session.
     };
@@ -62,12 +67,16 @@ class Routes {
 
     HttpResponse login(const HttpRequest& aRequest);
 
+    /// The answer for a path outside `/api`: the file of that path, or 404.
+    HttpResponse staticFile(const HttpRequest& aRequest, std::string_view aPath) const;
+
     std::uint16_t mPort;
     LinkToken mLinkToken;
     std::string mSessionToken;
     std::filesystem::path mLaunchFile;
     Clock mClock;
     RunRoutes mRunRoutes;
+    std::span<const StaticFile> mStaticFiles;
 };
 
 } // namespace taxbroker

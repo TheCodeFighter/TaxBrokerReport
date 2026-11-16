@@ -5,6 +5,7 @@
 #include "request_guard.hpp"
 #include "routes.hpp"
 #include "state_folder.hpp"
+#include "static_files.hpp"
 
 #include "taxbroker/logging.hpp"
 
@@ -81,7 +82,8 @@ int StartServer(const EnvLookup& aEnv,
             makeToken(),
             launchFile,
             []() { return std::chrono::steady_clock::now(); },
-            aHooks.mMaxFileBytes);
+            aHooks.mMaxFileBytes,
+            embeddedStaticFiles());
 
         // A TBR_LAUNCH_FILE folder is made by the caller (Docker: scripts/run.sh).
         if (!config.mLaunchFile.has_value())

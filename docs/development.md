@@ -26,7 +26,7 @@ Valgrind and Cppcheck jobs load that build and compile nothing, so the failing c
 visible. The jobs and timings are described in [docker/docker_doc.md](../docker/docker_doc.md). The
 `main` ruleset **Required CI checks** requires **Dev image**, **Development build**, **Production
 image**, **Required tests**, **Valgrind**, **Cppcheck**, **Fuzz (Trade Republic parser)**,
-**format-check**, **Coverage (current)**, **Coverage (baseline)** and **coverage**. **Required
+**format-check**, **Frontend**, **Coverage (current)**, **Coverage (baseline)** and **coverage**. **Required
 issue reference** is a separate workflow; it requires the pull request's `Related issue` section
 to contain an issue reference or exactly `N/A`.
 
@@ -55,6 +55,57 @@ the paths after it up to the next option. For Tab completion of the script optio
 ```sh
 source /path/to/TaxBrokerReport/scripts/completion.bash
 ```
+
+## Frontend
+
+The browser interface is in `frontend/` (Preact 10, TypeScript, Vite; the choice and the rules
+are in the "Frontend" section of [architecture.md](architecture.md)). Everything runs in the dev
+container, so no Node is needed on the host.
+
+```sh
+scripts/frontend.sh             # npm ci, type check, Vitest tests, build, size and content check
+scripts/frontend.sh test        # one step: install | typecheck | test | build | check
+scripts/frontend.sh --rebuild-all build   # npm ci again first, even when node_modules looks current
+scripts/run.sh                  # builds build/dev and the frontend, embeds it in the server, runs it
+scripts/run.sh --reuse-build-backend   # keeps build/dev; builds the frontend, rebuilds the server
+scripts/run.sh --reuse-build-frontend  # keeps build/frontend/dist; builds build/dev from scratch
+scripts/run.sh --reuse-build           # keeps both: builds nothing, runs the existing server
+scripts/build.sh prod           # the production image builds and embeds it in its own stage
+```
+
+- **Development loop.** Change a file in `frontend/src`, run `scripts/run.sh --reuse-build-backend`
+  again: the frontend builds in a few seconds, then the server is rebuilt with it (only what
+  changed is compiled) and a new login link opens. After a C++ change only, use
+  `--reuse-build-frontend` (`build/dev` is built from scratch and embeds the existing
+  `build/frontend/dist`). `--reuse-build` does both: nothing is built and the existing server runs
+  again, which needs a server that an earlier `scripts/run.sh` built. Each flag fails clearly when
+  what it reuses is missing. With no flag, `run.sh` rebuilds everything. The plain C++ build
+  (`build.sh dev`, `test.sh`, `valgrind.sh`, `coverage.sh`) does not embed the frontend and needs
+  no Node; the server then serves only a placeholder page.
+- **Production build.** The `frontend` stage of `docker/Dockerfile` runs `npm ci --ignore-scripts`
+  and `npm run build`; the builder stage embeds the four files with `-DTAXBROKER_FRONTEND_DIR`.
+- **Packages.** `frontend/package.json` has exact versions and `package-lock.json` is committed.
+  `scripts/frontend.sh build` (so also `run.sh`) installs when `node_modules` is missing or
+  `package-lock.json` is newer than it (after a pull); `--rebuild-all` installs every time.
+  Install only with `npm ci --ignore-scripts`, so no install script runs. To change a package,
+  edit `package.json`, run `npm install --ignore-scripts` in the container
+  (`docker compose run ... -w /workspace/frontend dev`, with `-e HOME=/tmp`), run `npm audit`, and
+  commit the lock file. Vite is on the 7 line and Vitest on the 4 line, the newest that work
+  together and have no known advisory (checked with `npm audit`).
+- **Size budget.** Not compressed: `assets/app.js` 40 KB, `assets/app.css` 15 KB,
+  `assets/logo.webp` 12 KB, `index.html` 4 KB. `scripts/frontend.sh check` fails above them.
+- **Logo.** `frontend/src/assets/logo.webp` is made once from `docs/assets/icon.jpg`, with
+  ImageMagick in a throwaway container (ImageMagick is not part of any image):
+
+  ```sh
+  docker run --rm -v "$PWD":/w -w /w alpine:3.24 sh -c \
+    'apk add --no-cache imagemagick imagemagick-webp imagemagick-jpeg >/dev/null &&
+     magick docs/assets/icon.jpg -resize 192x192 -quality 80 -define webp:method=6 \
+       frontend/src/assets/logo.webp'
+  ```
+
+- **Texts.** The texts of the interface are in `frontend/src/i18n/ui_texts.ts`, Slovenian and
+  English together. Never copy a diagnostic text there: it comes from `GET /api/messages`.
 
 ## Static analysis
 

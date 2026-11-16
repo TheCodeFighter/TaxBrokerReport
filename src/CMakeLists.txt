@@ -116,6 +116,7 @@ add_library(taxbroker_api STATIC
     server/api/application_result_json.cpp
     server/api/diagnostics_json.cpp
     server/api/json_strings.cpp
+    server/api/messages_json.cpp
     server/api/report_files.cpp
     server/api/request_json.cpp
     server/api/taxpayer_json.cpp
@@ -207,7 +208,47 @@ add_library(taxbroker_server_lib STATIC
     server/server.cpp
     server/server_config.cpp
     server/state_folder.cpp
+    server/static_files.cpp
 )
+
+# The files of the built frontend (frontend/, scripts/frontend.sh) are embedded in the server, so
+# the application needs no file at run time. Without TAXBROKER_FRONTEND_DIR the server serves only
+# a placeholder page, so the C++ builds and tests need no Node.
+set(TAXBROKER_FRONTEND_DIR "" CACHE PATH
+    "Folder with the built frontend (index.html and assets/) to embed in taxbroker_server")
+
+if(TAXBROKER_FRONTEND_DIR)
+    get_filename_component(FRONTEND_DIR ${TAXBROKER_FRONTEND_DIR} ABSOLUTE)
+    set(FRONTEND_FILES index.html assets/app.js assets/app.css assets/logo.webp)
+    set(FRONTEND_ARRAYS "")
+    set(FRONTEND_TABLE "")
+    set(FRONTEND_COUNT 0)
+
+    foreach(FRONTEND_FILE ${FRONTEND_FILES})
+        set(FRONTEND_PATH ${FRONTEND_DIR}/${FRONTEND_FILE})
+
+        if(NOT EXISTS ${FRONTEND_PATH})
+            message(FATAL_ERROR
+                "TAXBROKER_FRONTEND_DIR has no ${FRONTEND_FILE}; build the frontend first "
+                "(scripts/frontend.sh build)")
+        endif()
+
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FRONTEND_PATH})
+        file(READ ${FRONTEND_PATH} FRONTEND_HEX HEX)
+        string(REGEX REPLACE "([0-9a-f][0-9a-f])" "'\\\\x\\1'," FRONTEND_BYTES "${FRONTEND_HEX}")
+        string(APPEND FRONTEND_ARRAYS
+            "constexpr char kFrontendFile${FRONTEND_COUNT}[] = {${FRONTEND_BYTES}};\n\n")
+        string(APPEND FRONTEND_TABLE
+            "    StaticFile{\"${FRONTEND_FILE}\", {kFrontendFile${FRONTEND_COUNT}, "
+            "sizeof(kFrontendFile${FRONTEND_COUNT})}},\n")
+        math(EXPR FRONTEND_COUNT "${FRONTEND_COUNT} + 1")
+    endforeach()
+
+    configure_file(server/embedded_frontend.cpp.in ${EMBEDDED_DIR}/embedded_frontend.cpp @ONLY)
+    target_sources(taxbroker_server_lib PRIVATE ${EMBEDDED_DIR}/embedded_frontend.cpp)
+    target_compile_definitions(taxbroker_server_lib PRIVATE TAXBROKER_EMBED_FRONTEND)
+    target_include_directories(taxbroker_server_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/server)
+endif()
 
 find_package(Threads REQUIRED)
 
