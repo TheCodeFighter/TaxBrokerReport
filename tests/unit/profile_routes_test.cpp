@@ -63,7 +63,7 @@ std::string readAll(const std::filesystem::path& aPath) {
     return content.str();
 }
 
-const std::string kAnaBody = R"({"taxNumber":"12345678","isResident":true,"name":"Ana Novak"})";
+const std::string kAnaBody = R"({"taxNumber":"12345679","isResident":true,"name":"Ana Novak"})";
 
 TEST_F(ProfileRoutesTest, WithoutAFileTheAnswerIsNotSavedWithTheLocation) {
     const HttpResponse response = get("/api/profile");
@@ -93,7 +93,7 @@ TEST_F(ProfileRoutesTest, ASavedProfileIsLoadedAndLogged) {
     EXPECT_EQ(response.mBody,
               R"({"ignoredKeys":false,"invalidFields":[],)"
               R"("location":"~/.local/share/taxbroker/profile.json","saved":true,)"
-              R"("taxpayer":{"isResident":true,"name":"Ana Novak","taxNumber":"12345678"},)"
+              R"("taxpayer":{"isResident":true,"name":"Ana Novak","taxNumber":"12345679"},)"
               R"("unreadable":false})");
     EXPECT_EQ(log.count("Profile saved"), 1U);
     EXPECT_EQ(log.count("Profile loaded (fields 3, invalid 0)"), 1U);
@@ -102,21 +102,21 @@ TEST_F(ProfileRoutesTest, ASavedProfileIsLoadedAndLogged) {
 TEST_F(ProfileRoutesTest, TheFileHoldsTheCheckedFieldsInKeyOrderAndNoMore) {
     // The keys come in another order, with spaces.
     ASSERT_EQ(post("/api/profile",
-                   R"({ "name": "Ana Novak", "isResident": true, "taxNumber": "12345678" })")
+                   R"({ "name": "Ana Novak", "isResident": true, "taxNumber": "12345679" })")
                   .mStatus,
               204U);
 
     EXPECT_EQ(readAll(mFile),
-              R"({"isResident":true,"name":"Ana Novak","taxNumber":"12345678"})"
+              R"({"isResident":true,"name":"Ana Novak","taxNumber":"12345679"})"
               "\n");
 }
 
 TEST_F(ProfileRoutesTest, ASaveReplacesTheEarlierProfile) {
     ASSERT_EQ(post("/api/profile", kAnaBody).mStatus, 204U);
-    ASSERT_EQ(post("/api/profile", R"({"taxNumber":"87654321","isResident":true})").mStatus, 204U);
+    ASSERT_EQ(post("/api/profile", R"({"taxNumber":"10000020","isResident":true})").mStatus, 204U);
 
     EXPECT_EQ(readAll(mFile),
-              R"({"isResident":true,"taxNumber":"87654321"})"
+              R"({"isResident":true,"taxNumber":"10000020"})"
               "\n");
 }
 
@@ -133,11 +133,22 @@ TEST_F(ProfileRoutesTest, AnInvalidTaxNumberIsRefusedWithTheFieldAndNothingIsWri
     EXPECT_EQ(log.count("Profile request refused: 400 bad_taxpayer (taxNumber)"), 1U);
 }
 
+TEST_F(ProfileRoutesTest, ATaxNumberWithAWrongCheckDigitIsSavedAsTyped) {
+    // Eight digits, but the check digit of 1234567 is 9, not 8. The run warns; the profile saves.
+    const HttpResponse response =
+        post("/api/profile", R"({"taxNumber":"12345678","isResident":true})");
+
+    EXPECT_EQ(response.mStatus, 204U);
+    EXPECT_EQ(readAll(mFile),
+              R"({"isResident":true,"taxNumber":"12345678"})"
+              "\n");
+}
+
 TEST_F(ProfileRoutesTest, AnUnknownKeyIsRefusedWithoutAFieldAndWithoutTheKeyInTheLog) {
     LogCapture log;
 
     const HttpResponse response =
-        post("/api/profile", R"({"taxNumber":"12345678","isResident":true,"shoeSize":"42"})");
+        post("/api/profile", R"({"taxNumber":"12345679","isResident":true,"shoeSize":"42"})");
 
     EXPECT_EQ(response.mStatus, 400U);
     EXPECT_EQ(response.mBody, R"({"error":"bad_taxpayer"})");
@@ -153,7 +164,7 @@ TEST_F(ProfileRoutesTest, ABodyThatIsNotJsonIsRefused) {
 }
 
 TEST_F(ProfileRoutesTest, ABodyOf32769BytesIsRefusedAndOneOf32768BytesIsAccepted) {
-    const std::string object = R"({"taxNumber":"12345678","isResident":true})";
+    const std::string object = R"({"taxNumber":"12345679","isResident":true})";
     const std::string tooLong = object + std::string(32769 - object.size(), ' ');
     const std::string longest = object + std::string(32768 - object.size(), ' ');
 
@@ -167,7 +178,7 @@ TEST_F(ProfileRoutesTest, ABodyOf32769BytesIsRefusedAndOneOf32768BytesIsAccepted
 }
 
 TEST_F(ProfileRoutesTest, SlovenianLettersAreSavedAsTheyAreAndLoadedBack) {
-    const std::string body = R"({"taxNumber":"12345678","isResident":true,)"
+    const std::string body = R"({"taxNumber":"12345679","isResident":true,)"
                              R"("name":"Žiga Šuštaršič-Čeh","address":"Črnuška cesta 12",)"
                              R"("city":"Črnomelj","postName":"Škofja Loka"})";
 
@@ -176,7 +187,7 @@ TEST_F(ProfileRoutesTest, SlovenianLettersAreSavedAsTheyAreAndLoadedBack) {
     // The keys are in key order and the letters are UTF-8, not \u escapes.
     EXPECT_EQ(readAll(mFile),
               R"({"address":"Črnuška cesta 12","city":"Črnomelj","isResident":true,)"
-              R"("name":"Žiga Šuštaršič-Čeh","postName":"Škofja Loka","taxNumber":"12345678"})"
+              R"("name":"Žiga Šuštaršič-Čeh","postName":"Škofja Loka","taxNumber":"12345679"})"
               "\n");
 
     const HttpResponse response = get("/api/profile");
@@ -187,7 +198,7 @@ TEST_F(ProfileRoutesTest, SlovenianLettersAreSavedAsTheyAreAndLoadedBack) {
 }
 
 TEST_F(ProfileRoutesTest, ANameOfSlovenianLettersFillingTheBodyTo32768BytesIsAccepted) {
-    const std::string head = R"({"taxNumber":"12345678","isResident":true,"name":")";
+    const std::string head = R"({"taxNumber":"12345679","isResident":true,"name":")";
     const std::string tail = R"("})";
     std::string name;
 
@@ -266,14 +277,14 @@ TEST_F(ProfileRoutesTest, InvalidAndUnknownKeysAreReportedAndTheRestIsLoaded) {
     LogCapture log;
 
     writeProfileFile(
-        R"({"taxNumber":"12345678","isResident":true,"birthDate":"1980-02-30","filingType":"original"})");
+        R"({"taxNumber":"12345679","isResident":true,"birthDate":"1980-02-30","filingType":"original"})");
 
     const HttpResponse response = get("/api/profile");
 
     EXPECT_EQ(response.mBody,
               R"({"ignoredKeys":true,"invalidFields":["birthDate"],)"
               R"("location":"~/.local/share/taxbroker/profile.json","saved":true,)"
-              R"("taxpayer":{"isResident":true,"taxNumber":"12345678"},"unreadable":false})");
+              R"("taxpayer":{"isResident":true,"taxNumber":"12345679"},"unreadable":false})");
     EXPECT_EQ(log.count("Profile loaded (fields 2, invalid 1)"), 1U);
 }
 
@@ -315,7 +326,7 @@ TEST_F(ProfileRoutesTest, NoLogLineAndNoAnswerHoldsAValueOrAPath) {
 
     // The log holds neither a value nor a folder of the machine.
     EXPECT_EQ(log.text().find("Ana"), std::string::npos);
-    EXPECT_EQ(log.text().find("12345678"), std::string::npos);
+    EXPECT_EQ(log.text().find("12345679"), std::string::npos);
     EXPECT_EQ(log.text().find(mFolder.string()), std::string::npos);
 
     // The save and the delete answers hold no value and no folder.

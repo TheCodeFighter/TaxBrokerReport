@@ -170,6 +170,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "treaty_claim_details_missing";
     case ProcessingDiagnosticCode::DeveloperExportUnavailable:
         return "developer_export_unavailable";
+    case ProcessingDiagnosticCode::TaxpayerTaxNumberCheckDigit:
+        return "taxpayer_tax_number_check_digit";
     }
 
     return "unrepresentable_value";

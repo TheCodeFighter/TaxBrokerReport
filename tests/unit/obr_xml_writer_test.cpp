@@ -79,7 +79,7 @@ void expectOneError(const XmlWriteResult& aResult,
 TEST(ObrXmlWriterTest, BothSubtypesWriteTheWholeDocument) {
     // Cash interest EUR 12.34 without tax, and a coupon of EUR 25.00 with EUR 3.75 foreign tax.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -121,7 +121,7 @@ TEST(ObrXmlWriterTest, BothSubtypesWriteTheWholeDocument) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -170,7 +170,7 @@ TEST(ObrXmlWriterTest, BothSubtypesWriteTheWholeDocument) {
 
 TEST(ObrXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678",
+        .mTaxpayer = {.mTaxNumber = "12345679",
                       .mIsResident = true,
                       .mEmail = "taxpayer@example.com",
                       .mPhoneNumber = "+38600000000"},
@@ -198,7 +198,7 @@ TEST(ObrXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
 // original.
 TEST(ObrXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::SelfReport,
     };
@@ -217,7 +217,7 @@ TEST(ObrXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
 
 TEST(ObrXmlWriterTest, ANonResidentWritesNoCountryOfResidence) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = false},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = false},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -235,7 +235,7 @@ TEST(ObrXmlWriterTest, ANonResidentWritesNoCountryOfResidence) {
 TEST(ObrXmlWriterTest, PayerNotFoundLeavesThePayerFieldsOut) {
     // No payer facts and no source country: only the facts of the payment are written.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -270,7 +270,7 @@ TEST(ObrXmlWriterTest, SlovenianIssuerWritesTaxNumberAndNoNameAddressOrForeignTa
     // A Slovenian issuer with a tax number: `TaxNumber`, no `IdentificationNumber`, no `Name` and
     // `Address` (eDavki fills them in from the tax register) and no foreign tax.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -312,7 +312,7 @@ TEST(ObrXmlWriterTest, SlovenianIssuerWithoutATaxNumberKeepsNameAndAddress) {
     // No valid tax number is known (the stage warned): the name and address are written, so the
     // user sees whom the row is about and completes the number in eDavki.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -354,7 +354,7 @@ TEST(ObrXmlWriterTest, SlovenianIssuerWithATaxIsWrittenWithoutForeignTax) {
     // Tax EUR 5.0000 of a Slovenian issuer is a Slovenian withholding, not foreign tax: the row is
     // written without it and without an error (the stage already warned).
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -388,7 +388,7 @@ TEST(ObrXmlWriterTest, HalfCentsRoundAwayFromZeroOnce) {
     // Row 1: gross 10.0049 is 10.00, tax 0.0050 is 0.01.
     // Row 2: gross 10.0050 is 10.01, tax 0.0049 is 0.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -427,7 +427,7 @@ TEST(ObrXmlWriterTest, HalfCentsRoundAwayFromZeroOnce) {
 TEST(ObrXmlWriterTest, RowsKeepTheModelOrder) {
     // The coupon of June comes before the cash interest of March: the model order is kept.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -467,7 +467,7 @@ TEST(ObrXmlWriterTest, RowsKeepTheModelOrder) {
 
 TEST(ObrXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -497,7 +497,7 @@ TEST(ObrXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
 
 TEST(ObrXmlWriterTest, AnEmptyReportWritesNoInterestRow) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -514,7 +514,7 @@ TEST(ObrXmlWriterTest, AnEmptyReportWritesNoInterestRow) {
 TEST(ObrXmlWriterTest, LargestValueThatFitsTheSchemaIsWritten) {
     // EUR 999999999999.9949 is 999999999999.99, the largest value of 12 digits and 2 decimals.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -543,7 +543,7 @@ TEST(ObrXmlWriterTest, LargestValueThatFitsTheSchemaIsWritten) {
 TEST(ObrXmlWriterTest, AValueThatRoundsAboveTheSchemaLimitIsRejected) {
     // EUR 999999999999.9950 rounds up to 1000000000000.00, which has 13 digits.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -568,7 +568,7 @@ TEST(ObrXmlWriterTest, AValueThatRoundsAboveTheSchemaLimitIsRejected) {
 
 TEST(ObrXmlWriterTest, AForeignTaxAboveTheSchemaLimitIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -593,7 +593,7 @@ TEST(ObrXmlWriterTest, AForeignTaxAboveTheSchemaLimitIsRejected) {
 
 TEST(ObrXmlWriterTest, GrossOfZeroIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -619,7 +619,7 @@ TEST(ObrXmlWriterTest, GrossOfZeroIsRejected) {
 TEST(ObrXmlWriterTest, GrossThatRoundsToZeroIsRejected) {
     // EUR 0.0049 is 0.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -644,7 +644,7 @@ TEST(ObrXmlWriterTest, GrossThatRoundsToZeroIsRejected) {
 
 TEST(ObrXmlWriterTest, NegativeGrossIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -670,7 +670,7 @@ TEST(ObrXmlWriterTest, NegativeGrossIsRejected) {
 TEST(ObrXmlWriterTest, NegativeForeignTaxIsRejected) {
     // Tax EUR -0.0001 would round to 0.00, but the form takes no negative amount.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -695,7 +695,7 @@ TEST(ObrXmlWriterTest, NegativeForeignTaxIsRejected) {
 
 TEST(ObrXmlWriterTest, DateOutsideTheReportingYearIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -721,7 +721,7 @@ TEST(ObrXmlWriterTest, DateOutsideTheReportingYearIsRejected) {
 TEST(ObrXmlWriterTest, IdentificationNumberOf30CharactersIsAccepted) {
     // 30 characters is the limit of the schema.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -752,7 +752,7 @@ TEST(ObrXmlWriterTest,
      IdentificationNumberOf30TwoByteCharactersIsAcceptedBecauseCharactersAreCounted) {
     // 30 times "Š" is 30 characters and 60 bytes.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -781,7 +781,7 @@ TEST(ObrXmlWriterTest,
 
 TEST(ObrXmlWriterTest, IdentificationNumberOf31CharactersIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -810,7 +810,7 @@ TEST(ObrXmlWriterTest, EmptyNameIsRejected) {
     // The schema type has no limit, but the instructions require a name; a missing name is left out
     // instead.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -835,7 +835,7 @@ TEST(ObrXmlWriterTest, EmptyNameIsRejected) {
 
 TEST(ObrXmlWriterTest, EmptyAddressIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -860,7 +860,7 @@ TEST(ObrXmlWriterTest, EmptyAddressIsRejected) {
 
 TEST(ObrXmlWriterTest, PayerCountryInLowercaseIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -885,7 +885,7 @@ TEST(ObrXmlWriterTest, PayerCountryInLowercaseIsRejected) {
 
 TEST(ObrXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -910,7 +910,7 @@ TEST(ObrXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
 
 TEST(ObrXmlWriterTest, PayerTaxNumberOfSevenDigitsIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -936,7 +936,7 @@ TEST(ObrXmlWriterTest, PayerTaxNumberOfSevenDigitsIsRejected) {
 TEST(ObrXmlWriterTest, PayerNameWithAControlCharacterIsRejected) {
     // The name is not valid XML text, so it is not part of the error either.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -962,7 +962,7 @@ TEST(ObrXmlWriterTest, PayerNameWithAControlCharacterIsRejected) {
 TEST(ObrXmlWriterTest, PayerAddressWithABrokenUtf8CharacterIsRejected) {
     // "\xC3\x28": a lead byte of a two-byte character followed by a plain "(".
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -989,7 +989,7 @@ TEST(ObrXmlWriterTest, IsinThatIsNotValidXmlTextIsLeftOutOfTheError) {
     // An ISIN with a control character is not part of the error (the source country is the
     // problem).
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1016,7 +1016,7 @@ TEST(ObrXmlWriterTest, AClaimWithoutATextWritesDAOnTheClaimedRowOnly) {
     // The user claims the treaty and fills in the paragraph and article in eDavki, so the claimed
     // row has `DA`. The other row has no claim and no element.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1059,7 +1059,7 @@ TEST(ObrXmlWriterTest, AClaimWithoutATextWritesDAOnTheClaimedRowOnly) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1110,7 +1110,7 @@ TEST(ObrXmlWriterTest, AClaimWithoutATextWritesDAOnTheClaimedRowOnly) {
 TEST(ObrXmlWriterTest, AClaimWithATextWritesTheText) {
     // Nothing makes a text today; the model and the writer are ready for it.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1141,7 +1141,7 @@ TEST(ObrXmlWriterTest, AClaimWithATextWritesTheText) {
 TEST(ObrXmlWriterTest, AClaimTextOf101CharactersStopsTheFile) {
     // The schema allows 100 characters; 101 is never cut or dropped.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1168,7 +1168,7 @@ TEST(ObrXmlWriterTest, AClaimTextOf101CharactersStopsTheFile) {
 TEST(ObrXmlWriterTest, AClaimTextWithASpaceAtItsStartStopsTheFile) {
     // A claim text is kept trimmed by the session; the writer never trims it.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1195,7 +1195,7 @@ TEST(ObrXmlWriterTest, AClaimTextWithASpaceAtItsStartStopsTheFile) {
 TEST(ObrXmlWriterTest, AClaimOnARowWithoutForeignTaxStopsTheFile) {
     // A treaty claim needs a foreign tax; it is never dropped silently.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1222,7 +1222,7 @@ TEST(ObrXmlWriterTest, AClaimOnARowWithoutForeignTaxStopsTheFile) {
 TEST(ObrXmlWriterTest, AClaimOnASlovenianPayerStopsTheFile) {
     // The foreign tax of a Slovenian payer is not written, so a treaty claim has no tax to relieve.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1252,7 +1252,7 @@ TEST(ObrXmlWriterTest, AClaimOnASlovenianPayerStopsTheFile) {
 TEST(ObrXmlWriterTest, ASlovenianPayerWithAnIdentificationNumberStopsTheFile) {
     // A Slovenian payer has a tax number and no identification number (eDavki rejects it).
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1281,7 +1281,7 @@ TEST(ObrXmlWriterTest, ASlovenianPayerWithAnIdentificationNumberStopsTheFile) {
 
 TEST(ObrXmlWriterTest, ACouponErrorHasTheIsinAndTheName) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1306,7 +1306,7 @@ TEST(ObrXmlWriterTest, ACouponErrorHasTheIsinAndTheName) {
 
 TEST(ObrXmlWriterTest, ACashInterestErrorHasTheNameOnly) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1332,7 +1332,7 @@ TEST(ObrXmlWriterTest, ACashInterestErrorHasTheNameOnly) {
 TEST(ObrXmlWriterTest, SeveralProblemsGiveOneDiagnosticEachInRowOrder) {
     // Row 1: gross 0. Row 2: tax -1. Two errors, in row order, each with its own name.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1376,7 +1376,7 @@ TEST(ObrXmlWriterTest, TheWholeCouponIsWrittenWhateverWasPaidAsAccruedInterest) 
     // Accrued interest paid with a purchase is part of the cost, not of the coupon: a coupon of EUR
     // 50.0000 is written as 50.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1402,7 +1402,7 @@ TEST(ObrXmlWriterTest, TheWholeCouponIsWrittenWhateverWasPaidAsAccruedInterest) 
 
 TEST(ObrXmlWriterTest, YearBelow1000IsRejectedAsPeriod) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 999,
         .mFilingType = FilingType::Original,
     };
@@ -1428,7 +1428,7 @@ TEST(ObrXmlWriterTest, TaxNumberWithSevenDigitsIsRejected) {
 
 TEST(ObrXmlWriterTest, ThePhoneNumberOfTheTaxpayerMustBeValidXmlText) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true, .mPhoneNumber = "1\x03"},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true, .mPhoneNumber = "1\x03"},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1445,7 +1445,7 @@ TEST(ObrXmlWriterTest, SchemaRejectsAValueWithThreeDecimals) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>

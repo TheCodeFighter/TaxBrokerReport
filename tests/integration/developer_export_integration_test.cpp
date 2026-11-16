@@ -60,7 +60,7 @@ constexpr std::string_view kCouponWithoutRate =
     R"(2024-08-01T10:00:00Z,2024-08-01,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond A,XX0000000003,,,1.80,,,EUR,200.00,RUB,0.009000,Synthetic bond interest,synthetic-coupon-1,,,,)";
 
 TaxpayerMetadata syntheticTaxpayer() {
-    return {.mTaxNumber = "12345678",
+    return {.mTaxNumber = "12345679",
             .mName = "Synthetic Taxpayer",
             .mAddress = "Synthetic Street 1",
             .mCity = "Synthetic City",

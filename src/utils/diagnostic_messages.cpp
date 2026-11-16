@@ -434,6 +434,8 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::DeveloperExportUnavailableCorporateActionAfterGap,
                       "developer_export_unavailable.corporate_action_after_gap",
                       {}},
+    MessageDefinition{
+        MessageKey::TaxpayerTaxNumberCheckDigit, "taxpayer_tax_number_check_digit", {}},
     MessageDefinition{MessageKey::TaxClassificationUnknownIncomeConfirmationRequired,
                       "tax_classification_unknown.income_confirmation_required",
                       {}},

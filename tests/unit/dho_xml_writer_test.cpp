@@ -64,7 +64,7 @@ void expectOneError(const XmlWriteResult& aResult,
 TEST(DhoXmlWriterTest, OneRowWritesTheWholeDocument) {
     // Interest EUR 1234.5650 is 1234.57 (half cent up); the tax is 0.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -92,7 +92,7 @@ TEST(DhoXmlWriterTest, OneRowWritesTheWholeDocument) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -135,7 +135,7 @@ TEST(DhoXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mIsResident = true,
                 .mEmail = "taxpayer@example.com",
                 .mPhoneNumber = "+38600000000",
@@ -164,7 +164,7 @@ TEST(DhoXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
 // original.
 TEST(DhoXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::SelfReport,
     };
@@ -183,7 +183,7 @@ TEST(DhoXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
 TEST(DhoXmlWriterTest, PayerNotFoundLeavesThePayerFieldsOut) {
     // No payer facts and no source country: only the type, the amounts and the tax are written.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -216,7 +216,7 @@ TEST(DhoXmlWriterTest, PayerNotFoundLeavesThePayerFieldsOut) {
 TEST(DhoXmlWriterTest, SlovenianPayerWritesTaxIdAndNoForeignTax) {
     // The form wants the foreign tax empty for a Slovenian payer; the total of the tax is 0.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -258,7 +258,7 @@ TEST(DhoXmlWriterTest, SlovenianPayerWritesTaxIdAndNoForeignTax) {
 TEST(DhoXmlWriterTest, SlovenianPayerWithATaxThatRoundsToZeroIsAccepted) {
     // Tax EUR 0.0040 is 0.00 after rounding, so nothing is left to leave out wrongly.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -283,7 +283,7 @@ TEST(DhoXmlWriterTest, SlovenianPayerWithATaxThatRoundsToZeroIsAccepted) {
 TEST(DhoXmlWriterTest, SlovenianPayerWithAForeignTaxStopsTheFile) {
     // Tax EUR 1.0000 for a Slovenian payer: the form wants the field empty.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -306,7 +306,7 @@ TEST(DhoXmlWriterTest, HalfCentsRoundAwayFromZeroOnce) {
     // Row 1: interest 10.0049 is 10.00, tax 0.0050 is 0.01.
     // Row 2: interest 10.0050 is 10.01, tax 0.0049 is 0.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -346,7 +346,7 @@ TEST(DhoXmlWriterTest, TotalsAreTheSumOfTheRoundedRows) {
     // Two rows of 0.0050 are 0.01 each and 0.02 together; rounding the exact sum 0.0100 first
     // would give 0.01 and disagree with the rows.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -381,7 +381,7 @@ TEST(DhoXmlWriterTest, TotalsAreTheSumOfTheRoundedRows) {
 
 TEST(DhoXmlWriterTest, RowsKeepTheModelOrder) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -417,7 +417,7 @@ TEST(DhoXmlWriterTest, RowsKeepTheModelOrder) {
 
 TEST(DhoXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -441,7 +441,7 @@ TEST(DhoXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
 
 TEST(DhoXmlWriterTest, AnEmptyReportWritesNoInterestRowAndZeroTotals) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -463,7 +463,7 @@ TEST(DhoXmlWriterTest, SchemaRejectsAnAmountWithThreeDecimals) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_DHO_4.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -492,7 +492,7 @@ TEST(DhoXmlWriterTest, SchemaRejectsAnAmountWithThreeDecimals) {
 TEST(DhoXmlWriterTest, LargestAmountThatFitsTheSchemaIsWritten) {
     // EUR 9999999999.9949 is 9999999999.99, the largest value of 12 digits with 2 decimals.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -518,7 +518,7 @@ TEST(DhoXmlWriterTest, LargestAmountThatFitsTheSchemaIsWritten) {
 TEST(DhoXmlWriterTest, AnAmountThatRoundsAboveTheSchemaLimitIsRejected) {
     // EUR 9999999999.9950 rounds up to 10000000000.00, which has 13 digits.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -539,7 +539,7 @@ TEST(DhoXmlWriterTest, AnAmountThatRoundsAboveTheSchemaLimitIsRejected) {
 
 TEST(DhoXmlWriterTest, AForeignTaxAboveTheSchemaLimitIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -561,7 +561,7 @@ TEST(DhoXmlWriterTest, AForeignTaxAboveTheSchemaLimitIsRejected) {
 TEST(DhoXmlWriterTest, TotalAboveTheSchemaLimitIsRejectedEvenWhenEveryRowFits) {
     // Two rows of EUR 6000000000.00 fit; their sum 12000000000.00 has 14 digits.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -593,7 +593,7 @@ TEST(DhoXmlWriterTest, TotalAboveTheSchemaLimitIsRejectedEvenWhenEveryRowFits) {
 TEST(DhoXmlWriterTest, ForeignTaxTotalAboveTheSchemaLimitIsRejectedEvenWhenEveryRowFits) {
     // Two taxes of EUR 6000000000.00 fit; their sum 12000000000.00 has 14 digits.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -624,7 +624,7 @@ TEST(DhoXmlWriterTest, ForeignTaxTotalAboveTheSchemaLimitIsRejectedEvenWhenEvery
 
 TEST(DhoXmlWriterTest, TitleOf50CharactersIsAccepted) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -649,7 +649,7 @@ TEST(DhoXmlWriterTest, TitleOf50CharactersIsAccepted) {
 TEST(DhoXmlWriterTest, TitleOf50TwoByteCharactersIsAcceptedBecauseCharactersAreCounted) {
     // 50 times "Š" is 50 characters and 100 bytes.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -679,7 +679,7 @@ TEST(DhoXmlWriterTest, TitleOf50TwoByteCharactersIsAcceptedBecauseCharactersAreC
 
 TEST(DhoXmlWriterTest, TitleOf51CharactersIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -702,7 +702,7 @@ TEST(DhoXmlWriterTest, TitleOf51CharactersIsRejected) {
 TEST(DhoXmlWriterTest, EmptyTitleIsRejected) {
     // The schema wants at least one character; a missing name is left out instead.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -723,7 +723,7 @@ TEST(DhoXmlWriterTest, EmptyTitleIsRejected) {
 
 TEST(DhoXmlWriterTest, AddressOf101CharactersIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -745,7 +745,7 @@ TEST(DhoXmlWriterTest, AddressOf101CharactersIsRejected) {
 
 TEST(DhoXmlWriterTest, InterestOfZeroIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -767,7 +767,7 @@ TEST(DhoXmlWriterTest, InterestOfZeroIsRejected) {
 TEST(DhoXmlWriterTest, InterestThatRoundsToZeroIsRejected) {
     // EUR 0.0049 is 0.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -788,7 +788,7 @@ TEST(DhoXmlWriterTest, InterestThatRoundsToZeroIsRejected) {
 
 TEST(DhoXmlWriterTest, NegativeInterestIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -810,7 +810,7 @@ TEST(DhoXmlWriterTest, NegativeInterestIsRejected) {
 TEST(DhoXmlWriterTest, NegativeForeignTaxIsRejected) {
     // Tax EUR -0.0001 would round to 0.00, but the form takes no negative amount.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -831,7 +831,7 @@ TEST(DhoXmlWriterTest, NegativeForeignTaxIsRejected) {
 
 TEST(DhoXmlWriterTest, PayerCountryInLowercaseIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -852,7 +852,7 @@ TEST(DhoXmlWriterTest, PayerCountryInLowercaseIsRejected) {
 
 TEST(DhoXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -873,7 +873,7 @@ TEST(DhoXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
 
 TEST(DhoXmlWriterTest, PayerTaxNumberOfSevenDigitsIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -895,7 +895,7 @@ TEST(DhoXmlWriterTest, PayerTaxNumberOfSevenDigitsIsRejected) {
 TEST(DhoXmlWriterTest, PayerNameWithAControlCharacterIsRejected) {
     // The name is not valid XML text, so it is not part of the error either.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -917,7 +917,7 @@ TEST(DhoXmlWriterTest, PayerNameWithAControlCharacterIsRejected) {
 TEST(DhoXmlWriterTest, PayerAddressWithABrokenUtf8CharacterIsRejected) {
     // "\xC3\x28": a lead byte of a two-byte character followed by a plain "(".
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -938,7 +938,7 @@ TEST(DhoXmlWriterTest, PayerAddressWithABrokenUtf8CharacterIsRejected) {
 
 TEST(DhoXmlWriterTest, PayerIdentificationNumberWithAControlCharacterIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -960,7 +960,7 @@ TEST(DhoXmlWriterTest, PayerIdentificationNumberWithAControlCharacterIsRejected)
 TEST(DhoXmlWriterTest, YearBefore2006IsRejected) {
     // The schema accepts a year from 2006.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2005,
         .mFilingType = FilingType::Original,
     };
@@ -973,7 +973,7 @@ TEST(DhoXmlWriterTest, YearBefore2006IsRejected) {
 
 TEST(DhoXmlWriterTest, Year2006IsAccepted) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2006,
         .mFilingType = FilingType::Original,
     };
@@ -989,7 +989,7 @@ TEST(DhoXmlWriterTest, Year2006IsAccepted) {
 TEST(DhoXmlWriterTest, YearBelow1000GivesOneYearError) {
     // The shared check reports it; the 2006 check must not report it a second time.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 999,
         .mFilingType = FilingType::Original,
     };
@@ -1015,7 +1015,7 @@ TEST(DhoXmlWriterTest, TaxNumberWithSevenDigitsIsRejected) {
 
 TEST(DhoXmlWriterTest, ThePhoneNumberOfTheTaxpayerMustBeValidXmlText) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true, .mPhoneNumber = "1\x03"},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true, .mPhoneNumber = "1\x03"},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1028,7 +1028,7 @@ TEST(DhoXmlWriterTest, ThePhoneNumberOfTheTaxpayerMustBeValidXmlText) {
 
 TEST(DhoXmlWriterTest, TheEmailOfTheTaxpayerMustBeValidXmlText) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true, .mEmail = "a\x03@b.si"},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true, .mEmail = "a\x03@b.si"},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1041,7 +1041,7 @@ TEST(DhoXmlWriterTest, TheEmailOfTheTaxpayerMustBeValidXmlText) {
 
 TEST(DhoXmlWriterTest, 999RowsAreWritten) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1068,7 +1068,7 @@ TEST(DhoXmlWriterTest, 999RowsAreWritten) {
 TEST(DhoXmlWriterTest, 1000RowsAreRejectedWithOneError) {
     // The schema allows at most 999 interest rows.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -1091,7 +1091,7 @@ TEST(DhoXmlWriterTest, SeveralProblemsGiveOneDiagnosticEachInRowOrder) {
     // Row 1: interest 0. Row 2: tax EUR -0.0001 (-1 at 4 decimals). Two errors, in row order, each
     // with its own payer name.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };

@@ -31,7 +31,7 @@ constexpr std::string_view kEcbHeader =
     "AGENCY,SOURCE_PUB,TITLE,TITLE_COMPL,UNIT,UNIT_MULT";
 
 TaxpayerMetadata syntheticTaxpayer() {
-    return {.mTaxNumber = "12345678",
+    return {.mTaxNumber = "12345679",
             .mName = "Synthetic Taxpayer",
             .mAddress = "Synthetic Street 1",
             .mCity = "Synthetic City",
@@ -238,6 +238,38 @@ TEST(ApplicationRunIntegrationTest, ACapitalErrorBlocksOnlyDohKdvp) {
 
     // An open request makes the whole run needs_input, while the dividend form stays available.
     EXPECT_EQ(result.mStatus, OverallStatus::NeedsInput);
+}
+
+TEST(ApplicationRunIntegrationTest,
+     AWrongTaxNumberCheckDigitGivesOneWarningAndTheXmlStaysComplete) {
+    // 1*8 + 2*7 + 3*6 + 4*5 + 5*4 + 6*3 + 7*2 = 112; 112 mod 11 = 2; the check digit is 9, not 8.
+    auto request = requestWithRows({kBuy1, kBuy2, kSell});
+
+    request.mTaxpayer.mTaxNumber = "12345678";
+
+    auto run = startRun(std::move(request));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics[0];
+
+    EXPECT_EQ(std::get<ProcessingDiagnosticCode>(diagnostic.mCode),
+              ProcessingDiagnosticCode::TaxpayerTaxNumberCheckDigit);
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_FALSE(diagnostic.mBlocking);
+    EXPECT_TRUE(diagnostic.mAffectedReports.empty());
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::TaxpayerTaxNumberCheckDigit);
+    EXPECT_EQ(diagnostic.mMessage.find("12345678"), std::string::npos);
+
+    // The form is still written, with the number as typed; the warning only changes the status.
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
+    ASSERT_TRUE(result.report(ReportType::CapitalGains).mXml.has_value());
+    EXPECT_NE(result.report(ReportType::CapitalGains).mXml->find("<edp:taxNumber>12345678<"),
+              std::string::npos);
 }
 
 TEST(ApplicationRunIntegrationTest, AnAnswerThroughTheSessionRecalculates) {

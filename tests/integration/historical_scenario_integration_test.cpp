@@ -102,7 +102,7 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesWritesItsRows2024)
     constexpr std::string_view februarySale =
         R"(2025-02-10T09:00:00Z,2025-02-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,22,44,,,EUR,,,,,synthetic-sell-4,,,,)";
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -156,7 +156,7 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesWritesItsRows2024)
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -276,7 +276,7 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesWritesItsRows2025)
     constexpr std::string_view februarySale =
         R"(2025-02-10T09:00:00Z,2025-02-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,22,44,,,EUR,,,,,synthetic-sell-4,,,,)";
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -330,7 +330,7 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesWritesItsRows2025)
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -429,7 +429,7 @@ TEST(HistoricalScenarioIntegrationTest, OneFileWithTheWholeHistoryWritesTheSameR
     constexpr std::string_view februarySale =
         R"(2025-02-10T09:00:00Z,2025-02-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,22,44,,,EUR,,,,,synthetic-sell-4,,,,)";
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -486,7 +486,7 @@ TEST(HistoricalScenarioIntegrationTest, OneFileWithTheWholeHistoryWritesTheSameR
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -606,7 +606,7 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesInReverseOrderWrit
     constexpr std::string_view februarySale =
         R"(2025-02-10T09:00:00Z,2025-02-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,22,44,,,EUR,,,,,synthetic-sell-4,,,,)";
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -660,7 +660,7 @@ TEST(HistoricalScenarioIntegrationTest, TheExampleFromTwoFilesInReverseOrderWrit
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -778,7 +778,7 @@ TEST(HistoricalScenarioIntegrationTest, OverlappingFilesWriteTheSameRows2024) {
     constexpr std::string_view februarySale =
         R"(2025-02-10T09:00:00Z,2025-02-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-2,22,44,,,EUR,,,,,synthetic-sell-4,,,,)";
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -833,7 +833,7 @@ TEST(HistoricalScenarioIntegrationTest, OverlappingFilesWriteTheSameRows2024) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>

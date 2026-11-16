@@ -30,7 +30,7 @@ TEST(RequestJsonTest, ReadsTheYearThePartsAndTheTaxpayer) {
         "reportingYear": 2024,
         "filingType": "original",
         "developerMode": false,
-        "taxpayer": {"taxNumber": "12345678", "isResident": true, "name": "Ana Novak"},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true, "name": "Ana Novak"},
         "files": [
             {"part": "file0", "kind": "broker", "broker": "trade_republic"},
             {"part": "file1", "kind": "ecb_rates"},
@@ -53,7 +53,7 @@ TEST(RequestJsonTest, ReadsTheYearThePartsAndTheTaxpayer) {
     EXPECT_EQ(request.mReportingYear, 2024);
     EXPECT_EQ(request.mFilingType, FilingType::Original);
     EXPECT_FALSE(request.mDeveloperMode);
-    EXPECT_EQ(request.mTaxpayer.mTaxNumber, "12345678");
+    EXPECT_EQ(request.mTaxpayer.mTaxNumber, "12345679");
     EXPECT_EQ(request.mTaxpayer.mName, "Ana Novak");
 
     ASSERT_EQ(request.mBrokerFiles.size(), 1U);
@@ -78,7 +78,7 @@ TEST(RequestJsonTest, KeepsTheOrderOfTheBrokerFilesAsListed) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [
             {"part": "file1", "kind": "broker", "broker": "trade_republic"},
             {"part": "file0", "kind": "broker", "broker": "trade_republic"}
@@ -107,7 +107,7 @@ TEST(RequestJsonTest, ReadsASelfReportInDeveloperMode) {
         "reportingYear": 2025,
         "filingType": "self_report",
         "developerMode": true,
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -128,13 +128,13 @@ TEST(RequestJsonTest, YearBoundsAre2000And9999) {
     const std::string first = R"({
         "reportingYear": 2000,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::string last = R"({
         "reportingYear": 9999,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> firstParts{
@@ -160,7 +160,7 @@ TEST(RequestJsonTest, YearBelow2000IsRefused) {
     const std::string json = R"({
         "reportingYear": 1999,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -175,7 +175,7 @@ TEST(RequestJsonTest, YearAbove9999IsRefused) {
     const std::string json = R"({
         "reportingYear": 10000,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -190,7 +190,7 @@ TEST(RequestJsonTest, YearAsTextIsRefused) {
     const std::string json = R"({
         "reportingYear": "2024",
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -205,7 +205,7 @@ TEST(RequestJsonTest, UnknownFilingTypeIsRefused) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "amended",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -219,7 +219,7 @@ TEST(RequestJsonTest, UnknownFilingTypeIsRefused) {
 TEST(RequestJsonTest, MissingFilingTypeIsRefused) {
     const std::string json = R"({
         "reportingYear": 2024,
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -235,7 +235,7 @@ TEST(RequestJsonTest, DeveloperModeAsTextIsRefused) {
         "reportingYear": 2024,
         "filingType": "original",
         "developerMode": "yes",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -269,7 +269,7 @@ TEST(RequestJsonTest, TaxpayerWithAnUnknownKeyIsBadTaxpayerWithoutAField) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true, "shoeSize": "42"},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true, "shoeSize": "42"},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -305,7 +305,7 @@ TEST(RequestJsonTest, PathKeyAtTheTopIsRefused) {
         "path": "/home/x",
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -320,7 +320,7 @@ TEST(RequestJsonTest, PathKeyInTheTaxpayerIsRefused) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true, "path": "/home/x"},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true, "path": "/home/x"},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -335,7 +335,7 @@ TEST(RequestJsonTest, PathKeyInAFileEntryIsRefused) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic", "Path": "/home/x"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -351,7 +351,7 @@ TEST(RequestJsonTest, UnknownTopLevelKeyIsRefused) {
         "reportingYear": 2024,
         "filingType": "original",
         "extra": 1,
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -366,7 +366,7 @@ TEST(RequestJsonTest, UnknownKeyInAFileEntryIsRefused) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic", "extra": 1}]
     })";
     const std::vector<UploadedPart> parts{
@@ -381,7 +381,7 @@ TEST(RequestJsonTest, NamedPartThatIsNotUploadedIsMissing) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file9", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -395,7 +395,7 @@ TEST(RequestJsonTest, UploadedPartThatNoEntryNamesIsUnreferenced) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -411,7 +411,7 @@ TEST(RequestJsonTest, TwoEntriesForOnePartAreADuplicate) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [
             {"part": "file0", "kind": "broker", "broker": "trade_republic"},
             {"part": "file0", "kind": "ecb_rates"}
@@ -429,7 +429,7 @@ TEST(RequestJsonTest, TwoUploadedPartsWithOneNameAreADuplicate) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -445,7 +445,7 @@ TEST(RequestJsonTest, BrokerThatIsNotReadIsUnsupported) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "ibkr"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -460,7 +460,7 @@ TEST(RequestJsonTest, BrokerFileWithoutABrokerIsBadRequest) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -475,7 +475,7 @@ TEST(RequestJsonTest, RateFileWithABrokerIsBadRequest) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "ecb_rates", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -490,7 +490,7 @@ TEST(RequestJsonTest, UnknownFileKindIsBadRequest) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "picture"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -505,7 +505,7 @@ TEST(RequestJsonTest, UploadWithOnlyRateFilesHasNoBrokerFile) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "ecb_rates"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -530,7 +530,7 @@ TEST(RequestJsonTest, ExactlyThe32FilesOfTheLimitAreAccepted) {
     json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [)" +
            files + "]}";
     parts.push_back({.mName = "request", .mFileName = std::nullopt, .mContent = json});
@@ -559,7 +559,7 @@ TEST(RequestJsonTest, MoreThan32FilesAreTooManyFiles) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [)" + files +
                              "]}";
     const std::vector<UploadedPart> parts{
@@ -582,7 +582,7 @@ TEST(RequestJsonTest, FileNameWithAWindowsPathKeepsOnlyTheLastPart) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -601,7 +601,7 @@ TEST(RequestJsonTest, FileNameWithAUnixPathKeepsOnlyTheLastPart) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -621,7 +621,7 @@ TEST(RequestJsonTest, FileNameThatIsOnlyAFolderBecomesEmpty) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -663,7 +663,7 @@ TEST(RequestJsonTest, FileEntryWithoutAKindIsBadRequest) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{
@@ -678,7 +678,7 @@ TEST(RequestJsonTest, BrokerThatIsNotATextIsBadRequest) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": 5}]
     })";
     const std::vector<UploadedPart> parts{
@@ -694,7 +694,7 @@ TEST(RequestJsonTest, FilePartWithoutAFileNameGetsAnEmptyName) {
     const std::string json = R"({
         "reportingYear": 2024,
         "filingType": "original",
-        "taxpayer": {"taxNumber": "12345678", "isResident": true},
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
         "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
     })";
     const std::vector<UploadedPart> parts{

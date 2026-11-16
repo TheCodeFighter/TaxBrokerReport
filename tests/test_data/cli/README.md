@@ -2,7 +2,7 @@
 
 - `report_fixture.csv` is the `tax_rules.md` example "one sale uses two purchases" in 2024: 10 @ 10
   and 20 @ 20 bought, 15 @ 30 sold.
-- `taxpayer.json` has every key of the taxpayer file, all made up: tax number `12345678`, the
+- `taxpayer.json` has every key of the taxpayer file, all made up: tax number `12345679`, the
   residence, and a synthetic name, address, birth date, email (`example.com`) and phone number.
 - `Doh-KDVP_2024.golden.xml` is the expected `taxbroker report --year 2024` output for them. Its
   rows are those of the golden literal of
@@ -42,5 +42,5 @@ For trying the questions of `taxbroker report` by hand (no test reads them):
   and `confirm` write `Doh-KDVP_2024_UNSAFE.xml`, which equals the golden file: the purchase of
   0.35 units open at the short sale (F8 0.35), the short sale in full without F10 (F8 0.35 - 0.5 =
   -0.15), the purchase of 1 (F8 0.85) and the last sale of 0.2 (F8 0.65). The golden file uses the
-  minimal taxpayer of the CLI tests (`{"taxNumber": "12345678", "isResident": true}`).
+  minimal taxpayer of the CLI tests (`{"taxNumber": "12345679", "isResident": true}`).
 

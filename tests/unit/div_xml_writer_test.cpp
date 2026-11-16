@@ -41,7 +41,7 @@ std::vector<std::string> textsOf(const std::string& aXml, std::string_view aElem
 TEST(DivXmlWriterTest, OneDividendWritesTheWholeDocument) {
     // Gross EUR 12.3450 is 12.35 (half cent up), tax EUR 1.8518 is 1.85.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -74,7 +74,7 @@ TEST(DivXmlWriterTest, OneDividendWritesTheWholeDocument) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -112,7 +112,7 @@ TEST(DivXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mIsResident = true,
                 .mEmail = "taxpayer@example.com",
                 .mPhoneNumber = "+38600000000",
@@ -141,7 +141,7 @@ TEST(DivXmlWriterTest, TaxpayerContactFieldsAreWrittenInSchemaOrder) {
 // original.
 TEST(DivXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::SelfReport,
     };
@@ -160,7 +160,7 @@ TEST(DivXmlWriterTest, SelfReportRunIsStillWrittenAsAnOriginal) {
 TEST(DivXmlWriterTest, PayerNotFoundLeavesThePayerFieldsOut) {
     // No payer facts and no source country: only the facts of the payment are written.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -192,7 +192,7 @@ TEST(DivXmlWriterTest, PayerNotFoundLeavesThePayerFieldsOut) {
 
 TEST(DivXmlWriterTest, SlovenianTaxNumberComesBeforeTheIdentificationNumber) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -223,7 +223,7 @@ TEST(DivXmlWriterTest, SlovenianTaxNumberComesBeforeTheIdentificationNumber) {
 
 TEST(DivXmlWriterTest, TheIsinIsNeverWritten) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -251,7 +251,7 @@ TEST(DivXmlWriterTest, HalfCentsRoundAwayFromZeroOnce) {
     // Money has four decimals, the form two. Gross 12.3450 -> 12.35, 12.3449 -> 12.34,
     // 0.0050 -> 0.01. Tax 0.0049 -> 0.00, 0.0150 -> 0.02, 0 -> 0.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -303,7 +303,7 @@ TEST(DivXmlWriterTest, HalfCentsRoundAwayFromZeroOnce) {
 
 TEST(DivXmlWriterTest, WholeAmountsKeepTwoDecimals) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -332,7 +332,7 @@ TEST(DivXmlWriterTest, LargestMoneyValueFitsWithoutOverflow) {
     // 922337203685477.5807 is 9223372036854775807 stored steps: 92233720368547758 cents and a
     // remainder of 7 steps, so it rounds down to 922337203685477.58.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -359,7 +359,7 @@ TEST(DivXmlWriterTest, LargestMoneyValueFitsWithoutOverflow) {
 
 TEST(DivXmlWriterTest, RowsKeepTheModelOrder) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -411,7 +411,7 @@ TEST(DivXmlWriterTest, RowsKeepTheModelOrder) {
 
 TEST(DivXmlWriterTest, ATreatyClaimWritesTheTreatyTextAsTheReliefStatement) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -440,7 +440,7 @@ TEST(DivXmlWriterTest, ATreatyClaimWritesTheTreatyTextAsTheReliefStatement) {
 TEST(DivXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
     // &, < and > are escaped; quotes need no escaping in element text; letters stay as they are.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -468,7 +468,7 @@ TEST(DivXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
 
 TEST(DivXmlWriterTest, AnEmptyReportWritesNoDividend) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -489,7 +489,7 @@ TEST(DivXmlWriterTest, SchemaRejectsAValueWithThreeDecimals) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Div_3.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -542,7 +542,7 @@ void expectOneError(const XmlWriteResult& aResult,
 
 TEST(DivXmlWriterTest, ATreatyTextThatIsNotValidXmlStopsTheFile) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -568,7 +568,7 @@ TEST(DivXmlWriterTest, ATreatyTextThatIsNotValidXmlStopsTheFile) {
 
 TEST(DivXmlWriterTest, ATreatyClaimWithoutForeignTaxStopsTheFile) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -594,7 +594,7 @@ TEST(DivXmlWriterTest, ATreatyClaimWithoutForeignTaxStopsTheFile) {
 
 TEST(DivXmlWriterTest, AnEmptyTreatyTextStopsTheFile) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -620,7 +620,7 @@ TEST(DivXmlWriterTest, AnEmptyTreatyTextStopsTheFile) {
 TEST(DivXmlWriterTest, ATreatyClaimWithoutATextStopsTheFile) {
     // Doh-Div always names the treaty; a claim without a text is never written as `DA`.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -644,7 +644,7 @@ TEST(DivXmlWriterTest, ATreatyClaimWithoutATextStopsTheFile) {
 
 TEST(DivXmlWriterTest, ATreatyTextFalseStopsTheFile) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -669,7 +669,7 @@ TEST(DivXmlWriterTest, ATreatyTextFalseStopsTheFile) {
 
 TEST(DivXmlWriterTest, ATreatyTextWithSpacesAtItsEndsStopsTheFile) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -694,7 +694,7 @@ TEST(DivXmlWriterTest, ATreatyTextWithSpacesAtItsEndsStopsTheFile) {
 
 TEST(DivXmlWriterTest, ATreatyTextOf101CharactersStopsTheFile) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -720,7 +720,7 @@ TEST(DivXmlWriterTest, ATreatyTextOf101CharactersStopsTheFile) {
 
 TEST(DivXmlWriterTest, GrossOfZeroIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -744,7 +744,7 @@ TEST(DivXmlWriterTest, GrossOfZeroIsRejected) {
 TEST(DivXmlWriterTest, GrossThatRoundsToZeroIsRejected) {
     // EUR 0.0049 rounds to 0.00.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -767,7 +767,7 @@ TEST(DivXmlWriterTest, GrossThatRoundsToZeroIsRejected) {
 
 TEST(DivXmlWriterTest, NegativeGrossIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -790,7 +790,7 @@ TEST(DivXmlWriterTest, NegativeGrossIsRejected) {
 
 TEST(DivXmlWriterTest, NegativeForeignTaxIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -813,7 +813,7 @@ TEST(DivXmlWriterTest, NegativeForeignTaxIsRejected) {
 
 TEST(DivXmlWriterTest, PayerCountryInLowercaseIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -836,7 +836,7 @@ TEST(DivXmlWriterTest, PayerCountryInLowercaseIsRejected) {
 
 TEST(DivXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -859,7 +859,7 @@ TEST(DivXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
 
 TEST(DivXmlWriterTest, PayerNameWithAControlCharacterIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -885,7 +885,7 @@ TEST(DivXmlWriterTest, PayerNameWithAControlCharacterIsRejected) {
 
 TEST(DivXmlWriterTest, PayerAddressWithABrokenUtf8CharacterIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -911,7 +911,7 @@ TEST(DivXmlWriterTest, PayerAddressWithABrokenUtf8CharacterIsRejected) {
 
 TEST(DivXmlWriterTest, PayerTaxNumberOfSevenDigitsIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -934,7 +934,7 @@ TEST(DivXmlWriterTest, PayerTaxNumberOfSevenDigitsIsRejected) {
 
 TEST(DivXmlWriterTest, DateOutsideTheReportingYearIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };
@@ -970,7 +970,7 @@ TEST(DivXmlWriterTest, TaxNumberWithSevenDigitsIsRejected) {
 
 TEST(DivXmlWriterTest, YearBelow1000IsRejectedAsPeriod) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 999,
         .mFilingType = FilingType::Original,
     };
@@ -984,7 +984,7 @@ TEST(DivXmlWriterTest, YearBelow1000IsRejectedAsPeriod) {
 TEST(DivXmlWriterTest, SeveralProblemsGiveOneDiagnosticEachInRowOrder) {
     // Row 1: gross 0. Row 2: tax -1. Two errors, in row order, each with its own ISIN.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = FilingType::Original,
     };

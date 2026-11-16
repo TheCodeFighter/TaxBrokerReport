@@ -81,6 +81,8 @@ enum class ProcessingDiagnosticCode {
     /// A warning: developer mode is on, but the developer export is not offered for an
     /// investment with missing history (see the message key for the reason).
     DeveloperExportUnavailable,
+    /// A warning: the check digit of the taxpayer's tax number is wrong, so it may be a typo.
+    TaxpayerTaxNumberCheckDigit,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.
