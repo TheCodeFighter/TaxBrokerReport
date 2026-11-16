@@ -39,7 +39,7 @@ export const taxpayerFields: TaxpayerFieldSpec[] = [
   { key: "taxNumber", label: "taxpayerTaxNumber", type: "text", inputMode: "numeric", maxLength: 8, required: true },
   { key: "name", label: "taxpayerName", type: "text" },
   { key: "address", label: "taxpayerAddress", type: "text" },
-  { key: "postCode", label: "taxpayerPostCode", type: "text" },
+  { key: "postCode", label: "taxpayerPostCode", type: "text", inputMode: "numeric", maxLength: 4 },
   { key: "postName", label: "taxpayerPostName", type: "text" },
   { key: "city", label: "taxpayerCity", type: "text" },
   { key: "birthDate", label: "taxpayerBirthDate", type: "date" },

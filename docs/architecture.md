@@ -1316,7 +1316,7 @@ rows of a partly blocked loss, and classification requests.
 
 **Taxpayer file.** One JSON object with `taxNumber` (eight digits, not `00000000`) and
 `isResident` (only `true` for now), and the optional strings `name`, `address`, `city`,
-`postCode`, `postName`, `birthDate` (`YYYY-MM-DD`), `email` and `phoneNumber`. Any other key is an
+`postCode` (four digits, 1000 to 9999), `postName`, `birthDate` (`YYYY-MM-DD`), `email` and `phoneNumber`. Any other key is an
 error, `filingType` included: the filing type is chosen for each run (`--self-report`), never
 read from the file. An error names the key, never the value.
 
@@ -1384,11 +1384,11 @@ later request is checked with the session cookie, `Host`, `Origin` and the clien
 | R7 | `Host` must be exactly `127.0.0.1:<port>` or `localhost:<port>`, the name compared without case (`isAllowedHost`). Anything else is rejected (against DNS rebinding). | `RequestGuardTest` (own host, `localhost`, other port, foreign name, empty, upper case); server test: a rejected `Host`. |
 | R8 | `Origin`, when present, must be `http://127.0.0.1:<port>` or `http://localhost:<port>` (`isAllowedOrigin`). A state-changing request (`isStateChangingMethod`: any method other than GET, HEAD and OPTIONS) without `Origin` is rejected. | `RequestGuardTest` (foreign, `null`, missing on a state-changing and on a safe request, the method names); server test: POST without `Origin`. |
 | R9 | No CORS headers at all: `Access-Control-Allow-Origin` is never sent. The frontend is served from the same origin. | Server test: an `OPTIONS` preflight gets no allow headers. |
-| R10 | Uploads stay in memory (`InputFile`). The server never writes an upload to disk and never takes a host path from a request. | `RequestJsonTest` and `AnswerCallJsonTest` (a `path` key anywhere is refused); `ServerRunTest.ASuccessfulRunWritesNoFile` (an upload, an answer and a download leave the same files in the test's state, runtime and launch folders) and `APathKeyIsRefusedAndTheServerWritesNothing` (a `path` key gives 400 and the same files); code review item. |
+| R10 | Uploads stay in memory (`InputFile`). The server never writes an upload to disk and never takes a host path from a request. The only file it writes besides the log and the launch file is the taxpayer profile, and only on `POST /api/profile` (the user ticked "Remember my details"); a run writes nothing. | `RequestJsonTest` and `AnswerCallJsonTest` (a `path` key anywhere is refused); `ServerRunTest.ASuccessfulRunWritesNoFile` (an upload, an answer and a download leave the same files in the test's state, runtime and launch folders) and `APathKeyIsRefusedAndTheServerWritesNothing` (a `path` key gives 400 and the same files); `ASuccessfulRunWritesNoFile` also checks that no profile file exists, and `ASavedProfileIsOnlyTheProfileFileAndSurvivesARestartOfTheServer` that a save adds the data folder, the app folder in it and `profile.json`, nothing else; code review item. |
 | R11 | Only the per-file limit applies: each file keeps `kMaxInputFileBytes` (100 MiB). There is no total request limit besides what follows from it: an upload may have the request part and 32 files, so its body is read up to 33 times the file limit, and only for a request that passed the guard (see "Local HTTP server"). A larger file gets 413, also a file part sent without a file name. The `request` part is small and is limited to `kDefaultBodyLimit` (1 MiB); a longer one gets 413 `request_too_large` before it is parsed. | `MultipartTest` (limit and limit + 1); `ServerRunTest` (a file over the limit gives 413, one of exactly the limit is accepted); `RunRoutesTest` (a file part without a file name of 11 bytes under a 10-byte limit gives 413, one of 10 bytes does not; a `request` part of 1048577 bytes gives 413, one of 1048576 bytes is not refused for its size); `ServerTest` (the body of a caller without a session is refused above 1 MiB before it is read). |
-| R12 | A response holds no absolute path, raw row or money value outside the result fields. Source names are sanitized when the result is serialized. | The JSON serializer tests, `InputFaultJsonTest` and `ServerRunTest` (no response body holds `/home/`, `/tmp/`, `/workspace/` or `C:\`, also for file names that are paths). |
-| R13 | A log line holds no money value, raw row, name, ISIN, absolute path, query or token (`diagnostics.md`). Every refusal writes one warning with the status and a fixed word: `Request refused: 403 host_not_allowed` (the guard: `host_not_allowed`, `bad_target`, `origin_repeated`, `origin_missing`, `origin_not_allowed`, `client_header`, `no_session`, `session_wrong`), `Login refused: 401 link_used` (`link_used`, `link_expired`, `link_wrong`, or 400 `bad_request`) and `Run request refused: 400 too_many_files (limit 32)` (the run API: the limit for a size or count refusal, a reason word or message key where a code has several causes). A step that works writes one info line with counts and statuses only (`Run started`, `Run restarted`, `Run result`, `Run details`, `Answers accepted` with the question types, `Answers deleted`, `Report downloaded`), so a bug report shows what ran. A body that stops writes `Request not finished: timeout` or `Request not finished: connection_closed`. A handler that throws writes `Run request failed: <route> (<exception type>)` and the HTTP layer writes `A request handler failed: <verb> <step> (<exception type>)`, never the exception text. | Review of the log lines of the server; `ServerRoutesTest` (one line per guard and login refusal, one line when the body limit is asked first, no token in the log); `RunRoutesTest` (one line per refusal, the limit in it, no file name or content in it; the start, result, answer, delete and download lines with no ISIN, name, request ID or file name; the failure line); `ExceptionKindTest`; `ApplicationResultJsonTest` (the summary and the details); `ServerTest` (the 413 lines of the HTTP layer, the guard's own line for a large or chunked refused body, the `Request not finished` lines and none for an idle connection, one `Accept failed` line per series, the failed-handler lines, the browser program line); `TradeRepublicParserTest` (the row line holds the message key, not the cell text). |
-| R14 | The per-user state folder holds the log: Linux `$XDG_STATE_HOME/taxbroker/` (an absolute path only), else `~/.local/state/taxbroker/`; macOS `~/Library/Application Support/TaxBrokerReport/`; Windows `%LOCALAPPDATA%\TaxBrokerReport\`. On POSIX the folder is created with mode `0700`. The launch file is in `$XDG_RUNTIME_DIR/taxbroker/` when `XDG_RUNTIME_DIR` is an absolute path (a per-user folder that is cleared at logout, and a folder that a browser installed as a snap can read, unlike the hidden state folder; tried on Ubuntu with Brave installed as a snap, started by `xdg-open` from the static `taxbroker_server`), else in the state folder. In Docker the log lives in `/var/log/taxbroker` and the launch file is `TBR_LAUNCH_FILE`. The log rotates at 5 MiB and keeps 3 files. | Logger test of the rotation (with the log file, not yet built); server tests: the mode of the launch folder, `StateFolderTest` (the folder choice and `0700`). |
+| R12 | A response holds no absolute path, raw row or money value outside the result fields. Source names are sanitized when the result is serialized. The one stated exception is the `location` text of `GET /api/profile`: the file path with the home folder written as `~` (so without the user name), or left out when the file is not under the home folder. | The JSON serializer tests, `InputFaultJsonTest` and `ServerRunTest` (no response body holds `/home/`, `/tmp/`, `/workspace/` or `C:\`, also for file names that are paths). |
+| R13 | A log line holds no money value, raw row, name, ISIN, absolute path, query or token (`diagnostics.md`). Every refusal writes one warning with the status and a fixed word: `Request refused: 403 host_not_allowed` (the guard: `host_not_allowed`, `bad_target`, `origin_repeated`, `origin_missing`, `origin_not_allowed`, `client_header`, `no_session`, `session_wrong`), `Login refused: 401 link_used` (`link_used`, `link_expired`, `link_wrong`, or 400 `bad_request`) and `Run request refused: 400 too_many_files (limit 32)` (the run API: the limit for a size or count refusal, a reason word or message key where a code has several causes). A step that works writes one info line with counts and statuses only (`Run started`, `Run restarted`, `Run result`, `Run details`, `Answers accepted` with the question types, `Answers deleted`, `Report downloaded`), so a bug report shows what ran. The profile routes write `Profile loaded (fields <n>, invalid <n>)`, `Profile saved`, `Profile deleted`, the warning `Profile unreadable`, the errors `Profile not saved (<exception type>)` and `Profile not deleted (<exception type>)`, and the refusals `Profile request refused: 400 bad_taxpayer (<taxpayer key>)`, `413 request_too_large (limit 32768)`, `405 method_not_allowed` and `404 not_found`; never a value or a path. A body that stops writes `Request not finished: timeout` or `Request not finished: connection_closed`. A handler that throws writes `Run request failed: <route> (<exception type>)` and the HTTP layer writes `A request handler failed: <verb> <step> (<exception type>)`, never the exception text. | Review of the log lines of the server; `ServerRoutesTest` (one line per guard and login refusal, one line when the body limit is asked first, no token in the log); `ProfileRoutesTest` (every profile line, and that no log line holds a name, a tax number or the folder); `RunRoutesTest` (one line per refusal, the limit in it, no file name or content in it; the start, result, answer, delete and download lines with no ISIN, name, request ID or file name; the failure line); `ExceptionKindTest`; `ApplicationResultJsonTest` (the summary and the details); `ServerTest` (the 413 lines of the HTTP layer, the guard's own line for a large or chunked refused body, the `Request not finished` lines and none for an idle connection, one `Accept failed` line per series, the failed-handler lines, the browser program line); `TradeRepublicParserTest` (the row line holds the message key, not the cell text). |
+| R14 | The per-user state folder holds the log: Linux `$XDG_STATE_HOME/taxbroker/` (an absolute path only), else `~/.local/state/taxbroker/`; macOS `~/Library/Application Support/TaxBrokerReport/`; Windows `%LOCALAPPDATA%\TaxBrokerReport\`. On POSIX the folder is created with mode `0700`. The launch file is in `$XDG_RUNTIME_DIR/taxbroker/` when `XDG_RUNTIME_DIR` is an absolute path (a per-user folder that is cleared at logout, and a folder that a browser installed as a snap can read, unlike the hidden state folder; tried on Ubuntu with Brave installed as a snap, started by `xdg-open` from the static `taxbroker_server`), else in the state folder. In Docker the log lives in `/var/log/taxbroker` and the launch file is `TBR_LAUNCH_FILE`. The log rotates at 5 MiB and keeps 3 files. The saved taxpayer profile is `profile.json` in the per-user data folder, which is another folder: Linux `$XDG_DATA_HOME/taxbroker/` (an absolute path only), else `~/.local/share/taxbroker/`; Windows `%APPDATA%\TaxBrokerReport\` and macOS `~/Library/Application Support/TaxBrokerReport/` come with the packaging step. The folder has mode `0700` and the file `0600` (written to `profile.json.tmp` and renamed, a symbolic link is refused). Without an absolute `HOME` or `XDG_DATA_HOME` there is no data folder: the server still starts, `GET` and delete answer `saved: false`, and a save is 500 `profile_not_saved`. In Docker the `prod` service keeps it in the named volume `taxbroker_data` (`XDG_DATA_HOME=/var/lib/taxbroker`) and `dev` in `runtime/data`. | Logger test of the rotation (with the log file, not yet built); server tests: the mode of the launch folder, `StateFolderTest` (the folder choice and `0700`, also for the data folder), `ProfileStoreTest` (the modes, the replacement, the symbolic link, the location text, no data folder), `ProfileRoutesTest` (no data folder). |
 | R15 | The server runs as a normal user; the `prod` image runs as `app`. | `docker/Dockerfile` (`USER app`). |
 | R16 | Accepted risks. (a) A process of the same user can read the input files directly, so no token can protect against it. (b) A browser extension with access to all sites can read the page. (c) Another local program on `127.0.0.1` receives the cookie, because cookies are per host name, not per port; every request is still checked for the session token. (d) No TLS on the loopback: reading loopback traffic needs root, which can read the process memory anyway, and browsers treat `http://127.0.0.1` as a secure context. A desktop window without a port (webview) would remove (b) and (c); it needs a different web engine per platform and a non-static Linux build, so it is not used. | Accepted risk. |
 | R17 | Every `/api/` request needs the header `X-TaxBroker: 1` (`kClientHeaderName`, `kClientHeaderValue`), else 403. A foreign page cannot send it without CORS. | `RequestGuardTest` (the constants); server test: a request without the header gets 403. |
@@ -1445,7 +1445,7 @@ SIGINT, SIGTERM or `stop` the server closes the port and deletes the launch file
 | 5 | Exactly one `X-TaxBroker: 1` header (R17) | 403, no body |
 | 6 | `POST /api/session`: the body is JSON with a string `token`; `LinkToken::redeem` (R4, R5); success is 204 with `Set-Cookie`, the launch file is deleted (R19) | 400 `{"error":"bad_request"}` or 401 |
 | 7 | The session cookie (several `Cookie` headers are joined) passes `tokenMatches` (R5) | 401, no body |
-| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; `GET /api/messages` is the message texts (JSON, see "Frontend"), another method on it is 405; `GET /api/version` is `{"version":"<project version>"}` (the CMake project version, for the page footer), another method on it is 405; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
+| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; `GET /api/messages` is the message texts (JSON, see "Frontend"), another method on it is 405; `GET /api/version` is `{"version":"<project version>"}` (the CMake project version, for the page footer), another method on it is 405; a path `/api/run` or below it goes to `RunRoutes` and `/api/profile` or below it to `ProfileRoutes` ("Local HTTP API"); an unknown path is 404 | |
 
 The guard runs before the route lookup, so an unknown `/api/` path without a cookie gives 401,
 not 404: the paths cannot be discovered. Every response carries the seven `securityHeaders()`
@@ -1474,6 +1474,11 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   compressed), when an address other than an XML namespace name or that repository link appears
   in a file, or when
   `index.html` has an inline script or style.
+- **Tests.** Unit tests are Vitest files named `*.test.ts` that sit next to the module they test
+  (`run/taxpayer.ts` and `run/taxpayer.test.ts`). The build never bundles them, because nothing
+  imports them, and `tsc --noEmit` checks them like the code. The screens (`screens/*.tsx`) hold
+  no logic and have no tests: the logic lives in the modules beside them. A test for a component
+  would be a `*.test.tsx` file, and `include` in `vite.config.ts` would then need that pattern.
 - **Login.** The link `/#token=...` is exchanged once with `POST /api/session` and the fragment
   is removed with `history.replaceState`, also when the exchange fails (R6). A page without a
   fragment (a reload) asks `GET /api/session`; so does a refused exchange (401), because a used
@@ -1521,6 +1526,18 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   original by default. The taxpayer form sends `isResident: true` always (only Slovenian tax
   residents are supported), trims the text and leaves out an empty field (the server refuses an
   empty string); it repeats no rule about a value.
+- **Saved taxpayer details.** Under the taxpayer fields a box "Remember my details" (off by
+  default) with a hint where the file is (`location` of `GET /api/profile`, or "in the app's data
+  folder"). The page loads the profile once after the login: a saved text fills only an input that
+  is still empty, and the box starts ticked when a file exists. With the box ticked, "Create the
+  reports" first sends `POST /api/profile` with the same taxpayer object and then the run; a 400
+  marks the field and stops, a 500 shows "Your details could not be saved." and the run goes on.
+  Unticking the box while a file exists opens an in-page warning with Cancel (focused; Escape is
+  Cancel) and Confirm delete, which calls `POST /api/profile/delete`; the run button waits while
+  the warning is open. No browser dialog (it can be suppressed and is not translated). Notices
+  for an unreadable file, for invalid fields (left empty, named) and for an unknown key (one
+  general notice). The pure state (`rememberBoxStep`) and the loading (`formFromProfile`) are in
+  `run/profile.ts`.
 - **Request order and file numbers.** The upload has the part `request` first, then `file0` and
   on: the broker files of the first broker area, the next broker areas, the rate files, the
   reference files. The source IDs of the diagnostics count only the broker files (`source-0001`
@@ -1539,7 +1556,7 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   `GET /api/run` on load (it logs a 404 warning before the first upload), so a reload shows the
   empty form.
 - **Tests.** Vitest tests of the login, the client, the page hashes, the version call, the language, the theme, the message texts and
-  the input screen's pure code (labels, years, list changes, the request, the answers); the
+  the input screen's pure code (labels, years, list changes, the request, the answers), the profile calls and the state of the "Remember my details" box; the
   browser functions (`location`, `history`, `fetch`, storage) are arguments, so they need no DOM.
 
 ### Local HTTP API
@@ -1595,6 +1612,28 @@ guard and the session cookie. The JSON readers and writers are in `taxbroker_api
   "messageParams":{...}}`. An input fault is `{"inputFault":{"kind":"ecb_rate_file"` or
   `"reference_file","messageKey":"...","messageParams":{...},"source":{"file":"rates.csv","row":3}}}`,
   with the file name only (R12).
+
+#### The saved taxpayer profile
+
+`ProfileRoutes` (`src/server/profile_routes.hpp`) and `ProfileStore` (`profile_store.hpp`) keep
+the taxpayer details of the page in `profile.json` (see R14 for the folder). The file holds the
+keys of the taxpayer file with `isResident`, in key order on one line, so it is also a valid
+`--taxpayer` file for the command line. The saved text is read leniently by
+`readTaxpayerProfile`: each key is checked by the same function as a typed one, a bad value is
+left out and named, an unknown key is ignored with one flag, and a file over 64 KiB, not JSON or
+not an object is unreadable.
+
+| Route | Body | Success | Errors |
+| --- | --- | --- | --- |
+| `GET /api/profile` | none | 200 `{"location":"~/.local/share/taxbroker/profile.json","saved":false}`, or with a file `{"ignoredKeys":false,"invalidFields":["birthDate"],"location":"...","saved":true,"taxpayer":{...},"unreadable":false}` (no `taxpayer` when unreadable; no `location` when the file is not under the home folder) | none |
+| `POST /api/profile` | the taxpayer object (the same reader as the run, at most 32 KiB) | 204, the file is written | 400 `bad_taxpayer` with `field`; 413 `request_too_large`; 500 `profile_not_saved` |
+| `POST /api/profile/delete` | none | 200 `{"location":...,"saved":false}`, also when there was no file | 500 `profile_not_deleted` |
+
+- Another method is 405 with `Allow`; another path below `/api/profile/` is 404.
+- The server writes the profile only on `POST /api/profile`, which the page sends only when the
+  user ticked the box (R10). A save replaces the file by a rename, so a crash leaves the old
+  file or the new one.
+- No response and no log line holds a path of the machine (R12, R13).
 
 ## Official rate files
 

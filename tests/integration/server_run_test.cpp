@@ -165,6 +165,7 @@ class LoggedInServer {
           mServer(
               envOf({{"XDG_STATE_HOME", (aFolder / "state").string()},
                      {"XDG_RUNTIME_DIR", (aFolder / "run").string()},
+                     {"XDG_DATA_HOME", (aFolder / "data").string()},
                      {"HOME", aFolder.string()}}),
               [](const std::filesystem::path&) { return true; },
               aMaxFileBytes) {
@@ -1165,6 +1166,7 @@ TEST_F(ServerRunTest, ASuccessfulRunWritesNoFile) {
 
     // The uploads, the answer and the download left the same files as before.
     EXPECT_EQ(listing(), before);
+    EXPECT_FALSE(std::filesystem::exists(mFolder / "main" / "data" / "taxbroker" / "profile.json"));
 }
 
 TEST_F(ServerRunTest, APathKeyIsRefusedAndTheServerWritesNothing) {
@@ -1299,6 +1301,98 @@ TEST_F(ServerRunTest, EveryRunRouteNeedsTheSessionAndTheClientHeader) {
             403U)
             << target;
     }
+}
+
+TEST_F(ServerRunTest, EveryProfileRouteNeedsTheSessionAndTheClientHeader) {
+    const auto server = startServer();
+    const std::vector<std::pair<std::string, std::string>> routes{
+        {"GET", "/api/profile"},
+        {"POST", "/api/profile"},
+        {"POST", "/api/profile/delete"},
+    };
+
+    for (const auto& [method, target] : routes)
+    {
+        EXPECT_EQ(
+            server->sendWith(method, target, "application/json", "{}", false, true).result_int(),
+            401U)
+            << target;
+        EXPECT_EQ(
+            server->sendWith(method, target, "application/json", "{}", true, false).result_int(),
+            403U)
+            << target;
+    }
+
+    // The refused calls wrote no profile.
+    EXPECT_FALSE(std::filesystem::exists(mFolder / "main" / "data"));
+}
+
+TEST_F(ServerRunTest, ASavedProfileIsOnlyTheProfileFileAndSurvivesARestartOfTheServer) {
+    const std::string saved = R"({"taxNumber":"12345678","isResident":true,"name":"Ana Novak"})";
+    auto first = startServer();
+
+    EXPECT_EQ(first->send("GET", "/api/profile").body(),
+              R"({"location":"~/data/taxbroker/profile.json","saved":false})");
+
+    const auto listing = [this]() {
+        std::set<std::string> names;
+
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(mFolder))
+        {
+            names.insert(entry.path().string());
+        }
+
+        return names;
+    };
+
+    const std::set<std::string> before = listing();
+
+    ASSERT_EQ(first->postJson("/api/profile", saved).result_int(), 204U);
+
+    const std::set<std::string> after = listing();
+
+    // The save added the data folder, the app folder in it and the profile file, nothing else.
+    std::set<std::string> added;
+
+    std::set_difference(after.begin(),
+                        after.end(),
+                        before.begin(),
+                        before.end(),
+                        std::inserter(added, added.begin()));
+
+    EXPECT_EQ(added,
+              (std::set<std::string>{
+                  (mFolder / "main" / "data").string(),
+                  (mFolder / "main" / "data" / "taxbroker").string(),
+                  (mFolder / "main" / "data" / "taxbroker" / "profile.json").string()}));
+
+    // A new server with the same folders finds the profile.
+    first.reset();
+
+    const auto second = startServer();
+    const Response loaded = second->send("GET", "/api/profile");
+
+    EXPECT_EQ(loaded.result_int(), 200U);
+    EXPECT_EQ(
+        loaded.body(),
+        R"({"ignoredKeys":false,"invalidFields":[],"location":"~/data/taxbroker/profile.json",)"
+        R"("saved":true,"taxpayer":{"isResident":true,"name":"Ana Novak","taxNumber":"12345678"},)"
+        R"("unreadable":false})");
+}
+
+TEST_F(ServerRunTest, DeletingTheProfileRemovesItsFileOverHttp) {
+    const auto server = startServer();
+
+    ASSERT_EQ(server->postJson("/api/profile", R"({"taxNumber":"12345678","isResident":true})")
+                  .result_int(),
+              204U);
+    ASSERT_TRUE(std::filesystem::exists(mFolder / "main" / "data" / "taxbroker" / "profile.json"));
+
+    const Response deleted = server->postJson("/api/profile/delete", "");
+
+    EXPECT_EQ(deleted.result_int(), 200U);
+    EXPECT_EQ(deleted.body(), R"({"location":"~/data/taxbroker/profile.json","saved":false})");
+    EXPECT_FALSE(std::filesystem::exists(mFolder / "main" / "data" / "taxbroker" / "profile.json"));
 }
 
 TEST_F(ServerRunTest, TheSecurityHeadersAreOnADownloadAnd413And422) {

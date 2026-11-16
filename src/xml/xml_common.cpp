@@ -29,8 +29,8 @@ constexpr std::size_t kTaxNumberDigits = 8;
 constexpr int kMaximumYear = 9999;
 // `xs:date` holds a year from 1 to 9999 in four digits.
 constexpr int kMinimumDateYear = 1;
-constexpr std::size_t kMaximumPostNumberLength = 12;
 constexpr std::size_t kCountryLength = 2;
+constexpr std::size_t kPostNumberDigits = 4;
 
 // `Money` has four decimals and the form two, so a cent is 100 stored steps.
 constexpr Money kStepsPerCent = 100;
@@ -39,6 +39,13 @@ constexpr std::int64_t kCentsPerUnit = 100;
 constexpr std::size_t kAmountDecimals = 2;
 
 } // namespace
+
+bool isPostNumber(std::string_view aText) {
+    return aText.size() == kPostNumberDigits && aText.front() >= '1' && aText.front() <= '9' &&
+           std::all_of(aText.begin(), aText.end(), [](char aCharacter) {
+               return aCharacter >= '0' && aCharacter <= '9';
+           });
+}
 
 bool isCountryCode(std::string_view aText) {
     return aText.size() == kCountryLength &&
@@ -210,7 +217,13 @@ void checkMetadata(std::vector<ProcessingDiagnostic>& aDiagnostics,
     checkText(aDiagnostics, aReport, "name", taxpayer.mName);
     checkText(aDiagnostics, aReport, "address1", taxpayer.mAddress);
     checkText(aDiagnostics, aReport, "city", taxpayer.mCity);
-    checkText(aDiagnostics, aReport, "postNumber", taxpayer.mPostCode, kMaximumPostNumberLength);
+
+    // A Slovenian post number has four digits, from 1000 to 9999. Only residents are supported.
+    if (taxpayer.mPostCode && !isPostNumber(*taxpayer.mPostCode))
+    {
+        addOutOfRange(aDiagnostics, aReport, "postNumber");
+    }
+
     checkText(aDiagnostics, aReport, "postName", taxpayer.mPostName);
 
     if (taxpayer.mBirthDate && !dateText(*taxpayer.mBirthDate))

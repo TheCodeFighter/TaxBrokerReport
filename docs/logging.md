@@ -151,6 +151,8 @@ never a value, a name, an ISIN, a file name, a path, a query or a token (R13 in 
 | info | `Run details: requests [<type> x<n>]; errors [<code> x<n>]; warnings [<code> x<n>]; excluded [<reason> x<n>]; no data [<report> <reason> x<n>]; answered [<report> <answer> x<n>]` | the same moments: which questions are open, which diagnostic codes were raised, why an item or a report is left out, and which failure question the user answered |
 | info | `Answers accepted: <n> [<type> x<n>]`, `Answers deleted: <n or all>`, `Report downloaded: <report>, revision <n>, <bytes> bytes[, unsafe developer export]` | the steps of the run API |
 | debug | `Run result requested: revision <n>` | `GET /api/run` |
+| info / warning / error | `Profile loaded (fields <n>, invalid <n>)`, `Profile saved`, `Profile deleted` / `Profile unreadable` / `Profile not saved (<exception type>)`, `Profile not deleted (<exception type>)` | the profile routes; never a value or a path |
+| warning | `Profile request refused: <status> <code> [(<taxpayer key or limit>)]` | a refused profile call: `400 bad_taxpayer (<key>)`, `413 request_too_large (limit 32768)`, `405 method_not_allowed`, `404 not_found` |
 | error | `Run request failed: <route> (<exception type>)`, `A request handler failed: <verb> <step> (<exception type>)` | a handler threw; the text of the exception is never logged |
 
 The parser, the input-file checks and the XML writers log their own errors (source index and row

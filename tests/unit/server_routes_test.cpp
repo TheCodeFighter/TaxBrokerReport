@@ -82,7 +82,8 @@ class ServerRoutesTest : public ::testing::Test {
               [this]() { return mNow; },
               1000,
               placeholderStaticFiles(),
-              "9.8.7") {}
+              "9.8.7",
+              ProfileStore(mFolder / "data" / "profile.json", std::nullopt)) {}
 
     void SetUp() override {
         std::filesystem::remove_all(mFolder);
@@ -165,7 +166,8 @@ TEST_F(ServerRoutesTest, LinkTokenWorksAt119SecondsAndNotAt120Seconds) {
         [this]() { return mNow; },
         1000,
         placeholderStaticFiles(),
-        "9.8.7");
+        "9.8.7",
+        ProfileStore(mFolder / "data" / "profile.json", std::nullopt));
 
     mNow = mStart + std::chrono::seconds(119);
     EXPECT_EQ(mRoutes.handle(request).mStatus, 204U);

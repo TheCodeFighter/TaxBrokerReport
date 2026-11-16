@@ -47,6 +47,25 @@ std::filesystem::path stateFolder(const EnvLookup& aEnv) {
     return *home / ".local" / "state" / "taxbroker";
 }
 
+std::filesystem::path dataFolder(const EnvLookup& aEnv) {
+    // The XDG rule: a relative XDG_DATA_HOME is ignored.
+    const std::optional<std::filesystem::path> dataHome = absolutePath(aEnv, "XDG_DATA_HOME");
+
+    if (dataHome.has_value())
+    {
+        return *dataHome / "taxbroker";
+    }
+
+    const std::optional<std::filesystem::path> home = absolutePath(aEnv, "HOME");
+
+    if (!home.has_value())
+    {
+        throw std::runtime_error("cannot find the data folder: HOME is not an absolute path");
+    }
+
+    return *home / ".local" / "share" / "taxbroker";
+}
+
 std::filesystem::path launchFilePath(const ServerConfig& aConfig, const EnvLookup& aEnv) {
     if (aConfig.mLaunchFile.has_value())
     {

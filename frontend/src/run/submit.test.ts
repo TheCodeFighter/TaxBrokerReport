@@ -153,4 +153,89 @@ describe("submitRun", () => {
     );
     expect(onEnded).toHaveBeenCalledTimes(1);
   });
+
+  it("sends only the run when the details are not to be saved", async () => {
+    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [] }));
+
+    const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), false);
+
+    expect(fetchFunction.mock.calls.map((call) => call[0])).toEqual(["/api/run"]);
+    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [] } });
+  });
+
+  it("saves the details first and then sends the run", async () => {
+    const fetchFunction = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json(200, { reports: {}, diagnostics: [] }));
+
+    const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), true);
+
+    expect(fetchFunction.mock.calls.map((call) => call[0])).toEqual(["/api/profile", "/api/run"]);
+
+    const [, profileInit] = fetchFunction.mock.calls[0] as [string, RequestInit];
+
+    // The taxpayer object of the run: the tax number and the residence.
+    expect(profileInit.body).toBe('{"taxNumber":"12345678","isResident":true}');
+    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [] }, profile: "saved" });
+  });
+
+  it("stops before the run when the server refuses a taxpayer field", async () => {
+    const fetchFunction = vi.fn().mockResolvedValueOnce(json(400, { error: "bad_taxpayer", field: "taxNumber" }));
+
+    await expect(submitRun(clientFor(fetchFunction).apiFetch, inputs(), true)).resolves.toEqual({
+      kind: "refused",
+      code: "bad_taxpayer",
+      field: "taxNumber",
+    });
+    expect(fetchFunction.mock.calls.map((call) => call[0])).toEqual(["/api/profile"]);
+  });
+
+  it("still sends the run when the details could not be saved", async () => {
+    const fetchFunction = vi
+      .fn()
+      .mockResolvedValueOnce(json(500, { error: "profile_not_saved" }))
+      .mockResolvedValueOnce(json(200, { reports: {}, diagnostics: [] }));
+
+    const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), true);
+
+    expect(fetchFunction.mock.calls.map((call) => call[0])).toEqual(["/api/profile", "/api/run"]);
+    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [] }, profile: "not_saved" });
+  });
+
+  it("keeps the saved outcome when the run is refused after the save", async () => {
+    const inputFault = { kind: "rate_file", messageKey: "k", messageParams: {} };
+    const fetchFunction = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json(422, { inputFault }));
+
+    const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), true);
+
+    expect(outcome).toEqual({ kind: "inputFault", fault: inputFault, profile: "saved" });
+  });
+
+  it("keeps the not-saved outcome when the run is refused after a failed save", async () => {
+    const fetchFunction = vi
+      .fn()
+      .mockResolvedValueOnce(json(500, { error: "profile_not_saved" }))
+      .mockResolvedValueOnce(json(400, { error: "bad_year" }));
+
+    const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), true);
+
+    expect(outcome).toEqual({ kind: "refused", code: "bad_year", profile: "not_saved" });
+  });
+
+  it("saves nothing when a file is over the limit", async () => {
+    const fetchFunction = vi.fn();
+    const prepared = inputs();
+    const big = new File(["a"], "big.csv");
+
+    Object.defineProperty(big, "size", { value: MAX_FILE_BYTES + 1 });
+    prepared.brokerFiles.trade_republic = [big];
+
+    await submitRun(clientFor(fetchFunction).apiFetch, prepared, true);
+
+    expect(fetchFunction).not.toHaveBeenCalled();
+  });
 });

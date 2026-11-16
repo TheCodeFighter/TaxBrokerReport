@@ -213,6 +213,10 @@ The dev service bind-mounts `../logs` into `/var/log/taxbroker` and sets `TBR_LO
 
 The prod service mounts a named volume (`taxbroker_logs`) at `/var/log/taxbroker` so logs stay outside the container filesystem.
 
+## Saved taxpayer profile
+
+The browser app saves the taxpayer details only when the user ticks "Remember my details". The `dev` service sets `XDG_DATA_HOME=/workspace/runtime/data`, so the file is `runtime/data/taxbroker/profile.json` in the ignored `runtime/` folder. The `prod` service sets `XDG_DATA_HOME=/var/lib/taxbroker` and mounts the named volume `taxbroker_data` there, so the profile survives `docker compose down` and a new image; the image makes that folder writable for the `app` user. Delete the saved details with the box in the page, or remove the volume with `docker volume rm` (the name starts with the compose project name).
+
 To view logs from the container:
 ```bash
 docker compose run --rm dev sh -lc 'tail -f /var/log/taxbroker/taxbroker.log'

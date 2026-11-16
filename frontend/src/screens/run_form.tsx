@@ -1,3 +1,5 @@
+import type { ComponentChildren } from "preact";
+
 import type { Language } from "../i18n/ui_texts";
 import { uiText, uiTextWith } from "../i18n/ui_texts";
 import { addFiles, moveFile, removeFile, type FilingType, type RunInputs } from "../run/inputs";
@@ -20,6 +22,10 @@ interface Props {
   fieldError?: { field: keyof TaxpayerForm | undefined; text: string };
   sending: boolean;
   outOfDate: boolean;
+  /** The "Remember my details" box, shown under the taxpayer fields. */
+  rememberBox?: ComponentChildren;
+  /** True while the box asks something (the delete warning): the run waits for the answer. */
+  submitBlocked?: boolean;
   onSubmit: () => void;
 }
 
@@ -98,7 +104,18 @@ function FileArea({ language, title, hint, files, labels, ordered, onChange }: F
 }
 
 /** The input screen: the files, the year, the filing type and the taxpayer, and the one button. */
-export function RunForm({ language, today, inputs, onChange, fieldError, sending, outOfDate, onSubmit }: Props) {
+export function RunForm({
+  language,
+  today,
+  inputs,
+  onChange,
+  fieldError,
+  sending,
+  outOfDate,
+  rememberBox,
+  submitBlocked = false,
+  onSubmit,
+}: Props) {
   const suffix = (number: number) => uiTextWith(language, "fileSuffix", { n: number });
   const hasBrokerFile = brokerKinds.some((kind) => (inputs.brokerFiles[kind.broker] ?? []).length > 0);
   const labels = inputLabels(inputs, suffix);
@@ -225,9 +242,10 @@ export function RunForm({ language, today, inputs, onChange, fieldError, sending
               </label>
             );
           })}
+          {rememberBox}
         </section>
 
-        <button type="submit" class="button" disabled={sending || !hasBrokerFile}>
+        <button type="submit" class="button" disabled={sending || !hasBrokerFile || submitBlocked}>
           {uiText(language, sending ? "sending" : outOfDate ? "createReportsAgain" : "createReports")}
         </button>
       </fieldset>

@@ -97,8 +97,8 @@ FROM alpine:3.24 AS prod
 # The executables are static, so no runtime libraries are needed.
 RUN apk add --no-cache ca-certificates && \
     addgroup -S app && adduser -S app -G app && \
-    mkdir -p /app /var/log/taxbroker && \
-    chown -R app:app /app /var/log/taxbroker
+    mkdir -p /app /var/log/taxbroker /var/lib/taxbroker && \
+    chown -R app:app /app /var/log/taxbroker /var/lib/taxbroker
 
 WORKDIR /app
 COPY --from=builder --chown=app:app /workspace/build/src/taxbroker_server /app/taxbroker_server

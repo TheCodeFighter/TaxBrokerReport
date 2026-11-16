@@ -219,8 +219,8 @@ Doh-KDVP is blocked (no XML) when an investment sold in the year:
 It is also blocked when a file cannot be read, when a trade or corporate-action row of
 any file is rejected, when two files disagree about the same trade, when the asset class
 question of an investment with a row up to 31 December is open or cancelled (sold in the
-year or not), or when a value does not fit the form (for example a postCode that is too
-long).
+year or not), or when a value does not fit the form (for example a text with a control
+character that XML cannot carry).
 
 Skipped:
   - Private-market events (Trade Republic types PRIVATE_MARKET_BUY and

@@ -39,6 +39,25 @@ TEST(TaxpayerJsonTest, MinimalFileSetsOnlyTheTaxNumberAndTheResidence) {
               (TaxpayerMetadata{.mTaxNumber = "12345678", .mIsResident = true}));
 }
 
+TEST(TaxpayerJsonTest, SlovenianLettersAndVeryLongTextAreKeptUnchanged) {
+    const std::string longName(1000, 'a');
+    const auto result = parseTaxpayerJson(
+        R"({"taxNumber": "12345678", "isResident": true, "name": "Žiga Šuštaršič-Čeh",)"
+        R"( "address": "Črnuška cesta 12", "city": "Črnomelj", "postName": "Škofja Loka",)"
+        R"( "email": ")" +
+        longName + R"(@example.com"})");
+
+    ASSERT_TRUE(std::holds_alternative<TaxpayerMetadata>(result));
+
+    const auto& taxpayer = std::get<TaxpayerMetadata>(result);
+
+    EXPECT_EQ(taxpayer.mName, "Žiga Šuštaršič-Čeh");
+    EXPECT_EQ(taxpayer.mAddress, "Črnuška cesta 12");
+    EXPECT_EQ(taxpayer.mCity, "Črnomelj");
+    EXPECT_EQ(taxpayer.mPostName, "Škofja Loka");
+    EXPECT_EQ(taxpayer.mEmail, longName + "@example.com");
+}
+
 TEST(TaxpayerJsonTest, EveryOptionalFieldIsMapped) {
     const auto result = parseTaxpayerJson(R"({
         "taxNumber": "12345678",
@@ -140,6 +159,30 @@ TEST(TaxpayerJsonTest, EmptyNameIsRefused) {
         parseTaxpayerJson(R"({"taxNumber": "12345678", "isResident": true, "name": ""})");
 
     EXPECT_EQ(errorOf(result), "\"name\" must be a text that is not empty.");
+}
+
+TEST(TaxpayerJsonTest, PostCodesFrom1000To9999AreAccepted) {
+    for (const std::string postCode : {"1000", "9999", "3270"})
+    {
+        const auto result = parseTaxpayerJson(
+            R"({"taxNumber": "12345678", "isResident": true, "postCode": ")" + postCode + R"("})");
+
+        ASSERT_TRUE(std::holds_alternative<TaxpayerMetadata>(result)) << postCode;
+        EXPECT_EQ(std::get<TaxpayerMetadata>(result).mPostCode, postCode);
+    }
+}
+
+TEST(TaxpayerJsonTest, PostCodesOutsideFourDigitsFrom1000AreRefused) {
+    // 999 and 0999 are below 1000, 10000 has five digits, the rest are not digits.
+    for (const std::string postCode : {"999", "0999", "10000", "1a00", "ČČČČ", " 100", "1000 "})
+    {
+        const auto result = parseTaxpayerJson(
+            R"({"taxNumber": "12345678", "isResident": true, "postCode": ")" + postCode + R"("})");
+
+        EXPECT_EQ(errorOf(result), "\"postCode\" must be a text of four digits, from 1000 to 9999.")
+            << postCode;
+        EXPECT_EQ(keyOf(result), "postCode") << postCode;
+    }
 }
 
 TEST(TaxpayerJsonTest, PostCodeAsANumberIsRefused) {
