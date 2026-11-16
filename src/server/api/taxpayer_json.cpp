@@ -30,7 +30,8 @@ constexpr std::array<std::string_view, 10> kKnownKeys{
 constexpr std::size_t kTaxNumberLength = 8;
 
 TaxpayerJsonError keyError(std::string_view aKey, std::string_view aProblem) {
-    return TaxpayerJsonError{"\"" + std::string{aKey} + "\" " + std::string{aProblem}};
+    return TaxpayerJsonError{"\"" + std::string{aKey} + "\" " + std::string{aProblem},
+                             std::string{aKey}};
 }
 
 bool isValidTaxNumber(const std::string& aValue) {
@@ -82,12 +83,17 @@ std::variant<TaxpayerMetadata, TaxpayerJsonError> parseTaxpayerJson(std::string_
         {
             return TaxpayerJsonError{"\"filingType\" is not read from the taxpayer file: the "
                                      "report is an original return, or a self-report with "
-                                     "--self-report."};
+                                     "--self-report.",
+                                     "filingType"};
         }
 
         if (std::find(kKnownKeys.begin(), kKnownKeys.end(), key) == kKnownKeys.end())
         {
-            return keyError(key, "is not a known key of the taxpayer file.");
+            auto error = keyError(key, "is not a known key of the taxpayer file.");
+
+            error.mKey.clear();
+
+            return error;
         }
     }
 

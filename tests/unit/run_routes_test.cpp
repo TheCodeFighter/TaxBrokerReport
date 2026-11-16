@@ -588,6 +588,53 @@ TEST(RunRoutesTest, OtherRefusalsLogTheirStatusAndCode) {
     EXPECT_EQ(log.count("Run request refused"), 4U);
 }
 
+/// An upload whose taxpayer object is the given text.
+std::string uploadWithTaxpayer(std::string_view aTaxpayer) {
+    return uploadWithRequestPart(R"({"reportingYear":2024,"filingType":"original","taxpayer":)" +
+                                 std::string{aTaxpayer} + R"(,"files":[]})");
+}
+
+TEST(RunRoutesTest, BadTaxpayerNamesTheFieldInTheBodyAndTheLog) {
+    RunRoutes routes(100000);
+    LogCapture log;
+
+    const HttpResponse response =
+        post(routes,
+             postUpload(uploadWithTaxpayer(R"({"taxNumber":"1234567","isResident":true})")));
+
+    EXPECT_EQ(response.mStatus, 400U);
+    EXPECT_EQ(response.mBody, R"({"error":"bad_taxpayer","field":"taxNumber"})");
+    EXPECT_EQ(log.count("Run request refused"), 1U);
+    EXPECT_EQ(log.count("Run request refused: 400 bad_taxpayer (taxNumber)"), 1U);
+
+    // The value the user typed is not in the log.
+    EXPECT_EQ(log.text().find("1234567"), std::string::npos);
+}
+
+TEST(RunRoutesTest, TaxpayerWithAnUnknownKeyHasNoFieldAndTheKeyIsNotLogged) {
+    RunRoutes routes(100000);
+    LogCapture log;
+
+    const HttpResponse response =
+        post(routes,
+             postUpload(uploadWithTaxpayer(
+                 R"({"taxNumber":"12345678","isResident":true,"shoeSize":"42"})")));
+
+    EXPECT_EQ(response.mStatus, 400U);
+    EXPECT_EQ(response.mBody, R"({"error":"bad_taxpayer"})");
+    EXPECT_EQ(log.count("Run request refused: 400 bad_taxpayer"), 1U);
+    EXPECT_EQ(log.text().find("shoeSize"), std::string::npos);
+}
+
+TEST(RunRoutesTest, TaxpayerThatIsNotAnObjectStaysBadRequest) {
+    RunRoutes routes(100000);
+
+    const HttpResponse response = post(routes, postUpload(uploadWithTaxpayer("[]")));
+
+    EXPECT_EQ(response.mStatus, 400U);
+    EXPECT_EQ(response.mBody, R"({"error":"bad_request"})");
+}
+
 TEST(RunRoutesTest, AcceptedUploadWritesNoRefusalLine) {
     RunRoutes routes(100000);
     LogCapture log;

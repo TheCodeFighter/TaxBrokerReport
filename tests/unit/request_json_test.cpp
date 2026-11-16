@@ -10,18 +10,19 @@ namespace {
 using namespace taxbroker;
 using taxbroker::api::buildApplicationRequest;
 using taxbroker::api::RunRequestError;
+using taxbroker::api::RunRequestRefusal;
 using taxbroker::api::UploadedPart;
 
 /// The error of a failed build; the test fails when the request was accepted.
-RunRequestError errorOf(const std::variant<ApplicationRequest, RunRequestError>& aResult) {
-    EXPECT_TRUE(std::holds_alternative<RunRequestError>(aResult));
+RunRequestError errorOf(const std::variant<ApplicationRequest, RunRequestRefusal>& aResult) {
+    EXPECT_TRUE(std::holds_alternative<RunRequestRefusal>(aResult));
 
-    if (!std::holds_alternative<RunRequestError>(aResult))
+    if (!std::holds_alternative<RunRequestRefusal>(aResult))
     {
         return RunRequestError::NoBrokerFile;
     }
 
-    return std::get<RunRequestError>(aResult);
+    return std::get<RunRequestRefusal>(aResult).mError;
 }
 
 TEST(RequestJsonTest, ReadsTheYearThePartsAndTheTaxpayer) {
@@ -245,7 +246,7 @@ TEST(RequestJsonTest, DeveloperModeAsTextIsRefused) {
     EXPECT_EQ(errorOf(buildApplicationRequest(parts)), RunRequestError::BadRequest);
 }
 
-TEST(RequestJsonTest, TaxpayerThatTheTaxpayerReaderRefusesIsBadRequest) {
+TEST(RequestJsonTest, TaxpayerThatTheTaxpayerReaderRefusesIsBadTaxpayerWithItsField) {
     // The tax number has seven digits.
     const std::string json = R"({
         "reportingYear": 2024,
@@ -258,7 +259,28 @@ TEST(RequestJsonTest, TaxpayerThatTheTaxpayerReaderRefusesIsBadRequest) {
         {.mName = "file0", .mFileName = "export.csv", .mContent = "a"},
     };
 
-    EXPECT_EQ(errorOf(buildApplicationRequest(parts)), RunRequestError::BadRequest);
+    const auto result = buildApplicationRequest(parts);
+
+    EXPECT_EQ(errorOf(result), RunRequestError::BadTaxpayer);
+    EXPECT_EQ(std::get<RunRequestRefusal>(result).mField, "taxNumber");
+}
+
+TEST(RequestJsonTest, TaxpayerWithAnUnknownKeyIsBadTaxpayerWithoutAField) {
+    const std::string json = R"({
+        "reportingYear": 2024,
+        "filingType": "original",
+        "taxpayer": {"taxNumber": "12345678", "isResident": true, "shoeSize": "42"},
+        "files": [{"part": "file0", "kind": "broker", "broker": "trade_republic"}]
+    })";
+    const std::vector<UploadedPart> parts{
+        {.mName = "request", .mFileName = std::nullopt, .mContent = json},
+        {.mName = "file0", .mFileName = "export.csv", .mContent = "a"},
+    };
+
+    const auto result = buildApplicationRequest(parts);
+
+    EXPECT_EQ(errorOf(result), RunRequestError::BadTaxpayer);
+    EXPECT_EQ(std::get<RunRequestRefusal>(result).mField, "");
 }
 
 TEST(RequestJsonTest, TextThatIsNotJsonIsBadRequest) {
@@ -696,6 +718,7 @@ TEST(RequestJsonTest, EveryErrorHasItsCode) {
     EXPECT_EQ(api::runRequestErrorCode(RunRequestError::DuplicatePart), "duplicate_part");
     EXPECT_EQ(api::runRequestErrorCode(RunRequestError::TooManyFiles), "too_many_files");
     EXPECT_EQ(api::runRequestErrorCode(RunRequestError::UnsupportedBroker), "unsupported_broker");
+    EXPECT_EQ(api::runRequestErrorCode(RunRequestError::BadTaxpayer), "bad_taxpayer");
 }
 
 } // namespace
