@@ -69,10 +69,12 @@ Routes::Routes(std::uint16_t aPort,
                std::filesystem::path aLaunchFile,
                Clock aClock,
                std::size_t aMaxFileBytes,
-               std::span<const StaticFile> aStaticFiles)
+               std::span<const StaticFile> aStaticFiles,
+               std::string_view aVersion)
     : mPort(aPort), mLinkToken(std::move(aLinkToken), aClock()),
       mSessionToken(std::move(aSessionToken)), mLaunchFile(std::move(aLaunchFile)),
-      mClock(std::move(aClock)), mRunRoutes(aMaxFileBytes), mStaticFiles(aStaticFiles) {}
+      mClock(std::move(aClock)), mRunRoutes(aMaxFileBytes), mStaticFiles(aStaticFiles),
+      mVersionBody(std::string{R"({"version":")"} + std::string{aVersion} + R"("})") {}
 
 Routes::Verdict Routes::check(const HttpRequest& aRequest) const {
     // Step 1: the Host header (R7).
@@ -207,6 +209,18 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
         }
 
         return makeJsonResponse(200, api::messagesJson());
+    }
+
+    if (path == "/api/version")
+    {
+        if (aRequest.mMethod != "GET")
+        {
+            logRefusal(405, "method_not_allowed");
+
+            return makeNotAllowedResponse("GET");
+        }
+
+        return makeJsonResponse(200, mVersionBody);
     }
 
     if (path != "/api/session")

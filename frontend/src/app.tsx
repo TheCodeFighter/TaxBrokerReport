@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import { createApiClient } from "./api/client";
+import { loadVersion } from "./api/version";
 import { readLanguage, saveLanguage } from "./i18n/language";
 import { createMessageLoader, type MessageCatalogue } from "./i18n/messages";
-import { uiText, type Language, type UiTextKey } from "./i18n/ui_texts";
+import { uiText, uiTextWith, type Language, type UiTextKey } from "./i18n/ui_texts";
+import { hashOf, pageFromHash, pages, type Page } from "./navigation/pages";
+import { AboutPage } from "./screens/about_page";
+import { HomePage } from "./screens/home_page";
+import { ManualPage } from "./screens/manual_page";
 import { RunScreen } from "./screens/run_screen";
 import { startSession, type SessionState } from "./session/login";
 import { otherTheme, readTheme, saveTheme, type Theme } from "./theme/theme";
@@ -19,6 +24,14 @@ const screenTexts: Record<Exclude<Screen, "ready">, { title: UiTextKey; body: Ui
 };
 
 const languages: Language[] = ["sl", "en"];
+
+/** The text of each header link. */
+const navTexts: Record<Page, UiTextKey> = {
+  home: "navHome",
+  report: "navReport",
+  manual: "navManual",
+  about: "navAbout",
+};
 
 const browserStorage = () => window.localStorage;
 
@@ -45,6 +58,10 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() => readTheme(browserStorage));
   const [screen, setScreen] = useState<Screen>("checking");
   const [catalogue, setCatalogue] = useState<MessageCatalogue | undefined>();
+  const [page, setPage] = useState<Page>(() => pageFromHash(window.location.hash));
+  // The version of the server, shown in the footer: undefined until asked, null when not known.
+  const [version, setVersion] = useState<string | null | undefined>();
+  const shownPage = useRef(page);
 
   // One client for the page: a 401 or a lost server anywhere ends the session here.
   const client = useMemo(
@@ -82,6 +99,34 @@ export function App() {
     }
   }, [screen, loadCatalogue]);
 
+  // The back button and a reload keep the page, because the page is the address hash.
+  useEffect(() => {
+    const onHashChange = () => setPage(pageFromHash(window.location.hash));
+
+    window.addEventListener("hashchange", onHashChange);
+
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // A new page takes the focus, so a screen reader reads it. Not on the first load.
+  useEffect(() => {
+    if (screen === "ready" && shownPage.current !== page) {
+      document.querySelector<HTMLElement>("main:not([hidden]) h1")?.focus();
+    }
+
+    shownPage.current = page;
+  }, [screen, page]);
+
+  // The version is asked once after the login.
+  useEffect(() => {
+    if (screen === "ready") {
+      loadVersion(client.apiFetch).then(
+        (loaded) => setVersion(loaded ?? null),
+        () => setVersion(null),
+      );
+    }
+  }, [screen, client]);
+
   const chooseLanguage = (chosen: Language) => {
     setLanguage(chosen);
     saveLanguage(browserStorage, chosen);
@@ -100,10 +145,19 @@ export function App() {
   return (
     <>
       <header class="header">
-        <div class="brand">
+        <a class="brand" href={hashOf("home")}>
           <img class="logo" src={logoUrl} width="40" height="40" alt="" />
           <span class="brand-name">{uiText(language, "appName")}</span>
-        </div>
+        </a>
+        {texts === undefined ? (
+          <nav class="nav" aria-label={uiText(language, "navLabel")}>
+            {pages.map((target) => (
+              <a key={target} href={hashOf(target)} aria-current={target === page ? "page" : undefined}>
+                {uiText(language, navTexts[target])}
+              </a>
+            ))}
+          </nav>
+        ) : null}
         <div class="header-controls">
           <div class="language-switch" role="group" aria-label={uiText(language, "languageLabel")}>
             {languages.map((code) => (
@@ -130,9 +184,19 @@ export function App() {
         </div>
       </header>
       {texts === undefined ? (
-        <main class="screen screen-wide">
-          <RunScreen language={language} apiFetch={client.apiFetch} catalogue={catalogue} />
-        </main>
+        <>
+          {page === "home" ? <HomePage language={language} /> : null}
+          {page === "manual" ? <ManualPage language={language} /> : null}
+          {page === "about" ? <AboutPage language={language} /> : null}
+          {/* The run screen stays mounted and only hidden, so the chosen files and the result stay. */}
+          <main class="screen screen-wide" hidden={page !== "report"}>
+            <h1 tabIndex={-1}>{uiText(language, "navReport")}</h1>
+            <RunScreen language={language} apiFetch={client.apiFetch} catalogue={catalogue} />
+          </main>
+          {version === undefined || version === null ? null : (
+            <footer class="footer">{uiTextWith(language, "versionLabel", { version })}</footer>
+          )}
+        </>
       ) : (
         <main class="screen">
           <h1>{uiText(language, texts.title)}</h1>

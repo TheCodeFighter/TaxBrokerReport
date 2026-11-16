@@ -7,6 +7,13 @@ html {
   background: var(--color-background);
 }
 
+/* The page is a column, so the footer stays at the bottom of a short page. */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
 body {
   margin: 0;
   min-width: 20rem;
@@ -23,11 +30,15 @@ body {
   outline-offset: 2px;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   padding: var(--space-2) var(--space-3);
   background: var(--color-primary);
   color: var(--color-on-primary);
@@ -37,6 +48,32 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The links sit at the right, before the controls; on a narrow window they take their own row. */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.nav a {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 2px solid transparent;
+  color: inherit;
+  text-decoration: none;
+}
+
+.nav a:hover,
+.nav a[aria-current="page"] {
+  border-bottom-color: var(--color-on-primary);
+}
+
+.nav a[aria-current="page"] {
+  font-weight: 600;
 }
 
 .logo {
@@ -94,7 +131,7 @@ body {
 }
 
 .screen {
-  max-width: var(--width-content);
+  width: min(var(--width-content), 100% - 2 * var(--space-3));
   margin: var(--space-5) auto;
   padding: var(--space-4);
   border: 1px solid var(--color-border);
@@ -104,7 +141,17 @@ body {
 
 @media (max-width: 40rem) {
   .screen {
-    margin: var(--space-3);
+    margin: var(--space-3) auto;
+  }
+
+  .header-controls {
+    margin-left: auto;
+  }
+
+  .nav {
+    order: 3;
+    flex-basis: 100%;
+    margin-left: 0;
   }
 }
 
@@ -121,7 +168,7 @@ body {
 
 /* The input screen of a run. */
 .screen-wide {
-  max-width: 44rem;
+  width: min(44rem, 100% - 2 * var(--space-3));
 }
 
 .run-form {
@@ -317,4 +364,102 @@ body {
 .screen .result-status {
   color: var(--color-text);
   font-weight: 600;
+}
+
+/* The welcome page. */
+.welcome {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.screen.welcome > * {
+  margin: 0;
+}
+
+.welcome-logo {
+  justify-self: center;
+  border-radius: 50%;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.welcome .button,
+.about .button {
+  text-decoration: none;
+}
+
+.screen h1:focus {
+  outline: none;
+}
+
+.screen.about {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.screen.about h1 {
+  margin: 0;
+}
+
+/* The welcome, About and Manual pages have larger left-aligned text and a centered headline. */
+.screen.welcome,
+.screen.about,
+.screen.manual {
+  font-size: 1.25rem;
+}
+
+.screen.welcome h1,
+.screen.about h1,
+.screen.manual h1 {
+  font-size: 2.25rem;
+}
+
+.screen.welcome h1 {
+  text-align: center;
+}
+
+.screen .welcome-line,
+.about-name {
+  font-size: 1.375rem;
+}
+
+/* On the welcome page the headline, the line and the buttons are centered; the rest is left-aligned. */
+.screen .welcome-line {
+  text-align: center;
+}
+
+.about-name {
+  font-weight: 600;
+}
+
+.about a {
+  color: var(--color-text);
+}
+
+.screen .disclaimer {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.disclaimer h2 {
+  margin: 0 0 var(--space-1);
+  font-size: 1.25rem;
+}
+
+.screen .disclaimer p {
+  font-size: 1.125rem;
+}
+
+.footer {
+  margin-top: auto;
+  padding: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
 }

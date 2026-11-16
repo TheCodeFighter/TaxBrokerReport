@@ -1445,7 +1445,7 @@ SIGINT, SIGTERM or `stop` the server closes the port and deletes the launch file
 | 5 | Exactly one `X-TaxBroker: 1` header (R17) | 403, no body |
 | 6 | `POST /api/session`: the body is JSON with a string `token`; `LinkToken::redeem` (R4, R5); success is 204 with `Set-Cookie`, the launch file is deleted (R19) | 400 `{"error":"bad_request"}` or 401 |
 | 7 | The session cookie (several `Cookie` headers are joined) passes `tokenMatches` (R5) | 401, no body |
-| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; `GET /api/messages` is the message texts (JSON, see "Frontend"), another method on it is 405; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
+| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; `GET /api/messages` is the message texts (JSON, see "Frontend"), another method on it is 405; `GET /api/version` is `{"version":"<project version>"}` (the CMake project version, for the page footer), another method on it is 405; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
 
 The guard runs before the route lookup, so an unknown `/api/` path without a cookie gives 401,
 not 404: the paths cannot be discovered. Every response carries the seven `securityHeaders()`
@@ -1466,10 +1466,13 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   serves only a placeholder page, so the C++ builds and tests need no Node. `scripts/run.sh` and
   the production image always embed the frontend.
 - **Content policy.** The page has one `<script type="module" src>` and one stylesheet link, no
-  inline script, style or `style=` attribute, no web font and no foreign address (R18, R20).
+  inline script, style or `style=` attribute, no web font and no foreign address (R18, R20); the
+  one exception is the link to the project's repository on the About page, which the user opens
+  and the page never fetches.
   `scripts/frontend.sh check` fails the build when the output has another file, when a file is
-  over its size budget (`app.js` 40 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
-  compressed), when an address other than an XML namespace name appears in a file, or when
+  over its size budget (`app.js` 48 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
+  compressed), when an address other than an XML namespace name or that repository link appears
+  in a file, or when
   `index.html` has an inline script or style.
 - **Login.** The link `/#token=...` is exchanged once with `POST /api/session` and the fragment
   is removed with `history.replaceState`, also when the exchange fails (R6). A page without a
@@ -1493,6 +1496,19 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   attribute `data-theme` of `<html>`, light by default and kept in the browser as `tbr.theme`; the
   system setting is not used, because it does not work on every Linux desktop. A later screen
   that polls must back off and stop while the tab is hidden (`document.visibilityState`).
+- **Pages.** After the login the page has four pages: the welcome page (home), the report screen
+  (the input screen below), Manual and About. The page is the address hash (`#/`, `#/report`,
+  `#/manual`, `#/about`; anything else, a login link included, is the home page), so the back
+  button and a reload keep the page and the server serves only `/`. The header shows the logo and
+  name (a link home), the four links in that order, the language switch and the theme button; on
+  a narrow window the links wrap to a second row. The report screen is mounted once and only
+  hidden on the other pages, so the chosen files and the result stay. A new page takes the focus
+  on its heading. The welcome page and About show the no-liability warning (the meaning of the
+  README "Disclaimer"). Every page has a small footer, centered at the bottom, with the version
+  from `GET /api/version` (asked once after the login; no footer when it is not known). About
+  shows the license, the privacy promise and a pointer to `THIRD_PARTY_NOTICES.txt` beside the
+  program, and links to the project's repository (a new tab, no referrer; the policy header
+  `Referrer-Policy: no-referrer` also applies). Manual is one line until the user guide is written.
 - **Input screen.** After the login the page shows the form of one run, in
   `frontend/src/run/` (pure code, tested without a DOM) and `frontend/src/screens/` (Preact
   views). One area for each kind of file, never guessed from a name or content: one area per
@@ -1522,7 +1538,7 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   next to the form; a lost session shows the "open the link again" screen. There is no
   `GET /api/run` on load (it logs a 404 warning before the first upload), so a reload shows the
   empty form.
-- **Tests.** Vitest tests of the login, the client, the language, the theme, the message texts and
+- **Tests.** Vitest tests of the login, the client, the page hashes, the version call, the language, the theme, the message texts and
   the input screen's pure code (labels, years, list changes, the request, the answers); the
   browser functions (`location`, `history`, `fetch`, storage) are arguments, so they need no DOM.
 

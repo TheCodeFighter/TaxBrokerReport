@@ -92,7 +92,7 @@ scripts/build.sh prod           # the production image builds and embeds it in i
   (`docker compose run ... -w /workspace/frontend dev`, with `-e HOME=/tmp`), run `npm audit`, and
   commit the lock file. Vite is on the 7 line and Vitest on the 4 line, the newest that work
   together and have no known advisory (checked with `npm audit`).
-- **Size budget.** Not compressed: `assets/app.js` 40 KB, `assets/app.css` 15 KB,
+- **Size budget.** Not compressed: `assets/app.js` 48 KB, `assets/app.css` 15 KB,
   `assets/logo.webp` 12 KB, `index.html` 4 KB. `scripts/frontend.sh check` fails above them.
 - **Logo.** `frontend/src/assets/logo.webp` is made once from `docs/assets/icon.jpg`, with
   ImageMagick in a throwaway container (ImageMagick is not part of any image):

@@ -26,14 +26,15 @@ class Routes {
 
     /// The link token is issued now. The launch file is deleted after the login. aMaxFileBytes is
     /// the longest file of an upload. aStaticFiles are the pages and assets served without a login;
-    /// the table must outlive the routes.
+    /// the table must outlive the routes. aVersion is the program version for `GET /api/version`.
     Routes(std::uint16_t aPort,
            std::string aLinkToken,
            std::string aSessionToken,
            std::filesystem::path aLaunchFile,
            Clock aClock,
            std::size_t aMaxFileBytes,
-           std::span<const StaticFile> aStaticFiles);
+           std::span<const StaticFile> aStaticFiles,
+           std::string_view aVersion);
 
     /// The body limit for a request whose header is read and whose body is not: the upload limit
     /// for `POST /api/run` that passes the guard, else `kDefaultBodyLimit`. It has no side effect
@@ -77,6 +78,7 @@ class Routes {
     Clock mClock;
     RunRoutes mRunRoutes;
     std::span<const StaticFile> mStaticFiles;
+    std::string mVersionBody; ///< The `GET /api/version` body, built once.
 };
 
 } // namespace taxbroker
