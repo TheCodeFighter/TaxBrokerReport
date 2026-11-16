@@ -70,10 +70,12 @@ Routes::Routes(std::uint16_t aPort,
                Clock aClock,
                std::size_t aMaxFileBytes,
                std::span<const StaticFile> aStaticFiles,
-               std::string_view aVersion)
+               std::string_view aVersion,
+               ProfileStore aProfileStore)
     : mPort(aPort), mLinkToken(std::move(aLinkToken), aClock()),
       mSessionToken(std::move(aSessionToken)), mLaunchFile(std::move(aLaunchFile)),
-      mClock(std::move(aClock)), mRunRoutes(aMaxFileBytes), mStaticFiles(aStaticFiles),
+      mClock(std::move(aClock)), mRunRoutes(aMaxFileBytes),
+      mProfileRoutes(std::move(aProfileStore)), mStaticFiles(aStaticFiles),
       mVersionBody(std::string{R"({"version":")"} + std::string{aVersion} + R"("})") {}
 
 Routes::Verdict Routes::check(const HttpRequest& aRequest) const {
@@ -197,6 +199,11 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
     if (path == "/api/run" || path.starts_with("/api/run/"))
     {
         return mRunRoutes.handle(aRequest, path, queryOf(aRequest.mTarget));
+    }
+
+    if (path == "/api/profile" || path.starts_with("/api/profile/"))
+    {
+        return mProfileRoutes.handle(aRequest, path);
     }
 
     if (path == "/api/messages")

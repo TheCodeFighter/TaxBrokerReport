@@ -2,6 +2,7 @@
 
 #include "http_server.hpp"
 #include "launch_file.hpp"
+#include "profile_store.hpp"
 #include "request_guard.hpp"
 #include "routes.hpp"
 #include "state_folder.hpp"
@@ -84,7 +85,8 @@ int StartServer(const EnvLookup& aEnv,
             []() { return std::chrono::steady_clock::now(); },
             aHooks.mMaxFileBytes,
             embeddedStaticFiles(),
-            TAXBROKER_VERSION);
+            TAXBROKER_VERSION,
+            ProfileStore::forUser(aEnv));
 
         // A TBR_LAUNCH_FILE folder is made by the caller (Docker: scripts/run.sh).
         if (!config.mLaunchFile.has_value())

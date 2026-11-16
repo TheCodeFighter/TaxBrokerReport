@@ -2063,13 +2063,97 @@ TEST(KdvpXmlWriterTest, TaxpayerNameWithInvalidUtf8IsRejected) {
     EXPECT_EQ(diagnostic.mMessageParams, std::vector{textParam("field", "name")});
 }
 
-TEST(KdvpXmlWriterTest, PostNumberOfThirteenCharactersIsRejected) {
-    // PostNumberType of EDP-Common-1.xsd allows at most 12 characters.
+ReportMetadata metadataWithPostCode(std::string aPostCode) {
+    return ReportMetadata{
+        .mTaxpayer =
+            {
+                .mTaxNumber = "12345678",
+                .mPostCode = std::move(aPostCode),
+                .mIsResident = true,
+            },
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+}
+
+TEST(KdvpXmlWriterTest, PostNumbersFrom1000To9999AreAccepted) {
+    // A Slovenian post number has four digits and starts at 1000.
+    const CapitalGainsReportKDVP report{.mLists = {}};
+
+    for (const std::string postCode : {"1000", "9999", "3270"})
+    {
+        const auto result = KdvpXmlWriter::write(metadataWithPostCode(postCode), report);
+
+        EXPECT_TRUE(result.mDiagnostics.empty()) << postCode;
+        ASSERT_TRUE(result.mXml.has_value()) << postCode;
+        EXPECT_NE(result.mXml->find("<edp:postNumber>" + postCode + "</edp:postNumber>"),
+                  std::string::npos);
+        expectValidForKdvpSchemas(*result.mXml);
+    }
+}
+
+TEST(KdvpXmlWriterTest, PostNumbersOutsideFourDigitsFrom1000AreRejected) {
+    const CapitalGainsReportKDVP report{.mLists = {}};
+
+    // 999 and 0999 are below 1000, 10000 has five digits, "1a00" and "ČČČČ" are not digits.
+    for (const std::string postCode : {"999", "0999", "0000", "10000", "1a00", "ČČČČ", "1 00"})
+    {
+        const auto result = KdvpXmlWriter::write(metadataWithPostCode(postCode), report);
+
+        EXPECT_FALSE(result.mXml.has_value()) << postCode;
+        ASSERT_EQ(result.mDiagnostics.size(), 1U) << postCode;
+
+        const auto& diagnostic = result.mDiagnostics.front();
+
+        EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::XmlValueOutOfRange);
+        EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::XmlGeneration);
+        EXPECT_EQ(diagnostic.mContext.mField, "postNumber");
+        EXPECT_EQ(diagnostic.mMessageParams, std::vector{textParam("field", "postNumber")});
+    }
+}
+
+TEST(KdvpXmlWriterTest, SlovenianLettersInEveryTaxpayerTextFieldAreWrittenAndSchemaValid) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
                 .mTaxNumber = "12345678",
-                .mPostCode = "1234567890123",
+                .mName = "Žiga Šuštaršič-Čeh",
+                .mAddress = "Črnuška cesta 12, Šmartno ob Paki",
+                .mCity = "Črnomelj",
+                .mPostCode = "3270",
+                .mPostName = "Škofja Loka",
+                .mIsResident = true,
+                .mEmail = "ziga@example.com",
+                .mPhoneNumber = "+38640123456",
+            },
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+    const CapitalGainsReportKDVP report{.mLists = {}};
+
+    const auto result = KdvpXmlWriter::write(metadata, report);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_NE(result.mXml->find("<edp:name>Žiga Šuštaršič-Čeh</edp:name>"), std::string::npos);
+    EXPECT_NE(result.mXml->find("<edp:address1>Črnuška cesta 12, Šmartno ob Paki</edp:address1>"),
+              std::string::npos);
+    EXPECT_NE(result.mXml->find("<edp:city>Črnomelj</edp:city>"), std::string::npos);
+    EXPECT_NE(result.mXml->find("<edp:postName>Škofja Loka</edp:postName>"), std::string::npos);
+    expectValidForKdvpSchemas(*result.mXml);
+}
+
+TEST(KdvpXmlWriterTest, VeryLongTaxpayerTextHasNoLimitInTheSchemaAndIsWritten) {
+    // EDP-Common-1.xsd gives name, address1, city and postName the plain type xs:string, so
+    // 1000 characters (2000 bytes) of "Š" in each are valid and nothing is cut.
+    const ReportMetadata metadata{
+        .mTaxpayer =
+            {
+                .mTaxNumber = "12345678",
+                .mName = repeated("Š", 1000),
+                .mAddress = repeated("Č", 1000),
+                .mCity = repeated("Ž", 1000),
+                .mPostName = repeated("š", 1000),
                 .mIsResident = true,
             },
         .mReportingYear = 2024,
@@ -2079,15 +2163,13 @@ TEST(KdvpXmlWriterTest, PostNumberOfThirteenCharactersIsRejected) {
 
     const auto result = KdvpXmlWriter::write(metadata, report);
 
-    EXPECT_FALSE(result.mXml.has_value());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-
-    const auto& diagnostic = result.mDiagnostics.front();
-
-    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::XmlValueOutOfRange);
-    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::XmlGeneration);
-    EXPECT_EQ(diagnostic.mContext.mField, "postNumber");
-    EXPECT_EQ(diagnostic.mMessageParams, std::vector{textParam("field", "postNumber")});
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+    EXPECT_NE(result.mXml->find("<edp:name>" + repeated("Š", 1000) + "</edp:name>"),
+              std::string::npos);
+    EXPECT_NE(result.mXml->find("<edp:postName>" + repeated("š", 1000) + "</edp:postName>"),
+              std::string::npos);
+    expectValidForKdvpSchemas(*result.mXml);
 }
 
 TEST(KdvpXmlWriterTest, IsinOfThirteenCharactersIsRejected) {

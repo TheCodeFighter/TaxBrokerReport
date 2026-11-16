@@ -102,6 +102,22 @@ TEST(StateFolderTest, MissingHomeThrowsWithoutAValue) {
               "cannot find the state folder: HOME is not an absolute path");
 }
 
+TEST(StateFolderTest, AbsoluteDataHomeIsUsed) {
+    EXPECT_EQ(dataFolder(envOf({{"XDG_DATA_HOME", "/data"}, {"HOME", "/home/someone"}})),
+              std::filesystem::path("/data/taxbroker"));
+}
+
+TEST(StateFolderTest, RelativeDataHomeIsIgnoredAndHomeIsUsed) {
+    // XDG says a relative XDG_DATA_HOME is ignored.
+    EXPECT_EQ(dataFolder(envOf({{"XDG_DATA_HOME", "relative/data"}, {"HOME", "/home/someone"}})),
+              std::filesystem::path("/home/someone/.local/share/taxbroker"));
+}
+
+TEST(StateFolderTest, MissingHomeThrowsWithoutAValueForTheDataFolder) {
+    EXPECT_EQ(messageOfThrow([&]() { (void)dataFolder(envOf({})); }),
+              "cannot find the data folder: HOME is not an absolute path");
+}
+
 TEST(StateFolderTest, LaunchFileFromTheConfigWins) {
     ServerConfig config = configWithoutLaunchFile();
     config.mLaunchFile = std::filesystem::path("/workspace/runtime/launch/launch.html");

@@ -88,6 +88,9 @@ add_executable(taxbroker_unit_tests
     unit/tax_processor_test.cpp
     unit/taxpayer_file_test.cpp
     unit/taxpayer_json_test.cpp
+    unit/profile_json_test.cpp
+    unit/profile_routes_test.cpp
+    unit/profile_store_test.cpp
     unit/trade_conversion_test.cpp
     unit/trade_republic_parser_checks_test.cpp
     unit/traderepublic_parser_test.cpp

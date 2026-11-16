@@ -4142,12 +4142,12 @@ Not about a form (skipped private-market rows): 1
 )");
 }
 
-TEST(CliReportIntegrationTest, TaxpayerValueTheFormDoesNotAcceptBlocksTheReport) {
-    // postCode has 13 characters; the form's postNumber allows 12.
+TEST(CliReportIntegrationTest, TaxpayerPostCodeOfFiveDigitsIsRefusedWithTheFieldNotTheValue) {
+    // A Slovenian post code has four digits, from 1000 to 9999.
     const TemporaryCliFolder folder;
-    const auto taxpayer = folder.writeText(
-        "taxpayer.json",
-        R"({"taxNumber": "12345678", "isResident": true, "postCode": "1234567890123"})");
+    const auto taxpayer =
+        folder.writeText("taxpayer.json",
+                         R"({"taxNumber": "12345678", "isResident": true, "postCode": "10000"})");
     const auto history = folder.writeCsv(
         "history.csv",
         {
@@ -4165,18 +4165,13 @@ TEST(CliReportIntegrationTest, TaxpayerValueTheFormDoesNotAcceptBlocksTheReport)
                              "--trade-republic",
                              history});
 
-    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "Capital gains (Doh-KDVP): blocked, no XML was written (see the errors "
-                         "below)\n"));
     // The error names the field, never the value.
-    EXPECT_TRUE(contains(result.mOut,
-                         "Doh-KDVP errors: 1\n"
-                         "  diagnostic-0001 xml_value_out_of_range\n"
-                         "    The value of the XML field postNumber is outside what the FURS form "
-                         "allows"));
-    EXPECT_FALSE(contains(result.mOut, "1234567890123"));
+    EXPECT_EQ(result.mErr,
+              "taxbroker: the taxpayer file taxpayer.json is not valid: \"postCode\" must be a "
+              "text of four digits, from 1000 to 9999.\n"
+              "Run 'taxbroker report --help' for the usage.\n");
 }
 
 TEST(CliReportIntegrationTest, BlockedRunKeepsAnOldXmlOfTheSameYearAndSaysSo) {

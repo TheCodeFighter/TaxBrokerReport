@@ -1484,11 +1484,11 @@ TEST(ReportCommandTest, FileLevelErrorNamesOnlyTheFile) {
 }
 
 TEST(ReportCommandTest, DiagnosticWithoutASourceNamesOnlyItsCode) {
-    // postCode has 13 characters; the form's postNumber allows 12.
+    // The name holds a control character (\u0001) that XML cannot carry.
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText(
         "taxpayer.json",
-        R"({"taxNumber": "12345678", "isResident": true, "postCode": "1234567890123"})");
+        R"({"taxNumber": "12345678", "isResident": true, "name": "Ana\u0001Novak"})");
     const auto history = folder.writeCsv(
         "history.csv",
         {

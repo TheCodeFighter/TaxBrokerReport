@@ -36,6 +36,9 @@ inline constexpr int kFourDigitYear = 1000;
 /// Eight digits, not all zero (the schema type is a positive integer).
 [[nodiscard]] bool isTaxNumber(std::string_view aText);
 
+/// A Slovenian post number: four digits, from 1000 to 9999.
+[[nodiscard]] bool isPostNumber(std::string_view aText);
+
 /// `YYYY-MM-DD`, or nothing for a year outside 1 to 9999, which `xs:date` cannot hold in four
 /// digits (year 0000 does not exist in XML).
 [[nodiscard]] std::optional<std::string> dateText(const Date& aDate);

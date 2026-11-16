@@ -73,7 +73,8 @@ Routes makeRoutes(std::span<const StaticFile> aFiles) {
         []() { return std::chrono::steady_clock::time_point{} + std::chrono::hours(1); },
         1000,
         aFiles,
-        "9.8.7");
+        "9.8.7",
+        ProfileStore(std::filesystem::path("unused") / "profile.json", std::nullopt));
 }
 
 HttpResponse get(Routes& aRoutes, const std::string& aTarget) {

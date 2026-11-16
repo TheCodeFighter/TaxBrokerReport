@@ -1316,7 +1316,7 @@ rows of a partly blocked loss, and classification requests.
 
 **Taxpayer file.** One JSON object with `taxNumber` (eight digits, not `00000000`) and
 `isResident` (only `true` for now), and the optional strings `name`, `address`, `city`,
-`postCode`, `postName`, `birthDate` (`YYYY-MM-DD`), `email` and `phoneNumber`. Any other key is an
+`postCode` (four digits, 1000 to 9999), `postName`, `birthDate` (`YYYY-MM-DD`), `email` and `phoneNumber`. Any other key is an
 error, `filingType` included: the filing type is chosen for each run (`--self-report`), never
 read from the file. An error names the key, never the value.
 
@@ -1474,6 +1474,11 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   compressed), when an address other than an XML namespace name or that repository link appears
   in a file, or when
   `index.html` has an inline script or style.
+- **Tests.** Unit tests are Vitest files named `*.test.ts` that sit next to the module they test
+  (`run/taxpayer.ts` and `run/taxpayer.test.ts`). The build never bundles them, because nothing
+  imports them, and `tsc --noEmit` checks them like the code. The screens (`screens/*.tsx`) hold
+  no logic and have no tests: the logic lives in the modules beside them. A test for a component
+  would be a `*.test.tsx` file, and `include` in `vite.config.ts` would then need that pattern.
 - **Login.** The link `/#token=...` is exchanged once with `POST /api/session` and the fragment
   is removed with `history.replaceState`, also when the exchange fails (R6). A page without a
   fragment (a reload) asks `GET /api/session`; so does a refused exchange (401), because a used

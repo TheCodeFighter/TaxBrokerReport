@@ -1,6 +1,8 @@
 #pragma once
 
 #include "http_message.hpp"
+#include "profile_routes.hpp"
+#include "profile_store.hpp"
 #include "request_guard.hpp"
 #include "run_routes.hpp"
 #include "static_files.hpp"
@@ -17,8 +19,8 @@
 namespace taxbroker {
 
 /// The routes of the local server: the browser login, the frontend files, the message texts and
-/// the run API. They have no sockets, so the tests call `handle` directly. The calls come from one
-/// thread.
+/// the run API and the saved profile. They have no sockets, so the tests call `handle` directly.
+/// The calls come from one thread.
 class Routes {
   public:
     /// Returns the current time; the tests pass a fake clock.
@@ -27,6 +29,7 @@ class Routes {
     /// The link token is issued now. The launch file is deleted after the login. aMaxFileBytes is
     /// the longest file of an upload. aStaticFiles are the pages and assets served without a login;
     /// the table must outlive the routes. aVersion is the program version for `GET /api/version`.
+    /// aProfileStore is the file of the saved taxpayer details.
     Routes(std::uint16_t aPort,
            std::string aLinkToken,
            std::string aSessionToken,
@@ -34,7 +37,8 @@ class Routes {
            Clock aClock,
            std::size_t aMaxFileBytes,
            std::span<const StaticFile> aStaticFiles,
-           std::string_view aVersion);
+           std::string_view aVersion,
+           ProfileStore aProfileStore);
 
     /// The body limit for a request whose header is read and whose body is not: the upload limit
     /// for `POST /api/run` that passes the guard, else `kDefaultBodyLimit`. It has no side effect
@@ -77,6 +81,7 @@ class Routes {
     std::filesystem::path mLaunchFile;
     Clock mClock;
     RunRoutes mRunRoutes;
+    ProfileRoutes mProfileRoutes;
     std::span<const StaticFile> mStaticFiles;
     std::string mVersionBody; ///< The `GET /api/version` body, built once.
 };

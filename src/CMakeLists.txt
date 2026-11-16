@@ -203,6 +203,8 @@ add_library(taxbroker_server_lib STATIC
     server/http_message.cpp
     server/http_server.cpp
     server/multipart.cpp
+    server/profile_routes.cpp
+    server/profile_store.cpp
     server/routes.cpp
     server/run_routes.cpp
     server/server.cpp
