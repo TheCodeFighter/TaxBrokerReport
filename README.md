@@ -46,7 +46,9 @@ browser app, Windows and macOS builds, and downloadable releases.
 
 ## Why TaxBrokerReport
 
-- **Private:** it works offline. Your exports and your tax data never leave your computer.
+- **Private:** it works offline. Your exports and your tax data never leave your computer. The
+  browser app saves only the taxpayer details, only when you tick "Remember my details", in a
+  private file on this computer that you can delete there.
 - **Free and open source:** MIT licensed, every line can be checked.
 - **Whole history:** FIFO runs over all the exports you give it, overlapping files included, so
   older purchases count. FIFO across brokers is planned with Interactive Brokers.

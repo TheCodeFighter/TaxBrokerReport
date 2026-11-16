@@ -341,6 +341,31 @@ body {
   color: var(--color-error);
 }
 
+.remember {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.remember-warning {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius);
+}
+
+.screen .remember-warning p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.remember-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .screen .notice {
   padding: var(--space-2) var(--space-3);
   border-left: 4px solid var(--color-primary);

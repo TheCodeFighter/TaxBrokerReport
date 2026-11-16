@@ -112,6 +112,41 @@ export const uiTexts = {
     sl: "Podatki zavezanca niso veljavni. Preverite polja.",
     en: "The taxpayer data is not valid. Check the fields.",
   },
+  profileRemember: { sl: "Zapomni si moje podatke", en: "Remember my details" },
+  profileHint: {
+    sl: "Podatki ostanejo samo na tem računalniku, v: {location}",
+    en: "Stays on this computer only, in: {location}",
+  },
+  profileHintNoLocation: {
+    sl: "Podatki ostanejo samo na tem računalniku, v podatkovni mapi aplikacije.",
+    en: "Stays on this computer only, in the app's data folder.",
+  },
+  profileWarning: {
+    sl: "Shranjeni podatki bodo izbrisani s tega računalnika.",
+    en: "Saved details will be deleted from this computer.",
+  },
+  profileCancel: { sl: "Prekliči", en: "Cancel" },
+  profileConfirm: { sl: "Izbriši", en: "Confirm delete" },
+  profileNotDeleted: {
+    sl: "Shranjenih podatkov ni bilo mogoče izbrisati.",
+    en: "The saved details could not be deleted.",
+  },
+  profileNotSaved: {
+    sl: "Vaših podatkov ni bilo mogoče shraniti.",
+    en: "Your details could not be saved.",
+  },
+  profileUnreadable: {
+    sl: "Shranjenih podatkov ni bilo mogoče prebrati, zato niso uporabljeni.",
+    en: "The saved details could not be read and were not used.",
+  },
+  profileInvalidFields: {
+    sl: "Nekateri shranjeni podatki niso veljavni in so ostali prazni: {fields}.",
+    en: "Some saved details were not valid and were left empty: {fields}.",
+  },
+  profileIgnoredKeys: {
+    sl: "Shranjena datoteka je vsebovala druge podatke; ti so prezrti.",
+    en: "The saved file held other data; it was ignored.",
+  },
   createReports: { sl: "Ustvari poročila", en: "Create the reports" },
   createReportsAgain: { sl: "Ustvari poročila znova", en: "Create the reports again" },
   sending: { sl: "Obdelujem …", en: "Working …" },

@@ -711,7 +711,8 @@ rules:
   capital failure question then lists it, and a cancel is never an exclusion. An unanswered
   request stays open: the session never answers anything by itself.
 - **Memory only.** Answers are never written to disk or browser storage and are gone when the app
-  closes. Only the taxpayer profile may be saved (#278).
+  closes. Only the taxpayer profile may be saved, only when the user ticks "Remember my details"
+  (`architecture.md`, "The saved taxpayer profile").
 
 In the JSON, a loss request has `"options":["no_other_activity","other_activity"]` and
 `"lossCheck"` with `name`, `isin` and `sales`; each sale has `saleDate`, `transaction` (`broker`,
