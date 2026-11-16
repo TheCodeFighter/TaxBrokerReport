@@ -72,7 +72,8 @@ Routes makeRoutes(std::span<const StaticFile> aFiles) {
         std::filesystem::path("unused_launch.html"),
         []() { return std::chrono::steady_clock::time_point{} + std::chrono::hours(1); },
         1000,
-        aFiles);
+        aFiles,
+        "9.8.7");
 }
 
 HttpResponse get(Routes& aRoutes, const std::string& aTarget) {

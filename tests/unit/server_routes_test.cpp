@@ -81,7 +81,8 @@ class ServerRoutesTest : public ::testing::Test {
               mLaunchFile,
               [this]() { return mNow; },
               1000,
-              placeholderStaticFiles()) {}
+              placeholderStaticFiles(),
+              "9.8.7") {}
 
     void SetUp() override {
         std::filesystem::remove_all(mFolder);
@@ -521,8 +522,9 @@ TEST_F(ServerRoutesTest, VersionWithTheSessionIsJson) {
     EXPECT_EQ(headerOf(response, "Content-Type"), "application/json");
     expectSecurityHeaders(response);
 
-    // The project version in CMakeLists.txt.
-    EXPECT_EQ(response.mBody, R"({"version":"2.0.0"})");
+    // The version the routes were made with, not the project version, so a release needs no
+    // test change.
+    EXPECT_EQ(response.mBody, R"({"version":"9.8.7"})");
 }
 
 TEST_F(ServerRoutesTest, PostToVersionIsNotAllowed) {

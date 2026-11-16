@@ -27,7 +27,7 @@ export const uiTexts = {
   disclaimerTitle: { sl: "Opozorilo", en: "Disclaimer" },
   disclaimerText: {
     sl: "To je neuradno orodje skupnosti. Ni davčni nasvet in ni povezano s FURS ali s katerim koli posrednikom. Sami ste odgovorni za preverjanje vseh vrednosti v ustvarjenih datotekah in za oddajo napovedi v eDavkih. Program je na voljo »tak, kot je«, pod licenco MIT, brez kakršnega koli jamstva. Razvijalec ne odgovarja za davčne napake, globe ali opustitve.",
-    en: "This is an unofficial community tool. It is not tax advice and is not affiliated with FURS or any broker. You are responsible for checking every value in the generated files and for filing the forms in eDavki. The software is provided \"as is\", under the MIT License, without warranty of any kind. The developer is not liable for tax errors, fines or omissions.",
+    en: "This is an unofficial community tool. It is not tax advice, and it is not affiliated with FURS or any broker. You are responsible for checking every value in the generated files and for filing your return in eDavki. This software is provided \"as is\" under the MIT License, without warranty of any kind. The developer assumes no liability for tax errors, fines or omissions.",
   },
   manualTitle: { sl: "Navodila", en: "Manual" },
   manualLater: {

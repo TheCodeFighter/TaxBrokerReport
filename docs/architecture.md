@@ -1445,7 +1445,7 @@ SIGINT, SIGTERM or `stop` the server closes the port and deletes the launch file
 | 5 | Exactly one `X-TaxBroker: 1` header (R17) | 403, no body |
 | 6 | `POST /api/session`: the body is JSON with a string `token`; `LinkToken::redeem` (R4, R5); success is 204 with `Set-Cookie`, the launch file is deleted (R19) | 400 `{"error":"bad_request"}` or 401 |
 | 7 | The session cookie (several `Cookie` headers are joined) passes `tokenMatches` (R5) | 401, no body |
-| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; `GET /api/messages` is the message texts (JSON, see "Frontend"), another method on it is 405; `GET /api/version` is `{"version":"<project version>"}` (the CMake project version, for the About page), another method on it is 405; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
+| 8 | `GET /api/session` is 204 (the frontend asks after a reload); another method on it is 405 with `Allow`; `GET /api/messages` is the message texts (JSON, see "Frontend"), another method on it is 405; `GET /api/version` is `{"version":"<project version>"}` (the CMake project version, for the page footer), another method on it is 405; a path `/api/run` or below it goes to `RunRoutes` ("Local HTTP API"); an unknown path is 404 | |
 
 The guard runs before the route lookup, so an unknown `/api/` path without a cookie gives 401,
 not 404: the paths cannot be discovered. Every response carries the seven `securityHeaders()`

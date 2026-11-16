@@ -250,7 +250,7 @@ if(TAXBROKER_FRONTEND_DIR)
     target_include_directories(taxbroker_server_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/server)
 endif()
 
-# The version of the program, shown by the About page through GET /api/version.
+# The version of the program, shown in the page footer through GET /api/version.
 target_compile_definitions(taxbroker_server_lib PRIVATE TAXBROKER_VERSION="${PROJECT_VERSION}")
 
 find_package(Threads REQUIRED)

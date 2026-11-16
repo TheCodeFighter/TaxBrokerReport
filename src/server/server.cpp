@@ -83,7 +83,8 @@ int StartServer(const EnvLookup& aEnv,
             launchFile,
             []() { return std::chrono::steady_clock::now(); },
             aHooks.mMaxFileBytes,
-            embeddedStaticFiles());
+            embeddedStaticFiles(),
+            TAXBROKER_VERSION);
 
         // A TBR_LAUNCH_FILE folder is made by the caller (Docker: scripts/run.sh).
         if (!config.mLaunchFile.has_value())
