@@ -13,7 +13,7 @@ function inputs() {
   const prepared = emptyInputs(new Date(2026, 10, 16));
 
   prepared.brokerFiles.trade_republic = [new File(["a"], "a.csv")];
-  prepared.taxpayer.taxNumber = "12345678";
+  prepared.taxpayer.taxNumber = "12345679";
 
   return prepared;
 }
@@ -176,7 +176,7 @@ describe("submitRun", () => {
     const [, profileInit] = fetchFunction.mock.calls[0] as [string, RequestInit];
 
     // The taxpayer object of the run: the tax number and the residence.
-    expect(profileInit.body).toBe('{"taxNumber":"12345678","isResident":true}');
+    expect(profileInit.body).toBe('{"taxNumber":"12345679","isResident":true}');
     expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [] }, profile: "saved" });
   });
 

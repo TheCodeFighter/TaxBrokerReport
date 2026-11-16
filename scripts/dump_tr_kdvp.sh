@@ -23,7 +23,7 @@ Usage: dump_tr_kdvp.sh [--synthetic] [--year YYYY] [--tax-number NNNNNNNN] [--se
     --synthetic     use the synthetic CSV $synthetic_csv
                     (trades in 2025) instead of the real export
     --tax-number    the taxpayer's tax number; use your own for an eDavki draft
-                    import (default: 12345678, a made-up number)
+                    import (default: 12345679, a made-up number)
     --self-report   write the self-report workflow code I instead of O
 
     Default year:   the previous calendar year
@@ -36,7 +36,7 @@ EOF
 year="$(( $(date +%Y) - 1 ))"
 output_path=""
 csv_inputs=()
-tax_number="12345678"
+tax_number="12345679"
 filing_type="original"
 synthetic=false
 

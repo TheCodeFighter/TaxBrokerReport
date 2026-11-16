@@ -2,7 +2,7 @@
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:name>Synthetic Taxpayer</edp:name>
       <edp:address1>Synthetic Street 1</edp:address1>

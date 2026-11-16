@@ -101,7 +101,7 @@ TEST(ProfileStoreTest, ReadGivesTheContentAndCutsItAtTheLimit) {
 TEST(ProfileStoreTest, WriteMakesAPrivateFolderAndAPrivateFileWithTheExactContent) {
     const TempFolder temp("write");
     const ProfileStore store(temp.path() / "data" / "taxbroker" / "profile.json", std::nullopt);
-    const std::string content = R"({"isResident":true,"name":"Ana Novak","taxNumber":"12345678"})"
+    const std::string content = R"({"isResident":true,"name":"Ana Novak","taxNumber":"12345679"})"
                                 "\n";
 
     store.write(content);

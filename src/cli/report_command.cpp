@@ -106,7 +106,7 @@ whose name starts with "-" is given as ./-name.csv.
 
 Taxpayer file (JSON):
   {
-    "taxNumber": "12345678",
+    "taxNumber": "12345679",
     "isResident": true,
     "name": "Ana Novak",
     "address": "Slovenska cesta 1",
@@ -1543,7 +1543,7 @@ std::string summaryText(const RunOutcome& aOutcome) {
     if (!others.empty())
     {
         out << '\n';
-        writeDiagnostics(out, "Not about a form (skipped private-market rows)", others, true, {});
+        writeDiagnostics(out, "Not about a form", others, true, {});
     }
 
     return out.str();

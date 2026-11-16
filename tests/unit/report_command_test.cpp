@@ -118,7 +118,7 @@ bool contains(const std::string& aText, std::string_view aPart) {
     return aText.find(aPart) != std::string::npos;
 }
 
-constexpr std::string_view kTaxpayer = R"({"taxNumber": "12345678", "isResident": true})";
+constexpr std::string_view kTaxpayer = R"({"taxNumber": "12345679", "isResident": true})";
 
 constexpr std::string_view kGeneralHelp =
     R"(taxbroker: turns broker CSV exports into Slovenian FURS tax forms (XML for eDavki).
@@ -964,6 +964,30 @@ TEST(ReportCommandTest, OutputThatIsAFileFails) {
               "taxbroker: --out must be a folder, not a file.\n" + std::string{kUsageHint});
 }
 
+TEST(ReportCommandTest, TaxpayerFileWithAWrongTaxNumberCheckDigitRunsWithOneWarning) {
+    const TemporaryFolder folder;
+    // 1*8 + 2*7 + 3*6 + 4*5 + 5*4 + 6*3 + 7*2 = 112; 112 mod 11 = 2; the check digit is 9, not 8.
+    const auto taxpayer =
+        folder.writeText("taxpayer.json", R"({"taxNumber": "12345678", "isResident": true})");
+    const auto history = folder.writeCsv("history.csv", {});
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    // The run is not blocked; the warning is not about a form and does not repeat the number.
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut, "\nNot about a form: 1\n"));
+    EXPECT_TRUE(contains(result.mOut, "taxpayer_tax_number_check_digit"));
+    EXPECT_FALSE(contains(result.mOut, "12345678"));
+}
+
 TEST(ReportCommandTest, TaxpayerFileThatIsNotJsonFails) {
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", "taxNumber = 12345678");
@@ -1488,7 +1512,7 @@ TEST(ReportCommandTest, DiagnosticWithoutASourceNamesOnlyItsCode) {
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText(
         "taxpayer.json",
-        R"({"taxNumber": "12345678", "isResident": true, "name": "Ana\u0001Novak"})");
+        R"({"taxNumber": "12345679", "isResident": true, "name": "Ana\u0001Novak"})");
     const auto history = folder.writeCsv(
         "history.csv",
         {
@@ -2259,7 +2283,7 @@ TEST(ReportCommandTest, APrivateMarketBuyWithUnitsIsListedUnderNotAboutAForm) {
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_TRUE(contains(result.mOut,
-                         "\nNot about a form (skipped private-market rows): 1\n"
+                         "\nNot about a form: 1\n"
                          "  diagnostic-0001 warning unsupported_asset_class, history.csv row 2\n"));
 }
 

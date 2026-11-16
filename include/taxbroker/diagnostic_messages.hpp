@@ -153,6 +153,7 @@ enum class MessageKey {
     TreatyClaimDetailsMissing,
     DeveloperExportUnavailableUnitValueTooLarge,
     DeveloperExportUnavailableCorporateActionAfterGap,
+    TaxpayerTaxNumberCheckDigit,
     TaxClassificationUnknownIncomeConfirmationRequired,
     TaxClassificationUnknownIncomeCancelled,
     TaxCategoryNotReportedUserChoiceIncome,

@@ -31,7 +31,7 @@ TEST(DohObrSchemaTest, DocumentWithoutInterestRowsIsValid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -63,7 +63,7 @@ TEST(DohObrSchemaTest, ValueOfZeroPassesTheSchema) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -105,7 +105,7 @@ TEST(DohObrSchemaTest, ValueWithTwelveIntegerDigitsIsValid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -147,7 +147,7 @@ TEST(DohObrSchemaTest, ValueWithThirteenIntegerDigitsIsInvalid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -189,7 +189,7 @@ TEST(DohObrSchemaTest, NegativeValueIsInvalid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -231,7 +231,7 @@ TEST(DohObrSchemaTest, ValueWithThreeDecimalsIsInvalid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -273,7 +273,7 @@ TEST(DohObrSchemaTest, NegativeForeignTaxIsInvalid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -315,7 +315,7 @@ TEST(DohObrSchemaTest, IdentificationNumberOfThirtyCharactersIsValid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -357,7 +357,7 @@ TEST(DohObrSchemaTest, IdentificationNumberOfThirtyOneCharactersIsInvalid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>
@@ -399,7 +399,7 @@ TEST(DohObrSchemaTest, InterestFieldsOutOfOrderAreInvalid) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
     </edp:taxpayer>
     <edp:Workflow>

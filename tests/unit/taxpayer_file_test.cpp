@@ -30,19 +30,19 @@ TEST(TaxpayerFileTest, ReadsTheFileFromDisk) {
 
     {
         std::ofstream output{path};
-        output << R"({"taxNumber": "12345678", "isResident": true})";
+        output << R"({"taxNumber": "12345679", "isResident": true})";
     }
 
     const auto result = readTaxpayerFile(path);
     std::filesystem::remove(path);
 
     ASSERT_TRUE(std::holds_alternative<TaxpayerMetadata>(result));
-    EXPECT_EQ(std::get<TaxpayerMetadata>(result).mTaxNumber, "12345678");
+    EXPECT_EQ(std::get<TaxpayerMetadata>(result).mTaxNumber, "12345679");
 }
 
 TEST(TaxpayerFileTest, TheFileAndItsTextGiveTheSameTaxpayer) {
     const std::string text =
-        R"({"taxNumber": "12345678", "isResident": true, "name": "Ana Novak", "city": "Ljubljana"})";
+        R"({"taxNumber": "12345679", "isResident": true, "name": "Ana Novak", "city": "Ljubljana"})";
     const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto path = std::filesystem::temp_directory_path() /
                       ("taxbroker_taxpayer_same_" + std::to_string(token));

@@ -43,7 +43,7 @@ constexpr std::string_view kTaxNumberMessage =
 TEST(KdvpXmlWriterTest, OneSaleUsingTwoPurchasesWritesTheWholeDocument) {
     // Example "one sale uses two purchases" in tax_rules.md.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -92,7 +92,7 @@ TEST(KdvpXmlWriterTest, OneSaleUsingTwoPurchasesWritesTheWholeDocument) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -171,7 +171,7 @@ TEST(KdvpXmlWriterTest, AllOptionalTaxpayerFieldsAreWrittenInSchemaOrder) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mName = "Test Taxpayer",
                 .mAddress = "Test Street 1",
                 .mCity = "Test City",
@@ -197,7 +197,7 @@ TEST(KdvpXmlWriterTest, AllOptionalTaxpayerFieldsAreWrittenInSchemaOrder) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:name>Test Taxpayer</edp:name>
       <edp:address1>Test Street 1</edp:address1>
@@ -243,7 +243,7 @@ TEST(KdvpXmlWriterTest, MissingOptionalFieldsAreLeftOut) {
     // No name for the list. The writer never adds Code, KDVPItem/Name or F11. F5 (0.0000 on the
     // purchase) and DocumentWorkflowName are always written, as in the legacy output.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -283,7 +283,7 @@ TEST(KdvpXmlWriterTest, MissingOptionalFieldsAreLeftOut) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -350,7 +350,7 @@ TEST(KdvpXmlWriterTest, SelfReportWritesItsWorkflowCode) {
     // I and the name SamoPrijava in the header and in KDVP, as eDavki expects for a self-report
     // (*samoprijava*). The legacy GUI wrote S and SelfReport, which eDavki does not accept.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::SelfReport,
     };
@@ -364,7 +364,7 @@ TEST(KdvpXmlWriterTest, SelfReportWritesItsWorkflowCode) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -400,7 +400,7 @@ TEST(KdvpXmlWriterTest, SelfReportWritesItsWorkflowCode) {
 
 TEST(KdvpXmlWriterTest, NonResidentWritesFalseInBothPlaces) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = false},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = false},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -414,7 +414,7 @@ TEST(KdvpXmlWriterTest, NonResidentWritesFalseInBothPlaces) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>false</edp:resident>
     </edp:taxpayer>
@@ -452,7 +452,7 @@ TEST(KdvpXmlWriterTest, QuantitiesKeepFourToEightDecimals) {
     // calculations.md, "XML precision": write the exact units; remove trailing zeros only down to
     // four decimals. Every unit value is EUR 10 or EUR 12.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -549,7 +549,7 @@ TEST(KdvpXmlWriterTest, QuantitiesKeepFourToEightDecimals) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -680,7 +680,7 @@ TEST(KdvpXmlWriterTest, UnitValuesKeepFourToEightDecimals) {
     // calculations.md, "XML precision": write UnitPrice without changing its value; remove
     // trailing zeros only down to four decimals.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -740,7 +740,7 @@ TEST(KdvpXmlWriterTest, UnitValuesKeepFourToEightDecimals) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -829,7 +829,7 @@ TEST(KdvpXmlWriterTest, LargestStoredValuesFitTheSchemaDigits) {
     // The largest int64 at eight decimals has 11 integer digits; F3, F7 and F8 allow 12 and F4
     // and F9 allow 14, so no stored value is too large for the form.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -869,7 +869,7 @@ TEST(KdvpXmlWriterTest, LargestStoredValuesFitTheSchemaDigits) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -939,7 +939,7 @@ TEST(KdvpXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mName = "Testni Zavezanec Čšž",
                 .mIsResident = true,
             },
@@ -1010,7 +1010,7 @@ TEST(KdvpXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:name>Testni Zavezanec Čšž</edp:name>
       <edp:resident>true</edp:resident>
@@ -1108,7 +1108,7 @@ TEST(KdvpXmlWriterTest, TextIsEscapedAndNonAsciiIsKept) {
 TEST(KdvpXmlWriterTest, CharactersOfThreeAndFourBytesAreKept) {
     // € is three bytes in UTF-8 (U+20AC) and 𐍈 is four (U+10348).
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -1148,7 +1148,7 @@ TEST(KdvpXmlWriterTest, CharactersOfThreeAndFourBytesAreKept) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1216,7 +1216,7 @@ TEST(KdvpXmlWriterTest, NameOfOneHundredCharactersIsAccepted) {
     // The limit is 100 characters, not bytes: 100 Ž are 200 bytes.
     const std::string hundredCharacters = repeated("Ž", 100);
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -1258,7 +1258,7 @@ TEST(KdvpXmlWriterTest, NameOfOneHundredCharactersIsAccepted) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1327,7 +1327,7 @@ TEST(KdvpXmlWriterTest, ListsAndRowsKeepModelOrderAndNumbering) {
     // The model lists XX0000000002 first. The writer keeps that order and does not sort.
     // ItemID counts from 1; the row ID counts from 0 in each list.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -1395,7 +1395,7 @@ TEST(KdvpXmlWriterTest, ListsAndRowsKeepModelOrderAndNumbering) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1492,7 +1492,7 @@ TEST(KdvpXmlWriterTest, ListsAndRowsKeepModelOrderAndNumbering) {
 TEST(KdvpXmlWriterTest, EverySaleRowHasF10AndPurchaseRowsHaveNone) {
     // A profitable sale gets F10 true: nothing blocks its gain.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -1532,7 +1532,7 @@ TEST(KdvpXmlWriterTest, EverySaleRowHasF10AndPurchaseRowsHaveNone) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1601,7 +1601,7 @@ TEST(KdvpXmlWriterTest, EligibleAndBlockedPartsOfOneSaleAreTwoSaleRows) {
     // 4. Both rows share the source sale. The writer writes them as two rows with the model's F8,
     // and merges or recalculates nothing.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -1650,7 +1650,7 @@ TEST(KdvpXmlWriterTest, EligibleAndBlockedPartsOfOneSaleAreTwoSaleRows) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1728,7 +1728,7 @@ TEST(KdvpXmlWriterTest, EmptyReportWritesNoLists) {
     // A year without sales. The writer still writes a valid document; the caller decides that
     // the form has no data and writes no file.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -1742,7 +1742,7 @@ TEST(KdvpXmlWriterTest, EmptyReportWritesNoLists) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1783,7 +1783,7 @@ TEST(KdvpXmlWriterTest, SchemaValidationRejectsAnUnknownF2Code) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -1962,7 +1962,7 @@ TEST(KdvpXmlWriterTest, TaxNumberOfZerosIsRejected) {
 
 TEST(KdvpXmlWriterTest, YearBelow1000IsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 999,
         .mFilingType = FilingType::Original,
     };
@@ -1990,7 +1990,7 @@ TEST(KdvpXmlWriterTest, YearBelow1000IsRejected) {
 
 TEST(KdvpXmlWriterTest, YearAbove9999IsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 10000,
         .mFilingType = FilingType::Original,
     };
@@ -2014,7 +2014,7 @@ TEST(KdvpXmlWriterTest, BirthDateInYearZeroIsRejected) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mBirthDate = day("0000-01-01"),
                 .mIsResident = true,
             },
@@ -2041,7 +2041,7 @@ TEST(KdvpXmlWriterTest, TaxpayerNameWithInvalidUtf8IsRejected) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mName = "Test \xC3\x28 Taxpayer",
                 .mIsResident = true,
             },
@@ -2067,7 +2067,7 @@ ReportMetadata metadataWithPostCode(std::string aPostCode) {
     return ReportMetadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mPostCode = std::move(aPostCode),
                 .mIsResident = true,
             },
@@ -2116,7 +2116,7 @@ TEST(KdvpXmlWriterTest, SlovenianLettersInEveryTaxpayerTextFieldAreWrittenAndSch
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mName = "Žiga Šuštaršič-Čeh",
                 .mAddress = "Črnuška cesta 12, Šmartno ob Paki",
                 .mCity = "Črnomelj",
@@ -2149,7 +2149,7 @@ TEST(KdvpXmlWriterTest, VeryLongTaxpayerTextHasNoLimitInTheSchemaAndIsWritten) {
     const ReportMetadata metadata{
         .mTaxpayer =
             {
-                .mTaxNumber = "12345678",
+                .mTaxNumber = "12345679",
                 .mName = repeated("Š", 1000),
                 .mAddress = repeated("Č", 1000),
                 .mCity = repeated("Ž", 1000),
@@ -2174,7 +2174,7 @@ TEST(KdvpXmlWriterTest, VeryLongTaxpayerTextHasNoLimitInTheSchemaAndIsWritten) {
 
 TEST(KdvpXmlWriterTest, IsinOfThirteenCharactersIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2223,7 +2223,7 @@ TEST(KdvpXmlWriterTest, IsinOfThirteenCharactersIsRejected) {
 TEST(KdvpXmlWriterTest, EmptyIsinIsRejected) {
     // The schema accepts an empty ISIN; a list without one cannot be filed.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2264,7 +2264,7 @@ TEST(KdvpXmlWriterTest, EmptyIsinIsRejected) {
 TEST(KdvpXmlWriterTest, IsinWithInvalidUtf8IsRejected) {
     // 0xC3 starts a two-byte character, but "(" (0x28) cannot continue it.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2306,7 +2306,7 @@ TEST(KdvpXmlWriterTest, IsinWithInvalidUtf8IsRejected) {
 TEST(KdvpXmlWriterTest, NameOfOneHundredAndOneCharactersIsRejected) {
     // Never shortened to fit: the list fails instead.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2346,7 +2346,7 @@ TEST(KdvpXmlWriterTest, NameOfOneHundredAndOneCharactersIsRejected) {
 TEST(KdvpXmlWriterTest, NameWithAControlCharacterIsRejected) {
     // U+0001 is not allowed in XML 1.0 text.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2388,7 +2388,7 @@ TEST(KdvpXmlWriterTest, NameWithAControlCharacterIsRejected) {
 TEST(KdvpXmlWriterTest, NameWithABrokenTwoByteCharacterIsRejected) {
     // 0xC3 starts a two-byte character, but "(" (0x28) cannot continue it.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2427,7 +2427,7 @@ TEST(KdvpXmlWriterTest, NameWithABrokenTwoByteCharacterIsRejected) {
 TEST(KdvpXmlWriterTest, NameWithAByteThatStartsNoCharacterIsRejected) {
     // 0xFF never appears in UTF-8.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2460,7 +2460,7 @@ TEST(KdvpXmlWriterTest, NameWithAByteThatStartsNoCharacterIsRejected) {
 TEST(KdvpXmlWriterTest, NameEndingInsideACharacterIsRejected) {
     // 0xC5 starts a two-byte character (as in Ž, 0xC5 0xBD), but the text ends after it.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2493,7 +2493,7 @@ TEST(KdvpXmlWriterTest, NameEndingInsideACharacterIsRejected) {
 TEST(KdvpXmlWriterTest, NameWithATooLongEncodingIsRejected) {
     // 0xC0 0xAF is "/" (U+002F) written with two bytes instead of one, which UTF-8 forbids.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2526,7 +2526,7 @@ TEST(KdvpXmlWriterTest, NameWithATooLongEncodingIsRejected) {
 TEST(KdvpXmlWriterTest, NameWithASurrogateIsRejected) {
     // 0xED 0xA0 0x80 is U+D800, half of a UTF-16 pair, which UTF-8 forbids.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2559,7 +2559,7 @@ TEST(KdvpXmlWriterTest, NameWithASurrogateIsRejected) {
 TEST(KdvpXmlWriterTest, NameAboveTheLastCodePointIsRejected) {
     // 0xF4 0x90 0x80 0x80 would be U+110000; Unicode ends at U+10FFFF.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2592,7 +2592,7 @@ TEST(KdvpXmlWriterTest, NameAboveTheLastCodePointIsRejected) {
 TEST(KdvpXmlWriterTest, NameWithUFFFEIsRejected) {
     // 0xEF 0xBF 0xBE is U+FFFE, valid UTF-8 but not allowed in XML 1.0 text.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2625,7 +2625,7 @@ TEST(KdvpXmlWriterTest, NameWithUFFFEIsRejected) {
 TEST(KdvpXmlWriterTest, NameWithUFFFFIsRejected) {
     // 0xEF 0xBF 0xBF is U+FFFF, valid UTF-8 but not allowed in XML 1.0 text.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2657,7 +2657,7 @@ TEST(KdvpXmlWriterTest, NameWithUFFFFIsRejected) {
 
 TEST(KdvpXmlWriterTest, PurchaseDateInYearZeroIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2698,7 +2698,7 @@ TEST(KdvpXmlWriterTest, PurchaseDateInYearZeroIsRejected) {
 TEST(KdvpXmlWriterTest, SaleDateAfterYear9999IsRejected) {
     // A year that needs five digits does not fit the YYYY-MM-DD of the form.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2745,7 +2745,7 @@ TEST(KdvpXmlWriterTest, SaleDateAfterYear9999IsRejected) {
 
 TEST(KdvpXmlWriterTest, NegativePurchaseUnitsAreRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2789,7 +2789,7 @@ TEST(KdvpXmlWriterTest, NegativePurchaseUnitsAreRejected) {
 
 TEST(KdvpXmlWriterTest, NegativePurchaseUnitValueIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2827,7 +2827,7 @@ TEST(KdvpXmlWriterTest, NegativePurchaseUnitValueIsRejected) {
 
 TEST(KdvpXmlWriterTest, NegativeSaleUnitsAreRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2865,7 +2865,7 @@ TEST(KdvpXmlWriterTest, NegativeSaleUnitsAreRejected) {
 
 TEST(KdvpXmlWriterTest, NegativeSaleUnitValueIsRejected) {
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2904,7 +2904,7 @@ TEST(KdvpXmlWriterTest, NegativeSaleUnitValueIsRejected) {
 TEST(KdvpXmlWriterTest, NegativeStockIsRejected) {
     // The schema allows a negative F8, but only the developer export may write one.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2945,7 +2945,7 @@ TEST(KdvpXmlWriterTest, DeveloperExportWritesANegativeStockAndLeavesOutF10) {
     // A purchase of 0.35 units, then a sale of 0.5 units: the sale is 0.15 units short, its
     // purchase value is unknown, so F10 is left out and F8 is 0.35 - 0.5 = -0.15.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -2986,7 +2986,7 @@ TEST(KdvpXmlWriterTest, DeveloperExportWritesANegativeStockAndLeavesOutF10) {
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -3052,7 +3052,7 @@ TEST(KdvpXmlWriterTest, DeveloperExportWritesANegativeStockAndLeavesOutF10) {
 TEST(KdvpXmlWriterTest, NotAssessedLossRuleOutsideADeveloperExportIsRejected) {
     // F10 is left out only for the developer export; a normal list has to say true or false.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };
@@ -3090,7 +3090,7 @@ TEST(KdvpXmlWriterTest, NotAssessedLossRuleOutsideADeveloperExportIsRejected) {
 TEST(KdvpXmlWriterTest, DeveloperExportStillRejectsANegativeUnitCount) {
     // Only F8 may be negative in a developer export; a negative F7 is still an error.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2024,
         .mFilingType = FilingType::Original,
     };

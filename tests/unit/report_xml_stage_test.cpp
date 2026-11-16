@@ -23,7 +23,7 @@ Date day(std::string_view aDate) {
 }
 
 const ReportMetadata kMetadata{
-    .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+    .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
     .mReportingYear = 2025,
     .mFilingType = FilingType::Original,
 };
@@ -420,7 +420,7 @@ TEST(ReportXmlStageTest, AnUnknownFilingTypeFailsOnlyDohKdvp) {
     // Filing type 9 is neither an original nor a self-report. Only Doh-KDVP writes the filing
     // type; the three income forms are always an original, so they do not read it.
     const ReportMetadata metadata{
-        .mTaxpayer = {.mTaxNumber = "12345678", .mIsResident = true},
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
         .mFilingType = static_cast<FilingType>(9),
     };

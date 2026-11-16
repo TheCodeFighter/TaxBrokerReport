@@ -13,6 +13,7 @@
 #include "processors/tax_classifier.hpp"
 #include "processors/tax_processor.hpp"
 #include "processors/trade_conversion.hpp"
+#include "utils/tax_number.hpp"
 #include "parsers/ecb_rate_file.hpp"
 #include "xml/report_xml_stage.hpp"
 
@@ -38,6 +39,21 @@ std::vector<Isin> blockedIsins(const CapitalGainsBuildResult& aBuilt) {
                    [](const KdvpBlockedIsin& aBlocked) { return aBlocked.mIsin; });
 
     return isins;
+}
+
+/// The warning for a taxpayer tax number whose check digit is wrong. It is about every form, so it
+/// names no report; the number itself is never in the text.
+ProcessingDiagnostic taxNumberCheckDigitWarning() {
+    auto message = makeDiagnosticMessage(MessageKey::TaxpayerTaxNumberCheckDigit);
+
+    return ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Warning,
+        .mCode = ProcessingDiagnosticCode::TaxpayerTaxNumberCheckDigit,
+        .mContext = {.mStage = PipelineStage::XmlGeneration},
+        .mMessage = std::move(message.mEnglish),
+        .mMessageKey = message.mKey,
+        .mMessageParams = std::move(message.mParams),
+    };
 }
 
 /// The investments the developer export is offered for, and one warning for each investment with
@@ -235,6 +251,11 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
     std::move(developerChoices.mWarnings.begin(),
               developerChoices.mWarnings.end(),
               std::back_inserter(processing));
+
+    if (!isSlovenianTaxNumber(aRequest.mTaxpayer.mTaxNumber))
+    {
+        processing.push_back(taxNumberCheckDigitWarning());
+    }
 
     const auto capitalChoice = FailureResolutionStage::resolveUnits(
         input,

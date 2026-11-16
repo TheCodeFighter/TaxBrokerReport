@@ -131,7 +131,7 @@ bool contains(const std::string& aText, std::string_view aPart) {
     return aText.find(aPart) != std::string::npos;
 }
 
-constexpr std::string_view kTaxpayer = R"({"taxNumber": "12345678", "isResident": true})";
+constexpr std::string_view kTaxpayer = R"({"taxNumber": "12345679", "isResident": true})";
 
 TEST(CliReportIntegrationTest, TwoFilesWriteTheGoldenXmlAndSummary2024) {
     // Example "one sale uses two purchases" in tax_rules.md, with the purchases and the sale in
@@ -206,7 +206,7 @@ Doh-KDVP warnings: 0
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -391,7 +391,7 @@ Doh-KDVP warnings: 0
 <Envelope xmlns="http://edavki.durs.si/Documents/Schemas/Doh_KDVP_9.xsd" xmlns:edp="http://edavki.durs.si/Documents/Schemas/EDP-Common-1.xsd">
   <edp:Header>
     <edp:taxpayer>
-      <edp:taxNumber>12345678</edp:taxNumber>
+      <edp:taxNumber>12345679</edp:taxNumber>
       <edp:taxpayerType>FO</edp:taxpayerType>
       <edp:resident>true</edp:resident>
     </edp:taxpayer>
@@ -795,7 +795,7 @@ Doh-KDVP warnings: 1
   diagnostic-0002 unsupported_tax_treatment, XX0000000009 Synthetic Private Fund, 2024-05-02, history.csv row 4
     Private-market events have only a cash amount, without units or a price, so they are skipped and are not in the Doh-KDVP report. Check whether you have to report them yourself.
 
-Not about a form (skipped private-market rows): 1
+Not about a form: 1
   diagnostic-0001 warning unsupported_asset_class, history.csv row 4
     This private-market row has units or a unit price. Private-market rows are not used as purchases, so these units are not in the capital-gains report. Check the row and report it yourself if needed.
 )");
@@ -4136,7 +4136,7 @@ Doh-KDVP errors: 0
 
 Doh-KDVP warnings: 0
 
-Not about a form (skipped private-market rows): 1
+Not about a form: 1
   diagnostic-0001 error invalid_value, history.csv row 4
     Field 'amount' has an invalid value in private-market row; the row was skipped.
 )");
@@ -4147,7 +4147,7 @@ TEST(CliReportIntegrationTest, TaxpayerPostCodeOfFiveDigitsIsRefusedWithTheField
     const TemporaryCliFolder folder;
     const auto taxpayer =
         folder.writeText("taxpayer.json",
-                         R"({"taxNumber": "12345678", "isResident": true, "postCode": "10000"})");
+                         R"({"taxNumber": "12345679", "isResident": true, "postCode": "10000"})");
     const auto history = folder.writeCsv(
         "history.csv",
         {
@@ -4741,7 +4741,7 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(report.mOut,
                          "lists them. The answers are used only in this run and are never saved, "
                          "so the next run\n  asks again.\n"));
-    EXPECT_TRUE(contains(report.mOut, "    \"taxNumber\": \"12345678\",\n"));
+    EXPECT_TRUE(contains(report.mOut, "    \"taxNumber\": \"12345679\",\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "  - Private-market events (Trade Republic types "
                          "PRIVATE_MARKET_BUY and\n"
@@ -5063,7 +5063,7 @@ TEST(CliReportIntegrationTest, InvalidTaxpayerFileFails) {
     const TemporaryCliFolder folder;
     const auto taxpayer =
         folder.writeText("taxpayer.json",
-                         R"({"taxNumber": "12345678", "isResident": true, "filingType": "S"})");
+                         R"({"taxNumber": "12345679", "isResident": true, "filingType": "S"})");
     const auto history = folder.writeCsv("history.csv", {});
 
     const auto result = run({"report",

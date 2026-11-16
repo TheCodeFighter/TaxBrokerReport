@@ -1045,6 +1045,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "TreatyClaimDetailsMissing";
     case ProcessingDiagnosticCode::DeveloperExportUnavailable:
         return "DeveloperExportUnavailable";
+    case ProcessingDiagnosticCode::TaxpayerTaxNumberCheckDigit:
+        return "TaxpayerTaxNumberCheckDigit";
     }
 
     return "Unknown";

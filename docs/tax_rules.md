@@ -1110,7 +1110,9 @@ accrued interest was paid at purchase.
 
 **Slovenian tax number.** Exactly eight digits; the last is the check digit of the first seven
 (weights 8 to 2, 11 minus the sum modulo 11, 10 written as 0; a sum that is a multiple of 11 has no
-digit). `SI` before the digits is not a tax number. eDavki's check before submitting wants, for a
+digit). The taxpayer's own number is checked the same way, but a wrong check digit is only a run
+warning, never an error: the files are written with the number as typed. `SI` before the digits is
+not a tax number. eDavki's check before submitting wants, for a
 payer in `SI`, the tax number filled and the identification number empty, and then takes the name
 and address from the tax register. So a Slovenian payer's Doh-Obr row has `TaxNumber` and no
 `IdentificationNumber`, `Name` or `Address`. A payer whose reference row has no valid number is

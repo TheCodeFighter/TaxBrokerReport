@@ -69,7 +69,7 @@ constexpr std::string_view kLossSell =
 
 /// The taxpayer of the golden files.
 constexpr std::string_view kTaxpayerJson = R"({
-    "taxNumber": "12345678",
+    "taxNumber": "12345679",
     "isResident": true,
     "name": "Synthetic Taxpayer",
     "address": "Synthetic Street 1",
@@ -1328,7 +1328,7 @@ TEST_F(ServerRunTest, EveryProfileRouteNeedsTheSessionAndTheClientHeader) {
 }
 
 TEST_F(ServerRunTest, ASavedProfileIsOnlyTheProfileFileAndSurvivesARestartOfTheServer) {
-    const std::string saved = R"({"taxNumber":"12345678","isResident":true,"name":"Ana Novak"})";
+    const std::string saved = R"({"taxNumber":"12345679","isResident":true,"name":"Ana Novak"})";
     auto first = startServer();
 
     EXPECT_EQ(first->send("GET", "/api/profile").body(),
@@ -1376,14 +1376,14 @@ TEST_F(ServerRunTest, ASavedProfileIsOnlyTheProfileFileAndSurvivesARestartOfTheS
     EXPECT_EQ(
         loaded.body(),
         R"({"ignoredKeys":false,"invalidFields":[],"location":"~/data/taxbroker/profile.json",)"
-        R"("saved":true,"taxpayer":{"isResident":true,"name":"Ana Novak","taxNumber":"12345678"},)"
+        R"("saved":true,"taxpayer":{"isResident":true,"name":"Ana Novak","taxNumber":"12345679"},)"
         R"("unreadable":false})");
 }
 
 TEST_F(ServerRunTest, DeletingTheProfileRemovesItsFileOverHttp) {
     const auto server = startServer();
 
-    ASSERT_EQ(server->postJson("/api/profile", R"({"taxNumber":"12345678","isResident":true})")
+    ASSERT_EQ(server->postJson("/api/profile", R"({"taxNumber":"12345679","isResident":true})")
                   .result_int(),
               204U);
     ASSERT_TRUE(std::filesystem::exists(mFolder / "main" / "data" / "taxbroker" / "profile.json"));
