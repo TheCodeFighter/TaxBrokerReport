@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 
 namespace taxbroker::api {
@@ -31,6 +32,17 @@ enum class RunRequestError {
     DuplicatePart,     ///< A part name used twice.
     TooManyFiles,      ///< More than `kMaxUploadFiles` files in the list.
     UnsupportedBroker, ///< A broker the application does not read.
+    BadTaxpayer,       ///< The taxpayer object is refused; the refusal can name the key.
+};
+
+/// A refused upload: the error and, for `BadTaxpayer`, the fixed taxpayer key it is about (empty
+/// when the key is unknown or the error is another one).
+struct RunRequestRefusal {
+    RunRequestError mError; ///< Why the upload is refused.
+    std::string mField;     ///< The taxpayer key for `BadTaxpayer`; empty otherwise or unknown.
+
+    explicit RunRequestRefusal(RunRequestError aError, std::string aField = {})
+        : mError(aError), mField(std::move(aField)) {}
 };
 
 /// The code of an error as the frontend gets it.
@@ -39,7 +51,7 @@ enum class RunRequestError {
 /// Builds the application request from the parts of an upload: the part `request` holds the JSON
 /// (year, filing type, developer mode, taxpayer and the list of files) and every other part is a
 /// file that the list names.
-[[nodiscard]] std::variant<ApplicationRequest, RunRequestError>
+[[nodiscard]] std::variant<ApplicationRequest, RunRequestRefusal>
 buildApplicationRequest(std::span<const UploadedPart> aParts);
 
 } // namespace taxbroker::api

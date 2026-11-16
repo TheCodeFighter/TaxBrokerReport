@@ -1219,6 +1219,13 @@ TEST_F(ServerRunTest, AnUploadIsRefusedWithACodeForEveryInputProblem) {
         {multipartBody(requestJson(2024, R"([{"part":"file0","kind":"broker","broker":"ibkr"}])"),
                        {{"file0", "export.csv", "x"}}),
          contentTypeHeader()});
+    // A tax number of 7 digits: the answer names the field, never the value.
+    const Response badTaxpayer = server->upload(
+        {multipartBody(R"({"reportingYear":2024,"filingType":"original",)"
+                       R"("taxpayer":{"taxNumber":"1234567","isResident":true},)"
+                       R"("files":[{"part":"file0","kind":"broker","broker":"trade_republic"}]})",
+                       {{"file0", "export.csv", "x"}}),
+         contentTypeHeader()});
     // Not a multipart body.
     const Response notMultipart = server->send("POST", "/api/run", "application/json", "{}");
     // No Content-Type header at all.
@@ -1228,11 +1235,17 @@ TEST_F(ServerRunTest, AnUploadIsRefusedWithACodeForEveryInputProblem) {
     EXPECT_EQ(unreferenced.body(), R"({"error":"unreferenced_part"})");
     EXPECT_EQ(missing.body(), R"({"error":"missing_part"})");
     EXPECT_EQ(unsupported.body(), R"({"error":"unsupported_broker"})");
+    EXPECT_EQ(badTaxpayer.body(), R"({"error":"bad_taxpayer","field":"taxNumber"})");
     EXPECT_EQ(notMultipart.body(), R"({"error":"bad_multipart"})");
     EXPECT_EQ(noContentType.body(), R"({"error":"bad_multipart"})");
 
-    for (const Response* response :
-         {&noBroker, &unreferenced, &missing, &unsupported, &notMultipart, &noContentType})
+    for (const Response* response : {&noBroker,
+                                     &unreferenced,
+                                     &missing,
+                                     &unsupported,
+                                     &badTaxpayer,
+                                     &notMultipart,
+                                     &noContentType})
     {
         EXPECT_EQ(response->result_int(), 400U);
     }

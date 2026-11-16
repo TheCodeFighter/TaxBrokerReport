@@ -88,6 +88,21 @@ HttpResponse refuseWithReason(unsigned aStatus, std::string_view aCode, std::str
     return makeErrorCodeResponse(aStatus, aCode);
 }
 
+/// A refused taxpayer object: the fixed taxpayer key is the reason word in the log and the
+/// `field` of the body, so the form can mark its input. The key is one of the application's own
+/// words (never a value or a sender's name); an unknown key has no field.
+HttpResponse refuseTaxpayer(std::string_view aField) {
+    if (aField.empty())
+    {
+        return refuse(400, "bad_taxpayer");
+    }
+
+    LOG_WARNING("Run request refused: 400 bad_taxpayer ({})", aField);
+
+    return makeJsonResponse(400,
+                            R"({"error":"bad_taxpayer","field":")" + std::string(aField) + R"("})");
+}
+
 /// The kind of an input fault and its stable message key, for example
 /// `reference_file input_file.too_large`. No file name and no row.
 std::string inputFaultReason(const ApplicationInputFault& aFault) {
@@ -380,11 +395,18 @@ HttpResponse RunRoutes::upload(const HttpRequest& aRequest) {
 
     auto request = api::buildApplicationRequest(parts);
 
-    if (const auto* error = std::get_if<api::RunRequestError>(&request))
+    if (const auto* refusal = std::get_if<api::RunRequestRefusal>(&request))
     {
+        const api::RunRequestError error = refusal->mError;
+
+        if (error == api::RunRequestError::BadTaxpayer)
+        {
+            return refuseTaxpayer(refusal->mField);
+        }
+
         return refuse(400,
-                      api::runRequestErrorCode(*error),
-                      *error == api::RunRequestError::TooManyFiles
+                      api::runRequestErrorCode(error),
+                      error == api::RunRequestError::TooManyFiles
                           ? std::optional<std::uint64_t>{api::kMaxUploadFiles}
                           : std::nullopt);
     }

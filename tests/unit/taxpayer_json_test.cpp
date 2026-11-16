@@ -21,6 +21,16 @@ std::string errorOf(const std::variant<TaxpayerMetadata, TaxpayerJsonError>& aRe
     return "accepted";
 }
 
+/// The key the error is about, or a note that the file was accepted.
+std::string keyOf(const std::variant<TaxpayerMetadata, TaxpayerJsonError>& aResult) {
+    if (const auto* error = std::get_if<TaxpayerJsonError>(&aResult))
+    {
+        return error->mKey;
+    }
+
+    return "accepted";
+}
+
 TEST(TaxpayerJsonTest, MinimalFileSetsOnlyTheTaxNumberAndTheResidence) {
     const auto result = parseTaxpayerJson(R"({"taxNumber": "12345678", "isResident": true})");
 
@@ -165,6 +175,32 @@ TEST(TaxpayerJsonTest, JsonArrayIsRefused) {
     const auto result = parseTaxpayerJson(R"([{"taxNumber": "12345678", "isResident": true}])");
 
     EXPECT_EQ(errorOf(result), "The taxpayer file must contain one JSON object.");
+}
+
+TEST(TaxpayerJsonTest, ErrorsNameTheKeyTheyAreAbout) {
+    EXPECT_EQ(keyOf(parseTaxpayerJson(R"({"taxNumber": "00000000", "isResident": true})")),
+              "taxNumber");
+    EXPECT_EQ(keyOf(parseTaxpayerJson(R"({"isResident": true})")), "taxNumber");
+    EXPECT_EQ(keyOf(parseTaxpayerJson(R"({"taxNumber": "12345678"})")), "isResident");
+    EXPECT_EQ(keyOf(parseTaxpayerJson(
+                  R"({"taxNumber": "12345678", "isResident": true, "birthDate": "1990-02-30"})")),
+              "birthDate");
+    EXPECT_EQ(
+        keyOf(parseTaxpayerJson(R"({"taxNumber": "12345678", "isResident": true, "name": ""})")),
+        "name");
+    EXPECT_EQ(keyOf(parseTaxpayerJson(
+                  R"({"taxNumber": "12345678", "isResident": true, "filingType": "original"})")),
+              "filingType");
+}
+
+TEST(TaxpayerJsonTest, ErrorsWithoutAKnownKeyHaveNoKey) {
+    // Not JSON, not an object, and a key that the application does not know: the key is the
+    // sender's text, so it is not repeated.
+    EXPECT_EQ(keyOf(parseTaxpayerJson(R"({"taxNumber": "12345678")")), "");
+    EXPECT_EQ(keyOf(parseTaxpayerJson("[]")), "");
+    EXPECT_EQ(keyOf(parseTaxpayerJson(
+                  R"({"taxNumber": "12345678", "isResident": true, "shoeSize": "42"})")),
+              "");
 }
 
 } // namespace

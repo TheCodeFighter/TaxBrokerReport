@@ -4,7 +4,8 @@ export const CLIENT_HEADER = "X-TaxBroker";
 export interface ApiInit {
   method?: string;
   headers?: Record<string, string>;
-  body?: string;
+  /** A text, or a `FormData` for an upload: the browser sets its own `Content-Type` with the boundary. */
+  body?: string | FormData;
 }
 
 /** The part of `fetch` that the client needs, so the tests pass their own. */

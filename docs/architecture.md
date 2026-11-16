@@ -1493,9 +1493,38 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   attribute `data-theme` of `<html>`, light by default and kept in the browser as `tbr.theme`; the
   system setting is not used, because it does not work on every Linux desktop. A later screen
   that polls must back off and stop while the tab is hidden (`document.visibilityState`).
-- **Tests.** Vitest tests of the login, the client, the language, the theme and the message
-  texts; the browser functions (`location`, `history`, `fetch`, storage) are arguments, so they
-  need no DOM.
+- **Input screen.** After the login the page shows the form of one run, in
+  `frontend/src/run/` (pure code, tested without a DOM) and `frontend/src/screens/` (Preact
+  views). One area for each kind of file, never guessed from a name or content: one area per
+  broker (the table `input_kinds.ts`, now only Trade Republic; a new broker is one more row),
+  then "ECB exchange rate files" and "Reference files" in a folded "Other files" block. The area
+  sets the `kind` and `broker` of its files. The broker files can be moved up and down and
+  removed. The year is a select from the current year down to 2000 (default the year before the
+  current one); a year without built-in rates (before 2016, or the current year) shows a hint that
+  trades not in EUR need the rate file of that year. The filing type is chosen for each run,
+  original by default. The taxpayer form sends `isResident: true` always (only Slovenian tax
+  residents are supported), trims the text and leaves out an empty field (the server refuses an
+  empty string); it repeats no rule about a value.
+- **Request order and file numbers.** The upload has the part `request` first, then `file0` and
+  on: the broker files of the first broker area, the next broker areas, the rate files, the
+  reference files. The source IDs of the diagnostics count only the broker files (`source-0001`
+  is `file0`), so a broker file that shares its name with another gets the suffix
+  `(file N)`, N being its position among the broker files, and the result block lists the files
+  in that order. There are no user labels: nothing typed by the user can change the order or the
+  work. The server keeps its answers when the files change (a new upload keeps them, see "Local
+  HTTP API"); the page marks the shown result "out of date" on any change of the inputs and
+  offers "Create the reports again".
+- **Before sending.** The page refuses a file over 100 MiB and more than 32 files itself
+  (`run/limits.ts`, the numbers of `kMaxInputFileBytes` and `kMaxUploadFiles`), because a refused
+  large body can end in a lost connection that the client would read as "session ended". The
+  answers 400 (a code text, for `bad_taxpayer` the text under the field the server names), 413
+  and 422 (an `inputFault` text from the message table, with the file name and row) are shown
+  next to the form; a lost session shows the "open the link again" screen. There is no
+  `GET /api/run` on load (it logs a 404 warning before the first upload), so a reload shows the
+  empty form.
+- **Tests.** Vitest tests of the login, the client, the language, the theme, the message texts and
+  the input screen's pure code (labels, years, list changes, the request, the answers); the
+  browser functions (`location`, `history`, `fetch`, storage) are arguments, so they need no DOM.
 
 ### Local HTTP API
 
@@ -1522,16 +1551,21 @@ guard and the session cookie. The JSON readers and writers are in `taxbroker_api
 - The `request` part: `reportingYear`, `filingType` (`original` or `self_report`), optional
   `developerMode`, the `taxpayer` object (the keys of the taxpayer file) and `files`, a list of
   `{"part":"file0","kind":"broker","broker":"trade_republic"}`, `"kind":"ecb_rates"` or
-  `"kind":"reference"` (up to 32; more is `too_many_files`). An unknown key is `bad_request`. The broker name is looked up in
+  `"kind":"reference"` (up to 32; more is `too_many_files`). An unknown key is `bad_request`.
+  A taxpayer object that the taxpayer reader refuses (a tax number that is not eight digits, an
+  empty text, a date that does not exist, ...) is 400 `{"error":"bad_taxpayer","field":"taxNumber"}`
+  with the key it is about, so the form can mark its input; the field is a fixed key of the
+  taxpayer file, never a value, and an unknown key gives no `field` (the name is the sender's
+  text). A taxpayer that is not an object stays `bad_request`. The broker name is looked up in
   one table of `request_json.cpp`; no route branches on a broker. The file name of a part is
   reduced to its last path part.
 - 400 codes: `bad_request`, `path_not_allowed` (a key named `path` anywhere, R10), `no_broker_file`
   (an input check for the frontend, not a tax rule), `missing_part`, `unreferenced_part`,
   `duplicate_part`, `too_many_files` (more than 32 files in the list, or more than 33 parts in the
-  upload), `unsupported_broker`, `bad_multipart`. Every refusal, also a 404, 405, 409 and 422,
+  upload), `unsupported_broker`, `bad_taxpayer`, `bad_multipart`. Every refusal, also a 404, 405, 409 and 422,
   writes one warning to the log with its status and code (R13), so a bug report with the log line
   names the cause. Where one code has several causes, the line adds a fixed word in brackets:
-  `bad_multipart (content_type|body|part_header)`, `input_fault (rate_file|reference_file <message
+  `bad_multipart (content_type|body|part_header)`, `bad_taxpayer (<taxpayer key>)`, `input_fault (rate_file|reference_file <message
   key>)` and `answer_rejected (<count>: <message key> x<n>, ...)`. A step that works writes an
   info line (`docs/logging.md`, "What the server logs").
 - The type of an answer comes from the request: the route looks up each `requestId` in the current

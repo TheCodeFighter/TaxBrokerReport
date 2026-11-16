@@ -102,13 +102,15 @@ std::string_view runRequestErrorCode(RunRequestError aError) {
     case RunRequestError::TooManyFiles:
         return "too_many_files";
     case RunRequestError::UnsupportedBroker:
+        return "unsupported_broker";
+    case RunRequestError::BadTaxpayer:
         break;
     }
 
-    return "unsupported_broker";
+    return "bad_taxpayer";
 }
 
-std::variant<ApplicationRequest, RunRequestError>
+std::variant<ApplicationRequest, RunRequestRefusal>
 buildApplicationRequest(std::span<const UploadedPart> aParts) {
     // The part names must be unique, and exactly one is the request.
     std::set<std::string_view> names;
@@ -118,7 +120,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
     {
         if (!names.insert(part.mName).second)
         {
-            return RunRequestError::DuplicatePart;
+            return RunRequestRefusal{RunRequestError::DuplicatePart};
         }
 
         if (part.mName == "request")
@@ -129,26 +131,26 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
 
     if (requestPart == nullptr)
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     const Json json = Json::parse(requestPart->mContent, nullptr, false);
 
     if (!json.is_object())
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     const detail::JsonScan scan = detail::scanRequestJson(json, 1);
 
     if (scan == detail::JsonScan::HasPathKey)
     {
-        return RunRequestError::PathNotAllowed;
+        return RunRequestRefusal{RunRequestError::PathNotAllowed};
     }
 
     if (scan == detail::JsonScan::TooDeep)
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     constexpr std::array<std::string_view, 5> topKeys{"reportingYear",
@@ -159,7 +161,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
 
     if (!hasOnlyKeys(json, topKeys))
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     ApplicationRequest request;
@@ -170,7 +172,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
         year->get<std::int64_t>() < kMinimumReportingYear ||
         year->get<std::int64_t>() > kMaximumReportingYear)
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     request.mReportingYear = year->get<int>();
@@ -182,7 +184,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
 
     if (!filing.has_value())
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     request.mFilingType = *filing;
@@ -193,7 +195,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
     {
         if (!developerMode->is_boolean())
         {
-            return RunRequestError::BadRequest;
+            return RunRequestRefusal{RunRequestError::BadRequest};
         }
 
         request.mDeveloperMode = developerMode->get<bool>();
@@ -203,14 +205,15 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
 
     if (taxpayer == json.end() || !taxpayer->is_object())
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     auto parsedTaxpayer = parseTaxpayerJson(taxpayer->dump());
 
-    if (!std::holds_alternative<TaxpayerMetadata>(parsedTaxpayer))
+    if (const auto* taxpayerError = std::get_if<TaxpayerJsonError>(&parsedTaxpayer))
     {
-        return RunRequestError::BadRequest;
+        // A text that is not an object cannot get here; an empty key is an unknown taxpayer key.
+        return RunRequestRefusal{RunRequestError::BadTaxpayer, taxpayerError->mKey};
     }
 
     request.mTaxpayer = std::move(std::get<TaxpayerMetadata>(parsedTaxpayer));
@@ -219,12 +222,12 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
 
     if (files == json.end() || !files->is_array())
     {
-        return RunRequestError::BadRequest;
+        return RunRequestRefusal{RunRequestError::BadRequest};
     }
 
     if (files->size() > kMaxUploadFiles)
     {
-        return RunRequestError::TooManyFiles;
+        return RunRequestRefusal{RunRequestError::TooManyFiles};
     }
 
     constexpr std::array<std::string_view, 3> fileKeys{"part", "kind", "broker"};
@@ -234,7 +237,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
     {
         if (!entry.is_object() || !hasOnlyKeys(entry, fileKeys))
         {
-            return RunRequestError::BadRequest;
+            return RunRequestRefusal{RunRequestError::BadRequest};
         }
 
         const auto partName = entry.find("part");
@@ -243,7 +246,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
         if (partName == entry.end() || !partName->is_string() || kindName == entry.end() ||
             !kindName->is_string())
         {
-            return RunRequestError::BadRequest;
+            return RunRequestRefusal{RunRequestError::BadRequest};
         }
 
         const auto kind = lookup(kFileKinds, kindName->get<std::string>());
@@ -251,14 +254,14 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
 
         if (!kind.has_value() || (*kind == FileKind::Broker) != (brokerField != entry.end()))
         {
-            return RunRequestError::BadRequest;
+            return RunRequestRefusal{RunRequestError::BadRequest};
         }
 
         const std::string& partText = partName->get_ref<const std::string&>();
 
         if (!named.insert(partText).second)
         {
-            return RunRequestError::DuplicatePart;
+            return RunRequestRefusal{RunRequestError::DuplicatePart};
         }
 
         const auto part =
@@ -268,7 +271,7 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
 
         if (part == aParts.end() || &*part == requestPart)
         {
-            return RunRequestError::MissingPart;
+            return RunRequestRefusal{RunRequestError::MissingPart};
         }
 
         InputFile file{.mName = displayName(*part), .mContent = std::string{part->mContent}};
@@ -285,14 +288,14 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
         {
             if (!brokerField->is_string())
             {
-                return RunRequestError::BadRequest;
+                return RunRequestRefusal{RunRequestError::BadRequest};
             }
 
             const auto broker = lookup(kBrokers, brokerField->get<std::string>());
 
             if (!broker.has_value())
             {
-                return RunRequestError::UnsupportedBroker;
+                return RunRequestRefusal{RunRequestError::UnsupportedBroker};
             }
 
             request.mBrokerFiles.push_back(
@@ -303,12 +306,12 @@ buildApplicationRequest(std::span<const UploadedPart> aParts) {
     // Every part except the request must be named.
     if (named.size() + 1 != aParts.size())
     {
-        return RunRequestError::UnreferencedPart;
+        return RunRequestRefusal{RunRequestError::UnreferencedPart};
     }
 
     if (request.mBrokerFiles.empty())
     {
-        return RunRequestError::NoBrokerFile;
+        return RunRequestRefusal{RunRequestError::NoBrokerFile};
     }
 
     return request;
