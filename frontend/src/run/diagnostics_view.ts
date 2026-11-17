@@ -85,6 +85,25 @@ export function placeDiagnostics(result: RunResult): PlacedDiagnostics {
   return { byReport, shared };
 }
 
+/**
+ * The distinct texts of the diagnostics linked to one investment, in order; a text that repeats
+ * (for example three equal warnings) is shown once, and an ID the result does not have is skipped.
+ */
+export function linkedTexts(
+  diagnosticIds: string[],
+  byId: Map<string, Diagnostic>,
+  catalogue: MessageCatalogue | undefined,
+  language: Language,
+): string[] {
+  const texts = diagnosticIds.flatMap((id) => {
+    const linked = byId.get(id);
+
+    return linked === undefined ? [] : [diagnosticText(linked, catalogue, language)];
+  });
+
+  return [...new Set(texts)];
+}
+
 /** The form codes of `affectedReports`, in the result's order; an unknown name is kept as it is. */
 export function affectedForms(diagnostic: Diagnostic): string[] {
   return diagnostic.affectedReports.map(

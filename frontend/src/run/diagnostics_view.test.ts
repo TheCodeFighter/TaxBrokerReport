@@ -5,6 +5,7 @@ import {
   affectedForms,
   diagnosticText,
   groupDiagnostics,
+  linkedTexts,
   placeDiagnostics,
   severityText,
   sourceLabel,
@@ -314,5 +315,52 @@ describe("labels and texts", () => {
     };
 
     expect(diagnosticText(warning, undefined, "sl")).toBe("Neznano sporočilo: inconsistent_value.datetime_date");
+  });
+});
+
+describe("linkedTexts", () => {
+  const warning = (id: string, row: number): Diagnostic => ({
+    id,
+    severity: "warning",
+    stage: "parsing",
+    code: "inconsistent_value",
+    messageKey: "inconsistent_value.datetime_date",
+    messageParams: { defaultHour: 12 },
+    affectedReports: ["capital_gains"],
+    blocking: false,
+    sources: [{ sourceId: "source-0001", row }],
+  });
+
+  it("shows a text that three diagnostics share once, and skips an unknown ID", () => {
+    const byId = new Map([
+      ["diagnostic-0001", warning("diagnostic-0001", 2)],
+      ["diagnostic-0002", warning("diagnostic-0002", 3)],
+      ["diagnostic-0003", warning("diagnostic-0003", 4)],
+    ]);
+
+    expect(
+      linkedTexts(["diagnostic-0001", "diagnostic-0002", "diagnostic-0003", "diagnostic-0099"], byId, catalogue, "en"),
+    ).toEqual(["The calendar date in 'datetime' differs; hour 12 is used."]);
+  });
+
+  it("keeps two different texts in the order of the IDs", () => {
+    const other: Diagnostic = {
+      id: "diagnostic-0002",
+      severity: "error",
+      stage: "fifo_tax",
+      code: "internal_error",
+      affectedReports: ["capital_gains"],
+      blocking: true,
+      sources: [],
+    };
+    const byId = new Map([
+      ["diagnostic-0001", warning("diagnostic-0001", 2)],
+      ["diagnostic-0002", other],
+    ]);
+
+    expect(linkedTexts(["diagnostic-0002", "diagnostic-0001"], byId, catalogue, "en")).toEqual([
+      "Unknown message: internal_error",
+      "The calendar date in 'datetime' differs; hour 12 is used.",
+    ]);
   });
 });

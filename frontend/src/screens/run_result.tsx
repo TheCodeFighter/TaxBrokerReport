@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from "preact/hooks";
 import type { MessageCatalogue } from "../i18n/messages";
 import type { Language } from "../i18n/ui_texts";
 import { uiText, uiTextWith } from "../i18n/ui_texts";
-import { diagnosticText, groupDiagnostics, placeDiagnostics } from "../run/diagnostics_view";
+import { groupDiagnostics, linkedTexts, placeDiagnostics } from "../run/diagnostics_view";
 import {
   brokerTitle,
   classificationExclusions,
@@ -114,23 +114,12 @@ function ReportCardView({ language, card, diagnostics, byId, fileLabels, catalog
   const headingId = `report-${card.key}`;
   const groups = groupDiagnostics(diagnostics);
 
-  // Each distinct text of the linked diagnostics once; the card's list below has every source.
-  const linkedTexts = (investment: ReportInvestment): string[] => {
-    const texts = investment.diagnosticIds.flatMap((id) => {
-      const linked = byId.get(id);
-
-      return linked === undefined ? [] : [diagnosticText(linked, catalogue, language)];
-    });
-
-    return [...new Set(texts)];
-  };
-
   const investmentList = (investments: ReportInvestment[]) => (
     <ul class="plain-list">
       {investments.map((investment) => (
         <li key={investment.isin}>
           {`${investment.name} (${investment.isin})`}
-          {linkedTexts(investment).map((text) => (
+          {linkedTexts(investment.diagnosticIds, byId, catalogue, language).map((text) => (
             <p key={text} class="hint">
               {text}
             </p>
