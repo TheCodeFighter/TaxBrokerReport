@@ -13,21 +13,118 @@
 #include "processors/tax_classifier.hpp"
 #include "processors/tax_processor.hpp"
 #include "processors/trade_conversion.hpp"
+#include "taxbroker/logging.hpp"
 #include "utils/tax_number.hpp"
 #include "parsers/ecb_rate_file.hpp"
 #include "xml/report_xml_stage.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <map>
 #include <iterator>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace taxbroker {
 namespace {
+
+/// The milliseconds since a start time, for a stage line.
+long long millisecondsSince(std::chrono::steady_clock::time_point aStart) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                 aStart)
+        .count();
+}
+
+/// The counts of a run request as one text, for example `brokers [Trade Republic x2]`. Names a
+/// broker, never a file; the other kinds are counts.
+std::string requestLogSummary(const ApplicationRequest& aRequest) {
+    std::map<std::string_view, std::size_t> brokers;
+
+    for (const BrokerInputFile& file : aRequest.mBrokerFiles)
+    {
+        ++brokers[brokerName(file.mBroker)];
+    }
+
+    std::string text = "brokers [";
+
+    for (const auto& [name, count] : brokers)
+    {
+        text += text.back() == '[' ? "" : ", ";
+        text += name;
+        text += " x" + std::to_string(count);
+    }
+
+    return text + "], ecb rate files " + std::to_string(aRequest.mEcbRateFiles.size()) +
+           ", reference files " + std::to_string(aRequest.mReferenceFiles.size());
+}
+
+/// One info line for a started or restarted run. The taxpayer is never in it.
+void logRunStart(std::string_view aEvent, const ApplicationRequest& aRequest) {
+    LOG_INFO("Run {}: year {}, filing {}, developer mode {}, {}",
+             aEvent,
+             aRequest.mReportingYear,
+             aRequest.mFilingType == FilingType::Original ? "original" : "self_report",
+             aRequest.mDeveloperMode ? "on" : "off",
+             requestLogSummary(aRequest));
+}
+
+/// The info lines of the load stages that parse and merge the files and prepare the year: counts
+/// only, never a value, a name or a file name.
+void logLoadStages(const ApplicationRequest& aRequest,
+                   const TaxProcessingResult& aPrepared,
+                   long long aParseAndMergeMs) {
+    std::size_t parseErrors = 0;
+    std::size_t parseWarnings = 0;
+    std::size_t mergeErrors = 0;
+    std::size_t mergeWarnings = 0;
+    std::size_t conflicts = 0;
+
+    for (const StatementMergeDiagnostic& diagnostic : aPrepared.mMerged.mDiagnostics)
+    {
+        if (const auto* parse = std::get_if<SourcedParseDiagnostic>(&diagnostic))
+        {
+            const bool isError = parse->mDiagnostic.mSeverity == DiagnosticSeverity::Error;
+
+            ++(isError ? parseErrors : parseWarnings);
+            continue;
+        }
+
+        const auto& merge = std::get<MergeDiagnostic>(diagnostic);
+        const bool isError = merge.mSeverity == DiagnosticSeverity::Error;
+
+        ++(isError ? mergeErrors : mergeWarnings);
+        conflicts += merge.mCode == MergeDiagnosticCode::ConflictingDuplicate ? 1U : 0U;
+    }
+
+    LOG_INFO("Stage parse and merge: sources {}, events {}, parse errors {}, parse warnings {}, "
+             "merge errors {}, merge warnings {}, conflicts {} ({} ms)",
+             aRequest.mBrokerFiles.size(),
+             aPrepared.mMerged.mStatement.mChronologicalOrder.size(),
+             parseErrors,
+             parseWarnings,
+             mergeErrors,
+             mergeWarnings,
+             conflicts,
+             aParseAndMergeMs);
+
+    if (aPrepared.mLedger.has_value())
+    {
+        LOG_INFO("Stage year: instruments {}, capital events {}, events of the year {}",
+                 aPrepared.mMerged.mStatement.mPresentation.mTradeInstruments.size(),
+                 aPrepared.mLedger->mCapitalEvents.size(),
+                 aPrepared.mLedger->mSelectedYearEvents.size());
+    }
+    else
+    {
+        LOG_INFO("Stage year: no ledger, the year {} is not supported", aRequest.mReportingYear);
+    }
+}
 
 /// The ISINs that the builder blocked, for a preview of the rows of every other ISIN.
 std::vector<Isin> blockedIsins(const CapitalGainsBuildResult& aBuilt) {
@@ -205,6 +302,10 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
 
     ledger.mLeftOutIsins = classification.mLeftOutIsins;
 
+    LOG_DEBUG("Stage classify: instruments {}, left out {}",
+              statement.mPresentation.mTradeInstruments.size(),
+              ledger.mLeftOutIsins.size());
+
     // Foreign trades are converted to EUR before FIFO, so every later stage reads EUR prices.
     auto conversion = convertCapitalTrades(statement, ledger, aRates);
     const auto& convertedStatement = conversion.statement(statement);
@@ -214,12 +315,21 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
     auto& actions = pools.mActions;
     auto& quantities = pools.mQuantities;
 
+    LOG_DEBUG("Stage fifo: pools {}, diagnostics {}", fifo.mIsins.size(), fifo.mDiagnostics.size());
+
     // The stages after the pools read the sale units after the quantity corrections.
     const auto& capitalStatement = pools.statement(convertedStatement);
     auto loss = LossEligibilityChecker::check(capitalStatement, ledger, fifo, aDecisions);
     auto built = CapitalGainsReportBuilder::build(capitalStatement, ledger, fifo, loss, {});
     auto gateDiagnostics =
         CapitalReportGates::check(capitalStatement, ledger, fifo, loss, built, conversion.mRates);
+
+    LOG_DEBUG("Stage loss and builder: loss requests {}, blocked ISINs {}, excluded ISINs {}, "
+              "lists {}",
+              loss.mRequests.size(),
+              built.mBlocked.size(),
+              built.mExcluded.size(),
+              built.mReport ? built.mReport->mLists.size() : 0U);
 
     // Copied, not moved: every calculation of the run starts from the same diagnostics.
     ApplicationResultInput input{
@@ -338,10 +448,20 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
     // generated, whatever the writer made, and the other forms are not touched.
     auto income = prepareIncomeReports(input, statement, ledger, aCatalogue, aRates, aDecisions);
 
+    LOG_DEBUG("Stage income: dividend rows {}, deposit interest rows {}, other interest rows {}",
+              income.mDividends.mRows.size(),
+              income.mDeposit.mRows.size(),
+              income.mOther.mRows.size());
+
     writeReportXml(
         input,
         metadata,
         {.mDividends = &income.mDividends, .mDeposit = &income.mDeposit, .mOther = &income.mOther});
+
+    LOG_DEBUG("Stage xml: forms written {}",
+              std::count_if(input.mReports.begin(), input.mReports.end(), [](const auto& aReport) {
+                  return aReport.mXml.has_value();
+              }));
 
     // The summary reads the preview: the report, or the rows of the ISINs without a problem.
     const auto& preview = built.mReport ? *built.mReport : previewWithoutBlocked.value();
@@ -415,11 +535,17 @@ std::variant<ApplicationInputFault, RunData> loadRunData(ApplicationRequest aReq
         return ApplicationInputFault{std::move(*reference.mFault)};
     }
 
+    LOG_INFO("Stage rates: supplied files {}", aRequest.mEcbRateFiles.size());
+    LOG_INFO("Stage reference: supplied files {}", aRequest.mReferenceFiles.size());
+
     auto dataSources = dataSourcesOf(reference.mOrigins, rates.mTable);
+    const auto parseStart = std::chrono::steady_clock::now();
     auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
         .mReportingYear = aRequest.mReportingYear,
         .mMerged = parseAndMerge(aRequest.mBrokerFiles),
     });
+
+    logLoadStages(aRequest, prepared, millisecondsSince(parseStart));
 
     return RunData{.mRequest = std::move(aRequest),
                    .mRates = std::move(rates.mTable),
@@ -456,12 +582,17 @@ struct ApplicationRun::Impl {
     /// One calculation from the given data; it keeps them alive for as long as the session does.
     static RunCalculation calculationOn(std::shared_ptr<const RunData> aData) {
         return [data = std::move(aData)](RunDecisions& aDecisions) {
-            return calculateReport(data->mRequest,
-                                   data->mPrepared,
-                                   data->mCatalogue,
-                                   data->mRates,
-                                   data->mDataSources,
-                                   aDecisions);
+            const auto start = std::chrono::steady_clock::now();
+            auto input = calculateReport(data->mRequest,
+                                         data->mPrepared,
+                                         data->mCatalogue,
+                                         data->mRates,
+                                         data->mDataSources,
+                                         aDecisions);
+
+            LOG_INFO("Calculation done ({} ms)", millisecondsSince(start));
+
+            return input;
         };
     }
 };
@@ -495,6 +626,8 @@ ApplicationRun::start(ApplicationRequest aRequest) {
         return std::move(*fault);
     }
 
+    logRunStart("started", std::get<RunData>(loaded).mRequest);
+
     return ApplicationRun{std::make_unique<Impl>(std::move(std::get<RunData>(loaded)))};
 }
 
@@ -506,6 +639,7 @@ std::optional<ApplicationInputFault> ApplicationRun::restart(ApplicationRequest 
         return std::move(*fault);
     }
 
+    logRunStart("restarted", std::get<RunData>(loaded).mRequest);
     mImpl->restart(std::move(std::get<RunData>(loaded)));
 
     return std::nullopt;

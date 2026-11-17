@@ -2,6 +2,7 @@
 #include "server.hpp"
 #include "server_config.hpp"
 
+#include "taxbroker/build_info.hpp"
 #include "taxbroker/input_file.hpp"
 #include "taxbroker/logging.hpp"
 
@@ -15,6 +16,7 @@ int main(int aArgc, char** aArgv) {
 
     // Called just one time!
     taxbroker::InitializeLogger();
+    taxbroker::logProgramStart("server");
 
     taxbroker::ServerHooks hooks;
     hooks.mOpener = taxbroker::openInBrowser;

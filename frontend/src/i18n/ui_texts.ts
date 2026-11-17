@@ -116,6 +116,20 @@ export const uiTexts = {
     sl: "Podatki zavezanca niso veljavni. Preverite polja.",
     en: "The taxpayer data is not valid. Check the fields.",
   },
+  advancedTitle: { sl: "Napredno", en: "Advanced" },
+  logLevelLabel: { sl: "Raven dnevnika", en: "Log level" },
+  logLevelError: { sl: "Samo napake", en: "Errors only" },
+  logLevelWarn: { sl: "Napake in opozorila", en: "Errors and warnings" },
+  logLevelInfo: { sl: "Koraki (info)", en: "Steps (info)" },
+  logLevelDebug: { sl: "Vse (debug)", en: "Everything (debug)" },
+  logLevelHint: {
+    sl: "Dnevnik ne vsebuje zneskov, imen ali imen datotek. Za prijavo težave izberite »Koraki« in ponovite izračun. Raven velja do izklopa programa. Datoteka taxbroker.log je v mapi ~/.local/state/taxbroker.",
+    en: "The log holds no amounts, names or file names. To report a problem, choose \"Steps\" and run again. The level lasts until the program is closed. The file taxbroker.log is in the folder ~/.local/state/taxbroker.",
+  },
+  logLevelFailed: {
+    sl: "Ravni dnevnika ni bilo mogoče spremeniti.",
+    en: "The log level could not be changed.",
+  },
   profileRemember: { sl: "Zapomni si moje podatke", en: "Remember my details" },
   profileHint: {
     sl: "Podatki ostanejo samo na tem računalniku, v: {location}",

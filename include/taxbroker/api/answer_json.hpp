@@ -60,4 +60,8 @@ struct DeleteCall {
 /// never a path.
 [[nodiscard]] std::string serializeInputFaultJson(const ApplicationInputFault& aFault);
 
+/// The kind of an input fault and its stable message key for a log line, for example
+/// `reference_file input_file.too_large`. No file name and no row.
+[[nodiscard]] std::string inputFaultLogReason(const ApplicationInputFault& aFault);
+
 } // namespace taxbroker::api

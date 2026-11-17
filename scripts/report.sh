@@ -14,7 +14,7 @@ synthetic_taxpayer="tests/test_data/cli/taxpayer.json"
 usage() {
     cat <<EOF
 Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.json]
-                 [--self-report] [--no-input] [--out runtime/dir]
+                 [--self-report] [--no-input] [--log-level LEVEL] [--out runtime/dir]
                  [--trade-republic path.csv ...] [--ecb-rates path.csv ...]
                  [--reference-files path.csv ...]
 
@@ -38,6 +38,8 @@ Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.js
     --self-report   write a self-report instead of an original return
     --no-input      ask no questions: an open question blocks the report
                     (without it, the command asks in this terminal)
+    --log-level     error (the default), warn, info or debug: how much the log holds; the
+                    log is runtime/logs/taxbroker_report.log
     --trade-republic  one or more Trade Republic exports (default: $default_csv)
     --ecb-rates     ECB rate files (one calendar year each, EXR csvdata). The years 2016 to
                     2025 are built in; a file replaces its built-in year and adds other years
@@ -110,6 +112,17 @@ while [[ $# -gt 0 ]]; do
             end_list
             cli_options+=(--no-input)
             shift
+            ;;
+        --log-level)
+            end_list
+
+            if [[ $# -lt 2 || ! "$2" =~ ^(error|warn|info|debug)$ ]]; then
+                echo "--log-level requires error, warn, info or debug." >&2
+                exit 2
+            fi
+
+            cli_options+=(--log-level "$2")
+            shift 2
             ;;
         --year)
             end_list

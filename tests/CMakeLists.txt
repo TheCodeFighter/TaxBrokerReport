@@ -67,6 +67,10 @@ add_executable(taxbroker_unit_tests
     unit/browser_open_test.cpp
     unit/launch_file_test.cpp
     unit/logger_settings_test.cpp
+    unit/logger_file_test.cpp
+    unit/log_level_routes_test.cpp
+    unit/build_info_test.cpp
+    unit/cli_log_test.cpp
     unit/exception_kind_test.cpp
     unit/multipart_test.cpp
     unit/request_guard_test.cpp

@@ -125,8 +125,8 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--developer-export] [--ecb-rates FILE...] [--reference-files FILE...]
-                   --out DIR --trade-republic FILE...
+                   [--developer-export] [--log-level LEVEL] [--ecb-rates FILE...]
+                   [--reference-files FILE...] --out DIR --trade-republic FILE...
   taxbroker report --help
   taxbroker --help
 
@@ -197,9 +197,10 @@ TEST(ReportCommandTest, ReportHelpStartsWithTheUsageAndEndsWithTheExample) {
     EXPECT_EQ(result.mOut.rfind("Usage:\n"
                                 "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                                 "[--no-input]\n"
-                                "                   [--developer-export] [--ecb-rates FILE...] "
-                                "[--reference-files FILE...]\n"
-                                "                   --out DIR --trade-republic FILE...\n",
+                                "                   [--developer-export] [--log-level LEVEL] "
+                                "[--ecb-rates FILE...]\n"
+                                "                   [--reference-files FILE...] --out DIR "
+                                "--trade-republic FILE...\n",
                                 0),
               0U);
     EXPECT_TRUE(contains(result.mOut,

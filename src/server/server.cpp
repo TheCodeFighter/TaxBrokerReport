@@ -8,6 +8,7 @@
 #include "state_folder.hpp"
 #include "static_files.hpp"
 
+#include "taxbroker/build_info.hpp"
 #include "taxbroker/logging.hpp"
 
 #include <chrono>
@@ -85,7 +86,7 @@ int StartServer(const EnvLookup& aEnv,
             []() { return std::chrono::steady_clock::now(); },
             aHooks.mMaxFileBytes,
             embeddedStaticFiles(),
-            TAXBROKER_VERSION,
+            buildVersion(),
             ProfileStore::forUser(aEnv));
 
         // A TBR_LAUNCH_FILE folder is made by the caller (Docker: scripts/run.sh).

@@ -299,6 +299,15 @@ body {
   font-weight: 600;
 }
 
+.advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.advanced .field {
+  margin-top: var(--space-3);
+}
+
 .other-files .file-area {
   margin-top: var(--space-3);
 }

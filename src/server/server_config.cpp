@@ -32,19 +32,6 @@ std::optional<std::uint16_t> parsePort(std::string_view aText) {
 
 } // namespace
 
-EnvLookup systemEnvironment() {
-    return [](std::string_view aName) -> std::optional<std::string> {
-        const char* value = std::getenv(std::string(aName).c_str());
-
-        if (value == nullptr)
-        {
-            return std::nullopt;
-        }
-
-        return std::string(value);
-    };
-}
-
 std::variant<ServerConfig, std::string> readServerConfig(const EnvLookup& aEnv) {
     ServerConfig config;
     config.mHost = "127.0.0.1";

@@ -4,14 +4,18 @@
 #include "output_files.hpp"
 #include "taxpayer_file.hpp"
 #include "cli_text.hpp"
+#include "taxbroker/api/answer_json.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/api/report_files.hpp"
 #include "taxbroker/application_request.hpp"
 #include "taxbroker/application_run.hpp"
 #include "taxbroker/application_result.hpp"
+#include "taxbroker/build_info.hpp"
 #include "taxbroker/currency.hpp"
 #include "taxbroker/decision_session.hpp"
+#include "taxbroker/exception_kind.hpp"
 #include "taxbroker/input_file.hpp"
+#include "taxbroker/logging.hpp"
 #include "taxbroker/official_rates.hpp"
 #include "taxbroker/reference_catalogue.hpp"
 #include "taxbroker/text_format.hpp"
@@ -48,8 +52,8 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--developer-export] [--ecb-rates FILE...] [--reference-files FILE...]
-                   --out DIR --trade-republic FILE...
+                   [--developer-export] [--log-level LEVEL] [--ecb-rates FILE...]
+                   [--reference-files FILE...] --out DIR --trade-republic FILE...
   taxbroker report --help
   taxbroker --help
 
@@ -62,8 +66,8 @@ Run 'taxbroker report --help' for the details.
 constexpr std::string_view kReportHelp =
     R"(Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--developer-export] [--ecb-rates FILE...] [--reference-files FILE...]
-                   --out DIR --trade-republic FILE...
+                   [--developer-export] [--log-level LEVEL] [--ecb-rates FILE...]
+                   [--reference-files FILE...] --out DIR --trade-republic FILE...
 
 Writes the forms Doh-KDVP (capital gains from selling shares and funds), Doh-Div (dividends),
 Doh-DHO (bank-deposit interest) and Doh-Obr (other interest and bond coupons) for one year
@@ -83,6 +87,10 @@ Options:
                      is written with that sale as the files say, no F10 and a negative stock
                      where needed. eDavki may reject it or the tax may be wrong. Cannot be
                      used with --no-input.
+  --log-level LEVEL  How much the log file holds for this run: error (the default), warn, info
+                     or debug. It wins over TBR_LOG_LEVEL. The log never holds amounts, names,
+                     ISINs, file names or paths. To report a problem, run again with
+                     --log-level info and send the log file (see docs/logging.md).
   --out DIR          The folder for the output files. It is created if it is missing.
   -h, --help         Show this help.
 
@@ -258,6 +266,7 @@ struct ReportOptions {
     FilingType mFilingType{FilingType::Original};
     bool mAskQuestions{true}; ///< False with --no-input: the open questions stay open.
     bool mDeveloperMode{};    ///< --developer-export: offers the unsafe export of missing history.
+    std::optional<spdlog::level::level_enum> mLogLevel; ///< --log-level; empty keeps the default.
     std::filesystem::path mOutputDirectory;
     std::vector<std::filesystem::path> mTradeRepublicPaths; ///< The --trade-republic files.
     std::vector<std::filesystem::path> mEcbRatePaths;       ///< The --ecb-rates files.
@@ -301,6 +310,7 @@ parseReportArguments(std::span<const std::string> aArguments) {
     std::optional<std::string> yearText;
     std::optional<std::string> taxpayerText;
     std::optional<std::string> outputText;
+    std::optional<std::string> logLevelText;
     bool selfReport = false;
     bool noInput = false;
     bool developerExport = false;
@@ -408,6 +418,10 @@ parseReportArguments(std::span<const std::string> aArguments) {
         {
             target = &outputText;
         }
+        else if (argument == "--log-level")
+        {
+            target = &logLevelText;
+        }
         else
         {
             // Only the name before "=", so a value such as a folder path is never printed.
@@ -461,6 +475,16 @@ parseReportArguments(std::span<const std::string> aArguments) {
     if (options.mTradeRepublicPaths.empty())
     {
         return UsageError{"Give at least one Trade Republic CSV file with --trade-republic."};
+    }
+
+    if (logLevelText.has_value())
+    {
+        options.mLogLevel = parseSelectableLogLevel(*logLevelText);
+
+        if (!options.mLogLevel.has_value())
+        {
+            return UsageError{"--log-level must be error, warn, info or debug."};
+        }
     }
 
     options.mYear = *year;
@@ -1566,6 +1590,12 @@ bool isFileOrMissing(const std::filesystem::path& aPath) {
     return !std::filesystem::exists(status) || std::filesystem::is_regular_file(status);
 }
 
+/// One warning that says where the run stopped: a fixed word, never a file name or a message
+/// text. The reason for the user is in the error output.
+void logReportStopped(std::string_view aReason) {
+    LOG_WARNING("Report stopped: {}", aReason);
+}
+
 /// Asks the open questions, writes the output files and the summary, and returns the exit code.
 int runReport(const ReportOptions& aOptions,
               ApplicationRun& aRun,
@@ -1581,11 +1611,14 @@ int runReport(const ReportOptions& aOptions,
     // calculates nothing.
     const auto& result = aRun.result();
 
+    api::logResult(result);
+
     std::error_code error;
     std::filesystem::create_directories(aOptions.mOutputDirectory, error);
 
     if (error)
     {
+        logReportStopped("output_folder");
         aErr << "taxbroker: the output folder cannot be created.\n";
         return kExitFailure;
     }
@@ -1610,6 +1643,7 @@ int runReport(const ReportOptions& aOptions,
 
         if (generated && !isFileOrMissing(xmlPath))
         {
+            logReportStopped("output_file");
             aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear, unsafe)
                  << " cannot be written.\n";
             return kExitFailure;
@@ -1620,6 +1654,7 @@ int runReport(const ReportOptions& aOptions,
 
     if (!isFileOrMissing(summaryPath))
     {
+        logReportStopped("output_file");
         aErr << "taxbroker: " << summaryFileName(aOptions.mYear) << " cannot be written.\n";
         return kExitFailure;
     }
@@ -1654,6 +1689,7 @@ int runReport(const ReportOptions& aOptions,
         if (!writeFile(xmlTemporary, report.mXml.value()))
         {
             removeTemporaryFiles(temporaries);
+            logReportStopped("output_file");
             aErr << "taxbroker: " << xmlFileName(form, aOptions.mYear, report.mUnsafe)
                  << " cannot be written.\n";
             return kExitFailure;
@@ -1669,6 +1705,7 @@ int runReport(const ReportOptions& aOptions,
     if (!writeFile(summaryTemporary, summary))
     {
         removeTemporaryFiles(temporaries);
+        logReportStopped("output_file");
         aErr << "taxbroker: " << summaryFileName(aOptions.mYear) << " cannot be written.\n";
         return kExitFailure;
     }
@@ -1681,6 +1718,7 @@ int runReport(const ReportOptions& aOptions,
 
     if (!replaced.mReplaced)
     {
+        logReportStopped("output_replace");
         aErr << "taxbroker: the output files cannot be replaced";
 
         if (!replaced.mNotRestored.empty())
@@ -1778,6 +1816,8 @@ bool readInputFiles(const std::vector<std::filesystem::path>& aPaths,
                      << kHelpHint;
             }
 
+            logReportStopped("input_file");
+
             return false;
         }
 
@@ -1807,8 +1847,17 @@ int runReportCommand(std::span<const std::string> aArguments,
 
     const auto& options = std::get<ReportOptions>(parsed);
 
+    // The option wins over TBR_LOG_LEVEL. A usage error above logs nothing: there is no run yet.
+    if (options.mLogLevel.has_value())
+    {
+        setLogLevel(*options.mLogLevel);
+    }
+
+    logProgramStart("report");
+
     if (const auto problem = checkInputFiles(options))
     {
+        logReportStopped("input_files");
         aErr << "taxbroker: " << problem->mMessage << '\n' << kHelpHint;
         return kExitFailure;
     }
@@ -1817,6 +1866,7 @@ int runReportCommand(std::span<const std::string> aArguments,
 
     if (const auto* problem = std::get_if<TaxpayerFileError>(&taxpayer))
     {
+        logReportStopped("taxpayer_file");
         aErr << "taxbroker: the taxpayer file " << fileNameOf(options.mTaxpayerPath)
              << " is not valid: " << problem->mMessage << '\n'
              << kHelpHint;
@@ -1860,6 +1910,7 @@ int runReportCommand(std::span<const std::string> aArguments,
 
     if (const auto* fault = std::get_if<ApplicationInputFault>(&started))
     {
+        logReportStopped("input_fault (" + api::inputFaultLogReason(*fault) + ")");
         writeInputFault(*fault, aErr);
 
         return kExitFailure;
@@ -1869,6 +1920,10 @@ int runReportCommand(std::span<const std::string> aArguments,
 }
 
 } // namespace
+
+void logUnexpectedFailure() {
+    LOG_ERROR("Report failed unexpectedly ({})", currentExceptionKind());
+}
 
 int runCli(std::span<const std::string> aArguments,
            std::istream& aIn,
@@ -1901,6 +1956,7 @@ int runCli(std::span<const std::string> aArguments,
         return runReportCommand(aArguments.subspan(1), aIn, aOut, aErr);
     } catch (const std::exception& exception)
     {
+        logUnexpectedFailure();
         aErr << "taxbroker: the report failed unexpectedly: " << exception.what() << '\n';
         return kExitFailure;
     }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "taxbroker/state_folder.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -9,12 +11,6 @@
 #include <variant>
 
 namespace taxbroker {
-
-/// Looks up an environment variable. The tests pass a map instead of the real environment.
-using EnvLookup = std::function<std::optional<std::string>(std::string_view)>;
-
-/// The lookup of the real process environment.
-[[nodiscard]] EnvLookup systemEnvironment();
 
 /// The server options that come from the environment.
 struct ServerConfig {

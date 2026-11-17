@@ -1,3 +1,4 @@
+#include "../support/log_capture.hpp"
 #include "utils/date_utils.hpp"
 #include "xml/report_xml_stage.hpp"
 
@@ -6,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -460,6 +462,29 @@ TEST(ReportXmlStageTest, AWriterThatThrowsSomethingElseFailsOnlyItsForm) {
     expectOneError(result, kOther, ProcessingDiagnosticCode::XmlSerializationFailed, "");
 
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+}
+
+TEST(ReportXmlStageTest, AWriterThatThrowsLogsTheKindNotTheText) {
+    LogCapture log;
+    ApplicationResultInput input{.mReportingYear = 2025};
+
+    // The writer throws with a text that holds a value and a path.
+    writeGuardedXml(input, kCapital, "Doh-KDVP", []() -> XmlWriteResult {
+        throw std::runtime_error("value 123.45 in /home/someone/file.csv");
+    });
+
+    EXPECT_EQ(log.count("XML writer of Doh-KDVP stopped (std::runtime_error)"), 1U);
+    EXPECT_EQ(log.count("123.45"), 0U);
+    EXPECT_EQ(log.count("/home/someone"), 0U);
+}
+
+TEST(ReportXmlStageTest, AWriterThatThrowsAnIntLogsTheUnknownKind) {
+    LogCapture log;
+    ApplicationResultInput input{.mReportingYear = 2025};
+
+    writeGuardedXml(input, kOther, "Doh-Obr", []() -> XmlWriteResult { throw 42; });
+
+    EXPECT_EQ(log.count("XML writer of Doh-Obr stopped (unknown)"), 1U);
 }
 
 TEST(ReportXmlStageTest, AnAbsentOrEmptyModelWritesNothing) {

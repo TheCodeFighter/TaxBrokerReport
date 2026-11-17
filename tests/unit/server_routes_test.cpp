@@ -1,6 +1,7 @@
 #include "../support/log_capture.hpp"
 #include "server/routes.hpp"
 #include "server/static_files.hpp"
+#include "taxbroker/logging.hpp"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -528,6 +529,37 @@ TEST_F(ServerRoutesTest, VersionWithTheSessionIsJson) {
     // The version the routes were made with, not the project version, so a release needs no
     // test change.
     EXPECT_EQ(response.mBody, R"({"version":"9.8.7"})");
+}
+
+TEST_F(ServerRoutesTest, LogLevelNeedsTheSession) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/log-level",
+                              .mHeaders = {kHost, kOrigin, kClient},
+                              .mBody = R"({"level":"debug"})"};
+    LogCapture log;
+    setLogLevel(spdlog::level::warn);
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 401U);
+    EXPECT_EQ(currentLogLevel(), spdlog::level::warn); // the level did not change
+    EXPECT_EQ(log.count("Request refused: 401 no_session"), 1U);
+}
+
+TEST_F(ServerRoutesTest, LogLevelWithTheSessionIsRoutedToTheLevelRoute) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/log-level",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie},
+                              .mBody = R"({"level":"info"})"};
+    LogCapture log;
+    setLogLevel(spdlog::level::err);
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 200U);
+    EXPECT_EQ(response.mBody, R"({"level":"info"})");
+    expectSecurityHeaders(response);
+    EXPECT_EQ(currentLogLevel(), spdlog::level::info);
 }
 
 TEST_F(ServerRoutesTest, PostToVersionIsNotAllowed) {

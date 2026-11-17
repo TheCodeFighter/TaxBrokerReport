@@ -1,4 +1,6 @@
 #include "taxbroker/api/application_result_json.hpp"
+
+#include "taxbroker/logging.hpp"
 #include "json_strings.hpp"
 #include "taxbroker/application_result.hpp"
 #include "taxbroker/currency.hpp"
@@ -1594,6 +1596,11 @@ std::string resultLogDetails(const ApplicationResult& aResult) {
     return "requests " + list(requests) + "; errors " + list(errors) + "; warnings " +
            list(warnings) + "; excluded " + list(excluded) + "; no data " + list(noData) +
            "; answered " + list(resolved);
+}
+
+void logResult(const ApplicationResult& aResult) {
+    LOG_INFO("Run result: {}", resultLogSummary(aResult));
+    LOG_INFO("Run details: {}", resultLogDetails(aResult));
 }
 
 std::string serializeApplicationResultJson(const ApplicationResult& aResult, int aIndent) {

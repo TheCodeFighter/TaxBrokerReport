@@ -28,6 +28,11 @@ inline constexpr unsigned kApplicationResultSchemaVersion = 2;
 /// [none]; answered [none]`. Only fixed words and counts.
 [[nodiscard]] std::string resultLogDetails(const ApplicationResult& aResult);
 
+/// Writes the result of a step to the log as two info lines, `Run result: <summary>` and
+/// `Run details: <details>`. Only fixed words and counts, so the lines can be sent with a bug
+/// report.
+void logResult(const ApplicationResult& aResult);
+
 /// Produces the application result object that the HTTP API returns.
 [[nodiscard]] std::string serializeApplicationResultJson(const ApplicationResult& aResult,
                                                          int aIndent = -1);
