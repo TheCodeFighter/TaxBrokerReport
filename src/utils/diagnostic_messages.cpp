@@ -38,8 +38,9 @@ constexpr std::array kRowKind{
 constexpr std::array kField{
     MessageParamDefinition{"field", MessageParamKind::Text},
 };
-constexpr std::array kCountry{
-    MessageParamDefinition{"country", MessageParamKind::Text},
+constexpr std::array kIsinAndDate{
+    MessageParamDefinition{"isin", MessageParamKind::Text},
+    MessageParamDefinition{"date", MessageParamKind::Text},
 };
 constexpr std::array kDefaultHour{
     MessageParamDefinition{"defaultHour", MessageParamKind::Number},
@@ -122,11 +123,6 @@ constexpr std::array kCurrencyDateAndEuroDate{
     MessageParamDefinition{"currency", MessageParamKind::Text},
     MessageParamDefinition{"date", MessageParamKind::Text},
     MessageParamDefinition{"euroDate", MessageParamKind::Text},
-};
-constexpr std::array kCurrencyDateAndRateDate{
-    MessageParamDefinition{"currency", MessageParamKind::Text},
-    MessageParamDefinition{"date", MessageParamKind::Text},
-    MessageParamDefinition{"rateDate", MessageParamKind::Text},
 };
 constexpr std::array kYearAndFirstDate{
     MessageParamDefinition{"year", MessageParamKind::Number},
@@ -350,9 +346,6 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::MissingExchangeRateReplacedByEur,
                       "missing_exchange_rate.replaced_by_eur",
                       kCurrencyDateAndEuroDate},
-    MessageDefinition{MessageKey::OfficialRateFromNearbyDate,
-                      "official_rate_from_nearby_date",
-                      kCurrencyDateAndRateDate},
     MessageDefinition{MessageKey::OfficialRateFileIncompleteStartsLate,
                       "official_rate_file_incomplete.starts_late",
                       kYearAndFirstDate},
@@ -420,14 +413,19 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::DividendPayerNotFound, "dividend_payer_not_found", {}},
     MessageDefinition{MessageKey::ForeignTaxEvidenceRequired, "foreign_tax_evidence_required", {}},
     MessageDefinition{MessageKey::InterestPayerNotFound, "interest_payer_not_found", {}},
+    MessageDefinition{MessageKey::InterestPayerNumberMissing, "interest_payer_number_missing", {}},
     MessageDefinition{MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
     MessageDefinition{MessageKey::SlovenianCouponTax, "slovenian_coupon_tax", {}},
+    MessageDefinition{MessageKey::CouponAccruedInterestNotDeducted,
+                      "coupon_accrued_interest_not_deducted",
+                      kIsinAndDate},
+    MessageDefinition{MessageKey::BondSaleAccruedInterestNotReported,
+                      "bond_sale_accrued_interest_not_reported",
+                      {}},
     MessageDefinition{
         MessageKey::SlovenianPayerTaxNumberMissing, "slovenian_payer_tax_number_missing", {}},
     MessageDefinition{
         MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
-    MessageDefinition{
-        MessageKey::TreatyClaimDetailsMissing, "treaty_claim_details_missing", kCountry},
     MessageDefinition{MessageKey::DeveloperExportUnavailableUnitValueTooLarge,
                       "developer_export_unavailable.unit_value_too_large",
                       {}},

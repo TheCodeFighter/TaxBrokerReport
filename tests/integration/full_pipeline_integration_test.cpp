@@ -174,9 +174,10 @@ TEST(FullPipelineIntegrationTest, TwoOverlappingExportsGiveFourGoldenFormsFor202
     EXPECT_EQ(result.mExcludedItems[1].mIsin, "XS0000000002");
     EXPECT_EQ(result.mExcludedItems[1].mReason, ExcludedReason::DebtSecurity);
 
-    // Two warnings: Doh-DHO holds only the imported interest (the answer was above_limit), and the
-    // payer of the bond is not in the reference files.
-    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    // Three warnings: Doh-DHO holds only the imported interest (the answer was above_limit), the
+    // payer of the bond is not in the reference files, and the first coupon of the bond
+    // (2024-02-14) follows its purchase of 2024-01-10, so its accrued interest is not deducted.
+    ASSERT_EQ(result.mDiagnostics.size(), 3U);
     EXPECT_EQ(result.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports,
               (std::vector{ReportType::BankDepositInterest}));
@@ -186,6 +187,10 @@ TEST(FullPipelineIntegrationTest, TwoOverlappingExportsGiveFourGoldenFormsFor202
     EXPECT_EQ(result.mDiagnostics[1].mAffectedReports, (std::vector{ReportType::OtherInterest}));
     EXPECT_EQ(result.mDiagnostics[1].mMessageKey, MessageKey::InterestPayerNotFound);
     EXPECT_EQ(result.mDiagnostics[1].mIsin, "XS0000000002");
+    EXPECT_EQ(result.mDiagnostics[2].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics[2].mAffectedReports, (std::vector{ReportType::OtherInterest}));
+    EXPECT_EQ(result.mDiagnostics[2].mMessageKey, MessageKey::CouponAccruedInterestNotDeducted);
+    EXPECT_EQ(result.mDiagnostics[2].mIsin, "XS0000000002");
 
     // Doh-DHO: 0.33 + 0.33 + 0.34 = EUR 1.00; the two payments in both files count once.
     const auto& deposit = result.report(ReportType::BankDepositInterest);
@@ -271,18 +276,22 @@ TEST(FullPipelineIntegrationTest, EitherFileOrderGivesTheSameResult) {
     EXPECT_EQ(*left.report(ReportType::OtherInterest).mXml,
               *right.report(ReportType::OtherInterest).mXml);
 
-    // The two warnings are the same, in another order: the first sort key after the stage is the
+    // The three warnings are the same, in another order: the first sort key after the stage is the
     // earliest source file, so the file order decides which warning comes first.
-    ASSERT_EQ(left.mDiagnostics.size(), 2U);
-    ASSERT_EQ(right.mDiagnostics.size(), 2U);
+    ASSERT_EQ(left.mDiagnostics.size(), 3U);
+    ASSERT_EQ(right.mDiagnostics.size(), 3U);
 
     EXPECT_EQ(left.mDiagnostics[0].mMessageKey, MessageKey::DepositInterestAddOtherBanks);
     EXPECT_EQ(left.mDiagnostics[1].mMessageKey, MessageKey::InterestPayerNotFound);
     EXPECT_EQ(left.mDiagnostics[1].mIsin, "XS0000000002");
+    EXPECT_EQ(left.mDiagnostics[2].mMessageKey, MessageKey::CouponAccruedInterestNotDeducted);
+    EXPECT_EQ(left.mDiagnostics[2].mIsin, "XS0000000002");
 
     EXPECT_EQ(right.mDiagnostics[0].mMessageKey, MessageKey::InterestPayerNotFound);
     EXPECT_EQ(right.mDiagnostics[0].mIsin, "XS0000000002");
-    EXPECT_EQ(right.mDiagnostics[1].mMessageKey, MessageKey::DepositInterestAddOtherBanks);
+    EXPECT_EQ(right.mDiagnostics[1].mMessageKey, MessageKey::CouponAccruedInterestNotDeducted);
+    EXPECT_EQ(right.mDiagnostics[1].mIsin, "XS0000000002");
+    EXPECT_EQ(right.mDiagnostics[2].mMessageKey, MessageKey::DepositInterestAddOtherBanks);
 
     // The open request is the deposit interest total in both.
     ASSERT_EQ(left.mRequests.size(), 1U);

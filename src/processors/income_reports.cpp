@@ -36,11 +36,7 @@ void setPayer(IncomeRowFacts& aRow, const IncomePayer& aPayer) {
 void setTreaty(IncomeRowFacts& aRow, const std::optional<TreatyClaim>& aClaim) {
     if (aClaim)
     {
-        if (!aClaim->mStatement)
-        {
-            aRow.mTreaty = TreatyClaimKind::ClaimedWithoutText;
-        }
-        else if (aClaim->mCatalogueRow)
+        if (aClaim->mCatalogueRow)
         {
             aRow.mTreaty = TreatyClaimKind::ReferenceText;
             aRow.mTreatyRow = aClaim->mCatalogueRow;

@@ -409,7 +409,7 @@ TEST(TradeConversionTest, ATradeWithoutARateStaysForeignAndKeepsTheReason) {
               (std::vector<SourceReference>{source(2, "synthetic-buy-1")}));
 }
 
-TEST(TradeConversionTest, ARateFromAnEarlierDayConvertsWithOneWarning) {
+TEST(TradeConversionTest, ARateFromAnEarlierDayConvertsWithoutAWarning) {
     OfficialRateTable table;
     addFile2025(table);
     addRate(table, "USD", "2025-01-10", 125'000'000, 3); // Friday, 1 EUR = 1.25 USD
@@ -435,13 +435,45 @@ TEST(TradeConversionTest, ARateFromAnEarlierDayConvertsWithOneWarning) {
                   .mTransactions.at(0)
                   .mUnitPrice,
               2'400'000'000);
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
-              ProcessingDiagnosticCode::OfficialRateFromNearbyDate);
+    EXPECT_TRUE(result.mDiagnostics.empty());
     ASSERT_EQ(result.mUsedRates.size(), 1U);
     EXPECT_EQ(result.mUsedRates.at(0).mTaxDate, date("2025-01-11"));
     EXPECT_EQ(result.mUsedRates.at(0).mRate.mObservationDate, date("2025-01-10"));
+}
+
+TEST(TradeConversionTest, AFileThatEndsEarlyConvertsWithItsWarning) {
+    OfficialRateTable table;
+    // The file of 2025 ends on 2025-12-29, two days before the year does.
+    table.mFiles.push_back(OfficialRateFile{.mYear = 2025,
+                                            .mFirstDate = date("2025-01-02"),
+                                            .mLastDate = date("2025-12-29")});
+    addRate(table, "USD", "2025-12-29", 125'000'000, 3); // 1 EUR = 1.25 USD
+    MergedStatement statement;
+    statement.mPresentation.mTradeInstruments = {{
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = date("2025-12-31"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 3'000'000'000, // USD 30
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::USD},
+            },
+    }};
+
+    const auto result = convertCapitalTrades(statement, ledger2025(), table);
+
+    ASSERT_TRUE(result.mConvertedStatement.has_value());
+    // USD 30 / 1.25 = EUR 24.
+    EXPECT_EQ(result.mConvertedStatement->mPresentation.mTradeInstruments.at(0)
+                  .mTransactions.at(0)
+                  .mUnitPrice,
+              2'400'000'000);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::OfficialRateFileIncomplete);
 }
 
 TEST(TradeConversionTest, APriceThatDoesNotFitStaysForeignWithAnOverflowError) {

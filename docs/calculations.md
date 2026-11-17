@@ -193,7 +193,7 @@ settled Slovenian tax and foreign-tax relief").
 The user copies the rate that Banka Slovenije shows as valid for that currency and date. This also
 covers a date for which the site uses its applicable daily or monthly rate. The app must not
 interpolate rates or silently choose an average, annual or current rate. The only other rate it
-takes by itself is the last earlier ECB rate when the date has none, with a visible warning (see
+takes by itself is the last earlier ECB rate when the date has none (see
 "Lookup" under "Official ECB rate files").
 
 ## Supported currencies
@@ -321,14 +321,15 @@ rate** for the currency, at most 4 calendar days back (the longest gap is Good F
 Monday). Friday's rate serves a Saturday and a Sunday. This applies only to a day on which the
 ECB published no rate at all: if the loaded files have rates for other currencies on that day,
 the currency itself was stopped and no earlier rate is taken. It never takes a later rate: a rate
-published after the event was not known on that day. Each such rate gets a visible warning
-`official_rate_from_nearby_date` that names the currency, the date and the rate's own date. The
-rate is still an official ECB rate, and its provenance keeps its own observation date.
+published after the event was not known on that day. The rate is still an official ECB rate and
+gives no warning: its provenance keeps its own observation date.
 
-The rule follows the general practice for a day without a fixing: the latest rate published at
-that time (for example Article 91(2) of the VAT Directive 2006/112/EC, "the latest exchange rate
-published by the European Central Bank"). It is **unconfirmed** for the Slovenian forms: no FURS
-instruction or *Banka Slovenije* page states what to do, so it needs a FURS answer.
+The rule is confirmed by FURS in a written answer to the developer contact (2026-11-17): the rate
+is the last ECB (*Banka Slovenije*) rate published on or before the event date, so Friday's rate
+serves a Saturday and a Sunday, and the last working day before a TARGET holiday serves the
+holiday. It also follows the general practice for a day without a fixing (for example Article
+91(2) of the VAT Directive 2006/112/EC, "the latest exchange rate published by the European
+Central Bank").
 
 A date still has no rate, and the report that needs it is blocked with `missing_exchange_rate`,
 when:

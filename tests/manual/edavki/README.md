@@ -357,13 +357,11 @@ scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json --no-input \
 ```
 
 Doh-Div row: USD 12.50 / 1.25 = `Value` **10.00**, `ForeignTax` 0.00, date 2025-03-15. The summary
-has the warning `official_rate_from_nearby_date` and lists `USD 2025-03-15 … (rate of 2025-03-14)`.
-The share has an imaginary ISIN (`XX0000000010`), so the row has no payer facts and a second
-warning says to complete them in eDavki.
+lists `USD 2025-03-15 … (rate of 2025-03-14)` and has no rate warning. The share has an imaginary
+ISIN (`XX0000000010`), so the row has no payer facts and a warning says to complete them in eDavki.
 
 Checks: eDavki imports a dividend dated on a Saturday; the empty payer facts are the only critical
-content error. (Whether FURS accepts the rate of the day
-before is a separate question to FURS, not tested by a draft.)
+content error. (FURS confirmed in writing that the rate of the last day before is the right one.)
 
 ### E3: Doh-Obr with `ReliefStatement` `DA`
 

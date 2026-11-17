@@ -720,14 +720,44 @@ TEST(OtherInterestFailureTest, ARateFromAnEarlierDayKeepsItsWarningAndMakesTheRo
     orderChronologically(statement);
     ObrRun run{statement, catalogue, rates};
 
-    // The rate of the day before is used with a warning; USD 10.00 / 1.0880 = EUR 9.1912.
-    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode,
-              ProcessingDiagnosticCode::OfficialRateFromNearbyDate);
+    // The rate of the day before is used without a warning; USD 10.00 / 1.0880 = EUR 9.1912.
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
     ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
     EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 91'912);
     EXPECT_TRUE(run.result().mRequests.empty());
+}
+
+TEST(OtherInterestFailureTest, AFileThatEndsEarlyGivesItsWarningAndStillMakesTheRow) {
+    const auto catalogue = catalogueOf(kFrenchIssuers);
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    // The file of 2025 ends on 2025-12-29, two days before the year does.
+    rates.mFiles.push_back(OfficialRateFile{.mYear = 2025,
+                                            .mFirstDate = day("2025-01-02"),
+                                            .mLastDate = day("2025-12-29")});
+    addRate(rates, "USD", "2025-12-29", 108'800'000, 2); // 1 EUR = 1.0880 USD
+    statement.mPresentation.mInterestInstruments = {
+        {.mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mInterestType = InterestType::BondInterest,
+         .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-12-31"),
+                                          .mSources = {source(2, "synthetic-int-1")}},
+                            .mGrossAmount = 100'000, // USD 10.00, after the end of the file
+                            .mTaxPaid = 0,
+                            .mCurrency = Currency::USD,
+                            .mTaxCurrency = Currency::USD}}},
+    };
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 91'912); // USD 10.00 / 1.0880
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::OfficialRateFileIncomplete);
 }
 
 // --- The bond type ---
@@ -794,7 +824,12 @@ TEST(OtherInterestFailureTest, ASoldBondAsksItsTypeAndHoldsBackItsCouponsWithout
     EXPECT_EQ(run.obrStatus(), ReportStatus::NeedsInput);
 }
 
-TEST(OtherInterestFailureTest, AnOrdinaryBondKeepsItsCouponsAsBefore) {
+TEST(OtherInterestFailureTest,
+     AnOrdinaryBondWithASaleKeepsItsCouponsAndWarnsAboutTheAccruedInterest) {
+    // Bond A (XX0000000010): bought 2025-01-10, coupon EUR 5.00 on 2025-03-14, 400 units sold on
+    // 2025-06-02. The accrued interest received at the sale is Doh-Obr income that nothing
+    // calculates yet: both coupons stay and bond A gets one warning. Bond B (XX0000000028) has only
+    // a coupon of EUR 8.00 on 2025-04-14 and no warning.
     const auto catalogue = catalogueOf(kFrenchIssuers);
     OfficialRateTable rates;
     MergedStatement statement;
@@ -819,17 +854,30 @@ TEST(OtherInterestFailureTest, AnOrdinaryBondKeepsItsCouponsAsBefore) {
                  .mCurrency = Currency::EUR},
             },
     }};
-    statement.mPresentation.mInterestInstruments = {{
-        .mName = "Synthetic Bond A",
-        .mIsin = "XX0000000010",
-        .mInterestType = InterestType::BondInterest,
-        .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-14"),
-                                         .mSources = {source(3, "synthetic-int-1")}},
-                           .mGrossAmount = 50'000, // EUR 5.00
-                           .mTaxPaid = 0,
-                           .mCurrency = Currency::EUR,
-                           .mTaxCurrency = Currency::EUR}},
-    }};
+    statement.mPresentation.mInterestInstruments = {
+        {
+            .mName = "Synthetic Bond A",
+            .mIsin = "XX0000000010",
+            .mInterestType = InterestType::BondInterest,
+            .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-03-14"),
+                                             .mSources = {source(3, "synthetic-int-1")}},
+                               .mGrossAmount = 50'000, // EUR 5.00
+                               .mTaxPaid = 0,
+                               .mCurrency = Currency::EUR,
+                               .mTaxCurrency = Currency::EUR}},
+        },
+        {
+            .mName = "Synthetic Bond B",
+            .mIsin = "XX0000000028",
+            .mInterestType = InterestType::BondInterest,
+            .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-04-14"),
+                                             .mSources = {source(5, "synthetic-int-2")}},
+                               .mGrossAmount = 80'000, // EUR 8.00
+                               .mTaxPaid = 0,
+                               .mCurrency = Currency::EUR,
+                               .mTaxCurrency = Currency::EUR}},
+        },
+    };
 
     orderChronologically(statement);
     ObrRun run{statement, catalogue, rates};
@@ -837,10 +885,27 @@ TEST(OtherInterestFailureTest, AnOrdinaryBondKeepsItsCouponsAsBefore) {
     const auto rejections = run.answerFirst(BondTypeAnswer{BondType::Ordinary});
 
     EXPECT_TRUE(rejections.empty());
-    EXPECT_TRUE(run.result().mRequests.empty());
-    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
-    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+
+    // Both coupons are rows. Bond A has the sale warning, and its coupon follows the purchase of
+    // 2025-01-10, so it also has the coupon warning. Nothing blocks.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
     EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 50'000);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mGrossInterest, 80'000);
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 2U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(1).mCode,
+              ProcessingDiagnosticCode::CouponAccruedInterestNotDeducted);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(1).mContext.mIsin, std::optional<Isin>{"XX0000000010"});
+
+    const auto& warning = run.mLast.mDiagnostics.at(0);
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, ProcessingDiagnosticCode::BondSaleAccruedInterestNotReported);
+    EXPECT_EQ(warning.mMessageKey,
+              std::optional<MessageKey>{MessageKey::BondSaleAccruedInterestNotReported});
+    EXPECT_EQ(warning.mContext.mIsin, std::optional<Isin>{"XX0000000010"});
+    EXPECT_EQ(warning.mContext.mAffectedReports,
+              std::vector<ReportType>{ReportType::OtherInterest});
+    EXPECT_TRUE(run.result().mRequests.empty());
     EXPECT_EQ(run.obrStatus(), ReportStatus::Generated);
 }
 
@@ -1143,17 +1208,14 @@ TEST(OtherInterestFailureTest, AnOrdinarySlovenianBondReportsItsCouponWithTheIss
     OfficialRateTable rates;
     MergedStatement statement;
 
-    statement.mPresentation.mTradeInstruments = {{
-        .mName = "Synthetic Bond A",
-        .mIsin = "XX0000000010",
-        .mAssetClass = AssetClass::Bond,
-        .mTransactions = {{.mMetadata = {.mTaxDate = day("2025-06-02"),
-                                         .mSources = {source(4, "synthetic-sell-1")}},
-                           .mTradeSide = TradeSide::Sell,
-                           .mUnitPrice = 10'000'000'000, // EUR 100
-                           .mUnits = 400 * kOneUnit,
-                           .mCurrency = Currency::EUR}},
-    }};
+    // The bond matured on 2025-09-30 (a maturity is asked about, a sale would stop the bond).
+    statement.mPresentation.mBondRedemptions = {
+        {.mMetadata = {.mTaxDate = day("2025-09-30"), .mSources = {source(4, "synthetic-mat-1")}},
+         .mKind = BondRedemptionKind::Maturity,
+         .mName = "Synthetic Bond A",
+         .mIsin = "XX0000000010",
+         .mUnits = 1000 * kOneUnit},
+    };
     statement.mPresentation.mInterestInstruments = {{
         .mName = "Synthetic Bond A",
         .mIsin = "XX0000000010",
@@ -1873,6 +1935,47 @@ TEST(OtherInterestFailureTest, ExcludingBrokersKeepsCouponsAndTheCashInterestOfO
     ASSERT_EQ(report.mRows.size(), 2U);
     EXPECT_EQ(report.mRows.at(0).mGrossInterest, 20'000);
     EXPECT_EQ(report.mRows.at(1).mGrossInterest, 30'000);
+}
+
+TEST(OtherInterestFailureTest, AnOrdinaryBondOfASlovenianIssuerWithASaleGivesNoSaleWarning) {
+    // Bond A (XX0000000010) has a payer row with country SI: bought 2025-01-10, 400 units sold on
+    // 2025-06-02, no coupon. The accrued interest received at the sale is not taxed for a bond
+    // issued in Slovenia after 1 January 2005 and the issue date is not known, so there is no
+    // sale warning. Nothing blocks.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer SI,TAX-S,1 Main Street,SI,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+
+    statement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Bond A",
+        .mIsin = "XX0000000010",
+        .mAssetClass = AssetClass::Bond,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 10'000'000'000, // EUR 100
+                 .mUnits = 1000 * kOneUnit,
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-06-02"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 10'000'000'000, // EUR 100
+                 .mUnits = 400 * kOneUnit,
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    ObrRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(BondTypeAnswer{BondType::Ordinary});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+    EXPECT_TRUE(run.result().mRequests.empty());
 }
 
 } // namespace

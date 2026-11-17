@@ -69,14 +69,15 @@ TEST(SupportReportJsonUnitTest, ADiagnosticKeepsItsFieldAndDateAndDropsTheNamePa
     EXPECT_EQ(report.dump().find("Private Name"), std::string::npos);
 }
 
-TEST(SupportReportJsonUnitTest, ACountryParameterStaysInTheMessageParams) {
+TEST(SupportReportJsonUnitTest, AYearAndADateParameterStayInTheMessageParams) {
     ApplicationResultInput input{.mReportingYear = 2024};
     auto message =
-        makeDiagnosticMessage(MessageKey::TreatyClaimDetailsMissing, {textParam("country", "US")});
+        makeDiagnosticMessage(MessageKey::OfficialRateFileIncompleteStartsLate,
+                              {numberParam("year", 2024), textParam("firstDate", "2024-01-08")});
 
     input.mProcessingDiagnostics = {ProcessingDiagnostic{
         .mSeverity = DiagnosticSeverity::Warning,
-        .mCode = ProcessingDiagnosticCode::TreatyClaimDetailsMissing,
+        .mCode = ProcessingDiagnosticCode::OfficialRateFileIncomplete,
         .mContext = {.mStage = PipelineStage::FifoTax,
                      .mAffectedReports = {ReportType::OtherInterest}},
         .mMessage = std::move(message.mEnglish),
@@ -86,11 +87,12 @@ TEST(SupportReportJsonUnitTest, ACountryParameterStaysInTheMessageParams) {
 
     const Json report = serialize(ApplicationResultBuilder::build(std::move(input)));
 
-    // `country` is a country code, not a name, so it stays.
-    EXPECT_EQ(report["diagnostics"][0]["messageParams"], Json::parse(R"({"country": "US"})"));
+    // `year` and `firstDate` are not names, so they stay.
+    EXPECT_EQ(report["diagnostics"][0]["messageParams"],
+              Json::parse(R"({"year": 2024, "firstDate": "2024-01-08"})"));
     EXPECT_EQ(report["result"]["counts"]["warnings"], 1);
     EXPECT_EQ(report["result"]["counts"]["byCode"],
-              Json::parse(R"({"treaty_claim_details_missing": 1})"));
+              Json::parse(R"({"official_rate_file_incomplete": 1})"));
 }
 
 TEST(SupportReportJsonUnitTest, ADohObrFailureQuestionListsItsBrokerAndTheReasonCode) {

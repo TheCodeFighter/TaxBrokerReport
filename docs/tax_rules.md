@@ -673,7 +673,7 @@ Classify the legal instrument and income, not just the broker name or its CSV ca
 | IBKR cash interest | Other-interest category in Doh-Obr; no bank-deposit allowance. |
 | Ordinary bond coupons | Bond-interest category in Doh-Obr, also for a Slovenian issuer (see "Interest forms and the annual deposit allowance": the payer does not withhold on a listed bond); separate from broker cash interest in the model and summary. |
 | Ordinary debt-security disposals | No taxable capital gain or deductible capital loss in Doh-KDVP; retain the source and explain the exclusion. A bond is a *rule exclusion*: every bond with a purchase, sale or maturity row in the selected year gets an entry in `excludedItems` (no warning: a tax rule leaves it out on purpose) with the units bought, sold and matured and the maturity date, and it is skipped by FIFO, the corporate-action stage, the loss rule and the Doh-KDVP builder. A Trade Republic bond maturity, its cancellation and its payout (also a corrected one) are parsed as information-only redemption events (units out or back, amount paid or taken back, tax) and are never a sale (`architecture.md`, "Trade Republic bond rows"). Matured units are added up by sum (units out minus units back), never by row order. Bonds are a separate category outside capital gains: the application lists every bond and reports only the bond interest (coupons), in Doh-Obr. |
-| Discount or zero-coupon debt | Interest may arise on disposal or redemption; require instrument terms and acquisition data. Until these calculations are implemented, return `unsupported_tax_treatment` rather than silently excluding possible interest. A bond with a sale or maturity in the year asks its type (`ordinary`, or `discount_or_zero_coupon` meaning issued below its nominal value; the wording is unconfirmed against FURS): a discount or zero-coupon answer, or no answer, stops Doh-Obr for that bond (`diagnostics.md`, "Choosing whether to exclude failed other-interest ISINs"). |
+| Discount or zero-coupon debt | Interest may arise on disposal or redemption; require instrument terms and acquisition data. Until these calculations are implemented, return `unsupported_tax_treatment` rather than silently excluding possible interest. A bond with a sale or maturity in the year asks its type (`ordinary`, or `discount_or_zero_coupon` meaning issued below its nominal value; the wording is unconfirmed against FURS): a discount or zero-coupon answer, or no answer, stops Doh-Obr for that bond, while an ordinary bond with a sale only gets a warning, because the accrued interest received at a sale is Doh-Obr income that is not calculated yet (see "Accrued interest" in the Doh-Obr form contract; `diagnostics.md`, "Choosing whether to exclude failed other-interest ISINs"). |
 | Ordinary private crypto disposals | Left out of Doh-KDVP for every year: crypto never belongs in this form. Every crypto instrument with a trade or corporate-action row in the selected year gets an entry in `excludedItems` and no warning (a tax rule leaves it out on purpose; the summary tells the user to check whether a separate crypto return applies); it is skipped by every capital stage. The tax treatment of crypto disposals depends on the year and is unconfirmed here; confirm it against the official FURS guidance (below) before relying on it. Business activity and tokens qualifying as securities or derivatives are not covered by this exclusion. |
 | Derivatives | *Izvedeni finančni instrumenti* (options, futures, CFDs, leveraged products) have their own return (Doh-IFI) and rules. Not supported yet: `unsupported_tax_treatment` blocks the sale as for any unsupported class, until a dedicated processor and form exist. Trade Republic has none of them in scope; Interactive Brokers exports will (see "IBKR extension" in `plan.md`), so the IBKR parser must map them to the derivative class and the user is told that they are not reported. A resident who sold derivatives files Doh-IFI themselves. |
 | Unknown instruments and private-market events | Ask for classification and required facts; cash movements alone do not establish a purchase quantity or cost basis. |
@@ -825,9 +825,10 @@ A payer found by exact identifier, or several rows with the same facts, fills th
 every dividend row of the ISIN without a question; the result lists the reference row. The source
 country of a Doh-Div row is the payer's country, and empty when the payer is not known. A Doh-Div
 row with a foreign tax makes a treaty claim when the reference files give the treaty text of its
-payer country (see below); without a claim `ReliefStatement` is written as `false` (eDavki
-accepted `true` and `false`; `false` is still to be checked in a draft import,
-`verification.md`). When any row has a foreign tax above 0, the result warns once that the user
+payer country (see below); without a claim the `ReliefStatement` element is left out. It is the
+treaty paragraph and article, never a yes or no (FURS written answer to the developer contact,
+2026-11-17; the earlier `false` is not written any more, and a draft import without the element is
+still to be checked, `verification.md`). When any row has a foreign tax above 0, the result warns once that the user
 attaches the evidence of the payment and the tax in eDavki (`foreign_tax_evidence_required`).
 
 For reportable foreign income, retain the gross payment and actual foreign tax separately, both in
@@ -894,7 +895,7 @@ has no `edp:bodyContent`: it holds `Doh_Div`, then one `Dividend` per payment, a
 | `Value` | Gross dividend in EUR | Two decimals, greater than zero after rounding. |
 | `ForeignTax` | Foreign tax in EUR | Two decimals, `0.00` when none was withheld. |
 | `SourceCountry` | Payer's country | Left out when not known; two capital letters. |
-| `ReliefStatement` | Treaty claim | The treaty text with a claim (rows with foreign tax only), otherwise `false`. |
+| `ReliefStatement` | Treaty claim | The treaty text with a claim (rows with foreign tax only), otherwise left out. |
 
 **Numbers.** `Value` and `ForeignTax` are `Amount_Type`: a decimal with two fraction digits and no
 limit on the digits before them. They are rounded once from the four-decimal EUR amount, halves
@@ -915,8 +916,8 @@ its field; the other forms are not affected.
 
 **Still open.** The type code of a fund distribution, and that eDavki applies the relief from the
 treaty text (a draft shows no calculation). A draft import accepted `ReliefStatement` `false`, the
-treaty text and a row without payer facts (with content errors the user completes). All are listed
-in `verification.md`.
+treaty text and a row without payer facts (with content errors the user completes); a row without
+the element is not tried yet. All are listed in `verification.md`.
 
 ## Interest forms and the annual deposit allowance
 
@@ -1065,6 +1066,10 @@ Checked on 2 November 2026 against the files FURS publishes on the eDavki Doh-Ob
 real bond export was available, so this section records what the official files say, not how
 eDavki behaves. Where the files are silent or disagree the point is marked unconfirmed.
 
+FURS answered 13 written questions of the developer on 2026-11-17 (a written answer to the
+developer contact). The rules below that cite it are confirmed by that answer; the Slovenian text
+of the answer is not copied into the repository.
+
 **Schema.** `resources/xml/schemas/Doh_Obr_2.xsd`, SHA-256
 `3fd134e0a4ccf6af58d820f69a52b267c5a5f0f5434451d4ad9808201b1891a6`, namespace
 `http://edavki.durs.si/Documents/Schemas/Doh_Obr_2.xsd`. It imports `EDP-Common-1.xsd`
@@ -1082,15 +1087,16 @@ this order: `SelfReport`, `WfTypeU`, `Notes`, `Period` (the year, for example `2
 always filed as an original: header workflow `O` / `Original`, `DocumentWorkflowID` `O` and
 `SelfReport` `false`, also for a run with `--self-report`. A draft import accepted this and
 rejected the self-report encoding (`verification.md`). FURS requires electronic filing
-when more than five interest payments were received in the year.
+when more than five interest payments were received in the year; each monthly credit is one
+payment, and eDavki imports files with hundreds of rows. One Doh-Obr per year holds all payers and
+both type codes `2` and `4`; the app writes one form.
 
 **Writer.** `ObrXmlWriter` writes `SelfReport`, `Period`, `DocumentWorkflowID`, `Email` and
 `TelephoneNumber` when known, `ResidentOfRepublicOfSlovenia` and, for a resident, `Country` `SI`,
 then one `Interest` row per model row in model order. `WfTypeU`, `Notes`, `Reduction`,
 the attachment and the late-submission elements are not written; `ReliefStatement` is written
-only for a treaty claim (see "Treaty claim" below). The coupon of a bond is the whole coupon: accrued interest paid with a purchase is part of the buyer's cost and
-does not lower the coupon, so a coupon of EUR 50.00 is `Value` `50.00` even when EUR 25.00 of
-accrued interest was paid at purchase.
+only for a treaty claim (see "Treaty claim" below). The row of a coupon holds the whole coupon the
+broker paid. Accrued interest has its own rule, see "Accrued interest" below.
 
 **One `Interest` row per payment, in this order:**
 
@@ -1098,15 +1104,15 @@ accrued interest was paid at purchase.
 | --- | --- | --- | --- |
 | `Date` | Date the interest was received | Coupon payment date | `xs:date`, inside the filed year, required. |
 | `TaxNumber` | Left out | Slovenian issuer's eight digits, otherwise left out | Required for a Slovenian payer (`xs:int`; eDavki's check before submitting). The reference row holds the eight digits, with a valid check digit (see "Slovenian tax number"); otherwise it is left out and the row warns `slovenian_payer_tax_number_missing`. Cash interest has a foreign payer. |
-| `IdentificationNumber` | Payer's tax or other identification number | Issuer's (unconfirmed, see "Still open") | At most 30 characters. Optional in general, required for a foreign payer; for a Slovenian payer it must stay empty (eDavki's check before submitting). |
+| `IdentificationNumber` | Payer's tax or other identification number | Issuer's foreign tax number, LEI or register number, if known | At most 30 characters. At least one of `TaxNumber` and `IdentificationNumber` must be filled; an issuer without any number gets a sequential number (FURS answer). The app writes the number of the reference row and never invents one; without a number the user enters it in eDavki. For a Slovenian payer it must stay empty (eDavki's check before submitting). |
 | `Name` | Payer's name | Issuer's name | Left out for a Slovenian payer with a tax number: eDavki fills it in from the tax register and rejects a different spelling. Otherwise written. |
 | `Address` | Payer's address | Issuer's address | Left out for a Slovenian payer with a tax number, as `Name`. Otherwise written. |
 | `Country` | Payer's country, two letters | Issuer's country, two letters | Required; `SI` for a Slovenian payer. |
-| `Type` | `4` (unconfirmed, see below) | `2` | Interest-type code, required. |
+| `Type` | `4` (confirmed by FURS) | `2` | Interest-type code, required. |
 | `Value` | Gross interest in EUR | Gross coupon in EUR | Two decimals, greater than zero, required. |
-| `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0.00` when none), left out for a Slovenian payer whatever the export holds: a Slovenian withholding is not foreign tax (the warning `slovenian_coupon_tax` tells the user). |
-| `Country2` | Payer's country | Payer's country | Source country, two letters; left out when not known. |
-| `ReliefStatement` | The treaty text of the country's cash interest with a claim, `DA` without a text, otherwise left out | The treaty text of the issuer's country with a claim, `DA` without a text, otherwise left out | Optional, at most 100 characters; see "Treaty claim". |
+| `ForeignTax` | Tax paid abroad in EUR | Tax paid abroad in EUR | Two decimals; required for a foreign payer (`0.00` when none; FURS accepts `0`, `0.00` or empty, and needs no statement or evidence for a tax of 0), left out for a Slovenian payer whatever the export holds: a Slovenian withholding is not foreign tax (the warning `slovenian_coupon_tax` tells the user). |
+| `Country2` | Payer's country | Payer's country | Source country, two letters, never `XS` or `EU`; left out when not known. |
+| `ReliefStatement` | The treaty text of the country's cash interest with a claim, otherwise left out | The treaty text of the issuer's country with a claim, otherwise left out | Optional, at most 100 characters, never `DA` or `NE`; see "Treaty claim". |
 
 **Slovenian tax number.** Exactly eight digits; the last is the check digit of the first seven
 (weights 8 to 2, 11 minus the sum modulo 11, 10 written as 0; a sum that is a multiple of 11 has no
@@ -1128,8 +1134,10 @@ greater than zero. A foreign amount is converted at the official ECB rate of the
 
 **Rows the form cannot hold.** One payment is one row. A payment that is zero or negative (for
 example debit interest), or that rounds to `0.00`, is not written and is never netted against
-other rows; it is listed with a warning. Netting debit interest is a tax question and not
-decided here.
+other rows; it is listed with a warning (`interest_payment_not_positive`). FURS confirms both:
+negative interest paid to the broker is not netted and is left out of Doh-Obr, and a payment
+that rounds to `0.00` is left out. One row per payment is the rule, because the rate depends on
+the date; FURS accepts a yearly sum in practice, but one row per payment is safer for a tool.
 
 A value the form cannot hold is found when the row is made, before the failure question: a payer
 identification number longer than 30 characters, a name or address that is empty or not valid XML
@@ -1138,8 +1146,9 @@ text, a `Value` or `ForeignTax` that rounds above `999999999999.99`, or a negati
 error is `xml_value_out_of_range` with the Doh-Obr field, for the coupon's ISIN or for the cash
 interest of its broker, so the user can leave that investment or broker out (`diagnostics.md`).
 The writer repeats these checks as a guard and also stops the file for a date outside the year, a
-payer tax number that is not eight digits, a country that is not two capital letters and a treaty
-claim on a row without foreign tax or with a Slovenian payer, or with a text that no claim may carry
+payer tax number that is not eight digits, a country that is not two capital letters (or is `XS`
+or `EU`, which are not countries and which eDavki rejects) and a treaty claim on a row without
+foreign tax or with a Slovenian payer, or without a text or with a text that no claim may carry
 (more than 100 characters, spaces at its ends), which is never dropped silently.
 
 **Interest-type codes.** The instructions list 1 loans; 2 debt securities, including convertible
@@ -1150,40 +1159,47 @@ as interest; 8 fees, discounts, bonuses and premiums taxed as interest; 9 supple
 The application writes only two:
 
 - Ordinary bond coupons: code `2`.
-- Broker cash interest (Trade Republic before 6 December 2023, IBKR): code `4`. FURS says this
-  interest is not bank-deposit interest but does not name a code. Code `3` is for deposits at
-  banks, which these brokers did not hold for the customer. Unconfirmed: ask FURS
-  (`sd.fu@gov.si`) before the beta, and change the code if the answer differs.
+- Broker cash interest (Trade Republic before 6 December 2023, IBKR): code `4`. FURS confirmed it
+  in writing: code `3` is only for deposits at banks outside the EU.
 
 **Source country.** `Country2` is the country code of the verified payer data (the payer's
 country), for a coupon and for cash interest alike. The ISIN prefix is never used: it is not
-always a country (`XS`, `EU`) and does not prove the payer's country, residence or tax treatment
-(see "Payer lists, settled Slovenian tax and foreign-tax relief"). When the payer data has no
+always a country and does not prove the payer's country, residence or tax treatment (ZDoh-2
+Article 10: the source is the payer's residence). `XS` and `EU` are not valid country codes and
+eDavki rejects them, so a reference row with such a country is an error of the reference file; the
+issuer's real country is used instead (for example `LU` for the EIB). When the payer data has no
 country, the row is still made without `Country2`, and the result warns the user to complete it
 in eDavki.
 
 **Payer facts.** `Name`, `Address`, `Country` and `IdentificationNumber` are required by the
 instructions for a foreign payer. They come from the verified payer resource. A missing fact is
 left out of the row and the result warns the user to complete it in eDavki; the form is still
-made, as for dividends. The payer of broker cash interest is the broker, whose facts are known
-(`broker_payers.csv`).
+made, as for dividends. The payer of a coupon is the issuer, never the broker or the custodian
+(FURS answer). The payer of broker cash interest is the broker, whose facts are known
+(`broker_payers.csv`). A payer that is not found gives `interest_payer_not_found`, which names the
+number to enter: the issuer's foreign tax number, LEI or register number, and a sequential number
+only if it has none. A found foreign payer whose reference row has no number gives one warning
+(`interest_payer_number_missing`): the row is still written without `IdentificationNumber`.
 
 **Foreign tax.** A blank source tax means no tax was paid: the row gets `ForeignTax` `0`, without
 a question and without a warning, for a dividend, a bond coupon and cash interest alike. The form
 instructions require evidence for a foreign-tax deduction (amount, base, final and actually
-paid); the result lists it, and XML generation does not mean it was attached. When any Doh-Obr row
+paid); the result lists it, and XML generation does not mean it was attached. FURS accepts, in
+practice, the broker's annual statement or tax report that shows the gross amount and the tax; an
+officer may ask for more. When any Doh-Obr row
 has a foreign tax above 0 (a Slovenian payer's tax is not written and does not count), the result
 warns once that the user attaches the evidence of the payment and the tax in eDavki
 (`foreign_tax_evidence_required`); eDavki lists the missing proof as a critical content error.
 
 **Treaty claim.** The form has a column to claim an exemption under an international treaty
-(*Uveljavljam oprostitev po mednarodni pogodbi (odstavek, člen)*). The form instructions say a
-resident enters the paragraph and article of the treaty between Slovenia and the country where the
-income arose; the XML instructions describe the element as `DA` or `NE`. The reference files can
-hold a text per country and kind of income (`relief_statements.csv`, `income` `cash_interest` or
-`bond_coupon`), and a text can differ between the two kinds, so each kind has its own rows. The
-built-in file has no interest text yet; a text is added in a release or in a supplied file. A
-dividend text is never used for interest.
+(*Uveljavljam oprostitev po mednarodni pogodbi (odstavek, člen)*). FURS confirmed in writing
+(2026-11-17) that `ReliefStatement` holds the treaty paragraph and article (for example
+`1. odstavek 11. člena`), never `DA` or `NE`, and that the element is left out when no treaty
+relief is claimed. That is the usual case for a resident: the foreign tax is credited through
+`ForeignTax`. The reference files can hold a text per country and kind of income
+(`relief_statements.csv`, `income` `cash_interest` or `bond_coupon`), and a text can differ between
+the two kinds, so each kind has its own rows. The built-in file has no interest text yet; a text is
+added in a release or in a supplied file. A dividend text is never used for interest.
 
 - A coupon or cash-interest row with a foreign tax above 0, a payer country other than `SI` and a
   payer country at all is a row that can claim. A coupon takes the one `bond_coupon` text of its
@@ -1191,29 +1207,36 @@ dividend text is never used for interest.
   count as one, and the first row is the claim's reference row). The claim is made without a
   question and without a warning, and `ReliefStatement` is the text. Several different texts, or a
   text that no claim may carry, are no text.
-- The rows of a country without a text of their kind give one question per payer country (the
-  coupons and the cash interest without a text together): claim the tax treaty, yes or no. The
-  question never blocks; no answer is no claim. A country whose taxed rows all have a text gets no
-  question. Rows without foreign tax, with a Slovenian payer (its tax is not foreign tax) or
-  without a payer country are not asked about.
-- Yes: those rows are claimed without a text, `ReliefStatement` is `DA`, and one warning for the
-  country (`treaty_claim_details_missing`) tells the user to fill in the paragraph and article of
-  the treaty in eDavki, because the app has no text for them. The user attaches the evidence of the
-  tax as for any foreign tax.
-- No, or no answer: no claim and no element.
-- The model keeps the claim as the shared `TreatyClaim` with an optional text: a claim with a text
-  writes the text, a claim without one writes `DA` (as the XML instructions describe the element).
+- A row without such a text has no claim and no element. The app asks nothing and warns about
+  nothing: a claim without a text could not be written (the element is never `DA` or `true`).
+- The model keeps the claim as the shared `TreatyClaim`; the writers reject a claim without a text.
 
 A draft import (2026-11-10, `verification.md`) accepted a Doh-Obr file with one row whose
 `ReliefStatement` is a text (`2. odstavek 11. člena`), one with `true` and one without the
-element, with a `Type` `2` and a `Type` `4` row. The writer now writes `DA` instead of `true`
-(the XML instructions' value); `DA` is not imported yet.
+element, with a `Type` `2` and a `Type` `4` row. The app writes only the text or no element.
 
-**Still open.** The type code for broker cash interest (FURS names none; `4` imports); the treaty
-paragraph and article of interest (built in only where a text was added; otherwise filled in
-eDavki) and whether the text needs the *Uradni list MP* number as the dividend texts have it; who
-the payer of a bond coupon is (the issuer or the paying broker); a real bond export for the coupon
-and maturity shapes (`verification.md`).
+**Accrued interest.** A bond purchase includes the interest accrued since the last coupon, and a
+sale pays it to the seller (FURS answer, ZDoh-2 Article 87).
+
+- Accrued interest paid at a purchase lowers the tax base of the first following coupon. If the
+  bond is sold before that coupon, nothing is entered. The row of the coupon holds the whole
+  coupon, so the value is too high, never too low. A coupon that follows a purchase of its bond
+  after the previous coupon (any year, the whole history), or any purchase when there is no
+  earlier coupon, gets the warning `coupon_accrued_interest_not_deducted`: the user lowers the
+  value in eDavki by the accrued interest paid at that purchase. The app does not calculate the
+  amount yet.
+- Accrued interest received at a sale is Doh-Obr income with type code `2`, on the settlement date
+  of the sale (not for a bond issued in Slovenia after 1 January 2005, where only the coupon is
+  taxed). The app does not calculate it yet, so its coupons are still written and an ordinary bond
+  with a sale in the year gets one warning (`bond_sale_accrued_interest_not_reported`): the user
+  adds the accrued interest of the sale in eDavki. A bond whose payer rows all have country `SI`
+  gets none, because the issue date is not known and a bond issued in Slovenia after 1 January 2005
+  has no tax on that interest. It never blocks. A bond that only matured is
+  unchanged.
+
+**Still open.** Whether the text needs the *Uradni list MP* number as the dividend texts have it;
+a real bond export for the coupon and maturity shapes, and the shape of a bond sale, which the
+calculation of accrued interest needs (`verification.md`).
 
 `tests/test_data/obr/Doh-Obr_2025_example.xml` is a synthetic file with one row of each subtype,
 checked against the schema by a unit test. This is a schema check only. Row 1 is cash interest:

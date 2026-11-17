@@ -3590,8 +3590,8 @@ TEST(CliReportIntegrationTest, ARateFromAnEarlierDayIsUsedWithAWarning) {
                              history});
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
-    EXPECT_TRUE(contains(result.mOut, "Doh-KDVP warnings: 1\n"));
-    EXPECT_TRUE(contains(result.mOut, "official_rate_from_nearby_date"));
+    EXPECT_TRUE(contains(result.mOut, "Doh-KDVP warnings: 0\n"));
+    EXPECT_FALSE(contains(result.mOut, "official_rate_from_nearby_date"));
     EXPECT_TRUE(contains(result.mOut,
                          "  USD 2025-01-11: 1 EUR = 1.25000000 USD (rate of 2025-01-10) "
                          "(rates.csv row 5)\n"));
@@ -7098,9 +7098,10 @@ TEST(CliReportIntegrationTest, TheTerminalAsksTheDepositInterestAllowance) {
     EXPECT_FALSE(contains(result.mOut, "Open questions"));
 }
 
-TEST(CliReportIntegrationTest, TheTerminalAsksWhetherToClaimTheTaxTreatyOnTaxedCashInterest) {
+TEST(CliReportIntegrationTest, ATaxedCashInterestWithoutATreatyTextAsksNothing) {
     // Trade Republic is a broker before 6 December 2023, so this is cash interest of Doh-Obr; its
-    // payer is the broker's company in DE, and the export has EUR 0.20 tax.
+    // payer is the broker's company in DE, and the export has EUR 0.20 tax. The built-in reference
+    // files have no `cash_interest` text for DE: no claim and no question, even with input open.
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
     const auto history = folder.writeCsv(
@@ -7116,46 +7117,14 @@ TEST(CliReportIntegrationTest, TheTerminalAsksWhetherToClaimTheTaxTreatyOnTaxedC
                              taxpayer,
                              "--out",
                              folder.outputDirectory(),
-                             "--trade-republic",
-                             history},
-                            "yes\n");
-
-    EXPECT_EQ(result.mExitCode, kExitSuccess);
-    EXPECT_TRUE(contains(result.mOut,
-                         "Question request-0001: treaty relief on the interest from DE in 2023\n"
-                         "  Foreign tax was withheld on cash interest.\n"));
-    EXPECT_TRUE(contains(result.mOut, "Your answer (yes or no):"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "DE, interest treaty claim: treaty relief claimed, filled in eDavki"));
-    EXPECT_FALSE(contains(result.mOut, "Open questions"));
-}
-
-TEST(CliReportIntegrationTest, WithoutInputTheTaxTreatyQuestionStaysOpenAndDoesNotBlock) {
-    const TemporaryCliFolder folder;
-    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
-    const auto history = folder.writeCsv(
-        "history.csv",
-        {
-            R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
-        });
-
-    const auto result = run({"report",
-                             "--year",
-                             "2023",
-                             "--taxpayer",
-                             taxpayer,
-                             "--out",
-                             folder.outputDirectory(),
-                             "--no-input",
                              "--trade-republic",
                              history},
                             "");
 
     EXPECT_EQ(result.mExitCode, kExitSuccess);
     EXPECT_FALSE(contains(result.mOut, "Question request-0001"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "Open questions: 1\n"
-                         "  request-0001 income_details_required, interest treaty claim for DE\n"));
+    EXPECT_FALSE(contains(result.mOut, "Open questions"));
+    EXPECT_FALSE(contains(folder.readOutput("Doh-Obr_2023.xml"), "ReliefStatement"));
 }
 
 TEST(CliReportIntegrationTest, ASuppliedBondCouponTextClaimsATaxedCouponWithoutAQuestion) {

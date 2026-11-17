@@ -52,8 +52,6 @@ enum class ProcessingDiagnosticCode {
     CorporateActionApplied,
     UnsupportedCorporateAction,
     TaxCategoryNotReported, ///< A warning for an instrument left out by a tax rule or the user.
-    /// A warning: no ECB rate on the tax date, so the last earlier ECB rate was used.
-    OfficialRateFromNearbyDate,
     /// A warning: a rate file starts after the beginning or ends before the end of its year.
     OfficialRateFileIncomplete,
     /// A warning: the years of the ECB rate files that missing rates need (loaded or replaced).
@@ -68,16 +66,21 @@ enum class ProcessingDiagnosticCode {
     ForeignTaxEvidenceRequired,
     /// A warning: no reference row gave the payer of an interest payment, so its facts are empty.
     InterestPayerNotFound,
+    /// A warning: a foreign payer's reference row has no number, so the user enters it in eDavki.
+    InterestPayerNumberMissing,
     /// A warning: an interest payment of 0 or less, or that rounds to 0.00, is not reported.
     InterestPaymentNotPositive,
     /// A warning: a coupon of a Slovenian issuer has tax, which is not foreign tax.
     SlovenianCouponTax,
+    /// A warning: a coupon follows a purchase of its bond, whose accrued interest is not deducted.
+    CouponAccruedInterestNotDeducted,
+    /// A warning: a bond was sold in the year, and the accrued interest received at the sale is
+    /// income that the report does not hold.
+    BondSaleAccruedInterestNotReported,
     /// A warning: a written row's payer is in Slovenia, but no valid Slovenian tax number is known.
     SlovenianPayerTaxNumberMissing,
     /// A warning: the user adds the interest of the other banks in eDavki.
     DepositInterestAddOtherBanks,
-    /// A warning: the user fills in the treaty paragraph and article of claimed Doh-Obr rows.
-    TreatyClaimDetailsMissing,
     /// A warning: developer mode is on, but the developer export is not offered for an
     /// investment with missing history (see the message key for the reason).
     DeveloperExportUnavailable,

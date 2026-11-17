@@ -1206,10 +1206,6 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         {
             return "treaty claim for " + aQuestion.mCountry;
         }
-        else if constexpr (std::is_same_v<Question, InterestTreatyClaimQuestion>)
-        {
-            return "interest treaty claim for " + aQuestion.mCountry;
-        }
         else if constexpr (std::is_same_v<Question, DepositInterestTotalQuestion>)
         {
             return "bank-deposit interest";

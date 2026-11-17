@@ -190,6 +190,44 @@ TEST(IncomePayersTest, AForeignPayerNumberStaysTheIdentificationNumber) {
     EXPECT_EQ(outcome.mPayer.mIdentificationNumber, std::optional<std::string>{"DE123456789"});
     EXPECT_FALSE(outcome.mIsSlovenian);
     EXPECT_FALSE(outcome.mSlovenianTaxNumberMissing);
+    EXPECT_FALSE(outcome.mIdentificationNumberMissing);
+}
+
+TEST(IncomePayersTest, AForeignPayerWithoutANumberHasNoNumberAndSaysSo) {
+    const PayerEntry entry{
+        .mIsin = "DE0000000001",
+        .mIsinSource = "DE0000000001",
+        .mName = "Example AG",
+        .mTaxNumber = std::nullopt,
+        .mAddress = "1 Main St, Berlin",
+        .mCountry = "DE",
+        .mInstrumentKind = std::nullopt,
+        .mVerifiedOn = std::nullopt,
+        .mSource = {.mSource = "manual", .mFile = "payers.csv", .mRowNumber = 2},
+    };
+
+    const auto outcome = payerOutcomeOf(entry);
+
+    EXPECT_EQ(outcome.mPayer.mTaxNumber, std::nullopt);
+    EXPECT_EQ(outcome.mPayer.mIdentificationNumber, std::nullopt);
+    EXPECT_TRUE(outcome.mIdentificationNumberMissing);
+    EXPECT_FALSE(outcome.mSlovenianTaxNumberMissing);
+}
+
+TEST(IncomePayersTest, ASlovenianPayerWithoutANumberIsNotAForeignNumberGap) {
+    const PayerEntry entry{
+        .mIsin = "SI0000000001",
+        .mIsinSource = "SI0000000001",
+        .mName = "Example Izdajatelj d.d.",
+        .mTaxNumber = std::nullopt,
+        .mAddress = "1 Main St, Ljubljana",
+        .mCountry = "SI",
+        .mInstrumentKind = std::nullopt,
+        .mVerifiedOn = std::nullopt,
+        .mSource = {.mSource = "manual", .mFile = "payers.csv", .mRowNumber = 2},
+    };
+
+    EXPECT_FALSE(payerOutcomeOf(entry).mIdentificationNumberMissing);
 }
 
 TEST(IncomePayersTest, ASlovenianBrokerNumberBecomesTheTaxNumber) {
@@ -256,7 +294,8 @@ TEST(IncomePayersTest, AFormThatReportsASlovenianPayerWarnsWhenItsNumberIsMissin
     const PayerForm form{.mReport = ReportType::OtherInterest,
                          .mNotFoundCode = ProcessingDiagnosticCode::InterestPayerNotFound,
                          .mNotFoundKey = MessageKey::InterestPayerNotFound,
-                         .mSlovenianExclusion = std::nullopt};
+                         .mSlovenianExclusion = std::nullopt,
+                         .mNeedsPayerNumber = false};
     std::vector<ProcessingDiagnostic> diagnostics;
     std::vector<RequestInput> requests;
     std::vector<ExcludedItemInput> excluded;
@@ -284,7 +323,8 @@ TEST(IncomePayersTest, AFormThatExcludesASlovenianPayerDoesNotWarnAboutItsNumber
     const PayerForm form{.mReport = ReportType::Dividends,
                          .mNotFoundCode = ProcessingDiagnosticCode::DividendPayerNotFound,
                          .mNotFoundKey = MessageKey::DividendPayerNotFound,
-                         .mSlovenianExclusion = ExcludedCategory::Dividend};
+                         .mSlovenianExclusion = ExcludedCategory::Dividend,
+                         .mNeedsPayerNumber = false};
     std::vector<ProcessingDiagnostic> diagnostics;
     std::vector<RequestInput> requests;
     std::vector<ExcludedItemInput> excluded;

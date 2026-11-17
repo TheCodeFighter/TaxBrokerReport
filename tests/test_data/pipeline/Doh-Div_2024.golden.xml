@@ -36,7 +36,6 @@
       <Value>10.00</Value>
       <ForeignTax>0.00</ForeignTax>
       <SourceCountry>US</SourceCountry>
-      <ReliefStatement>false</ReliefStatement>
     </Dividend>
   </body>
 </Envelope>

@@ -128,14 +128,11 @@ void appendDividend(pugi::xml_node aBody, const DivDividendRow& aRow) {
     appendText(dividend, "Value", amountText(roundedCents(aRow.mGrossIncome)));
     appendText(dividend, "ForeignTax", amountText(roundedCents(aRow.mWithholding.mForeignTax)));
     appendOptionalText(dividend, "SourceCountry", aRow.mSourceCountry);
-    // A claim writes its treaty text, which eDavki needs to apply the relief; otherwise `false`.
+    // A claim writes its treaty text, which eDavki needs to apply the relief; a row without a
+    // claim has no element.
     if (aRow.mTreatyClaim)
     {
         appendText(dividend, "ReliefStatement", aRow.mTreatyClaim->mStatement.value());
-    }
-    else
-    {
-        appendBoolean(dividend, "ReliefStatement", false);
     }
 }
 

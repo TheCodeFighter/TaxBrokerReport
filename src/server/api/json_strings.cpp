@@ -187,8 +187,6 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "unsupported_corporate_action";
     case ProcessingDiagnosticCode::TaxCategoryNotReported:
         return "tax_category_not_reported";
-    case ProcessingDiagnosticCode::OfficialRateFromNearbyDate:
-        return "official_rate_from_nearby_date";
     case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
         return "official_rate_file_incomplete";
     case ProcessingDiagnosticCode::OfficialRateFilesRequired:
@@ -205,16 +203,20 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "foreign_tax_evidence_required";
     case ProcessingDiagnosticCode::InterestPayerNotFound:
         return "interest_payer_not_found";
+    case ProcessingDiagnosticCode::InterestPayerNumberMissing:
+        return "interest_payer_number_missing";
     case ProcessingDiagnosticCode::InterestPaymentNotPositive:
         return "interest_payment_not_positive";
     case ProcessingDiagnosticCode::SlovenianCouponTax:
         return "slovenian_coupon_tax";
+    case ProcessingDiagnosticCode::CouponAccruedInterestNotDeducted:
+        return "coupon_accrued_interest_not_deducted";
+    case ProcessingDiagnosticCode::BondSaleAccruedInterestNotReported:
+        return "bond_sale_accrued_interest_not_reported";
     case ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing:
         return "slovenian_payer_tax_number_missing";
     case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
         return "deposit_interest_add_other_banks";
-    case ProcessingDiagnosticCode::TreatyClaimDetailsMissing:
-        return "treaty_claim_details_missing";
     case ProcessingDiagnosticCode::DeveloperExportUnavailable:
         return "developer_export_unavailable";
     case ProcessingDiagnosticCode::TaxpayerTaxNumberCheckDigit:

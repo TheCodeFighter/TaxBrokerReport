@@ -107,8 +107,10 @@ output with it byte for byte.
   that window does not hold for these forms. Doh-KDVP as an original was not imported yet.
 - **Doh-Div as written by the app.** A draft import accepted `ReliefStatement` `false` on the rows
   without a claim and the treaty text on the claimed row, `Type` `1`, `ForeignTax` `0.00` and
-  `SelfReport` `false`. Still open: that eDavki applies the relief from the text (a draft shows no
-  calculation), `Type` for a foreign fund distribution (it may need `4`; FURS did not say), and a
+  `SelfReport` `false`. The app no longer writes `false` (FURS: the element is the treaty text or
+  left out), so a draft import of a Doh-Div file whose rows without a claim have no
+  `ReliefStatement` is not done yet. Still open: that eDavki applies the relief from the text (a
+  draft shows no calculation), `Type` for a foreign fund distribution (it may need `4`; FURS did not say), and a
   row without payer facts only warns: eDavki lists critical content errors for it, which the user
   completes in eDavki before filing.
 - **Doh-DHO as written by the app.** A draft import accepted the file (taxpayer block without
@@ -116,12 +118,12 @@ output with it byte for byte.
   errors. Still open: a row without payer facts and a row with a foreign tax.
 - **Doh-Obr as written by the app.** Draft imports accepted two coupons of `Type` `2` without
   payer facts (the only errors were the empty payer facts), and a file with payer facts, a treaty
-  text for interest (`2. odstavek 11. člena`), `ReliefStatement` `true` (the writer now writes `DA`, not imported yet), and broker cash interest
-  of `Type` `4` (see "Results: income forms"). Still open: whether eDavki shows a `true` row as a
-  claim the user completes with the paragraph and article (not recorded), and whether an interest text needs the
-  *Uradni list MP* number (the built-in file has no interest text yet); the interest-type code
-  for broker cash interest (FURS names none, `4` imports); the payer fields of a coupon (the
-  issuer's facts; unconfirmed); whether a draft shows the interest as expected (`tax_rules.md`, "Doh-Obr form
+  text for interest (`2. odstavek 11. člena`), `ReliefStatement` `true` (the app no longer writes
+  `true` or `DA`: the element is the treaty text or left out) and broker cash interest
+  of `Type` `4` (see "Results: income forms"). FURS confirmed in writing (2026-11-17) the type
+  code `4` and the issuer as the payer of a coupon. Still open: whether an interest text needs the
+  *Uradni list MP* number (the built-in file has no interest text yet); a draft import of a
+  foreign coupon row without `IdentificationNumber`; whether a draft shows the interest as expected (`tax_rules.md`, "Doh-Obr form
   contract"). A coupon of a Slovenian issuer: eDavki's check before submitting wants `TaxNumber`
   (eight digits) and no `IdentificationNumber`, and fills in the name and address from the tax
   register (E4, 2026-11-11); a draft import accepts it. Still open: the same rule for a Slovenian

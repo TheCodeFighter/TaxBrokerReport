@@ -814,33 +814,6 @@ TEST_F(ServerRunTest, ADeveloperExportIsConfirmedOverHttpAndDownloadedAsUnsafe) 
               "attachment; filename=\"Doh-KDVP_2024_UNSAFE.xml\"");
 }
 
-TEST_F(ServerRunTest, AnInterestTreatyClaimIsAnsweredOverHttp) {
-    // Before 6 December 2023 this Trade Republic interest is cash interest for Doh-Obr. EUR 0.20
-    // foreign tax was withheld, so the treaty question is asked.
-    constexpr std::string_view interest =
-        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)";
-
-    const auto server = startServer();
-
-    const Json uploaded = jsonOf(server->upload(oneFileUpload(2023, {interest})));
-
-    ASSERT_EQ(uploaded["requests"].size(), 1U);
-    EXPECT_EQ(uploaded["requests"][0]["type"], "income_details_required");
-
-    const Response answered =
-        server->postJson("/api/run/answers", answerBody(1, "request-0001", R"("claim")"));
-
-    ASSERT_EQ(answered.result_int(), 200U);
-
-    const Json result = jsonOf(answered);
-
-    EXPECT_EQ(result["runRevision"], 2);
-    EXPECT_TRUE(result["requests"].empty());
-    ASSERT_EQ(result["decisions"].size(), 1U);
-    EXPECT_EQ(result["decisions"][0]["type"], "income_details_required");
-    EXPECT_EQ(result["reports"]["otherInterest"]["status"], "generated");
-}
-
 TEST_F(ServerRunTest, ABondTypeIsAnsweredOverHttp) {
     // A bond bought in 2025 (1000 units), two EUR coupons, then its maturity: the type of the bond
     // decides how the coupons are reported.

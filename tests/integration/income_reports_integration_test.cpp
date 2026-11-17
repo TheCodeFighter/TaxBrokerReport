@@ -333,37 +333,20 @@ TEST(IncomeReportsIntegrationTest, InterestIsSortedIntoDhoAndOneObrWithBothSubty
     EXPECT_NE(run.status(ReportType::BankDepositInterest), ReportStatus::NeedsInput);
 }
 
-TEST(IncomeReportsIntegrationTest, YesToTheTreatyQuestionClaimsTheTaxedCashInterestWithAWarning) {
+TEST(IncomeReportsIntegrationTest, ATaxedCashInterestWithoutATreatyTextHasNoClaimAndAsksNothing) {
     // Trade Republic is a broker before 6 December 2023, so this interest is cash interest in
-    // Doh-Obr. Its payer is the broker's company in DE, and the export has EUR 0.20 tax.
+    // Doh-Obr. Its payer is the broker's company in DE, and the export has EUR 0.20 tax. The
+    // reference files have no `cash_interest` text for DE: no claim, no question, no warning.
     const TemporaryCsv csv{
         R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
     };
 
     IncomeRun run{csv, 2023};
 
-    // Before the answer: one open question, no claim, and Doh-Obr is not blocked.
     ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
     EXPECT_FALSE(run.reports().mOther.mRows[0].mTreatyClaim.has_value());
-    ASSERT_EQ(run.result().mRequests.size(), 1U);
-
-    const auto* question =
-        std::get_if<InterestTreatyClaimQuestion>(&run.result().mRequests[0].mData);
-
-    ASSERT_NE(question, nullptr);
-    EXPECT_EQ(question->mYear, 2023);
-    EXPECT_EQ(question->mCountry, "DE");
-    EXPECT_TRUE(question->mIsins.empty());
-    EXPECT_TRUE(question->mCashInterest);
-    EXPECT_NE(run.status(ReportType::OtherInterest), ReportStatus::NeedsInput);
-
-    // Yes: the row is claimed without a text, and one warning tells the user to complete it.
-    ASSERT_TRUE(run.answerFirst(InterestTreatyClaimAnswer{.mClaim = true}).empty());
     EXPECT_TRUE(run.result().mRequests.empty());
-    ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
-    ASSERT_TRUE(run.reports().mOther.mRows[0].mTreatyClaim.has_value());
-    EXPECT_FALSE(run.reports().mOther.mRows[0].mTreatyClaim->mStatement.has_value());
-    EXPECT_EQ(run.diagnosticsOf(ProcessingDiagnosticCode::TreatyClaimDetailsMissing).size(), 1U);
+    EXPECT_NE(run.status(ReportType::OtherInterest), ReportStatus::NeedsInput);
 }
 
 TEST(IncomeReportsIntegrationTest, ACashInterestTextOfTheReferenceFilesClaimsTheTaxedCashInterest) {
@@ -387,7 +370,6 @@ TEST(IncomeReportsIntegrationTest, ACashInterestTextOfTheReferenceFilesClaimsThe
     ASSERT_TRUE(run.reports().mOther.mRows[0].mTreatyClaim.has_value());
     EXPECT_EQ(run.reports().mOther.mRows[0].mTreatyClaim->mStatement,
               std::optional<std::string>{"1. odstavek 11. člena"});
-    EXPECT_TRUE(run.diagnosticsOf(ProcessingDiagnosticCode::TreatyClaimDetailsMissing).empty());
 }
 
 TEST(IncomeReportsIntegrationTest, YesToTheAllowanceQuestionMakesTheDohDhoRow) {
@@ -690,19 +672,18 @@ TEST(IncomeReportsIntegrationTest, AReferenceTreatyTextIsSummarizedWithItsRowAnd
     EXPECT_TRUE(row.mEvidenceRequired);
 }
 
-TEST(IncomeReportsIntegrationTest, AClaimWithoutATextIsSummarizedAsClaimedWithoutText) {
+TEST(IncomeReportsIntegrationTest,
+     ATaxedRowWithoutAClaimIsSummarizedWithoutATreatyAndNeedsEvidence) {
     const TemporaryCsv csv{
         R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,-0.20,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
     };
 
-    IncomeRun run{csv, 2023};
-
-    ASSERT_TRUE(run.answerFirst(InterestTreatyClaimAnswer{.mClaim = true}).empty());
+    const IncomeRun run{csv, 2023};
 
     const auto& rows = run.result().report(ReportType::OtherInterest).mIncome->mRows;
 
     ASSERT_EQ(rows.size(), 1U);
-    EXPECT_EQ(rows[0].mTreaty, TreatyClaimKind::ClaimedWithoutText);
+    EXPECT_EQ(rows[0].mTreaty, TreatyClaimKind::None);
     EXPECT_FALSE(rows[0].mTreatyRow.has_value());
     EXPECT_TRUE(rows[0].mEvidenceRequired);
 }
