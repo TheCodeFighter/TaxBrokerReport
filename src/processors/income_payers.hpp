@@ -31,6 +31,9 @@ struct PayerOutcome {
     /// The payer's country is SI but its reference row has no valid Slovenian tax number, which
     /// the forms need for such a payer. `resolvePayer` warns once for a row that is written.
     bool mSlovenianTaxNumberMissing{};
+    /// The payer is found, is not Slovenian and its reference row has no number at all.
+    /// `resolvePayer` warns once for a row that is written, when the form needs the number.
+    bool mIdentificationNumberMissing{};
 };
 
 /// What differs between the forms that look a payer up by ISIN.
@@ -41,6 +44,9 @@ struct PayerForm {
     /// The category of the excluded item of a Slovenian payer. Empty when the form reports the
     /// income of a Slovenian payer too, because no Slovenian payer settles the tax on it.
     std::optional<ExcludedCategory> mSlovenianExclusion;
+    /// The form wants an identification number of a foreign payer (Doh-Obr). Always set by the
+    /// creator.
+    bool mNeedsPayerNumber{};
 };
 
 /// Where the payer helpers put what they find.
@@ -75,6 +81,13 @@ slovenianTaxNumberMissingWarning(ReportType aReport,
                                  std::optional<Date> aTaxDate,
                                  std::optional<std::string> aName,
                                  std::optional<Isin> aIsin);
+
+/// The warning that a written row has a foreign payer whose reference row has no number.
+[[nodiscard]] ProcessingDiagnostic payerNumberMissingWarning(ReportType aReport,
+                                                             std::vector<SourceReference> aSources,
+                                                             std::optional<Date> aTaxDate,
+                                                             std::optional<std::string> aName,
+                                                             std::optional<Isin> aIsin);
 
 /// The warning that the payer has no facts: not found, or several rows and none picked.
 void addPayerNotFound(const PayerForm& aForm,

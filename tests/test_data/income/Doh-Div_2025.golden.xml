@@ -36,7 +36,6 @@
       <Value>10.02</Value>
       <ForeignTax>0.00</ForeignTax>
       <SourceCountry>US</SourceCountry>
-      <ReliefStatement>false</ReliefStatement>
     </Dividend>
     <Dividend>
       <Date>2025-05-15</Date>
@@ -55,7 +54,6 @@
       <Type>1</Type>
       <Value>5.00</Value>
       <ForeignTax>0.00</ForeignTax>
-      <ReliefStatement>false</ReliefStatement>
     </Dividend>
     <Dividend>
       <Date>2025-09-10</Date>
@@ -67,7 +65,6 @@
       <Value>4.00</Value>
       <ForeignTax>0.00</ForeignTax>
       <SourceCountry>BR</SourceCountry>
-      <ReliefStatement>false</ReliefStatement>
     </Dividend>
   </body>
 </Envelope>

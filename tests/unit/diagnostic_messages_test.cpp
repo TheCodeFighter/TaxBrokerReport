@@ -258,11 +258,6 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          {{"currency", MessageParamKind::Text},
           {"date", MessageParamKind::Text},
           {"euroDate", MessageParamKind::Text}}},
-        {MessageKey::OfficialRateFromNearbyDate,
-         "official_rate_from_nearby_date",
-         {{"currency", MessageParamKind::Text},
-          {"date", MessageParamKind::Text},
-          {"rateDate", MessageParamKind::Text}}},
         {MessageKey::OfficialRateFileIncompleteStartsLate,
          "official_rate_file_incomplete.starts_late",
          {{"year", MessageParamKind::Number}, {"firstDate", MessageParamKind::Text}}},
@@ -333,13 +328,17 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::DividendPayerNotFound, "dividend_payer_not_found", {}},
         {MessageKey::ForeignTaxEvidenceRequired, "foreign_tax_evidence_required", {}},
         {MessageKey::InterestPayerNotFound, "interest_payer_not_found", {}},
+        {MessageKey::InterestPayerNumberMissing, "interest_payer_number_missing", {}},
         {MessageKey::InterestPaymentNotPositive, "interest_payment_not_positive", {}},
         {MessageKey::SlovenianCouponTax, "slovenian_coupon_tax", {}},
+        {MessageKey::CouponAccruedInterestNotDeducted,
+         "coupon_accrued_interest_not_deducted",
+         {{"isin", MessageParamKind::Text}, {"date", MessageParamKind::Text}}},
+        {MessageKey::BondSaleAccruedInterestNotReported,
+         "bond_sale_accrued_interest_not_reported",
+         {}},
         {MessageKey::SlovenianPayerTaxNumberMissing, "slovenian_payer_tax_number_missing", {}},
         {MessageKey::DepositInterestAddOtherBanks, "deposit_interest_add_other_banks", {}},
-        {MessageKey::TreatyClaimDetailsMissing,
-         "treaty_claim_details_missing",
-         {{"country", MessageParamKind::Text}}},
         {MessageKey::DeveloperExportUnavailableUnitValueTooLarge,
          "developer_export_unavailable.unit_value_too_large",
          {}},
@@ -426,8 +425,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 149U);
-    ASSERT_EQ(expectedMessages().size(), 149U);
+    ASSERT_EQ(definitions.size(), 150U);
+    ASSERT_EQ(expectedMessages().size(), 150U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -461,8 +460,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 149U);
-    EXPECT_EQ(keys.size(), 149U);
+    EXPECT_EQ(ids.size(), 150U);
+    EXPECT_EQ(keys.size(), 150U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -485,7 +484,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 158U); // 149 message keys and 9 terms.
+    ASSERT_EQ(table.size(), 159U); // 150 message keys and 9 terms.
 
     std::set<std::string> tableKeys;
 

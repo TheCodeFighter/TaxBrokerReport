@@ -380,7 +380,7 @@ TEST(DividendPaymentsTest, AnExplicitZeroTaxIsNotBlankAndHasNoWarning) {
     EXPECT_TRUE(result.mDiagnostics.empty());
 }
 
-TEST(DividendPaymentsTest, OnePaymentOnADayOfTheWeekendUsesTheLastEarlierRateWithAWarning) {
+TEST(DividendPaymentsTest, OnePaymentOnADayOfTheWeekendUsesTheLastEarlierRateWithoutAWarning) {
     const auto catalogue =
         catalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,DE,,,issuer,manual,\n");
     OfficialRateTable rates;
@@ -410,10 +410,48 @@ TEST(DividendPaymentsTest, OnePaymentOnADayOfTheWeekendUsesTheLastEarlierRateWit
 
     ASSERT_EQ(result.mReport.mRows.size(), 1U);
     EXPECT_EQ(result.mReport.mRows.at(0).mGrossIncome, 91'912); // the rate of Friday
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(DividendPaymentsTest, AFileThatEndsEarlyGivesItsWarningAndStillMakesTheRow) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Payer A,TAX-A,1 Main Street,DE,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    // The file of 2025 ends on 2025-12-29, two days before the year does.
+    rates.mFiles.push_back(OfficialRateFile{.mYear = 2025,
+                                            .mFirstDate = day("2025-01-02"),
+                                            .mLastDate = day("2025-12-29")});
+    addRate(rates, "USD", "2025-12-29", 108'800'000, 3); // 1 EUR = 1.0880 USD
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                // 2025-12-31 is after the end of the file; the last rate is the one of 2025-12-29.
+                {.mMetadata = {.mTaxDate = day("2025-12-31"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 100'000, // USD 10.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::USD,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mGrossIncome, 91'912); // USD 10.00 / 1.0880
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
-              ProcessingDiagnosticCode::OfficialRateFromNearbyDate);
     EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::OfficialRateFileIncomplete);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              std::optional<MessageKey>{MessageKey::OfficialRateFileIncompleteEndsEarly});
 }
 
 TEST(DividendPaymentsTest, AZeroTaxInAForeignCurrencyNeedsNoRate) {

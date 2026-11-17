@@ -100,10 +100,6 @@ namespace {
             return answer != nullptr &&
                    (!answer->mStatement || isValidTreatyStatement(*answer->mStatement));
         }
-        else if constexpr (std::is_same_v<Data, InterestTreatyClaimQuestion>)
-        {
-            return std::holds_alternative<InterestTreatyClaimAnswer>(aAnswer);
-        }
         else
         {
             static_assert(std::is_same_v<Data, CorporateActionRatioQuestion>);

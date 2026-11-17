@@ -123,6 +123,7 @@ PayerOutcome payerOutcomeOfNumber(const std::string& aName,
                                  .mIdentificationNumber = identificationNumber,
                                  .mCatalogueRow = aSource};
     outcome.mIsSlovenian = isSlovenian;
+    outcome.mIdentificationNumberMissing = !isSlovenian && !identificationNumber;
 
     return outcome;
 }
@@ -180,6 +181,21 @@ ProcessingDiagnostic slovenianTaxNumberMissingWarning(ReportType aReport,
                             DiagnosticSeverity::Warning,
                             ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing,
                             makeDiagnosticMessage(MessageKey::SlovenianPayerTaxNumberMissing),
+                            std::move(aSources),
+                            aTaxDate,
+                            std::move(aName),
+                            std::move(aIsin));
+}
+
+ProcessingDiagnostic payerNumberMissingWarning(ReportType aReport,
+                                               std::vector<SourceReference> aSources,
+                                               std::optional<Date> aTaxDate,
+                                               std::optional<std::string> aName,
+                                               std::optional<Isin> aIsin) {
+    return incomeDiagnostic(aReport,
+                            DiagnosticSeverity::Warning,
+                            ProcessingDiagnosticCode::InterestPayerNumberMissing,
+                            makeDiagnosticMessage(MessageKey::InterestPayerNumberMissing),
                             std::move(aSources),
                             aTaxDate,
                             std::move(aName),
@@ -262,6 +278,16 @@ PayerOutcome resolvePayer(const PayerForm& aForm,
                                                                        aPayments.mFirstDate,
                                                                        aPayments.mName,
                                                                        aIsin));
+    }
+
+    // A foreign payer needs a number in the form of Doh-Obr; the row is still written without it.
+    if (aForm.mNeedsPayerNumber && outcome.mIdentificationNumberMissing)
+    {
+        aSinks.mDiagnostics.push_back(payerNumberMissingWarning(aForm.mReport,
+                                                                aPayments.mSources,
+                                                                aPayments.mFirstDate,
+                                                                aPayments.mName,
+                                                                aIsin));
     }
 
     return outcome;

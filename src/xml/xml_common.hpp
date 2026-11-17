@@ -43,7 +43,7 @@ inline constexpr int kFourDigitYear = 1000;
 /// digits (year 0000 does not exist in XML).
 [[nodiscard]] std::optional<std::string> dateText(const Date& aDate);
 
-/// Two capital letters A to Z.
+/// Two capital letters A to Z, but not `XS` or `EU` (not countries; eDavki rejects them).
 [[nodiscard]] bool isCountryCode(std::string_view aText);
 
 /// The amount in cents, rounded once, halves up. A negative amount is cut towards zero, not

@@ -139,7 +139,7 @@ These parts are informational: the XML is the truth, and they never change a sta
   interest), date (none for a Doh-DHO row, which sums several payments), gross and foreign tax in
   EUR at four decimals, whether the export's tax was blank, the payer facts with the reference row
   they came from (an empty payer: not found), the treaty claim (`none`, `reference_text`,
-  `user_text`, `claimed_without_text`) and `evidenceRequired`: the user attaches the evidence in
+  `user_text`) and `evidenceRequired`: the user attaches the evidence in
   eDavki when the foreign tax is above 0 or a claim is made.
 - `depositInterest`: only when the year has qualifying interest with a known total:
   `importedInterestEur`, `limitEur` (1,000) and `addOtherBanks`, true when the form holds only the
@@ -562,11 +562,13 @@ recorded choice is bound to both lists, so a changed broker list asks again.
 `income_details_required` question, because the interest of a discount or zero-coupon bond arises
 then and nothing calculates it yet. The question data has the ISIN, the name, the units sold, the
 units matured (units out minus units back) and the first maturity date. Answers: `ordinary` (the
-coupons go to Doh-Obr as usual) or `discount_or_zero_coupon`; neither is preselected. Without an
-answer Doh-Obr is `needs_input` and the coupons of the bond are not rows. `discount_or_zero_coupon`
-is a blocking `unsupported_tax_treatment` error of Doh-Obr with the bond's ISIN, and so is a
-cancel (with a message that the type was not given); the failure question above can then leave
-the bond out. A bond whose unit totals of the year do not fit is a blocking `arithmetic_overflow`
+coupons go to Doh-Obr as usual) or `discount_or_zero_coupon`; neither
+is preselected. Without an answer Doh-Obr is `needs_input` and the coupons of the bond are not
+rows. `discount_or_zero_coupon` is a blocking `unsupported_tax_treatment` error of Doh-Obr with the
+bond's ISIN, and so is a cancel (with a message that the type was not given); the failure question
+above can then leave the bond out. `ordinary` for a bond with units sold in the year keeps the
+coupons and gives the warning `bond_sale_accrued_interest_not_reported` (the accrued interest
+received at a sale is income that nothing calculates yet; not given for a Slovenian issuer). A bond whose unit totals of the year do not fit is a blocking `arithmetic_overflow`
 error of Doh-Obr with its ISIN instead of a question, and its coupons are not rows either. A bond
 with coupons only and a bond sold or matured in another year ask nothing. The issuer does not
 matter: a Slovenian issuer's listed bond is asked and reported like any other, because its payer
@@ -792,19 +794,6 @@ text and a cancel are rejected with `answer_does_not_fit`. The request is listed
 claim sets the text as the `ReliefStatement` of the country's rows with a foreign tax above 0. A
 country with a usable reference text is claimed without a request. The question changes when the set
 of taxed ISINs changes. A recorded answer lists the same `treatyCheck`.
-
-An interest treaty claim request (`income_details_required` for the Doh-Obr interest of one payer
-country with foreign tax in the year, for the rows whose kind of income has no usable treaty text in
-the reference files: a coupon needs a `bond_coupon` text, cash interest a `cash_interest` text; a
-kind with a text is claimed without a request) has no `options` and no `isin` and
-`"interestTreatyCheck"` with `year`, `country`, `isins` (the ISINs of the taxed coupons without a text, sorted; empty when only
-cash interest is asked) and `cashInterest` (`true` when the country's cash interest has tax and no
-text). It is answered with
-`"claim"` or `"no_claim"`; a text and a cancel are rejected with `answer_does_not_fit`, and the
-dividend treaty answers do not answer it. The request is listed with Doh-Obr (`requestIds`) but never
-makes the form `needs_input` and never blocks: no answer is no claim. A claim marks the asked
-rows with `ReliefStatement` `DA` and gives the warning `treaty_claim_details_missing`. A recorded
-answer lists the same `interestTreatyCheck`.
 
 A deposit interest request (`deposit_interest_total_required`) has no `options` and `"depositCheck"`
 with `year`, `importedInterestEur` (the exact total of the imported qualifying interest, four
@@ -1055,14 +1044,15 @@ Additional codes and their default scope are:
 | `foreign_tax_evidence_required` | Warning for Doh-Div and Doh-Obr, once per form per run when a row left in the form has a foreign tax above 0 (a Doh-Obr row of a Slovenian payer does not count, its tax is not written; an investment the user leaves out of the form does not count either): the user attaches the evidence of the payment and the tax in eDavki; the app attaches nothing. The sources are those of the payments with tax. |
 | `official_rate_files_required` | Warning for the capital gains report: the years of the ECB rate files that the missing rates of investments sold in the year need. Key `.not_loaded` (`years`: the files are not loaded) or `.ends_early` (`years`: the files end before a trade day); `years` is a text such as `2023, 2024`. No ISIN or date; the sources are those of the trades behind the years. Given once per key after the per-ISIN `missing_exchange_rate` errors, and not given for a rate that no file can fix. |
 | `missing_exchange_rate` | Error for every report that needs one currency and tax date for which no official rate was found, one error per pair with all its sources: key `.no_rate_file` (parameters `currency`, `date`, `year`: the rate file of that year is not loaded), `.rate_file_ends_early` (`currency`, `date`, `lastDate`: the file of that year ends before the date), `.no_rate_on_date` (`currency`, `date`: the loaded files have no rate for it within 4 days before the date, or the currency was stopped) or `.replaced_by_eur` (`currency`, `date`, `euroDate`). For the capital gains report the error is given per ISIN, not per pair: the first foreign trade of an ISIN that has no rate names its date and sources, and the ISIN can be excluded. A trade with no known currency has the key `.trade` (no parameters). |
-| `official_rate_from_nearby_date` | Warning for every report that needs one currency and tax date with no ECB rate of its own, one per pair: the last earlier ECB rate, at most 4 days before, was used. Parameters `currency`, `date` and `rateDate`. The rate is still official; the rule is unconfirmed by FURS. |
 | `official_rate_file_incomplete` | Warning, once per used rate file of a tax year that is not a whole year: key `.starts_late` (parameters `year`, `firstDate`: the file starts more than 4 days after 1 January) or `.ends_early` (`year`, `lastDate`: the file ends within 4 days before 31 December and a need after its end was accepted). Its reports and sources are those of the needs in that file's year (for `.ends_early`, those after its end). |
 | `income_details_missing` | Error for the affected income form, with a details request while resolvable. |
 | `interest_payer_not_found` | Warning for Doh-Obr (and Doh-DHO when the payments are deposit interest), once per ISIN of a coupon or once per broker of cash interest: no reference row gave the payer, several rows disagree and the user skipped them or has not answered, or the broker has no single company in `broker_payers.csv`. The rows are made without payer facts and the user completes them in eDavki. |
+| `interest_payer_number_missing` | Warning for Doh-Obr and Doh-DHO (the form of the payment is the affected report), once per ISIN of a coupon or once per broker of cash interest: the payer was found and is not Slovenian, but its reference row has no tax number, LEI or register number. The row is still made, without `IdentificationNumber`; the user enters the issuer's foreign tax number, LEI or register number in eDavki, and a sequential number only if it has none. Never blocks, never asks. Not given for Doh-Div. |
 | `interest_payment_not_positive` | Warning for the form of the payment, one per payment: an interest payment of 0 or less, or one that rounds to 0.00, is not a row, is not netted against other payments and is not in the deposit total. |
+| `coupon_accrued_interest_not_deducted` | Warning for Doh-Obr, one per coupon row that follows a purchase of its bond: after the previous coupon of that bond in the whole history, or with any purchase when there is no earlier coupon, and before the coupon date. The row holds the whole coupon; the accrued interest paid at the purchase lowers its tax base (ZDoh-2 Article 87), so the user lowers the value in eDavki. Parameters `isin` and `date` (the coupon date); the sources, the ISIN and the date are those of the coupon. Never blocks. |
+| `bond_sale_accrued_interest_not_reported` | Warning for Doh-Obr, once per bond with units sold in the year after the answer `ordinary`, not given when every payer row of the ISIN has the country `SI` (no tax on that interest for a bond issued in Slovenia after 1 January 2005; the issue date is not known): the accrued interest received at the sale is Doh-Obr income (type 2, on the settlement date of the sale) that the report does not hold, so the user adds it in eDavki. The coupons of the bond are written. No parameters; the ISIN, the name, the sources and the date are those of the bond's events of the year. Never blocks. |
 | `slovenian_coupon_tax` | Warning for Doh-Obr, one per coupon row whose payer has the residence country `SI` and whose export has a tax above 0. A Slovenian withholding is not foreign tax and gives no credit; if the payer already taxed the coupon, the user leaves it out in eDavki. The row is still made. |
 | `slovenian_payer_tax_number_missing` | Warning for the form of the row, once per ISIN of a coupon or once per broker of cash interest: the payer's reference row has the country `SI` but no valid Slovenian tax number (empty, with `SI` before the digits, or a wrong check digit). The row is still made, with its name and address and no number; the user enters the tax number in eDavki. Never blocks, never asks. |
-| `treaty_claim_details_missing` | Warning for Doh-Obr, one per payer country after the answer `claim`: the user fills in the paragraph and article of the tax treaty in the claimed rows in eDavki, because the app does not fill them in yet. The parameter `country` is the payer country; the sources and the date are those of the country's taxed payments. |
 | `developer_export_unavailable` | Warning for Doh-KDVP in developer mode, one per investment whose pool stopped for missing history but that the developer export cannot be written for: a corporate action follows the sale without history (`developer_export_unavailable.corporate_action_after_gap`) or a unit value does not fit `F4` (`developer_export_unavailable.unit_value_too_large`). No parameters; the source and the date are those of the sale without history. It does not block; the failure question keeps its two choices. |
 | `taxpayer_tax_number_check_digit` | Warning, once per run, when the check digit of the taxpayer's tax number is wrong (weights 8 to 2, 11 minus the sum modulo 11, 10 as 0; the same rule as a payer's number). Message key `taxpayer_tax_number_check_digit`, no parameters; the number is never in the text. No report is named, because every form holds the number; the CLI lists it as not about a form. It never blocks: the files are written with the number as typed. |
 | `deposit_interest_add_other_banks` | Warning for Doh-DHO, once per run, after the answer `above_limit`: the form holds only the imported interest, and the user adds the interest of the other banks in eDavki. |

@@ -145,14 +145,14 @@ void checkRow(std::vector<ProcessingDiagnostic>& aDiagnostics,
         }
     }
 
-    // A claim needs a foreign tax that is written, and, when it has a text, a trimmed text a claim
-    // may carry; a claim without a text is written as `DA`.
+    // A claim needs a foreign tax that is written and a trimmed text a claim may carry. The element
+    // is the treaty text or left out: a claim without a text is not accepted.
     if (aRow.mTreatyClaim)
     {
         const auto& statement = aRow.mTreatyClaim->mStatement;
-        const bool badText =
-            statement && (!xmlTextLength(*statement) || !isValidTreatyStatement(*statement) ||
-                          trimmedTreatyStatement(*statement) != *statement);
+        const bool badText = !statement || !xmlTextLength(*statement) ||
+                             !isValidTreatyStatement(*statement) ||
+                             trimmedTreatyStatement(*statement) != *statement;
 
         if (aRow.mWithholding.mForeignTax <= 0 || isSlovenianPayer(aRow) || badText)
         {
@@ -210,18 +210,10 @@ void appendInterest(pugi::xml_node aObr, const ObrInterestRow& aRow) {
 
     appendOptionalText(interest, "Country2", aRow.mSourceCountry);
 
-    // A claim writes its treaty text, or `DA` when the user fills in the paragraph and article in
-    // eDavki; a row without a claim has no element.
+    // A claim writes its treaty text; a row without a claim has no element.
     if (aRow.mTreatyClaim)
     {
-        if (aRow.mTreatyClaim->mStatement)
-        {
-            appendText(interest, "ReliefStatement", *aRow.mTreatyClaim->mStatement);
-        }
-        else
-        {
-            appendText(interest, "ReliefStatement", "DA");
-        }
+        appendText(interest, "ReliefStatement", aRow.mTreatyClaim->mStatement.value());
     }
 }
 

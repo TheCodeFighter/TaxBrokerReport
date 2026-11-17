@@ -2725,79 +2725,6 @@ TEST(ApplicationResultJsonTest, RecordedTreatyAnswersAreATextOrNoClaim) {
     EXPECT_EQ(decisions[0].at("treatyCheck").at("country"), "BE");
 }
 
-TEST(ApplicationResultJsonTest,
-     AnInterestTreatyClaimRequestListsTheCountryTheIsinsAndCashInterest) {
-    ApplicationResultInput input{.mReportingYear = 2025};
-    input.mRequests = {
-        RequestInput{.mQuestion = {.mType = RequestType::IncomeDetailsRequired,
-                                   .mAffectedReports = {ReportType::OtherInterest},
-                                   .mData = InterestTreatyClaimQuestion{.mYear = 2025,
-                                                                        .mCountry = "US",
-                                                                        .mIsins = {"XX0000000010"},
-                                                                        .mCashInterest = true}}}};
-
-    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
-    const auto& request = json.at("requests").at(0);
-
-    EXPECT_EQ(request.at("type"), "income_details_required");
-    EXPECT_FALSE(request.contains("isin"));
-    EXPECT_FALSE(request.contains("treatyCheck"));
-    EXPECT_EQ(request.at("interestTreatyCheck"),
-              (nlohmann::json{{"year", 2025},
-                              {"country", "US"},
-                              {"isins", {"XX0000000010"}},
-                              {"cashInterest", true}}));
-}
-
-TEST(ApplicationResultJsonTest, RecordedInterestTreatyAnswersAreClaimOrNoClaim) {
-    ApplicationResult result;
-    const InterestTreatyClaimQuestion question{.mYear = 2025,
-                                               .mCountry = "US",
-                                               .mIsins = {"XX0000000010"},
-                                               .mCashInterest = false};
-
-    result.mDecisions = {
-        RecordedDecision{.mId = "decision-0001",
-                         .mType = RequestType::IncomeDetailsRequired,
-                         .mData = question,
-                         .mAnswer = InterestTreatyClaimAnswer{.mClaim = true}},
-        RecordedDecision{.mId = "decision-0002",
-                         .mType = RequestType::IncomeDetailsRequired,
-                         .mData = question,
-                         .mAnswer = InterestTreatyClaimAnswer{.mClaim = false}},
-    };
-
-    const auto json = serialize(result);
-    const auto& decisions = json.at("decisions");
-
-    ASSERT_EQ(decisions.size(), 2U);
-    EXPECT_EQ(decisions[0].at("answer"), "claim");
-    EXPECT_EQ(decisions[1].at("answer"), "no_claim");
-    EXPECT_EQ(decisions[0].at("interestTreatyCheck").at("country"), "US");
-}
-
-TEST(ApplicationResultJsonTest, TheTreatyClaimDetailsMissingWarningHasItsCodeAndTheCountry) {
-    ApplicationResultInput input{.mReportingYear = 2025};
-    auto message =
-        makeDiagnosticMessage(MessageKey::TreatyClaimDetailsMissing, {textParam("country", "US")});
-
-    input.mProcessingDiagnostics = {ProcessingDiagnostic{
-        .mSeverity = DiagnosticSeverity::Warning,
-        .mCode = ProcessingDiagnosticCode::TreatyClaimDetailsMissing,
-        .mContext = {.mStage = PipelineStage::FifoTax,
-                     .mAffectedReports = {ReportType::OtherInterest}},
-        .mMessage = std::move(message.mEnglish),
-        .mMessageKey = message.mKey,
-        .mMessageParams = std::move(message.mParams),
-    }};
-
-    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
-    const auto& diagnostic = json.at("diagnostics").at(0);
-
-    EXPECT_EQ(diagnostic.at("code"), "treaty_claim_details_missing");
-    EXPECT_EQ(diagnostic.at("messageKey"), "treaty_claim_details_missing");
-}
-
 // The summary parts of the result: capital investments, rates, corrections, income, data sources.
 
 SourceReference saleSource(std::size_t aRow) {
@@ -2943,7 +2870,7 @@ TEST(ApplicationResultJsonTest, WritesTheTreatyClaimKindsWithoutACatalogueRow) {
                                                .mTreaty = TreatyClaimKind::UserText},
                                 IncomeRowFacts{.mKind = IncomeRowKind::BondCoupon,
                                                .mIsin = "XX0000000002",
-                                               .mTreaty = TreatyClaimKind::ClaimedWithoutText}}};
+                                               .mTreaty = TreatyClaimKind::None}}};
 
     const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
     const auto& rows = json.at("reports").at("otherInterest").at("incomeSummary").at("rows");
@@ -2951,8 +2878,44 @@ TEST(ApplicationResultJsonTest, WritesTheTreatyClaimKindsWithoutACatalogueRow) {
     ASSERT_EQ(rows.size(), 2U);
     EXPECT_EQ(rows.at(0).at("treaty").at("claim"), "user_text");
     EXPECT_FALSE(rows.at(0).at("treaty").contains("catalogueRow"));
-    EXPECT_EQ(rows.at(1).at("treaty").at("claim"), "claimed_without_text");
+    EXPECT_EQ(rows.at(1).at("treaty").at("claim"), "none");
     EXPECT_FALSE(rows.at(1).at("treaty").contains("catalogueRow"));
+}
+
+TEST(ApplicationResultJsonTest, TheNewInterestWarningsHaveTheirOwnCodes) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+    auto number = makeDiagnosticMessage(MessageKey::InterestPayerNumberMissing);
+    auto sale = makeDiagnosticMessage(MessageKey::BondSaleAccruedInterestNotReported);
+
+    input.mProcessingDiagnostics = {
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = ProcessingDiagnosticCode::InterestPayerNumberMissing,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {ReportType::OtherInterest}},
+            .mMessage = std::move(number.mEnglish),
+            .mMessageKey = number.mKey,
+            .mMessageParams = std::move(number.mParams),
+        },
+        ProcessingDiagnostic{
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = ProcessingDiagnosticCode::BondSaleAccruedInterestNotReported,
+            .mContext = {.mStage = PipelineStage::FifoTax,
+                         .mAffectedReports = {ReportType::OtherInterest}},
+            .mMessage = std::move(sale.mEnglish),
+            .mMessageKey = sale.mKey,
+            .mMessageParams = std::move(sale.mParams),
+        },
+    };
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& diagnostics = json.at("diagnostics");
+
+    ASSERT_EQ(diagnostics.size(), 2U);
+    EXPECT_EQ(diagnostics.at(0).at("code"), "interest_payer_number_missing");
+    EXPECT_EQ(diagnostics.at(0).at("messageKey"), "interest_payer_number_missing");
+    EXPECT_EQ(diagnostics.at(1).at("code"), "bond_sale_accrued_interest_not_reported");
+    EXPECT_EQ(diagnostics.at(1).at("messageKey"), "bond_sale_accrued_interest_not_reported");
 }
 
 TEST(ApplicationResultJsonTest, WritesTheCorrectionsAndTheReconciliationImpactAsExactFractions) {

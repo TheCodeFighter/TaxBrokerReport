@@ -239,16 +239,7 @@ const OfficialRate* resolvePair(const OfficialRateTable& aTable,
 
         if (const auto* earlier = aTable.find(code, candidate))
         {
-            aSelection.mDiagnostics.push_back(pairDiagnostic(
-                DiagnosticSeverity::Warning,
-                ProcessingDiagnosticCode::OfficialRateFromNearbyDate,
-                makeDiagnosticMessage(MessageKey::OfficialRateFromNearbyDate,
-                                      {currencyParam,
-                                       dateParam,
-                                       textParam("rateDate", formatCalendarDate(candidate))}),
-                aPair,
-                aTaxDate));
-
+            // The last earlier rate is the official rule for a day without a rate: no warning.
             return earlier;
         }
 

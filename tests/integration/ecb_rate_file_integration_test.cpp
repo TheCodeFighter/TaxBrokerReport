@@ -136,13 +136,7 @@ TEST(EcbRateFileIntegrationTest, TakesTheLastRateOfThePreviousYearOnNewYearsDay)
     EXPECT_EQ(rate->mObservationDate, date("2024-12-31"));
     EXPECT_EQ(rate->mSourceFile.value(), "exr_2024_synthetic.csv");
 
-    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageKey, MessageKey::OfficialRateFromNearbyDate);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageParams,
-              (std::vector<MessageParam>{textParam("currency", "USD"),
-                                         textParam("date", "2025-01-01"),
-                                         textParam("rateDate", "2024-12-31")}));
+    EXPECT_TRUE(selection.mDiagnostics.empty());
 }
 
 TEST(EcbRateFileIntegrationTest, BlocksNewYearsDayWhenThePreviousYearsFileIsNotLoaded) {

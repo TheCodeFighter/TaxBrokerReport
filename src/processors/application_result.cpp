@@ -468,7 +468,6 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* income = std::get_if<IncomeClassificationQuestion>(&aQuestion.mData);
     const auto* bond = std::get_if<BondTypeQuestion>(&aQuestion.mData);
     const auto* treaty = std::get_if<TreatyClaimQuestion>(&aQuestion.mData);
-    const auto* interestTreaty = std::get_if<InterestTreatyClaimQuestion>(&aQuestion.mData);
     const auto* developer = std::get_if<DeveloperExportQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
@@ -481,8 +480,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
         ((classification != nullptr || income != nullptr) != isClassificationType) ||
         (quantity != nullptr) != isQuantityType ||
-        ((payer != nullptr || bond != nullptr || treaty != nullptr || interestTreaty != nullptr) &&
-         !isIncomeDetailsType) ||
+        ((payer != nullptr || bond != nullptr || treaty != nullptr) && !isIncomeDetailsType) ||
         (deposit != nullptr) != isDepositType ||
         (developer != nullptr) !=
             (aQuestion.mType == RequestType::DeveloperExportConfirmationRequired))
@@ -514,14 +512,6 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A treaty claim question needs a country of two capital "
                                     "letters and an ISIN.");
-    }
-
-    if (interestTreaty != nullptr &&
-        (!isTwoCapitalLetters(interestTreaty->mCountry) ||
-         (interestTreaty->mIsins.empty() && !interestTreaty->mCashInterest)))
-    {
-        throw std::invalid_argument("An interest treaty claim question needs a country of two "
-                                    "capital letters and an ISIN or cash interest.");
     }
 
     if (deposit != nullptr && (deposit->mTotal <= 0 || deposit->mTotal > kDepositInterestAllowance))
@@ -1137,14 +1127,6 @@ QuestionData normalizedData(QuestionData aData) {
         isins.erase(std::unique(isins.begin(), isins.end()), isins.end());
     }
 
-    if (auto* interestTreaty = std::get_if<InterestTreatyClaimQuestion>(&aData))
-    {
-        auto& isins = interestTreaty->mIsins;
-
-        std::sort(isins.begin(), isins.end());
-        isins.erase(std::unique(isins.begin(), isins.end()), isins.end());
-    }
-
     if (auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aData))
     {
         std::sort(
@@ -1442,8 +1424,7 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
                 hasBlockingRequest |=
                     !std::holds_alternative<PayerChoiceQuestion>(request.mData) &&
                     !std::holds_alternative<DepositInterestTotalQuestion>(request.mData) &&
-                    !std::holds_alternative<TreatyClaimQuestion>(request.mData) &&
-                    !std::holds_alternative<InterestTreatyClaimQuestion>(request.mData);
+                    !std::holds_alternative<TreatyClaimQuestion>(request.mData);
             }
         }
 

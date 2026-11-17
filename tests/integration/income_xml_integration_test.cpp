@@ -469,11 +469,11 @@ TEST(IncomeXmlIntegrationTest, DohObrSelfReportRunWithBothSubtypesIsWrittenAsAnO
     expectValidForObrSchema(*result.mXml);
 }
 
-TEST(IncomeXmlIntegrationTest, DohObrWithPayersForeignTaxAndTreatyClaimsMatchesTheGoldenFile) {
+TEST(IncomeXmlIntegrationTest, DohObrWithPayersForeignTaxAndATreatyTextMatchesTheGoldenFile) {
     // 2023-03-14: a coupon of EUR 25.00 with EUR 3.00 foreign tax; the issuer is in US and the
     //             reference files have a bond coupon text for US: the row has that text.
     // 2023-06-16: a coupon of EUR 40.00 with EUR 6.00 foreign tax; the issuer is in DE and there
-    //             is no bond coupon text for DE, so the question is answered yes: `DA`.
+    //             is no bond coupon text for DE, so the row has no claim and no question is asked.
     // 2023-11-30: Trade Republic interest of EUR 3.45 before 6 December 2023, so cash interest,
     //             without tax: the broker's payer facts and no ReliefStatement.
     // Both bonds are bought on 2023-01-10 and kept, so there is no bond type question.
@@ -496,20 +496,8 @@ TEST(IncomeXmlIntegrationTest, DohObrWithPayersForeignTaxAndTreatyClaimsMatchesT
 
     IncomeRun run{csv.path(), 2023, OfficialRateTable{}, catalogue};
 
-    // Only the DE coupon has no text, so only DE is asked; the US coupon is claimed with its text.
-    ASSERT_EQ(run.result().mRequests.size(), 1U);
-
-    const auto* question =
-        std::get_if<InterestTreatyClaimQuestion>(&run.result().mRequests.at(0).mData);
-
-    ASSERT_NE(question, nullptr);
-    EXPECT_EQ(question->mCountry, "DE");
-    EXPECT_EQ(question->mIsins, std::vector<Isin>{"XX0000000028"});
-    EXPECT_FALSE(question->mCashInterest);
-
-    ASSERT_TRUE(run.answerFirst(InterestTreatyClaimAnswer{.mClaim = true}).empty());
+    // Nothing is asked: the US coupon is claimed with its text, the DE coupon has no claim.
     EXPECT_TRUE(run.result().mRequests.empty());
-    EXPECT_EQ(run.diagnosticsOf(ProcessingDiagnosticCode::TreatyClaimDetailsMissing).size(), 1U);
     EXPECT_NE(run.status(ReportType::OtherInterest), ReportStatus::NeedsInput);
     EXPECT_NE(run.status(ReportType::OtherInterest), ReportStatus::Failed);
 
@@ -520,12 +508,11 @@ TEST(IncomeXmlIntegrationTest, DohObrWithPayersForeignTaxAndTreatyClaimsMatchesT
     EXPECT_EQ(rows[1].mGrossInterest, 400'000); // EUR 40.00
     EXPECT_EQ(rows[2].mGrossInterest, 34'500);  // EUR 3.45
 
-    // US: the reference text; DE: claimed without a text (`DA`); the cash interest: no claim.
+    // US: the reference text; DE: no text, so no claim; the cash interest: no claim.
     ASSERT_TRUE(rows[0].mTreatyClaim.has_value());
     EXPECT_EQ(rows[0].mTreatyClaim->mStatement,
               std::optional<std::string>{"2. odstavek 11. člena"});
-    ASSERT_TRUE(rows[1].mTreatyClaim.has_value());
-    EXPECT_EQ(rows[1].mTreatyClaim->mStatement, std::nullopt);
+    EXPECT_FALSE(rows[1].mTreatyClaim.has_value());
     EXPECT_FALSE(rows[2].mTreatyClaim.has_value());
 
     const auto result =

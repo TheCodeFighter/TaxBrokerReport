@@ -908,6 +908,58 @@ TEST(ObrXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
     expectOneError(result, "Country2", "A Broker", std::nullopt);
 }
 
+TEST(ObrXmlWriterTest, TheIsinPrefixXsIsNotAPayerCountry) {
+    // `XS` is the ISIN prefix of international issues, not a country: eDavki rejects it.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BrokerCashInterest{},
+                .mDate = day("2025-03-31"),
+                .mPayer = {.mName = "A Broker", .mCountry = "XS"},
+                .mGrossInterest = 1'000'000,
+                .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
+                .mSourceCountry = std::nullopt,
+                .mTreatyClaim = std::nullopt,
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    expectOneError(result, "Country", "A Broker", std::nullopt);
+}
+
+TEST(ObrXmlWriterTest, TheIsinPrefixEuIsNotASourceCountry) {
+    // `EU` is not a country: eDavki rejects it.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BrokerCashInterest{},
+                .mDate = day("2025-03-31"),
+                .mPayer = {.mName = "A Broker", .mCountry = "FR"},
+                .mGrossInterest = 1'000'000,
+                .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
+                .mSourceCountry = "EU",
+                .mTreatyClaim = std::nullopt,
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    expectOneError(result, "Country2", "A Broker", std::nullopt);
+}
+
 TEST(ObrXmlWriterTest, PayerTaxNumberOfSevenDigitsIsRejected) {
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
@@ -1012,9 +1064,9 @@ TEST(ObrXmlWriterTest, IsinThatIsNotValidXmlTextIsLeftOutOfTheError) {
     expectOneError(result, "Country2", "A Issuer", std::nullopt);
 }
 
-TEST(ObrXmlWriterTest, AClaimWithoutATextWritesDAOnTheClaimedRowOnly) {
-    // The user claims the treaty and fills in the paragraph and article in eDavki, so the claimed
-    // row has `DA`. The other row has no claim and no element.
+TEST(ObrXmlWriterTest, AClaimWritesItsTextOnTheClaimedRowOnly) {
+    // The claimed row has the treaty paragraph and article as its `ReliefStatement`. The other row
+    // has no claim and no element.
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,
@@ -1033,8 +1085,8 @@ TEST(ObrXmlWriterTest, AClaimWithoutATextWritesDAOnTheClaimedRowOnly) {
                 .mGrossInterest = 250'000,                                        // EUR 25.00
                 .mWithholding = {.mForeignTax = 37'500, .mBlankInExport = false}, // EUR 3.75
                 .mSourceCountry = "US",
-                .mTreatyClaim =
-                    TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt},
+                .mTreatyClaim = TreatyClaim{.mStatement = "1. odstavek 11. člena",
+                                            .mCatalogueRow = std::nullopt},
             },
             {
                 .mPayment = {StatementEventKind::Interest, std::size_t{1}, std::size_t{0}},
@@ -1087,7 +1139,7 @@ TEST(ObrXmlWriterTest, AClaimWithoutATextWritesDAOnTheClaimedRowOnly) {
         <Value>25.00</Value>
         <ForeignTax>3.75</ForeignTax>
         <Country2>US</Country2>
-        <ReliefStatement>DA</ReliefStatement>
+        <ReliefStatement>1. odstavek 11. člena</ReliefStatement>
       </Interest>
       <Interest>
         <Date>2025-07-15</Date>
@@ -1209,6 +1261,33 @@ TEST(ObrXmlWriterTest, AClaimOnARowWithoutForeignTaxStopsTheFile) {
                 .mGrossInterest = 1'000'000,
                 .mWithholding = {.mForeignTax = 0, .mBlankInExport = false},
                 .mSourceCountry = "DE",
+                .mTreatyClaim = TreatyClaim{.mStatement = "1. odstavek 11. člena",
+                                            .mCatalogueRow = std::nullopt},
+            },
+        }};
+
+    const auto result = ObrXmlWriter::write(metadata, report);
+
+    expectOneError(result, "ReliefStatement", "A Broker", std::nullopt);
+}
+
+TEST(ObrXmlWriterTest, AClaimWithoutATextStopsTheFile) {
+    // The element is the treaty text or left out, never a yes or no, so a claim needs its text.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const OtherInterestReportObr report{
+        .mRows = {
+            {
+                .mPayment = {StatementEventKind::Interest, std::size_t{0}, std::size_t{0}},
+                .mKind = BrokerCashInterest{},
+                .mDate = day("2025-03-31"),
+                .mPayer = {.mName = "A Broker", .mCountry = "DE"},
+                .mGrossInterest = 1'000'000,                                       // EUR 100.00
+                .mWithholding = {.mForeignTax = 150'000, .mBlankInExport = false}, // EUR 15.00
+                .mSourceCountry = "DE",
                 .mTreatyClaim =
                     TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt},
             },
@@ -1239,8 +1318,8 @@ TEST(ObrXmlWriterTest, AClaimOnASlovenianPayerStopsTheFile) {
                 .mGrossInterest = 250'000,
                 .mWithholding = {.mForeignTax = 62'500, .mBlankInExport = false},
                 .mSourceCountry = "SI",
-                .mTreatyClaim =
-                    TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt},
+                .mTreatyClaim = TreatyClaim{.mStatement = "1. odstavek 11. člena",
+                                            .mCatalogueRow = std::nullopt},
             },
         }};
 
@@ -1372,9 +1451,9 @@ TEST(ObrXmlWriterTest, SeveralProblemsGiveOneDiagnosticEachInRowOrder) {
     EXPECT_EQ(result.mDiagnostics.at(1).mContext.mIsin, "FR0000000002");
 }
 
-TEST(ObrXmlWriterTest, TheWholeCouponIsWrittenWhateverWasPaidAsAccruedInterest) {
-    // Accrued interest paid with a purchase is part of the cost, not of the coupon: a coupon of EUR
-    // 50.0000 is written as 50.00.
+TEST(ObrXmlWriterTest, TheWriterWritesTheValueOfTheRowAsItIs) {
+    // The writer only formats: a coupon of EUR 50.0000 is written as 50.00. Lowering it by the
+    // accrued interest of a purchase is not the writer's job; the processor warns instead.
     const ReportMetadata metadata{
         .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
         .mReportingYear = 2025,

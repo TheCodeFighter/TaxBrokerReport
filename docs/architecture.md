@@ -1019,13 +1019,15 @@ reports stage below; both share the payer, rate and exclusion helpers of
 - **Notice.** One `foreign_tax_evidence_required` warning per run when a row has a foreign tax above
   0 and a payer country other than `SI`, as for dividends. It is made after the exclusions of the
   form, from the rows that stay, so a left-out investment never asks for evidence.
-- **Treaty claims.** After the rows, per payer country (not `SI`) with rows that have a foreign
-  tax above 0: a coupon takes the one `bond_coupon` text of the country and cash interest the one
-  `cash_interest` text, without a question. The country's rows of a kind without a text get one
-  `InterestTreatyClaimQuestion` (`income_details_required`, never blocking), yes or no. Yes sets a
-  `TreatyClaim` without a text on those rows and gives one `treaty_claim_details_missing` warning
-  (the user fills in the paragraph and article in eDavki); no answer or no leaves them without a
-  claim. Rows without a payer country get no question. Dividend texts are never used here.
+- **Treaty claims.** For each row with a foreign tax above 0 and a payer country other than `SI`:
+  a coupon takes the one `bond_coupon` text of the country and cash interest the one
+  `cash_interest` text, without a question, as a `TreatyClaim` with that text. A row without such a
+  text has no claim: nothing is asked and nothing is warned, because the element is the text or
+  left out, never `DA`. Rows without a payer country have no claim. Dividend texts are never used
+  here.
+- **Accrued interest.** An ordinary bond with a sale in the year gets the warning
+  `bond_sale_accrued_interest_not_reported` (after its type answer; not for a bond whose payer rows all have country `SI`); its coupons are written. A coupon that follows a purchase of its bond, by the dates of the whole history, gets
+  the warning `coupon_accrued_interest_not_deducted`; the row keeps the whole coupon.
 
 ### Income reports stage
 
@@ -1680,7 +1682,7 @@ that replaced a built-in year has `mReplacesBuiltIn`.
 - The table is found by exact currency code and date (`find`); there is no nearby-date lookup.
 - `selectOfficialRates` (`src/processors/official_rate_selection.hpp`) takes the rate needs
   of a run (currency, tax date, report, sources) and the table. It returns one rate per currency
-  and tax date, takes the last earlier rate (at most 4 days back) with a warning, and gives one
+  and tax date, takes the last earlier rate (at most 4 days back, no warning), and gives one
   blocking `missing_exchange_rate` error per pair it cannot fill, also kept per pair in
   `mMissing`. The conversion stage (`convertCapitalTrades`, `src/processors/trade_conversion.hpp`) calls it for
   the foreign trades of the capital pools and gives the missing-pair errors to the gates.

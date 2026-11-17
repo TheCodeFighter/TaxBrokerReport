@@ -395,7 +395,17 @@ TEST(ReferenceCatalogueTest, RejectsAnIsinWithALowercaseLetter) {
 
 TEST(ReferenceCatalogueTest, RejectsAThreeLetterCountry) {
     expectFault("XX0000000010,Payer A,,1 Main Street,IRL,,,issuer,manual,\n",
-                "payers.csv row 2: the country is not 2 uppercase letters");
+                "payers.csv row 2: the country is not 2 uppercase letters or is XS or EU");
+}
+
+TEST(ReferenceCatalogueTest, RejectsTheIsinPrefixXsAsACountry) {
+    expectFault("XX0000000010,Payer A,,1 Main Street,XS,,,issuer,manual,\n",
+                "payers.csv row 2: the country is not 2 uppercase letters or is XS or EU");
+}
+
+TEST(ReferenceCatalogueTest, RejectsTheIsinPrefixEuAsACountry) {
+    expectFault("XX0000000010,Payer A,,1 Main Street,EU,,,issuer,manual,\n",
+                "payers.csv row 2: the country is not 2 uppercase letters or is XS or EU");
 }
 
 TEST(ReferenceCatalogueTest, RejectsAnEmptyName) {
@@ -518,9 +528,10 @@ TEST(ReferenceCatalogueTest, RejectsAReliefStatementWithAnEmptyIncome) {
 }
 
 TEST(ReferenceCatalogueTest, RejectsAReliefStatementWithAWrongCountry) {
-    expectFault("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
-                "relief_statements.csv row 2: the country is not 2 uppercase letters",
-                "Belgium,dividend,Treaty text,manual,\n");
+    expectFault(
+        "XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+        "relief_statements.csv row 2: the country is not 2 uppercase letters or is XS or EU",
+        "Belgium,dividend,Treaty text,manual,\n");
 }
 
 TEST(ReferenceCatalogueTest, RejectsARepeatedBrokerPayer) {
@@ -841,6 +852,14 @@ TEST(ReferenceDataTest, FaultOfACountryWithThreeLetters) {
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidCountry);
 }
 
+TEST(ReferenceDataTest, FaultOfTheCountryXs) {
+    const auto fault = payersFault(std::string{kPayersHeader} +
+                                   "XX0000000010,Payer A,,1 Main Street,XS,,,issuer,manual,\n");
+
+    EXPECT_EQ(fault.mRow, 2U);
+    EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileInvalidCountry);
+}
+
 TEST(ReferenceDataTest, FaultOfAnInstrumentKindThatIsNotKnown) {
     const auto fault =
         payersFault(std::string{kPayersHeader} +
@@ -988,8 +1007,10 @@ TEST(ReferenceDataTest, AFaultHasTheEnglishTextAndNoValueOfTheFile) {
         payersFault(std::string{kPayersHeader} +
                     "XX0000000010,Secret Name,,1 Main Street,IRL,,,issuer,manual,\n");
 
-    EXPECT_EQ(fault.mMessage.mEnglish,
-              "The country is not 2 uppercase letters. The reference data was not loaded.");
+    EXPECT_EQ(
+        fault.mMessage.mEnglish,
+        "The country is not 2 uppercase letters, or it is XS or EU, which are not countries. Use "
+        "the real country of the issuer. The reference data was not loaded.");
     EXPECT_EQ(fault.mMessage.mEnglish.find("Secret Name"), std::string::npos);
     EXPECT_EQ(fault.mMessage.mEnglish.find("IRL"), std::string::npos);
 }

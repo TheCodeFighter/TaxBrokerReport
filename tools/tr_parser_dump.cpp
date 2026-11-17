@@ -1015,8 +1015,6 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "UnsupportedCorporateAction";
     case ProcessingDiagnosticCode::TaxCategoryNotReported:
         return "TaxCategoryNotReported";
-    case ProcessingDiagnosticCode::OfficialRateFromNearbyDate:
-        return "OfficialRateFromNearbyDate";
     case ProcessingDiagnosticCode::OfficialRateFileIncomplete:
         return "OfficialRateFileIncomplete";
     case ProcessingDiagnosticCode::OfficialRateFilesRequired:
@@ -1033,16 +1031,20 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "ForeignTaxEvidenceRequired";
     case ProcessingDiagnosticCode::InterestPayerNotFound:
         return "InterestPayerNotFound";
+    case ProcessingDiagnosticCode::InterestPayerNumberMissing:
+        return "InterestPayerNumberMissing";
     case ProcessingDiagnosticCode::InterestPaymentNotPositive:
         return "InterestPaymentNotPositive";
     case ProcessingDiagnosticCode::SlovenianCouponTax:
         return "SlovenianCouponTax";
+    case ProcessingDiagnosticCode::CouponAccruedInterestNotDeducted:
+        return "CouponAccruedInterestNotDeducted";
+    case ProcessingDiagnosticCode::BondSaleAccruedInterestNotReported:
+        return "BondSaleAccruedInterestNotReported";
     case ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing:
         return "SlovenianPayerTaxNumberMissing";
     case ProcessingDiagnosticCode::DepositInterestAddOtherBanks:
         return "DepositInterestAddOtherBanks";
-    case ProcessingDiagnosticCode::TreatyClaimDetailsMissing:
-        return "TreatyClaimDetailsMissing";
     case ProcessingDiagnosticCode::DeveloperExportUnavailable:
         return "DeveloperExportUnavailable";
     case ProcessingDiagnosticCode::TaxpayerTaxNumberCheckDigit:

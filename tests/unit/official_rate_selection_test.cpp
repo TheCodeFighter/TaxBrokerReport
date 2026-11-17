@@ -577,19 +577,9 @@ TEST(OfficialRateSelectionTest, SaturdayTakesTheFridayRateWithAWarning) {
     ASSERT_NE(rate, nullptr);
     EXPECT_EQ(rate->mValue, 108'570'000);
     EXPECT_EQ(rate->mObservationDate, date("2025-03-07"));
-    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
 
-    const auto& warning = selection.mDiagnostics.at(0);
-
-    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(warning.mCode, ProcessingDiagnosticCode::OfficialRateFromNearbyDate);
-    EXPECT_EQ(warning.mMessageKey, MessageKey::OfficialRateFromNearbyDate);
-    EXPECT_EQ(warning.mMessageParams,
-              (std::vector<MessageParam>{textParam("currency", "USD"),
-                                         textParam("date", "2025-03-08"),
-                                         textParam("rateDate", "2025-03-07")}));
-    EXPECT_EQ(warning.mContext.mTaxDate, date("2025-03-08"));
-    EXPECT_EQ(warning.mContext.mAffectedReports, (std::vector<ReportType>{ReportType::Dividends}));
+    // The last earlier rate is the official rule for a day without a rate: no diagnostic.
+    EXPECT_TRUE(selection.mDiagnostics.empty());
 
     // 10.0000 USD / 1.0857 = 9.2106475... EUR, rounded to 9.2106 EUR
     EXPECT_EQ(requireValue(convertOfficialMoney(100'000, *rate)), 92'106);
@@ -613,9 +603,7 @@ TEST(OfficialRateSelectionTest, SundayTakesTheFridayRateToo) {
 
     ASSERT_NE(rate, nullptr);
     EXPECT_EQ(rate->mObservationDate, date("2025-03-07"));
-    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageParams.at(2),
-              textParam("rateDate", "2025-03-07"));
+    EXPECT_TRUE(selection.mDiagnostics.empty());
 }
 
 TEST(OfficialRateSelectionTest, EasterMondayTakesTheThursdayRateFourDaysBack) {
@@ -637,10 +625,7 @@ TEST(OfficialRateSelectionTest, EasterMondayTakesTheThursdayRateFourDaysBack) {
 
     ASSERT_NE(rate, nullptr);
     EXPECT_EQ(rate->mObservationDate, date("2025-04-17"));
-    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageParams.at(2),
-              textParam("rateDate", "2025-04-17"));
+    EXPECT_TRUE(selection.mDiagnostics.empty());
 }
 
 TEST(OfficialRateSelectionTest, NewYearsDayTakesThePreviousYearsLastRateWhenBothFilesAreLoaded) {
@@ -663,10 +648,7 @@ TEST(OfficialRateSelectionTest, NewYearsDayTakesThePreviousYearsLastRateWhenBoth
     ASSERT_NE(rate, nullptr);
     EXPECT_EQ(rate->mObservationDate, date("2024-12-31"));
     EXPECT_EQ(rate->mValue, 103'890'000);
-    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageParams.at(2),
-              textParam("rateDate", "2024-12-31"));
+    EXPECT_TRUE(selection.mDiagnostics.empty());
 }
 
 TEST(OfficialRateSelectionTest, NewYearsDayNeedsThePreviousYearsFile) {
@@ -709,7 +691,7 @@ TEST(OfficialRateSelectionTest, AnEarlierRateIsNotUsedWhenTheFileOfTheTaxYearIsN
     EXPECT_EQ(selection.mDiagnostics.at(0).mMessageParams.at(2), numberParam("year", 2025));
 }
 
-TEST(OfficialRateSelectionTest, TwoEventsOnOneSaturdayGiveOneWarningWithBothSources) {
+TEST(OfficialRateSelectionTest, TwoEventsOnOneSaturdayUseFridaysRateWithoutADiagnostic) {
     OfficialRateTable table;
     addFile(table, 2025);
     addRate(table, "USD", "2025-03-07", 108'570'000);
@@ -728,10 +710,11 @@ TEST(OfficialRateSelectionTest, TwoEventsOnOneSaturdayGiveOneWarningWithBothSour
 
     const auto selection = selectOfficialRates(needs, table);
 
-    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
-    // The same source twice is listed once.
-    EXPECT_EQ(selection.mDiagnostics.at(0).mContext.mSources,
-              (std::vector<SourceReference>{source(2, "a"), source(4, "c")}));
+    const auto* rate = selection.find(Currency::USD, date("2025-03-08"));
+
+    ASSERT_NE(rate, nullptr);
+    EXPECT_EQ(rate->mObservationDate, date("2025-03-07"));
+    EXPECT_TRUE(selection.mDiagnostics.empty());
 }
 
 TEST(OfficialRateSelectionTest, AStoppedCurrencyOnAPublicationDayTakesNoEarlierRate) {
@@ -825,20 +808,18 @@ TEST(OfficialRateSelectionTest, AFileEndingWithinFourDaysOfNewYearsEveIsAWholeYe
 
     ASSERT_NE(rate, nullptr);
     EXPECT_EQ(rate->mObservationDate, date("2023-12-29"));
-    ASSERT_EQ(selection.mDiagnostics.size(), 2U);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageKey, MessageKey::OfficialRateFromNearbyDate);
+    ASSERT_EQ(selection.mDiagnostics.size(), 1U);
 
     // The file ends two days before the year does; the need after its end is told so.
-    EXPECT_EQ(selection.mDiagnostics.at(1).mSeverity, DiagnosticSeverity::Warning);
-    EXPECT_EQ(selection.mDiagnostics.at(1).mCode,
+    EXPECT_EQ(selection.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(selection.mDiagnostics.at(0).mCode,
               ProcessingDiagnosticCode::OfficialRateFileIncomplete);
-    EXPECT_EQ(selection.mDiagnostics.at(1).mMessageKey,
+    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageKey,
               MessageKey::OfficialRateFileIncompleteEndsEarly);
-    EXPECT_EQ(selection.mDiagnostics.at(1).mMessageParams,
+    EXPECT_EQ(selection.mDiagnostics.at(0).mMessageParams,
               (std::vector<MessageParam>{numberParam("year", 2023),
                                          textParam("lastDate", "2023-12-29")}));
-    EXPECT_EQ(selection.mDiagnostics.at(1).mContext.mSources,
+    EXPECT_EQ(selection.mDiagnostics.at(0).mContext.mSources,
               (std::vector<SourceReference>{source(2, "a")}));
 }
 

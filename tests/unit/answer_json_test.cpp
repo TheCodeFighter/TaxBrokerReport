@@ -136,20 +136,19 @@ TEST(AnswerJsonTest, DividendTreatyQuestionReadsATextOrNoClaim) {
     EXPECT_EQ(fit(R"("no_claim")", request), AnswerValue{TreatyClaimAnswer{std::nullopt}});
 }
 
-TEST(AnswerJsonTest, InterestTreatyQuestionReadsClaimOrNoClaim) {
-    const auto request =
-        requestOf(RequestType::IncomeDetailsRequired, InterestTreatyClaimQuestion{});
-
-    EXPECT_EQ(fit(R"("claim")", request), AnswerValue{InterestTreatyClaimAnswer{true}});
-    EXPECT_EQ(fit(R"("no_claim")", request), AnswerValue{InterestTreatyClaimAnswer{false}});
-}
-
 TEST(AnswerJsonTest, BondTypeQuestionReadsBothTypes) {
     const auto request = requestOf(RequestType::IncomeDetailsRequired, BondTypeQuestion{});
 
     EXPECT_EQ(fit(R"("ordinary")", request), AnswerValue{BondTypeAnswer{BondType::Ordinary}});
     EXPECT_EQ(fit(R"("discount_or_zero_coupon")", request),
               AnswerValue{BondTypeAnswer{BondType::DiscountOrZeroCoupon}});
+}
+
+TEST(AnswerJsonTest, AWordQuestionRefusesAnAnswerThatIsNotAString) {
+    const auto request = requestOf(RequestType::IncomeDetailsRequired, BondTypeQuestion{});
+
+    EXPECT_EQ(fit("5", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"type":"ordinary"})", request), std::nullopt);
 }
 
 TEST(AnswerJsonTest, DepositQuestionReadsBothAnswers) {
@@ -201,8 +200,6 @@ TEST(AnswerJsonTest, DeveloperExportQuestionReadsConfirm) {
 TEST(AnswerJsonTest, AnswerOfAnotherQuestionTypeIsRefused) {
     const auto dividendTreaty =
         requestOf(RequestType::IncomeDetailsRequired, TreatyClaimQuestion{});
-    const auto interestTreaty =
-        requestOf(RequestType::IncomeDetailsRequired, InterestTreatyClaimQuestion{});
     const auto dividendsFailure =
         requestOf(RequestType::DividendsFailureResolutionRequired, FailureResolutionQuestion{});
     const auto deposit =
@@ -210,7 +207,6 @@ TEST(AnswerJsonTest, AnswerOfAnotherQuestionTypeIsRefused) {
 
     EXPECT_EQ(fit(R"("no_claim")", kLossRequest), std::nullopt);
     EXPECT_EQ(fit(R"("claim")", dividendTreaty), std::nullopt);
-    EXPECT_EQ(fit(R"({"statement":"x"})", interestTreaty), std::nullopt);
     EXPECT_EQ(fit(R"("developer_export")", dividendsFailure), std::nullopt);
     EXPECT_EQ(fit(R"("skip")", deposit), std::nullopt);
 }

@@ -221,10 +221,11 @@ translate it:
 - `payers.csv`: an ISIN of 2 letters, 9 letters or digits and a correct check digit in every row;
   an `isin_source` of `ib-edavki`, `wikidata`, `issuer`, `exchange` or `gleif`; a non-empty
   `name` and `address`; a `country` of 2
-  uppercase letters; an `instrument_kind` that is empty or one of the four kinds; a `verified_on`
+  uppercase letters, never `XS` or `EU` (ISIN prefixes of international issues, not countries:
+  eDavki rejects them, so the issuer's real country is used); an `instrument_kind` that is empty or one of the four kinds; a `verified_on`
   that is empty or a calendar date; `source` `ib-edavki` or `manual`, and a `source_revision` for
   `ib-edavki`.
-- `relief_statements.csv`: a 2-letter `country`, an `income` of `dividend`, `cash_interest` or
+- `relief_statements.csv`: a 2-letter `country` (same rule), an `income` of `dividend`, `cash_interest` or
   `bond_coupon`, a non-empty `statement`, a source.
 - `broker_payers.csv`: a non-empty `broker`, `code`, `name` and `address`, a 2-letter `country`, a
   source, and no broker and code twice.

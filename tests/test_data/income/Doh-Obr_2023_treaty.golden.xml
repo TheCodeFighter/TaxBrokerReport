@@ -50,7 +50,6 @@
         <Value>40.00</Value>
         <ForeignTax>6.00</ForeignTax>
         <Country2>DE</Country2>
-        <ReliefStatement>DA</ReliefStatement>
       </Interest>
       <Interest>
         <Date>2023-11-30</Date>

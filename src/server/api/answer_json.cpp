@@ -280,12 +280,6 @@ Parsed answerFor(const Json& aJson, const DecisionRequest& aRequest) {
 
             return TreatyClaimAnswer{aJson["statement"].get<std::string>()};
         }
-        else if constexpr (std::is_same_v<Data, InterestTreatyClaimQuestion>)
-        {
-            return fromWords(aJson,
-                             {{"claim", InterestTreatyClaimAnswer{true}},
-                              {"no_claim", InterestTreatyClaimAnswer{false}}});
-        }
         else
         {
             static_assert(std::is_same_v<Data, DeveloperExportQuestion>);

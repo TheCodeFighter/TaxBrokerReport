@@ -375,18 +375,6 @@ struct TreatyClaimQuestion {
     bool operator==(const TreatyClaimQuestion&) const = default;
 };
 
-/// The question data of `income_details_required` for the treaty claim of the Doh-Obr interest of
-/// one payer country that had foreign tax in the year. The paragraph and article are filled in
-/// eDavki, so the answer is only yes or no; no answer is no claim and never blocks.
-struct InterestTreatyClaimQuestion {
-    int mYear{};              ///< The reporting year.
-    std::string mCountry;     ///< Payer country, 2 uppercase letters.
-    std::vector<Isin> mIsins; ///< ISINs of the coupons with foreign tax; may be empty.
-    bool mCashInterest{};     ///< The country's cash interest has foreign tax too (no ISIN).
-
-    bool operator==(const InterestTreatyClaimQuestion&) const = default;
-};
-
 /// The question data of `developer_export_confirmation_required`: one of the three confirmations
 /// before an unsafe Doh-KDVP for incomplete history, with the investments it would contain. The
 /// steps are asked in order; a changed list asks step 1 again.
@@ -410,7 +398,6 @@ using QuestionData = std::variant<std::monostate,
                                   IncomeClassificationQuestion,
                                   BondTypeQuestion,
                                   TreatyClaimQuestion,
-                                  InterestTreatyClaimQuestion,
                                   DeveloperExportQuestion>;
 
 /// What a stage asks the user. Only mType and mData identify the question.
@@ -534,14 +521,6 @@ struct TreatyClaimAnswer {
     bool operator==(const TreatyClaimAnswer&) const = default;
 };
 
-/// The answer to an interest treaty claim question: whether the user claims the treaty. The
-/// paragraph and article are filled in eDavki.
-struct InterestTreatyClaimAnswer {
-    bool mClaim{}; ///< Always set by the creator.
-
-    bool operator==(const InterestTreatyClaimAnswer&) const = default;
-};
-
 /// The longest treaty text of a claim, in characters (UTF-8 code points).
 inline constexpr std::size_t kMaxTreatyStatementLength = 100;
 
@@ -567,7 +546,6 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  IncomeTreatmentAnswer,
                                  BondTypeAnswer,
                                  TreatyClaimAnswer,
-                                 InterestTreatyClaimAnswer,
                                  DeveloperExportConfirmAnswer>;
 
 /// What a stage hands over about an open question to the user.
@@ -734,7 +712,6 @@ enum class TreatyClaimKind {
     None,
     ReferenceText,
     UserText,
-    ClaimedWithoutText, ///< The user only said yes (Doh-Obr); the text is filled in eDavki.
 };
 
 /// One row of an income form, as facts for the user: where the payer data came from, the foreign

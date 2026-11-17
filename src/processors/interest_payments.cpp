@@ -3,6 +3,7 @@
 #include "processors/bond_years.hpp"
 #include "processors/income_payers.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
+#include "taxbroker/text_format.hpp"
 #include "utils/xml_text.hpp"
 
 #include <algorithm>
@@ -40,6 +41,7 @@ const PayerForm kCouponForm{
     .mNotFoundCode = ProcessingDiagnosticCode::InterestPayerNotFound,
     .mNotFoundKey = MessageKey::InterestPayerNotFound,
     .mSlovenianExclusion = std::nullopt,
+    .mNeedsPayerNumber = true,
 };
 
 /// Where a payment goes.
@@ -157,6 +159,104 @@ ProcessingDiagnostic slovenianCouponTaxWarning(const Payment& aPayment) {
                             aPayment.mInstrument->mIsin);
 }
 
+/// The warning that a coupon follows a purchase of its bond: the accrued interest paid at that
+/// purchase lowers the tax base of the coupon, but the row holds the whole coupon.
+ProcessingDiagnostic couponAccruedInterestWarning(const Payment& aPayment) {
+    const auto& metadata = aPayment.mTransaction->mMetadata;
+
+    return incomeDiagnostic(
+        ReportType::OtherInterest,
+        DiagnosticSeverity::Warning,
+        ProcessingDiagnosticCode::CouponAccruedInterestNotDeducted,
+        makeDiagnosticMessage(MessageKey::CouponAccruedInterestNotDeducted,
+                              {textParam("isin", aPayment.mInstrument->mIsin.value()),
+                               textParam("date", formatCalendarDate(metadata.mTaxDate))}),
+        metadata.mSources,
+        metadata.mTaxDate,
+        nameOf(aPayment),
+        aPayment.mInstrument->mIsin);
+}
+
+/// The dates of the purchases and the coupons of one bond in the whole history, in date order.
+struct BondDates {
+    std::vector<Date> mPurchases;
+    std::vector<Date> mCoupons;
+};
+
+/// The purchase and coupon dates of each bond that has a coupon payment, over all years: the
+/// purchase before a coupon may lie in an earlier year.
+std::map<Isin, BondDates> bondDatesOf(const MergedStatement& aStatement,
+                                      const std::vector<Payment>& aPayments) {
+    std::map<Isin, BondDates> bonds;
+
+    for (const auto& payment : aPayments)
+    {
+        if (payment.mRoute == Route::Coupon)
+        {
+            bonds.try_emplace(payment.mInstrument->mIsin.value());
+        }
+    }
+
+    if (bonds.empty())
+    {
+        return bonds;
+    }
+
+    for (const auto& instrument : aStatement.mPresentation.mInterestInstruments)
+    {
+        const auto found = instrument.mIsin ? bonds.find(*instrument.mIsin) : bonds.end();
+
+        if (found == bonds.end() || instrument.mInterestType != InterestType::BondInterest)
+        {
+            continue;
+        }
+
+        for (const auto& transaction : instrument.mTransactions)
+        {
+            found->second.mCoupons.push_back(transaction.mMetadata.mTaxDate);
+        }
+    }
+
+    for (const auto& instrument : aStatement.mPresentation.mTradeInstruments)
+    {
+        const auto found = bonds.find(instrument.mIsin);
+
+        if (found == bonds.end() || instrument.mAssetClass != AssetClass::Bond)
+        {
+            continue;
+        }
+
+        for (const auto& trade : instrument.mTransactions)
+        {
+            if (trade.mTradeSide == TradeSide::Buy)
+            {
+                found->second.mPurchases.push_back(trade.mMetadata.mTaxDate);
+            }
+        }
+    }
+
+    for (auto& [isin, dates] : bonds)
+    {
+        std::sort(dates.mPurchases.begin(), dates.mPurchases.end());
+        std::sort(dates.mCoupons.begin(), dates.mCoupons.end());
+    }
+
+    return bonds;
+}
+
+/// True when the bond had a purchase after its previous coupon (or with no earlier coupon at all)
+/// and before this coupon.
+bool followsAPurchase(const BondDates& aDates, Date aCouponDate) {
+    const auto firstNotBefore =
+        std::lower_bound(aDates.mCoupons.begin(), aDates.mCoupons.end(), aCouponDate);
+    const auto purchaseAfterPrevious = [&](Date aPurchase) {
+        return aPurchase < aCouponDate &&
+               (firstNotBefore == aDates.mCoupons.begin() || aPurchase > *(firstNotBefore - 1));
+    };
+
+    return std::any_of(aDates.mPurchases.begin(), aDates.mPurchases.end(), purchaseAfterPrevious);
+}
+
 /// The warning that a payment is not reported because it is not above 0.
 ProcessingDiagnostic notPositiveWarning(const Payment& aPayment) {
     const auto& metadata = aPayment.mTransaction->mMetadata;
@@ -266,6 +366,18 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
                                                                 first.mMetadata.mTaxDate,
                                                                 nameOf(*payments.front()),
                                                                 std::nullopt);
+
+                warning.mContext.mAffectedReports.assign(reports.begin(), reports.end());
+                aDiagnostics.push_back(std::move(warning));
+            }
+
+            if (outcome.mIdentificationNumberMissing)
+            {
+                auto warning = payerNumberMissingWarning(*reports.begin(),
+                                                         sources,
+                                                         first.mMetadata.mTaxDate,
+                                                         nameOf(*payments.front()),
+                                                         std::nullopt);
 
                 warning.mContext.mAffectedReports.assign(reports.begin(), reports.end());
                 aDiagnostics.push_back(std::move(warning));
@@ -629,12 +741,35 @@ ProcessingDiagnostic bondTypeError(const Isin& aIsin, const BondYear& aBond, Mes
                             aIsin);
 }
 
+/// Whether every reference row of the ISIN's payer has the country SI. No row is not Slovenian.
+bool hasSlovenianIssuer(const ReferenceCatalogue& aCatalogue, const Isin& aIsin) {
+    const auto lookup = aCatalogue.findPayer(aIsin);
+
+    return !lookup.mEntries.empty() &&
+           std::all_of(lookup.mEntries.begin(),
+                       lookup.mEntries.end(),
+                       [](const PayerEntry* aEntry) { return aEntry->mCountry == kSlovenia; });
+}
+
+/// The warning that the accrued interest received at the sale of a bond is not in the report.
+ProcessingDiagnostic bondSaleWarning(const Isin& aIsin, const BondYear& aBond) {
+    return incomeDiagnostic(ReportType::OtherInterest,
+                            DiagnosticSeverity::Warning,
+                            ProcessingDiagnosticCode::BondSaleAccruedInterestNotReported,
+                            makeDiagnosticMessage(MessageKey::BondSaleAccruedInterestNotReported),
+                            aBond.mSources,
+                            aBond.mFirstDate,
+                            aBond.mName,
+                            aIsin);
+}
+
 /// Asks the bond type of each bond with a sale or maturity in the year, whatever its issuer. A bond
 /// whose units overflow is an error of the bond. Returns the ISINs whose coupons stay out of
 /// Doh-Obr: the answer is open, is a discount or zero-coupon bond (an error), or was cancelled (an
 /// error).
 std::set<Isin> askBondTypes(const MergedStatement& aStatement,
                             const ReportingYearLedger& aLedger,
+                            const ReferenceCatalogue& aCatalogue,
                             RunDecisions& aDecisions,
                             InterestPaymentsResult& aResult) {
     std::set<Isin> heldBack;
@@ -694,6 +829,15 @@ std::set<Isin> askBondTypes(const MergedStatement& aStatement,
         {
             if (typed->mType == BondType::Ordinary)
             {
+                // The accrued interest received at a sale is Doh-Obr income that nothing
+                // calculates yet: the coupons are written and the user adds it in eDavki. A
+                // Slovenian issuer is skipped: that interest is not taxed for a bond issued in
+                // Slovenia after 1 January 2005, and the issue date is not known.
+                if (units.mSoldUnits > 0 && !hasSlovenianIssuer(aCatalogue, isin))
+                {
+                    aResult.mDiagnostics.push_back(bondSaleWarning(isin, bond));
+                }
+
                 continue;
             }
 
@@ -713,142 +857,38 @@ std::set<Isin> askBondTypes(const MergedStatement& aStatement,
     return heldBack;
 }
 
-/// One Doh-Obr row with foreign tax, for its treaty claim.
-struct TreatyRow {
-    std::size_t mIndex{};                  ///< Position in the report rows.
-    TreatyIncome mIncome{};                ///< Coupon or cash interest; always set by the creator.
-    std::optional<Isin> mIsin;             ///< The ISIN of a coupon; empty for cash interest.
-    std::vector<SourceReference> mSources; ///< The sources of the payment.
-    Date mTaxDate;                         ///< The receipt date.
-};
+/// The treaty text of a country and kind of income, found once per pair of the run.
+using TreatyTextCache = std::map<std::pair<std::string, TreatyIncome>,
+                                 std::optional<std::pair<std::string, CatalogueSource>>>;
 
-/// The Doh-Obr rows of one payer country that had foreign tax, in report order.
-using TreatyGroup = std::vector<TreatyRow>;
-
-/// Adds the payment's row to the treaty group of its payer country. A row of a Slovenian payer has
-/// no foreign tax in the file, and a row without a payer country has no question.
-void addToTreatyGroup(std::map<std::string, TreatyGroup>& aGroups,
-                      const Payment& aPayment,
-                      const ObrInterestRow& aRow,
-                      std::size_t aRowIndex) {
+/// Claims the one reference treaty text for a row with foreign tax and a payer country other than
+/// `SI`: a coupon takes the country's `bond_coupon` text, cash interest its `cash_interest` text.
+/// A row without such a text gets no claim: a resident usually claims no treaty relief (the credit
+/// goes through `ForeignTax`), and the app never asks about it.
+void claimTreatyText(ObrInterestRow& aRow,
+                     const Payment& aPayment,
+                     const ReferenceCatalogue& aCatalogue,
+                     TreatyTextCache& aCache) {
     if (aRow.mWithholding.mForeignTax <= 0 || !aRow.mPayer.mCountry ||
         *aRow.mPayer.mCountry == kSlovenia)
     {
         return;
     }
 
-    const auto& metadata = aPayment.mTransaction->mMetadata;
-    const bool isCoupon = aPayment.mRoute == Route::Coupon;
+    const auto income =
+        aPayment.mRoute == Route::Coupon ? TreatyIncome::BondCoupon : TreatyIncome::CashInterest;
+    const auto key = std::make_pair(*aRow.mPayer.mCountry, income);
+    auto found = aCache.find(key);
 
-    aGroups[*aRow.mPayer.mCountry].push_back(TreatyRow{
-        .mIndex = aRowIndex,
-        .mIncome = isCoupon ? TreatyIncome::BondCoupon : TreatyIncome::CashInterest,
-        .mIsin = isCoupon ? std::optional<Isin>{aPayment.mInstrument->mIsin.value()} : std::nullopt,
-        .mSources = metadata.mSources,
-        .mTaxDate = metadata.mTaxDate,
-    });
-}
-
-/// Claims, for each payer country with foreign tax, the rows of a kind of income whose reference
-/// rows give one treaty text, without a question. The rows of the other kinds are asked once per
-/// country: a yes marks them as claimed without a text and adds one warning (the paragraph and
-/// article are filled in eDavki); no answer or a no leaves them without a claim.
-void applyTreatyClaims(InterestPaymentsResult& aResult,
-                       const std::map<std::string, TreatyGroup>& aGroups,
-                       int aYear,
-                       const ReferenceCatalogue& aCatalogue,
-                       RunDecisions& aDecisions) {
-    for (const auto& [country, rows] : aGroups)
+    if (found == aCache.end())
     {
-        const auto couponText = treatyTextOf(aCatalogue, country, TreatyIncome::BondCoupon);
-        const auto cashText = treatyTextOf(aCatalogue, country, TreatyIncome::CashInterest);
-        std::vector<const TreatyRow*> asked;
+        found = aCache.emplace(key, treatyTextOf(aCatalogue, *aRow.mPayer.mCountry, income)).first;
+    }
 
-        for (const auto& row : rows)
-        {
-            const auto& text = row.mIncome == TreatyIncome::BondCoupon ? couponText : cashText;
-
-            if (text)
-            {
-                aResult.mOtherReport.mRows[row.mIndex].mTreatyClaim =
-                    TreatyClaim{.mStatement = text->first, .mCatalogueRow = text->second};
-            }
-            else
-            {
-                asked.push_back(&row);
-            }
-        }
-
-        if (asked.empty())
-        {
-            continue;
-        }
-
-        std::vector<Isin> isins;
-        std::vector<SourceReference> sources;
-        bool cashInterest = false;
-        Date firstDate = asked.front()->mTaxDate;
-
-        for (const auto* row : asked)
-        {
-            firstDate = std::min(firstDate, row->mTaxDate);
-            sources.insert(sources.end(), row->mSources.begin(), row->mSources.end());
-
-            if (row->mIsin)
-            {
-                isins.push_back(*row->mIsin);
-            }
-            else
-            {
-                cashInterest = true;
-            }
-        }
-
-        DecisionQuestion question{
-            .mType = RequestType::IncomeDetailsRequired,
-            .mAffectedReports = {ReportType::OtherInterest},
-            .mSources = sources,
-            .mTaxDate = firstDate,
-            .mIsin = std::nullopt,
-            .mData = normalizedData(InterestTreatyClaimQuestion{
-                .mYear = aYear,
-                .mCountry = country,
-                .mIsins = std::move(isins),
-                .mCashInterest = cashInterest,
-            }),
-        };
-        const auto* answer = aDecisions.find(question);
-
-        if (answer == nullptr)
-        {
-            aResult.mRequests.push_back(
-                RequestInput{.mQuestion = std::move(question), .mProcessingDiagnostics = {}});
-
-            continue;
-        }
-
-        // The session accepts only a yes or no answer for this question.
-        if (!std::get<InterestTreatyClaimAnswer>(*answer).mClaim)
-        {
-            continue;
-        }
-
-        for (const auto* row : asked)
-        {
-            aResult.mOtherReport.mRows[row->mIndex].mTreatyClaim =
-                TreatyClaim{.mStatement = std::nullopt, .mCatalogueRow = std::nullopt};
-        }
-
-        aResult.mDiagnostics.push_back(
-            incomeDiagnostic(ReportType::OtherInterest,
-                             DiagnosticSeverity::Warning,
-                             ProcessingDiagnosticCode::TreatyClaimDetailsMissing,
-                             makeDiagnosticMessage(MessageKey::TreatyClaimDetailsMissing,
-                                                   {textParam("country", country)}),
-                             sources,
-                             firstDate,
-                             std::nullopt,
-                             std::nullopt));
+    if (found->second)
+    {
+        aRow.mTreatyClaim =
+            TreatyClaim{.mStatement = found->second->first, .mCatalogueRow = found->second->second};
     }
 }
 
@@ -875,7 +915,8 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
 
     // A bond with a sale or maturity is asked about even when it has no coupon in the year.
     // Coupons stay out of Doh-Obr for a bond whose type is open or not supported.
-    const std::set<Isin> skippedCoupons = askBondTypes(aStatement, aLedger, aDecisions, result);
+    const std::set<Isin> skippedCoupons =
+        askBondTypes(aStatement, aLedger, aCatalogue, aDecisions, result);
 
     if (payments.empty())
     {
@@ -903,7 +944,8 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
 
     IncomeEurConverter converter{selection, result.mDiagnostics};
     std::map<Broker, DepositGroup> deposits;
-    std::map<std::string, TreatyGroup> treatyGroups;
+    TreatyTextCache treatyTexts;
+    const auto bondDates = bondDatesOf(aStatement, payments);
     Money total = 0;
     bool depositComplete = true;
     bool hasDeposit = false;
@@ -973,12 +1015,16 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
         // A row with a value the form cannot hold is not made, so no partial row is written.
         if (problems.empty())
         {
-            addToTreatyGroup(treatyGroups, payment, row, result.mOtherReport.mRows.size());
+            claimTreatyText(row, payment, aCatalogue, treatyTexts);
             result.mOtherReport.mRows.push_back(std::move(row));
+
+            if (isCoupon && followsAPurchase(bondDates.at(payment.mInstrument->mIsin.value()),
+                                             payment.mTransaction->mMetadata.mTaxDate))
+            {
+                result.mDiagnostics.push_back(couponAccruedInterestWarning(payment));
+            }
         }
     }
-
-    applyTreatyClaims(result, treatyGroups, aLedger.mYear, aCatalogue, aDecisions);
 
     if (hasDeposit && depositComplete)
     {

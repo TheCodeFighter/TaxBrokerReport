@@ -100,7 +100,6 @@ TEST(DivXmlWriterTest, OneDividendWritesTheWholeDocument) {
       <Value>12.35</Value>
       <ForeignTax>1.85</ForeignTax>
       <SourceCountry>US</SourceCountry>
-      <ReliefStatement>false</ReliefStatement>
     </Dividend>
   </body>
 </Envelope>
@@ -184,7 +183,6 @@ TEST(DivXmlWriterTest, PayerNotFoundLeavesThePayerFieldsOut) {
                                 "      <Type>1</Type>\n"
                                 "      <Value>10.00</Value>\n"
                                 "      <ForeignTax>0.00</ForeignTax>\n"
-                                "      <ReliefStatement>false</ReliefStatement>\n"
                                 "    </Dividend>"),
               std::string::npos);
     expectValidForDivSchema(*result.mXml);
@@ -849,6 +847,77 @@ TEST(DivXmlWriterTest, SourceCountryOfThreeLettersIsRejected) {
                                        .mGrossIncome = 100'000,
                                        .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
                                        .mSourceCountry = "USA",
+                                       .mTreatyClaim = std::nullopt,
+                                   }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "SourceCountry", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, PayerCountryWithADigitIsRejected) {
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{.mRows = {{
+                                       .mPayment = {StatementEventKind::Dividend, 0, 0},
+                                       .mIsin = "US0000000001",
+                                       .mDate = day("2025-03-14"),
+                                       .mPayer = {.mCountry = "U5"},
+                                       .mKind = DividendKind::Ordinary,
+                                       .mGrossIncome = 100'000,
+                                       .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
+                                       .mSourceCountry = std::nullopt,
+                                       .mTreatyClaim = std::nullopt,
+                                   }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "PayerCountry", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, TheIsinPrefixXsIsNotAPayerCountry) {
+    // `XS` is the ISIN prefix of international issues, not a country: eDavki rejects it.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{.mRows = {{
+                                       .mPayment = {StatementEventKind::Dividend, 0, 0},
+                                       .mIsin = "US0000000001",
+                                       .mDate = day("2025-03-14"),
+                                       .mPayer = {.mCountry = "XS"},
+                                       .mKind = DividendKind::Ordinary,
+                                       .mGrossIncome = 100'000,
+                                       .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
+                                       .mSourceCountry = std::nullopt,
+                                       .mTreatyClaim = std::nullopt,
+                                   }}};
+
+    const auto result = DivXmlWriter::write(metadata, report);
+
+    expectOneError(result, "PayerCountry", "US0000000001");
+}
+
+TEST(DivXmlWriterTest, TheIsinPrefixEuIsNotASourceCountry) {
+    // `EU` is not a country: eDavki rejects it.
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
+        .mReportingYear = 2025,
+        .mFilingType = FilingType::Original,
+    };
+    const DividendReportDiv report{.mRows = {{
+                                       .mPayment = {StatementEventKind::Dividend, 0, 0},
+                                       .mIsin = "US0000000001",
+                                       .mDate = day("2025-03-14"),
+                                       .mPayer = {},
+                                       .mKind = DividendKind::Ordinary,
+                                       .mGrossIncome = 100'000,
+                                       .mWithholding = {.mForeignTax = 0, .mBlankInExport = true},
+                                       .mSourceCountry = "EU",
                                        .mTreatyClaim = std::nullopt,
                                    }}};
 

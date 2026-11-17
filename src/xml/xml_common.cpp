@@ -48,7 +48,9 @@ bool isPostNumber(std::string_view aText) {
 }
 
 bool isCountryCode(std::string_view aText) {
-    return aText.size() == kCountryLength &&
+    // `XS` and `EU` are the ISIN prefixes of international issues, not countries: eDavki rejects
+    // them.
+    return aText.size() == kCountryLength && aText != "XS" && aText != "EU" &&
            std::all_of(aText.begin(), aText.end(), [](char aCharacter) {
                return aCharacter >= 'A' && aCharacter <= 'Z';
            });
