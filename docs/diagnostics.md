@@ -1364,11 +1364,13 @@ end. The same run gives the same bytes. `supportReportVersion` is 1.
 - `diagnostics`, in application order: `id`, `severity`, `stage`, `code`, `messageKey`,
   `messageParams`, `field`, `isin`, `taxDate`, `affectedReports` and `sources`. A source is the
   number of the file in the request (1 is the first file) and the row; never the file name.
-  `messageParams` leaves out `name`, because that parameter can hold an instrument name.
+  `messageParams` leaves out `name`, because that parameter holds the name of a supplied
+  reference file.
 - `inputFault` instead of `result` and `diagnostics`, when a supplied rate or reference file stops
   the run: the `kind` (`rate_file` or `reference_file`) and the `messageKey`. The command line
-  writes this report only with `--support-report`; the page has no run in that case, so it has no
-  button.
+  writes this report only with `--support-report`. The server keeps the fault of the last upload
+  and the support route answers with this report until a good upload clears it, also when an
+  older run is still held, so the report describes the upload that failed.
 
 It never holds an amount, unit, price, rate, fee, payer tax number, transaction ID, instrument or
 payer name, taxpayer fact, file name, path, time stamp, duration, English sentence or log line.

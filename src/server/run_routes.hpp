@@ -2,12 +2,14 @@
 
 #include "http_message.hpp"
 
+#include "taxbroker/api/support_report_json.hpp"
 #include "taxbroker/application_run.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace taxbroker {
 
@@ -49,6 +51,9 @@ class RunRoutes {
 
     std::size_t mMaxFileBytes;
     std::optional<ApplicationRun> mRun; ///< None until the first upload.
+    /// The shape and fault of the last upload when a supplied file stopped it; cleared by the next
+    /// good upload. The support report describes it, not the older run that is still held.
+    std::optional<std::pair<api::SupportReportRun, ApplicationInputFault>> mLastFault;
 };
 
 } // namespace taxbroker

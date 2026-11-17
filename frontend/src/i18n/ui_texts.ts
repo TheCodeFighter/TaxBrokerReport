@@ -217,8 +217,8 @@ export const uiTexts = {
   },
   supportReportSave: { sl: "Shrani poročilo za podporo", en: "Save support report" },
   supportReportHint: {
-    sl: "Za prijavo težave. Ne vsebuje zneskov, imen, davčnih številk ali imen datotek. Preberite ga, preden ga pošljete.",
-    en: "For a problem report. It holds no amounts, names, tax numbers or file names. Read it before you send it.",
+    sl: "Za prijavo težave. Ne vsebuje zneskov, imen, davčnih številk ali imen datotek, vsebuje pa ISIN-e in datume težav. Preberite ga, preden ga pošljete.",
+    en: "For a problem report. It holds no amounts, names, tax numbers or file names, but it does hold the ISINs and dates of the problems. Read it before you send it.",
   },
   resultCounts: { sl: "Napake: {errors}, opozorila: {warnings}", en: "Errors: {errors}, warnings: {warnings}" },
   statusSuccess: { sl: "Vsa poročila so pripravljena.", en: "All reports are ready." },

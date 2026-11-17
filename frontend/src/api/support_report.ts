@@ -47,5 +47,6 @@ export function saveFile(file: SupportReportFile): void {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Later, so a browser that starts the download after the click still finds the file.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

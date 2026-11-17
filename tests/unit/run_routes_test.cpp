@@ -191,6 +191,59 @@ TEST(RunRoutesTest, TheSupportReportAllowsOnlyGet) {
     EXPECT_EQ(refused.mStatus, 405U);
 }
 
+TEST(RunRoutesTest, TheSupportReportOfAFirstUploadThatABadRateFileStoppedHasTheInputFault) {
+    RunRoutes routes(100000);
+    const std::string files =
+        R"([{"part":"file0","kind":"broker","broker":"trade_republic"},{"part":"file1","kind":"ecb_rates"}])";
+
+    ASSERT_EQ(
+        post(routes, postUpload(uploadBody(2024, files, kHeaderOnly, "this is not a rate file\n")))
+            .mStatus,
+        422U);
+
+    // No run exists, but the failed upload can be described.
+    const HttpResponse report = get(routes, "/api/run/support-report");
+
+    ASSERT_EQ(report.mStatus, 200U);
+
+    const Json parsed = Json::parse(report.mBody);
+
+    EXPECT_EQ(parsed["run"]["year"], 2024);
+    EXPECT_EQ(parsed["run"]["ecbRateFiles"], 1);
+    EXPECT_EQ(parsed["inputFault"]["kind"], "rate_file");
+    EXPECT_FALSE(parsed.contains("result"));
+    EXPECT_EQ(report.mBody.find("bad_rates"), std::string::npos);
+}
+
+TEST(RunRoutesTest, TheSupportReportAfterAFailedRestartIsTheFaultNotTheOlderRun) {
+    RunRoutes routes(100000);
+    const std::string files =
+        R"([{"part":"file0","kind":"broker","broker":"trade_republic"},{"part":"file1","kind":"ecb_rates"}])";
+
+    ASSERT_EQ(post(routes, postUpload(uploadBody(2024, kBrokerFileEntry, kHeaderOnly))).mStatus,
+              200U);
+
+    // The run of revision 1 stays after the failed upload, but the report is about the upload.
+    ASSERT_EQ(
+        post(routes, postUpload(uploadBody(2024, files, kHeaderOnly, "this is not a rate file\n")))
+            .mStatus,
+        422U);
+
+    const Json failed = Json::parse(get(routes, "/api/run/support-report").mBody);
+
+    EXPECT_EQ(failed["inputFault"]["kind"], "rate_file");
+    EXPECT_FALSE(failed.contains("result"));
+
+    // A good upload clears the fault; the report is the run again.
+    ASSERT_EQ(post(routes, postUpload(uploadBody(2024, kBrokerFileEntry, kHeaderOnly))).mStatus,
+              200U);
+
+    const Json good = Json::parse(get(routes, "/api/run/support-report").mBody);
+
+    EXPECT_FALSE(good.contains("inputFault"));
+    EXPECT_EQ(good["result"]["revision"], 2);
+}
+
 TEST(RunRoutesTest, SecondUploadRestartsTheRun) {
     RunRoutes routes(100000);
 

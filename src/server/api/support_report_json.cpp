@@ -27,7 +27,7 @@ std::string_view filingWord(FilingType aType) {
     return aType == FilingType::SelfReport ? "self_report" : "original";
 }
 
-/// The message parameters without `name`, which can hold the name of an instrument.
+/// The message parameters without `name`, which holds the name of a supplied reference file.
 Json messageParamsWithoutName(const std::vector<MessageParam>& aParams) {
     std::vector<MessageParam> kept;
 
