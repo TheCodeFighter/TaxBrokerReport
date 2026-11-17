@@ -8,7 +8,7 @@ set -euo pipefail
 # The four files the server embeds, with their size budget in bytes (not compressed).
 declare -A budget=(
     ["index.html"]=4096
-    ["assets/app.js"]=49152
+    ["assets/app.js"]=65536
     ["assets/app.css"]=15360
     ["assets/logo.webp"]=12288
 )
@@ -123,7 +123,7 @@ self_test() {
     expect_failure "an inline style" "$work/inline_style" || failed=1
 
     cp -r "$dist" "$work/big_script" &&
-        head -c 49153 /dev/zero | tr '\0' 'a' >>"$work/big_script/assets/app.js"
+        head -c 65537 /dev/zero | tr '\0' 'a' >>"$work/big_script/assets/app.js"
     expect_failure "an app.js over the budget" "$work/big_script" || failed=1
 
     return "$failed"

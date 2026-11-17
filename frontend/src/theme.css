@@ -1,8 +1,9 @@
 /* Design tokens. The colors come from the project icon (docs/assets/icon.jpg): green #304C44,
    dark green #304641, near-black #0B1314, light grey #E0E5E6 and grey #7D8081. Text on its
    background is at least 4.5:1 (WCAG AA); the muted text of the light theme is the grey darkened
-   for that. The error color is the only one outside the icon palette: a red that reads on both
-   backgrounds. System fonts only: no web font and no icon pack.
+   for that. The error and warning colors are the only ones outside the icon palette: a red and an
+   amber that read on both backgrounds. A status in order (ok) is the icon green, or the light grey
+   in the dark theme. System fonts only: no web font and no icon pack.
 
    The theme is the attribute data-theme of <html> (light by default, set by the page): the tokens
    below are the light ones, and :root[data-theme="dark"] overrides the colors. The system setting
@@ -19,6 +20,8 @@
   --color-border: #7d8081;
   --color-focus: #304c44;
   --color-error: #a61b1b;
+  --color-warn: #8a5300;
+  --color-ok: #304c44;
 
   --font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-size-base: 1rem;
@@ -45,4 +48,6 @@
   --color-border: #304641;
   --color-focus: #e0e5e6;
   --color-error: #ff8a80;
+  --color-warn: #f0b85a;
+  --color-ok: #e0e5e6;
 }

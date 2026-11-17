@@ -32,4 +32,18 @@ describe("uiTexts", () => {
       "For trades not in EUR. The rates of the years 2016 to 2025 are already in the application.",
     );
   });
+
+  it("fills the places of the result texts", () => {
+    expect(uiTextWith("en", "questionsWaiting", { count: 2 })).toBe("Questions waiting for an answer: 2");
+    expect(uiTextWith("sl", "questionsWaiting", { count: 2 })).toBe("Vprašanja, ki čakajo na odgovor: 2");
+    expect(uiTextWith("en", "evidenceRows", { count: 3 })).toBe(
+      "Rows that need the proof of the foreign tax attached in eDavki: 3",
+    );
+    expect(uiTextWith("en", "groupCount", { count: 12 })).toBe("12 times");
+    expect(uiTextWith("sl", "groupCount", { count: 12 })).toBe("12-krat");
+    expect(uiTextWith("en", "detailsSummary", { count: 7 })).toBe("Details (7)");
+    expect(uiTextWith("sl", "detailsSummary", { count: 7 })).toBe("Podrobnosti (7)");
+    expect(uiTextWith("en", "fieldLabel", { field: "datetime" })).toBe("field datetime");
+    expect(uiTextWith("sl", "sourceFile", { n: 3 })).toBe("datoteka 3");
+  });
 });

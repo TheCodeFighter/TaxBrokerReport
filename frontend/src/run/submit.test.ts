@@ -24,7 +24,7 @@ function clientFor(fetchFunction: ReturnType<typeof vi.fn>, onEnded = () => unde
 
 describe("submitRun", () => {
   it("returns the result of a 200", async () => {
-    const result = { status: "success", runRevision: 1, reports: {}, diagnostics: [] };
+    const result = { status: "success", runRevision: 1, reports: {}, diagnostics: [], excludedItems: [] };
     const fetchFunction = vi.fn().mockResolvedValue(json(200, result));
 
     await expect(submitRun(clientFor(fetchFunction).apiFetch, inputs())).resolves.toEqual({
@@ -34,7 +34,7 @@ describe("submitRun", () => {
   });
 
   it("sends a FormData with the client header and no Content-Type of its own", async () => {
-    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [] }));
+    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [], excludedItems: [] }));
 
     await submitRun(clientFor(fetchFunction).apiFetch, inputs());
 
@@ -108,7 +108,7 @@ describe("submitRun", () => {
   });
 
   it("accepts a file of exactly 100 MiB", async () => {
-    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [] }));
+    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [], excludedItems: [] }));
     const prepared = inputs();
     const exact = new File(["a"], "exact.csv");
 
@@ -134,7 +134,7 @@ describe("submitRun", () => {
   });
 
   it("accepts 32 files", async () => {
-    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [] }));
+    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [], excludedItems: [] }));
     const prepared = inputs();
 
     prepared.brokerFiles.trade_republic = Array.from({ length: 32 }, (_unused, index) => new File(["a"], `${index}.csv`));
@@ -155,19 +155,19 @@ describe("submitRun", () => {
   });
 
   it("sends only the run when the details are not to be saved", async () => {
-    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [] }));
+    const fetchFunction = vi.fn().mockResolvedValue(json(200, { reports: {}, diagnostics: [], excludedItems: [] }));
 
     const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), false);
 
     expect(fetchFunction.mock.calls.map((call) => call[0])).toEqual(["/api/run"]);
-    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [] } });
+    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [], excludedItems: [] } });
   });
 
   it("saves the details first and then sends the run", async () => {
     const fetchFunction = vi
       .fn()
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(json(200, { reports: {}, diagnostics: [] }));
+      .mockResolvedValueOnce(json(200, { reports: {}, diagnostics: [], excludedItems: [] }));
 
     const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), true);
 
@@ -177,7 +177,7 @@ describe("submitRun", () => {
 
     // The taxpayer object of the run: the tax number and the residence.
     expect(profileInit.body).toBe('{"taxNumber":"12345679","isResident":true}');
-    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [] }, profile: "saved" });
+    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [], excludedItems: [] }, profile: "saved" });
   });
 
   it("stops before the run when the server refuses a taxpayer field", async () => {
@@ -195,12 +195,12 @@ describe("submitRun", () => {
     const fetchFunction = vi
       .fn()
       .mockResolvedValueOnce(json(500, { error: "profile_not_saved" }))
-      .mockResolvedValueOnce(json(200, { reports: {}, diagnostics: [] }));
+      .mockResolvedValueOnce(json(200, { reports: {}, diagnostics: [], excludedItems: [] }));
 
     const outcome = await submitRun(clientFor(fetchFunction).apiFetch, inputs(), true);
 
     expect(fetchFunction.mock.calls.map((call) => call[0])).toEqual(["/api/profile", "/api/run"]);
-    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [] }, profile: "not_saved" });
+    expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [], excludedItems: [] }, profile: "not_saved" });
   });
 
   it("keeps the saved outcome when the run is refused after the save", async () => {
