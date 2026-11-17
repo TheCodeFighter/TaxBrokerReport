@@ -1367,6 +1367,14 @@ The frontend must:
 The frontend must not parse logs, diagnostic message wording, or exception text to decide what to
 show or which action to offer.
 
+A diagnostic is grouped under a report when exactly one report lists its ID in `diagnosticIds`. A
+diagnostic that two or more reports list, or none, is shown once in the run-wide summary with the
+forms of its `affectedReports`, so a file-level problem is not repeated on every form. Repeated
+diagnostics are shown as one entry with a count when their severity, stage, code, message key,
+parameters, `affectedReports`, `blocking`, `field` and `instrument` are all equal; the entry keeps
+every source in result order. A diagnostic with a `requestId` is never grouped, because each
+question is answered on its own.
+
 ## Result examples
 
 ### Complete success

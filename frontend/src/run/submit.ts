@@ -6,12 +6,75 @@ import { orderedBrokerFiles, type RunInputs } from "./inputs";
 import { buildRunRequest } from "./request";
 import { taxpayerObject } from "./taxpayer";
 
-/** The part of the result JSON (schema 2) that the input screen shows. */
+/** A safe source of a diagnostic: `file` only when the name passed the server's sanitizer. */
+export interface DiagnosticSource {
+  sourceId: string;
+  broker?: string;
+  file?: string;
+  row?: number;
+  transactionId?: string;
+}
+
+/** One diagnostic of the result. The text comes from `messageKey`, never from `message`. */
+export interface Diagnostic {
+  id: string;
+  severity: string;
+  stage: string;
+  code: string;
+  messageKey?: string;
+  messageParams?: MessageParams;
+  /** The forms it affects, as `capital_gains`, `dividends`, `bank_deposit_interest`, `other_interest`. */
+  affectedReports: string[];
+  blocking: boolean;
+  sources: DiagnosticSource[];
+  taxDate?: string;
+  field?: string;
+  instrument?: { name?: string; isin?: string };
+  requestId?: string;
+}
+
+/** An investment left out of one form, or exported unsafely, with the diagnostics that explain it. */
+export interface ReportInvestment {
+  name: string;
+  isin: string;
+  reasonCodes: string[];
+  diagnosticIds: string[];
+}
+
+/** One report of the result (`capitalGains`, `dividends`, `bankInterest`, `otherInterest`). */
+export interface ReportResult {
+  status: string;
+  diagnosticIds: string[];
+  requestIds: string[];
+  excludedInvestments?: ReportInvestment[];
+  excludedBrokers?: { broker: string; reasonCodes: string[]; diagnosticIds: string[] }[];
+  failureResolution?: string;
+  unsafeInvestments?: ReportInvestment[];
+  unsafe: boolean;
+  downloadAvailable?: boolean;
+  /** Why a `no_data` report has no data, when the backend knows it. */
+  reason?: string;
+  /** Only the part the screen reads; the full summary is shown by a later screen. */
+  incomeSummary?: { rows: { evidenceRequired: boolean }[] };
+}
+
+/** An instrument left out by classification (a tax rule or a user choice), not by one form. */
+export interface ExcludedItem {
+  name: string;
+  isin?: string;
+  category: string;
+  reason: string;
+  basis: string;
+  diagnosticIds: string[];
+}
+
+/** The part of the result JSON (schema 2) that the screens show. */
 export interface RunResult {
   status: string;
   runRevision: number;
-  reports: Record<string, { status: string }>;
-  diagnostics: { severity: string }[];
+  reports: Record<string, ReportResult>;
+  diagnostics: Diagnostic[];
+  excludedItems: ExcludedItem[];
 }
 
 /** A rate or reference file that the server could not read (the 422 `inputFault`). */

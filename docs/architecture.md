@@ -1470,7 +1470,7 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   one exception is the link to the project's repository on the About page, which the user opens
   and the page never fetches.
   `scripts/frontend.sh check` fails the build when the output has another file, when a file is
-  over its size budget (`app.js` 48 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
+  over its size budget (`app.js` 64 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
   compressed), when an address other than an XML namespace name or that repository link appears
   in a file, or when
   `index.html` has an inline script or style.
@@ -1555,8 +1555,25 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   next to the form; a lost session shows the "open the link again" screen. There is no
   `GET /api/run` on load (it logs a 404 warning before the first upload), so a reload shows the
   empty form.
-- **Tests.** Vitest tests of the login, the client, the page hashes, the version call, the language, the theme, the message texts and
-  the input screen's pure code (labels, years, list changes, the request, the answers), the profile calls and the state of the "Remember my details" box; the
+- **Result screen.** After a run the result block shows the overall status with its tone (a
+  partial success looks different from a failure), then one card per form in the fixed order
+  Doh-KDVP, Doh-Div, Doh-DHO, Doh-Obr, each with its own status: `generated` and `no_data` (with
+  the reason when the backend gives one) are not shown as errors, `needs_input` gives the number of
+  open questions, and `failed` is red. A tone is a class beside a text label, never color alone.
+  A card also lists the failure choice (`failureResolution`), the investments and brokers left out
+  of that form (each with the text of its linked diagnostics), the unsafe developer-export marker
+  with its investments, and the number of income rows whose foreign tax needs proof in eDavki.
+  A diagnostic goes in the card of the one report whose `diagnosticIds` lists it; one that two or
+  more reports list, or none, goes once in "Messages for several reports" with the forms of its
+  `affectedReports`. Diagnostics that differ only in their sources, tax date and ID are one entry
+  with a count (never one with a question); the sources are behind a "Details" button, one per
+  line, built only when it is opened. A source is the shown name of sent file N for `source-000N` (with `(file N)` on a
+  repeated name), else the sanitized server name, else "file N", then the row and transaction ID.
+  The classification exclusions (`excludedItems`) are their own list. The pure code is
+  `run/diagnostics_view.ts` and `run/result_view.ts`.
+- **Tests.** Vitest tests of the login, the client, the page hashes, the version call, the language, the theme, the message texts,
+  the input screen's pure code (labels, years, list changes, the request, the answers), the profile calls and the state of the "Remember my details" box,
+  and the result screen's pure code (source labels, placement, grouping, the cards); the
   browser functions (`location`, `history`, `fetch`, storage) are arguments, so they need no DOM.
 
 ### Local HTTP API
