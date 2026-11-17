@@ -1,5 +1,7 @@
 #include "routes.hpp"
 
+#include "log_level_routes.hpp"
+
 #include "taxbroker/api/messages_json.hpp"
 #include "taxbroker/logging.hpp"
 
@@ -204,6 +206,11 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
     if (path == "/api/profile" || path.starts_with("/api/profile/"))
     {
         return mProfileRoutes.handle(aRequest, path);
+    }
+
+    if (path == "/api/log-level" || path.starts_with("/api/log-level/"))
+    {
+        return handleLogLevelRoute(aRequest, path);
     }
 
     if (path == "/api/messages")

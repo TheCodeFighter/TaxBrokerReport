@@ -1,31 +1,28 @@
 #include "taxbroker/logging.hpp"
 
+#include "taxbroker/state_folder.hpp"
+
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <exception>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include <spdlog/async.h>
-#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 namespace {
-
-spdlog::level::level_enum DefaultLogLevel() {
-#ifndef NDEBUG
-    return spdlog::level::debug;
-#else
-    return spdlog::level::info;
-#endif
-}
 
 bool IsStdoutEnabledByDefault() {
 #ifndef NDEBUG
@@ -36,7 +33,7 @@ bool IsStdoutEnabledByDefault() {
 }
 
 constexpr auto kLoggerName = "taxbroker";
-constexpr auto kDefaultLogFilePath = "logs/taxbroker.log";
+constexpr auto kLogFileName = "taxbroker.log";
 constexpr auto kDefaultPattern = "[%Y-%m-%d %H:%M:%S.%e] [tid %2t] [%^%-8l%$] [%-20!s:%4#] %v";
 constexpr std::size_t kAsyncQueueSize = 8192;
 constexpr std::size_t kAsyncThreadCount = 1;
@@ -195,6 +192,17 @@ bool IsAsyncLogger(const std::shared_ptr<spdlog::logger>& aLogger) {
     return std::dynamic_pointer_cast<spdlog::async_logger>(aLogger) != nullptr;
 }
 
+std::optional<std::string> SinkFilePath(const spdlog::sink_ptr& aSink) {
+    const auto fileSink = std::dynamic_pointer_cast<spdlog::sinks::rotating_file_sink_mt>(aSink);
+
+    if (fileSink == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    return std::string{fileSink->filename()};
+}
+
 std::optional<std::string> GetLogFilePath(const std::shared_ptr<spdlog::logger>& aLogger) {
     if (aLogger == nullptr)
     {
@@ -203,10 +211,11 @@ std::optional<std::string> GetLogFilePath(const std::shared_ptr<spdlog::logger>&
 
     for (const auto& sink : aLogger->sinks())
     {
-        const auto fileSink = std::dynamic_pointer_cast<spdlog::sinks::basic_file_sink_mt>(sink);
-        if (fileSink != nullptr)
+        const auto path = SinkFilePath(sink);
+
+        if (path.has_value())
         {
-            return std::string{fileSink->filename()};
+            return path;
         }
     }
 
@@ -216,6 +225,115 @@ std::optional<std::string> GetLogFilePath(const std::shared_ptr<spdlog::logger>&
 } // namespace
 
 namespace taxbroker {
+
+spdlog::level::level_enum defaultLogLevel() {
+    return spdlog::level::err;
+}
+
+std::optional<spdlog::level::level_enum> parseSelectableLogLevel(std::string_view aName) {
+    if (aName == "error")
+    {
+        return spdlog::level::err;
+    }
+    if (aName == "warn")
+    {
+        return spdlog::level::warn;
+    }
+    if (aName == "info")
+    {
+        return spdlog::level::info;
+    }
+    if (aName == "debug")
+    {
+        return spdlog::level::debug;
+    }
+
+    return std::nullopt;
+}
+
+std::string_view selectableLogLevelName(spdlog::level::level_enum aLevel) {
+    switch (aLevel)
+    {
+    case spdlog::level::trace:
+    case spdlog::level::debug:
+        return "debug";
+    case spdlog::level::info:
+        return "info";
+    case spdlog::level::warn:
+        return "warn";
+    case spdlog::level::err:
+    case spdlog::level::critical:
+    case spdlog::level::off:
+    case spdlog::level::n_levels:
+        return "error";
+    }
+
+    return "error";
+}
+
+void setLogLevel(spdlog::level::level_enum aLevel) {
+    spdlog::default_logger()->set_level(aLevel);
+}
+
+spdlog::level::level_enum currentLogLevel() {
+    return spdlog::default_logger()->level();
+}
+
+std::optional<std::filesystem::path> logFilePath(const EnvLookup& aEnv) {
+    const std::optional<std::string> explicitFile = aEnv("TBR_LOG_FILE");
+
+    if (explicitFile.has_value() && !explicitFile->empty())
+    {
+        return std::filesystem::path{*explicitFile};
+    }
+
+    try
+    { return stateFolder(aEnv) / kLogFileName; } catch (const std::exception&)
+    {
+        // No absolute HOME: there is no state folder, so no log file.
+        return std::nullopt;
+    }
+}
+
+spdlog::sink_ptr
+makeLogFileSink(const std::filesystem::path& aFile, std::size_t aMaxBytes, std::size_t aMaxFiles) {
+    return std::make_shared<spdlog::sinks::rotating_file_sink_mt>(aFile.string(),
+                                                                  aMaxBytes,
+                                                                  aMaxFiles);
+}
+
+spdlog::sink_ptr openLogFile(const EnvLookup& aEnv, bool aTruncate) {
+    const std::optional<std::filesystem::path> file = logFilePath(aEnv);
+
+    if (!file.has_value())
+    {
+        return nullptr;
+    }
+
+    try
+    {
+        // Only the default folder is made here; a folder of TBR_LOG_FILE is the user's own.
+        const std::optional<std::string> explicitFile = aEnv("TBR_LOG_FILE");
+
+        if (!explicitFile.has_value() || explicitFile->empty())
+        {
+            makePrivateFolder(file->parent_path());
+        }
+
+        if (aTruncate)
+        {
+            std::error_code removeError;
+
+            std::filesystem::remove(*file, removeError);
+        }
+
+        return makeLogFileSink(*file, kLogFileMaxBytes, kLogFileCount);
+    } catch (const std::exception&)
+    {
+        // The text of the exception can hold the path, so it is not logged.
+        return nullptr;
+    }
+}
 
 std::vector<std::string> InvalidLogSettings() {
     std::vector<std::string> invalid;
@@ -245,15 +363,11 @@ void InitializeLogger() {
     std::call_once(sInitializeOnce, []() {
         const auto logLevelValue = GetEnvironmentValue("TBR_LOG_LEVEL");
         const auto logFileModeValue = GetEnvironmentValue("TBR_LOG_FILE_MODE");
-        const auto logFilePathValue = GetEnvironmentValue("TBR_LOG_FILE");
         const auto logAsyncValue = GetEnvironmentValue("TBR_LOG_ASYNC");
         const auto logQueueSizeValue = GetEnvironmentValue("TBR_LOG_QUEUE_SIZE");
         const auto logThreadCountValue = GetEnvironmentValue("TBR_LOG_THREADS");
         const auto logStdoutValue = GetEnvironmentValue("TBR_LOG_STDOUT");
 
-        const std::string logFilePath = logFilePathValue != nullptr
-                                            ? std::string{logFilePathValue}
-                                            : std::string{kDefaultLogFilePath};
         const bool truncateLogFile = ParseLogFileMode(logFileModeValue).value_or(false);
         const bool useAsyncLogger = ParseLogBool(logAsyncValue).value_or(true);
         const std::size_t logQueueSize =
@@ -263,22 +377,30 @@ void InitializeLogger() {
         const bool useStdoutSink =
             ParseLogBool(logStdoutValue).value_or(IsStdoutEnabledByDefault());
 
+        // A file that cannot be opened is reported after the logger exists; the run goes on
+        // without a log file.
+        const spdlog::sink_ptr fileSink = openLogFile(systemEnvironment(), truncateLogFile);
+        const std::string logFilePathText = SinkFilePath(fileSink).value_or(std::string{});
+
         auto logger = spdlog::get(kLoggerName);
-        if (logger == nullptr || GetLogFilePath(logger).value_or(std::string{}) != logFilePath ||
+        if (logger == nullptr ||
+            GetLogFilePath(logger).value_or(std::string{}) != logFilePathText ||
             IsAsyncLogger(logger) != useAsyncLogger)
         {
             spdlog::drop(kLoggerName);
 
             std::vector<spdlog::sink_ptr> sinks;
-            sinks.reserve(useStdoutSink ? 2U : 1U);
+            sinks.reserve(2U);
 
             if (useStdoutSink)
             {
                 sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
             }
 
-            sinks.push_back(
-                std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFilePath, truncateLogFile));
+            if (fileSink != nullptr)
+            {
+                sinks.push_back(fileSink);
+            }
 
             if (useAsyncLogger)
             {
@@ -300,12 +422,18 @@ void InitializeLogger() {
 
         spdlog::set_default_logger(logger);
 
-        spdlog::set_level(ParseLogLevel(logLevelValue).value_or(DefaultLogLevel()));
+        spdlog::set_level(ParseLogLevel(logLevelValue).value_or(defaultLogLevel()));
 
         spdlog::flush_on(spdlog::level::warn);
         spdlog::flush_every(std::chrono::seconds(1));
 
         spdlog::set_pattern(kDefaultPattern);
+
+        if (fileSink == nullptr)
+        {
+            LOG_WARNING("No log file is written: the log file cannot be opened or there is no "
+                        "state folder");
+        }
 
         // A wrong setting is ignored, but the log says so. Names only: a value may be a path.
         for (const std::string& name : InvalidLogSettings())

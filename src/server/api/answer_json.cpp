@@ -534,6 +534,20 @@ std::string serializeRejectionsJson(const std::vector<RejectedAnswer>& aRejectio
         .dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
+std::string inputFaultLogReason(const ApplicationInputFault& aFault) {
+    const auto* rateFault = std::get_if<RateFileFault>(&aFault);
+
+    if (rateFault != nullptr)
+    {
+        const auto& key = rateFault->mDiagnostic.mMessageKey;
+
+        return "rate_file " + (key.has_value() ? std::string{messageDefinition(*key).mId} : "none");
+    }
+
+    return "reference_file " +
+           std::string{messageDefinition(std::get<ReferenceFileFault>(aFault).mMessage.mKey).mId};
+}
+
 std::string serializeInputFaultJson(const ApplicationInputFault& aFault) {
     using OrderedJson = nlohmann::ordered_json;
 

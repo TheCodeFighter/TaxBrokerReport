@@ -1,7 +1,6 @@
 #include "http_server.hpp"
 
-#include "exception_kind.hpp"
-
+#include "taxbroker/exception_kind.hpp"
 #include "taxbroker/logging.hpp"
 
 #include <boost/asio.hpp>

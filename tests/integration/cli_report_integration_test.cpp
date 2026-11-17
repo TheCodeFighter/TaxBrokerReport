@@ -4714,9 +4714,10 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(general.mOut,
                          "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                          "[--no-input]\n"
-                         "                   [--developer-export] [--ecb-rates FILE...] "
-                         "[--reference-files FILE...]\n"
-                         "                   --out DIR --trade-republic FILE...\n"));
+                         "                   [--developer-export] [--log-level LEVEL] "
+                         "[--ecb-rates FILE...]\n"
+                         "                   [--reference-files FILE...] --out DIR "
+                         "--trade-republic FILE...\n"));
 
     const auto report = run({"report", "--help"});
 
@@ -4725,6 +4726,9 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(report.mOut, "  --self-report      Write a self-report (samoprijava)"));
     EXPECT_TRUE(contains(report.mOut,
                          "  --ecb-rates FILE...\n                     ECB reference-rate files"));
+    EXPECT_TRUE(contains(report.mOut,
+                         "  --log-level LEVEL  How much the log file holds for this run: error "
+                         "(the default), warn, info\n"));
     EXPECT_TRUE(contains(report.mOut, "  --trade-republic FILE...\n"));
     EXPECT_TRUE(contains(report.mOut, "  --reference-files FILE...\n"));
     EXPECT_TRUE(contains(report.mOut,

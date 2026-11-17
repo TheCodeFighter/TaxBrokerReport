@@ -1,4 +1,5 @@
 #include "xml/report_xml_stage.hpp"
+#include "taxbroker/exception_kind.hpp"
 #include "taxbroker/logging.hpp"
 #include "xml/dho_xml_writer.hpp"
 #include "xml/div_xml_writer.hpp"
@@ -45,13 +46,10 @@ void writeGuardedXml(ApplicationResultInput& aInput,
                   written.mDiagnostics.end(),
                   std::back_inserter(processing));
         aInput.mReports[static_cast<std::size_t>(aReport)].mXml = std::move(written.mXml);
-    } catch (const std::exception& aError)
-    {
-        LOG_ERROR("XML writer of {} stopped: {}", aFormName, aError.what());
-        processing.push_back(serializationFailed(aReport));
     } catch (...)
     {
-        LOG_ERROR("XML writer of {} stopped: unknown exception", aFormName);
+        // The exception text can hold a value, so only its kind is logged.
+        LOG_ERROR("XML writer of {} stopped ({})", aFormName, currentExceptionKind());
         processing.push_back(serializationFailed(aReport));
     }
 }

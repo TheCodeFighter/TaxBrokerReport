@@ -1,8 +1,7 @@
 #include "profile_routes.hpp"
 
-#include "exception_kind.hpp"
-
 #include "taxbroker/api/taxpayer_json.hpp"
+#include "taxbroker/exception_kind.hpp"
 #include "taxbroker/logging.hpp"
 
 #include <nlohmann/json.hpp>

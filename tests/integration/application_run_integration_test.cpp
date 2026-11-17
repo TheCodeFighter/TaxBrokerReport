@@ -1,3 +1,4 @@
+#include "../support/log_capture.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/application_request.hpp"
 #include "taxbroker/application_run.hpp"
@@ -392,6 +393,47 @@ TEST(ApplicationRunIntegrationTest, AReferenceFileWithAnUnknownNameIsAFault) {
     ASSERT_TRUE(std::holds_alternative<ReferenceFileFault>(fault));
     EXPECT_EQ(std::get<ReferenceFileFault>(fault).mMessage.mKey,
               MessageKey::ReferenceFileUnknownName);
+}
+
+TEST(ApplicationRunIntegrationTest, StartWritesOneRunStartedLineAndTheLoadStages) {
+    LogCapture log;
+
+    auto run = startRun(requestWithRows({kBuy1, kBuy2, kSell}));
+
+    ASSERT_TRUE(run.has_value());
+
+    EXPECT_EQ(log.count("Run started: year 2024, filing original, developer mode off, brokers "
+                        "[Trade Republic x1], ecb rate files 0, reference files 0"),
+              1U);
+    EXPECT_EQ(log.count("Run restarted"), 0U);
+    EXPECT_EQ(log.count("Stage parse and merge: sources 1, events 3,"), 1U);
+    EXPECT_EQ(log.count("Calculation done ("), 1U);
+}
+
+TEST(ApplicationRunIntegrationTest, RestartWritesOneRunRestartedLine) {
+    auto run = startRun(requestWithRows({kBuy1, kBuy2, kSell}));
+
+    ASSERT_TRUE(run.has_value());
+
+    LogCapture log;
+    const auto fault = run->restart(requestWithRows({kBuy1, kBuy2, kSell}));
+
+    EXPECT_FALSE(fault.has_value());
+    EXPECT_EQ(log.count("Run restarted: year 2024, filing original,"), 1U);
+    EXPECT_EQ(log.count("Run started"), 0U);
+    EXPECT_EQ(log.count("Calculation done ("), 1U);
+}
+
+TEST(ApplicationRunIntegrationTest, AFaultWritesNoRunStartedLine) {
+    LogCapture log;
+    auto request = requestWithRows({kBuy1});
+
+    request.mReferenceFiles.push_back({.mName = "unknown.csv", .mContent = "isin\n"});
+
+    const auto started = ApplicationRun::start(std::move(request));
+
+    EXPECT_TRUE(std::holds_alternative<ApplicationInputFault>(started));
+    EXPECT_EQ(log.count("Run started"), 0U);
 }
 
 } // namespace

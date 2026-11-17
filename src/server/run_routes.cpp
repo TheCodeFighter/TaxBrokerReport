@@ -1,12 +1,12 @@
 #include "run_routes.hpp"
 
-#include "exception_kind.hpp"
 #include "multipart.hpp"
 
 #include "taxbroker/api/answer_json.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/api/report_files.hpp"
 #include "taxbroker/api/request_json.hpp"
+#include "taxbroker/exception_kind.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/logging.hpp"
 
@@ -103,24 +103,8 @@ HttpResponse refuseTaxpayer(std::string_view aField) {
                             R"({"error":"bad_taxpayer","field":")" + std::string(aField) + R"("})");
 }
 
-/// The kind of an input fault and its stable message key, for example
-/// `reference_file input_file.too_large`. No file name and no row.
-std::string inputFaultReason(const ApplicationInputFault& aFault) {
-    const auto* rateFault = std::get_if<RateFileFault>(&aFault);
-
-    if (rateFault != nullptr)
-    {
-        const auto& key = rateFault->mDiagnostic.mMessageKey;
-
-        return "rate_file " + (key.has_value() ? std::string{messageDefinition(*key).mId} : "none");
-    }
-
-    return "reference_file " +
-           std::string{messageDefinition(std::get<ReferenceFileFault>(aFault).mMessage.mKey).mId};
-}
-
 HttpResponse inputFaultResponse(const ApplicationInputFault& aFault) {
-    LOG_WARNING("Run request refused: 422 input_fault ({})", inputFaultReason(aFault));
+    LOG_WARNING("Run request refused: 422 input_fault ({})", api::inputFaultLogReason(aFault));
 
     return makeJsonResponse(422, api::serializeInputFaultJson(aFault));
 }
@@ -129,47 +113,6 @@ HttpResponse refuseMethod(std::string_view aAllow) {
     LOG_WARNING("Run request refused: 405 method_not_allowed");
 
     return makeNotAllowedResponse(aAllow);
-}
-
-/// The counts of a run request as one text, for example `brokers [Trade Republic x2]`. Names a
-/// broker, never a file; the other kinds are counts.
-std::string requestLogSummary(const ApplicationRequest& aRequest) {
-    std::map<std::string_view, std::size_t> brokers;
-
-    for (const BrokerInputFile& file : aRequest.mBrokerFiles)
-    {
-        ++brokers[brokerName(file.mBroker)];
-    }
-
-    std::string text = "brokers [";
-
-    for (const auto& [name, count] : brokers)
-    {
-        text += text.back() == '[' ? "" : ", ";
-        text += name;
-        text += " x" + std::to_string(count);
-    }
-
-    return text + "], ecb rate files " + std::to_string(aRequest.mEcbRateFiles.size()) +
-           ", reference files " + std::to_string(aRequest.mReferenceFiles.size());
-}
-
-/// The result of a step in the log: the statuses and counts, then the open question types and the
-/// diagnostic codes with their counts. This is what a bug report needs to find the cause. It holds
-/// no value, name, ISIN or file name.
-void logResult(const ApplicationResult& aResult) {
-    LOG_INFO("Run result: {}", api::resultLogSummary(aResult));
-    LOG_INFO("Run details: {}", api::resultLogDetails(aResult));
-}
-
-/// One info line for a started or restarted run. The taxpayer is never in it.
-void logRunStart(std::string_view aEvent, const ApplicationRequest& aRequest) {
-    LOG_INFO("Run {}: year {}, filing {}, developer mode {}, {}",
-             aEvent,
-             aRequest.mReportingYear,
-             aRequest.mFilingType == FilingType::Original ? "original" : "self_report",
-             aRequest.mDeveloperMode ? "on" : "off",
-             requestLogSummary(aRequest));
 }
 
 HttpResponse resultResponse(const ApplicationResult& aResult) {
@@ -422,8 +365,7 @@ HttpResponse RunRoutes::upload(const HttpRequest& aRequest) {
             return inputFaultResponse(*fault);
         }
 
-        logRunStart("restarted", mRun->request());
-        logResult(mRun->result());
+        api::logResult(mRun->result());
 
         return resultResponse(mRun->result());
     }
@@ -437,8 +379,7 @@ HttpResponse RunRoutes::upload(const HttpRequest& aRequest) {
 
     mRun.emplace(std::move(std::get<ApplicationRun>(started)));
 
-    logRunStart("started", mRun->request());
-    logResult(mRun->result());
+    api::logResult(mRun->result());
 
     return resultResponse(mRun->result());
 }
@@ -488,7 +429,7 @@ HttpResponse RunRoutes::answers(const HttpRequest& aRequest) {
     }
 
     LOG_INFO("Answers accepted: {} {}", answerCount, answeredTypes);
-    logResult(mRun->result());
+    api::logResult(mRun->result());
 
     return resultResponse(mRun->result());
 }
@@ -526,7 +467,7 @@ HttpResponse RunRoutes::deleteAnswers(const HttpRequest& aRequest) {
         LOG_INFO("Answers deleted: {}", deleteCall.mDecisionIds.size());
     }
 
-    logResult(mRun->result());
+    api::logResult(mRun->result());
 
     return resultResponse(mRun->result());
 }

@@ -77,6 +77,9 @@ asks nothing and lists the open questions instead. `--developer-export` is for d
 sale has no purchase history, it adds one more choice that writes an unsafe `Doh-KDVP_YYYY_UNSAFE.xml`
 after one confirmation (eDavki may reject it, or the tax may be wrong).
 
+If something fails, run the command again with `--log-level info` and send the log file (it holds
+no amounts, names or file names); see [docs/logging.md](docs/logging.md).
+
 More detail: [docker/docker_doc.md](docker/docker_doc.md) (the Docker setup),
 [docs/development.md](docs/development.md) (builds, tests, checks and debug dumps) and
 [docs/logging.md](docs/logging.md) (logging).

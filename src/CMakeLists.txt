@@ -80,14 +80,17 @@ add_library(taxbroker_core STATIC
     ${EMBEDDED_DIR}/diagnostic_messages_table.cpp
     ${EMBEDDED_DIR}/payers_csv.cpp
     ${EMBEDDED_DIR}/relief_statements_csv.cpp
+    utils/build_info.cpp
     utils/csv_text_reader.cpp
     utils/currency.cpp
     utils/date_utils.cpp
     utils/diagnostic_messages.cpp
+    utils/exception_kind.cpp
     utils/exact_arithmetic.cpp
     utils/logger.cpp
     utils/numeric_util.cpp
     utils/split_ratio.cpp
+    utils/state_folder.cpp
     utils/tax_number.cpp
     utils/xml_text.cpp
 )
@@ -102,6 +105,9 @@ target_include_directories(taxbroker_core
     ${CMAKE_SOURCE_DIR}/src
     ${CSV_PARSER_INCLUDE_DIR}
 )
+
+# The version of the program, for the start line of the log and GET /api/version.
+target_compile_definitions(taxbroker_core PRIVATE TAXBROKER_VERSION="${PROJECT_VERSION}")
 
 target_link_libraries(taxbroker_core
     PUBLIC
@@ -199,9 +205,9 @@ endif()
 # the backend only through the public headers (the service); the logger comes with the service.
 add_library(taxbroker_server_lib STATIC
     server/browser_open.cpp
-    server/exception_kind.cpp
     server/http_message.cpp
     server/http_server.cpp
+    server/log_level_routes.cpp
     server/multipart.cpp
     server/profile_routes.cpp
     server/profile_store.cpp
@@ -251,9 +257,6 @@ if(TAXBROKER_FRONTEND_DIR)
     target_compile_definitions(taxbroker_server_lib PRIVATE TAXBROKER_EMBED_FRONTEND)
     target_include_directories(taxbroker_server_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/server)
 endif()
-
-# The version of the program, shown in the page footer through GET /api/version.
-target_compile_definitions(taxbroker_server_lib PRIVATE TAXBROKER_VERSION="${PROJECT_VERSION}")
 
 find_package(Threads REQUIRED)
 
