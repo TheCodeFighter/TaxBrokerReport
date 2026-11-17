@@ -7,6 +7,7 @@
 #include "taxbroker/api/answer_json.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/api/report_files.hpp"
+#include "taxbroker/api/support_report_json.hpp"
 #include "taxbroker/application_request.hpp"
 #include "taxbroker/application_run.hpp"
 #include "taxbroker/application_result.hpp"
@@ -52,8 +53,9 @@ constexpr std::string_view kGeneralHelp =
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--developer-export] [--log-level LEVEL] [--ecb-rates FILE...]
-                   [--reference-files FILE...] --out DIR --trade-republic FILE...
+                   [--developer-export] [--support-report] [--log-level LEVEL]
+                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
+                   --trade-republic FILE...
   taxbroker report --help
   taxbroker --help
 
@@ -66,8 +68,9 @@ Run 'taxbroker report --help' for the details.
 constexpr std::string_view kReportHelp =
     R"(Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
-                   [--developer-export] [--log-level LEVEL] [--ecb-rates FILE...]
-                   [--reference-files FILE...] --out DIR --trade-republic FILE...
+                   [--developer-export] [--support-report] [--log-level LEVEL]
+                   [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
+                   --trade-republic FILE...
 
 Writes the forms Doh-KDVP (capital gains from selling shares and funds), Doh-Div (dividends),
 Doh-DHO (bank-deposit interest) and Doh-Obr (other interest and bond coupons) for one year
@@ -87,6 +90,11 @@ Options:
                      is written with that sale as the files say, no F10 and a negative stock
                      where needed. eDavki may reject it or the tax may be wrong. Cannot be
                      used with --no-input.
+  --support-report   Also write support_YYYY.json, a report for a problem report. It holds the
+                     version, the counts of the files, the status of each form and every
+                     diagnostic (code, field, ISIN, file number and row). It never holds
+                     amounts, names, tax numbers, file names or paths. Read it before you
+                     send it. It is also written when a rate or reference file stops the run.
   --log-level LEVEL  How much the log file holds for this run: error (the default), warn, info
                      or debug. It wins over TBR_LOG_LEVEL. The log never holds amounts, names,
                      ISINs, file names or paths. To report a problem, run again with
@@ -133,6 +141,7 @@ Output files in DIR:
   Doh-KDVP_YYYY.xml, Doh-Div_YYYY.xml, Doh-DHO_YYYY.xml, Doh-Obr_YYYY.xml
                      One file per form, written only when that form could be made in
                      full. A form without data has no file.
+  support_YYYY.json  Only with --support-report: the support report (see above).
   summary_YYYY.txt   The status of each form, each investment sold in the year, the units
                      past the holding period, the skipped private-market events, the
                      warnings and errors of each form, the open questions and your
@@ -266,6 +275,7 @@ struct ReportOptions {
     FilingType mFilingType{FilingType::Original};
     bool mAskQuestions{true}; ///< False with --no-input: the open questions stay open.
     bool mDeveloperMode{};    ///< --developer-export: offers the unsafe export of missing history.
+    bool mSupportReport{};    ///< --support-report: also write support_YYYY.json.
     std::optional<spdlog::level::level_enum> mLogLevel; ///< --log-level; empty keeps the default.
     std::filesystem::path mOutputDirectory;
     std::vector<std::filesystem::path> mTradeRepublicPaths; ///< The --trade-republic files.
@@ -314,6 +324,7 @@ parseReportArguments(std::span<const std::string> aArguments) {
     bool selfReport = false;
     bool noInput = false;
     bool developerExport = false;
+    bool supportReport = false;
 
     // The list that takes the next plain arguments, its option and how many it has so far.
     std::vector<std::filesystem::path>* list = nullptr;
@@ -401,6 +412,17 @@ parseReportArguments(std::span<const std::string> aArguments) {
             }
 
             developerExport = true;
+            continue;
+        }
+
+        if (argument == "--support-report")
+        {
+            if (supportReport)
+            {
+                return UsageError{"--support-report is given twice."};
+            }
+
+            supportReport = true;
             continue;
         }
 
@@ -493,6 +515,7 @@ parseReportArguments(std::span<const std::string> aArguments) {
     options.mFilingType = selfReport ? FilingType::SelfReport : FilingType::Original;
     options.mAskQuestions = !noInput;
     options.mDeveloperMode = developerExport;
+    options.mSupportReport = supportReport;
 
     // The three confirmations of the developer export need a person.
     if (developerExport && noInput)
@@ -717,6 +740,10 @@ std::string xmlFileName(const FormInfo& aForm, int aYear, bool aUnsafe = false) 
 
 std::string summaryFileName(int aYear) {
     return "summary_" + std::to_string(aYear) + ".txt";
+}
+
+std::string supportReportFileName(int aYear) {
+    return "support_" + std::to_string(aYear) + ".json";
 }
 
 /// The text of a text parameter of the diagnostic, or an empty string when it has none.
@@ -1598,6 +1625,7 @@ void logReportStopped(std::string_view aReason) {
 
 /// Asks the open questions, writes the output files and the summary, and returns the exit code.
 int runReport(const ReportOptions& aOptions,
+              const api::SupportReportRun& aSupportRun,
               ApplicationRun& aRun,
               std::istream& aIn,
               std::ostream& aOut,
@@ -1659,6 +1687,15 @@ int runReport(const ReportOptions& aOptions,
         return kExitFailure;
     }
 
+    const auto supportPath = aOptions.mOutputDirectory / supportReportFileName(aOptions.mYear);
+
+    if (aOptions.mSupportReport && !isFileOrMissing(supportPath))
+    {
+        logReportStopped("output_file");
+        aErr << "taxbroker: " << supportReportFileName(aOptions.mYear) << " cannot be written.\n";
+        return kExitFailure;
+    }
+
     const RunOutcome outcome{
         .mRequest = aRun.request(),
         .mResult = result,
@@ -1712,6 +1749,26 @@ int runReport(const ReportOptions& aOptions,
 
     replacements.push_back({.mTemporary = summaryTemporary, .mFinal = summaryPath});
 
+    if (aOptions.mSupportReport)
+    {
+        const auto supportTemporary = temporaryPath(supportPath);
+
+        temporaries.push_back(supportTemporary);
+
+        if (!writeFile(
+                supportTemporary,
+                api::serializeSupportReport(api::currentSupportReportApp(), aSupportRun, result)))
+        {
+            removeTemporaryFiles(temporaries);
+            logReportStopped("output_file");
+            aErr << "taxbroker: " << supportReportFileName(aOptions.mYear)
+                 << " cannot be written.\n";
+            return kExitFailure;
+        }
+
+        replacements.push_back({.mTemporary = supportTemporary, .mFinal = supportPath});
+    }
+
     // The final paths hold a file or nothing. A failing step puts back the files of an earlier
     // run, so the run changes nothing (exit 2).
     const auto replaced = replaceFiles(replacements);
@@ -1738,6 +1795,11 @@ int runReport(const ReportOptions& aOptions,
     }
 
     aOut << summary;
+
+    if (aOptions.mSupportReport)
+    {
+        aOut << "Support report: " << supportReportFileName(aOptions.mYear) << '\n';
+    }
 
     return allDone ? kExitSuccess : kExitBlocked;
 }
@@ -1788,6 +1850,47 @@ void writeInputFault(const ApplicationInputFault& aFault, std::ostream& aErr) {
     };
 
     std::visit(visitor, aFault);
+}
+
+/// Writes support_YYYY.json for a run that a supplied file stopped, and nothing else. A failure
+/// is reported on aErr; the exit code of the stopped run stays the same.
+void writeInputFaultSupportReport(const ReportOptions& aOptions,
+                                  const api::SupportReportRun& aSupportRun,
+                                  const ApplicationInputFault& aFault,
+                                  std::ostream& aOut,
+                                  std::ostream& aErr) {
+    std::error_code error;
+    std::filesystem::create_directories(aOptions.mOutputDirectory, error);
+
+    const auto path = aOptions.mOutputDirectory / supportReportFileName(aOptions.mYear);
+
+    if (error || !isFileOrMissing(path))
+    {
+        logReportStopped("output_file");
+        aErr << "taxbroker: " << supportReportFileName(aOptions.mYear) << " cannot be written.\n";
+        return;
+    }
+
+    const auto temporary = temporaryPath(path);
+
+    if (!writeFile(
+            temporary,
+            api::serializeSupportReport(api::currentSupportReportApp(), aSupportRun, aFault)))
+    {
+        removeTemporaryFiles({temporary});
+        logReportStopped("output_file");
+        aErr << "taxbroker: " << supportReportFileName(aOptions.mYear) << " cannot be written.\n";
+        return;
+    }
+
+    if (!replaceFiles({{.mTemporary = temporary, .mFinal = path}}).mReplaced)
+    {
+        logReportStopped("output_replace");
+        aErr << "taxbroker: " << supportReportFileName(aOptions.mYear) << " cannot be written.\n";
+        return;
+    }
+
+    aOut << "Support report: " << supportReportFileName(aOptions.mYear) << '\n';
 }
 
 /// Reads each file into memory and hands it to aAdd. On the first file that cannot be read it
@@ -1904,6 +2007,9 @@ int runReportCommand(std::span<const std::string> aArguments,
         return kExitFailure;
     }
 
+    // The shape is taken now: the run takes the request.
+    const auto supportRun = api::supportReportRun(request);
+
     // A supplied rate or reference file that is not valid fails the run before anything is
     // calculated.
     auto started = ApplicationRun::start(std::move(request));
@@ -1913,10 +2019,15 @@ int runReportCommand(std::span<const std::string> aArguments,
         logReportStopped("input_fault (" + api::inputFaultLogReason(*fault) + ")");
         writeInputFault(*fault, aErr);
 
+        if (options.mSupportReport)
+        {
+            writeInputFaultSupportReport(options, supportRun, *fault, aOut, aErr);
+        }
+
         return kExitFailure;
     }
 
-    return runReport(options, std::get<ApplicationRun>(started), aIn, aOut, aErr);
+    return runReport(options, supportRun, std::get<ApplicationRun>(started), aIn, aOut, aErr);
 }
 
 } // namespace

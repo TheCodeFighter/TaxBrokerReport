@@ -125,6 +125,7 @@ add_library(taxbroker_api STATIC
     server/api/messages_json.cpp
     server/api/report_files.cpp
     server/api/request_json.cpp
+    server/api/support_report_json.cpp
     server/api/taxpayer_json.cpp
 )
 

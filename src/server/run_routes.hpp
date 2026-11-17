@@ -2,12 +2,14 @@
 
 #include "http_message.hpp"
 
+#include "taxbroker/api/support_report_json.hpp"
 #include "taxbroker/application_run.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace taxbroker {
 
@@ -15,9 +17,10 @@ namespace taxbroker {
 /// inside a `catch` block; aRoute is one of the fixed route words, never request text.
 void logRouteFailure(std::string_view aRoute);
 
-/// The routes below `/api/run`: upload and start, the result, answers, deleting answers and the
-/// XML downloads. They hold the one run of the server and only convert HTTP and JSON to the
-/// application service and back; every check of an answer and every calculation is the service's.
+/// The routes below `/api/run`: upload and start, the result, the support report, answers, deleting
+/// answers and the XML downloads. They hold the one run of the server and only convert HTTP and
+/// JSON to the application service and back; every check of an answer and every calculation is
+/// the service's.
 /// The guard (Host, Origin, client header, session) is done before; the calls come from one thread.
 class RunRoutes {
   public:
@@ -41,12 +44,16 @@ class RunRoutes {
                           std::string_view& aRoute);
     HttpResponse upload(const HttpRequest& aRequest);
     HttpResponse result() const;
+    HttpResponse supportReport() const;
     HttpResponse answers(const HttpRequest& aRequest);
     HttpResponse deleteAnswers(const HttpRequest& aRequest);
     HttpResponse download(std::string_view aReport, std::string_view aQuery) const;
 
     std::size_t mMaxFileBytes;
     std::optional<ApplicationRun> mRun; ///< None until the first upload.
+    /// The shape and fault of the last upload when a supplied file stopped it; cleared by the next
+    /// good upload. The support report describes it, not the older run that is still held.
+    std::optional<std::pair<api::SupportReportRun, ApplicationInputFault>> mLastFault;
 };
 
 } // namespace taxbroker

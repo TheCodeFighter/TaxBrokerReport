@@ -1,14 +1,15 @@
 /** The pages of the application. The run screen is the page `report`. */
-export type Page = "home" | "report" | "manual" | "about";
+export type Page = "home" | "report" | "manual" | "support" | "about";
 
 /** The pages in the order of the header links. */
-export const pages: readonly Page[] = ["home", "report", "manual", "about"];
+export const pages: readonly Page[] = ["home", "report", "manual", "support", "about"];
 
 /** The address hash of each page: a hash, so the back button and a reload work without the server. */
 const hashes: Record<Page, string> = {
   home: "#/",
   report: "#/report",
   manual: "#/manual",
+  support: "#/support",
   about: "#/about",
 };
 

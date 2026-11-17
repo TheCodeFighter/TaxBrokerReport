@@ -116,6 +116,8 @@ TEST(RunRoutesTest, NoRunBeforeTheFirstUpload) {
     EXPECT_EQ(result.mStatus, 404U);
     EXPECT_EQ(result.mBody, R"({"error":"no_run"})");
     EXPECT_EQ(get(routes, "/api/run/reports/capitalGains/xml?revision=1").mStatus, 404U);
+    EXPECT_EQ(get(routes, "/api/run/support-report").mStatus, 404U);
+    EXPECT_EQ(get(routes, "/api/run/support-report").mBody, R"({"error":"no_run"})");
     EXPECT_EQ(post(routes, postJson("/api/run/answers", "{}")).mStatus, 404U);
     EXPECT_EQ(post(routes, postJson("/api/run/decisions/delete", "{}")).mStatus, 404U);
 }
@@ -134,6 +136,112 @@ TEST(RunRoutesTest, UploadStartsARunAndTheResultIsTheSameAfterwards) {
     EXPECT_EQ(result["runRevision"], 1);
     EXPECT_EQ(result["status"], "success");
     EXPECT_EQ(get(routes, "/api/run").mBody, started.mBody);
+}
+
+TEST(RunRoutesTest, TheSupportReportIsAFileOfTheRunWithoutPrivateFacts) {
+    RunRoutes routes(100000);
+    const std::string file = std::string{kHeaderOnly} + std::string{kLossRows};
+    LogCapture log;
+
+    ASSERT_EQ(post(routes, postUpload(uploadBody(2025, kBrokerFileEntry, file))).mStatus, 200U);
+
+    const HttpResponse report = get(routes, "/api/run/support-report");
+
+    ASSERT_EQ(report.mStatus, 200U);
+
+    const auto header = [&report](std::string_view aName) {
+        const auto found =
+            std::find_if(report.mHeaders.begin(),
+                         report.mHeaders.end(),
+                         [aName](const HttpField& aField) { return aField.mName == aName; });
+
+        return found == report.mHeaders.end() ? std::string{} : found->mValue;
+    };
+
+    EXPECT_EQ(header("Content-Type"), "application/json; charset=utf-8");
+    EXPECT_EQ(header("Content-Disposition"),
+              "attachment; filename=\"taxbroker-support-2025.json\"");
+
+    const Json parsed = Json::parse(report.mBody);
+
+    EXPECT_EQ(parsed["supportReportVersion"], 1);
+    EXPECT_EQ(parsed["run"]["year"], 2025);
+    EXPECT_EQ(parsed["result"]["status"], "needs_input");
+    EXPECT_EQ(parsed["result"]["requests"][0]["type"], "loss_eligibility_confirmation_required");
+
+    // The loss question holds the units and the sale facts; the report holds none of them.
+    EXPECT_EQ(report.mBody.find("synthetic-buy-1"), std::string::npos);
+    EXPECT_EQ(report.mBody.find("Synthetic Share"), std::string::npos);
+    EXPECT_EQ(report.mBody.find("synthetic.csv"), std::string::npos);
+    EXPECT_EQ(report.mBody.find("12345679"), std::string::npos);
+
+    EXPECT_EQ(log.count("Support report downloaded: revision 1, " +
+                        std::to_string(report.mBody.size()) + " bytes"),
+              1U);
+}
+
+TEST(RunRoutesTest, TheSupportReportAllowsOnlyGet) {
+    RunRoutes routes(100000);
+
+    ASSERT_EQ(post(routes, postUpload(uploadBody(2024, kBrokerFileEntry, kHeaderOnly))).mStatus,
+              200U);
+
+    const HttpResponse refused = post(routes, postJson("/api/run/support-report", "{}"));
+
+    EXPECT_EQ(refused.mStatus, 405U);
+}
+
+TEST(RunRoutesTest, TheSupportReportOfAFirstUploadThatABadRateFileStoppedHasTheInputFault) {
+    RunRoutes routes(100000);
+    const std::string files =
+        R"([{"part":"file0","kind":"broker","broker":"trade_republic"},{"part":"file1","kind":"ecb_rates"}])";
+
+    ASSERT_EQ(
+        post(routes, postUpload(uploadBody(2024, files, kHeaderOnly, "this is not a rate file\n")))
+            .mStatus,
+        422U);
+
+    // No run exists, but the failed upload can be described.
+    const HttpResponse report = get(routes, "/api/run/support-report");
+
+    ASSERT_EQ(report.mStatus, 200U);
+
+    const Json parsed = Json::parse(report.mBody);
+
+    EXPECT_EQ(parsed["run"]["year"], 2024);
+    EXPECT_EQ(parsed["run"]["ecbRateFiles"], 1);
+    EXPECT_EQ(parsed["inputFault"]["kind"], "rate_file");
+    EXPECT_FALSE(parsed.contains("result"));
+    EXPECT_EQ(report.mBody.find("bad_rates"), std::string::npos);
+}
+
+TEST(RunRoutesTest, TheSupportReportAfterAFailedRestartIsTheFaultNotTheOlderRun) {
+    RunRoutes routes(100000);
+    const std::string files =
+        R"([{"part":"file0","kind":"broker","broker":"trade_republic"},{"part":"file1","kind":"ecb_rates"}])";
+
+    ASSERT_EQ(post(routes, postUpload(uploadBody(2024, kBrokerFileEntry, kHeaderOnly))).mStatus,
+              200U);
+
+    // The run of revision 1 stays after the failed upload, but the report is about the upload.
+    ASSERT_EQ(
+        post(routes, postUpload(uploadBody(2024, files, kHeaderOnly, "this is not a rate file\n")))
+            .mStatus,
+        422U);
+
+    const Json failed = Json::parse(get(routes, "/api/run/support-report").mBody);
+
+    EXPECT_EQ(failed["inputFault"]["kind"], "rate_file");
+    EXPECT_FALSE(failed.contains("result"));
+
+    // A good upload clears the fault; the report is the run again.
+    ASSERT_EQ(post(routes, postUpload(uploadBody(2024, kBrokerFileEntry, kHeaderOnly))).mStatus,
+              200U);
+
+    const Json good = Json::parse(get(routes, "/api/run/support-report").mBody);
+
+    EXPECT_FALSE(good.contains("inputFault"));
+    EXPECT_EQ(good["result"]["revision"], 2);
 }
 
 TEST(RunRoutesTest, SecondUploadRestartsTheRun) {

@@ -11,6 +11,12 @@ namespace taxbroker {
 /// The name and version, for example `TaxBrokerReport 2.0.0`.
 [[nodiscard]] std::string buildInfoText();
 
+/// The build type: `release` or `debug`.
+[[nodiscard]] std::string_view buildTypeName();
+
+/// The operating system and processor of the build, for example `linux x86_64`.
+[[nodiscard]] std::string buildSystemName();
+
 /// The facts of the build that are known at compile time, for example
 /// `release, linux x86_64`: build type, operating system and processor. Never a host name, a user
 /// name or a kernel release.

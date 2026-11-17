@@ -6,6 +6,7 @@
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/api/report_files.hpp"
 #include "taxbroker/api/request_json.hpp"
+#include "taxbroker/api/support_report_json.hpp"
 #include "taxbroker/exception_kind.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/logging.hpp"
@@ -251,6 +252,18 @@ HttpResponse RunRoutes::dispatch(const HttpRequest& aRequest,
         return deleteAnswers(aRequest);
     }
 
+    if (aPath == "/api/run/support-report")
+    {
+        if (aRequest.mMethod != "GET")
+        {
+            return refuseMethod("GET");
+        }
+
+        aRoute = "support_report";
+
+        return supportReport();
+    }
+
     // `/api/run/reports/xml` would share its slash between the prefix and the suffix.
     if (aPath.starts_with(kReportsPrefix) && aPath.ends_with(kXmlSuffix) &&
         aPath.size() > kReportsPrefix.size() + kXmlSuffix.size())
@@ -354,6 +367,9 @@ HttpResponse RunRoutes::upload(const HttpRequest& aRequest) {
                           : std::nullopt);
     }
 
+    // The shape is taken now: the run takes the request.
+    const auto shape = api::supportReportRun(std::get<ApplicationRequest>(request));
+
     // A second upload keeps the answers and starts a new revision; a failed restart leaves the
     // run as it was.
     if (mRun.has_value())
@@ -362,9 +378,11 @@ HttpResponse RunRoutes::upload(const HttpRequest& aRequest) {
 
         if (fault.has_value())
         {
+            mLastFault.emplace(shape, *fault);
             return inputFaultResponse(*fault);
         }
 
+        mLastFault.reset();
         api::logResult(mRun->result());
 
         return resultResponse(mRun->result());
@@ -374,9 +392,11 @@ HttpResponse RunRoutes::upload(const HttpRequest& aRequest) {
 
     if (const auto* fault = std::get_if<ApplicationInputFault>(&started))
     {
+        mLastFault.emplace(shape, *fault);
         return inputFaultResponse(*fault);
     }
 
+    mLastFault.reset();
     mRun.emplace(std::move(std::get<ApplicationRun>(started)));
 
     api::logResult(mRun->result());
@@ -393,6 +413,50 @@ HttpResponse RunRoutes::result() const {
     LOG_DEBUG("Run result requested: revision {}", mRun->result().mRunRevision);
 
     return resultResponse(mRun->result());
+}
+
+HttpResponse RunRoutes::supportReport() const {
+    if (!mRun.has_value() && !mLastFault.has_value())
+    {
+        return noRunResponse();
+    }
+
+    // The last upload decides: a file that stopped it is the problem, even when an earlier run
+    // is still held.
+    int year = 0;
+    std::string body;
+
+    if (mLastFault.has_value())
+    {
+        year = mLastFault->first.mYear;
+        body = api::serializeSupportReport(api::currentSupportReportApp(),
+                                           mLastFault->first,
+                                           mLastFault->second);
+
+        LOG_INFO("Support report downloaded: input fault, {} bytes", body.size());
+    }
+    else
+    {
+        const ApplicationResult& current = mRun->result();
+
+        year = mRun->request().mReportingYear;
+        body = api::serializeSupportReport(api::currentSupportReportApp(),
+                                           api::supportReportRun(mRun->request()),
+                                           current);
+
+        LOG_INFO("Support report downloaded: revision {}, {} bytes",
+                 current.mRunRevision,
+                 body.size());
+    }
+
+    HttpResponse response = makeResponse(200, body);
+
+    response.mHeaders.push_back({"Content-Type", "application/json; charset=utf-8"});
+    response.mHeaders.push_back(
+        {"Content-Disposition",
+         "attachment; filename=\"taxbroker-support-" + std::to_string(year) + ".json\""});
+
+    return response;
 }
 
 HttpResponse RunRoutes::answers(const HttpRequest& aRequest) {

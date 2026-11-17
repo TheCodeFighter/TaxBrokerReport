@@ -395,6 +395,13 @@ body {
   margin: var(--space-2) 0 0;
 }
 
+.support-report {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  margin-top: var(--space-3);
+}
+
 .screen .result-status {
   padding-left: var(--space-2);
   border-left: 4px solid var(--tone);

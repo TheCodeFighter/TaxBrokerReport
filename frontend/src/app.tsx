@@ -7,6 +7,7 @@ import { createMessageLoader, type MessageCatalogue } from "./i18n/messages";
 import { uiText, uiTextWith, type Language, type UiTextKey } from "./i18n/ui_texts";
 import { hashOf, pageFromHash, pages, type Page } from "./navigation/pages";
 import { AboutPage } from "./screens/about_page";
+import { SupportPage } from "./screens/support_page";
 import { HomePage } from "./screens/home_page";
 import { ManualPage } from "./screens/manual_page";
 import { RunScreen } from "./screens/run_screen";
@@ -30,6 +31,7 @@ const navTexts: Record<Page, UiTextKey> = {
   home: "navHome",
   report: "navReport",
   manual: "navManual",
+  support: "navSupport",
   about: "navAbout",
 };
 
@@ -187,6 +189,7 @@ export function App() {
         <>
           {page === "home" ? <HomePage language={language} /> : null}
           {page === "manual" ? <ManualPage language={language} /> : null}
+          {page === "support" ? <SupportPage language={language} apiFetch={client.apiFetch} /> : null}
           {page === "about" ? <AboutPage language={language} /> : null}
           {/* The run screen stays mounted and only hidden, so the chosen files and the result stay. */}
           <main class="screen screen-wide" hidden={page !== "report"}>

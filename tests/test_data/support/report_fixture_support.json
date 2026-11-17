@@ -1,0 +1,64 @@
+{
+  "supportReportVersion": 1,
+  "app": {
+    "version": "2.0.0",
+    "build": "release",
+    "platform": "linux x86_64"
+  },
+  "run": {
+    "year": 2024,
+    "filing": "original",
+    "developerMode": false,
+    "brokers": [
+      {
+        "broker": "trade_republic",
+        "files": 1
+      }
+    ],
+    "ecbRateFiles": 0,
+    "referenceFiles": 0
+  },
+  "result": {
+    "revision": 1,
+    "status": "success",
+    "reports": {
+      "capitalGains": {
+        "status": "generated",
+        "unsafe": false,
+        "diagnosticIds": [],
+        "requestTypes": [],
+        "excludedCount": 0
+      },
+      "dividends": {
+        "status": "no_data",
+        "unsafe": false,
+        "diagnosticIds": [],
+        "requestTypes": [],
+        "excludedCount": 0
+      },
+      "bankInterest": {
+        "status": "no_data",
+        "unsafe": false,
+        "diagnosticIds": [],
+        "requestTypes": [],
+        "excludedCount": 0
+      },
+      "otherInterest": {
+        "status": "no_data",
+        "unsafe": false,
+        "diagnosticIds": [],
+        "requestTypes": [],
+        "excludedCount": 0
+      }
+    },
+    "requests": [],
+    "answered": [],
+    "counts": {
+      "errors": 0,
+      "warnings": 0,
+      "requests": 0,
+      "byCode": {}
+    }
+  },
+  "diagnostics": []
+}
