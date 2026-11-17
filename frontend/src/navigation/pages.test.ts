@@ -8,9 +8,10 @@ describe("pageFromHash", () => {
     expect(pageFromHash("#/")).toBe("home");
   });
 
-  it("reads the four page hashes", () => {
+  it("reads the page hashes", () => {
     expect(pageFromHash("#/report")).toBe("report");
     expect(pageFromHash("#/manual")).toBe("manual");
+    expect(pageFromHash("#/support")).toBe("support");
     expect(pageFromHash("#/about")).toBe("about");
   });
 
@@ -31,6 +32,7 @@ describe("hashOf", () => {
     expect(hashOf("home")).toBe("#/");
     expect(hashOf("report")).toBe("#/report");
     expect(hashOf("manual")).toBe("#/manual");
+    expect(hashOf("support")).toBe("#/support");
     expect(hashOf("about")).toBe("#/about");
   });
 });

@@ -18,6 +18,7 @@ export const uiTexts = {
   navHome: { sl: "Domov", en: "Home" },
   navReport: { sl: "Poročilo", en: "Report" },
   navManual: { sl: "Navodila", en: "Manual" },
+  navSupport: { sl: "Podpora", en: "Support" },
   navAbout: { sl: "O aplikaciji", en: "About" },
   welcomeLine: {
     sl: "Iz izvozov posrednikov pripravi datoteke XML za eDavke.",
@@ -123,8 +124,8 @@ export const uiTexts = {
   logLevelInfo: { sl: "Koraki (info)", en: "Steps (info)" },
   logLevelDebug: { sl: "Vse (debug)", en: "Everything (debug)" },
   logLevelHint: {
-    sl: "Dnevnik ne vsebuje zneskov, imen ali imen datotek. Za prijavo težave izberite »Koraki« in ponovite izračun. Raven velja do izklopa programa. Datoteka taxbroker.log je v mapi ~/.local/state/taxbroker.",
-    en: "The log holds no amounts, names or file names. To report a problem, choose \"Steps\" and run again. The level lasts until the program is closed. The file taxbroker.log is in the folder ~/.local/state/taxbroker.",
+    sl: "Dnevnik ne vsebuje zneskov, imen ali imen datotek. Priložite ga le, če vas za to prosi razvijalec: izberite »Koraki« in ponovite izračun. Raven velja do izklopa programa. Datoteka taxbroker.log je v mapi ~/.local/state/taxbroker.",
+    en: "The log holds no amounts, names or file names. Send it only when the developer asks for it: choose \"Steps\" and run again. The level lasts until the program is closed. The file taxbroker.log is in the folder ~/.local/state/taxbroker.",
   },
   logLevelFailed: {
     sl: "Ravni dnevnika ni bilo mogoče spremeniti.",
@@ -205,6 +206,20 @@ export const uiTexts = {
     en: "The inputs changed. This result is out of date: create the reports again.",
   },
   resultFiles: { sl: "Datoteke s posli", en: "Trade files" },
+  supportTitle: { sl: "Podpora", en: "Support" },
+  supportIntro: {
+    sl: "Če nekaj ne deluje, shranite poročilo za podporo in ga priložite prijavi težave. Opisuje zadnji zagon: različico programa, stanje vsakega obrazca in kode sporočil. Najprej ustvarite poročila na strani Poročilo.",
+    en: "If something does not work, save the support report and attach it to your problem report. It describes the last run: the program version, the status of each form and the message codes. Create the reports on the Report page first.",
+  },
+  supportNoRun: {
+    sl: "Ni zagona, ki bi ga lahko opisali. Najprej ustvarite poročila na strani Poročilo.",
+    en: "There is no run to describe yet. Create the reports on the Report page first.",
+  },
+  supportReportSave: { sl: "Shrani poročilo za podporo", en: "Save support report" },
+  supportReportHint: {
+    sl: "Za prijavo težave. Ne vsebuje zneskov, imen, davčnih številk ali imen datotek. Preberite ga, preden ga pošljete.",
+    en: "For a problem report. It holds no amounts, names, tax numbers or file names. Read it before you send it.",
+  },
   resultCounts: { sl: "Napake: {errors}, opozorila: {warnings}", en: "Errors: {errors}, warnings: {warnings}" },
   statusSuccess: { sl: "Vsa poročila so pripravljena.", en: "All reports are ready." },
   statusCompletedWithWarnings: {

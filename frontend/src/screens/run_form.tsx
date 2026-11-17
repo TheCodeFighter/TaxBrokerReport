@@ -25,8 +25,6 @@ interface Props {
   outOfDate: boolean;
   /** The "Remember my details" box, shown under the taxpayer fields. */
   rememberBox?: ComponentChildren;
-  /** The closed "Advanced" section at the bottom of the form. */
-  advanced?: ComponentChildren;
   /** True while the box asks something (the delete warning): the run waits for the answer. */
   submitBlocked?: boolean;
   onSubmit: () => void;
@@ -116,7 +114,6 @@ export function RunForm({
   sending,
   outOfDate,
   rememberBox,
-  advanced,
   submitBlocked = false,
   onSubmit,
 }: Props) {
@@ -257,8 +254,6 @@ export function RunForm({
           })}
           {rememberBox}
         </section>
-
-        {advanced}
 
         <button type="submit" class="button" disabled={sending || !hasBrokerFile || submitBlocked}>
           {uiText(language, sending ? "sending" : outOfDate ? "createReportsAgain" : "createReports")}

@@ -6,6 +6,7 @@
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/api/report_files.hpp"
 #include "taxbroker/api/request_json.hpp"
+#include "taxbroker/api/support_report_json.hpp"
 #include "taxbroker/exception_kind.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 #include "taxbroker/logging.hpp"
@@ -251,6 +252,18 @@ HttpResponse RunRoutes::dispatch(const HttpRequest& aRequest,
         return deleteAnswers(aRequest);
     }
 
+    if (aPath == "/api/run/support-report")
+    {
+        if (aRequest.mMethod != "GET")
+        {
+            return refuseMethod("GET");
+        }
+
+        aRoute = "support_report";
+
+        return supportReport();
+    }
+
     // `/api/run/reports/xml` would share its slash between the prefix and the suffix.
     if (aPath.starts_with(kReportsPrefix) && aPath.ends_with(kXmlSuffix) &&
         aPath.size() > kReportsPrefix.size() + kXmlSuffix.size())
@@ -393,6 +406,29 @@ HttpResponse RunRoutes::result() const {
     LOG_DEBUG("Run result requested: revision {}", mRun->result().mRunRevision);
 
     return resultResponse(mRun->result());
+}
+
+HttpResponse RunRoutes::supportReport() const {
+    if (!mRun.has_value())
+    {
+        return noRunResponse();
+    }
+
+    const ApplicationResult& current = mRun->result();
+    const std::string body = api::serializeSupportReport(api::currentSupportReportApp(),
+                                                         api::supportReportRun(mRun->request()),
+                                                         current);
+
+    LOG_INFO("Support report downloaded: revision {}, {} bytes", current.mRunRevision, body.size());
+
+    HttpResponse response = makeResponse(200, body);
+
+    response.mHeaders.push_back({"Content-Type", "application/json; charset=utf-8"});
+    response.mHeaders.push_back({"Content-Disposition",
+                                 "attachment; filename=\"taxbroker-support-" +
+                                     std::to_string(mRun->request().mReportingYear) + ".json\""});
+
+    return response;
 }
 
 HttpResponse RunRoutes::answers(const HttpRequest& aRequest) {

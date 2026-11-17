@@ -19,6 +19,19 @@ describe("uiTexts", () => {
     expect(uiText("en", "unknownMessage")).toBe("Unknown message");
   });
 
+  it("has the support report texts", () => {
+    expect(uiText("sl", "navSupport")).toBe("Podpora");
+    expect(uiText("en", "navSupport")).toBe("Support");
+    expect(uiText("sl", "supportReportSave")).toBe("Shrani poročilo za podporo");
+    expect(uiText("en", "supportReportSave")).toBe("Save support report");
+    expect(uiText("en", "supportReportHint")).toBe(
+      "For a problem report. It holds no amounts, names, tax numbers or file names. Read it before you send it.",
+    );
+    expect(uiText("sl", "supportReportHint")).toBe(
+      "Za prijavo težave. Ne vsebuje zneskov, imen, davčnih številk ali imen datotek. Preberite ga, preden ga pošljete.",
+    );
+  });
+
   it("has the navigation texts", () => {
     expect(uiText("sl", "navManual")).toBe("Navodila");
     expect(uiText("en", "navAbout")).toBe("About");

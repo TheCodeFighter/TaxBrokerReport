@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 
 import type { ApiClient } from "../api/client";
 import { SessionEndedError } from "../api/client";
-import { changeLogLevel, loadLogLevel, type LogLevel } from "../api/log_level";
 import { deleteProfile, loadProfile } from "../api/profile";
 import type { MessageCatalogue } from "../i18n/messages";
 import { uiText, uiTextWith, type Language, type UiTextKey } from "../i18n/ui_texts";
@@ -23,7 +22,6 @@ import { markOutOfDate, type ShownResult } from "../run/result_view";
 import { runErrorText, type ShownError } from "../run/run_errors";
 import { submitRun } from "../run/submit";
 import { RememberBox } from "./remember_box";
-import { AdvancedSection } from "./advanced_section";
 import { RunForm } from "./run_form";
 import { RunResultView } from "./run_result";
 
@@ -47,9 +45,6 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
   const [loadNotices, setLoadNotices] = useState<ProfileNotice[]>([]);
   // A failed save or delete of the last action; cleared by the next one.
   const [profileProblem, setProfileProblem] = useState<UiTextKey | undefined>();
-  // The level of the log: read when the form opens, sent when the user changes it.
-  const [logLevel, setLogLevel] = useState<LogLevel | undefined>();
-  const [logLevelFailed, setLogLevelFailed] = useState(false);
 
   // The saved details load once after the login; they fill only the inputs still empty.
   useEffect(() => {
@@ -77,46 +72,6 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
       cancelled = true;
     };
   }, [apiFetch]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    loadLogLevel(apiFetch).then(
-      (level) => {
-        if (!cancelled) {
-          setLogLevel(level);
-        }
-      },
-      // A lost session is shown by the page itself; the select stays off.
-      () => undefined,
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiFetch]);
-
-  // A change goes to the server at once. The select shows it first; on a failure it goes back.
-  const chooseLogLevel = async (level: LogLevel) => {
-    const previous = logLevel;
-
-    setLogLevel(level);
-    setLogLevelFailed(false);
-
-    try {
-      const now = await changeLogLevel(apiFetch, level);
-
-      setLogLevelFailed(now === undefined);
-      setLogLevel(now ?? previous);
-    } catch (caught) {
-      setLogLevel(previous);
-
-      // A lost session is shown by the page itself.
-      if (!(caught instanceof SessionEndedError)) {
-        setLogLevelFailed(true);
-      }
-    }
-  };
 
   // Any change of the inputs marks the shown result as out of date and clears the last error.
   const change = (changed: RunInputs) => {
@@ -211,14 +166,6 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
             onUntick={() => step("untick")}
             onCancel={() => step("cancel")}
             onConfirm={() => void confirmDelete()}
-          />
-        }
-        advanced={
-          <AdvancedSection
-            language={language}
-            level={logLevel}
-            failed={logLevelFailed}
-            onChange={(level) => void chooseLogLevel(level)}
           />
         }
         onSubmit={() => void send()}

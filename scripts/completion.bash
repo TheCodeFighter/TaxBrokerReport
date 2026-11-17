@@ -204,8 +204,8 @@ _tbr_dump_exact_arithmetic() {
 
 _tbr_report() {
     _tbr_complete --reuse-build --synthetic --year=year --taxpayer=json --self-report --no-input \
-        --out=dir --trade-republic=csv+ --ecb-rates=csv+ --reference-files=csv+ \
-        --command-help --help
+        --support-report "--log-level=words:error warn info debug" --out=dir \
+        --trade-republic=csv+ --ecb-rates=csv+ --reference-files=csv+ --command-help --help
 }
 
 _tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse

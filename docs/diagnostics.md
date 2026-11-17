@@ -1341,6 +1341,40 @@ If the user instead chooses to stop the capital-gains report, its status is `fai
 `failureResolution` is `fail_report`, `excludedInvestments` is empty, and no capital-gains XML is
 available.
 
+## Support report
+
+The support report is a small file for a problem report. The user saves it (the command line with
+`--support-report` writes `support_<year>.json` into the output folder; the page saves
+`taxbroker-support-<year>.json` from `GET /api/run/support-report`) and sends it. It is not the
+application JSON: that holds the values a user needs for a question, the support report holds only
+the facts needed to see what happened.
+
+It is indented JSON (2 spaces) with the keys in the fixed order below and one line feed at the
+end. The same run gives the same bytes. `supportReportVersion` is 1.
+
+- `app`: `version`, `build` (`release` or `debug`) and `platform` (for example `linux x86_64`).
+- `run`: `year`, `filing` (`original` or `self_report`), `developerMode`, `brokers` (each broker
+  with its number of `files`), `ecbRateFiles` and `referenceFiles`. Counts only.
+- `result`: `revision`, `status` and `reports`, one entry per form with `status`, `noDataReason`
+  (when there is one), `unsafe`, `diagnosticIds`, `requestTypes` and `excludedCount`;
+  `requests` (`id`, `type`, and the `investments` or `brokers` of a failure question with their
+  reason codes; an investment is its ISIN only); `answered` (the form and the failure answer);
+  `counts` with `errors`, `warnings`, `requests` and `byCode` (the number of diagnostics of each
+  code, sorted by code).
+- `diagnostics`, in application order: `id`, `severity`, `stage`, `code`, `messageKey`,
+  `messageParams`, `field`, `isin`, `taxDate`, `affectedReports` and `sources`. A source is the
+  number of the file in the request (1 is the first file) and the row; never the file name.
+  `messageParams` leaves out `name`, because that parameter can hold an instrument name.
+- `inputFault` instead of `result` and `diagnostics`, when a supplied rate or reference file stops
+  the run: the `kind` (`rate_file` or `reference_file`) and the `messageKey`. The command line
+  writes this report only with `--support-report`; the page has no run in that case, so it has no
+  button.
+
+It never holds an amount, unit, price, rate, fee, payer tax number, transaction ID, instrument or
+payer name, taxpayer fact, file name, path, time stamp, duration, English sentence or log line.
+The log (`logging.md`) is a second source: the maintainer asks for it only when the report is not
+enough.
+
 ## Frontend behavior
 
 The frontend must:
@@ -1477,5 +1511,8 @@ Application-service, API, and integration tests based on this document must prov
 - every diagnostic the code can emit has a message key, and a missing or duplicate key fails a test;
 - each key has an English and a Slovenian text, and the placeholders match its parameters;
 - each diagnostic reports the expected key and parameters, for example a wrong field count gives
-  `field_count_mismatch` with `expected` and `found`; and
-- the parser diagnostics JSON sends the key and parameters.
+  `field_count_mismatch` with `expected` and `found`;
+- the parser diagnostics JSON sends the key and parameters; and
+- the support report holds the code, field, ISIN and source row of each diagnostic, and none of
+  the amounts, names, tax numbers, transaction IDs or file names of the run (a fixed golden file
+  and a check for each private literal).

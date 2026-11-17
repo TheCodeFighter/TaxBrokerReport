@@ -3902,6 +3902,348 @@ TEST(CliReportIntegrationTest, AForeignInvestmentWithoutARateCanBeExcluded) {
     EXPECT_FALSE(contains(xml, "XX0000000002"));
 }
 
+TEST(CliReportIntegrationTest, TheSupportReportFlagWritesTheFileNextToTheSummary) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--support-report",
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(result.mOut.ends_with("Support report: support_2024.json\n"));
+    EXPECT_EQ(
+        folder.fileNames("out"),
+        (std::vector<std::string>{"Doh-KDVP_2024.xml", "summary_2024.txt", "support_2024.json"}));
+
+    const std::string report = folder.readOutput("support_2024.json");
+
+    EXPECT_TRUE(contains(report, "\"supportReportVersion\": 1,\n"));
+    EXPECT_TRUE(contains(report, "\"year\": 2024,\n"));
+    EXPECT_TRUE(contains(report, "\"files\": 1\n"));
+    EXPECT_TRUE(contains(report, "\"capitalGains\": {\n        \"status\": \"generated\""));
+    EXPECT_TRUE(report.ends_with("}\n"));
+
+    // Nothing of the input: no file name, no folder, no name, no tax number.
+    EXPECT_FALSE(contains(report, "history.csv"));
+    EXPECT_FALSE(contains(report, "taxbroker_cli_synthetic_"));
+    EXPECT_FALSE(contains(report, "Synthetic Share"));
+    EXPECT_FALSE(contains(report, "12345679"));
+}
+
+TEST(CliReportIntegrationTest, WithoutTheSupportReportFlagNoSupportFileIsWritten) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_FALSE(contains(result.mOut, "Support report"));
+    EXPECT_FALSE(folder.hasOutput("support_2024.json"));
+}
+
+TEST(CliReportIntegrationTest, TheSupportReportOfABlockedRunNamesTheCodeAndTheIsin) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // A sale of XX0000000002 that was never bought: the history is incomplete.
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,TRADING,SELL,STOCK,Other Share,XX0000000002,-5,10,50,,,EUR,,,,,synthetic-sale-2,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--no-input",
+                             "--support-report",
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_TRUE(folder.hasOutput("summary_2024.txt"));
+    EXPECT_TRUE(contains(result.mOut, "Support report: support_2024.json\n"));
+
+    const std::string report = folder.readOutput("support_2024.json");
+
+    EXPECT_TRUE(contains(report, "\"code\": \"incomplete_history\""));
+    EXPECT_TRUE(contains(report, "\"isin\": \"XX0000000002\""));
+    EXPECT_FALSE(contains(report, "Other Share"));
+}
+
+TEST(CliReportIntegrationTest, TheSupportReportFlagTwiceIsAUsageError) {
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out",
+                             "--support-report",
+                             "--support-report",
+                             "--trade-republic",
+                             "history.csv"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_TRUE(result.mErr.starts_with("taxbroker: --support-report is given twice.\n"));
+}
+
+TEST(CliReportIntegrationTest, ASecondRunReplacesTheSupportReportAndLeavesNoOldFile) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+    const std::vector<std::string> arguments{"report",
+                                             "--year",
+                                             "2024",
+                                             "--taxpayer",
+                                             taxpayer,
+                                             "--out",
+                                             folder.outputDirectory(),
+                                             "--support-report",
+                                             "--trade-republic",
+                                             history};
+
+    ASSERT_EQ(run(arguments).mExitCode, kExitSuccess);
+
+    const std::string first = folder.readOutput("support_2024.json");
+
+    ASSERT_EQ(run(arguments).mExitCode, kExitSuccess);
+
+    // The same input gives the same bytes, and no .tmp or .old file stays.
+    EXPECT_EQ(folder.readOutput("support_2024.json"), first);
+    EXPECT_EQ(folder.fileNames("out"),
+              (std::vector<std::string>{"summary_2024.txt", "support_2024.json"}));
+}
+
+TEST(CliReportIntegrationTest, AnInputFaultWithTheSupportReportFlagWritesOnlyTheSupportReport) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // The columns after KEY and FREQ are missing.
+    const auto rates = folder.writeText("rates.csv", "KEY,FREQ\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--support-report",
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mErr.starts_with("taxbroker: the ECB rate file rates.csv is not valid"));
+    EXPECT_EQ(result.mOut, "Support report: support_2025.json\n");
+    EXPECT_EQ(folder.fileNames("out"), (std::vector<std::string>{"support_2025.json"}));
+
+    const std::string report = folder.readOutput("support_2025.json");
+
+    EXPECT_TRUE(contains(report, "\"inputFault\": {\n    \"kind\": \"rate_file\""));
+    EXPECT_TRUE(contains(report, "\"ecbRateFiles\": 1"));
+    EXPECT_FALSE(contains(report, "\"result\""));
+    EXPECT_FALSE(contains(report, "rates.csv"));
+}
+
+TEST(CliReportIntegrationTest, ASupportReportThatCannotBeWrittenChangesNothing) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+    // A folder where the support report should go.
+    std::filesystem::create_directories(folder.outputDirectory() + "/support_2024.json");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--support-report",
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_EQ(result.mErr, "taxbroker: support_2024.json cannot be written.\n");
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_FALSE(folder.hasOutput("summary_2024.txt"));
+}
+
+TEST(CliReportIntegrationTest, ATemporarySupportReportThatCannotBeWrittenChangesNothing) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+    // A folder where the support report is written before it replaces an old one.
+    std::filesystem::create_directories(folder.outputDirectory() + "/support_2024.json.tmp");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--support-report",
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_EQ(result.mErr, "taxbroker: support_2024.json cannot be written.\n");
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml.tmp"));
+    EXPECT_FALSE(folder.hasOutput("summary_2024.txt"));
+    EXPECT_FALSE(folder.hasOutput("summary_2024.txt.tmp"));
+    EXPECT_FALSE(folder.hasOutput("support_2024.json"));
+}
+
+TEST(CliReportIntegrationTest, AnInputFaultReportThatCannotBeWrittenKeepsTheFaultAndTheExitCode) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // The columns after KEY and FREQ are missing.
+    const auto rates = folder.writeText("rates.csv", "KEY,FREQ\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+    // A folder where the support report should go.
+    std::filesystem::create_directories(folder.outputDirectory() + "/support_2025.json");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--support-report",
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_TRUE(result.mErr.starts_with("taxbroker: the ECB rate file rates.csv is not valid"));
+    EXPECT_TRUE(result.mErr.ends_with("taxbroker: support_2025.json cannot be written.\n"));
+}
+
+TEST(CliReportIntegrationTest, AnInputFaultReportInAFolderThatCannotBeCreatedIsRefused) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", "KEY,FREQ\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+
+    // The output folder would be inside a file.
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             taxpayer + "/out",
+                             "--support-report",
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_TRUE(result.mErr.ends_with("taxbroker: support_2025.json cannot be written.\n"));
+}
+
+TEST(CliReportIntegrationTest, AnInputFaultReportWithATemporaryFolderInTheWayIsRefused) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto rates = folder.writeText("rates.csv", "KEY,FREQ\n");
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2025-01-10T09:00:00Z,2025-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,1,10,-10,,,EUR,,,,,synthetic-buy-1,,,,)",
+        });
+    // A folder where the support report is written before it is moved into place.
+    std::filesystem::create_directories(folder.outputDirectory() + "/support_2025.json.tmp");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2025",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--support-report",
+                             "--ecb-rates",
+                             rates,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_TRUE(result.mOut.empty());
+    EXPECT_TRUE(result.mErr.ends_with("taxbroker: support_2025.json cannot be written.\n"));
+    EXPECT_FALSE(folder.hasOutput("support_2025.json"));
+}
+
 TEST(CliReportIntegrationTest, AnEcbRateFileThatIsNotValidFailsTheRun) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -4714,10 +5056,11 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
     EXPECT_TRUE(contains(general.mOut,
                          "  taxbroker report --year YYYY --taxpayer FILE [--self-report] "
                          "[--no-input]\n"
-                         "                   [--developer-export] [--log-level LEVEL] "
-                         "[--ecb-rates FILE...]\n"
-                         "                   [--reference-files FILE...] --out DIR "
-                         "--trade-republic FILE...\n"));
+                         "                   [--developer-export] [--support-report] "
+                         "[--log-level LEVEL]\n"
+                         "                   [--ecb-rates FILE...] [--reference-files "
+                         "FILE...] --out DIR\n"
+                         "                   --trade-republic FILE...\n"));
 
     const auto report = run({"report", "--help"});
 

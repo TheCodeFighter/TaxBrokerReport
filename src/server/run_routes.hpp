@@ -15,9 +15,10 @@ namespace taxbroker {
 /// inside a `catch` block; aRoute is one of the fixed route words, never request text.
 void logRouteFailure(std::string_view aRoute);
 
-/// The routes below `/api/run`: upload and start, the result, answers, deleting answers and the
-/// XML downloads. They hold the one run of the server and only convert HTTP and JSON to the
-/// application service and back; every check of an answer and every calculation is the service's.
+/// The routes below `/api/run`: upload and start, the result, the support report, answers, deleting
+/// answers and the XML downloads. They hold the one run of the server and only convert HTTP and
+/// JSON to the application service and back; every check of an answer and every calculation is
+/// the service's.
 /// The guard (Host, Origin, client header, session) is done before; the calls come from one thread.
 class RunRoutes {
   public:
@@ -41,6 +42,7 @@ class RunRoutes {
                           std::string_view& aRoute);
     HttpResponse upload(const HttpRequest& aRequest);
     HttpResponse result() const;
+    HttpResponse supportReport() const;
     HttpResponse answers(const HttpRequest& aRequest);
     HttpResponse deleteAnswers(const HttpRequest& aRequest);
     HttpResponse download(std::string_view aReport, std::string_view aQuery) const;

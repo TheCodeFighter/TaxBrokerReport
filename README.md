@@ -77,6 +77,10 @@ asks nothing and lists the open questions instead. `--developer-export` is for d
 sale has no purchase history, it adds one more choice that writes an unsafe `Doh-KDVP_YYYY_UNSAFE.xml`
 after one confirmation (eDavki may reject it, or the tax may be wrong).
 
+`--support-report` also writes `support_YYYY.json`, a small file for a problem report: the version, the status of
+each form and every diagnostic code with its ISIN and row. It holds no amounts, names, tax numbers or
+file names; read it before you send it. The "Support" page has a "Save support report" button for the same file, and an "Advanced" section for the log level.
+
 If something fails, run the command again with `--log-level info` and send the log file (it holds
 no amounts, names or file names); see [docs/logging.md](docs/logging.md).
 

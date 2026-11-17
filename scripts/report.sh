@@ -14,7 +14,8 @@ synthetic_taxpayer="tests/test_data/cli/taxpayer.json"
 usage() {
     cat <<EOF
 Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.json]
-                 [--self-report] [--no-input] [--log-level LEVEL] [--out runtime/dir]
+                 [--self-report] [--no-input] [--support-report] [--log-level LEVEL]
+                 [--out runtime/dir]
                  [--trade-republic path.csv ...] [--ecb-rates path.csv ...]
                  [--reference-files path.csv ...]
 
@@ -38,6 +39,7 @@ Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.js
     --self-report   write a self-report instead of an original return
     --no-input      ask no questions: an open question blocks the report
                     (without it, the command asks in this terminal)
+    --support-report  also write support_<year>.json, the privacy-safe report for a problem report
     --log-level     error (the default), warn, info or debug: how much the log holds; the
                     log is runtime/logs/taxbroker_report.log
     --trade-republic  one or more Trade Republic exports (default: $default_csv)
@@ -111,6 +113,11 @@ while [[ $# -gt 0 ]]; do
         --no-input)
             end_list
             cli_options+=(--no-input)
+            shift
+            ;;
+        --support-report)
+            end_list
+            cli_options+=(--support-report)
             shift
             ;;
         --log-level)

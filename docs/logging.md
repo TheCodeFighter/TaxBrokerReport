@@ -156,10 +156,10 @@ never a value, a name, an ISIN, a file name, a path, a query or a token (R13 in 
 | info | `Run started: year, filing, developer mode, brokers [<broker> x<n>], ecb rate files, reference files` (`Run restarted: ...`) | an upload |
 | info | `Run result: revision=<n> status=<s> capitalGains=<s> dividends=<s> bankInterest=<s> otherInterest=<s> requests=<n> errors=<n> warnings=<n>` | after an upload, answers or deletes |
 | info | `Run details: requests [<type> x<n>]; errors [<code> x<n>]; warnings [<code> x<n>]; excluded [<reason> x<n>]; no data [<report> <reason> x<n>]; answered [<report> <answer> x<n>]` | the same moments: which questions are open, which diagnostic codes were raised, why an item or a report is left out, and which failure question the user answered |
-| info | `Answers accepted: <n> [<type> x<n>]`, `Answers deleted: <n or all>`, `Report downloaded: <report>, revision <n>, <bytes> bytes[, unsafe developer export]` | the steps of the run API |
+| info | `Answers accepted: <n> [<type> x<n>]`, `Answers deleted: <n or all>`, `Report downloaded: <report>, revision <n>, <bytes> bytes[, unsafe developer export]`, `Support report downloaded: revision <n>, <bytes> bytes` | the steps of the run API |
 | info | `Stage rates: supplied files <n>`, `Stage reference: supplied files <n>`, `Stage parse and merge: sources <n>, events <n>, parse errors <n>, parse warnings <n>, merge errors <n>, merge warnings <n>, conflicts <n> (<ms> ms)`, `Stage year: instruments <n>, capital events <n>, events of the year <n>` (or `no ledger, the year <year> is not supported`), `Calculation done (<ms> ms)` | the load of a run (once per upload) and each calculation (also after an answer); counts and times only |
 | debug | `Stage classify: instruments <n>, left out <n>`, `Stage fifo: pools <n>, diagnostics <n>`, `Stage loss and builder: loss requests <n>, blocked ISINs <n>, excluded ISINs <n>, lists <n>`, `Stage income: dividend rows <n>, deposit interest rows <n>, other interest rows <n>`, `Stage xml: forms written <n>` | each calculation; counts only |
-| info | `Log level set: <level>` | the Advanced section of the page; shown when the new level is `info` or `debug` |
+| info | `Log level set: <level>` | the "Advanced" section of the Support page; shown when the new level is `info` or `debug` |
 | warning | `Log level request refused: <status> <code> [(limit <n>)]` | `400 bad_log_level`, `413 request_too_large (limit 1024)`, `405 method_not_allowed`, `404 not_found` |
 | warning | `Report stopped: <reason>` | the command line stopped before the calculation or while writing the files; the reason is a fixed word: `input_files`, `taxpayer_file`, `input_file`, `input_fault (<kind> <message id>)`, `output_folder`, `output_file` or `output_replace`; never a file name. The details are in the error output |
 | error | `Report failed unexpectedly (<exception type>)` | the command line stopped on an exception; the text goes to the error output only |
@@ -177,14 +177,21 @@ one shared function writes the result.
 
 ## What to send when something fails
 
-1. Run the same command again with more detail: `taxbroker report ... --log-level info` (or
-   `debug`), or choose "Steps (info)" in the "Advanced" section of the page and run again. The
-   level lasts for that command, or for that server session; the next start is at `error` again.
-   `TBR_LOG_LEVEL=info` does the same for every start.
-2. Send the file `taxbroker.log` (and `taxbroker.1.log` if the run was long) from the state folder
-   above. It holds the version and the build, the steps with their counts and times, and the
-   diagnostic codes. It holds no amount, name, ISIN, tax number, file name or path.
-3. Read it before you send it: it is a plain text file.
+1. Save the support report. On the command line add `--support-report` to the same command: it
+   writes `support_<year>.json` into the output folder, also when a rate or reference file stops
+   the run. In the page open "Support" in the header and press "Save support report" (`taxbroker-support-<year>.json`).
+   It holds the version and build, how many files each broker has, the status of each form, the
+   open question types and every diagnostic with its code, message key, stage, field, ISIN and file
+   number and row. It holds no amount, unit, price, name, tax number, transaction ID, file name,
+   path or time (`diagnostics.md`, "Support report").
+2. Read it before you send it: it is a plain text file.
+3. Only when the maintainer asks for more detail, run the same command again with
+   `taxbroker report ... --log-level info` (or `debug`), or choose "Steps (info)" in the "Advanced"
+   section of the Support page and run again. The level lasts for that command, or for that server session;
+   the next start is at `error` again. `TBR_LOG_LEVEL=info` does the same for every start. Then send
+   the file `taxbroker.log` (and `taxbroker.1.log` if the run was long) from the state folder above.
+   It holds the version and the build, the steps with their counts and times, and the diagnostic
+   codes. It holds no amount, name, ISIN, tax number, file name or path.
 
 ---
 
@@ -208,7 +215,7 @@ LOG_CRITICAL("...");
 * Logger is initialized once
 * Configuration is read from environment variables at startup
 * Only the level can change at run time: `--log-level` for one command line run, and
-  `GET`/`POST /api/log-level` (the "Advanced" section) for the rest of a server session. Every
+  `GET`/`POST /api/log-level` (the "Advanced" section of the Support page) for the rest of a server session. Every
   level follows the privacy rule, so a higher level holds more lines, never a private fact
 
 ---

@@ -50,13 +50,24 @@ std::string buildInfoText() {
     return text;
 }
 
+std::string_view buildTypeName() {
+    return kBuildType;
+}
+
+std::string buildSystemName() {
+    std::string text{kOperatingSystem};
+
+    text += ' ';
+    text += kProcessor;
+
+    return text;
+}
+
 std::string buildPlatformText() {
     std::string text{kBuildType};
 
     text += ", ";
-    text += kOperatingSystem;
-    text += ' ';
-    text += kProcessor;
+    text += buildSystemName();
 
     return text;
 }

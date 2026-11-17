@@ -21,6 +21,14 @@ TEST(BuildInfoTest, ThePlatformTextHoldsOnlyCompileTimeFacts) {
     EXPECT_TRUE(text.ends_with(" x86_64") || text.ends_with(" aarch64")) << text;
 }
 
+TEST(BuildInfoTest, TheBuildTypeAndTheSystemAreTheTwoPartsOfThePlatformText) {
+    // The tests run on Linux, in a debug or a release build.
+    EXPECT_TRUE(buildTypeName() == "debug" || buildTypeName() == "release");
+    EXPECT_TRUE(buildSystemName() == "linux x86_64" || buildSystemName() == "linux aarch64")
+        << buildSystemName();
+    EXPECT_EQ(buildPlatformText(), std::string{buildTypeName()} + ", " + buildSystemName());
+}
+
 TEST(BuildInfoTest, TheStartLineNamesTheProgramAndNothingPrivate) {
     LogCapture log;
 

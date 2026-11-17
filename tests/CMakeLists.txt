@@ -102,6 +102,7 @@ add_executable(taxbroker_unit_tests
     unit/numeric_util_test.cpp
     unit/obr_schema_test.cpp
     unit/split_ratio_test.cpp
+    unit/support_report_json_test.cpp
     unit/tax_number_test.cpp
 )
 
@@ -156,6 +157,7 @@ add_executable(taxbroker_integration_tests
     integration/server_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/statement_merger_integration_test.cpp
+    integration/support_report_integration_test.cpp
 )
 
 target_include_directories(taxbroker_integration_tests PRIVATE 
