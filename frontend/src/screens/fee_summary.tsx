@@ -1,0 +1,55 @@
+import { uiText, type Language } from "../i18n/ui_texts";
+import { benefitView, feeView, type SummaryView } from "../run/income_view";
+import type { RunResult } from "../run/submit";
+
+interface Props {
+  language: Language;
+  result: RunResult;
+}
+
+function SummaryList({ language, title, view }: { language: Language; title: string; view: SummaryView }) {
+  return (
+    <>
+      <h4>{title}</h4>
+      <ul class="plain-list">
+        {view.rows.map((row, index) => (
+          <li key={index}>
+            <strong>{row.title}</strong>
+            <ul class="plain-list">
+              {row.lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+              <li>{row.total}</li>
+              {row.converted === undefined ? null : <li class="hint">{row.converted}</li>}
+            </ul>
+          </li>
+        ))}
+        <li>
+          <strong>{`${uiText(language, "summaryOverall")}: `}</strong>
+          {view.total}
+        </li>
+      </ul>
+    </>
+  );
+}
+
+/** Fees and benefits of the year by broker and currency. Information only: no form holds them. */
+export function FeeSummary({ language, result }: Props) {
+  const fees = feeView(result.feeSummary, language);
+  const benefits = benefitView(result.benefitSummary, language);
+
+  if (fees === undefined && benefits === undefined) {
+    return null;
+  }
+
+  return (
+    <section aria-labelledby="fees-title">
+      <h3 id="fees-title">{uiText(language, "feesTitle")}</h3>
+      <p class="hint">{uiText(language, "feesHint")}</p>
+      {fees === undefined ? null : <SummaryList language={language} title={uiText(language, "feesFees")} view={fees} />}
+      {benefits === undefined ? null : (
+        <SummaryList language={language} title={uiText(language, "feesBenefits")} view={benefits} />
+      )}
+    </section>
+  );
+}

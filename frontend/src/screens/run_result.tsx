@@ -5,6 +5,7 @@ import type { MessageCatalogue } from "../i18n/messages";
 import type { Language, UiTextKey } from "../i18n/ui_texts";
 import { uiText, uiTextWith } from "../i18n/ui_texts";
 import { groupDiagnostics, linkedTexts, placeDiagnostics } from "../run/diagnostics_view";
+import { depositReminder } from "../run/income_view";
 import {
   brokerTitle,
   classificationExclusions,
@@ -24,6 +25,8 @@ import type { QuestionEnv } from "./questions/question_frame";
 import { QuestionLink } from "./questions/question_link";
 import { QuestionList } from "./questions/question_list";
 import { RecordedAnswers } from "./questions/recorded_answers";
+import { FeeSummary } from "./fee_summary";
+import { IncomeRows } from "./income_rows";
 import { ReportDownloadButton } from "./report_download_button";
 
 interface Props {
@@ -71,11 +74,11 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
     onNoRun,
   };
 
-  // A new run or a new revision (after an answer) takes the focus, which also scrolls it into
-  // view and makes a screen reader read it.
+  // A new run takes the focus, which also scrolls it into view and makes a screen reader read it.
+  // An answer or a delete gives a new revision of the same run: the page stays where it is.
   useEffect(() => {
     titleRef.current?.focus();
-  }, [shown.fileLabels, result.runRevision]);
+  }, [shown.fileLabels]);
 
   return (
     <section class="run-section run-result" aria-labelledby="result-title">
@@ -121,6 +124,9 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
             outOfDate={shown.outOfDate}
           />
         ))}
+        {cards.some((card) => card.downloadAvailable) ? (
+          <p class="hint">{uiText(language, "notFiledHint")}</p>
+        ) : null}
         <QuestionList env={env} requests={placedQuestions.rest} />
         <RecordedAnswers env={env} decisions={result.decisions} />
         {shared.length === 0 ? null : (
@@ -149,6 +155,7 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
             </ul>
           </>
         )}
+        <FeeSummary language={language} result={result} />
         <h3>{uiText(language, "resultFiles")}</h3>
         <ol class="plain-list">
           {shown.fileLabels.map((label, index) => (
@@ -198,6 +205,7 @@ function ReportCardView({
 }: CardProps) {
   const headingId = `report-${card.key}`;
   const groups = groupDiagnostics(diagnostics);
+  const reminder = depositReminder(result.depositInterest, language);
 
   const investmentList = (investments: ReportInvestment[]) => (
     <ul class="plain-list">
@@ -254,6 +262,8 @@ function ReportCardView({
       {card.evidenceRows === 0 ? null : (
         <p>{uiTextWith(language, "evidenceRows", { count: card.evidenceRows })}</p>
       )}
+      <IncomeRows language={language} summary={result.reports[card.key]?.incomeSummary} />
+      {card.key !== "bankInterest" || reminder === undefined ? null : <p class="notice">{reminder}</p>}
       {card.key === "capitalGains" ? (
         <CorrectionsBlock language={language} corrections={result.corrections} reconciliation={result.reconciliation} />
       ) : null}

@@ -1,5 +1,5 @@
 import type { MessageParams } from "../i18n/messages";
-import type { DiagnosticSource, RunResult } from "./submit";
+import type { CatalogueRow, DiagnosticSource, RunResult } from "./submit";
 import {
   formatUnits,
   parseUnits,
@@ -76,6 +76,66 @@ export interface QuantityCheck {
   budgetUsedEur: Fraction;
 }
 
+/** A trade the export does not classify: the class labels as the file wrote them. */
+export interface ClassificationCheck {
+  name: string;
+  isin: string;
+  classLabels: string[];
+}
+
+/** An income payment of an unknown type, as the file gave it. */
+export interface IncomeCheck {
+  /** `dividend` or `interest`. */
+  eventKind: string;
+  receiptDate: string;
+  name: string;
+  isin?: string;
+  transaction?: TransactionRef;
+  classLabels: string[];
+  /** Gross amount in the payment currency, four decimals. */
+  grossAmount: string;
+  currency: string;
+}
+
+/** One reference row that could be the payer of an ISIN. */
+export interface PayerOption {
+  name: string;
+  address: string;
+  country: string;
+  taxNumber?: string;
+  source: CatalogueRow;
+}
+
+/** Several reference rows disagree on the payer of an ISIN. */
+export interface PayerCheck {
+  name: string;
+  isin: string;
+  options: PayerOption[];
+}
+
+/** A bond with a sale or a maturity in the year, whose kind decides the income. */
+export interface BondCheck {
+  isin: string;
+  name: string;
+  soldUnits: string;
+  maturedUnits: string;
+  maturityDate?: string;
+}
+
+/** A country whose taxed dividends can claim a treaty relief. */
+export interface TreatyCheck {
+  year: number;
+  country: string;
+  isins: string[];
+}
+
+/** The imported deposit interest and the allowance it is compared with. */
+export interface DepositCheck {
+  year: number;
+  importedInterestEur: string;
+  limitEur: string;
+}
+
 /** An open question. Only the parts the screens read are typed. */
 export interface DecisionRequest {
   id: string;
@@ -85,10 +145,19 @@ export interface DecisionRequest {
   sources: DiagnosticSource[];
   taxDate?: string;
   isin?: string;
+  /** The choices the question offers (classification, income, bond); the page never adds one. */
   options?: string[];
   lossCheck?: LossCheck;
   ratioCheck?: RatioCheck;
   quantityCheck?: QuantityCheck;
+  classificationCheck?: ClassificationCheck;
+  incomeCheck?: IncomeCheck;
+  payerCheck?: PayerCheck;
+  bondCheck?: BondCheck;
+  treatyCheck?: TreatyCheck;
+  depositCheck?: DepositCheck;
+  /** The kinds of `other_interest` the question offers. */
+  otherInterestSubtypes?: string[];
 }
 
 /** A recorded answer with the question data it belongs to. */
@@ -100,6 +169,12 @@ export interface Decision {
   lossCheck?: LossCheck;
   ratioCheck?: RatioCheck;
   quantityCheck?: QuantityCheck;
+  classificationCheck?: ClassificationCheck;
+  incomeCheck?: IncomeCheck;
+  payerCheck?: PayerCheck;
+  bondCheck?: BondCheck;
+  treatyCheck?: TreatyCheck;
+  depositCheck?: DepositCheck;
   /** A word (`other_activity`, `cancel`) or an object (a ratio, a corrected quantity). */
   answer: string | Record<string, unknown>;
 }
@@ -122,23 +197,67 @@ export interface Reconciliation {
   limitEur: string;
 }
 
-/** The three kinds of question that have a screen. */
-export type QuestionKind = "loss" | "ratio" | "quantity";
+/** The kinds of question that have a screen. */
+export type QuestionKind =
+  | "loss"
+  | "ratio"
+  | "quantity"
+  | "classification"
+  | "income"
+  | "payer"
+  | "bond"
+  | "treaty"
+  | "deposit";
 
 const questionKinds = new Map<string, QuestionKind>([
   ["loss_eligibility_confirmation_required", "loss"],
   ["corporate_action_ratio_required", "ratio"],
   ["quantity_correction_required", "quantity"],
+  ["deposit_interest_total_required", "deposit"],
 ]);
 
-/** The kind of a request type, or `undefined` for a type that has no screen yet. */
-export function questionKind(type: string): QuestionKind | undefined {
-  return questionKinds.get(type);
+/** What tells the kind of a question: its request type and, for the shared types, its data. */
+interface KindSource {
+  type: string;
+  classificationCheck?: ClassificationCheck;
+  incomeCheck?: IncomeCheck;
+  payerCheck?: PayerCheck;
+  bondCheck?: BondCheck;
+  treatyCheck?: TreatyCheck;
+}
+
+/**
+ * The kind of a request or a recorded answer, or `undefined` for a type that has no screen. The
+ * types `tax_classification_required` and `income_details_required` each hold two or three kinds;
+ * the data key tells them apart, never the type alone.
+ */
+export function questionKind(source: KindSource): QuestionKind | undefined {
+  if (source.type === "tax_classification_required") {
+    if (source.incomeCheck !== undefined) {
+      return "income";
+    }
+
+    return source.classificationCheck === undefined ? undefined : "classification";
+  }
+
+  if (source.type === "income_details_required") {
+    if (source.payerCheck !== undefined) {
+      return "payer";
+    }
+
+    if (source.bondCheck !== undefined) {
+      return "bond";
+    }
+
+    return source.treatyCheck === undefined ? undefined : "treaty";
+  }
+
+  return questionKinds.get(source.type);
 }
 
 /** The open questions that have a screen, in result order. */
 export function supportedQuestions(result: RunResult): DecisionRequest[] {
-  return result.requests.filter((request) => questionKinds.has(request.type));
+  return result.requests.filter((request) => questionKind(request) !== undefined);
 }
 
 /** The open questions with a screen, placed in the first form that lists them; `rest` has no form. */
@@ -174,7 +293,7 @@ export function questionAnchor(requestId: string): string {
 
 /** True when an open question has no screen yet, so the page still says it cannot take it. */
 export function hasQuestionWithoutScreen(result: RunResult): boolean {
-  return result.requests.some((request) => !questionKinds.has(request.type));
+  return result.requests.some((request) => questionKind(request) === undefined);
 }
 
 /** The loss choices; the page preselects none. */

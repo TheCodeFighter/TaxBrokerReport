@@ -1,5 +1,6 @@
 import { uiText, uiTextWith, type Language } from "../i18n/ui_texts";
-import { questionKind, type Correction, type Decision, type Reconciliation } from "./questions";
+import { choiceText } from "./income_questions";
+import { questionKind, type Correction, type Decision, type QuestionKind, type Reconciliation } from "./questions";
 import { fractionToEur4 } from "./units";
 
 /** One recorded answer as the "Your answers" list shows it. */
@@ -59,40 +60,133 @@ function quantityAnswerText(answer: Decision["answer"], language: Language): str
   return uiText(language, "answerRecorded");
 }
 
-function investmentOf(decision: Decision): string | undefined {
-  const check = decision.lossCheck ?? decision.ratioCheck ?? decision.quantityCheck;
+/** A word answer as its choice text; `cancel` and an answer the page does not know have their own. */
+function wordAnswerText(answer: Decision["answer"], language: Language): string {
+  if (answer === "cancel") {
+    return uiText(language, "answerCancelled");
+  }
+
+  const key = typeof answer === "string" ? choiceText(answer) : undefined;
+
+  return key === undefined ? uiText(language, "answerRecorded") : uiText(language, key);
+}
+
+function incomeAnswerText(answer: Decision["answer"], language: Language): string {
+  if (typeof answer === "object") {
+    const subtype = typeof answer.subtype === "string" ? choiceText(answer.subtype) : undefined;
+    const choice = typeof answer.choice === "string" ? choiceText(answer.choice) : undefined;
+
+    if (choice !== undefined && subtype !== undefined) {
+      return `${uiText(language, choice)}: ${uiText(language, subtype)}`;
+    }
+  }
+
+  return wordAnswerText(answer, language);
+}
+
+function payerAnswerText(decision: Decision, language: Language): string {
+  const { answer } = decision;
+
+  if (answer === "skip") {
+    return uiText(language, "answerPayerSkipped");
+  }
+
+  if (typeof answer === "object" && typeof answer.option === "number") {
+    const option = decision.payerCheck?.options[answer.option];
+
+    if (option !== undefined) {
+      return uiTextWith(language, "answerPayer", {
+        name: option.name,
+        country: option.country,
+        file: option.source.file,
+        row: option.source.row,
+      });
+    }
+  }
+
+  return wordAnswerText(answer, language);
+}
+
+function treatyAnswerText(answer: Decision["answer"], language: Language): string {
+  if (answer === "no_claim") {
+    return uiText(language, "answerNoClaim");
+  }
+
+  if (typeof answer === "object" && typeof answer.statement === "string") {
+    return uiTextWith(language, "answerTreaty", { statement: answer.statement });
+  }
+
+  return wordAnswerText(answer, language);
+}
+
+/** The investment (or the country, or the year) an answer belongs to; not set when it has none. */
+function investmentOf(decision: Decision, kind: QuestionKind | undefined): string | undefined {
+  if (kind === "income") {
+    const check = decision.incomeCheck;
+
+    return check === undefined ? undefined : check.isin === undefined ? check.name : `${check.name} (${check.isin})`;
+  }
+
+  if (kind === "treaty") {
+    return decision.treatyCheck === undefined ? undefined : `${decision.treatyCheck.country}, ${decision.treatyCheck.year}`;
+  }
+
+  if (kind === "deposit") {
+    return decision.depositCheck === undefined ? undefined : String(decision.depositCheck.year);
+  }
+
+  const check =
+    decision.lossCheck ??
+    decision.ratioCheck ??
+    decision.quantityCheck ??
+    decision.classificationCheck ??
+    decision.payerCheck ??
+    decision.bondCheck;
 
   return check === undefined ? undefined : `${check.name} (${check.isin})`;
+}
+
+/** The title and the answer text of a recorded answer, by the kind of its question. */
+function describeDecision(
+  decision: Decision,
+  kind: QuestionKind | undefined,
+  language: Language,
+): { title: string; answer: string } {
+  switch (kind) {
+    case "loss":
+      return { title: uiText(language, "decisionLoss"), answer: lossAnswerText(decision.answer, language) };
+    case "ratio":
+      return { title: uiText(language, "decisionRatio"), answer: ratioAnswerText(decision.answer, language) };
+    case "quantity":
+      return { title: uiText(language, "decisionQuantity"), answer: quantityAnswerText(decision.answer, language) };
+    case "classification":
+      return { title: uiText(language, "decisionClassification"), answer: wordAnswerText(decision.answer, language) };
+    case "income":
+      return { title: uiText(language, "decisionIncome"), answer: incomeAnswerText(decision.answer, language) };
+    case "payer":
+      return { title: uiText(language, "decisionPayer"), answer: payerAnswerText(decision, language) };
+    case "bond":
+      return { title: uiText(language, "decisionBond"), answer: wordAnswerText(decision.answer, language) };
+    case "treaty":
+      return { title: uiText(language, "decisionTreaty"), answer: treatyAnswerText(decision.answer, language) };
+    case "deposit":
+      return { title: uiText(language, "decisionDeposit"), answer: wordAnswerText(decision.answer, language) };
+    case undefined:
+      return { title: uiText(language, "decisionOther"), answer: uiText(language, "answerRecorded") };
+  }
 }
 
 /** The recorded answers in result order, each with its kind, investment, answer text and notes. */
 export function decisionRows(decisions: Decision[], language: Language): DecisionRow[] {
   return decisions.map((decision) => {
-    const kind = questionKind(decision.type);
-    const investment = investmentOf(decision);
+    const kind = questionKind(decision);
+    const investment = investmentOf(decision, kind);
     const notes = [
       decision.fromEarlierRun ? uiText(language, "answerFromEarlier") : undefined,
       decision.used ? undefined : uiText(language, "answerNotUsed"),
     ].filter((note) => note !== undefined);
 
-    const title =
-      kind === "loss"
-        ? uiText(language, "decisionLoss")
-        : kind === "ratio"
-          ? uiText(language, "decisionRatio")
-          : kind === "quantity"
-            ? uiText(language, "decisionQuantity")
-            : uiText(language, "decisionOther");
-    const answer =
-      kind === "loss"
-        ? lossAnswerText(decision.answer, language)
-        : kind === "ratio"
-          ? ratioAnswerText(decision.answer, language)
-          : kind === "quantity"
-            ? quantityAnswerText(decision.answer, language)
-            : uiText(language, "answerRecorded");
-
-    return { id: decision.id, title, ...(investment === undefined ? {} : { investment }), answer, notes };
+    return { id: decision.id, ...describeDecision(decision, kind, language), ...(investment === undefined ? {} : { investment }), notes };
   });
 }
 

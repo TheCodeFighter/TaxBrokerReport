@@ -73,7 +73,13 @@ export function LossQuestion({ env, request }: Props) {
   ];
 
   return (
-    <QuestionFrame env={env} request={request} title={`${check.name} (${check.isin})`} answer={choice}>
+    <QuestionFrame
+      env={env}
+      request={request}
+      title={`${check.name} (${check.isin})`}
+      answer={choice}
+      allowCancel
+    >
       {() => (
         <>
           <p>{uiText(language, "lossIntro")}</p>

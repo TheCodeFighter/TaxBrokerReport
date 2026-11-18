@@ -42,6 +42,85 @@ export interface ReportInvestment {
   diagnosticIds: string[];
 }
 
+/** The reference row a payer or a treaty text came from. */
+export interface CatalogueRow {
+  /** The upstream project or the supplied file's own label. */
+  source: string;
+  sourceRevision: string;
+  file: string;
+  row: number;
+  /** `built_in` or `supplied`. */
+  origin: string;
+}
+
+/** One row of an income form: a dividend, a deposit interest payer, cash interest or a coupon. */
+export interface IncomeRow {
+  /** `dividend`, `deposit_interest`, `broker_cash_interest` or `bond_coupon`. */
+  kind: string;
+  isin?: string;
+  broker?: string;
+  /** Not set for a Doh-DHO row, which sums several payments. */
+  date?: string;
+  grossEur: string;
+  foreignTaxEur: string;
+  /** True when the export's tax field was blank (no tax in the export), false for a real 0. */
+  taxBlankInExport: boolean;
+  /** Empty when the payer was not found in the reference files. */
+  payer: { name?: string; country?: string; catalogueRow?: CatalogueRow };
+  treaty: { claim: "none" | "reference_text" | "user_text"; catalogueRow?: CatalogueRow };
+  evidenceRequired: boolean;
+}
+
+export interface IncomeSummary {
+  grossEur: string;
+  foreignTaxEur: string;
+  rowCount: number;
+  rows: IncomeRow[];
+}
+
+/** The count and total of one currency; `total` is `null` when it is not known. */
+export interface CurrencyTotal {
+  currency: string;
+  count: number;
+  total: string | null;
+}
+
+/** The fees of one broker. `totalEur` is `null` when a fee has no rate: no partial sum is shown. */
+export interface BrokerFees {
+  broker: string;
+  byCurrency: CurrencyTotal[];
+  totalEur: string | null;
+  /** The number of fees converted with the broker's own rate, not an official one. */
+  brokerRateCount: number;
+}
+
+/** The benefits (saveback, stock perk, bonus, referral) of one broker and type. */
+export interface BrokerBenefits {
+  broker: string;
+  /** `saveback`, `stock_perk`, `bonus` or `referral`. */
+  type: string;
+  byCurrency: CurrencyTotal[];
+  totalEur: string | null;
+}
+
+export interface FeeSummary {
+  brokers: BrokerFees[];
+  totalEur: string | null;
+}
+
+export interface BenefitSummary {
+  brokers: BrokerBenefits[];
+  totalEur: string | null;
+}
+
+/** The imported deposit interest against the EUR 1,000 allowance; only when the year has some. */
+export interface DepositInterest {
+  importedInterestEur: string;
+  limitEur: string;
+  /** True when the form holds only the imported interest and the user adds the other banks'. */
+  addOtherBanks: boolean;
+}
+
 /** One report of the result (`capitalGains`, `dividends`, `bankInterest`, `otherInterest`). */
 export interface ReportResult {
   status: string;
@@ -55,8 +134,8 @@ export interface ReportResult {
   downloadAvailable?: boolean;
   /** Why a `no_data` report has no data, when the backend knows it. */
   reason?: string;
-  /** Only the part the screen reads; the full summary is shown by a later screen. */
-  incomeSummary?: { rows: { evidenceRequired: boolean }[] };
+  /** The income forms only. */
+  incomeSummary?: IncomeSummary;
 }
 
 /** An instrument left out by classification (a tax rule or a user choice), not by one form. */
@@ -83,6 +162,10 @@ export interface RunResult {
   /** The sale quantities that were corrected, and the cumulative impact per ISIN. */
   corrections: Correction[];
   reconciliation: Reconciliation[];
+  /** The informational summaries of the year; no form holds them. */
+  feeSummary?: FeeSummary;
+  benefitSummary?: BenefitSummary;
+  depositInterest?: DepositInterest;
 }
 
 /** A rate or reference file that the server could not read (the 422 `inputFault`). */

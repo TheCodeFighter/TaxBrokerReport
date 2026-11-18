@@ -65,7 +65,7 @@ describe("result view", () => {
     expect(overallTone("failed")).toBe("fail");
   });
 
-  it("shows the answers-later hint only for an open question without a screen", () => {
+  it("shows the answers-later hint only for an open question without a screen (a failure question)", () => {
     const loss = {
       id: "request-0001",
       type: "loss_eligibility_confirmation_required",
@@ -73,9 +73,9 @@ describe("result view", () => {
       affectedReports: ["capital_gains"],
       sources: [],
     };
-    const classification = {
+    const failure = {
       id: "request-0002",
-      type: "tax_classification_required",
+      type: "dividends_failure_resolution_required",
       runRevision: 1,
       affectedReports: ["capital_gains"],
       sources: [],
@@ -83,8 +83,8 @@ describe("result view", () => {
 
     expect(needsAnswerHint({ ...result, requests: [] })).toBe(false);
     expect(needsAnswerHint({ ...result, requests: [loss] })).toBe(false);
-    expect(needsAnswerHint({ ...result, requests: [classification] })).toBe(true);
-    expect(needsAnswerHint({ ...result, requests: [loss, classification] })).toBe(true);
+    expect(needsAnswerHint({ ...result, requests: [failure] })).toBe(true);
+    expect(needsAnswerHint({ ...result, requests: [loss, failure] })).toBe(true);
   });
 
   it("marks a shown result as out of date and keeps the result itself", () => {
@@ -315,7 +315,46 @@ describe("reportCards", () => {
           requestIds: [],
           unsafe: false,
           downloadAvailable: true,
-          incomeSummary: { rows: [{ evidenceRequired: true }, { evidenceRequired: false }, { evidenceRequired: true }] },
+          incomeSummary: {
+            grossEur: "30.0000",
+            foreignTaxEur: "3.0000",
+            rowCount: 3,
+            rows: [
+              {
+                kind: "dividend",
+                isin: "US0000000001",
+                date: "2023-05-02",
+                grossEur: "10.0000",
+                foreignTaxEur: "1.5000",
+                taxBlankInExport: false,
+                payer: {},
+                treaty: { claim: "none" },
+                evidenceRequired: true,
+              },
+              {
+                kind: "dividend",
+                isin: "US0000000002",
+                date: "2023-05-03",
+                grossEur: "10.0000",
+                foreignTaxEur: "0.0000",
+                taxBlankInExport: true,
+                payer: {},
+                treaty: { claim: "none" },
+                evidenceRequired: false,
+              },
+              {
+                kind: "dividend",
+                isin: "US0000000003",
+                date: "2023-05-04",
+                grossEur: "10.0000",
+                foreignTaxEur: "1.5000",
+                taxBlankInExport: false,
+                payer: {},
+                treaty: { claim: "none" },
+                evidenceRequired: true,
+              },
+            ],
+          },
         },
       },
       diagnostics: [],

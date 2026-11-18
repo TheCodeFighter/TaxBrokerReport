@@ -71,11 +71,45 @@ const twoRanges: RatioCheck = {
 };
 
 describe("question kinds", () => {
-  it("knows the three request types that have a screen", () => {
-    expect(questionKind("loss_eligibility_confirmation_required")).toBe("loss");
-    expect(questionKind("corporate_action_ratio_required")).toBe("ratio");
-    expect(questionKind("quantity_correction_required")).toBe("quantity");
-    expect(questionKind("tax_classification_required")).toBeUndefined();
+  it("knows the capital request types that have a screen", () => {
+    expect(questionKind({ type: "loss_eligibility_confirmation_required" })).toBe("loss");
+    expect(questionKind({ type: "corporate_action_ratio_required" })).toBe("ratio");
+    expect(questionKind({ type: "quantity_correction_required" })).toBe("quantity");
+    expect(questionKind({ type: "deposit_interest_total_required" })).toBe("deposit");
+  });
+
+  it("tells the two kinds of a classification request by its data", () => {
+    const trade = { name: "Example Share", isin: "US0000000001", classLabels: ["Stock"] };
+    const income = {
+      eventKind: "dividend",
+      receiptDate: "2023-05-02",
+      name: "Example Share",
+      classLabels: [],
+      grossAmount: "10.0000",
+      currency: "USD",
+    };
+
+    expect(questionKind({ type: "tax_classification_required", classificationCheck: trade })).toBe("classification");
+    expect(questionKind({ type: "tax_classification_required", incomeCheck: income })).toBe("income");
+    expect(questionKind({ type: "tax_classification_required" })).toBeUndefined();
+  });
+
+  it("tells the three kinds of an income details request by its data", () => {
+    const payer = { name: "Example Corp", isin: "US0000000001", options: [] };
+    const bond = { isin: "XS0000000001", name: "Example Bond", soldUnits: "1.00000000", maturedUnits: "0.00000000" };
+    const treaty = { year: 2023, country: "BR", isins: ["BR0000000001"] };
+
+    expect(questionKind({ type: "income_details_required", payerCheck: payer })).toBe("payer");
+    expect(questionKind({ type: "income_details_required", bondCheck: bond })).toBe("bond");
+    expect(questionKind({ type: "income_details_required", treatyCheck: treaty })).toBe("treaty");
+    expect(questionKind({ type: "income_details_required" })).toBeUndefined();
+  });
+
+  it("has no screen for the failure and developer questions", () => {
+    expect(questionKind({ type: "capital_gains_failure_resolution_required" })).toBeUndefined();
+    expect(questionKind({ type: "dividends_failure_resolution_required" })).toBeUndefined();
+    expect(questionKind({ type: "other_interest_failure_resolution_required" })).toBeUndefined();
+    expect(questionKind({ type: "developer_export_confirmation_required" })).toBeUndefined();
   });
 
   it("names the page anchor of a question", () => {
@@ -86,7 +120,7 @@ describe("question kinds", () => {
 describe("firstQuestionId", () => {
   it("is the first open question that has a screen", () => {
     const result = resultWith([
-      request("request-0001", "tax_classification_required"),
+      request("request-0001", "dividends_failure_resolution_required"),
       request("request-0002", "loss_eligibility_confirmation_required"),
       request("request-0003", "quantity_correction_required"),
     ]);
@@ -96,7 +130,7 @@ describe("firstQuestionId", () => {
   });
 
   it("is undefined when no open question has a screen, so there is no link", () => {
-    const result = resultWith([request("request-0001", "tax_classification_required")]);
+    const result = resultWith([request("request-0001", "dividends_failure_resolution_required")]);
 
     expect(firstQuestionId(result)).toBeUndefined();
     expect(firstQuestionId(resultWith([]))).toBeUndefined();
@@ -104,12 +138,17 @@ describe("firstQuestionId", () => {
 });
 
 describe("hasQuestionWithoutScreen", () => {
-  it("is false for a loss question alone and true beside a classification question", () => {
+  it("is false for a loss and a classification question and true beside a failure question", () => {
     const loss = request("request-0001", "loss_eligibility_confirmation_required");
-    const classification = request("request-0002", "tax_classification_required");
+    const classification: DecisionRequest = {
+      ...request("request-0002", "tax_classification_required"),
+      classificationCheck: { name: "Example Share", isin: "US0000000001", classLabels: [] },
+    };
+    const failure = request("request-0003", "dividends_failure_resolution_required");
 
     expect(hasQuestionWithoutScreen(resultWith([loss]))).toBe(false);
-    expect(hasQuestionWithoutScreen(resultWith([classification]))).toBe(true);
+    expect(hasQuestionWithoutScreen(resultWith([loss, classification]))).toBe(false);
+    expect(hasQuestionWithoutScreen(resultWith([classification, failure]))).toBe(true);
   });
 });
 
