@@ -34,7 +34,7 @@ describe("buildRunRequest", () => {
     expect((form.get("file2") as File).name).toBe("r.csv");
   });
 
-  it("sends a self-report and never a developer mode", () => {
+  it("sends a self-report and, with the switch off, no developer mode key", () => {
     const inputs = inputsWithFiles();
 
     inputs.filingType = "self_report";
@@ -45,5 +45,15 @@ describe("buildRunRequest", () => {
     expect(request.filingType).toBe("self_report");
     expect(Object.keys(request)).not.toContain("developerMode");
     expect(request.files[3]).toEqual({ part: "file3", kind: "reference" });
+  });
+
+  it("sends developerMode true only when the switch is on", () => {
+    const inputs = inputsWithFiles();
+
+    inputs.developerMode = true;
+
+    const request = JSON.parse(buildRunRequest(inputs).get("request") as string);
+
+    expect(request.developerMode).toBe(true);
   });
 });

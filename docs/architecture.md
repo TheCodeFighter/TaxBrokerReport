@@ -1568,6 +1568,7 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   Doh-KDVP, Doh-Div, Doh-DHO, Doh-Obr, each with its own status: `generated` and `no_data` (with
   the reason when the backend gives one) are not shown as errors, `needs_input` gives the number of
   open questions, and `failed` is red. A tone is a class beside a text label, never color alone.
+  An error that no longer blocks (its question was answered) is shown, and counted, as a warning.
   A card also lists the failure choice (`failureResolution`), the investments and brokers left out
   of that form (each with the text of its linked diagnostics), the unsafe developer-export marker
   with its investments, and the number of income rows whose foreign tax needs proof in eDavki.
@@ -1624,6 +1625,19 @@ guard and the session cookie. The JSON readers and writers are in `taxbroker_api
   delete for each and for all (`POST /api/run/decisions/delete`). Answer and delete buttons are
   disabled while the shown result is out of date. The page never sends an answer by itself and
   preselects none.
+- Developer mode in the browser: a "Developer mode" button at the very bottom of the page, under a dividing line and centered,
+  opens a panel with a checkbox that is off at every start and never saved (not in
+  the profile); the button reads "Developer mode: ON" in red while the mode is on, also when the
+  panel is closed. Only when it is on does the
+  request carry `developerMode: true`; then the capital failure question lists the third choice
+  `developer_export` in red, last. Choosing it and pressing "Send answer" only asks for the
+  confirmation. The page then shows one red confirmation screen for
+  `developer_export_confirmation_required` (the warning, every `name (ISIN)`, the risk) with
+  Confirm and Cancel. Confirm sends the three confirmations of the service one after the other,
+  each with the new revision, as the command line does; it stops at the first answer that is not a
+  result, or when the next step lists other ISINs, and shows what it has. Cancel sends `cancel`
+  and the failure question comes back. A result with `unsafe: true` shows a red notice above its
+  download button, and the button says "Save the UNSAFE Doh-KDVP file".
 - Another method on a run path is 405 with `Allow`. A request that throws is the 500 of the HTTP
   layer (empty body) and leaves the run as it was.
 - The `request` part: `reportingYear`, `filingType` (`original` or `self_report`), optional

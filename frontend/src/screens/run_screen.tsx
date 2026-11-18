@@ -22,6 +22,7 @@ import {
 import { markOutOfDate, type ShownResult } from "../run/result_view";
 import { runErrorText, type ShownError } from "../run/run_errors";
 import { submitRun, type RunResult } from "../run/submit";
+import { DeveloperSwitch } from "./developer_switch";
 import { RememberBox } from "./remember_box";
 import { RunForm } from "./run_form";
 import { RunResultView } from "./run_result";
@@ -212,6 +213,12 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
           onNoRun={() => setAnswerNote("answerNoRun")}
         />
       )}
+      <DeveloperSwitch
+        language={language}
+        on={inputs.developerMode}
+        disabled={sending}
+        onChange={(on) => change({ ...inputs, developerMode: on })}
+      />
     </>
   );
 }

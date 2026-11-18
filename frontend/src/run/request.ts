@@ -11,7 +11,8 @@ interface FileEntry {
 /**
  * The upload of a run: the part `request` first, then one part per file, `file0` and on, in the
  * order broker files, ECB rate files, reference files. The order of the broker files is the order
- * of their source IDs. `developerMode` is never sent (it is off).
+ * of their source IDs. `developerMode` is sent only when the switch is on, so a normal run never
+ * carries the key.
  */
 export function buildRunRequest(inputs: RunInputs): FormData {
   const files: FileEntry[] = [];
@@ -44,6 +45,7 @@ export function buildRunRequest(inputs: RunInputs): FormData {
       reportingYear: inputs.reportingYear,
       filingType: inputs.filingType,
       taxpayer: taxpayerObject(inputs.taxpayer),
+      ...(inputs.developerMode ? { developerMode: true } : {}),
       files,
     }),
   );

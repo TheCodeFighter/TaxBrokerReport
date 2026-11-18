@@ -29,6 +29,7 @@ describe("emptyInputs", () => {
     expect(inputs.reportingYear).toBe(2025);
     expect(inputs.filingType).toBe("original");
     expect(inputs.taxpayer.taxNumber).toBe("");
+    expect(inputs.developerMode).toBe(false);
   });
 });
 

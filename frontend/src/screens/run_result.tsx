@@ -281,6 +281,7 @@ function ReportCardView({
           form={card.form}
           revision={revision}
           disabled={outOfDate}
+          unsafe={card.unsafe}
         />
       ) : null}
       {groups.length === 0 ? null : (

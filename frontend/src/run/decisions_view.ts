@@ -202,14 +202,25 @@ function describeDecision(
         title: uiTextWith(language, "decisionFailure", { form: failureForm(decision.type) ?? "" }),
         answer: failureAnswerText(decision, language),
       };
+    // The confirmation steps of the developer export are never listed (see `listedDecisions`).
+    case "developer":
     case undefined:
       return { title: uiText(language, "decisionOther"), answer: uiText(language, "answerRecorded") };
   }
 }
 
+/**
+ * The recorded answers the page lists. The three confirmation steps of the developer export are
+ * left out: the user chose the developer export once, so the list has that one answer. Deleting it
+ * brings the failure question back, and the next choice asks the confirmations again.
+ */
+export function listedDecisions(decisions: Decision[]): Decision[] {
+  return decisions.filter((decision) => questionKind(decision) !== "developer");
+}
+
 /** The recorded answers in result order, each with its kind, investment, answer text and notes. */
 export function decisionRows(decisions: Decision[], language: Language): DecisionRow[] {
-  return decisions.map((decision) => {
+  return listedDecisions(decisions).map((decision) => {
     const kind = questionKind(decision);
     const investment = investmentOf(decision, kind);
     const notes = [

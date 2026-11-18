@@ -196,8 +196,8 @@ Final report statuses and GUI presentation are integrated later.
 If a disposal cannot be matched because acquisition history is missing, produce a structured
 incomplete-history error. In normal mode, identify the investment by name and ISIN and require user
 confirmation before excluding every listed unsafe ISIN; the other normal choice is to generate no
-capital-gains XML. Developer mode may include known incomplete data only after three separate
-warnings. Neither mode may invent a cost basis.
+capital-gains XML. Developer mode may include known incomplete data only after one explicit confirmation that
+shows the warning, every affected name and ISIN and the risk. Neither mode may invent a cost basis.
 
 ## Tax processing rules
 

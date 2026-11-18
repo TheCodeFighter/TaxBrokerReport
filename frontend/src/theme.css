@@ -20,6 +20,7 @@
   --color-border: #7d8081;
   --color-focus: #304c44;
   --color-error: #a61b1b;
+  --color-on-error: #ffffff;
   --color-warn: #8a5300;
   --color-ok: #1b6b43;
 
@@ -48,6 +49,7 @@
   --color-border: #4a625c;
   --color-focus: #e0e5e6;
   --color-error: #ff8a80;
+  --color-on-error: #121c1e;
   --color-warn: #f0b85a;
   --color-ok: #6fcf97;
 }

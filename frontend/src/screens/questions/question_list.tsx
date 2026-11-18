@@ -3,6 +3,7 @@ import { questionKind, type DecisionRequest } from "../../run/questions";
 import { BondQuestion } from "./bond_question";
 import { ClassificationQuestion } from "./classification_question";
 import { DepositQuestion } from "./deposit_question";
+import { DeveloperConfirmation } from "./developer_confirmation";
 import { FailureQuestion } from "./failure_question";
 import { IncomeQuestion } from "./income_question";
 import { LossQuestion } from "./loss_question";
@@ -42,6 +43,8 @@ function QuestionView({ env, request }: { env: QuestionEnv; request: DecisionReq
       return <DepositQuestion env={env} request={request} />;
     case "failure":
       return <FailureQuestion env={env} request={request} />;
+    case "developer":
+      return <DeveloperConfirmation env={env} request={request} />;
     case undefined:
       return null;
   }

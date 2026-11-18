@@ -14,7 +14,15 @@ import {
 import type { Diagnostic, RunResult } from "./submit";
 
 function diagnostic(id: string, severity: string): Diagnostic {
-  return { id, severity, stage: "parsing", code: "inconsistent_value", affectedReports: [], blocking: false, sources: [] };
+  return {
+    id,
+    severity,
+    stage: "parsing",
+    code: "inconsistent_value",
+    affectedReports: [],
+    blocking: severity === "error",
+    sources: [],
+  };
 }
 
 const result: RunResult = {
@@ -51,6 +59,16 @@ describe("result view", () => {
     expect(countDiagnostics(result)).toEqual({ errors: 1, warnings: 2 });
   });
 
+  it("counts an error that no longer blocks as a warning", () => {
+    const resolved = { ...diagnostic("diagnostic-0004", "error"), blocking: false };
+
+    expect(countDiagnostics({ ...result, diagnostics: [diagnostic("diagnostic-0001", "error"), resolved] })).toEqual({
+      errors: 1,
+      warnings: 1,
+    });
+    expect(countDiagnostics({ ...result, diagnostics: [resolved] })).toEqual({ errors: 0, warnings: 1 });
+  });
+
   it("has a text for each overall status and a failed text for an unknown one", () => {
     expect(overallStatusText("success")).toBe("statusSuccess");
     expect(overallStatusText("partial_success")).toBe("statusPartialSuccess");
@@ -65,7 +83,7 @@ describe("result view", () => {
     expect(overallTone("failed")).toBe("fail");
   });
 
-  it("shows the answers-later hint only for an open question without a screen (a developer export question)", () => {
+  it("shows the answers-later hint only for an open question without a screen (an unknown question type)", () => {
     const loss = {
       id: "request-0001",
       type: "loss_eligibility_confirmation_required",
@@ -75,7 +93,7 @@ describe("result view", () => {
     };
     const failure = {
       id: "request-0002",
-      type: "developer_export_confirmation_required",
+      type: "unknown_future_question_required",
       runRevision: 1,
       affectedReports: ["capital_gains"],
       sources: [],

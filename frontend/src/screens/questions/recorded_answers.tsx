@@ -3,7 +3,7 @@ import { useState } from "preact/hooks";
 import { deleteDecisions } from "../../api/answers";
 import { SessionEndedError } from "../../api/client";
 import { uiText, uiTextWith } from "../../i18n/ui_texts";
-import { decisionRows } from "../../run/decisions_view";
+import { decisionRows, listedDecisions } from "../../run/decisions_view";
 import type { Decision } from "../../run/questions";
 import { applyOutcome, type QuestionEnv } from "./question_frame";
 
@@ -16,10 +16,11 @@ interface Props {
  * The recorded answers with a delete for each and for all of them. A deleted answer brings its
  * question back with the next result. Nothing is sent while the result is out of date.
  */
-export function RecordedAnswers({ env, decisions }: Props) {
+export function RecordedAnswers({ env, decisions: recorded }: Props) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(false);
   const { language } = env;
+  const decisions = listedDecisions(recorded);
 
   if (decisions.length === 0) {
     return null;

@@ -296,7 +296,6 @@ export const uiTexts = {
   excludedReasonUserChoice: { sl: "vaša izbira", en: "your choice" },
   severityWarning: { sl: "Opozorilo", en: "Warning" },
   severityError: { sl: "Napaka", en: "Error" },
-  severityErrorKept: { sl: "Napaka (izračuna ne ustavi več)", en: "Error, kept (no longer blocks)" },
   stageParsing: { sl: "Branje datotek", en: "Reading the files" },
   stageMerging: { sl: "Združevanje datotek", en: "Combining the files" },
   stageHistory: { sl: "Preverjanje zgodovine", en: "Checking the history" },
@@ -407,7 +406,7 @@ export const uiTexts = {
     en: "There is no position on the date of the record. The units are needed before the sale on {date}.",
   },
   ratioWarning: {
-    sl: "Ne nadaljujte, če objava omenja denar, drugo naložbo ali nov ISIN. Aplikacija podpira samo delitve in združitve delnic z istim ISIN.",
+    sl: "Ne nadaljujte, če objava omenja denar (cash), drugo naložbo ali nov ISIN. Aplikacija podpira samo delitve in združitve delnic z istim ISIN.",
     en: "Do not continue if the announcement mentions cash, another investment or a new ISIN. The application supports only splits and reverse splits with the same ISIN.",
   },
   ratioExamplesTitle: { sl: "Primeri", en: "Examples" },
@@ -483,6 +482,38 @@ export const uiTexts = {
     en: "Leave out everything listed above and make the form from the rest",
   },
   choiceFailReport: { sl: "Za ta obrazec ne ustvari datoteke XML", en: "Make no XML file for this form" },
+  choiceFailDeveloper: {
+    sl: "Napiši NEVARNO datoteko Doh-KDVP (razvijalski način)",
+    en: "Write an UNSAFE Doh-KDVP file (developer mode)",
+  },
+  developerModeTitle: { sl: "Razvijalski način", en: "Developer mode" },
+  developerModeButtonOn: { sl: "Razvijalski način: VKLOPLJEN", en: "Developer mode: ON" },
+  developerModeLabel: { sl: "Vklopi razvijalski način za ta izračun", en: "Turn on developer mode for this run" },
+  developerModeNote: {
+    sl: "Če zgodovina nakupov ni popolna, Vam lahko ta izračun ponudi NEVARNO datoteko Doh-KDVP. Nastavitev se ne shrani in je ob vsakem zagonu izklopljena.",
+    en: "If the purchase history is incomplete, this run may offer an UNSAFE Doh-KDVP file. The setting is never saved and is off at every start.",
+  },
+  developerConfirmTitle: { sl: "NEVARNA datoteka Doh-KDVP: potrdite", en: "UNSAFE Doh-KDVP file: confirm" },
+  developerConfirmWarning: {
+    sl: "Zgodovina nakupov manjka, zato so podatki v obrazcu Doh-KDVP nepopolni.",
+    en: "Purchase history is missing, so the data in the Doh-KDVP form is incomplete.",
+  },
+  developerConfirmInvestments: { sl: "Prizadete naložbe", en: "Affected investments" },
+  developerConfirmRisk: {
+    sl: "Tveganje: eDavki lahko datoteko zavrnejo ali pa izračunajo napačen davek. Datoteke ne oddajte, ne da bi jo preverili.",
+    en: "Risk: eDavki may reject the file, or it may give an incorrect tax result. Do not file it without checking.",
+  },
+  developerConfirmButton: { sl: "Potrdi in napiši nevarno datoteko", en: "Confirm and write the unsafe file" },
+  developerCancelButton: { sl: "Prekliči", en: "Cancel" },
+  developerCancelHint: {
+    sl: "S preklicem se vrnete na vprašanje o obrazcu. Nobena datoteka ni napisana.",
+    en: "Cancel takes you back to the question about the form. No file is written.",
+  },
+  unsafeNotice: {
+    sl: "Ta Doh-KDVP je NEVARNA: zgodovina nakupov je nepopolna. Ne oddajte je, ne da bi jo preverili.",
+    en: "This Doh-KDVP is UNSAFE: the purchase history is incomplete. Do not file it without checking.",
+  },
+  reportSaveUnsafe: { sl: "Shrani NEVARNO datoteko {form}", en: "Save the UNSAFE {form} file" },
   failureTitle: { sl: "{form}: nadaljevanje brez teh naložb?", en: "{form}: continue without these investments?" },
   failureIntro: {
     sl: "Obrazca {form} ni mogoče ustvariti, ker je pri spodnjih postavkah napaka. Izberite, kaj naj se zgodi. Nič ni vnaprej izbrano.",

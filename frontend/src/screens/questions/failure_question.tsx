@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 
 import { uiText, uiTextWith } from "../../i18n/ui_texts";
 import { linkedTexts, sourceLabel } from "../../run/diagnostics_view";
-import { failureChoices, failureForm } from "../../run/failure_question";
+import { DEVELOPER_ANSWER, failureChoices, failureForm } from "../../run/failure_question";
 import type { DecisionRequest } from "../../run/questions";
 import { brokerTitle } from "../../run/result_view";
 import { ChoiceGroup } from "./choice_group";
@@ -16,7 +16,8 @@ interface Props {
 /**
  * The failure question of one form (Doh-KDVP, Doh-Div or Doh-Obr): it lists every investment and
  * broker with its reasons, then asks to leave them out or to make no XML for the form. Nothing is
- * preselected; the click on "Send answer" is the confirmation.
+ * preselected; the click on "Send answer" is the confirmation. The developer export choice, when
+ * offered, is red and only leads to its own confirmation screen.
  */
 export function FailureQuestion({ env, request }: Props) {
   const [choice, setChoice] = useState<string | undefined>(undefined);
@@ -92,6 +93,7 @@ export function FailureQuestion({ env, request }: Props) {
             options={failureChoices(request.options)}
             value={choice}
             onChange={setChoice}
+            dangerWords={[DEVELOPER_ANSWER]}
           />
         </>
       )}

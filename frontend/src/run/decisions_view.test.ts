@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { correctionLines, decisionRows } from "./decisions_view";
+import { correctionLines, decisionRows, listedDecisions } from "./decisions_view";
 import type { Correction, Decision, Reconciliation } from "./questions";
 
 const lossCheck = {
@@ -186,6 +186,38 @@ describe("decisionRows for the failure answers", () => {
     expect(rows[1]?.title).toBe("Failed investments (Doh-Div)");
     expect(rows[1]?.answer).toBe("Cancelled (no answer)");
     expect(rows[1]?.details).toEqual([]);
+  });
+
+  it("lists the developer export once, without its three confirmation steps", () => {
+    const investments = [{ name: "Example Share", isin: "XX0000000001", reasonCodes: ["incomplete_history"] }];
+    const choice: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "capital_gains_failure_resolution_required",
+      investments,
+      answer: "developer_export",
+    };
+    const steps: Decision[] = [1, 2, 3].map((step) => ({
+      ...base,
+      id: `decision-000${step + 1}`,
+      type: "developer_export_confirmation_required",
+      investments,
+      answer: "confirm",
+    }));
+
+    expect(listedDecisions([choice, ...steps]).map((decision) => decision.id)).toEqual(["decision-0001"]);
+
+    const rows = decisionRows([choice, ...steps], "en");
+
+    expect(rows).toEqual([
+      {
+        id: "decision-0001",
+        title: "Failed investments (Doh-KDVP)",
+        answer: "Write an UNSAFE Doh-KDVP file (developer mode)",
+        details: ["Example Share (XX0000000001)"],
+        notes: [],
+      },
+    ]);
   });
 
   it("counts a left-out broker and lists it by its name", () => {
