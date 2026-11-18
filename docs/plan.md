@@ -352,10 +352,11 @@ server). It must allow the user to:
 - confirm source corrections and see their recorded quantity and EUR impact;
 - confirm loss-check coverage across reporting-year boundaries and declare external activity;
 - classify unknown instruments or explicitly exclude them, with a list of missing fields;
-- independently choose exclusion of all listed failed ISINs or failure for Doh-KDVP and Doh-Obr,
-  and see each form's exclusions beside its download;
+- independently choose exclusion of all listed failed ISINs or failure for Doh-KDVP, Doh-Div and
+  Doh-Obr, and see each form's exclusions beside its download;
 - review company/ETF payer suggestions, resolve withholding and treaty-claim facts, and see the
   evidence required for foreign-tax relief and any settled-Slovenian-tax exclusions;
+- see which investments with a sale in the year are in the Doh-KDVP form, blocked or left out;
 - see separate bank-deposit, broker-cash and ordinary-bond-interest summaries;
 - see the bank-interest allowance reminder and answer the yes/no question about the interest of
   other banks (the app takes no amount; the user adds those banks in eDavki);
@@ -365,6 +366,8 @@ server). It must allow the user to:
 - see warnings and errors with useful source locations;
 - see selected-year fees and benefits by broker and original currency, with EUR totals only when
   complete and without any rate prompt for fees;
+- read decimal numbers in the format of the page language (decimal comma in Slovenian, point in
+  English);
 - understand which report files succeeded or failed; and
 - download every successfully generated XML file.
 

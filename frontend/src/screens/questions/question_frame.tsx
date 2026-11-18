@@ -5,7 +5,7 @@ import { sendAnswers, type AnswerOutcome, type Rejection } from "../../api/answe
 import type { ApiClient } from "../../api/client";
 import { SessionEndedError } from "../../api/client";
 import { renderDiagnostic, type MessageCatalogue } from "../../i18n/messages";
-import { uiText, type Language } from "../../i18n/ui_texts";
+import { uiText, type Language, type UiTextKey } from "../../i18n/ui_texts";
 import {
   CANCEL_ANSWER,
   questionAnchor,
@@ -14,13 +14,17 @@ import {
   type DecisionRequest,
   type RejectionTarget,
 } from "../../run/questions";
-import type { RunResult } from "../../run/submit";
+import type { Diagnostic, RunResult } from "../../run/submit";
 
 /** What every question and answer list needs from the result screen. */
 export interface QuestionEnv {
   language: Language;
   catalogue: MessageCatalogue | undefined;
   apiFetch: ApiClient["apiFetch"];
+  /** The diagnostics of the shown result by ID, for the texts a question links to. */
+  diagnostics: Map<string, Diagnostic>;
+  /** The shown names of the sent files, for the labels of sources. */
+  fileLabels: string[];
   /** The revision of the shown result; the server refuses an answer to any other. */
   revision: number;
   /** True while the shown result is out of date: nothing is sent. */
@@ -79,6 +83,8 @@ interface FrameProps {
   answer: AnswerValue | undefined;
   /** False when the server takes no cancel for this question (payer, treaty, deposit total): no cancel button. */
   allowCancel: boolean;
+  /** What a cancel does, when it is not the usual text. */
+  cancelText?: UiTextKey;
   /** The inputs; `messagesFor` gives the rejections that mark the given inputs. */
   children: (messagesFor: (targets: RejectionTarget[]) => ComponentChildren) => ComponentChildren;
 }
@@ -88,7 +94,7 @@ interface FrameProps {
  * the question" with what a cancel does. The form is disabled while a call runs and while the
  * result is out of date. Nothing is sent until the user presses a button.
  */
-export function QuestionFrame({ env, request, title, answer, allowCancel, children }: FrameProps) {
+export function QuestionFrame({ env, request, title, answer, allowCancel, cancelText, children }: FrameProps) {
   const [busy, setBusy] = useState(false);
   const [rejections, setRejections] = useState<Rejection[]>([]);
   const [problem, setProblem] = useState(false);
@@ -145,7 +151,7 @@ export function QuestionFrame({ env, request, title, answer, allowCancel, childr
         </div>
         {confirmCancel ? (
           <div class="notice">
-            <p>{uiText(env.language, "questionCancelWhat")}</p>
+            <p>{uiText(env.language, cancelText ?? "questionCancelWhat")}</p>
             <div class="question-actions">
               <button type="button" class="button" onClick={() => void post(CANCEL_ANSWER)}>
                 {uiText(env.language, "questionCancelConfirm")}

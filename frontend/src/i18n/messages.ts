@@ -1,4 +1,5 @@
 import type { ApiClient } from "../api/client";
+import { localizeNumber } from "./number_format";
 import { uiText, type Language, type Texts } from "./ui_texts";
 
 export type ParamKind = "number" | "text" | "term";
@@ -73,7 +74,8 @@ export function renderDiagnostic(
     }
 
     // A number is written as plain digits, like the server's own sentence: many are years
-    // (`{year}` 2024), which digit grouping would turn into "2,024".
-    return String(value);
+    // (`{year}` 2024), which digit grouping would turn into "2,024". A decimal number gets the
+    // decimal comma in Slovenian.
+    return localizeNumber(String(value), language);
   });
 }

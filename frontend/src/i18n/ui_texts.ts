@@ -1,3 +1,4 @@
+import { localizeNumber } from "./number_format";
 export type Language = "sl" | "en";
 
 export interface Texts {
@@ -473,6 +474,28 @@ export const uiTexts = {
   decisionOther: { sl: "Drug odgovor", en: "Other answer" },
   answerCancelled: { sl: "Prekinjeno (brez odgovora)", en: "Cancelled (no answer)" },
   answerSeparateEvents: { sl: "Dve ločeni delitvi", en: "Two separate splits" },
+  decisionFailure: { sl: "Neuspešne naložbe ({form})", en: "Failed investments ({form})" },
+  answerFailExclude: { sl: "Izpuščeno: {count}", en: "Left out: {count}" },
+  answerFailReport: { sl: "Brez datoteke XML za ta obrazec", en: "No XML file for this form" },
+  answerListSummary: { sl: "Seznam", en: "List" },
+  choiceFailExclude: {
+    sl: "Izpusti vse zgoraj našteto in ustvari obrazec iz preostalega",
+    en: "Leave out everything listed above and make the form from the rest",
+  },
+  choiceFailReport: { sl: "Za ta obrazec ne ustvari datoteke XML", en: "Make no XML file for this form" },
+  failureTitle: { sl: "{form}: nadaljevanje brez teh naložb?", en: "{form}: continue without these investments?" },
+  failureIntro: {
+    sl: "Obrazca {form} ni mogoče ustvariti, ker je pri spodnjih postavkah napaka. Izberite, kaj naj se zgodi. Nič ni vnaprej izbrano.",
+    en: "The {form} form cannot be made because the items below have an error. Choose what happens. Nothing is chosen for you.",
+  },
+  failureInvestments: { sl: "Naložbe z napako", en: "Investments with an error" },
+  failureBrokers: { sl: "Posredniki z napako", en: "Brokers with an error" },
+  failureSources: { sl: "Od kod prihaja ({count})", en: "Where it comes from ({count})" },
+  failureLegend: { sl: "Kaj naj se zgodi z obrazcem?", en: "What should happen to the form?" },
+  failureCancelWhat: {
+    sl: "Če prekinete, vprašanje ostane brez odgovora. Napake ostanejo, za ta obrazec ni datoteke XML in nič ni izpuščeno. Prekinitev lahko pozneje izbrišete med »Vašimi odgovori«, da Vas vprašamo znova.",
+    en: "If you cancel, the question gets no answer. The errors stay, this form gets no XML file and nothing is left out. You can delete the cancel later under \"Your answers\" to be asked again.",
+  },
   answerRatio: {
     sl: "{new} : {old} dne {date}, po delitvi {units} enot",
     en: "{new} : {old} on {date}, {units} units after the split",
@@ -600,6 +623,29 @@ export const uiTexts = {
     sl: "Vrstice: {count}, bruto {gross} EUR, tuji davek {tax} EUR",
     en: "Rows: {count}, gross EUR {gross}, foreign tax EUR {tax}",
   },
+  capitalSummaryLine: {
+    sl: "Naložbe s prodajo v letu: {count}, v obrazcu: {listed}",
+    en: "Investments with a sale in the year: {count}, in the form: {listed}",
+  },
+  capitalCaption: { sl: "Naložbe s prodajo", en: "Investments with a sale" },
+  capitalColInvestment: { sl: "Naložba", en: "Investment" },
+  capitalColState: { sl: "Stanje", en: "State" },
+  capitalColSales: { sl: "Prodaje v obrazcu", en: "Sales in the form" },
+  capitalColUnits: { sl: "Enote", en: "Units" },
+  capitalColBlocked: { sl: "Enote z blokirano izgubo (F10)", en: "Units with a blocked loss (F10)" },
+  capitalColDates: { sl: "Datumi prodaje", en: "Sale dates" },
+  capitalStateListed: { sl: "v obrazcu", en: "in the form" },
+  capitalStateBlocked: { sl: "blokirano zaradi napake", en: "blocked by an error" },
+  capitalStateExcluded: { sl: "izpuščeno (Vaša izbira)", en: "left out (your choice)" },
+  capitalStateLongHeld: { sl: "samo enote po obdobju zadrževanja", en: "only units past the holding period" },
+  capitalLongHeldTitle: {
+    sl: "Enote po obdobju zadrževanja (niso v obrazcu)",
+    en: "Units past the holding period (not in the form)",
+  },
+  capitalLongHeldLine: {
+    sl: "{name} ({isin}), prodaja {date}: {units} enot",
+    en: "{name} ({isin}), sale {date}: {units} units",
+  },
   incomeColDate: { sl: "Datum", en: "Date" },
   incomeColSubject: { sl: "ISIN ali posrednik", en: "ISIN or broker" },
   incomeColPayer: { sl: "Izplačevalec", en: "Payer" },
@@ -651,11 +697,18 @@ export function uiText(language: Language, key: UiTextKey): string {
   return uiTexts[key][language];
 }
 
-/** A text with its `{name}` places filled, for example `{n}` with a number. */
+/**
+ * A text with its `{name}` places filled, for example `{n}` with a number. A value that is a plain
+ * decimal number is written in the number format of the language (`1234,50` in Slovenian).
+ */
 export function uiTextWith(
   language: Language,
   key: UiTextKey,
   values: Record<string, string | number>,
 ): string {
-  return uiText(language, key).replace(/\{(\w+)\}/g, (place, name: string) => String(values[name] ?? place));
+  return uiText(language, key).replace(/\{(\w+)\}/g, (place, name: string) => {
+    const value = values[name];
+
+    return value === undefined ? place : localizeNumber(String(value), language);
+  });
 }

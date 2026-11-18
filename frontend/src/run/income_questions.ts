@@ -22,6 +22,8 @@ const choiceTexts = new Map<string, UiTextKey>([
   ["discount_or_zero_coupon", "choiceDiscount"],
   ["above_limit", "choiceAboveLimit"],
   ["not_above_limit", "choiceNotAboveLimit"],
+  ["exclude_failed_instruments", "choiceFailExclude"],
+  ["fail_report", "choiceFailReport"],
 ]);
 
 /** The text of a choice word; `undefined` for a word the page does not know (it is shown as it is). */

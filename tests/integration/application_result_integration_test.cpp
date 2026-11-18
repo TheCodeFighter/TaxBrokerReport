@@ -1387,6 +1387,7 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
         "diagnostic-0002"
       ],
       "requestIds": [],
+      "excludedInvestments": [],
       "unsafe": false,
       "downloadAvailable": true
     },

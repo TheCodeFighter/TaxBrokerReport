@@ -45,6 +45,14 @@ describe("incomeGroups", () => {
     ]);
   });
 
+  it("writes the gross and the tax of a row with the decimal comma in Slovenian", () => {
+    const summary: IncomeSummary = { grossEur: "10.0000", foreignTaxEur: "1.5000", rowCount: 1, rows: [dividend] };
+    const row = incomeGroups(summary, "sl")[0]?.rows[0];
+
+    expect(row?.gross).toBe("10,0000");
+    expect(row?.tax).toBe("1,5000");
+  });
+
   it("says a payer is not found and a blank tax is no tax in the export, not 0", () => {
     const blank: IncomeRow = {
       kind: "dividend",
@@ -113,7 +121,7 @@ describe("incomeGroups", () => {
     const summary: IncomeSummary = { grossEur: "10.0000", foreignTaxEur: "1.5000", rowCount: 1, rows: [dividend] };
 
     expect(incomeSummaryLine(summary, "en")).toBe("Rows: 1, gross EUR 10.0000, foreign tax EUR 1.5000");
-    expect(incomeSummaryLine(summary, "sl")).toBe("Vrstice: 1, bruto 10.0000 EUR, tuji davek 1.5000 EUR");
+    expect(incomeSummaryLine(summary, "sl")).toBe("Vrstice: 1, bruto 10,0000 EUR, tuji davek 1,5000 EUR");
   });
 });
 

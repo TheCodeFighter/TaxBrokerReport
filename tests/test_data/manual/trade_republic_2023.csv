@@ -26,6 +26,7 @@ datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,am
 2023-06-14T09:00:00Z,2023-06-14,DEFAULT,TRADING,SELL,STOCK,Synthetic Split Share,XX0000000107,-4,70,280.00,-1.00,,EUR,,,,,manual-2023-003,,,,
 2023-06-14T09:00:00Z,2023-06-14,DEFAULT,CASH,DIVIDEND,,Synthetic Unknown Class Share,XX0000000118,10,,5.00,,,EUR,,,,,manual-2023-016,,,,
 2023-06-30T10:00:00Z,2023-06-30,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,5.00,,,EUR,,,,Synthetic bank interest,manual-2023-032,,,,
+2023-07-03T09:00:00Z,2023-07-03,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic Ruble Share,XX0000000121,5,,25.00,,,RUB,,,,,manual-2023-047,,,,
 2023-07-03T11:00:00Z,2023-07-03,DEFAULT,CASH,CARD_TRANSACTION_INTERNATIONAL,,Synthetic Merchant,,,,-9.00,,,EUR,,,,Synthetic card payment,manual-2023-044,,,,
 2023-07-31T10:00:00Z,2023-07-31,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,5.00,,,EUR,,,,Synthetic bank interest,manual-2023-033,,,,
 2023-08-02T09:00:00Z,2023-08-02,DEFAULT,TRADING,SELL,FUND,Synthetic Index Fund,XX0000000102,-0.75,45,33.75,,,EUR,,,,,manual-2023-004,,,,

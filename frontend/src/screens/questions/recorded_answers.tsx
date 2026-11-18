@@ -57,6 +57,16 @@ export function RecordedAnswers({ env, decisions }: Props) {
                 {row.investment === undefined ? null : `: ${row.investment}`}
               </p>
               <p>{row.answer}</p>
+              {row.details.length === 0 ? null : (
+                <details>
+                  <summary>{uiText(language, "answerListSummary")}</summary>
+                  <ul class="plain-list">
+                    {row.details.map((line, index) => (
+                      <li key={index}>{line}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {row.notes.length === 0 ? null : <p class="hint">{row.notes.join(", ")}</p>}
             </div>
             <button

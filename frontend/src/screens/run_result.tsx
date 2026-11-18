@@ -26,6 +26,7 @@ import { QuestionLink } from "./questions/question_link";
 import { QuestionList } from "./questions/question_list";
 import { RecordedAnswers } from "./questions/recorded_answers";
 import { FeeSummary } from "./fee_summary";
+import { CapitalRows } from "./capital_rows";
 import { IncomeRows } from "./income_rows";
 import { ReportDownloadButton } from "./report_download_button";
 
@@ -67,6 +68,8 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
     language,
     catalogue,
     apiFetch,
+    diagnostics: byId,
+    fileLabels: shown.fileLabels,
     revision: result.runRevision,
     disabled: shown.outOfDate,
     onResult,
@@ -262,6 +265,7 @@ function ReportCardView({
       {card.evidenceRows === 0 ? null : (
         <p>{uiTextWith(language, "evidenceRows", { count: card.evidenceRows })}</p>
       )}
+      {card.key === "capitalGains" ? <CapitalRows language={language} summary={result.capitalSummary} /> : null}
       <IncomeRows language={language} summary={result.reports[card.key]?.incomeSummary} />
       {card.key !== "bankInterest" || reminder === undefined ? null : <p class="notice">{reminder}</p>}
       {card.key === "capitalGains" ? (

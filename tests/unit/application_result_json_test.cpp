@@ -93,6 +93,7 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
           "status": "generated",
           "diagnosticIds": [],
           "requestIds": [],
+          "excludedInvestments": [],
           "unsafe": false,
           "downloadAvailable": true
         },
@@ -1859,6 +1860,38 @@ TEST(ApplicationResultJsonTest, AnExclusionIsListedWithItsChoiceAndItsResolvedDi
     }])"));
     EXPECT_FALSE(json.at("reports").at("otherInterest").contains("failureResolution"));
     EXPECT_FALSE(json.at("diagnostics").at(0).at("blocking").get<bool>());
+}
+
+TEST(ApplicationResultJsonTest, ADividendsExclusionIsListedWithItsChoiceAndItsResolvedDiagnostics) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mProcessingDiagnostics = {ProcessingDiagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = ProcessingDiagnosticCode::MissingExchangeRate,
+        .mContext = {.mStage = PipelineStage::FifoTax,
+                     .mAffectedReports = {ReportType::Dividends},
+                     .mInstrumentName = "Example Fund",
+                     .mIsin = "XX0000000001"},
+        .mMessage = "Synthetic error.",
+    }};
+    input.mResolvedDiagnostics = {0};
+    input.mReports[1].mFailureResolution = FailureResolution::ExcludeFailedInstruments;
+    input.mReports[1].mExcludedInvestments = {{
+        .mIsin = "XX0000000001",
+        .mName = "Example Fund",
+        .mReasonCodes = {ProcessingDiagnosticCode::MissingExchangeRate},
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& dividends = json.at("reports").at("dividends");
+
+    EXPECT_EQ(dividends.at("failureResolution"), "exclude_failed_instruments");
+    EXPECT_EQ(dividends.at("excludedInvestments"), nlohmann::json::parse(R"([{
+      "name": "Example Fund",
+      "isin": "XX0000000001",
+      "reasonCodes": ["missing_exchange_rate"],
+      "diagnosticIds": ["diagnostic-0001"]
+    }])"));
+    EXPECT_FALSE(dividends.contains("excludedBrokers"));
 }
 
 TEST(ApplicationResultJsonTest, FailingTheReportListsTheChoiceAndNoInvestment) {

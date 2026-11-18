@@ -55,6 +55,15 @@ describe("renderDiagnostic", () => {
     expect(renderDiagnostic(catalogue, "x.count", { count: 12345 }, "sl")).toBe("Preskočenih vrstic: 12345.");
   });
 
+  it("writes a decimal text parameter with the decimal comma in Slovenian only", () => {
+    expect(renderDiagnostic(catalogue, "x.y", { currency: "12.50", date: "2024-03-01" }, "sl")).toBe(
+      "Ni tečaja za 12,50 na dan 2024-03-01.",
+    );
+    expect(renderDiagnostic(catalogue, "x.y", { currency: "12.50", date: "2024-03-01" }, "en")).toBe(
+      "No rate for 12.50 on 2024-03-01.",
+    );
+  });
+
   it("writes a year without digit grouping in both languages", () => {
     // Grouping would give "2,024" (en) and "2.024" (sl).
     expect(renderDiagnostic(catalogue, "x.year", { year: 2024 }, "en")).toBe(

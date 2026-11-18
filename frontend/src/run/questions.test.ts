@@ -105,10 +105,13 @@ describe("question kinds", () => {
     expect(questionKind({ type: "income_details_required" })).toBeUndefined();
   });
 
-  it("has no screen for the failure and developer questions", () => {
-    expect(questionKind({ type: "capital_gains_failure_resolution_required" })).toBeUndefined();
-    expect(questionKind({ type: "dividends_failure_resolution_required" })).toBeUndefined();
-    expect(questionKind({ type: "other_interest_failure_resolution_required" })).toBeUndefined();
+  it("has the failure screen for the three failure questions", () => {
+    expect(questionKind({ type: "capital_gains_failure_resolution_required" })).toBe("failure");
+    expect(questionKind({ type: "dividends_failure_resolution_required" })).toBe("failure");
+    expect(questionKind({ type: "other_interest_failure_resolution_required" })).toBe("failure");
+  });
+
+  it("has no screen for the developer export confirmations", () => {
     expect(questionKind({ type: "developer_export_confirmation_required" })).toBeUndefined();
   });
 
@@ -120,7 +123,7 @@ describe("question kinds", () => {
 describe("firstQuestionId", () => {
   it("is the first open question that has a screen", () => {
     const result = resultWith([
-      request("request-0001", "dividends_failure_resolution_required"),
+      request("request-0001", "developer_export_confirmation_required"),
       request("request-0002", "loss_eligibility_confirmation_required"),
       request("request-0003", "quantity_correction_required"),
     ]);
@@ -130,25 +133,53 @@ describe("firstQuestionId", () => {
   });
 
   it("is undefined when no open question has a screen, so there is no link", () => {
-    const result = resultWith([request("request-0001", "dividends_failure_resolution_required")]);
+    const result = resultWith([request("request-0001", "developer_export_confirmation_required")]);
 
     expect(firstQuestionId(result)).toBeUndefined();
     expect(firstQuestionId(resultWith([]))).toBeUndefined();
   });
 });
 
+describe("placeQuestions with two failure questions", () => {
+  it("puts the capital question in Doh-KDVP and the other-interest question in Doh-Obr", () => {
+    const capital: DecisionRequest = {
+      ...request("request-0001", "capital_gains_failure_resolution_required"),
+      investments: [{ name: "Example Share", isin: "XX0000000001", reasonCodes: ["incomplete_history"] }],
+    };
+    const other: DecisionRequest = {
+      ...request("request-0002", "other_interest_failure_resolution_required"),
+      affectedReports: ["other_interest"],
+      investments: [{ name: "Example Bond", isin: "XX0000000002", reasonCodes: ["missing_exchange_rate"] }],
+      brokers: [{ broker: "trade_republic", reasonCodes: ["missing_exchange_rate"] }],
+    };
+    const result = resultWith([capital, other]);
+
+    result.reports = {
+      capitalGains: { status: "needs_input", diagnosticIds: [], requestIds: ["request-0001"], unsafe: false },
+      otherInterest: { status: "needs_input", diagnosticIds: [], requestIds: ["request-0002"], unsafe: false },
+    };
+
+    const placed = placeQuestions(result, ["capitalGains", "dividends", "bankInterest", "otherInterest"]);
+
+    expect(placed.byReport.get("capitalGains")?.map((entry) => entry.id)).toEqual(["request-0001"]);
+    expect(placed.byReport.get("otherInterest")?.map((entry) => entry.id)).toEqual(["request-0002"]);
+    expect(placed.rest).toEqual([]);
+  });
+});
+
 describe("hasQuestionWithoutScreen", () => {
-  it("is false for a loss and a classification question and true beside a failure question", () => {
+  it("is false for a loss, a classification and a failure question and true beside a developer export question", () => {
     const loss = request("request-0001", "loss_eligibility_confirmation_required");
     const classification: DecisionRequest = {
       ...request("request-0002", "tax_classification_required"),
       classificationCheck: { name: "Example Share", isin: "US0000000001", classLabels: [] },
     };
     const failure = request("request-0003", "dividends_failure_resolution_required");
+    const developer = request("request-0004", "developer_export_confirmation_required");
 
     expect(hasQuestionWithoutScreen(resultWith([loss]))).toBe(false);
-    expect(hasQuestionWithoutScreen(resultWith([loss, classification]))).toBe(false);
-    expect(hasQuestionWithoutScreen(resultWith([classification, failure]))).toBe(true);
+    expect(hasQuestionWithoutScreen(resultWith([loss, classification, failure]))).toBe(false);
+    expect(hasQuestionWithoutScreen(resultWith([classification, developer]))).toBe(true);
   });
 });
 
@@ -160,6 +191,8 @@ describe("answers", () => {
 
   it("turns a quantity into the corrected units with 8 decimals", () => {
     expect(quantityAnswer("0,99999998")).toEqual({ correctedUnits: "0.99999998" });
+    expect(quantityAnswer("0,5")).toEqual({ correctedUnits: "0.50000000" });
+    expect(quantityAnswer("0.5")).toEqual({ correctedUnits: "0.50000000" });
     expect(quantityAnswer("1")).toEqual({ correctedUnits: "1.00000000" });
     expect(quantityAnswer("1.000,5")).toBeUndefined();
     expect(quantityAnswer("")).toBeUndefined();

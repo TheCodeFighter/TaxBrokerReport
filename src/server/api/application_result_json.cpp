@@ -1135,8 +1135,9 @@ Json reportToJson(ReportType aType, const ReportResult& aReport) {
         {"requestIds", aReport.mRequestIds},
     };
 
-    // Only the two forms with a failure choice list excluded investments.
-    if (aType == ReportType::CapitalGains || aType == ReportType::OtherInterest)
+    // Only the three forms with a failure choice list excluded investments.
+    if (aType == ReportType::CapitalGains || aType == ReportType::Dividends ||
+        aType == ReportType::OtherInterest)
     {
         Json excluded = Json::array();
 
