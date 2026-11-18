@@ -234,7 +234,7 @@ export const uiTexts = {
   statusPartialSuccess: { sl: "Nekatera poročila so pripravljena.", en: "Some reports are ready." },
   statusNeedsInput: { sl: "Potrebujemo še vaš odgovor.", en: "We need an answer from you." },
   answersLater: {
-    sl: "Nekatera vprašanja v brskalniku še ni mogoče odgovoriti. Zaenkrat jih zastavi ukazna vrstica (taxbroker report).",
+    sl: "Na nekatera vprašanja v brskalniku še ni mogoče odgovoriti. Zaenkrat jih zastavi ukazna vrstica (taxbroker report).",
     en: "Some questions cannot be answered in the browser yet. For now the command line (taxbroker report) asks them.",
   },
   statusFailed: { sl: "Poročil ni bilo mogoče pripraviti.", en: "The reports could not be made." },
@@ -324,13 +324,13 @@ export const uiTexts = {
   },
   questionsTitle: { sl: "Vprašanja ({count})", en: "Questions ({count})" },
   answerQuestionsButton: { sl: "Odgovorite na vprašanja ({count})", en: "Answer the questions ({count})" },
-  goToQuestion: { sl: "Pojdi na vprašanje", en: "Go to the question" },
-  answerThisQuestion: { sl: "Odgovori na to vprašanje", en: "Answer this question" },
+  goToQuestion: { sl: "Pojdite na vprašanje", en: "Go to the question" },
+  answerThisQuestion: { sl: "Odgovorite na to vprašanje", en: "Answer this question" },
   questionSend: { sl: "Pošlji odgovor", en: "Send answer" },
   questionSending: { sl: "Pošiljanje …", en: "Sending …" },
   questionCancel: { sl: "Prekini vprašanje", en: "Cancel the question" },
   questionCancelWhat: {
-    sl: "Če prekinete, vprašanje ostane brez odgovora. Ta naložba je nato v obrazcu blokirana, rezultat pa pokaže napako zanjo. Prekinitev lahko pozneje izbrišete med »Vašimi odgovori«, da vas vprašamo znova.",
+    sl: "Če prekinete, vprašanje ostane brez odgovora. Ta naložba je nato v obrazcu blokirana, rezultat pa pokaže napako zanjo. Prekinitev lahko pozneje izbrišete med »Vašimi odgovori«, da Vas vprašamo znova.",
     en: "If you cancel, the question gets no answer. This investment is then blocked in the form, and the result shows an error for it. You can delete the cancel later under \"Your answers\" to be asked again.",
   },
   questionCancelConfirm: { sl: "Da, prekini vprašanje", en: "Yes, cancel the question" },
@@ -351,7 +351,7 @@ export const uiTexts = {
   lossSaleTitle: { sl: "Prodaja {date}", en: "Sale on {date}" },
   lossSaleUnits: { sl: "Prodane enote: {units}", en: "Units sold: {units}" },
   lossLossUnits: { sl: "Enote, prodane z izgubo: {units}", en: "Units sold at a loss: {units}" },
-  lossWindow: { sl: "Okno 30 dni: {start} do {end}", en: "30-day window: {start} to {end}" },
+  lossWindow: { sl: "Okno 30 dni: od {start} do {end}", en: "30-day window: {start} to {end}" },
   lossReplacementsTitle: {
     sl: "Nakupi v oknu po Vaših datotekah:",
     en: "Purchases in the window, from your files:",
@@ -378,10 +378,14 @@ export const uiTexts = {
     en: "The whole open loss of this investment will not be deductible (F10 false). This is the safe side: you pay more tax, never less. In eDavki, correct the part of the loss that the 30-day rule does not block.",
   },
   quantityIntro: {
-    sl: "Prodaja {date} je {original} enot, vaši prejšnji nakupi pa so pustili le {units} enot. Razlika je pod 0,00000100 enot, vendar datoteke ne kažejo, da gre za zaokroževanje. Vnesite količino prodaje, ki naj se uporabi (največ preostale enote, do 8 decimalk), ali prekinite.",
+    sl: "Prodaja {date} je {original} enot, Vaši prejšnji nakupi pa so pustili le {units} enot. Razlika je pod 0,00000100 enot, vendar datoteke ne kažejo, da gre za zaokroževanje. Vnesite količino prodaje, ki naj se uporabi (največ preostale enote, do 8 decimalk), ali prekinite.",
     en: "The sale on {date} is {original} units, but your earlier purchases left only {units} units. The difference is below 0.00000100 units, but the files do not show that it is rounding. Enter the quantity of the sale to use (at most the units left, up to 8 decimals), or cancel.",
   },
   quantityInput: { sl: "Količina prodaje (enote)", en: "Quantity of the sale (units)" },
+  quantityTooHigh: {
+    sl: "Največ {units} enot: toliko so jih pustili Vaši prejšnji nakupi. Popravek lahko prodajo le zmanjša.",
+    en: "At most {units} units: that is what your earlier purchases left. A correction can only reduce the sale.",
+  },
   quantityImpact: {
     sl: "Odstranjene enote: {removed}. Vrednost približno {value} EUR. Zaokroževanje porabi {used} od 0,01 EUR.",
     en: "Removed units: {removed}. Value about EUR {value}. Rounding uses EUR {used} of EUR 0.01.",
@@ -431,9 +435,17 @@ export const uiTexts = {
     sl: "Datum začetka veljavnosti iz objave (npr. 2023-01-15)",
     en: "Effective date from the announcement (for example 2023-01-15)",
   },
-  ratioRangeOne: { sl: "{from} do {to}", en: "{from} to {to}" },
-  ratioRangeWithUnits: { sl: "{from} do {to} ({units} enot)", en: "{from} to {to} ({units} units)" },
+  ratioRangeOne: { sl: "od {from} do {to}", en: "{from} to {to}" },
+  ratioRangeWithUnits: { sl: "od {from} do {to} ({units} enot)", en: "{from} to {to} ({units} units)" },
   ratioRanges: { sl: "Dovoljeni datumi: {ranges}", en: "Allowed dates: {ranges}" },
+  ratioNotValid: {
+    sl: "Vnos ne da delitve. Vnesite dve različni celi števili nad 0 (delnice pred in po: do 8 decimalk, brez ločila tisočic). Enote po delitvi morajo biti nad 0.",
+    en: "These entries do not give a split. Enter two different whole numbers above 0 (shares before and after: up to 8 decimals, no thousands separator). The units after the split must be above 0.",
+  },
+  ratioDateOutside: {
+    sl: "Ta datum ni med dovoljenimi datumi.",
+    en: "This date is not one of the allowed dates.",
+  },
   ratioPreview: {
     sl: "Razmerje {new} : {old}. Pred delitvijo imate {before} enot, po njej {after} enot.",
     en: "Ratio {new} : {old}. Before the split you hold {before} units; after it you hold {after} units.",

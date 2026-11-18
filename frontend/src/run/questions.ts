@@ -270,6 +270,29 @@ export function ratioPreview(check: RatioCheck, form: RatioForm): RatioPreview |
   };
 }
 
+/** What is wrong with the entries of the ratio form, so the page can say why nothing can be sent. */
+export interface RatioProblems {
+  /** Both number fields are filled but give no split (equal, zero, a decimal, or 0 units after). */
+  numbers: boolean;
+  /** A date is entered that is in none of the allowed ranges. */
+  date: boolean;
+}
+
+/** The problems of the entered ratio and date; a field that is still empty is no problem yet. */
+export function ratioProblems(check: RatioCheck, form: RatioForm): RatioProblems {
+  const [first, second] = form.mode === "shares" ? [form.before, form.after] : [form.newShares, form.oldShares];
+  const filled = first.trim() !== "" && second.trim() !== "";
+  const ratio = enteredRatio(form);
+  const range = rangeOf(check, form.date);
+  const noUnits =
+    ratio !== undefined && range !== undefined && previewUnits(range.positionBefore, ratio.newShares, ratio.oldShares) === undefined;
+
+  return {
+    numbers: filled && (ratio === undefined || noUnits),
+    date: form.date.trim() !== "" && range === undefined,
+  };
+}
+
 /** The answer of a confirmed preview: the two numbers, the date and the confirmed position. */
 export function ratioAnswer(preview: RatioPreview): AnswerValue {
   return {

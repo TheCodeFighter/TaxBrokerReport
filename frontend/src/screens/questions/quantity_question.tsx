@@ -24,7 +24,11 @@ export function QuantityQuestion({ env, request }: Props) {
   const { language } = env;
   const original = parseUnits(check.originalUnits);
   const entered = parseUnits(text);
-  const removed = original !== undefined && entered !== undefined && entered <= original ? original - entered : undefined;
+  const left = parseUnits(check.proposedUnits);
+  // A correction only reduces the sale to the units the earlier purchases left, never above them.
+  const tooHigh = entered !== undefined && left !== undefined && entered > left;
+  const removed =
+    original !== undefined && entered !== undefined && entered <= original && !tooHigh ? original - entered : undefined;
   const errorId = `quantity-error-${request.id}`;
 
   return (
@@ -32,7 +36,7 @@ export function QuantityQuestion({ env, request }: Props) {
       env={env}
       request={request}
       title={`${check.name} (${check.isin})`}
-      answer={quantityAnswer(text)}
+      answer={tooHigh ? undefined : quantityAnswer(text)}
     >
       {(messagesFor) => (
         <>
@@ -61,6 +65,11 @@ export function QuantityQuestion({ env, request }: Props) {
               onInput={(event) => setText(event.currentTarget.value)}
             />
           </label>
+          {!tooHigh ? null : (
+            <p class="field-error" role="alert">
+              {uiTextWith(language, "quantityTooHigh", { units: check.proposedUnits })}
+            </p>
+          )}
           {removed === undefined ? null : (
             <p class="hint">
               {uiTextWith(language, "quantityImpact", {

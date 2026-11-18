@@ -13,6 +13,7 @@ import {
   rangeOf,
   ratioAnswer,
   ratioPreview,
+  ratioProblems,
   rejectionTargets,
   supportedQuestions,
   CANCEL_ANSWER,
@@ -220,6 +221,56 @@ describe("ratio form", () => {
   it("has no preview while the date is outside the ranges or the ratio is not valid", () => {
     expect(ratioPreview(oneRange, ratioMode({ newShares: "2", oldShares: "1", date: "2024-01-01" }))).toBeUndefined();
     expect(ratioPreview(oneRange, ratioMode({ newShares: "2", oldShares: "2", date: "2023-01-15" }))).toBeUndefined();
+  });
+});
+
+describe("ratioProblems", () => {
+  const form = (changed: Partial<RatioForm>): RatioForm => ({
+    mode: "ratio",
+    newShares: "",
+    oldShares: "",
+    before: "",
+    after: "",
+    date: "",
+    ...changed,
+  });
+
+  it("has no problem while a field is still empty", () => {
+    expect(ratioProblems(oneRange, form({}))).toEqual({ numbers: false, date: false });
+    expect(ratioProblems(oneRange, form({ newShares: "2" }))).toEqual({ numbers: false, date: false });
+  });
+
+  it("has a numbers problem for 2 : 2, 0 : 1 and a decimal", () => {
+    expect(ratioProblems(oneRange, form({ newShares: "2", oldShares: "2", date: "2023-01-15" })).numbers).toBe(true);
+    expect(ratioProblems(oneRange, form({ newShares: "0", oldShares: "1", date: "2023-01-15" })).numbers).toBe(true);
+    expect(ratioProblems(oneRange, form({ newShares: "1.5", oldShares: "1", date: "2023-01-15" })).numbers).toBe(true);
+  });
+
+  it("has a numbers problem for equal share counts and none for a good ratio", () => {
+    expect(ratioProblems(oneRange, form({ mode: "shares", before: "0.52", after: "0.52" })).numbers).toBe(true);
+    expect(ratioProblems(oneRange, form({ mode: "shares", before: "0.52", after: "5.20" })).numbers).toBe(false);
+    expect(ratioProblems(oneRange, form({ newShares: "2", oldShares: "1", date: "2023-01-15" }))).toEqual({
+      numbers: false,
+      date: false,
+    });
+  });
+
+  it("has a numbers problem when the units after the split round to 0", () => {
+    // 0.00000001 units x 1 / 3 = 0.0000000033, which rounds to 0.
+    const tiny: RatioCheck = {
+      ...oneRange,
+      dateRanges: [
+        { earliestDate: "2023-01-01", latestDate: "2023-12-31", positionBefore: "0.00000001", lowestChangeAfter: "0.00000001" },
+      ],
+    };
+
+    expect(ratioProblems(tiny, form({ newShares: "1", oldShares: "3", date: "2023-01-15" })).numbers).toBe(true);
+  });
+
+  it("has a date problem only for a date outside every range", () => {
+    expect(ratioProblems(oneRange, form({ date: "2030-01-01" })).date).toBe(true);
+    expect(ratioProblems(oneRange, form({ date: "2023-1-5" })).date).toBe(true);
+    expect(ratioProblems(oneRange, form({ date: "2023-01-15" })).date).toBe(false);
   });
 });
 

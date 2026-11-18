@@ -6,6 +6,7 @@ import {
   defaultEffectiveDate,
   ratioAnswer,
   ratioPreview,
+  ratioProblems,
   type AnswerValue,
   type DecisionRequest,
   type RatioCheck,
@@ -69,6 +70,7 @@ export function RatioQuestion({ env, request }: Props) {
   const asksSameEvent = check.askSameEvent;
   const entersRatio = !asksSameEvent || sameEvent === "yes";
   const preview = entersRatio ? ratioPreview(check, form) : undefined;
+  const problems = ratioProblems(check, form);
   const key = preview === undefined ? undefined : previewKey([preview.ratio.newShares, preview.ratio.oldShares, preview.date, preview.units]);
   const confirmed = key !== undefined && confirmedFor === key;
 
@@ -196,6 +198,11 @@ export function RatioQuestion({ env, request }: Props) {
                 </>
               )}
               {messagesFor(["newShares", "oldShares"])}
+              {!problems.numbers ? null : (
+                <p class="field-error" role="alert">
+                  {uiText(language, "ratioNotValid")}
+                </p>
+              )}
               <label class="field">
                 <span>{uiText(language, "ratioDate")}</span>
                 <input
@@ -206,6 +213,11 @@ export function RatioQuestion({ env, request }: Props) {
                 />
                 <span class="hint">{uiTextWith(language, "ratioRanges", { ranges: rangesText(env, check) })}</span>
               </label>
+              {!problems.date ? null : (
+                <p class="field-error" role="alert">
+                  {uiText(language, "ratioDateOutside")}
+                </p>
+              )}
               {messagesFor(["effectiveDate"])}
               {preview === undefined ? null : (
                 <>
