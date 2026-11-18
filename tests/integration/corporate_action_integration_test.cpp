@@ -933,11 +933,13 @@ TEST(CorporateActionIntegrationTest, ALossSaleBeforeASplitIsComparedWithARebuyAf
 
     EXPECT_TRUE(loss.empty());
 
-    // Only the warning that the user gave the ratio; the sale used no changed lot.
+    // The warning that the user gave the ratio, then the warning of the answer `other_activity`;
+    // the sale used no changed lot.
     EXPECT_TRUE(session.result().mRequests.empty());
-    EXPECT_EQ(
-        codesOf(session.result()),
-        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::CorporateActionApplied}));
+    EXPECT_EQ(codesOf(session.result()),
+              (std::vector<ApplicationDiagnosticCode>{
+                  ProcessingDiagnosticCode::CorporateActionApplied,
+                  ProcessingDiagnosticCode::LossEligibilityUnresolved}));
 
     ASSERT_TRUE(stages.mBuilt.mReport.has_value());
     ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);

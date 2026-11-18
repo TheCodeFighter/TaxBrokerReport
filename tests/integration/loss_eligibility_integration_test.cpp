@@ -7,6 +7,7 @@
 #include "processors/loss_eligibility.hpp"
 #include "processors/tax_processor.hpp"
 #include "taxbroker/decision_session.hpp"
+#include "taxbroker/text_format.hpp"
 #include "xml/kdvp_xml_writer.hpp"
 
 #include <gtest/gtest.h>
@@ -247,6 +248,28 @@ TEST(LossEligibilityIntegrationTest, AnsweringYesBlocksTheWholeOpenLoss) {
 
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
 
+    // One warning stays with the result, so the user still sees after the question is gone that
+    // the whole open loss was treated as blocked. It is built like the assumed-blocked warning.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(std::get<ProcessingDiagnosticCode>(warning.mCode),
+              ProcessingDiagnosticCode::LossEligibilityUnresolved);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::LossEligibilityUnresolvedOtherActivity);
+    EXPECT_TRUE(warning.mMessageParams.empty());
+    EXPECT_EQ(warning.mAffectedReports, (std::vector<ReportType>{kCapital}));
+    EXPECT_FALSE(warning.mBlocking);
+    EXPECT_EQ(warning.mIsin, "XX0000000001");
+    EXPECT_EQ(warning.mInstrumentName, "Synthetic Share");
+    EXPECT_EQ(warning.mTaxDate, *parseCalendarDate("2024-01-05")); // the open sale
+    EXPECT_FALSE(warning.mRequestId.has_value());
+
+    ASSERT_EQ(warning.mSources.size(), 1U);
+    EXPECT_EQ(warning.mSources[0].mTransactionId, "synthetic-sell-1");
+    EXPECT_EQ(warning.mSources[0].mRow, 3U); // the header is row 1, the purchase row 2
+
     // The safe side: all 25 units are blocked, and the user corrects it in eDavki.
     const auto& xml = result.report(kCapital).mXml.value();
 
@@ -257,6 +280,59 @@ TEST(LossEligibilityIntegrationTest, AnsweringYesBlocksTheWholeOpenLoss) {
               <F10>false</F10>
             </Sale>
 )xml"));
+    expectValidForKdvpSchemas(xml);
+}
+
+TEST(LossEligibilityIntegrationTest, AnsweringYesForTwoOpenSalesGivesOneWarningForTheInvestment) {
+    // Bought 10 at EUR 10. The sale of 5 at EUR 8 on 2024-03-10 is a loss; the purchase of 2 on
+    // 2024-03-20 blocks 2 units, 3 stay open. The sale of 3 at EUR 8 on 2024-06-10 is a loss with
+    // no purchase within 30 days: 3 open. One question covers both sales, and `yes` blocks all
+    // open units: one warning for the investment, with both sales as sources.
+    constexpr std::string_view firstPurchase =
+        R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)";
+    constexpr std::string_view firstSale =
+        R"(2024-03-10T09:00:00Z,2024-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,8,40,,,EUR,,,,,synthetic-sell-1,,,,)";
+    constexpr std::string_view secondPurchase =
+        R"(2024-03-20T09:00:00Z,2024-03-20,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,2,10,-20,,,EUR,,,,,synthetic-buy-2,,,,)";
+    constexpr std::string_view secondSale =
+        R"(2024-06-10T09:00:00Z,2024-06-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-3,8,24,,,EUR,,,,,synthetic-sell-2,,,,)";
+
+    const TemporaryLossInputs files;
+    tr::TradeRepublicParser parser;
+    const std::vector<ParseResult> parsed{parser.parseFile(
+        files.write("history.csv", {firstPurchase, firstSale, secondPurchase, secondSale}))};
+    const auto calculation = [&parsed](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions);
+    };
+    DecisionSession session;
+    const auto& first = session.start(calculation);
+
+    ASSERT_EQ(first.mRequests.size(), 1U);
+    ASSERT_EQ(lossCheckAt(first, 0).mSales.size(), 2U);
+
+    ASSERT_TRUE(
+        session.answer({{"request-0001", kFirstRunRevision, OtherActivityAnswer{}}}).empty());
+
+    const auto& result = session.result();
+
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics.front();
+
+    EXPECT_EQ(warning.mMessageKey, MessageKey::LossEligibilityUnresolvedOtherActivity);
+    EXPECT_EQ(warning.mIsin, "XX0000000001");
+    EXPECT_EQ(warning.mTaxDate, *parseCalendarDate("2024-03-10")); // the first open sale
+
+    ASSERT_EQ(warning.mSources.size(), 2U);
+    EXPECT_EQ(warning.mSources[0].mTransactionId, "synthetic-sell-1");
+    EXPECT_EQ(warning.mSources[1].mTransactionId, "synthetic-sell-2");
+
+    // Both losses are blocked in full: no sale row keeps its loss.
+    const auto& xml = result.report(kCapital).mXml.value();
+
+    EXPECT_TRUE(contains(xml, "<F10>false</F10>"));
+    EXPECT_FALSE(contains(xml, "<F10>true</F10>"));
     expectValidForKdvpSchemas(xml);
 }
 
@@ -387,6 +463,9 @@ TEST(LossEligibilityIntegrationTest, AnsweringYesBlocksAPartlyKnownLossInFull) {
     const auto& result = session.result();
 
     EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.front().mMessageKey,
+              MessageKey::LossEligibilityUnresolvedOtherActivity);
 
     // The sale uses 40 of the 50 units of 2023-02-01; the December purchase has no row.
     const auto& xml = result.report(kCapital).mXml.value();

@@ -5,6 +5,8 @@
 /* The page color also fills the part of the window below the content. */
 html {
   background: var(--color-background);
+  /* Everything is in rem: 110% makes the whole page 10% larger and easier to read. */
+  font-size: 110%;
   /* Room for the fixed header and footer, so a focused field is not hidden behind them. */
   scroll-padding-top: 5rem;
   scroll-padding-bottom: 3rem;
@@ -423,6 +425,10 @@ body {
   --tone: var(--color-ok);
 }
 
+.tone-neutral {
+  --tone: var(--color-text);
+}
+
 .tone-warn,
 .tone-pending {
   --tone: var(--color-warn);
@@ -461,6 +467,85 @@ body {
 .screen .report-card p,
 .screen .diagnostic p {
   color: var(--color-text);
+}
+
+/* The open questions of a form. A question heading takes the focus from a link. */
+.questions {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.question {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.question h5,
+.question h6 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.question h6 {
+  font-size: 0.875rem;
+}
+
+.question-fields {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.question-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.question-sale {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 3px solid var(--color-border);
+}
+
+.screen .question-sale-title {
+  font-weight: 600;
+}
+
+.screen .notice-warn {
+  border-left-color: var(--color-warn);
+}
+
+.link-button {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.recorded-answers {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.recorded-answer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .badge {
@@ -599,4 +684,33 @@ body {
   color: var(--color-text-muted);
   font-size: 0.875rem;
   text-align: center;
+}
+
+/* Result headings: clearly larger than the body text, so the forms and their parts can be found at a glance. */
+.run-result h2 {
+  font-size: 1.625rem;
+}
+
+.run-result h3 {
+  margin-top: var(--space-3);
+  font-size: 1.25rem;
+}
+
+.result .report-card h3 {
+  font-size: 1.375rem;
+}
+
+.report-card h4 {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  font-size: 1.125rem;
+}
+
+.question h5 {
+  font-size: 1.0625rem;
+}
+
+.recorded-answers h3 {
+  margin: 0;
 }

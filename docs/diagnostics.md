@@ -1030,7 +1030,7 @@ Additional codes and their default scope are:
 | `xml_basis_rounding_difference` | Warning for capital gains, one per purchase row of a Doh-KDVP list whose `F4` times `F3`, rounded to four decimals, differs from the exact basis of its units rounded the same way. Output only: no value changes and no budget is used. Its sources and date are those of the purchase. |
 | `xml_value_out_of_range` | Error for the one form whose writer rejects the value (Doh-KDVP for capital gains, Doh-Div for dividends, Doh-DHO for deposit interest, Doh-Obr for other interest): one per field that the form does not accept, and no XML for that form. The parameter `field` is the XML field name (for example `taxNumber`, `ISIN` or `F8`), never the value; the context has the ISIN and name of the list when they are valid text. For Doh-Obr the interest stage gives it too, in stage `fifo_tax` and before the failure question, for a value of one payment that the form cannot hold (the writer repeats the checks as a guard), so the coupon's ISIN or the broker's cash interest can be left out. |
 | `xml_serialization_failed` | Error for one form whose XML writer stopped on an internal error, such as an unknown enumeration value: no XML for that form, the other forms keep theirs. Stage `xml_generation`, no field, no ISIN and no parameters; the exception text goes to the developer log only, never into the message. The log line is `XML writer of <form> stopped: <text>`, so a writer throws only with a fixed text, never with a value, a name or an ISIN. |
-| `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked; no request. Key `.units_mismatch` (stage `fifo_tax`, on the sale) is a safety check: a decided sale whose rule blocks more units than the sale has loss units within the holding period cannot be written as rows; it should never happen. |
+| `loss_eligibility_unresolved` | Error for capital gains on one sale, isolated to its complete ISIN where possible: key `.confirmation_required` while the loss question is open (linked to it), `.cancelled` after a cancel (no request). A warning per ISIN with key `.assumed_blocked` when a caller that does not ask (the debug tools) treats the open units as blocked, or with key `.other_activity` after the answer `other_activity`; no request. Key `.units_mismatch` (stage `fifo_tax`, on the sale) is a safety check: a decided sale whose rule blocks more units than the sale has loss units within the holding period cannot be written as rows; it should never happen. |
 | `corporate_action_not_applied` | Error for capital gains: a corporate action whose result cannot be reported yet. Key `.waiting_for_earlier_action` (parameter `earlierDate`) for a later action of the ISIN, linked to the open ratio question of the earlier one; `.loss_window` for a date after 31 December with a merger row inside a December loss window (a split row there has its ratio question or its own error instead). An action of a class that never reaches Doh-KDVP gets none: that class has its own error. |
 | `corporate_action_ambiguous` | Error for capital gains on one action (`fifo.md`): key `.ratio_required` while its ratio question is open (linked to it), `.ratio_required_before_sale` (parameters `saleDate` and `days`, 10) for the same question when a sale before the row needs more units than were held and the row may be a late booking, `.cancelled` after a cancel (no request), `.same_day` for two or more rows of one broker for the ISIN on one date, and `.different_dates` (parameter `days`, 10) for split rows of different brokers on dates at most that far apart that the user says are two splits, or that cannot be asked as one split (more than one such neighbour date, a merger row, or a broker on both dates; no request for these until the identity question exists). |
 | `corporate_action_applied` | Warning for capital gains on one applied action, key `.user_ratio` (parameters `newShares`, `oldShares` and `effectiveDate`): the user, not the broker, supplied the ratio and the effective date. |
@@ -1388,6 +1388,20 @@ The frontend must:
 - list every excluded name and ISIN before confirmation and beside the final download;
 - mark developer output as unsafe;
 - use structured request types and fields for user decisions;
+- show an open loss, split-ratio or quantity question inside the card of its form, with its
+  facts (the sales and windows, every source record with its read-only quantity, the sale and the
+  units left), never preselect an answer, never send one without a click, and explain what a
+  cancel does before it is sent;
+- for the split ratio: take the ratio or the shares before and after, show the position after the
+  split from the position before on the entered date, warn when a reduced number is above 1000,
+  and send the answer only after the user confirms that position;
+- show a loss question's January hint when a window ends in the next year, and a warning, before
+  the answer is sent, that `other_activity` blocks the whole open loss (`F10` false);
+- show the corrected sale quantities with their EUR impact beside the cumulative impact of the
+  ISIN, and the recorded answers with a delete for each and for all (a deleted answer brings its
+  question back);
+- link to a question from the top notice, from a form that waits for it and from a diagnostic
+  that has its `requestId`, and move the focus to the question;
 - build the text of every diagnostic from its message key and parameters, in Slovenian by default
   or in English; and
 - use a clear general message only when a more specific diagnostic is unavailable.

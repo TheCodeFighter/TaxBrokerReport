@@ -1,0 +1,353 @@
+import type { MessageParams } from "../i18n/messages";
+import type { DiagnosticSource, RunResult } from "./submit";
+import {
+  formatUnits,
+  parseUnits,
+  parseWholeNumber,
+  previewUnits,
+  ratioFromShareCounts,
+  ratioLooksUnusual,
+  reduceRatio,
+  type Fraction,
+  type Ratio,
+} from "./units";
+
+/** A broker transaction: its broker ID and transaction ID. */
+export interface TransactionRef {
+  broker: string;
+  transactionId: string;
+}
+
+/** One sale of a loss question with the facts of its 30-day window. */
+export interface LossSale {
+  saleDate: string;
+  transaction?: TransactionRef;
+  saleUnits: string;
+  lossUnits: string;
+  windowStart: string;
+  windowEnd: string;
+  knownReplacements: { date: string; units: string }[];
+  knownIneligibleUnits: string;
+  openUnits: string;
+}
+
+export interface LossCheck {
+  name: string;
+  isin: string;
+  sales: LossSale[];
+}
+
+/** One broker record of a corporate action; the broker's own quantity is shown read-only. */
+export interface RatioSource {
+  broker: string;
+  date: string;
+  transactionId?: string;
+  sourceValue?: string;
+}
+
+/** The dates an answer may give, with the position held just before and the lowest change after. */
+export interface DateRange {
+  earliestDate: string;
+  latestDate: string;
+  positionBefore: string;
+  lowestChangeAfter: string;
+}
+
+export interface RatioCheck {
+  name: string;
+  isin: string;
+  effectiveDate: string;
+  sources: RatioSource[];
+  /** The position on the row date; left out for a question before a sale with too few units. */
+  positionBefore?: string;
+  earlierSaleDate?: string;
+  dateRanges: DateRange[];
+  askSameEvent: boolean;
+}
+
+export interface QuantityCheck {
+  name: string;
+  isin: string;
+  saleDate: string;
+  transaction?: TransactionRef;
+  originalUnits: string;
+  proposedUnits: string;
+  unitValueEur: Fraction;
+  budgetUsedEur: Fraction;
+}
+
+/** An open question. Only the parts the screens read are typed. */
+export interface DecisionRequest {
+  id: string;
+  type: string;
+  runRevision: number;
+  affectedReports: string[];
+  sources: DiagnosticSource[];
+  taxDate?: string;
+  isin?: string;
+  options?: string[];
+  lossCheck?: LossCheck;
+  ratioCheck?: RatioCheck;
+  quantityCheck?: QuantityCheck;
+}
+
+/** A recorded answer with the question data it belongs to. */
+export interface Decision {
+  id: string;
+  type: string;
+  fromEarlierRun: boolean;
+  used: boolean;
+  lossCheck?: LossCheck;
+  ratioCheck?: RatioCheck;
+  quantityCheck?: QuantityCheck;
+  /** A word (`other_activity`, `cancel`) or an object (a ratio, a corrected quantity). */
+  answer: string | Record<string, unknown>;
+}
+
+/** A sale quantity that was corrected, by the rounding evidence or by the user's answer. */
+export interface Correction {
+  isin: string;
+  saleDate: string;
+  source: DiagnosticSource;
+  originalUnits: string;
+  correctedUnits: string;
+  kind: string;
+  impactEur: Fraction;
+}
+
+/** The cumulative EUR impact of the corrections of one ISIN against its limit. */
+export interface Reconciliation {
+  isin: string;
+  impactEur: Fraction;
+  limitEur: string;
+}
+
+/** The three kinds of question that have a screen. */
+export type QuestionKind = "loss" | "ratio" | "quantity";
+
+const questionKinds = new Map<string, QuestionKind>([
+  ["loss_eligibility_confirmation_required", "loss"],
+  ["corporate_action_ratio_required", "ratio"],
+  ["quantity_correction_required", "quantity"],
+]);
+
+/** The kind of a request type, or `undefined` for a type that has no screen yet. */
+export function questionKind(type: string): QuestionKind | undefined {
+  return questionKinds.get(type);
+}
+
+/** The open questions that have a screen, in result order. */
+export function supportedQuestions(result: RunResult): DecisionRequest[] {
+  return result.requests.filter((request) => questionKinds.has(request.type));
+}
+
+/** The open questions with a screen, placed in the first form that lists them; `rest` has no form. */
+export function placeQuestions(
+  result: RunResult,
+  reportKeys: string[],
+): { byReport: Map<string, DecisionRequest[]>; rest: DecisionRequest[] } {
+  const byReport = new Map<string, DecisionRequest[]>();
+  const rest: DecisionRequest[] = [];
+
+  for (const request of supportedQuestions(result)) {
+    const owner = reportKeys.find((key) => result.reports[key]?.requestIds.includes(request.id));
+
+    if (owner === undefined) {
+      rest.push(request);
+    } else {
+      byReport.set(owner, [...(byReport.get(owner) ?? []), request]);
+    }
+  }
+
+  return { byReport, rest };
+}
+
+/** The ID of the first open question with a screen; `undefined` when there is none (no link). */
+export function firstQuestionId(result: RunResult): string | undefined {
+  return supportedQuestions(result)[0]?.id;
+}
+
+/** The page anchor of a question; the link scrolls to it and moves the focus to its heading. */
+export function questionAnchor(requestId: string): string {
+  return `question-${requestId}`;
+}
+
+/** True when an open question has no screen yet, so the page still says it cannot take it. */
+export function hasQuestionWithoutScreen(result: RunResult): boolean {
+  return result.requests.some((request) => !questionKinds.has(request.type));
+}
+
+/** The loss choices; the page preselects none. */
+export type LossChoice = "no_other_activity" | "other_activity";
+
+/** What one answer holds: a word or an object, as the server's answer JSON. */
+export type AnswerValue = string | Record<string, unknown>;
+
+/** The answer that closes a question without answering it. */
+export const CANCEL_ANSWER = "cancel";
+
+/** The answer for the same-event choice of a ratio question: they are two separate splits. */
+export const SEPARATE_EVENTS_ANSWER = "separate_events";
+
+/** The corrected quantity as the answer of a quantity question; empty when the text is not one. */
+export function quantityAnswer(input: string): AnswerValue | undefined {
+  const ticks = parseUnits(input);
+
+  return ticks === undefined ? undefined : { correctedUnits: formatUnits(ticks) };
+}
+
+/** The text fields of the ratio form. */
+export interface RatioForm {
+  mode: "ratio" | "shares";
+  newShares: string;
+  oldShares: string;
+  /** The shares held before the action, as the broker shows them (mode `shares`). */
+  before: string;
+  after: string;
+  /** `YYYY-MM-DD`. */
+  date: string;
+}
+
+/** The ratio the entered numbers give, reduced; `undefined` when they are not a valid ratio. */
+export function enteredRatio(form: RatioForm): Ratio | undefined {
+  if (form.mode === "shares") {
+    return ratioFromShareCounts(form.before, form.after);
+  }
+
+  const newer = parseWholeNumber(form.newShares);
+  const older = parseWholeNumber(form.oldShares);
+
+  return newer === undefined || older === undefined ? undefined : reduceRatio(newer, older);
+}
+
+/** The range of effective dates that holds the date; `undefined` for an invalid or outside date. */
+export function rangeOf(check: RatioCheck, date: string): DateRange | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return undefined;
+  }
+
+  return check.dateRanges.find((range) => range.earliestDate <= date && date <= range.latestDate);
+}
+
+/** The date the form starts with: the row date of the broker when it is in a range, else empty. */
+export function defaultEffectiveDate(check: RatioCheck): string {
+  return rangeOf(check, check.effectiveDate) === undefined ? "" : check.effectiveDate;
+}
+
+/** What the entered ratio does: the reduced numbers, the position before and after. */
+export interface RatioPreview {
+  ratio: Ratio;
+  date: string;
+  /** The position just before the action on the entered date. */
+  position: string;
+  /** The position after the action; the user confirms it, and it is sent as `confirmedUnits`. */
+  units: string;
+  /** True when a reduced number is above 1000: shown as a warning, still accepted. */
+  unusual: boolean;
+}
+
+/** The preview of the entered ratio and date; `undefined` while one of them is not valid. */
+export function ratioPreview(check: RatioCheck, form: RatioForm): RatioPreview | undefined {
+  const ratio = enteredRatio(form);
+  const range = rangeOf(check, form.date);
+
+  if (ratio === undefined || range === undefined) {
+    return undefined;
+  }
+
+  const units = previewUnits(range.positionBefore, ratio.newShares, ratio.oldShares);
+
+  if (units === undefined) {
+    return undefined;
+  }
+
+  return {
+    ratio,
+    date: form.date,
+    position: range.positionBefore,
+    units,
+    unusual: ratioLooksUnusual(ratio.newShares, ratio.oldShares),
+  };
+}
+
+/** What is wrong with the entries of the ratio form, so the page can say why nothing can be sent. */
+export interface RatioProblems {
+  /** Both number fields are filled but give no split (equal, zero, a decimal, or 0 units after). */
+  numbers: boolean;
+  /** A date is entered that is in none of the allowed ranges. */
+  date: boolean;
+}
+
+/** The problems of the entered ratio and date; a field that is still empty is no problem yet. */
+export function ratioProblems(check: RatioCheck, form: RatioForm): RatioProblems {
+  const [first, second] = form.mode === "shares" ? [form.before, form.after] : [form.newShares, form.oldShares];
+  const filled = first.trim() !== "" && second.trim() !== "";
+  const ratio = enteredRatio(form);
+  const range = rangeOf(check, form.date);
+  const noUnits =
+    ratio !== undefined && range !== undefined && previewUnits(range.positionBefore, ratio.newShares, ratio.oldShares) === undefined;
+
+  return {
+    numbers: filled && (ratio === undefined || noUnits),
+    date: form.date.trim() !== "" && range === undefined,
+  };
+}
+
+/** The answer of a confirmed preview: the two numbers, the date and the confirmed position. */
+export function ratioAnswer(preview: RatioPreview): AnswerValue {
+  return {
+    newShares: preview.ratio.newShares,
+    oldShares: preview.ratio.oldShares,
+    effectiveDate: preview.date,
+    confirmedUnits: preview.units,
+  };
+}
+
+/** The place on the form that a rejection marks. */
+export type RejectionTarget =
+  | "newShares"
+  | "oldShares"
+  | "effectiveDate"
+  | "confirmation"
+  | "correctedUnits"
+  /** Not tied to one input: shown beside the send button. */
+  | "form"
+  /** The question or the revision is out of date: the page loads the run again. */
+  | "reload";
+
+const rejectionPrefix = "answer_rejected.";
+
+/** The input or inputs a rejection marks, from its message key and parameters. */
+export function rejectionTargets(messageKey: string, params: MessageParams): RejectionTarget[] {
+  const key = messageKey.startsWith(rejectionPrefix) ? messageKey.slice(rejectionPrefix.length) : messageKey;
+
+  switch (key) {
+    case "ratio_not_positive":
+      return params.field === "newShares" || params.field === "oldShares" ? [params.field] : ["newShares", "oldShares"];
+    case "ratio_unchanged":
+    case "ratio_out_of_range":
+      return ["newShares", "oldShares"];
+    case "later_sale_too_large":
+      return ["newShares", "oldShares", "effectiveDate"];
+    case "preview_mismatch":
+      return ["confirmation"];
+    case "effective_date_out_of_range":
+    case "effective_date_without_units":
+      return ["effectiveDate"];
+    case "correction_not_positive":
+    case "correction_above_open_units":
+    case "correction_too_large":
+    case "correction_over_budget":
+      return ["correctedUnits"];
+    case "stale_revision":
+    case "unknown_request":
+      return ["reload"];
+    default:
+      return ["form"];
+  }
+}
+
+/** True when the sale's window ends after 31 December of the sale's year. */
+export function januaryHint(sale: LossSale): boolean {
+  return sale.windowEnd.slice(0, 4) > sale.saleDate.slice(0, 4);
+}

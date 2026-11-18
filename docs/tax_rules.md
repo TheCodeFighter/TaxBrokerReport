@@ -479,7 +479,10 @@ and the CLI show all of them together as one checklist.
 
 - `no_other_activity`: the open units keep their loss.
 - `other_activity`: every open unit is treated as blocked (`F10` `false`). This is the safe side,
-  more tax and never less; the user corrects the deemed disposal in eDavki.
+  more tax and never less; the user corrects the deemed disposal in eDavki. The answer does not
+  ask for the quantities of the other activity. One `loss_eligibility_unresolved` warning per
+  ISIN (key `.other_activity`) stays with the result, so the user still sees after the question is
+  gone that the whole open loss was treated as not deductible.
 - Cancel: each open sale gets a blocking `loss_eligibility_unresolved` error. When every
   other error that blocks capital gains also names its own investment, the capital exclusion
   question lists it: exclude it, or write no Doh-KDVP ([`diagnostics.md`](diagnostics.md)).

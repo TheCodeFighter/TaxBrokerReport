@@ -813,7 +813,9 @@ class is checked, because it may still be classified as a share or a fund.
   request with `LossEligibilityQuestion` data and one `loss_eligibility_unresolved` error per open
   sale (key `loss_eligibility_unresolved.confirmation_required`, the sale's sources and date),
   linked to the request. The checker looks the question up in `RunDecisions`: `no_other_activity`
-  decides the open units as eligible, `other_activity` as blocked, and a cancel gives each open
+  decides the open units as eligible, `other_activity` as blocked (with one warning per ISIN, key
+  `loss_eligibility_unresolved.other_activity`, the sources of its open sales and the date of the
+  first), and a cancel gives each open
   sale the error with key `loss_eligibility_unresolved.cancelled` and no request. The request's
   diagnostic indices count from the checker's first diagnostic; `appendStageOutput` moves them to
   the numbering of `ApplicationResultInput`.
@@ -1475,7 +1477,7 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   one exception is the link to the project's repository on the About page, which the user opens
   and the page never fetches.
   `scripts/frontend.sh check` fails the build when the output has another file, when a file is
-  over its size budget (`app.js` 64 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
+  over its size budget (`app.js` 96 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
   compressed), when an address other than an XML namespace name or that repository link appears
   in a file, or when
   `index.html` has an inline script or style.
@@ -1609,6 +1611,18 @@ guard and the session cookie. The JSON readers and writers are in `taxbroker_api
   to create the reports again, and any other refusal shows the general error text. A card for
   `no_data`, `needs_input` or `failed` has no button. A note under the button says the file is not
   filed yet.
+- The frontend answers the open questions that have a screen (the 30-day loss question, the split
+  ratio and the quantity correction) with `POST /api/run/answers`, one answer for one question per
+  call, with the revision of the shown result. A 200 replaces the shown result with the new one
+  (a new revision; every question form starts fresh, because request IDs are numbered again for
+  each result). A 422 shows each rejection, by its message key, beside the input it marks. A
+  rejection that says the revision or the question is out of date (`stale_revision`,
+  `unknown_request`, and for a delete `stale_revision_delete` and `unknown_decision`) makes the
+  page load `GET /api/run` again and tell the user that the questions were refreshed; a 404
+  `no_run` tells the user to create the reports again. The recorded answers are listed with a
+  delete for each and for all (`POST /api/run/decisions/delete`). Answer and delete buttons are
+  disabled while the shown result is out of date. The page never sends an answer by itself and
+  preselects none.
 - Another method on a run path is 405 with `Allow`. A request that throws is the 500 of the HTTP
   layer (empty body) and leaves the run as it was.
 - The `request` part: `reportingYear`, `filingType` (`original` or `self_report`), optional

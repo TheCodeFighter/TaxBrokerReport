@@ -32,6 +32,10 @@ const result: RunResult = {
     diagnostic("diagnostic-0004", "info"),
   ],
   excludedItems: [],
+  requests: [],
+  decisions: [],
+  corrections: [],
+  reconciliation: [],
 };
 
 describe("result view", () => {
@@ -61,9 +65,26 @@ describe("result view", () => {
     expect(overallTone("failed")).toBe("fail");
   });
 
-  it("shows the answers-later hint only for a needs_input result", () => {
-    expect(needsAnswerHint(result)).toBe(true);
-    expect(needsAnswerHint({ ...result, status: "success" })).toBe(false);
+  it("shows the answers-later hint only for an open question without a screen", () => {
+    const loss = {
+      id: "request-0001",
+      type: "loss_eligibility_confirmation_required",
+      runRevision: 1,
+      affectedReports: ["capital_gains"],
+      sources: [],
+    };
+    const classification = {
+      id: "request-0002",
+      type: "tax_classification_required",
+      runRevision: 1,
+      affectedReports: ["capital_gains"],
+      sources: [],
+    };
+
+    expect(needsAnswerHint({ ...result, requests: [] })).toBe(false);
+    expect(needsAnswerHint({ ...result, requests: [loss] })).toBe(false);
+    expect(needsAnswerHint({ ...result, requests: [classification] })).toBe(true);
+    expect(needsAnswerHint({ ...result, requests: [loss, classification] })).toBe(true);
   });
 
   it("marks a shown result as out of date and keeps the result itself", () => {
@@ -105,14 +126,18 @@ describe("reportCards", () => {
       },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     const cards = reportCards(noData);
 
     expect(cards.map((card) => [card.form, card.tone, card.noDataText])).toEqual([
-      ["Doh-KDVP", "ok", "reportNoDataNoSales"],
-      ["Doh-Div", "ok", "reportNoDataEmpty"],
-      ["Doh-DHO", "ok", "reportNoDataBelowThreshold"],
+      ["Doh-KDVP", "neutral", "reportNoDataNoSales"],
+      ["Doh-Div", "neutral", "reportNoDataEmpty"],
+      ["Doh-DHO", "neutral", "reportNoDataBelowThreshold"],
     ]);
   });
 
@@ -155,6 +180,10 @@ describe("reportCards", () => {
       },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     const card = reportCards(excluded)[0];
@@ -192,6 +221,10 @@ describe("reportCards", () => {
       },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     const card = reportCards(allExcluded)[0];
@@ -227,6 +260,10 @@ describe("reportCards", () => {
       },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     const cards = reportCards(unsafe);
@@ -254,6 +291,10 @@ describe("reportCards", () => {
       },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     const card = reportCards(stopped)[0];
@@ -279,6 +320,10 @@ describe("reportCards", () => {
       },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     expect(reportCards(income)[0]?.evidenceRows).toBe(2);
@@ -296,6 +341,10 @@ describe("reportCards", () => {
       },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     const flags = reportCards(mixed).map((card) => `${card.key}:${card.downloadAvailable}`);
@@ -315,6 +364,10 @@ describe("reportCards", () => {
       reports: { capitalGains: { status: "generated", diagnosticIds: [], requestIds: [], unsafe: false } },
       diagnostics: [],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     expect(reportCards(unflagged)[0]?.downloadAvailable).toBe(false);
@@ -347,6 +400,10 @@ describe("classificationExclusions", () => {
           diagnosticIds: [],
         },
       ],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     expect(classificationExclusions(bond)).toEqual([
@@ -370,6 +427,10 @@ describe("classificationExclusions", () => {
           diagnosticIds: ["diagnostic-0001"],
         },
       ],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     expect(classificationExclusions(unknown)).toEqual([{ name: "Example Payment" }]);
