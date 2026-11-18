@@ -87,7 +87,13 @@ export function RatioQuestion({ env, request }: Props) {
   const examples = ["ratioExampleSplit", "ratioExampleReverse", "ratioExampleAdditional"] as const;
 
   return (
-    <QuestionFrame env={env} request={request} title={`${check.name} (${check.isin})`} answer={answer}>
+    <QuestionFrame
+      env={env}
+      request={request}
+      title={`${check.name} (${check.isin})`}
+      answer={answer}
+      allowCancel
+    >
       {(messagesFor) => (
         <>
           <p>{uiText(language, "ratioIntro")}</p>

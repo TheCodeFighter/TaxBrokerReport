@@ -11,7 +11,7 @@ interface Props {
 export function HomePage({ language }: Props) {
   return (
     <main class="screen welcome">
-      <img class="welcome-logo" src={logoUrl} width="96" height="96" alt="" />
+      <img class="welcome-logo" src={logoUrl} width="288" height="288" alt="" />
       <h1 tabIndex={-1}>{uiText(language, "appName")}</h1>
       <p class="welcome-line">{uiText(language, "welcomeLine")}</p>
       <div class="welcome-actions">

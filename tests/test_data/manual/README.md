@@ -98,6 +98,22 @@ warning; `cancel` blocks; a deposit answer `yes` in 2024 makes Doh-DHO from EUR 
 payer question leaves the payer empty with a warning; `exclude` on the unknown-class share removes it
 (a warning says so).
 
+## What the browser shows
+
+Every question above has a screen in the browser, except the exclusion (failure) questions of the
+ruble share, the certificate, the missing-history share and Bond B: the page still says it cannot
+take them. Nothing is preselected on any screen.
+
+| Year | Question screens | Result blocks |
+| --- | --- | --- |
+| 2022 | 30-day loss (2), treaty text (BR: text or no claim), payer (NVIDIA: two rows or skip) | Doh-Div rows with the treaty text of each country, the Krka dividend in the excluded items, Doh-Obr rows grouped into interest on cash and bond coupons, the fee block, benefits |
+| 2023 | class of the unknown share, split ratio, payer (BAT), income type of the unknown dividend, bond type, deposit total (EUR 12.50, no cancel button) | the reminder to add other banks in the Doh-DHO card after `yes`, a payer that is not found in the rows, fees and benefits |
+| 2024 | class, bond type (`discount`), deposit total (EUR 427.80), reverse split ratio, payer, 30-day loss, quantity | Doh-DHO no data after `no`, from EUR 427.80 and the reminder after `yes`; a coupon with tax in the export (evidence mark) |
+| 2025 | class, split ratio, quantity, payer, bond type | Doh-DHO above EUR 1,000 with no reminder, the dividend without a name, benefits |
+
+Not reachable from a Trade Republic export, covered by the frontend tests: an interest payment of
+an unknown type (the choice `other_interest` and its kinds) and fees with a missing exchange rate.
+
 ## Doh-KDVP rows to check in eDavki
 
 | Year | ISIN | Rows (`F1`/`F6` date, `F3`/`F7` units, `F4`/`F9` EUR per unit, `F10`) |

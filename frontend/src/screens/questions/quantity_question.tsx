@@ -37,6 +37,7 @@ export function QuantityQuestion({ env, request }: Props) {
       request={request}
       title={`${check.name} (${check.isin})`}
       answer={tooHigh ? undefined : quantityAnswer(text)}
+      allowCancel
     >
       {(messagesFor) => (
         <>

@@ -77,6 +77,8 @@ interface FrameProps {
   title: string;
   /** The answer to send; `undefined` while the form is not complete, which disables the button. */
   answer: AnswerValue | undefined;
+  /** False when the server takes no cancel for this question (payer, treaty, deposit total): no cancel button. */
+  allowCancel: boolean;
   /** The inputs; `messagesFor` gives the rejections that mark the given inputs. */
   children: (messagesFor: (targets: RejectionTarget[]) => ComponentChildren) => ComponentChildren;
 }
@@ -86,7 +88,7 @@ interface FrameProps {
  * the question" with what a cancel does. The form is disabled while a call runs and while the
  * result is out of date. Nothing is sent until the user presses a button.
  */
-export function QuestionFrame({ env, request, title, answer, children }: FrameProps) {
+export function QuestionFrame({ env, request, title, answer, allowCancel, children }: FrameProps) {
   const [busy, setBusy] = useState(false);
   const [rejections, setRejections] = useState<Rejection[]>([]);
   const [problem, setProblem] = useState(false);
@@ -135,9 +137,11 @@ export function QuestionFrame({ env, request, title, answer, children }: FramePr
           <button type="button" class="button" disabled={answer === undefined} onClick={() => answer !== undefined && void post(answer)}>
             {uiText(env.language, busy ? "questionSending" : "questionSend")}
           </button>
-          <button type="button" class="button button-secondary" onClick={() => setConfirmCancel(true)}>
-            {uiText(env.language, "questionCancel")}
-          </button>
+          {allowCancel ? (
+            <button type="button" class="button button-secondary" onClick={() => setConfirmCancel(true)}>
+              {uiText(env.language, "questionCancel")}
+            </button>
+          ) : null}
         </div>
         {confirmCancel ? (
           <div class="notice">

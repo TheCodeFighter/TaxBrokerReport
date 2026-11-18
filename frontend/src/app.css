@@ -592,9 +592,25 @@ body {
   margin: 0;
 }
 
+/* In the dark theme the welcome card is black, the black of the logo; the light theme keeps the
+   normal card. The text colours of the dark theme are already light; the disclaimer keeps the
+   normal card colour. */
+:root[data-theme="dark"] .screen.welcome {
+  background: #000;
+}
+
+:root[data-theme="dark"] .screen.welcome .disclaimer {
+  background: var(--color-surface);
+}
+
+/* A white ring 3 px wide sets the round picture off from the black card. */
 .welcome-logo {
+  display: block;
   justify-self: center;
+  max-width: 100%;
+  height: auto;
   border-radius: 50%;
+  box-shadow: 0 0 0 3px #fff;
 }
 
 .welcome-actions {
@@ -713,4 +729,42 @@ body {
 
 .recorded-answers h3 {
   margin: 0;
+}
+
+/* The income rows of a form: closed by default; a wide table scrolls inside its own box. */
+.income-rows summary {
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.income-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.income-table caption {
+  padding: var(--space-2) 0;
+  font-weight: 600;
+  text-align: left;
+}
+
+.income-table th,
+.income-table td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.payer-option {
+  align-items: flex-start;
+}
+
+.payer-option > span {
+  display: grid;
 }

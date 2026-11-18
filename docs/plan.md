@@ -357,12 +357,13 @@ server). It must allow the user to:
 - review company/ETF payer suggestions, resolve withholding and treaty-claim facts, and see the
   evidence required for foreign-tax relief and any settled-Slovenian-tax exclusions;
 - see separate bank-deposit, broker-cash and ordinary-bond-interest summaries;
-- see the bank-interest allowance reminder and optionally add other qualifying bank interest;
+- see the bank-interest allowance reminder and answer the yes/no question about the interest of
+  other banks (the app takes no amount; the user adds those banks in eDavki);
 - enter each missing official Banka Slovenije rate once per currency and date;
 - choose a broker-rate fallback only after a prominent warning;
 - start processing;
 - see warnings and errors with useful source locations;
-- see selected-year fees by broker and original currency, with broker-rate EUR totals only when
+- see selected-year fees and benefits by broker and original currency, with EUR totals only when
   complete and without any rate prompt for fees;
 - understand which report files succeeded or failed; and
 - download every successfully generated XML file.

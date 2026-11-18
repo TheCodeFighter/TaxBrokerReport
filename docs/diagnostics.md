@@ -1400,6 +1400,20 @@ The frontend must:
 - show the corrected sale quantities with their EUR impact beside the cumulative impact of the
   ISIN, and the recorded answers with a delete for each and for all (a deleted answer brings its
   question back);
+- show the classification and income questions with the facts the file gave (the instrument and its
+  class labels as the export wrote them, the date and the gross amount of a payment), never
+  preselect a choice, and offer only the choices and kinds of other interest that the request
+  lists; a payer choice shows every reference row with its file, row and revision and a skip, a
+  treaty question takes the treaty text (checked with the server's rule: trimmed, 1 to 100
+  characters, no control characters, not `true` or `false`) or no claim, a bond question shows the
+  units sold and matured, and the payer, treaty and deposit total questions have no cancel (the
+  server refuses it);
+- show the income rows of each income form with the payer and the reference row it came from
+  (or that the payer was not found), the foreign tax (a blank export tax as "no tax in the
+  export", not as 0), the treaty claim and a mark for the rows that need evidence, the reminder to
+  add the interest of other banks when `depositInterest.addOtherBanks` is true, and the fee and
+  benefit summaries by broker and currency, with no EUR total (and no partial sum) when a fee has
+  no rate, marked as information that no form holds;
 - link to a question from the top notice, from a form that waits for it and from a diagnostic
   that has its `requestId`, and move the focus to the question;
 - build the text of every diagnostic from its message key and parameters, in Slovenian by default

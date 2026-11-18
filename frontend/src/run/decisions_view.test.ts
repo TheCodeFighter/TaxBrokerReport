@@ -137,6 +137,135 @@ describe("decisionRows", () => {
   });
 });
 
+describe("decisionRows for the income and classification answers", () => {
+  const base = { fromEarlierRun: false, used: true };
+
+  it("describes a trade class answer", () => {
+    const decision: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "tax_classification_required",
+      classificationCheck: { name: "Example Share", isin: "US0000000001", classLabels: ["Stock"] },
+      answer: "capital_gains",
+    };
+
+    expect(decisionRows([decision], "en")).toEqual([
+      {
+        id: "decision-0001",
+        title: "Kind of investment",
+        investment: "Example Share (US0000000001)",
+        answer: "Capital gains (Doh-KDVP)",
+        notes: [],
+      },
+    ]);
+  });
+
+  it("describes an income type answer with its kind of other interest", () => {
+    const check = {
+      eventKind: "interest",
+      receiptDate: "2023-02-01",
+      name: "Example Cash Interest",
+      classLabels: [],
+      grossAmount: "1.0000",
+      currency: "EUR",
+    };
+    const plain: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "tax_classification_required",
+      incomeCheck: check,
+      answer: "dividends",
+    };
+    const other: Decision = {
+      ...base,
+      id: "decision-0002",
+      type: "tax_classification_required",
+      incomeCheck: check,
+      answer: { choice: "other_interest", subtype: "broker_cash" },
+    };
+
+    const rows = decisionRows([plain, other], "en");
+
+    expect(rows[0]?.title).toBe("Kind of income");
+    expect(rows[0]?.investment).toBe("Example Cash Interest");
+    expect(rows[0]?.answer).toBe("Dividends (Doh-Div)");
+    expect(rows[1]?.answer).toBe("Other interest (Doh-Obr): Interest on cash at the broker");
+  });
+
+  it("describes the picked payer row and a skip", () => {
+    const check = {
+      name: "Example Corp",
+      isin: "US0000000001",
+      options: [
+        { name: "Example Corp", address: "1 Main Street", country: "US", source: { source: "a", sourceRevision: "r1", file: "payers.csv", row: 2, origin: "built_in" } },
+        { name: "Example Corp Ltd", address: "2 Side Street", country: "IE", source: { source: "a", sourceRevision: "r1", file: "payers.csv", row: 9, origin: "built_in" } },
+      ],
+    };
+    const picked: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "income_details_required",
+      payerCheck: check,
+      answer: { option: 1 },
+    };
+    const skipped: Decision = { ...picked, id: "decision-0002", answer: "skip" };
+
+    const rows = decisionRows([picked, skipped], "en");
+
+    expect(rows[0]?.title).toBe("Payer");
+    expect(rows[0]?.answer).toBe("Example Corp Ltd (IE), payers.csv, row 9");
+    expect(rows[1]?.answer).toBe("Skipped (payer facts empty)");
+  });
+
+  it("describes a bond type, a treaty text, no claim and a deposit total", () => {
+    const bond: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "income_details_required",
+      bondCheck: { isin: "XS0000000001", name: "Example Bond", soldUnits: "1.00000000", maturedUnits: "0.00000000" },
+      answer: "ordinary",
+    };
+    const treaty: Decision = {
+      ...base,
+      id: "decision-0002",
+      type: "income_details_required",
+      treatyCheck: { year: 2022, country: "BR", isins: ["BR0000000001"] },
+      answer: { statement: "Article 10" },
+    };
+    const noClaim: Decision = { ...treaty, id: "decision-0003", answer: "no_claim" };
+    const deposit: Decision = {
+      ...base,
+      id: "decision-0004",
+      type: "deposit_interest_total_required",
+      depositCheck: { year: 2023, importedInterestEur: "12.5000", limitEur: "1000.0000" },
+      answer: "above_limit",
+    };
+
+    const rows = decisionRows([bond, treaty, noClaim, deposit], "en");
+
+    expect(rows[0]?.investment).toBe("Example Bond (XS0000000001)");
+    expect(rows[0]?.answer).toBe("Ordinary bond (regular coupons)");
+    expect(rows[1]?.title).toBe("Treaty text");
+    expect(rows[1]?.investment).toBe("BR, 2022");
+    expect(rows[1]?.answer).toBe("Text: Article 10");
+    expect(rows[2]?.answer).toBe("No relief claimed");
+    expect(rows[3]?.investment).toBe("2023");
+    expect(rows[3]?.answer).toBe("Yes, the interest of all banks together is above the limit");
+  });
+
+  it("describes a cancelled answer of the new kinds", () => {
+    const decision: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "income_details_required",
+      bondCheck: { isin: "XS0000000001", name: "Example Bond", soldUnits: "1.00000000", maturedUnits: "0.00000000" },
+      answer: "cancel",
+    };
+
+    expect(decisionRows([decision], "sl")[0]?.answer).toBe("Prekinjeno (brez odgovora)");
+  });
+});
+
 describe("correctionLines", () => {
   const rounding: Correction = {
     isin: "US0000000001",
