@@ -4,7 +4,7 @@ import type { ApiClient } from "../api/client";
 import { SessionEndedError } from "../api/client";
 import { loadLogFile } from "../api/log_file";
 import { LOG_LEVELS, type LogLevel } from "../api/log_level";
-import { saveFile } from "../api/support_report";
+import { saveFile } from "../api/saved_file";
 import type { Language, UiTextKey } from "../i18n/ui_texts";
 import { uiText } from "../i18n/ui_texts";
 

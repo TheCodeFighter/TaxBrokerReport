@@ -1372,6 +1372,8 @@ enough.
 The frontend must:
 
 - show each generated download even when another report needs input or failed;
+- never present a downloaded file as a filed return: the user imports it in eDavki, checks the
+  values and files the return there;
 - show `no_data` as a normal empty result, not an error;
 - group each diagnostic under its affected report and also allow a run-wide summary;
 - show a sanitized filename and row number when available;

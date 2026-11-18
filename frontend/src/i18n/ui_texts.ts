@@ -275,6 +275,15 @@ export const uiTexts = {
     sl: "Vrstice, za katere v eDavkih priložite dokazilo o plačanem tujem davku: {count}",
     en: "Rows that need the proof of the foreign tax attached in eDavki: {count}",
   },
+  reportSave: { sl: "Shrani datoteko {form}", en: "Save the {form} file" },
+  reportSaveHint: {
+    sl: "Datoteka še ni oddana: uvozite jo v eDavke, preverite vrednosti in napoved oddajte tam.",
+    en: "This file is not filed yet: import it in eDavki, check the values and file the return there.",
+  },
+  reportSaveStale: {
+    sl: "Rezultat se je medtem spremenil. Ponovno ustvarite poročila.",
+    en: "The result changed in the meantime. Create the reports again.",
+  },
   sharedMessagesTitle: { sl: "Sporočila za več poročil", en: "Messages for several reports" },
   classificationTitle: { sl: "Izpuščeno pri razvrstitvi", en: "Left out by classification" },
   excludedReasonDebtSecurity: { sl: "dolžniški vrednostni papir", en: "debt security" },

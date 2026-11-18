@@ -5,6 +5,9 @@
 /* The page color also fills the part of the window below the content. */
 html {
   background: var(--color-background);
+  /* Room for the fixed header and footer, so a focused field is not hidden behind them. */
+  scroll-padding-top: 5rem;
+  scroll-padding-bottom: 3rem;
 }
 
 /* The page is a column, so the footer stays at the bottom of a short page. */
@@ -42,6 +45,10 @@ body {
   padding: var(--space-2) var(--space-3);
   background: var(--color-primary);
   color: var(--color-on-primary);
+  /* The header stays at the top while the page scrolls. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .brand {
@@ -396,7 +403,8 @@ body {
 }
 
 .support-report,
-.log-file {
+.log-file,
+.report-download {
   display: grid;
   gap: var(--space-2);
   justify-items: start;
@@ -581,7 +589,13 @@ body {
 
 .footer {
   margin-top: auto;
-  padding: var(--space-3);
+  /* The footer stays at the bottom of the window, on a short page at the bottom of the page. */
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-background);
+  border-top: 1px solid var(--color-border);
   color: var(--color-text-muted);
   font-size: 0.875rem;
   text-align: center;

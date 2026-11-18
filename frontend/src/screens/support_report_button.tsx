@@ -2,7 +2,8 @@ import { useState } from "preact/hooks";
 
 import type { ApiClient } from "../api/client";
 import { SessionEndedError } from "../api/client";
-import { loadSupportReport, saveFile } from "../api/support_report";
+import { saveFile } from "../api/saved_file";
+import { loadSupportReport } from "../api/support_report";
 import type { Language, UiTextKey } from "../i18n/ui_texts";
 import { uiText } from "../i18n/ui_texts";
 
