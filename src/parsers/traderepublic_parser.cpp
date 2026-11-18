@@ -863,7 +863,8 @@ void TradeRepublicParser::isInstrumentValid(std::string_view aContext,
     }
 }
 
-GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) {
+GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow,
+                                                    const AmountSign aAmountSign) {
     const auto originalCurrencyValue = aCsvRow["original_currency"].get<std::string>();
     const bool usesOriginalCurrency = !originalCurrencyValue.empty();
     const auto columnCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
@@ -881,7 +882,7 @@ GetAmount TradeRepublicParser::getAmountAndCurrency(const csv::CSVRow& aCsvRow) 
                                               columnCurrency,
                                               RateDirectionVerification::VerifiedBySourceSamples);
 
-    if (grossAmount && *grossAmount < 0)
+    if (aAmountSign == AmountSign::PositiveOnly && grossAmount && *grossAmount < 0)
     {
         grossAmount.reset();
     }
@@ -1121,6 +1122,7 @@ std::optional<TradeRepublicParser::ParsedIncome>
 TradeRepublicParser::parseIncome(const csv::CSVRow& aCsvRow,
                                  std::string_view aRowKind,
                                  bool aCheckInstrument,
+                                 const AmountSign aAmountSign,
                                  const RowContext& aContext) {
     const auto dateText = aCsvRow["date"].get<std::string>();
     const auto taxText = aCsvRow["tax"].get<std::string>();
@@ -1130,7 +1132,7 @@ TradeRepublicParser::parseIncome(const csv::CSVRow& aCsvRow,
     const auto date = parseCalendarDate(dateText);
     const auto taxPaid = parseTaxPaid(taxText);
     const auto taxCurrency = parseCurrency(currencyText);
-    const auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
+    const auto amountAndCurrency = getAmountAndCurrency(aCsvRow, aAmountSign);
 
     // Every invalid field is reported, in the column order of the export: amount comes before
     // tax, original_amount after currency.
@@ -1205,7 +1207,8 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
     const auto isinValue = aCsvRow["symbol"].get<std::string>();
     const auto nameValue = aCsvRow["name"].get<std::string>();
 
-    const auto income = parseIncome(aCsvRow, term::kRowKindDividend, true, aContext);
+    const auto income =
+        parseIncome(aCsvRow, term::kRowKindDividend, true, AmountSign::PositiveOnly, aContext);
 
     if (!income)
     {
@@ -1278,7 +1281,11 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                          : isUnknown ? term::kRowKindUnknownInterest
                                      : term::kRowKindBrokerInterest;
 
-    const auto income = parseIncome(aCsvRow, rowKind, isBond, aContext);
+    // Only cash interest can be negative (debit interest); coupons and unknown rows cannot.
+    const auto amountSign = aInterestType == InterestType::BrokerInterest
+                                ? AmountSign::AnySign
+                                : AmountSign::PositiveOnly;
+    const auto income = parseIncome(aCsvRow, rowKind, isBond, amountSign, aContext);
 
     if (!income)
     {
@@ -1490,7 +1497,7 @@ void TradeRepublicParser::parseBondRedemptionRow(const csv::CSVRow& aCsvRow,
     const auto taxPaid = parseTaxPaid(taxText);
     const auto columnCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
     const auto rateText = aCsvRow["fx_rate"].get<std::string>();
-    const auto amountAndCurrency = getAmountAndCurrency(aCsvRow);
+    const auto amountAndCurrency = getAmountAndCurrency(aCsvRow, AmountSign::PositiveOnly);
     const bool isAmountUsable = signedAmount && isUsable(*signedAmount);
 
     BondRedemptionKind kind = BondRedemptionKind::Maturity;

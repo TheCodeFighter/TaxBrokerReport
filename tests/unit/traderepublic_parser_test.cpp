@@ -15686,8 +15686,8 @@ TEST(TradeRepublicParserTest, RejectsBondInterestNegativeAmountBelowHalfStep) {
     EXPECT_EQ(error.mTransactionId, "synthetic-validation");
 }
 
-TEST(TradeRepublicParserTest, RejectsDepositInterestNegativeAmount) {
-    SyntheticCsvRow row{
+TEST(TradeRepublicParserTest, ReadsDepositInterestNegativeAmount) {
+    const SyntheticCsvRow row{
         .mDatetime = "2024-01-15T10:00:00.000Z",
         .mDate = "2024-01-15",
         .mCategory = "CASH",
@@ -15697,9 +15697,112 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestNegativeAmount) {
         .mSymbol = "",
         .mShares = "",
         .mPrice = "",
-        .mAmount = "10.00",
+        .mAmount = "-1.00",
         .mFee = "",
-        .mTax = "-1.00",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-debit-interest",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
+    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-debit-interest");
+    EXPECT_EQ(transaction.mGrossAmount, -10'000); // EUR -1.00 at 4 decimals.
+    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
+    EXPECT_EQ(transaction.mCashHolder, std::optional{CashHolder::Bank});
+}
+
+TEST(TradeRepublicParserTest, ReadsBrokerCashInterestNegativeAmount) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2023-11-15T10:00:00.000Z",
+        .mDate = "2023-11-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-0.40",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mTransactionId = "synthetic-debit-interest",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2023, 11, 15));
+    EXPECT_EQ(transaction.mGrossAmount, -4'000); // EUR -0.40 at 4 decimals.
+    EXPECT_EQ(transaction.mCashHolder, std::optional{CashHolder::Broker}); // Before 2023-12-06.
+}
+
+TEST(TradeRepublicParserTest, ReadsNegativeCashInterestInTheOriginalCurrency) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "",
+        .mName = "",
+        .mSymbol = "",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-0.92",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "-1.00",
+        .mOriginalCurrency = "USD",
+        .mFxRate = "0.92",
+        .mTransactionId = "synthetic-debit-interest-usd",
+    };
+
+    const auto result = parseRows({row});
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mInterestInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
+
+    const auto& transaction = result.mStatement.mInterestInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(transaction.mGrossAmount, -10'000); // USD -1.00, the amount in original_currency.
+    EXPECT_EQ(transaction.mCurrency, Currency::USD);
+}
+
+TEST(TradeRepublicParserTest, RejectsUnknownInterestNegativeAmount) {
+    const SyntheticCsvRow row{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mCategory = "CASH",
+        .mType = "INTEREST_PAYMENT",
+        .mAssetClass = "STOCK",
+        .mName = "Synthetic Unknown Instrument",
+        .mSymbol = "XX9000000010",
+        .mShares = "",
+        .mPrice = "",
+        .mAmount = "-1.00",
+        .mFee = "",
+        .mTax = "",
         .mCurrency = "EUR",
         .mOriginalAmount = "",
         .mOriginalCurrency = "",
@@ -15707,43 +15810,21 @@ TEST(TradeRepublicParserTest, RejectsDepositInterestNegativeAmount) {
         .mTransactionId = "synthetic-validation",
     };
 
-    const auto accepted = parseRows({row});
-
-    ASSERT_TRUE(accepted.mDiagnostics.empty());
-    ASSERT_EQ(accepted.mStatement.mInterestInstruments.size(), 1U);
-    ASSERT_EQ(accepted.mStatement.mInterestInstruments.front().mTransactions.size(), 1U);
-
-    const auto& transaction =
-        accepted.mStatement.mInterestInstruments.front().mTransactions.front();
-
-    EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2024, 1, 15));
-    EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-validation");
-    EXPECT_EQ(transaction.mGrossAmount, 100'000);
-    EXPECT_EQ(transaction.mTaxPaid, 10'000);
-    EXPECT_EQ(transaction.mCurrency, Currency::EUR);
-    EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
-
-    row.mAmount = "-1.00";
     const TemporaryCsvFile csvFile{{row}};
     tr::TradeRepublicParser parser;
 
-    const auto rejected = parser.parseFile(csvFile.path());
+    const auto result = parser.parseFile(csvFile.path());
 
-    EXPECT_TRUE(rejected.mStatement.mTradeInstruments.empty());
-    EXPECT_TRUE(rejected.mStatement.mDividendInstruments.empty());
-    EXPECT_TRUE(rejected.mStatement.mInterestInstruments.empty());
-    EXPECT_TRUE(rejected.mStatement.mBenefitEvents.empty());
-    EXPECT_TRUE(rejected.mStatement.mPrivateMarketEvents.empty());
-    ASSERT_EQ(rejected.mDiagnostics.size(), 1U);
+    EXPECT_TRUE(result.mStatement.mInterestInstruments.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
 
-    const auto& error = rejected.mDiagnostics.front();
-
-    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
-    EXPECT_EQ(error.mCode, DiagnosticCode::InvalidValue);
-    EXPECT_EQ(error.mField, "amount");
-    EXPECT_EQ(error.mSourceFile, csvFile.path().filename().string());
-    EXPECT_EQ(error.mRowIndex, 2U);
-    EXPECT_EQ(error.mTransactionId, "synthetic-validation");
+    // The unsupported asset class stays an error; the negative amount is a second one.
+    EXPECT_EQ(result.mDiagnostics[0].mCode, DiagnosticCode::UnsupportedAssetClass);
+    EXPECT_EQ(result.mDiagnostics[0].mField, "asset_class");
+    EXPECT_EQ(result.mDiagnostics[1].mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(result.mDiagnostics[1].mCode, DiagnosticCode::InvalidValue);
+    EXPECT_EQ(result.mDiagnostics[1].mField, "amount");
+    EXPECT_EQ(result.mDiagnostics[1].mTransactionId, "synthetic-validation");
 }
 
 TEST(TradeRepublicParserTest, RejectsDepositInterestPositiveAmountBelowHalfStep) {
