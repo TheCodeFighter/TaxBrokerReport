@@ -14,9 +14,7 @@ Rules for these files:
   year where it fits (see the skill `taxbrokerreport-development`, "Manual test files"), and a line
   to the tables below.
 - **A case that would block every form is not here.** A row type the parser does not know blocks
-  all forms of every year by design, and a negative interest payment is an `invalid_value` error
-  that blocks Doh-DHO and Doh-Obr (the tax rules describe it as a warning; the parser does not
-  take it). Try those with a copy of a file.
+  all forms of every year by design. Try that with a copy of a file.
 - Foreign amounts use the real built-in ECB rates of the day, so the broker rate (`fx_rate`) is
   about the same as the official one. Use the taxpayer file `tests/test_data/cli/taxpayer.json`
   (all values made up, tax number `12345679`) or type any made-up details in the browser.
@@ -73,8 +71,9 @@ runs), so 2024 and 2025 also ask the classification of the unknown-class share a
 | Distribution of a fund and a dividend of a yen share | 2022, 2023, 2024, 2025 | payer not in the reference files: the row is made, with a warning |
 | A dividend without a name | 2025 | the row is made, the name is left empty |
 | Interest on cash, monthly | 2022, 2023 (up to 2023-12-05) | Trade Republic interest before 2023-12-06 is Doh-Obr |
+| One negative interest payment (-1.25, debit interest) | 2022 | not a row of Doh-Obr and not netted against the other payments; a warning `interest_payment_not_positive` |
 | Interest on cash from 2023-12-06 (6.00 on the 6th, 6.50 on the 29th) | 2023 | from 2023-12-06 it is deposit interest (Doh-DHO); the total is EUR 12.50, so the app asks whether other banks bring it above EUR 1,000 |
-| Interest on cash, monthly, with one payment of 0.00 | 2024 | total EUR 427.80, below EUR 1,000: the same question; the 0.00 payment is not a row and gets a warning |
+| Interest on cash, monthly, with one payment of 0.00 and one of -2.40 | 2024 | total EUR 427.80, below EUR 1,000: the same question; the 0.00 and the -2.40 payment are not rows (not netted) and each gets a warning |
 | Interest on cash, 12 payments of 95.00 | 2025 | EUR 1,140, above EUR 1,000: Doh-DHO is made without a question |
 | Saveback, stock perk, referral, bonus | most years | benefits: information only, shown in the summary |
 | Card payment, deposit, transfer, card fee | every year | ignored rows |
@@ -138,6 +137,6 @@ an unknown type (the choice `other_interest` and its kinds) and fees with a miss
 - Several brokers and the second broker's split rows: Interactive Brokers is not supported yet.
 - A conflicting duplicate (the same transaction ID with different facts) rejects the whole group;
   see `tests/test_data/csv/merger/conflict.csv`.
-- A row type the parser does not know, a negative interest payment, a CSV with a wrong header or
+- A row type the parser does not know, a CSV with a wrong header or
   a broken record: they block forms, so they are in `tests/test_data/csv/` and the parser tests.
 - The developer export (incomplete history written as an unsafe file): `tests/test_data/cli/developer_export.csv`.

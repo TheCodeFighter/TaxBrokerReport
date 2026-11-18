@@ -333,6 +333,41 @@ TEST(IncomeReportsIntegrationTest, InterestIsSortedIntoDhoAndOneObrWithBothSubty
     EXPECT_NE(run.status(ReportType::BankDepositInterest), ReportStatus::NeedsInput);
 }
 
+TEST(IncomeReportsIntegrationTest, ANegativeCashInterestRowIsLeftOutWithAWarning) {
+    // Debit interest: 2023-11-15 (broker holds the cash, Doh-Obr) and 2023-12-29 (bank holds it,
+    // Doh-DHO). Each is left out whole, with a warning, and the positive payments stay rows.
+    const TemporaryCsv csv{
+        R"(2023-11-01T10:00:00Z,2023-11-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,1.23,,,EUR,,,,Synthetic broker interest,synthetic-interest-1,,,,)",
+        R"(2023-11-15T10:00:00Z,2023-11-15,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,-0.40,,,EUR,,,,Synthetic debit interest,synthetic-interest-2,,,,)",
+        R"(2023-12-29T10:00:00Z,2023-12-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,2.00,,,EUR,,,,Synthetic bank interest,synthetic-interest-3,,,,)",
+        R"(2023-12-29T11:00:00Z,2023-12-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,-0.50,,,EUR,,,,Synthetic debit interest,synthetic-interest-4,,,,)",
+    };
+
+    IncomeRun run{csv, 2023};
+
+    ASSERT_EQ(run.reports().mOther.mRows.size(), 1U);
+    EXPECT_EQ(run.reports().mOther.mRows[0].mGrossInterest, 12'300); // EUR 1.23, not 0.83
+
+    ASSERT_EQ(run.reports().mDeposit.mRows.size(), 1U);
+    EXPECT_EQ(run.reports().mDeposit.mRows[0].mInterest, 20'000); // EUR 2.00, not 1.50
+
+    EXPECT_EQ(run.diagnosticsOf(ProcessingDiagnosticCode::InterestPaymentNotPositive).size(), 2U);
+    EXPECT_NE(run.status(ReportType::OtherInterest), ReportStatus::Failed);
+    EXPECT_NE(run.status(ReportType::BankDepositInterest), ReportStatus::Failed);
+
+    // The parser accepts the negative amounts: no invalid_value diagnostic at all.
+    const auto invalidValue =
+        std::count_if(run.result().mDiagnostics.begin(),
+                      run.result().mDiagnostics.end(),
+                      [](const auto& aDiagnostic) {
+                          const auto* code = std::get_if<DiagnosticCode>(&aDiagnostic.mCode);
+
+                          return code != nullptr && *code == DiagnosticCode::InvalidValue;
+                      });
+
+    EXPECT_EQ(invalidValue, 0);
+}
+
 TEST(IncomeReportsIntegrationTest, ATaxedCashInterestWithoutATreatyTextHasNoClaimAndAsksNothing) {
     // Trade Republic is a broker before 6 December 2023, so this interest is cash interest in
     // Doh-Obr. Its payer is the broker's company in DE, and the export has EUR 0.20 tax. The

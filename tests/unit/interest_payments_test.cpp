@@ -1001,6 +1001,43 @@ TEST(InterestPaymentsTest, APaymentOfZeroOrLessIsNeverARowOrPartOfTheTotal) {
     EXPECT_EQ(warning->mContext.mInstrumentName, std::optional<std::string>{"Trade Republic"});
 }
 
+TEST(InterestPaymentsTest, ANegativeCashInterestOfTheBrokerIsNotARowOfDohObr) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "",
+        .mIsin = std::nullopt,
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-11-01"),
+                               .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 12'300, // EUR 1.23, the broker holds the cash
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker},
+                {.mMetadata = {.mTaxDate = day("2023-11-15"),
+                               .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
+                 .mGrossAmount = -4'000, // EUR -0.40, debit interest, not netted with the 1.23
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker},
+            },
+    }};
+
+    orderChronologically(statement);
+    InterestRun run{statement, catalogue, rates, 2023};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mDate, day("2023-11-01"));
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mGrossInterest, 12'300);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::InterestPaymentNotPositive),
+              1U);
+}
+
 TEST(InterestPaymentsTest, ACouponThatRoundsToZeroCentsIsNotARow) {
     const auto catalogue =
         catalogueOf("XX0000000010,Issuer A,TAX-A,1 Main Street,FR,,,issuer,manual,\n");

@@ -33,6 +33,12 @@ class TradeRepublicParser final : public CsvParser {
     struct RowContext;
     struct ParsedIncome;
 
+    /// Which sign an income amount may have.
+    enum class AmountSign {
+        PositiveOnly, ///< A negative amount is an invalid value.
+        AnySign,      ///< A negative amount is read as it is (debit interest on cash).
+    };
+
     static constexpr char delimiter = ',';
 
     static RowMeta detectRowType(const csv::CSVRow& aCsvRow);
@@ -68,10 +74,12 @@ class TradeRepublicParser final : public CsvParser {
                                const RowContext& aContext);
 
     /// Shared income validation; blank withholding and absent broker FX remain unknown. Reports
-    /// every invalid field, and the instrument too when aCheckInstrument is set.
+    /// every invalid field, and the instrument too when aCheckInstrument is set. A negative
+    /// amount is an invalid value unless aAmountSign is AnySign.
     std::optional<ParsedIncome> parseIncome(const csv::CSVRow& aCsvRow,
                                             std::string_view aRowKind,
                                             bool aCheckInstrument,
+                                            AmountSign aAmountSign,
                                             const RowContext& aContext);
 
     // Parsing helpers
@@ -92,7 +100,7 @@ class TradeRepublicParser final : public CsvParser {
                                   const RowContext& aRowContext);
     static std::optional<Units> normalizeTradeUnits(TradeSide aTradeSide, Units aSignedUnits);
     static std::optional<Money> normalizeTradeAmount(TradeSide aTradeSide, Money aSignedAmount);
-    GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow);
+    GetAmount getAmountAndCurrency(const csv::CSVRow& aCsvRow, AmountSign aAmountSign);
     /// The broker rate of a trade or income row, EUR per 1 foreign unit: the supplied `fx_rate`, or
     /// the identity rate for a plain EUR row, or none. Only a foreign `original_currency` row
     /// settled in EUR, and the identity rate, get aVerifiedAs; any other supplied rate is
