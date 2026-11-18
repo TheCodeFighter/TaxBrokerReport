@@ -46,6 +46,10 @@ void setLogLevel(spdlog::level::level_enum aLevel);
 /// (`stateFolder`). Empty when there is no `TBR_LOG_FILE` and no absolute `HOME`.
 [[nodiscard]] std::optional<std::filesystem::path> logFilePath(const EnvLookup& aEnv);
 
+/// The file that the default logger writes to now (its rotating file sink). Empty when the
+/// default logger has no file sink, for example when the log file could not be opened.
+[[nodiscard]] std::optional<std::filesystem::path> currentLogFilePath();
+
 [[nodiscard]] spdlog::sink_ptr openLogFile(const EnvLookup& aEnv, bool aTruncate);
 
 /// A file sink that starts a new file at `aMaxBytes` and keeps `aMaxFiles` older ones

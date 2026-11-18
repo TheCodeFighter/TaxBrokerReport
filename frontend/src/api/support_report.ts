@@ -9,11 +9,11 @@ export interface SupportReportFile {
 const FALLBACK_FILE_NAME = "taxbroker-support.json";
 
 /** The file name of `attachment; filename="taxbroker-support-2024.json"`, or the fallback name. */
-function fileNameOf(response: Response): string {
+export function fileNameOf(response: Response, fallback: string): string {
   const header = response.headers.get("Content-Disposition") ?? "";
   const match = /filename="([A-Za-z0-9._-]+)"/.exec(header);
 
-  return match?.[1] ?? FALLBACK_FILE_NAME;
+  return match?.[1] ?? fallback;
 }
 
 /** The answer of the server: the file, or the reason there is none. */
@@ -34,7 +34,7 @@ export async function loadSupportReport(apiFetch: ApiClient["apiFetch"]): Promis
     return { problem: "failed" };
   }
 
-  return { file: { blob: await response.blob(), fileName: fileNameOf(response) } };
+  return { file: { blob: await response.blob(), fileName: fileNameOf(response, FALLBACK_FILE_NAME) } };
 }
 
 /** Saves the file through a temporary link: the browser shows its own save dialog or folder. */

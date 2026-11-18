@@ -213,6 +213,11 @@ HttpResponse Routes::handle(const HttpRequest& aRequest) {
         return handleLogLevelRoute(aRequest, path);
     }
 
+    if (path == "/api/log")
+    {
+        return handleLogFileRoute(aRequest, currentLogFilePath());
+    }
+
     if (path == "/api/messages")
     {
         if (aRequest.mMethod != "GET")

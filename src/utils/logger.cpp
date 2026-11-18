@@ -295,6 +295,17 @@ std::optional<std::filesystem::path> logFilePath(const EnvLookup& aEnv) {
     }
 }
 
+std::optional<std::filesystem::path> currentLogFilePath() {
+    const std::optional<std::string> file = GetLogFilePath(spdlog::default_logger());
+
+    if (!file.has_value())
+    {
+        return std::nullopt;
+    }
+
+    return std::filesystem::path{*file};
+}
+
 spdlog::sink_ptr
 makeLogFileSink(const std::filesystem::path& aFile, std::size_t aMaxBytes, std::size_t aMaxFiles) {
     return std::make_shared<spdlog::sinks::rotating_file_sink_mt>(aFile.string(),

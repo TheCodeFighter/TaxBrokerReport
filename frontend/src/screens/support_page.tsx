@@ -68,6 +68,7 @@ export function SupportPage({ language, apiFetch }: Props) {
       <SupportReportButton language={language} apiFetch={apiFetch} />
       <AdvancedSection
         language={language}
+        apiFetch={apiFetch}
         level={logLevel}
         failed={logLevelFailed}
         onChange={(level) => void chooseLogLevel(level)}
