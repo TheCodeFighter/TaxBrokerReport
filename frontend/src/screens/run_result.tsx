@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "preact/hooks";
 
+import type { ApiClient } from "../api/client";
 import type { MessageCatalogue } from "../i18n/messages";
 import type { Language } from "../i18n/ui_texts";
 import { uiText, uiTextWith } from "../i18n/ui_texts";
@@ -17,18 +18,20 @@ import {
 } from "../run/result_view";
 import type { Diagnostic, ReportInvestment } from "../run/submit";
 import { DiagnosticList } from "./diagnostic_list";
+import { ReportDownloadButton } from "./report_download_button";
 
 interface Props {
   language: Language;
   shown: ShownResult;
   catalogue: MessageCatalogue | undefined;
+  apiFetch: ApiClient["apiFetch"];
 }
 
 /**
  * The result of the last run: its status, one card per form with everything that affects it,
  * the messages of several reports, the classification exclusions and the file list.
  */
-export function RunResultView({ language, shown, catalogue }: Props) {
+export function RunResultView({ language, shown, catalogue, apiFetch }: Props) {
   const { result } = shown;
   const counts = countDiagnostics(result);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -62,6 +65,9 @@ export function RunResultView({ language, shown, catalogue }: Props) {
             byId={byId}
             fileLabels={shown.fileLabels}
             catalogue={catalogue}
+            apiFetch={apiFetch}
+            revision={result.runRevision}
+            outOfDate={shown.outOfDate}
           />
         ))}
         {shared.length === 0 ? null : (
@@ -107,10 +113,16 @@ interface CardProps {
   byId: Map<string, Diagnostic>;
   fileLabels: string[];
   catalogue: MessageCatalogue | undefined;
+  apiFetch: ApiClient["apiFetch"];
+  revision: number;
+  outOfDate: boolean;
 }
 
-/** One form: its status, the no-data reason, questions, the choice, exclusions and its own messages. */
-function ReportCardView({ language, card, diagnostics, byId, fileLabels, catalogue }: CardProps) {
+/**
+ * One form: its status, the no-data reason, questions, the choice, exclusions, the save button of
+ * its XML file and its own messages.
+ */
+function ReportCardView({ language, card, diagnostics, byId, fileLabels, catalogue, apiFetch, revision, outOfDate }: CardProps) {
   const headingId = `report-${card.key}`;
   const groups = groupDiagnostics(diagnostics);
 
@@ -164,6 +176,17 @@ function ReportCardView({ language, card, diagnostics, byId, fileLabels, catalog
       {card.evidenceRows === 0 ? null : (
         <p>{uiTextWith(language, "evidenceRows", { count: card.evidenceRows })}</p>
       )}
+      {card.downloadAvailable ? (
+        <ReportDownloadButton
+          key={revision}
+          language={language}
+          apiFetch={apiFetch}
+          reportKey={card.key}
+          form={card.form}
+          revision={revision}
+          disabled={outOfDate}
+        />
+      ) : null}
       {groups.length === 0 ? null : (
         <DiagnosticList
           language={language}

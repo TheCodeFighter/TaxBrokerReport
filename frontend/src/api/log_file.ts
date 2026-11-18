@@ -1,10 +1,10 @@
 import type { ApiClient } from "./client";
-import { fileNameOf, type SupportReportFile } from "./support_report";
+import { fileNameOf, type SavedFile } from "./saved_file";
 
 const FALLBACK_FILE_NAME = "taxbroker-log.txt";
 
 /** The answer of the server: the log as a file, or the reason there is none. */
-export type LogFileAnswer = { file: SupportReportFile } | { problem: "no_log" | "failed" };
+export type LogFileAnswer = { file: SavedFile } | { problem: "no_log" | "failed" };
 
 /**
  * Asks the server for the log of this computer. A 404 means there is no log yet; any other

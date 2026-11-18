@@ -1602,6 +1602,13 @@ guard and the session cookie. The JSON readers and writers are in `taxbroker_api
 - `<report>` is the key of the result JSON: `capitalGains`, `dividends`, `bankInterest`,
   `otherInterest`. The file names are those of the command line (`reportXmlFileName`), with
   `_UNSAFE` for a developer export.
+- The frontend shows one save button in each form card whose report has `downloadAvailable`. It
+  asks for the revision of the shown result and saves the file under the server's name, or
+  `<form>.xml` when the header is missing. While the shown result is out of date the button is
+  disabled, because the file would belong to inputs the user no longer has. A 409 tells the user
+  to create the reports again, and any other refusal shows the general error text. A card for
+  `no_data`, `needs_input` or `failed` has no button. A note under the button says the file is not
+  filed yet.
 - Another method on a run path is 405 with `Allow`. A request that throws is the 500 of the HTTP
   layer (empty body) and leaves the run as it was.
 - The `request` part: `reportingYear`, `filingType` (`original` or `self_report`), optional

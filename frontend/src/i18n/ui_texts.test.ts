@@ -32,6 +32,16 @@ describe("uiTexts", () => {
     );
   });
 
+  it("has the report save texts", () => {
+    expect(uiTextWith("sl", "reportSave", { form: "Doh-Div" })).toBe("Shrani datoteko Doh-Div");
+    expect(uiTextWith("en", "reportSave", { form: "Doh-Div" })).toBe("Save the Doh-Div file");
+    expect(uiText("en", "reportSaveHint")).toBe(
+      "This file is not filed yet: import it in eDavki, check the values and file the return there.",
+    );
+    expect(uiText("sl", "reportSaveStale")).toBe("Rezultat se je medtem spremenil. Ponovno ustvarite poročila.");
+    expect(uiText("en", "reportSaveStale")).toBe("The result changed in the meantime. Create the reports again.");
+  });
+
   it("has the navigation texts", () => {
     expect(uiText("sl", "navManual")).toBe("Navodila");
     expect(uiText("en", "navAbout")).toBe("About");

@@ -1,23 +1,10 @@
 import type { ApiClient } from "./client";
-
-/** The support report as a file the user can save. */
-export interface SupportReportFile {
-  blob: Blob;
-  fileName: string;
-}
+import { fileNameOf, type SavedFile } from "./saved_file";
 
 const FALLBACK_FILE_NAME = "taxbroker-support.json";
 
-/** The file name of `attachment; filename="taxbroker-support-2024.json"`, or the fallback name. */
-export function fileNameOf(response: Response, fallback: string): string {
-  const header = response.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([A-Za-z0-9._-]+)"/.exec(header);
-
-  return match?.[1] ?? fallback;
-}
-
 /** The answer of the server: the file, or the reason there is none. */
-export type SupportReportAnswer = { file: SupportReportFile } | { problem: "no_run" | "failed" };
+export type SupportReportAnswer = { file: SavedFile } | { problem: "no_run" | "failed" };
 
 /**
  * Asks the server for the support report of the run. A 404 means no run exists yet; any other
@@ -35,18 +22,4 @@ export async function loadSupportReport(apiFetch: ApiClient["apiFetch"]): Promis
   }
 
   return { file: { blob: await response.blob(), fileName: fileNameOf(response, FALLBACK_FILE_NAME) } };
-}
-
-/** Saves the file through a temporary link: the browser shows its own save dialog or folder. */
-export function saveFile(file: SupportReportFile): void {
-  const url = URL.createObjectURL(file.blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = file.fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  // Later, so a browser that starts the download after the click still finds the file.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

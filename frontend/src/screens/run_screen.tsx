@@ -171,7 +171,7 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
         onSubmit={() => void send()}
       />
       <div role="alert">{error === undefined ? null : <p class="error">{error.text}</p>}</div>
-      {shown === undefined ? null : <RunResultView language={language} shown={shown} catalogue={catalogue} />}
+      {shown === undefined ? null : <RunResultView language={language} shown={shown} catalogue={catalogue} apiFetch={apiFetch} />}
     </>
   );
 }

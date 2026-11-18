@@ -283,6 +283,42 @@ describe("reportCards", () => {
 
     expect(reportCards(income)[0]?.evidenceRows).toBe(2);
   });
+
+  it("offers a download only for generated forms that the server marks as available", () => {
+    const mixed: RunResult = {
+      status: "needs_input",
+      runRevision: 1,
+      reports: {
+        capitalGains: { status: "needs_input", diagnosticIds: [], requestIds: ["request-0001"], unsafe: false },
+        dividends: { status: "generated", diagnosticIds: [], requestIds: [], unsafe: false, downloadAvailable: true },
+        bankInterest: { status: "failed", diagnosticIds: [], requestIds: [], unsafe: false },
+        otherInterest: { status: "no_data", diagnosticIds: [], requestIds: [], unsafe: false },
+      },
+      diagnostics: [],
+      excludedItems: [],
+    };
+
+    const flags = reportCards(mixed).map((card) => `${card.key}:${card.downloadAvailable}`);
+
+    expect(flags).toEqual([
+      "capitalGains:false",
+      "dividends:true",
+      "bankInterest:false",
+      "otherInterest:false",
+    ]);
+  });
+
+  it("never guesses a download for a generated form without the flag", () => {
+    const unflagged: RunResult = {
+      status: "success",
+      runRevision: 1,
+      reports: { capitalGains: { status: "generated", diagnosticIds: [], requestIds: [], unsafe: false } },
+      diagnostics: [],
+      excludedItems: [],
+    };
+
+    expect(reportCards(unflagged)[0]?.downloadAvailable).toBe(false);
+  });
 });
 
 describe("brokerTitle", () => {
