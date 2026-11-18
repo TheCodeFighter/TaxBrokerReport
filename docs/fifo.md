@@ -726,22 +726,27 @@ without history as its source), and the question keeps its two choices:
   (`developer_export_unavailable.unit_value_too_large`), for example a purchase still held at the
   sale after a large reverse split.
 
-Before generating the unsafe file, the app must require three separate confirmations:
+Before generating the unsafe file, the app must require an explicit confirmation of the user. It
+shows, in one loud (red) screen or prompt:
 
-1. Warn that purchase history is missing and the Doh-KDVP data will be incomplete.
-2. Show every affected investment name and ISIN, and warn that the XML may be rejected or may
+1. The warning that purchase history is missing and the Doh-KDVP data will be incomplete.
+2. Every affected investment name and ISIN, and the warning that the XML may be rejected or may
    produce an incorrect tax result.
-3. Ask the user to confirm explicitly that they still want to generate the incorrect Doh-KDVP XML.
+3. The choice to confirm explicitly that the user still wants the incorrect Doh-KDVP XML, or to
+   cancel.
 
-Each confirmation requires a separate user action. One checkbox, one dialog with repeated text, or
-a saved preference is not enough. Cancelling at any step returns to the normal choice of excluding
-the affected ISINs or adding more statements. The three confirmations apply only to the current
-run and must be repeated next time: a new run never keeps the confirmations or the choice of the
-developer export, so its failure question is shown first again. A client that cannot show three screens, such as the
-command line, may show one combined confirmation (the warning, every name and ISIN, the risk) and
-send the three confirmations of the service one after the other; the frontend shows three.
+The confirmation is a separate user action: choosing `developer_export` in the failure question
+is not the confirmation, and one checkbox or a saved preference is not enough. Cancelling returns
+to the normal choice of excluding the affected ISINs or adding more statements. The confirmation
+applies only to the current run and must be repeated next time: a new run never keeps the
+confirmation or the choice of the developer export, so its failure question is shown first again.
+Every client (the command line and the browser) shows this one confirmation. The service keeps
+its three steps (`developer_export_confirmation_required`, `step` 1, 2 and 3, each after the one
+before it); a client sends the three confirmations one after the other, and only after the user
+confirmed, bound to the same list of ISINs. It stops when a later step lists other ISINs or is
+refused.
 
-After the third confirmation, rebuild a separate source-event export for every overridden ISIN.
+After the last confirmation step, rebuild a separate source-event export for every overridden ISIN.
 Include all known acquisitions needed to describe the position and all selected-year source sales,
 including the unmatched sale in full. Up to the first unmatched sale ("the gap") the rows are those
 of a normal list: the sales of the year with their matches, and each purchase row lists the units
@@ -834,7 +839,7 @@ Tests based on this document must prove that:
 - the final result records whether the user chose exclusion or failure of Doh-KDVP;
 - an error without a complete, safely isolatable ISIN cannot use the exclusion flow;
 - developer mode is disabled by default;
-- developer mode requires three separate confirmations for each run;
+- developer mode requires one explicit confirmation for each run, sent to the service as its three steps;
 - cancelling any developer confirmation does not generate unsafe output;
 - developer mode includes the whole known source sale and permits signed stock only under its XSD;
 - developer mode never restarts guessed FIFO matching after a history gap;

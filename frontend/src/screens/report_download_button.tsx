@@ -18,10 +18,12 @@ interface Props {
   revision: number;
   /** True while the shown result is out of date. */
   disabled: boolean;
+  /** True for the developer export: a red button that says UNSAFE. */
+  unsafe?: boolean;
 }
 
 /** Saves the XML file of one generated form, with the note that it is not filed yet. */
-export function ReportDownloadButton({ language, apiFetch, reportKey, form, revision, disabled }: Props) {
+export function ReportDownloadButton({ language, apiFetch, reportKey, form, revision, disabled, unsafe = false }: Props) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<UiTextKey | undefined>(undefined);
 
@@ -49,8 +51,14 @@ export function ReportDownloadButton({ language, apiFetch, reportKey, form, revi
 
   return (
     <div class="report-download">
-      <button type="button" class="button" disabled={busy || disabled} onClick={() => void save()}>
-        {uiTextWith(language, "reportSave", { form })}
+      {unsafe ? <p class="danger-notice" role="alert">{uiText(language, "unsafeNotice")}</p> : null}
+      <button
+        type="button"
+        class={unsafe ? "button button-danger" : "button"}
+        disabled={busy || disabled}
+        onClick={() => void save()}
+      >
+        {uiTextWith(language, unsafe ? "reportSaveUnsafe" : "reportSave", { form })}
       </button>
       <p class="hint">{uiText(language, "reportSaveHint")}</p>
       <div role="alert">{problem === undefined ? null : <p class="error">{uiText(language, problem)}</p>}</div>

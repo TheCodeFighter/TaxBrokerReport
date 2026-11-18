@@ -260,6 +260,13 @@ body {
   border-color: var(--color-border);
 }
 
+/* The unsafe developer export: the same red as an error, never the normal green. */
+.button-danger {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: var(--color-on-error);
+}
+
 /* The file button is a label around the hidden input: show the focus ring on the label. */
 .button:focus-within {
   outline: 3px solid var(--color-focus);
@@ -500,6 +507,50 @@ body {
   margin: 0;
   padding: 0;
   border: 0;
+}
+
+.danger-panel {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 3px solid var(--color-error);
+  border-radius: var(--radius);
+}
+
+.screen .danger-panel h5,
+.screen .danger-notice {
+  color: var(--color-error);
+}
+
+.screen .danger-notice {
+  margin: 0;
+  font-weight: 700;
+}
+
+.radio-danger {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+.developer-switch {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.developer-panel {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  text-align: center;
+}
+
+.developer-switch .button-on {
+  color: var(--color-error);
+  border-color: var(--color-error);
 }
 
 .question-actions {

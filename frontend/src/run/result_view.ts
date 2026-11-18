@@ -1,5 +1,5 @@
 import type { Language, UiTextKey } from "../i18n/ui_texts";
-import { reportForms } from "./diagnostics_view";
+import { isBlockingError, reportForms } from "./diagnostics_view";
 import { brokerKinds } from "./input_kinds";
 import { hasQuestionWithoutScreen } from "./questions";
 import type { ReportInvestment, ReportResult, RunResult } from "./submit";
@@ -60,12 +60,15 @@ export function needsAnswerHint(result: RunResult): boolean {
   return hasQuestionWithoutScreen(result);
 }
 
-/** The number of errors and warnings in the diagnostics of the result. */
+/**
+ * The number of errors and warnings in the diagnostics of the result. An error that no longer
+ * blocks (the user answered its question) counts, and is shown, as a warning.
+ */
 export function countDiagnostics(result: RunResult): { errors: number; warnings: number } {
-  return {
-    errors: result.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
-    warnings: result.diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length,
-  };
+  const shown = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error" || diagnostic.severity === "warning");
+  const errors = shown.filter(isBlockingError).length;
+
+  return { errors, warnings: shown.length - errors };
 }
 
 /** The tone of a status: a class and a text label beside it, never colour alone. */

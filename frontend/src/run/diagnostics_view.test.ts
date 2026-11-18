@@ -229,7 +229,7 @@ describe("placeDiagnostics", () => {
 });
 
 describe("labels and texts", () => {
-  it("has a severity text for a warning, a blocking error and a kept error", () => {
+  it("has a severity text for a warning and a blocking error, and shows an error that no longer blocks as a warning", () => {
     const warning: Diagnostic = {
       id: "diagnostic-0001",
       severity: "warning",
@@ -260,7 +260,7 @@ describe("labels and texts", () => {
 
     expect(severityText(warning)).toBe("severityWarning");
     expect(severityText(blocking)).toBe("severityError");
-    expect(severityText(kept)).toBe("severityErrorKept");
+    expect(severityText(kept)).toBe("severityWarning");
   });
 
   it("has a text for each of the six stages and none for an unknown stage", () => {

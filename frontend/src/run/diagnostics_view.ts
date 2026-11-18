@@ -164,13 +164,14 @@ export function groupDiagnostics(diagnostics: Diagnostic[]): DiagnosticGroup[] {
   return [...groups.values()];
 }
 
-/** "Warning", "Error", or "Error, kept" for an error that no longer blocks. */
-export function severityText(diagnostic: Diagnostic): UiTextKey {
-  if (diagnostic.severity === "warning") {
-    return "severityWarning";
-  }
+/** True for an error that still blocks; an error that no longer blocks (resolved by an answer) is shown as a warning. */
+export function isBlockingError(diagnostic: Diagnostic): boolean {
+  return diagnostic.severity === "error" && diagnostic.blocking;
+}
 
-  return diagnostic.blocking ? "severityError" : "severityErrorKept";
+/** "Error" for a blocking error, else "Warning": a warning, or an error that no longer blocks. */
+export function severityText(diagnostic: Diagnostic): UiTextKey {
+  return isBlockingError(diagnostic) ? "severityError" : "severityWarning";
 }
 
 const stageTexts = new Map<string, UiTextKey>([

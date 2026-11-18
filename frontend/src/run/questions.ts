@@ -160,6 +160,8 @@ export interface DecisionRequest {
   sources: DiagnosticSource[];
   taxDate?: string;
   isin?: string;
+  /** The step (1 to 3) of a developer export confirmation. */
+  step?: number;
   /** The choices the question offers (classification, income, bond); the page never adds one. */
   options?: string[];
   lossCheck?: LossCheck;
@@ -228,7 +230,8 @@ export type QuestionKind =
   | "bond"
   | "treaty"
   | "deposit"
-  | "failure";
+  | "failure"
+  | "developer";
 
 const questionKinds = new Map<string, QuestionKind>([
   ["loss_eligibility_confirmation_required", "loss"],
@@ -238,6 +241,7 @@ const questionKinds = new Map<string, QuestionKind>([
   ["capital_gains_failure_resolution_required", "failure"],
   ["dividends_failure_resolution_required", "failure"],
   ["other_interest_failure_resolution_required", "failure"],
+  ["developer_export_confirmation_required", "developer"],
 ]);
 
 /** What tells the kind of a question: its request type and, for the shared types, its data. */

@@ -10,10 +10,16 @@ describe("failureChoices", () => {
     ]);
   });
 
-  it("never shows the developer export choice (4.22)", () => {
+  it("adds the developer export choice last when the request offers it", () => {
     expect(failureChoices(["exclude_failed_instruments", "fail_report", "developer_export"])).toEqual([
       "exclude_failed_instruments",
       "fail_report",
+      "developer_export",
+    ]);
+    expect(failureChoices(["fail_report", "developer_export", "exclude_failed_instruments"])).toEqual([
+      "exclude_failed_instruments",
+      "fail_report",
+      "developer_export",
     ]);
   });
 

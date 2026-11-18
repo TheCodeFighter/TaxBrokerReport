@@ -111,8 +111,12 @@ describe("question kinds", () => {
     expect(questionKind({ type: "other_interest_failure_resolution_required" })).toBe("failure");
   });
 
-  it("has no screen for the developer export confirmations", () => {
-    expect(questionKind({ type: "developer_export_confirmation_required" })).toBeUndefined();
+  it("has the confirmation screen for the developer export steps", () => {
+    expect(questionKind({ type: "developer_export_confirmation_required" })).toBe("developer");
+  });
+
+  it("has no screen for an unknown request type", () => {
+    expect(questionKind({ type: "unknown_future_question_required" })).toBeUndefined();
   });
 
   it("names the page anchor of a question", () => {
@@ -123,7 +127,7 @@ describe("question kinds", () => {
 describe("firstQuestionId", () => {
   it("is the first open question that has a screen", () => {
     const result = resultWith([
-      request("request-0001", "developer_export_confirmation_required"),
+      request("request-0001", "unknown_future_question_required"),
       request("request-0002", "loss_eligibility_confirmation_required"),
       request("request-0003", "quantity_correction_required"),
     ]);
@@ -133,7 +137,7 @@ describe("firstQuestionId", () => {
   });
 
   it("is undefined when no open question has a screen, so there is no link", () => {
-    const result = resultWith([request("request-0001", "developer_export_confirmation_required")]);
+    const result = resultWith([request("request-0001", "unknown_future_question_required")]);
 
     expect(firstQuestionId(result)).toBeUndefined();
     expect(firstQuestionId(resultWith([]))).toBeUndefined();
@@ -168,18 +172,18 @@ describe("placeQuestions with two failure questions", () => {
 });
 
 describe("hasQuestionWithoutScreen", () => {
-  it("is false for a loss, a classification and a failure question and true beside a developer export question", () => {
+  it("is false for a loss, a classification and a failure question and true beside an unknown question", () => {
     const loss = request("request-0001", "loss_eligibility_confirmation_required");
     const classification: DecisionRequest = {
       ...request("request-0002", "tax_classification_required"),
       classificationCheck: { name: "Example Share", isin: "US0000000001", classLabels: [] },
     };
     const failure = request("request-0003", "dividends_failure_resolution_required");
-    const developer = request("request-0004", "developer_export_confirmation_required");
+    const unknown = request("request-0004", "unknown_future_question_required");
 
     expect(hasQuestionWithoutScreen(resultWith([loss]))).toBe(false);
     expect(hasQuestionWithoutScreen(resultWith([loss, classification, failure]))).toBe(false);
-    expect(hasQuestionWithoutScreen(resultWith([classification, developer]))).toBe(true);
+    expect(hasQuestionWithoutScreen(resultWith([classification, unknown]))).toBe(true);
   });
 });
 

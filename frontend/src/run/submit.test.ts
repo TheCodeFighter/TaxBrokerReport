@@ -163,6 +163,23 @@ describe("submitRun", () => {
     expect(outcome).toEqual({ kind: "result", result: { reports: {}, diagnostics: [], excludedItems: [] } });
   });
 
+  it("never saves the developer mode with the details", async () => {
+    const fetchFunction = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json(200, { reports: {}, diagnostics: [], excludedItems: [] }));
+    const developer = inputs();
+
+    developer.developerMode = true;
+    await submitRun(clientFor(fetchFunction).apiFetch, developer, true);
+
+    const [, profileInit] = fetchFunction.mock.calls[0] as [string, RequestInit];
+    const [, runInit] = fetchFunction.mock.calls[1] as [string, RequestInit];
+
+    expect(profileInit.body).toBe('{"taxNumber":"12345679","isResident":true}');
+    expect(JSON.parse((runInit.body as FormData).get("request") as string).developerMode).toBe(true);
+  });
+
   it("saves the details first and then sends the run", async () => {
     const fetchFunction = vi
       .fn()

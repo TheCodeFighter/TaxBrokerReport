@@ -5,6 +5,7 @@ import { uiText, uiTextWith, type Language } from "../i18n/ui_texts";
 import {
   affectedForms,
   diagnosticText,
+  isBlockingError,
   severityText,
   sourceLabel,
   stageText,
@@ -43,7 +44,7 @@ export function DiagnosticList({ language, groups, fileLabels, catalogue, showFo
         const instrumentText = [instrument?.name, instrument?.isin === undefined ? undefined : `(${instrument.isin})`]
           .filter((part) => part !== undefined)
           .join(" ");
-        const tone = diagnostic.severity === "error" && diagnostic.blocking ? "fail" : "warn";
+        const tone = isBlockingError(diagnostic) ? "fail" : "warn";
         const { requestId } = diagnostic;
 
         return (

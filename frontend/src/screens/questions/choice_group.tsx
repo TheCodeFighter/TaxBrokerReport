@@ -11,10 +11,12 @@ interface Props {
   /** `undefined` until the user picks: nothing is preselected. */
   value: string | undefined;
   onChange: (word: string) => void;
+  /** Words shown in red, for a choice with a risk (the unsafe developer export). */
+  dangerWords?: string[];
 }
 
 /** One group of radio buttons for the choice words of a question. */
-export function ChoiceGroup({ language, name, legend, options, value, onChange }: Props) {
+export function ChoiceGroup({ language, name, legend, options, value, onChange, dangerWords = [] }: Props) {
   return (
     <fieldset class="field">
       <legend>{legend}</legend>
@@ -22,7 +24,7 @@ export function ChoiceGroup({ language, name, legend, options, value, onChange }
         const key = choiceText(word);
 
         return (
-          <label key={word} class="radio">
+          <label key={word} class={dangerWords.includes(word) ? "radio radio-danger" : "radio"}>
             <input type="radio" name={name} value={word} checked={value === word} onChange={() => onChange(word)} />
             {key === undefined ? word : uiText(language, key)}
           </label>

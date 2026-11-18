@@ -202,7 +202,7 @@ investments of an unsafe export are listed in `unsafeInvestments` of the capital
 absent for every other result.
 
 `failureResolution` is `exclude_failed_instruments`, `fail_report` or, for Doh-KDVP in developer
-mode after the three confirmations, `developer_export`. It is present only
+mode after the confirmation (its three steps), `developer_export`. It is present only
 after the user answers that report's `capital_gains_failure_resolution_required`,
 `dividends_failure_resolution_required` or `other_interest_failure_resolution_required`; otherwise
 it is omitted. Each report owns its own
@@ -589,8 +589,8 @@ results remain available.
 
 ### Developer-mode result
 
-Developer mode can bypass only incomplete history and only after the three confirmations defined
-in [`fifo.md`](fifo.md). It is a switch of the whole run, off by default; with it on, the capital
+Developer mode can bypass only incomplete history and only after the confirmation defined
+in [`fifo.md`](fifo.md) (one confirmation of the user, three steps of the service). It is a switch of the whole run, off by default; with it on, the capital
 failure question offers `developer_export` as a third choice (see its request type). Capital
 gains becomes `generated`, `unsafe` is `true`, `failureResolution` is `developer_export`, and the
 blocking flag on the retained `incomplete_history` diagnostic becomes `false`. The output and download
@@ -822,7 +822,7 @@ request type, and a failure-resolution question without an investment.
 | `deposit_interest_total_required` | The year and the exact imported qualifying interest in EUR (above 0, at most 1,000); answer yes (`above_limit`) or no (`not_above_limit`). It has no cancel. Without an answer the form is made as for yes, and the open request never blocks it. |
 | `income_details_required` | Income items and a missing gross amount, requested treaty-claim facts, the bond type of a bond with a sale or maturity in the year (`ordinary` or `discount_or_zero_coupon`, or a cancel), and the choice among several reference rows of one payer (the options are the rows with their facts and a skip for each payer; a skip or no answer never blocks and gives empty payer facts, so it creates no unanswered blocking request); a payer that is not found, a blank tax and other banks' deposit interest do not use this request; answer with validated details or explicit withdrawal of an optional exemption claim. |
 | `capital_gains_failure_resolution_required` | Exact complete unsafe-ISIN list, diagnostic IDs and the two existing exclusion/failure choices; answer with one choice for the whole list. In developer mode, and only when every listed error is `incomplete_history` of an investment whose FIFO pool stopped at a sale with too few units and no other question of Doh-KDVP names it, `options` has a third choice `developer_export`; the answer is rejected when it is not offered. A pool that stopped for missing history but has a corporate action after the sale without history, or a unit value that does not fit `F4`, is not exported: in developer mode it has the warning `developer_export_unavailable` (message keys `developer_export_unavailable.corporate_action_after_gap` and `developer_export_unavailable.unit_value_too_large`, no parameters). |
-| `developer_export_confirmation_required` | One request per confirmation step (`step` 1, 2 or 3) with the exact list of affected investments (name, ISIN, reason codes, diagnostic IDs), asked only after the choice `developer_export` and each step only after the one before it is confirmed; answer `confirm` or cancel. A cancel at any step asks the capital failure question again. The confirmations are bound to the exact list, belong to one run (a new run, and every new choice of the failure question, asks from step 1) and are never recorded for another run; a new run does not keep the choice `developer_export` either, so it shows the failure question first. A client that cannot show three screens (the command line) may show one combined confirmation and send the three answers; the frontend shows three. |
+| `developer_export_confirmation_required` | One request per confirmation step (`step` 1, 2 or 3) with the exact list of affected investments (name, ISIN, reason codes, diagnostic IDs), asked only after the choice `developer_export` and each step only after the one before it is confirmed; answer `confirm` or cancel. A cancel at any step asks the capital failure question again. The confirmations are bound to the exact list, belong to one run (a new run, and every new choice of the failure question, asks from step 1) and are never recorded for another run; a new run does not keep the choice `developer_export` either, so it shows the failure question first. Every client (the command line and the browser) shows one combined confirmation (the warning, every name and ISIN, the risk) and, after the user confirmed, sends the three answers one after the other; it stops when a later step lists other ISINs. |
 | `dividends_failure_resolution_required` | Exact complete failed Doh-Div ISIN list, safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 | `other_interest_failure_resolution_required` | Exact complete failed Doh-Obr ISIN list and, beside it, the failed brokers whose cash interest failed (`brokers`, only when there are any), safe sources, reason codes and diagnostic IDs; answer with `exclude_failed_instruments` or `fail_report` for that form and the whole list. |
 

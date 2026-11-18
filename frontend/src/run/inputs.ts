@@ -13,6 +13,8 @@ export interface RunInputs {
   reportingYear: number;
   filingType: FilingType;
   taxpayer: TaxpayerForm;
+  /** Developer mode of this run: it may offer an unsafe Doh-KDVP. Off at every start, never saved. */
+  developerMode: boolean;
 }
 
 export function emptyInputs(today: Date): RunInputs {
@@ -23,6 +25,7 @@ export function emptyInputs(today: Date): RunInputs {
     reportingYear: defaultYear(today),
     filingType: "original",
     taxpayer: { ...emptyTaxpayerForm },
+    developerMode: false,
   };
 }
 

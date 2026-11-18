@@ -1,6 +1,6 @@
-# Manual test files (Trade Republic, 2022 to 2025)
+# Manual test files (Trade Republic, 2022 to 2025, and one developer-mode file for 2021)
 
-Four synthetic Trade Republic exports, one for each year, for trying the application by hand in the
+Four synthetic Trade Republic exports, one for each year (and a fifth, standalone one for developer mode, see below), for trying the application by hand in the
 browser and for checking the XML in eDavki. Every name, amount and date is made up. No test reads
 these files: they are for people. Each file has the rows of its own year, so together they are
 one history, the way consecutive exports from the broker are.
@@ -130,6 +130,32 @@ an unknown type (the choice `other_interest` and its kinds) and fees with a miss
 | 2025 | `XX0000000104` | purchases 2022-01-20 10 @ 10 and 2022-04-20 4 @ 9; sale 2025-06-10 14 @ 12 |
 | 2025 | `XX0000000123` | purchases 0.5, 0.5 and 0.2 units; sale 2025-09-02 1.2 @ 45 |
 
+## Developer mode (own file, year 2021)
+
+`trade_republic_2021_developer_mode.csv` is not part of the 2022 to 2025 history. Load it **alone**
+and pick the year **2021**. It has one instrument and two rows: `Synthetic Developer Share`
+(`XX0000000131`), 2 units bought on 2021-02-01 @ 100 and 3 units sold on 2021-06-01 @ 120. The sale
+needs 1 unit more than the purchase left, so the history is incomplete and nothing else is in the
+file.
+
+| Developer mode | What to do | Expected result |
+| --- | --- | --- |
+| Off | Load the file, year 2021, create the reports | Doh-KDVP failure question with the two normal choices (leave out, no XML); the error is `incomplete_history` for the 2021-06-01 sale |
+| On (button at the bottom of the page) | Same, then choose the red third choice and press Confirm on the red screen | Doh-KDVP `generated`, UNSAFE marker, red notice, button "Save the UNSAFE Doh-KDVP file" saves `Doh-KDVP_2021_UNSAFE.xml` |
+| On | Press Cancel on the red screen | The failure question comes back, no file |
+
+Command line (answers: `developer`, then `confirm`):
+
+```sh
+printf 'developer\nconfirm\n' | taxbroker report --developer-export --year 2021 \
+  --taxpayer tests/test_data/cli/taxpayer.json --trade-republic \
+  tests/test_data/manual/trade_republic_2021_developer_mode.csv
+```
+
+(`scripts/report.sh` has no `--developer-export` option; use the browser, or the command above
+inside the dev container.) The XML is for looking at only: eDavki may reject it, by design. The
+smaller 2024 case with a purchase after the gap is `tests/test_data/cli/developer_export.csv`.
+
 ## Not in these files
 
 - Units held more than 15 years (tax free): Trade Republic data cannot be that old. The unit tests
@@ -139,4 +165,3 @@ an unknown type (the choice `other_interest` and its kinds) and fees with a miss
   see `tests/test_data/csv/merger/conflict.csv`.
 - A row type the parser does not know, a CSV with a wrong header or
   a broken record: they block forms, so they are in `tests/test_data/csv/` and the parser tests.
-- The developer export (incomplete history written as an unsafe file): `tests/test_data/cli/developer_export.csv`.
