@@ -571,11 +571,12 @@ DecisionQuestion questionOf(const LossEligibilityIsin& aIsin,
     return question;
 }
 
-/// The warning of an ISIN whose open units were assumed blocked without an answer, with the
-/// sources and date of its question. No units or amounts in the message.
-ProcessingDiagnostic assumedBlockedDiagnostic(const DecisionQuestion& aQuestion,
-                                              const LossEligibilityIsin& aIsin) {
-    auto message = makeDiagnosticMessage(MessageKey::LossEligibilityUnresolvedAssumedBlocked);
+/// The warning of an ISIN whose open units were blocked as the safe side (no answer, or the answer
+/// `other_activity`), with the sources and date of its question. No units or amounts in it.
+ProcessingDiagnostic blockedLossDiagnostic(const DecisionQuestion& aQuestion,
+                                           const LossEligibilityIsin& aIsin,
+                                           MessageKey aKey) {
+    auto message = makeDiagnosticMessage(aKey);
 
     return ProcessingDiagnostic{
         .mSeverity = DiagnosticSeverity::Warning,
@@ -656,7 +657,10 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
             sale.mState = LossSaleState::Decided;
         }
 
-        aResult.mDiagnostics.push_back(assumedBlockedDiagnostic(question, aIsin));
+        aResult.mDiagnostics.push_back(
+            blockedLossDiagnostic(question,
+                                  aIsin,
+                                  MessageKey::LossEligibilityUnresolvedAssumedBlocked));
 
         return;
     }
@@ -730,6 +734,15 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
     };
 
     std::visit(apply, *answer);
+
+    // One warning per ISIN, not per sale: the answer blocked every open unit of all its open sales.
+    if (std::holds_alternative<OtherActivityAnswer>(*answer))
+    {
+        aResult.mDiagnostics.push_back(
+            blockedLossDiagnostic(question,
+                                  aIsin,
+                                  MessageKey::LossEligibilityUnresolvedOtherActivity));
+    }
 }
 
 } // namespace

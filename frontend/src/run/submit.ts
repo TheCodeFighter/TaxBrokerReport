@@ -3,6 +3,7 @@ import { saveProfile } from "../api/profile";
 import type { MessageParams } from "../i18n/messages";
 import { MAX_FILE_BYTES, MAX_FILES } from "./limits";
 import { orderedBrokerFiles, type RunInputs } from "./inputs";
+import type { Correction, Decision, DecisionRequest, Reconciliation } from "./questions";
 import { buildRunRequest } from "./request";
 import { taxpayerObject } from "./taxpayer";
 
@@ -75,6 +76,13 @@ export interface RunResult {
   reports: Record<string, ReportResult>;
   diagnostics: Diagnostic[];
   excludedItems: ExcludedItem[];
+  /** The open questions. */
+  requests: DecisionRequest[];
+  /** The recorded answers, also those of earlier runs. */
+  decisions: Decision[];
+  /** The sale quantities that were corrected, and the cumulative impact per ISIN. */
+  corrections: Correction[];
+  reconciliation: Reconciliation[];
 }
 
 /** A rate or reference file that the server could not read (the 422 `inputFault`). */

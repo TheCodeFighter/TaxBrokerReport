@@ -212,6 +212,10 @@ describe("placeDiagnostics", () => {
         },
       ],
       excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
     };
 
     const placed = placeDiagnostics(result);

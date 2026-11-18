@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import type { ApiClient } from "../api/client";
+import { loadCurrentRun } from "../api/answers";
 import { SessionEndedError } from "../api/client";
 import { deleteProfile, loadProfile } from "../api/profile";
 import type { MessageCatalogue } from "../i18n/messages";
@@ -20,7 +21,7 @@ import {
 } from "../run/profile";
 import { markOutOfDate, type ShownResult } from "../run/result_view";
 import { runErrorText, type ShownError } from "../run/run_errors";
-import { submitRun } from "../run/submit";
+import { submitRun, type RunResult } from "../run/submit";
 import { RememberBox } from "./remember_box";
 import { RunForm } from "./run_form";
 import { RunResultView } from "./run_result";
@@ -45,6 +46,8 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
   const [loadNotices, setLoadNotices] = useState<ProfileNotice[]>([]);
   // A failed save or delete of the last action; cleared by the next one.
   const [profileProblem, setProfileProblem] = useState<UiTextKey | undefined>();
+  // A note about the shown result after an answer: it was refreshed, or the run is gone.
+  const [answerNote, setAnswerNote] = useState<UiTextKey | undefined>();
 
   // The saved details load once after the login; they fill only the inputs still empty.
   useEffect(() => {
@@ -80,12 +83,38 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
     setShown(markOutOfDate);
   };
 
+  // An answer or a delete gave a new result of the same run: the files are the same.
+  const showAnswered = (result: RunResult) => {
+    setAnswerNote(undefined);
+    setShown((current) => (current === undefined ? current : { ...current, result }));
+  };
+
+  // The question or the revision was out of date: take the current result of the server.
+  const reloadRun = async () => {
+    try {
+      const outcome = await loadCurrentRun(apiFetch);
+
+      if (outcome.kind === "result") {
+        showAnswered(outcome.result);
+        setAnswerNote("answerStale");
+      } else {
+        setAnswerNote(outcome.kind === "noRun" ? "answerNoRun" : "runErrorUnexpected");
+      }
+    } catch (caught) {
+      // A lost session is shown by the page itself.
+      if (!(caught instanceof SessionEndedError)) {
+        setAnswerNote("runErrorUnexpected");
+      }
+    }
+  };
+
   const send = async () => {
     const sent = inputs;
     const suffix = (number: number) => uiTextWith(language, "fileSuffix", { n: number });
 
     setSending(true);
     setError(undefined);
+    setAnswerNote(undefined);
 
     try {
       const outcome = await submitRun(apiFetch, sent, remember === "on");
@@ -171,7 +200,18 @@ export function RunScreen({ language, apiFetch, catalogue }: Props) {
         onSubmit={() => void send()}
       />
       <div role="alert">{error === undefined ? null : <p class="error">{error.text}</p>}</div>
-      {shown === undefined ? null : <RunResultView language={language} shown={shown} catalogue={catalogue} apiFetch={apiFetch} />}
+      {shown === undefined ? null : (
+        <RunResultView
+          language={language}
+          shown={shown}
+          catalogue={catalogue}
+          apiFetch={apiFetch}
+          note={answerNote}
+          onResult={showAnswered}
+          onStale={() => void reloadRun()}
+          onNoRun={() => setAnswerNote("answerNoRun")}
+        />
+      )}
     </>
   );
 }

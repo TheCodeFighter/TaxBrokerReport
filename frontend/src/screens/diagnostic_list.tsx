@@ -11,6 +11,7 @@ import {
   type DiagnosticGroup,
 } from "../run/diagnostics_view";
 import type { DiagnosticSource } from "../run/submit";
+import { QuestionLink } from "./questions/question_link";
 
 interface Props {
   language: Language;
@@ -19,10 +20,12 @@ interface Props {
   catalogue: MessageCatalogue | undefined;
   /** True in the shared list: each entry names the forms it affects. */
   showForms: boolean;
+  /** The IDs of the open questions that have a screen: their diagnostics get a link to the question. */
+  questionIds: ReadonlySet<string>;
 }
 
 /** A list of grouped diagnostics: severity, count, stage, field, forms, text and sources. */
-export function DiagnosticList({ language, groups, fileLabels, catalogue, showForms }: Props) {
+export function DiagnosticList({ language, groups, fileLabels, catalogue, showForms, questionIds }: Props) {
   return (
     <ul class="plain-list diagnostic-list">
       {groups.map((group) => {
@@ -41,12 +44,16 @@ export function DiagnosticList({ language, groups, fileLabels, catalogue, showFo
           .filter((part) => part !== undefined)
           .join(" ");
         const tone = diagnostic.severity === "error" && diagnostic.blocking ? "fail" : "warn";
+        const { requestId } = diagnostic;
 
         return (
           <li key={diagnostic.id} class={`diagnostic tone-${tone}`}>
             <p class="diagnostic-meta">{meta.join(" · ")}</p>
             <p>{diagnosticText(diagnostic, catalogue, language)}</p>
             {instrumentText === "" ? null : <p>{instrumentText}</p>}
+            {requestId !== undefined && questionIds.has(requestId) ? (
+              <QuestionLink language={language} requestId={requestId} label="answerThisQuestion" />
+            ) : null}
             <SourceList language={language} sources={group.sources} fileLabels={fileLabels} />
           </li>
         );

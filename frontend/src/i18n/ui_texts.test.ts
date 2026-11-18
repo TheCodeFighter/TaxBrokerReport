@@ -14,6 +14,25 @@ describe("uiTexts", () => {
     }
   });
 
+  it("has the same {places} in the Slovenian and the English text of every key", () => {
+    const places = (text: string) => (text.match(/\{\w+\}/g) ?? []).sort();
+
+    for (const key of Object.keys(uiTexts) as UiTextKey[]) {
+      expect(places(uiTexts[key].sl), `${key} places`).toEqual(places(uiTexts[key].en));
+    }
+  });
+
+  it("has the question texts", () => {
+    expect(uiTextWith("en", "questionsTitle", { count: 2 })).toBe("Questions (2)");
+    expect(uiTextWith("sl", "answerQuestionsButton", { count: 1 })).toBe("Odgovorite na vprašanja (1)");
+    expect(uiText("en", "lossOtherWarning")).toBe(
+      "The whole open loss of this investment will not be deductible (F10 false). This is the safe side: you pay more tax, never less. In eDavki, correct the part of the loss that the 30-day rule does not block.",
+    );
+    expect(uiTextWith("en", "ratioPreview", { new: 2, old: 1, before: "1.00000000", after: "2.00000000" })).toBe(
+      "Ratio 2 : 1. Before the split you hold 1.00000000 units; after it you hold 2.00000000 units.",
+    );
+  });
+
   it("returns the text of the language", () => {
     expect(uiText("sl", "unknownMessage")).toBe("Neznano sporočilo");
     expect(uiText("en", "unknownMessage")).toBe("Unknown message");
@@ -57,8 +76,12 @@ describe("uiTexts", () => {
   });
 
   it("fills the places of the result texts", () => {
-    expect(uiTextWith("en", "questionsWaiting", { count: 2 })).toBe("Questions waiting for an answer: 2");
-    expect(uiTextWith("sl", "questionsWaiting", { count: 2 })).toBe("Vprašanja, ki čakajo na odgovor: 2");
+    expect(uiTextWith("en", "questionsWaiting", { count: 2 })).toBe(
+      "Questions the browser cannot take yet: 2. The command line (taxbroker report) asks them.",
+    );
+    expect(uiTextWith("sl", "questionsWaiting", { count: 2 })).toBe(
+      "Vprašanja, na katera brskalnik še ne more odgovoriti: 2. Zastavi jih ukazna vrstica (taxbroker report).",
+    );
     expect(uiTextWith("en", "evidenceRows", { count: 3 })).toBe(
       "Rows that need the proof of the foreign tax attached in eDavki: 3",
     );

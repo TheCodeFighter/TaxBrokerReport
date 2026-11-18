@@ -66,6 +66,7 @@ enum class MessageKey {
     LossEligibilityUnresolvedConfirmationRequired,
     LossEligibilityUnresolvedCancelled,
     LossEligibilityUnresolvedAssumedBlocked,
+    LossEligibilityUnresolvedOtherActivity,
     LossEligibilityUnresolvedUnitsMismatch,
     CorporateActionNotAppliedLossWindow,
     AnswerRejectedStaleRevision,

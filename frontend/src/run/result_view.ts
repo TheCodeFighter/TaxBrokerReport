@@ -1,6 +1,7 @@
 import type { Language, UiTextKey } from "../i18n/ui_texts";
 import { reportForms } from "./diagnostics_view";
 import { brokerKinds } from "./input_kinds";
+import { hasQuestionWithoutScreen } from "./questions";
 import type { ReportInvestment, ReportResult, RunResult } from "./submit";
 
 /** What a shown result belongs to: the files as they were sent, with their display names. */
@@ -54,9 +55,9 @@ export function reportRows(result: RunResult): ReportRow[] {
   });
 }
 
-/** True while the result waits for an answer that the page cannot take yet (until the question screens). */
+/** True while an open question has no screen yet (classification, income and the like). */
 export function needsAnswerHint(result: RunResult): boolean {
-  return result.status === "needs_input";
+  return hasQuestionWithoutScreen(result);
 }
 
 /** The number of errors and warnings in the diagnostics of the result. */
@@ -68,7 +69,7 @@ export function countDiagnostics(result: RunResult): { errors: number; warnings:
 }
 
 /** The tone of a status: a class and a text label beside it, never colour alone. */
-export type Tone = "ok" | "warn" | "pending" | "fail";
+export type Tone = "ok" | "neutral" | "warn" | "pending" | "fail";
 
 const overallTones = new Map<string, Tone>([
   ["success", "ok"],
@@ -85,7 +86,8 @@ export function overallTone(status: string): Tone {
 
 const reportTones = new Map<string, Tone>([
   ["generated", "ok"],
-  ["no_data", "ok"],
+  // No data is not a result to celebrate or to worry about: it stays in the plain text colour.
+  ["no_data", "neutral"],
   ["needs_input", "pending"],
   ["failed", "fail"],
 ]);

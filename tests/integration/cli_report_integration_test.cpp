@@ -1498,14 +1498,23 @@ TEST(CliReportIntegrationTest, ALossQuestionAnsweredYesWritesTheLossAsBlocked) {
     EXPECT_TRUE(contains(result.mOut,
                          "  XX0000000001 Synthetic Share: listed, 1 sale, 10.0000 units, 10.0000 "
                          "units with a loss blocked by the 30-day rule (F10 false)\n"));
-    EXPECT_TRUE(contains(result.mOut,
-                         "Doh-KDVP errors: 0\n"
-                         "\n"
-                         "Doh-KDVP warnings: 0\n"
-                         "\n"
-                         "Answered in this run: 1\n"
-                         "  XX0000000001 Synthetic Share, 30-day loss rule: yes, bought or sold "
-                         "elsewhere (the open loss is not deductible, F10 false)\n"));
+    // The answer leaves one warning, so the summary still says that the open loss was treated as
+    // not deductible.
+    EXPECT_TRUE(contains(
+        result.mOut,
+        "Doh-KDVP errors: 0\n"
+        "\n"
+        "Doh-KDVP warnings: 1\n"
+        "  diagnostic-0001 loss_eligibility_unresolved, XX0000000001 Synthetic Share, 2025-03-10, "
+        "history.csv row 3\n"
+        "    You answered that you bought or sold this investment at another broker or account "
+        "within 30 days of a sale at a loss. The whole open loss was treated as not deductible "
+        "(F10 false), the safe side. In eDavki, correct the part of the loss that the 30-day rule "
+        "does not block.\n"
+        "\n"
+        "Answered in this run: 1\n"
+        "  XX0000000001 Synthetic Share, 30-day loss rule: yes, bought or sold "
+        "elsewhere (the open loss is not deductible, F10 false)\n"));
 
     const auto xml = folder.readOutput("Doh-KDVP_2025.xml");
 
