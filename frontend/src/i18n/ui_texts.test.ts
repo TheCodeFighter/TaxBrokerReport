@@ -33,6 +33,21 @@ describe("uiTexts", () => {
     );
   });
 
+  it("writes a decimal value with the decimal comma in Slovenian and the point in English", () => {
+    expect(uiTextWith("sl", "summaryTotal", { total: "12.3000" })).toBe("Skupaj v EUR: 12,3000");
+    expect(uiTextWith("en", "summaryTotal", { total: "12.3000" })).toBe("Total in EUR: 12.3000");
+    expect(uiTextWith("sl", "summaryLine", { currency: "USD", total: "1234.50", count: 2 })).toBe(
+      "USD 1234,50 (število: 2)",
+    );
+    expect(uiTextWith("sl", "bondSold", { units: "0.99999999" })).toBe("Prodane enote v letu: 0,99999999");
+    expect(uiTextWith("en", "bondSold", { units: "0.99999999" })).toBe("Units sold in the year: 0.99999999");
+  });
+
+  it("leaves an ISIN, a date and a whole number in a value as they are", () => {
+    expect(uiTextWith("sl", "bondMaturityDate", { date: "2025-03-01" })).toBe("Datum zapadlosti: 2025-03-01");
+    expect(uiTextWith("sl", "questionsTitle", { count: 12 })).toBe("Vprašanja (12)");
+  });
+
   it("returns the text of the language", () => {
     expect(uiText("sl", "unknownMessage")).toBe("Neznano sporočilo");
     expect(uiText("en", "unknownMessage")).toBe("Unknown message");

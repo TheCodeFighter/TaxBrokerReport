@@ -121,6 +121,34 @@ export interface DepositInterest {
   addOtherBanks: boolean;
 }
 
+/** One investment with a sale in the year, as `capitalSummary.investments` lists it. */
+export interface CapitalInvestment {
+  isin: string;
+  name: string;
+  /** `listed`, `blocked`, `excluded` or `long_held_only`. */
+  state: string;
+  reasonCodes: string[];
+  listedSales: number;
+  listedUnits: string;
+  /** The listed units whose loss the 30-day rule blocks (`F10` false). */
+  blockedLossUnits: string;
+  sales: { date: string; source: DiagnosticSource }[];
+}
+
+/** Units sold after the holding period; the form leaves them out. */
+export interface LongHeldSale {
+  isin: string;
+  name: string;
+  saleDate: string;
+  units: string;
+}
+
+/** The informational summary of the capital-gains sales of the year. */
+export interface CapitalSummary {
+  investments: CapitalInvestment[];
+  longHeld: LongHeldSale[];
+}
+
 /** One report of the result (`capitalGains`, `dividends`, `bankInterest`, `otherInterest`). */
 export interface ReportResult {
   status: string;
@@ -163,6 +191,7 @@ export interface RunResult {
   corrections: Correction[];
   reconciliation: Reconciliation[];
   /** The informational summaries of the year; no form holds them. */
+  capitalSummary?: CapitalSummary;
   feeSummary?: FeeSummary;
   benefitSummary?: BenefitSummary;
   depositInterest?: DepositInterest;

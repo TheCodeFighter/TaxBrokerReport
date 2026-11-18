@@ -26,6 +26,7 @@ describe("decisionRows", () => {
         title: "30-day rule",
         investment: "Example Share (US0000000001)",
         answer: "Yes, I did",
+        details: [],
         notes: [],
       },
     ]);
@@ -132,8 +133,75 @@ describe("decisionRows", () => {
     };
 
     expect(decisionRows([decision], "en")).toEqual([
-      { id: "decision-0006", title: "Other answer", answer: "Answer recorded", notes: [] },
+      { id: "decision-0006", title: "Other answer", answer: "Answer recorded", details: [], notes: [] },
     ]);
+  });
+});
+
+describe("decisionRows for the failure answers", () => {
+  const base = { fromEarlierRun: false, used: true };
+
+  it("describes leaving out two investments with the list of them", () => {
+    const decision: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "capital_gains_failure_resolution_required",
+      investments: [
+        { name: "Example Share", isin: "XX0000000001", reasonCodes: ["incomplete_history"] },
+        { name: "Example Fund", isin: "XX0000000002", reasonCodes: ["missing_exchange_rate"] },
+      ],
+      answer: "exclude_failed_instruments",
+    };
+
+    expect(decisionRows([decision], "en")).toEqual([
+      {
+        id: "decision-0001",
+        title: "Failed investments (Doh-KDVP)",
+        answer: "Left out: 2",
+        details: ["Example Share (XX0000000001)", "Example Fund (XX0000000002)"],
+        notes: [],
+      },
+    ]);
+  });
+
+  it("describes no XML for Doh-Obr and a cancel for Doh-Div", () => {
+    const failed: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "other_interest_failure_resolution_required",
+      investments: [{ name: "Bond B", isin: "XX0000000003", reasonCodes: ["incomplete_history"] }],
+      answer: "fail_report",
+    };
+    const cancelled: Decision = {
+      ...base,
+      id: "decision-0002",
+      type: "dividends_failure_resolution_required",
+      answer: "cancel",
+    };
+
+    const rows = decisionRows([failed, cancelled], "en");
+
+    expect(rows[0]?.title).toBe("Failed investments (Doh-Obr)");
+    expect(rows[0]?.answer).toBe("No XML file for this form");
+    expect(rows[1]?.title).toBe("Failed investments (Doh-Div)");
+    expect(rows[1]?.answer).toBe("Cancelled (no answer)");
+    expect(rows[1]?.details).toEqual([]);
+  });
+
+  it("counts a left-out broker and lists it by its name", () => {
+    const decision: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "other_interest_failure_resolution_required",
+      investments: [{ name: "Bond B", isin: "XX0000000003", reasonCodes: ["incomplete_history"] }],
+      brokers: [{ broker: "trade_republic", reasonCodes: ["incomplete_history"] }],
+      answer: "exclude_failed_instruments",
+    };
+
+    const row = decisionRows([decision], "en")[0];
+
+    expect(row?.answer).toBe("Left out: 2");
+    expect(row?.details).toEqual(["Bond B (XX0000000003)", "Trade Republic"]);
   });
 });
 
@@ -155,6 +223,7 @@ describe("decisionRows for the income and classification answers", () => {
         title: "Kind of investment",
         investment: "Example Share (US0000000001)",
         answer: "Capital gains (Doh-KDVP)",
+        details: [],
         notes: [],
       },
     ]);
@@ -297,7 +366,7 @@ describe("correctionLines", () => {
     const lines = correctionLines([confirmed], [], "sl");
 
     expect(lines.corrections).toEqual([
-      "US0000000001, prodaja 2024-05-02: 1.00000000 → 0.99999998 enot, Vaš odgovor, vpliv 0.3333 EUR",
+      "US0000000001, prodaja 2024-05-02: 1,00000000 → 0,99999998 enot, Vaš odgovor, vpliv 0,3333 EUR",
     ]);
     expect(lines.reconciliation).toEqual([]);
   });

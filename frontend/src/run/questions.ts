@@ -136,6 +136,21 @@ export interface DepositCheck {
   limitEur: string;
 }
 
+/** One investment a failure question lists; a recorded answer has no diagnostic IDs. */
+export interface FailureInvestment {
+  name: string;
+  isin: string;
+  reasonCodes: string[];
+  diagnosticIds?: string[];
+}
+
+/** One broker a failure question lists (Doh-Obr cash interest). */
+export interface FailureBroker {
+  broker: string;
+  reasonCodes: string[];
+  diagnosticIds?: string[];
+}
+
 /** An open question. Only the parts the screens read are typed. */
 export interface DecisionRequest {
   id: string;
@@ -158,6 +173,9 @@ export interface DecisionRequest {
   depositCheck?: DepositCheck;
   /** The kinds of `other_interest` the question offers. */
   otherInterestSubtypes?: string[];
+  /** The investments and brokers of a failure question, sorted by the server. */
+  investments?: FailureInvestment[];
+  brokers?: FailureBroker[];
 }
 
 /** A recorded answer with the question data it belongs to. */
@@ -175,6 +193,8 @@ export interface Decision {
   bondCheck?: BondCheck;
   treatyCheck?: TreatyCheck;
   depositCheck?: DepositCheck;
+  investments?: FailureInvestment[];
+  brokers?: FailureBroker[];
   /** A word (`other_activity`, `cancel`) or an object (a ratio, a corrected quantity). */
   answer: string | Record<string, unknown>;
 }
@@ -207,13 +227,17 @@ export type QuestionKind =
   | "payer"
   | "bond"
   | "treaty"
-  | "deposit";
+  | "deposit"
+  | "failure";
 
 const questionKinds = new Map<string, QuestionKind>([
   ["loss_eligibility_confirmation_required", "loss"],
   ["corporate_action_ratio_required", "ratio"],
   ["quantity_correction_required", "quantity"],
   ["deposit_interest_total_required", "deposit"],
+  ["capital_gains_failure_resolution_required", "failure"],
+  ["dividends_failure_resolution_required", "failure"],
+  ["other_interest_failure_resolution_required", "failure"],
 ]);
 
 /** What tells the kind of a question: its request type and, for the shared types, its data. */

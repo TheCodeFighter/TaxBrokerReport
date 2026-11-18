@@ -20,7 +20,7 @@ guessing. A successful XML file remains available even when another file needs u
 fails.
 
 No error may be handled by inventing a value, silently dropping an event, or showing a successful
-status for an incomplete result. The documented capital and other-interest ISIN exclusion flows
+status for an incomplete result. The documented capital, dividend and other-interest ISIN exclusion flows
 below, and the capital-only developer-mode flow in [`fifo.md`](fifo.md), are explicit user decisions,
 not silent recovery.
 
@@ -1226,6 +1226,7 @@ is present; the raw CSV row is not.
       "status": "generated",
       "diagnosticIds": [],
       "requestIds": [],
+      "excludedInvestments": [],
       "unsafe": false,
       "downloadAvailable": true
     },
@@ -1382,8 +1383,14 @@ The frontend must:
 - allow an optional frontend-only label for same-name files while keeping the file number as the
   fallback;
 - keep warnings and non-blocking errors visible beside the result they affect;
-- show separate choices for capital gains and other interest between excluding every listed
-  failed ISIN from that form and generating no XML for that form;
+- show separate choices for capital gains, dividends and other interest between excluding every
+  listed failed ISIN from that form and generating no XML for that form;
+- show each failure question (`capital_gains_`, `dividends_` and `other_interest_failure_resolution_required`)
+  inside the card of its form with every investment (name and ISIN) and broker it lists, the
+  texts of its linked diagnostics and its sources, then the two normal choices and no
+  preselection; the click on "Send answer" is the confirmation, the cancel text says that the
+  errors stay, the form gets no XML and nothing is left out, and `developer_export` is not shown
+  by this screen;
 - preserve the selected choice as `failureResolution` in the report result;
 - list every excluded name and ISIN before confirmation and beside the final download;
 - mark developer output as unsafe;
@@ -1399,7 +1406,8 @@ The frontend must:
   the answer is sent, that `other_activity` blocks the whole open loss (`F10` false);
 - show the corrected sale quantities with their EUR impact beside the cumulative impact of the
   ISIN, and the recorded answers with a delete for each and for all (a deleted answer brings its
-  question back);
+  question back; a failure answer shows its choice and, in a closed list, the investments and
+  brokers it left out);
 - show the classification and income questions with the facts the file gave (the instrument and its
   class labels as the export wrote them, the date and the gross amount of a payment), never
   preselect a choice, and offer only the choices and kinds of other interest that the request
@@ -1408,6 +1416,9 @@ The frontend must:
   characters, no control characters, not `true` or `false`) or no claim, a bond question shows the
   units sold and matured, and the payer, treaty and deposit total questions have no cancel (the
   server refuses it);
+- show the investments with a sale in the year in the Doh-KDVP card from `capitalSummary` (name and
+  ISIN, state, listed sales and units, the units whose loss is blocked, the sale dates) and the units
+  past the holding period, as information beside the form: the XML file is the truth;
 - show the income rows of each income form with the payer and the reference row it came from
   (or that the payer was not found), the foreign tax (a blank export tax as "no tax in the
   export", not as 0), the treaty claim and a mark for the rows that need evidence, the reminder to
@@ -1417,7 +1428,10 @@ The frontend must:
 - link to a question from the top notice, from a form that waits for it and from a diagnostic
   that has its `requestId`, and move the focus to the question;
 - build the text of every diagnostic from its message key and parameters, in Slovenian by default
-  or in English; and
+  or in English;
+- show a decimal number with the decimal comma in Slovenian (`1234,50`) and the point in English
+  (`1234.50`), without digit grouping; this is display only: the page sends and reads the server's
+  text with a point and keeps taking a comma or a point in its inputs; and
 - use a clear general message only when a more specific diagnostic is unavailable.
 
 The frontend must not parse logs, diagnostic message wording, or exception text to decide what to

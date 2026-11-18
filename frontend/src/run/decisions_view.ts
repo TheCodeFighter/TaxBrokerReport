@@ -1,6 +1,8 @@
 import { uiText, uiTextWith, type Language } from "../i18n/ui_texts";
+import { failureForm } from "./failure_question";
 import { choiceText } from "./income_questions";
 import { questionKind, type Correction, type Decision, type QuestionKind, type Reconciliation } from "./questions";
+import { brokerTitle } from "./result_view";
 import { fractionToEur4 } from "./units";
 
 /** One recorded answer as the "Your answers" list shows it. */
@@ -11,6 +13,8 @@ export interface DecisionRow {
   /** The investment the answer belongs to, `Name (ISIN)`; not set for a question without one. */
   investment?: string;
   answer: string;
+  /** The investments and brokers a failure answer lists, one line each; empty for other answers. */
+  details: string[];
   /** Short notes: from an earlier run, not used in this result. */
   notes: string[];
 }
@@ -119,6 +123,28 @@ function treatyAnswerText(answer: Decision["answer"], language: Language): strin
   return wordAnswerText(answer, language);
 }
 
+function failureAnswerText(decision: Decision, language: Language): string {
+  if (decision.answer === "exclude_failed_instruments") {
+    const count = (decision.investments?.length ?? 0) + (decision.brokers?.length ?? 0);
+
+    return uiTextWith(language, "answerFailExclude", { count });
+  }
+
+  if (decision.answer === "fail_report") {
+    return uiText(language, "answerFailReport");
+  }
+
+  return wordAnswerText(decision.answer, language);
+}
+
+/** The lines of the investments and brokers a failure answer lists. */
+function failureDetails(decision: Decision, language: Language): string[] {
+  return [
+    ...(decision.investments ?? []).map((investment) => `${investment.name} (${investment.isin})`),
+    ...(decision.brokers ?? []).map((broker) => brokerTitle(broker.broker, language)),
+  ];
+}
+
 /** The investment (or the country, or the year) an answer belongs to; not set when it has none. */
 function investmentOf(decision: Decision, kind: QuestionKind | undefined): string | undefined {
   if (kind === "income") {
@@ -171,6 +197,11 @@ function describeDecision(
       return { title: uiText(language, "decisionTreaty"), answer: treatyAnswerText(decision.answer, language) };
     case "deposit":
       return { title: uiText(language, "decisionDeposit"), answer: wordAnswerText(decision.answer, language) };
+    case "failure":
+      return {
+        title: uiTextWith(language, "decisionFailure", { form: failureForm(decision.type) ?? "" }),
+        answer: failureAnswerText(decision, language),
+      };
     case undefined:
       return { title: uiText(language, "decisionOther"), answer: uiText(language, "answerRecorded") };
   }
@@ -186,7 +217,13 @@ export function decisionRows(decisions: Decision[], language: Language): Decisio
       decision.used ? undefined : uiText(language, "answerNotUsed"),
     ].filter((note) => note !== undefined);
 
-    return { id: decision.id, ...describeDecision(decision, kind, language), ...(investment === undefined ? {} : { investment }), notes };
+    return {
+      id: decision.id,
+      ...describeDecision(decision, kind, language),
+      ...(investment === undefined ? {} : { investment }),
+      details: kind === "failure" ? failureDetails(decision, language) : [],
+      notes,
+    };
   });
 }
 

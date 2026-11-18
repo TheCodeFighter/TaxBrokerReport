@@ -1,3 +1,4 @@
+import { localizeNumber } from "../i18n/number_format";
 import { uiText, uiTextWith, type Language, type UiTextKey } from "../i18n/ui_texts";
 import { brokerTitle } from "./result_view";
 import type {
@@ -78,8 +79,8 @@ function rowView(row: IncomeRow, language: Language): IncomeRowView {
     subject: subjectText(row, language),
     payer: payerText(row, language),
     ...(row.payer.catalogueRow === undefined ? {} : { payerSource: sourceText(row.payer.catalogueRow, language) }),
-    gross: row.grossEur,
-    tax: row.taxBlankInExport ? uiText(language, "incomeTaxBlank") : row.foreignTaxEur,
+    gross: localizeNumber(row.grossEur, language),
+    tax: row.taxBlankInExport ? uiText(language, "incomeTaxBlank") : localizeNumber(row.foreignTaxEur, language),
     treaty: treatyText(row, language),
     evidence: row.evidenceRequired,
   };

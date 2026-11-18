@@ -24,7 +24,7 @@ Rules for these files:
 Command line, with the answers of 2023 (the order is the order of the questions):
 
 ```sh
-printf 'capital\n2 : 1\n\nyes\n1\ndividends\nordinary\nyes\nexclude\n' | scripts/report.sh --year 2023 \
+printf 'capital\n2 : 1\n\nyes\n1\ndividends\nordinary\nyes\nexclude\nexclude\n' | scripts/report.sh --year 2023 \
   --taxpayer tests/test_data/cli/taxpayer.json --trade-republic \
   tests/test_data/manual/trade_republic_2022.csv tests/test_data/manual/trade_republic_2023.csv \
   tests/test_data/manual/trade_republic_2024.csv tests/test_data/manual/trade_republic_2025.csv
@@ -52,7 +52,7 @@ runs), so 2024 and 2025 also ask the classification of the unknown-class share a
 | Synthetic Token | `XX0000000114` | crypto 2023 | crypto: left out of Doh-KDVP by rule, listed in the excluded items |
 | Synthetic Unknown Class Share | `XX0000000118` | blank asset class 2023 | classification question (answer `capital`), and its dividend asks the income type (`dividends`) |
 | Synthetic Index Certificate | `XX0000000119` | derivative 2024 | derivative: not supported, the exclusion question |
-| Synthetic Ruble Share | `XX0000000121` | RUB 2023 | the ECB has no ruble rate in 2023: `missing_exchange_rate`, the exclusion question |
+| Synthetic Ruble Share | `XX0000000121` | RUB 2023 (buy, sale and a dividend of 25.00 RUB on 2023-07-03) | the ECB has no ruble rate in 2023: `missing_exchange_rate`, the exclusion question of Doh-KDVP and a second one of Doh-Div (leave out: Doh-Div keeps its other rows and lists the ruble share; make no XML: no Doh-Div file; cancel: Doh-Div failed) |
 | Synthetic Two Row Share | `XX0000000122` | buy 2022, one sale in two rows 2023 | two sale rows on one day |
 | Synthetic Accumulating ETF | `XX0000000123` | savings plan and sale 2025 | sale over three lots |
 | Synthetic Spare Change Share, Synthetic Saveback Share | `XX0000000127`, `XX0000000128` | 2025 | `BENEFITS_SPARE_CHANGE_EXECUTION` and `BENEFITS_SAVEBACK_EXECUTION` buys |

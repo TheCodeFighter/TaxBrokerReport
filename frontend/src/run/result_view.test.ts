@@ -65,7 +65,7 @@ describe("result view", () => {
     expect(overallTone("failed")).toBe("fail");
   });
 
-  it("shows the answers-later hint only for an open question without a screen (a failure question)", () => {
+  it("shows the answers-later hint only for an open question without a screen (a developer export question)", () => {
     const loss = {
       id: "request-0001",
       type: "loss_eligibility_confirmation_required",
@@ -75,7 +75,7 @@ describe("result view", () => {
     };
     const failure = {
       id: "request-0002",
-      type: "dividends_failure_resolution_required",
+      type: "developer_export_confirmation_required",
       runRevision: 1,
       affectedReports: ["capital_gains"],
       sources: [],
@@ -195,6 +195,72 @@ describe("reportCards", () => {
       ["XX0000000001", "Example Fund"],
       ["XX0000000002", "Example Shares"],
     ]);
+  });
+
+  it("keeps the Doh-Div exclusion of a form that has no data left, without a download", () => {
+    const allExcluded: RunResult = {
+      status: "completed_with_warnings",
+      runRevision: 2,
+      reports: {
+        dividends: {
+          status: "no_data",
+          diagnosticIds: ["diagnostic-0001"],
+          requestIds: [],
+          failureResolution: "exclude_failed_instruments",
+          excludedInvestments: [
+            {
+              name: "Example Fund",
+              isin: "XX0000000001",
+              reasonCodes: ["missing_exchange_rate"],
+              diagnosticIds: ["diagnostic-0001"],
+            },
+          ],
+          unsafe: false,
+        },
+      },
+      diagnostics: [],
+      excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
+    };
+
+    const card = reportCards(allExcluded)[0];
+
+    expect(card?.form).toBe("Doh-Div");
+    expect(card?.resolutionText).toBe("resolutionExclude");
+    expect(card?.excluded.map((investment) => investment.isin)).toEqual(["XX0000000001"]);
+    expect(card?.downloadAvailable).toBe(false);
+  });
+
+  it("shows the choice of a failed form with no investment and no download", () => {
+    const failed: RunResult = {
+      status: "failed",
+      runRevision: 2,
+      reports: {
+        capitalGains: {
+          status: "failed",
+          diagnosticIds: ["diagnostic-0001"],
+          requestIds: [],
+          failureResolution: "fail_report",
+          excludedInvestments: [],
+          unsafe: false,
+        },
+      },
+      diagnostics: [],
+      excludedItems: [],
+      requests: [],
+      decisions: [],
+      corrections: [],
+      reconciliation: [],
+    };
+
+    const card = reportCards(failed)[0];
+
+    expect(card?.resolutionText).toBe("resolutionFail");
+    expect(card?.excluded).toEqual([]);
+    expect(card?.downloadAvailable).toBe(false);
   });
 
   it("keeps the exclusions and the excluded brokers of a form that has no data left", () => {
