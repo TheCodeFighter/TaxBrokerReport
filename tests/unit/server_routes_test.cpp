@@ -562,6 +562,31 @@ TEST_F(ServerRoutesTest, LogLevelWithTheSessionIsRoutedToTheLevelRoute) {
     EXPECT_EQ(currentLogLevel(), spdlog::level::info);
 }
 
+TEST_F(ServerRoutesTest, LogFileNeedsTheSession) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/log",
+                              .mHeaders = {kHost, kOrigin, kClient}};
+    LogCapture log;
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 401U);
+    EXPECT_EQ(log.count("Request refused: 401 no_session"), 1U);
+}
+
+TEST_F(ServerRoutesTest, LogFileWithTheSessionIsRoutedToTheLogRoute) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/log",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+    LogCapture log; // its logger has no file sink, so the log route answers no_log_file
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 404U);
+    EXPECT_EQ(response.mBody, R"({"error":"no_log_file"})");
+    expectSecurityHeaders(response);
+}
+
 TEST_F(ServerRoutesTest, PostToVersionIsNotAllowed) {
     const HttpRequest request{.mMethod = "POST",
                               .mTarget = "/api/version",

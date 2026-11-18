@@ -161,6 +161,8 @@ never a value, a name, an ISIN, a file name, a path, a query or a token (R13 in 
 | debug | `Stage classify: instruments <n>, left out <n>`, `Stage fifo: pools <n>, diagnostics <n>`, `Stage loss and builder: loss requests <n>, blocked ISINs <n>, excluded ISINs <n>, lists <n>`, `Stage income: dividend rows <n>, deposit interest rows <n>, other interest rows <n>`, `Stage xml: forms written <n>` | each calculation; counts only |
 | info | `Log level set: <level>` | the "Advanced" section of the Support page; shown when the new level is `info` or `debug` |
 | warning | `Log level request refused: <status> <code> [(limit <n>)]` | `400 bad_log_level`, `413 request_too_large (limit 1024)`, `405 method_not_allowed`, `404 not_found` |
+| info | `Log downloaded: <n> bytes` | "Save log" in the "Advanced" section of the Support page; written after the file is read, so it is not in the file that is sent |
+| warning | `Log request refused: <status> <code>` | `404 no_log_file` (no file sink, or no text in the files), `405 method_not_allowed` |
 | warning | `Report stopped: <reason>` | the command line stopped before the calculation or while writing the files; the reason is a fixed word: `input_files`, `taxpayer_file`, `input_file`, `input_fault (<kind> <message id>)`, `output_folder`, `output_file` or `output_replace`; never a file name. The details are in the error output |
 | error | `Report failed unexpectedly (<exception type>)` | the command line stopped on an exception; the text goes to the error output only |
 | error | `XML writer of <form> stopped (<exception type>)` | a writer threw; never the text, which can hold a value |
@@ -188,8 +190,12 @@ one shared function writes the result.
 3. Only when the maintainer asks for more detail, run the same command again with
    `taxbroker report ... --log-level info` (or `debug`), or choose "Steps (info)" in the "Advanced"
    section of the Support page and run again. The level lasts for that command, or for that server session;
-   the next start is at `error` again. `TBR_LOG_LEVEL=info` does the same for every start. Then send
-   the file `taxbroker.log` (and `taxbroker.1.log` if the run was long) from the state folder above.
+   the next start is at `error` again. `TBR_LOG_LEVEL=info` does the same for every start. Then
+   send the log. In the page press "Save log" in the same section: it saves `taxbroker-log.txt`,
+   the older file `taxbroker.1.log` and then `taxbroker.log`, each up to its last 5 MiB (this also
+   works when the server runs in Docker). The lines of the last second may be missing, because
+   the log is written in the background. On the command line send the files `taxbroker.log` (and
+   `taxbroker.1.log` if the run was long) from the state folder above.
    It holds the version and the build, the steps with their counts and times, and the diagnostic
    codes. It holds no amount, name, ISIN, tax number, file name or path.
 
@@ -217,6 +223,8 @@ LOG_CRITICAL("...");
 * Only the level can change at run time: `--log-level` for one command line run, and
   `GET`/`POST /api/log-level` (the "Advanced" section of the Support page) for the rest of a server session. Every
   level follows the privacy rule, so a higher level holds more lines, never a private fact
+* `GET /api/log` reads the log file of the running logger on request only, so a log in a
+  `TBR_LOG_FILE` folder (Docker) is saved the same way
 
 ---
 

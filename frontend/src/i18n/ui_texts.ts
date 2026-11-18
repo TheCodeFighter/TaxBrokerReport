@@ -124,8 +124,13 @@ export const uiTexts = {
   logLevelInfo: { sl: "Koraki (info)", en: "Steps (info)" },
   logLevelDebug: { sl: "Vse (debug)", en: "Everything (debug)" },
   logLevelHint: {
-    sl: "Dnevnik ne vsebuje zneskov, imen ali imen datotek. Priložite ga le, če vas za to prosi razvijalec: izberite »Koraki« in ponovite izračun. Raven velja do izklopa programa. Datoteka taxbroker.log je v mapi ~/.local/state/taxbroker.",
-    en: "The log holds no amounts, names or file names. Send it only when the developer asks for it: choose \"Steps\" and run again. The level lasts until the program is closed. The file taxbroker.log is in the folder ~/.local/state/taxbroker.",
+    sl: "Dnevnik ne vsebuje zneskov, imen ali imen datotek. Priložite ga le, če vas za to prosi razvijalec: izberite »Koraki« in ponovite izračun. Raven velja do izklopa programa. Nato shranite dnevnik z gumbom spodaj.",
+    en: "The log holds no amounts, names or file names. Send it only when the developer asks for it: choose \"Steps\" and run again. The level lasts until the program is closed. Then save the log with the button below.",
+  },
+  logFileSave: { sl: "Shrani dnevnik", en: "Save log" },
+  logFileNone: {
+    sl: "Dnevnika še ni. Izberite »Koraki« in ponovite izračun.",
+    en: "There is no log yet. Choose \"Steps\" and run again.",
   },
   logLevelFailed: {
     sl: "Ravni dnevnika ni bilo mogoče spremeniti.",
