@@ -647,7 +647,7 @@ body {
    normal card. The text colours of the dark theme are already light; the disclaimer keeps the
    normal card colour. */
 :root[data-theme="dark"] .screen.welcome {
-  background: #000;
+  background: #202526;
 }
 
 :root[data-theme="dark"] .screen.welcome .disclaimer {
