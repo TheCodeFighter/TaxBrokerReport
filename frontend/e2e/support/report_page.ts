@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 
 import { newContext } from "./browser";
-import { chooseBrokerFiles, type UploadFile } from "./files";
+import { chooseBrokerFiles, chooseReferenceFiles, type UploadFile } from "./files";
 import type { RunningServer } from "./server";
 
 /** The made-up tax number of tests/test_data/cli/taxpayer.json (it has a correct check digit). */
@@ -36,8 +36,11 @@ export async function openReportPage(context: BrowserContext, server: RunningSer
 
 /** What a run needs from the form. */
 export interface RunInput {
-  files: UploadFile[];
+  /** File contents, or paths of files on disk for a very large file. */
+  files: UploadFile[] | string[];
   year: number;
+  /** Reference files (payers and treaty texts), added in "Druge datoteke". */
+  referenceFiles?: UploadFile[];
   /** Extra taxpayer fields by their visible label, such as `{ "Ime in priimek": "Test" }`. */
   taxpayer?: Record<string, string>;
 }
@@ -52,6 +55,11 @@ export async function startRun(page: Page, input: RunInput): Promise<void> {
 /** Fills the files, the year and the taxpayer, and sends nothing. */
 export async function fillRunForm(page: Page, input: RunInput): Promise<void> {
   await chooseBrokerFiles(page, input.files);
+
+  if (input.referenceFiles !== undefined) {
+    await chooseReferenceFiles(page, input.referenceFiles);
+  }
+
   await page.getByRole("combobox", { name: "Leto poročanja" }).selectOption(String(input.year));
   await page.getByRole("textbox", { name: "Davčna številka" }).fill(TAX_NUMBER);
 
@@ -137,4 +145,26 @@ export async function download(page: Page, button: Locator): Promise<SavedFile> 
   const path = await file.path();
 
   return { name: file.suggestedFilename(), text: await readFile(path, "utf8") };
+}
+
+/** Counts the requests the page sends to the server whose path contains `part`, from now on. */
+export function countRequests(page: Page, part = "/api/"): { count: () => number } {
+  let seen = 0;
+
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.includes(part)) {
+      seen += 1;
+    }
+  });
+
+  return { count: () => seen };
+}
+
+/** Opens every "Podrobnosti" (details) element of the page, so that the sources of the diagnostics show. */
+export async function openAllDetails(page: Page): Promise<void> {
+  for (const element of await page.locator("details").all()) {
+    await element.evaluate((node) => {
+      (node as HTMLDetailsElement).open = true;
+    });
+  }
 }
