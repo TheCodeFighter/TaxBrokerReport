@@ -132,6 +132,19 @@ jobs:
           wait "$server_pid"
           test ! -e "$launch_file"
 
+      # The browser tests job runs these same binaries. The tar archive keeps the executable bits.
+      - name: Save the static binaries for the browser tests
+        run: tar -C build/static -cf "$RUNNER_TEMP/static-binaries.tar" taxbroker taxbroker_server
+
+      - name: Upload the static binaries for the browser tests
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: static-binaries
+          path: ${{ runner.temp }}/static-binaries.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
       # Only a push to main uploads the binaries; pull requests only build and check them.
       - name: Package the static binaries
         if: github.event_name == 'push'
@@ -401,6 +414,84 @@ jobs:
       - name: Build and check the frontend
         if: steps.changes.outputs.run == 'true'
         run: scripts/frontend.sh
+
+  # The browser tests (frontend/e2e): Chromium drives the page against the static
+  # taxbroker_server of the Production image job. They run in the e2e image (the dev image plus
+  # Chromium, built here, so the dev image that every job loads stays small). A pull request runs
+  # the steps only when a file that the page, the server or the tests depend on changes; a push to
+  # main always runs them. The job itself always runs and reports success when the steps are
+  # skipped, so the main-branch protection rule can require it.
+  browser-tests:
+    # Keep this name stable: the main-branch protection rule should require this check.
+    name: Browser tests
+    needs: [dev-image, production-image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for related changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          watched='^(frontend/.*|src/.*|include/.*|resources/.*|docker/.*|CMakeLists\.txt'
+          watched+='|scripts/(e2e|build|lib|frontend)\.sh|tests/test_data/manual/.*'
+          watched+='|\.github/(workflows/ci\.yml|actions/.*))$'
+
+          if git diff --name-only "$BASE_SHA...HEAD" | grep -Eq "$watched"; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+              echo "Skipped: no change that the browser tests depend on."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Load development image
+        if: steps.changes.outputs.run == 'true'
+        uses: ./.github/actions/load-dev-image
+
+      - name: Build the browser test image
+        if: steps.changes.outputs.run == 'true'
+        run: scripts/build.sh e2e-image
+
+      - name: Download the static binaries
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: static-binaries
+          path: ${{ runner.temp }}/static-binaries
+
+      - name: Unpack the static binaries
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          mkdir -p build/static
+          tar -C build/static -xf "$RUNNER_TEMP/static-binaries/static-binaries.tar"
+
+      - name: Install the frontend packages
+        if: steps.changes.outputs.run == 'true'
+        run: scripts/frontend.sh install
+
+      - name: Run the browser tests
+        if: steps.changes.outputs.run == 'true'
+        run: scripts/e2e.sh --reuse-build
+
+      - name: Upload the screenshots of failed tests
+        if: failure() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: browser-test-screenshots
+          path: runtime/e2e/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # The pull-request commit and its base commit are measured in parallel, each from a clean
   # coverage build. The coverage job then compares them.

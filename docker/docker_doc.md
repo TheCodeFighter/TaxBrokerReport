@@ -114,6 +114,16 @@ installs on its own when `package-lock.json` is newer than `node_modules`.
 ./scripts/frontend.sh
 ```
 
+### 6. Run the browser tests
+`scripts/build.sh e2e-image` builds the `e2e` stage of the Dockerfile once: the dev image plus the
+Alpine package `chromium` (about 1 GB more on disk; the dev image itself stays as it is, because
+every CI job loads it). `scripts/e2e.sh` then runs the tests of `frontend/e2e` in that image against
+the static `build/static/taxbroker_server` (see "Browser tests" in `docs/development.md`).
+```bash
+./scripts/build.sh e2e-image
+./scripts/e2e.sh
+```
+
 ### Build folders
 
 `build/` only holds sibling folders. Each script owns one of them and deletes only that one:
@@ -126,7 +136,7 @@ installs on its own when `package-lock.json` is newer than `node_modules`.
 | `build/coverage` | `coverage.sh` |
 | `build/fuzz` | `fuzz.sh` (Clang with sanitizers, only the fuzz target) |
 | `build/test-debug` | `debug_tests.sh` (VS Code), incremental on purpose |
-| `build/static` | `build.sh prod` (the static binaries copied out of the production image) |
+| `build/static` | `build.sh prod` (the static binaries copied out of the production image), `e2e.sh` reads them |
 | `build/frontend` | `frontend.sh build` (`dist` holds the four files the server embeds) |
 
 ---
@@ -147,7 +157,8 @@ Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reus
            ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 240 s, own sanitizer build)
            └─ Coverage (current) ─┬─ coverage      (pull requests only)
               Coverage (baseline) ┘
-Production image                   (own Release build inside the Dockerfile)
+Production image ── Browser tests    (e2e.sh; also needs Dev image; only when related files change)
+                   (own Release build inside the Dockerfile)
 ```
 
 - `Dev image` runs `build.sh image` and uploads the image as a compressed artifact. A build tree
@@ -161,6 +172,13 @@ Production image                   (own Release build inside the Dockerfile)
   workflow change; a push
   to `main` always runs it. The job always reports a result (it succeeds when the steps are
   skipped), so it is a required check like the others.
+- The `Browser tests` job needs `Dev image` and `Production image`. It builds the `e2e` image on
+  top of the loaded dev image, takes the static binaries that `Production image` saved as the
+  artifact `static-binaries` (one day), and runs `scripts/e2e.sh --reuse-build`. A pull request runs
+  the steps only when `frontend/`, `src/`, `include/`, `resources/`, `docker/`, `CMakeLists.txt`,
+  the scripts `e2e.sh`, `build.sh`, `lib.sh` and `frontend.sh`, `tests/test_data/manual/` or the
+  workflow or its actions change; a push to `main` always runs them. Like `Frontend`, it reports success when the
+  steps are skipped. A failed test uploads its screenshots (`runtime/e2e/`) for 7 days.
 - The coverage jobs measure the pull-request commit and its base commit in parallel, each from a
   clean GCC build, and `coverage` compares the two reports. lcov runs `gcov` on one core, so
   `coverage.sh` splits the coverage files into one list per core, captures the lists in parallel

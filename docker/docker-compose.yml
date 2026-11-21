@@ -26,6 +26,18 @@ services:
     stdin_open: true
     tty: true
 
+  # The development image plus Chromium, for the browser tests (scripts/e2e.sh). No ports: the
+  # tests start the server on a free port inside the container.
+  e2e:
+    image: taxbrokerreport-e2e
+    user: "${UID}:${GID}"
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: e2e
+    volumes:
+      - ..:/workspace
+
   prod:
     image: taxbrokerreport-prod
     build:

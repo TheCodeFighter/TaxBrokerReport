@@ -26,7 +26,7 @@ Valgrind and Cppcheck jobs load that build and compile nothing, so the failing c
 visible. The jobs and timings are described in [docker/docker_doc.md](../docker/docker_doc.md). The
 `main` ruleset **Required CI checks** requires **Dev image**, **Development build**, **Production
 image**, **Required tests**, **Valgrind**, **Cppcheck**, **Fuzz (Trade Republic parser)**,
-**format-check**, **Frontend**, **Coverage (current)**, **Coverage (baseline)** and **coverage**. **Required
+**format-check**, **Frontend**, **Browser tests**, **Coverage (current)**, **Coverage (baseline)** and **coverage**. **Required
 issue reference** is a separate workflow; it requires the pull request's `Related issue` section
 to contain an issue reference or exactly `N/A`.
 
@@ -106,6 +106,38 @@ scripts/build.sh prod           # the production image builds and embeds it in i
 
 - **Texts.** The texts of the interface are in `frontend/src/i18n/ui_texts.ts`, Slovenian and
   English together. Never copy a diagnostic text there: it comes from `GET /api/messages`.
+
+## Browser tests
+
+`frontend/e2e/` has end-to-end tests: Chromium drives the real page against the real static
+`taxbroker_server` (the binary of `scripts/build.sh prod`, frontend embedded). They check what the
+unit tests cannot: the login, the form, every question screen, the results and the downloads.
+`playwright-core` is used as a library from Vitest (its own config, `vitest.e2e.config.ts`), so
+`npm test` never starts a browser. Chromium is the Alpine package in a separate Docker stage
+(`e2e`), because Playwright's own Firefox and WebKit builds need glibc.
+
+```sh
+scripts/build.sh e2e-image      # once: the dev image plus Chromium (needs the dev image)
+scripts/e2e.sh                  # builds the production image and installs the packages, then runs the tests
+scripts/e2e.sh --reuse-build    # uses build/static and frontend/node_modules as they are
+scripts/e2e.sh "E5"             # only the tests whose name matches (Vitest -t)
+```
+
+The `e2e` image is built on the local dev image and keeps that base: run `scripts/build.sh e2e-image`
+again after `scripts/build.sh image`.
+
+- **One server per scenario.** The server keeps the answers of a session for the next run (a new
+  run is a restart), so every scenario starts its own server, with its own empty log and profile
+  folders, and logs in once with the printed link (it works once). One Chromium serves a file.
+- **Inputs.** The year walk-throughs load the files of `tests/test_data/manual/` and answer as its
+  README says, so the tests keep the README true: change the files and the tests together. Small
+  cases write their CSV inside the test.
+- **Selectors** are roles and the visible Slovenian texts of `ui_texts.ts` (a question by its
+  title, a form by its code). The answer words of a question (`other_activity`,
+  `exclude_failed_instruments`) are the `value` of its radio buttons. The page has no test
+  attributes. A failed test saves a screenshot to the ignored `runtime/e2e/`.
+- **Debugging.** Print `await page.locator("main:not([hidden])").ariaSnapshot()` to see what the
+  page offers. A page in the background does not draw: call `bringToFront()` before acting on it.
 
 ## Static analysis
 
