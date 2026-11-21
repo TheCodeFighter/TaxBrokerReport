@@ -150,6 +150,14 @@ tax_category_not_reported.user_choice_income_missing_isin,"You chose to leave th
 parse_error.invalid_filename,"The file has no valid file name, so it was not read.","Datoteka nima veljavnega imena, zato ni bila prebrana."
 input_file.too_large,"The file is larger than {limitMb} MB and was not read. Check that you chose the right file.","Datoteka je večja od {limitMb} MB in ni bila prebrana. Preverite, ali ste izbrali pravo datoteko."
 input_file.out_of_memory,"There was not enough memory to read the file. Close other programs and try again.","Za branje datoteke ni bilo dovolj pomnilnika. Zaprite druge programe in poskusite znova."
+invalid_header.flex_query_xml_required,"The file is not an Interactive Brokers Flex Query in XML format. Export the Activity Flex Query as XML and import it unchanged. No rows were imported.","Datoteka ni poizvedba Flex Query družbe Interactive Brokers v zapisu XML. Izvozite Activity Flex Query kot XML in jo uvozite nespremenjeno. Nobena vrstica ni bila uvožena."
+invalid_header.doctype_not_allowed,"The file declares a document type (DOCTYPE), which a Flex Query export never does, so it was not read. Download the export again from Interactive Brokers. No rows were imported.","Datoteka vsebuje deklaracijo vrste dokumenta (DOCTYPE), ki je izvoz Flex Query nikoli nima, zato ni bila prebrana. Izvoz znova prenesite iz Interactive Brokers. Nobena vrstica ni bila uvožena."
+invalid_header.missing_attribute,"Required attribute '{field}' is missing in {rowKind}; the row was skipped.","Zahtevani atribut '{field}' manjka (vrsta vrstice: {rowKind}); vrstica je bila preskočena."
+unsupported_row_type.cancelled_trade,"This row is a cancelled or corrected trade. Cancellations are not netted automatically, so the row was skipped. Check the trade in Interactive Brokers.","Ta vrstica je preklican ali popravljen posel. Preklici se ne pobotajo samodejno, zato je bila vrstica preskočena. Preverite posel v Interactive Brokers."
+unsupported_row_type.not_execution,"{count} rows of the trades section are not executions (closed lots, orders) and were not read. The app matches sales to purchases itself.","Vrstice v razdelku poslov, ki niso izvedbe (zaprti loti, naročila), niso bile prebrane: {count}. Aplikacija prodaje sama poveže z nakupi."
+unsupported_row_type.currency_conversion,"{count} currency conversions are not purchases or sales of an investment and were not read.","Menjave valut niso nakupi ali prodaje naložb in niso bile prebrane: {count}."
+unsupported_row_type.crypto_without_isin,"A crypto trade has no ISIN and is not reported in Doh-KDVP; the row was not read.","Posel s kriptovalutami nima ISIN in se ne prijavlja v Doh-KDVP; vrstica ni bila prebrana."
+unsupported_row_type.not_detail,"{count} rows of the cash and corporate-action sections are totals or other rows that are not single bookings, and were not read.","Vrstice v razdelkih denarnih transakcij in korporativnih dejanj, ki niso posamezna knjiženja (vsote, druge vrstice), niso bile prebrane: {count}."
 row_kind.trade,trade row,nakup ali prodaja
 row_kind.dividend,dividend row,dividenda
 row_kind.bond_interest,bond-interest row,obresti obveznice
@@ -159,3 +167,5 @@ row_kind.corporate_action,corporate-action row,korporativno dejanje
 row_kind.benefit,benefit row,ugodnost
 row_kind.private_market,private-market row,zasebni trg
 row_kind.bond_redemption,bond-maturity row,zapadlost obveznice
+row_kind.income_tax,tax row,davek
+row_kind.cash,cash row,denarna vrstica

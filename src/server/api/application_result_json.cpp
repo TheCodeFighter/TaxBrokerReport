@@ -1225,7 +1225,7 @@ std::string resultLogSummary(const ApplicationResult& aResult) {
         {
             ++errors;
         }
-        else
+        else if (diagnostic.mSeverity == DiagnosticSeverity::Warning)
         {
             ++warnings;
         }
@@ -1263,9 +1263,15 @@ std::string resultLogDetails(const ApplicationResult& aResult) {
 
     for (const ApplicationDiagnostic& diagnostic : aResult.mDiagnostics)
     {
-        auto& counts = diagnostic.mSeverity == DiagnosticSeverity::Error ? errors : warnings;
-
-        ++counts[codeString(diagnostic.mCode)];
+        // A notice is neither an error nor a warning, so it is not counted here.
+        if (diagnostic.mSeverity == DiagnosticSeverity::Error)
+        {
+            ++errors[codeString(diagnostic.mCode)];
+        }
+        else if (diagnostic.mSeverity == DiagnosticSeverity::Warning)
+        {
+            ++warnings[codeString(diagnostic.mCode)];
+        }
     }
 
     for (const ExcludedItem& item : aResult.mExcludedItems)

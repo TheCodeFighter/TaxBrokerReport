@@ -449,6 +449,66 @@ TEST(DeterministicStatementMergerTest, AssetClassConflictIsErrorAndUsesUnknown) 
     EXPECT_EQ(conflict->mSources.size(), 2U);
 }
 
+TEST(DeterministicStatementMergerTest,
+     ACorporateActionThatNamesNoClassDoesNotVoteAgainstTheTrades) {
+    // File 0 has the fund's trade. File 1 has only a split row of the same ISIN: the row has no
+    // instrument evidence and its file's instrument has no class (the export gives none).
+    StatementMergeInput first{.mSourceIndex = 0};
+    first.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Synthetic instrument",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Fund,
+        .mTransactions = {makeTrade(0, 0, makeDate(2024, 1, 1))},
+    });
+
+    StatementMergeInput second{.mSourceIndex = 1};
+    second.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Synthetic instrument",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Unknown,
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(1, 0, makeDate(2024, 2, 1)),
+            .mType = CorporateActionType::UnresolvedSplit,
+            .mUnitsDelta = 3 * UNITS_SCALE,
+        }},
+    });
+
+    std::vector inputs{first, second};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mAssetClass,
+              AssetClass::Fund);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions.size(),
+              1U);
+    EXPECT_EQ(findMergeDiagnostic(result, MergeDiagnosticCode::InstrumentAssetClassConflict),
+              nullptr);
+}
+
+TEST(DeterministicStatementMergerTest, AClasslessCorporateActionAloneLeavesTheClassUnknown) {
+    StatementMergeInput only{.mSourceIndex = 0};
+    only.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Synthetic instrument",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Unknown,
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(0, 0, makeDate(2024, 2, 1)),
+            .mType = CorporateActionType::UnresolvedSplit,
+            .mUnitsDelta = 3 * UNITS_SCALE,
+        }},
+    });
+    std::vector inputs{only};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+    EXPECT_EQ(result.mStatement.mPresentation.mTradeInstruments.front().mAssetClass,
+              AssetClass::Unknown);
+    EXPECT_EQ(findMergeDiagnostic(result, MergeDiagnosticCode::InstrumentAssetClassConflict),
+              nullptr);
+}
+
 TEST(DeterministicStatementMergerTest, DeduplicatesExactTradesAndRetainsEverySource) {
     StatementMergeInput first{.mSourceIndex = 0};
     first.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
@@ -1137,7 +1197,7 @@ void expectFieldConflicts(StatementEventKind aKind,
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
-    const std::array<FieldChange<TradeInstrument>, 17> changes{{
+    const std::array<FieldChange<TradeInstrument>, 18> changes{{
         {"tax date",
          [](TradeInstrument& aValue) {
              aValue.mTransactions.front().mMetadata.mTaxDate += DayDuration{1};
@@ -1161,6 +1221,8 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedTradeFact) {
         {"missing amount",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mAmount.reset(); }},
         {"fee", [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mFeePaid; }},
+        {"transaction tax",
+         [](TradeInstrument& aValue) { ++aValue.mTransactions.front().mTransactionTaxPaid; }},
         {"missing exchange rate",
          [](TradeInstrument& aValue) { aValue.mTransactions.front().mExchangeRate.reset(); }},
         {"exchange rate",
@@ -1524,7 +1586,7 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
-    const std::array<FieldChange<InterestInstrument>, 13> changes{{
+    const std::array<FieldChange<InterestInstrument>, 14> changes{{
         {"name without ISIN", [](InterestInstrument& aValue) { aValue.mName = "Other payer"; }},
         {"ISIN presence", [](InterestInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
         {"type",
@@ -1560,6 +1622,8 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
          [](InterestInstrument& aValue) {
              aValue.mTransactions.front().mCashHolder = CashHolder::Broker;
          }},
+        {"payer code",
+         [](InterestInstrument& aValue) { aValue.mTransactions.front().mPayerCode = "IB-IE"; }},
     }};
 
     expectFieldConflicts(StatementEventKind::Interest,

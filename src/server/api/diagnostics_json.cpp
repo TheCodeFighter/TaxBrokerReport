@@ -33,13 +33,18 @@ std::string_view statusFor(std::size_t aWarningCount, std::size_t aErrorCount) {
 namespace taxbroker::api {
 
 std::string serializeDiagnosticsJson(const ParseResult& aParseResult, int aIndent) {
-    const auto warningCount = static_cast<std::size_t>(
-        std::count_if(aParseResult.mDiagnostics.begin(),
-                      aParseResult.mDiagnostics.end(),
-                      [](const ParseDiagnostic& aDiagnostic) {
-                          return aDiagnostic.mSeverity == DiagnosticSeverity::Warning;
-                      }));
-    const auto errorCount = aParseResult.mDiagnostics.size() - warningCount;
+    const auto countOf = [&aParseResult](const DiagnosticSeverity aSeverity) {
+        return static_cast<std::size_t>(
+            std::count_if(aParseResult.mDiagnostics.begin(),
+                          aParseResult.mDiagnostics.end(),
+                          [aSeverity](const ParseDiagnostic& aDiagnostic) {
+                              return aDiagnostic.mSeverity == aSeverity;
+                          }));
+    };
+    const auto warningCount = countOf(DiagnosticSeverity::Warning);
+    const auto infoCount = countOf(DiagnosticSeverity::Info);
+    // A value that is none of the three is read as an error, as toString does.
+    const auto errorCount = aParseResult.mDiagnostics.size() - warningCount - infoCount;
 
     nlohmann::json diagnostics = nlohmann::json::array();
     for (const auto& diagnostic : aParseResult.mDiagnostics)
@@ -88,6 +93,7 @@ std::string serializeDiagnosticsJson(const ParseResult& aParseResult, int aInden
          {
              {"warningCount", warningCount},
              {"errorCount", errorCount},
+             {"infoCount", infoCount},
              {"totalCount", aParseResult.mDiagnostics.size()},
          }},
         {"diagnostics", std::move(diagnostics)},

@@ -12,6 +12,7 @@ namespace taxbroker {
 enum class DiagnosticSeverity {
     Warning,
     Error,
+    Info,
 };
 
 // These values form part of the frontend API contract. Add new values instead of renaming
@@ -50,6 +51,9 @@ enum class ParsedRowKind {
     PrivateMarket,
     /// A bond maturity row of a bond; the same row of another class has the capital scope.
     BondRedemption,
+    /// A tax row that names no instrument, so it cannot be assigned to one payment: the tax may be
+    /// on a dividend or on interest.
+    IncomeTax,
 };
 
 struct ParseDiagnostic {

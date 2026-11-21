@@ -476,6 +476,53 @@ TEST(ApplicationResultStatusTest, AWarningNeverBlocksAReport) {
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kCapital}));
 }
 
+TEST(ApplicationResultStatusTest, ANoticeLeavesTheRunASuccessAndIsListedAfterTheWarnings) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mMergeDiagnostics = {
+        SourcedParseDiagnostic{
+            .mSourceIndex = 0,
+            .mBroker = Broker::InteractiveBrokers,
+            .mDiagnostic =
+                ParseDiagnostic{
+                    .mSeverity = DiagnosticSeverity::Info,
+                    .mCode = DiagnosticCode::UnsupportedRowType,
+                    .mSourceFile = "export.xml",
+                    .mMessage = "Synthetic notice.",
+                },
+        },
+    };
+    input.mReports[0].mXml = "<capital/>";
+
+    const auto onlyNotice = ApplicationResultBuilder::build(ApplicationResultInput{input});
+
+    // A notice names no form, blocks nothing and is not a warning.
+    EXPECT_EQ(onlyNotice.mStatus, OverallStatus::Success);
+    ASSERT_EQ(onlyNotice.mDiagnostics.size(), 1U);
+    EXPECT_EQ(onlyNotice.mDiagnostics[0].mSeverity, DiagnosticSeverity::Info);
+    EXPECT_FALSE(onlyNotice.mDiagnostics[0].mBlocking);
+
+    // With a warning of the same file, the warning comes first and the run has warnings.
+    input.mMergeDiagnostics.push_back(SourcedParseDiagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::InteractiveBrokers,
+        .mDiagnostic =
+            ParseDiagnostic{
+                .mSeverity = DiagnosticSeverity::Warning,
+                .mCode = DiagnosticCode::TradeAmountMismatch,
+                .mSourceFile = "export.xml",
+                .mMessage = "Synthetic warning.",
+                .mRowKind = ParsedRowKind::Trade,
+            },
+    });
+
+    const auto withWarning = ApplicationResultBuilder::build(std::move(input));
+
+    EXPECT_EQ(withWarning.mStatus, OverallStatus::CompletedWithWarnings);
+    ASSERT_EQ(withWarning.mDiagnostics.size(), 2U);
+    EXPECT_EQ(withWarning.mDiagnostics[0].mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(withWarning.mDiagnostics[1].mSeverity, DiagnosticSeverity::Info);
+}
+
 TEST(ApplicationResultStatusTest, ATradeAmountMismatchWarningDoesNotBlockCapitalGains) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mMergeDiagnostics = {SourcedParseDiagnostic{
@@ -568,6 +615,41 @@ TEST(ApplicationResultStatusTest, AnUnsupportedInterestSubtypeStillBlocksBothInt
     EXPECT_FALSE(result.report(kBank).mXml.has_value());
     EXPECT_EQ(result.report(kOther).mStatus, ReportStatus::Failed);
     EXPECT_EQ(result.mStatus, OverallStatus::PartialSuccess);
+}
+
+TEST(ApplicationResultStatusTest,
+     ATaxRowWithoutAnInstrumentBlocksDividendsAndTheBrokerInterestForm) {
+    // The tax may be on a dividend or on interest, so both income forms are blocked. The broker
+    // is Interactive Brokers, whose cash interest is only ever Doh-Obr; capital gains and the
+    // bank-deposit form are not affected.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mMergeDiagnostics = {SourcedParseDiagnostic{
+        .mSourceIndex = 0,
+        .mBroker = Broker::InteractiveBrokers,
+        .mDiagnostic =
+            ParseDiagnostic{
+                .mSeverity = DiagnosticSeverity::Error,
+                .mCode = DiagnosticCode::MissingField,
+                .mSourceFile = "export.xml",
+                .mRowIndex = 7,
+                .mField = "isin",
+                .mMessage = "Synthetic parser message.",
+                .mRowKind = ParsedRowKind::IncomeTax,
+            },
+    }};
+    input.mReports[0].mXml = "<capital/>";
+    input.mReports[2].mXml = "<bank/>";
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kDividends, kOther}));
+    EXPECT_TRUE(result.mDiagnostics[0].mBlocking);
+    EXPECT_EQ(result.report(kCapital).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(kDividends).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.report(kBank).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(kOther).mStatus, ReportStatus::Failed);
 }
 
 TEST(ApplicationResultStatusTest, NoDataKeepsItsReasonAndIsASuccess) {

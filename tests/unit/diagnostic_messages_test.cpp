@@ -366,6 +366,26 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "input_file.too_large",
          {{"limitMb", MessageParamKind::Number}}},
         {MessageKey::InputFileOutOfMemory, "input_file.out_of_memory", {}},
+        {MessageKey::InvalidHeaderFlexQueryXmlRequired,
+         "invalid_header.flex_query_xml_required",
+         {}},
+        {MessageKey::InvalidHeaderDoctypeNotAllowed, "invalid_header.doctype_not_allowed", {}},
+        {MessageKey::InvalidHeaderMissingAttribute,
+         "invalid_header.missing_attribute",
+         {{"field", MessageParamKind::Text}, {"rowKind", MessageParamKind::Term}}},
+        {MessageKey::UnsupportedRowTypeCancelledTrade, "unsupported_row_type.cancelled_trade", {}},
+        {MessageKey::UnsupportedRowTypeNotExecution,
+         "unsupported_row_type.not_execution",
+         {{"count", MessageParamKind::Number}}},
+        {MessageKey::UnsupportedRowTypeCurrencyConversion,
+         "unsupported_row_type.currency_conversion",
+         {{"count", MessageParamKind::Number}}},
+        {MessageKey::UnsupportedRowTypeCryptoWithoutIsin,
+         "unsupported_row_type.crypto_without_isin",
+         {}},
+        {MessageKey::UnsupportedRowTypeNotDetail,
+         "unsupported_row_type.not_detail",
+         {{"count", MessageParamKind::Number}}},
     };
 
     return messages;
@@ -382,6 +402,8 @@ const std::vector<std::string_view>& expectedTerms() {
         "row_kind.benefit",
         "row_kind.private_market",
         "row_kind.bond_redemption",
+        "row_kind.income_tax",
+        "row_kind.cash",
     };
 
     return terms;
@@ -428,8 +450,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 151U);
-    ASSERT_EQ(expectedMessages().size(), 151U);
+    ASSERT_EQ(definitions.size(), 159U);
+    ASSERT_EQ(expectedMessages().size(), 159U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -463,8 +485,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 151U);
-    EXPECT_EQ(keys.size(), 151U);
+    EXPECT_EQ(ids.size(), 159U);
+    EXPECT_EQ(keys.size(), 159U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -482,12 +504,14 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
     EXPECT_EQ(term::kRowKindBenefit, "row_kind.benefit");
     EXPECT_EQ(term::kRowKindPrivateMarket, "row_kind.private_market");
     EXPECT_EQ(term::kRowKindBondRedemption, "row_kind.bond_redemption");
+    EXPECT_EQ(term::kRowKindIncomeTax, "row_kind.income_tax");
+    EXPECT_EQ(term::kRowKindCash, "row_kind.cash");
 }
 
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 160U); // 151 message keys and 9 terms.
+    ASSERT_EQ(table.size(), 170U); // 159 message keys and 11 terms.
 
     std::set<std::string> tableKeys;
 
@@ -856,8 +880,7 @@ TEST(DiagnosticMessagesTest, EmbedsTheTableUpToItsLastByte) {
     const auto table = diagnosticMessagesCsv();
 
     // The byte array has no terminating zero: the text ends with the newline of the last row.
-    EXPECT_TRUE(
-        table.ends_with("row_kind.bond_redemption,bond-maturity row,zapadlost obveznice\n"));
+    EXPECT_TRUE(table.ends_with("row_kind.cash,cash row,denarna vrstica\n"));
     EXPECT_EQ(table.find('\0'), std::string_view::npos);
 }
 

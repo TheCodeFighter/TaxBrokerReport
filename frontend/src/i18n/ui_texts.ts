@@ -296,6 +296,7 @@ export const uiTexts = {
   excludedReasonUserChoice: { sl: "vaša izbira", en: "your choice" },
   severityWarning: { sl: "Opozorilo", en: "Warning" },
   severityError: { sl: "Napaka", en: "Error" },
+  severityInfo: { sl: "Obvestilo", en: "Notice" },
   stageParsing: { sl: "Branje datotek", en: "Reading the files" },
   stageMerging: { sl: "Združevanje datotek", en: "Combining the files" },
   stageHistory: { sl: "Preverjanje zgodovine", en: "Checking the history" },

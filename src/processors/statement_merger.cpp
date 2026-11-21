@@ -8,6 +8,7 @@
 #include <map>
 #include <numeric>
 #include <set>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -523,7 +524,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mFeePaid == aRight.mEvent.mFeePaid &&
            aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
-           aLeft.mEvent.mFeeCurrency == aRight.mEvent.mFeeCurrency;
+           aLeft.mEvent.mFeeCurrency == aRight.mEvent.mFeeCurrency &&
+           aLeft.mEvent.mTransactionTaxPaid == aRight.mEvent.mTransactionTaxPaid;
 }
 
 [[nodiscard]] bool sameEventFacts(const CorporateActionRecord& aLeft,
@@ -561,7 +563,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
            aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency &&
-           aLeft.mEvent.mCashHolder == aRight.mEvent.mCashHolder;
+           aLeft.mEvent.mCashHolder == aRight.mEvent.mCashHolder &&
+           aLeft.mEvent.mPayerCode == aRight.mEvent.mPayerCode;
 }
 
 [[nodiscard]] bool sameEventFacts(const BenefitEvent& aLeft, const BenefitEvent& aRight) {
@@ -1033,6 +1036,21 @@ void rebuildChronologicalOrder(MergedStatement& aStatement) {
 
 StatementMergeResult
 DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) const {
+    // The rows of an income payment and the left-out rows are not merged yet; a parser that fills
+    // them must not lose them silently.
+    const bool hasUnmergedRows =
+        std::any_of(aInputs.begin(), aInputs.end(), [](const StatementMergeInput& aInput) {
+            const auto& statement = aInput.mParseResult.mStatement;
+
+            return !statement.mIncomePaymentRows.empty() || !statement.mLeftOutRows.empty();
+        });
+
+    if (hasUnmergedRows)
+    {
+        throw std::logic_error{"The merger does not handle income payment rows or left-out rows "
+                               "yet."};
+    }
+
     StatementMergeResult result;
     std::vector<StatementMergeInput*> orderedInputs(aInputs.size());
 
@@ -1286,7 +1304,17 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
                 bucket.mNames.add(contribution);
             }
 
-            bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent);
+            // An action row only votes on the asset class when it carries class information:
+            // instrument evidence, or a known class. A row with neither says nothing about the
+            // class, so it must not vote against the class that another file's trades give.
+            const bool hasClassInformation = !aValue.mEvent.mInstrumentEvidence.empty() ||
+                                             aValue.mAssetClass != AssetClass::Unknown;
+
+            if (hasClassInformation)
+            {
+                bucket.mAssetClasses.add(aValue.mAssetClass, aValue.mEvent);
+            }
+
             bucket.mCorporateActions.push_back(std::move(aValue.mEvent));
         }
         else if constexpr (std::is_same_v<Value, DividendRecord>)

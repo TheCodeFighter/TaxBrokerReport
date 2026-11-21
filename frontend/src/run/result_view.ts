@@ -62,7 +62,8 @@ export function needsAnswerHint(result: RunResult): boolean {
 
 /**
  * The number of errors and warnings in the diagnostics of the result. An error that no longer
- * blocks (the user answered its question) counts, and is shown, as a warning.
+ * blocks (the user answered its question) counts, and is shown, as a warning. A notice (info) is
+ * neither.
  */
 export function countDiagnostics(result: RunResult): { errors: number; warnings: number } {
   const shown = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error" || diagnostic.severity === "warning");

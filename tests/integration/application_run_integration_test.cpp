@@ -344,12 +344,67 @@ TEST(ApplicationRunIntegrationTest, AnUnsupportedYearFailsAllFourForms) {
 }
 
 TEST(ApplicationRunIntegrationTest, ABrokerWithoutAParserIsAProgrammingError) {
-    // Interactive Brokers has no parser yet, so a request that names it cannot be read.
+    // A request for an unknown broker has no parser, so it cannot be read.
     auto request = requestWithRows({kBuy1});
 
-    request.mBrokerFiles[0].mBroker = Broker::InteractiveBrokers;
+    request.mBrokerFiles[0].mBroker = Broker::Unknown;
 
     EXPECT_THROW(std::ignore = ApplicationRun::start(std::move(request)), std::logic_error);
+}
+
+/// A request for 2024 with one Interactive Brokers file with the given XML text.
+ApplicationRequest requestWithInteractiveBrokersXml(std::string aXml) {
+    ApplicationRequest request{
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+        .mTaxpayer = syntheticTaxpayer(),
+    };
+
+    request.mBrokerFiles.push_back(
+        {.mBroker = Broker::InteractiveBrokers,
+         .mFile = {.mName = "synthetic.xml", .mContent = std::move(aXml)}});
+
+    return request;
+}
+
+TEST(ApplicationRunIntegrationTest, AnInteractiveBrokersFileIsReadByItsOwnParser) {
+    // A buy of 10 shares at EUR 10 and a sale of 4 at EUR 12.50 in 2024: a gain of EUR 10.00.
+    auto run = startRun(requestWithInteractiveBrokersXml(
+        R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="synthetic-1" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Share" isin="XX0000000001" currency="EUR" tradeDate="20240110" dateTime="20240110;040000" buySell="BUY" quantity="10" tradePrice="10" proceeds="-100" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+        <Trade transactionID="synthetic-2" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Share" isin="XX0000000001" currency="EUR" tradeDate="20240310" dateTime="20240310;040000" buySell="SELL" quantity="-4" tradePrice="12.5" proceeds="50" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml"));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Generated);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(ApplicationRunIntegrationTest, AnInteractiveBrokersFileThatIsNotXmlFailsTheCapitalReport) {
+    // A Flex Query exported as CSV is not read; the file gets one error that names no form.
+    auto run = startRun(requestWithInteractiveBrokersXml(
+        "\"ClientAccountID\",\"AssetClass\"\n\"U0000000\",\"STK\"\n"));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(std::get<DiagnosticCode>(result.mDiagnostics[0].mCode),
+              DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(result.mDiagnostics[0].mMessageKey, MessageKey::InvalidHeaderFlexQueryXmlRequired);
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
 }
 
 TEST(ApplicationRunIntegrationTest, ABadSuppliedRateFileIsAFault) {

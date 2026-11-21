@@ -238,7 +238,15 @@ Json resultJson(const ApplicationResult& aResult) {
 
     for (const ApplicationDiagnostic& diagnostic : aResult.mDiagnostics)
     {
-        ++(diagnostic.mSeverity == DiagnosticSeverity::Error ? errors : warnings);
+        if (diagnostic.mSeverity == DiagnosticSeverity::Error)
+        {
+            ++errors;
+        }
+        else if (diagnostic.mSeverity == DiagnosticSeverity::Warning)
+        {
+            ++warnings;
+        }
+
         ++byCode[std::string{codeString(diagnostic.mCode)}];
     }
 

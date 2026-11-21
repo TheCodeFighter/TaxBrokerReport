@@ -62,6 +62,8 @@ add_executable(taxbroker_unit_tests
     unit/other_interest_failure_test.cpp
     unit/ecb_rate_file_test.cpp
     unit/ibkr_fixture_test.cpp
+    unit/ibkr_parser_test.cpp
+    unit/ibkr_time_test.cpp
     unit/input_file_test.cpp
     unit/official_rate_selection_test.cpp
     unit/quantity_reconciliation_test.cpp
@@ -118,6 +120,7 @@ target_link_libraries(taxbroker_unit_tests
     taxbroker_core
     taxbroker_api
     taxbroker_cli
+    taxbroker_ibkr
     taxbroker_service
     taxbroker_server_lib
     taxbroker_server_security

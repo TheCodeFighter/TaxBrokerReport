@@ -169,8 +169,15 @@ export function isBlockingError(diagnostic: Diagnostic): boolean {
   return diagnostic.severity === "error" && diagnostic.blocking;
 }
 
-/** "Error" for a blocking error, else "Warning": a warning, or an error that no longer blocks. */
+/**
+ * "Error" for a blocking error, "Notice" for an info diagnostic (a row the app does not read on
+ * purpose), else "Warning": a warning, or an error that no longer blocks.
+ */
 export function severityText(diagnostic: Diagnostic): UiTextKey {
+  if (diagnostic.severity === "info") {
+    return "severityInfo";
+  }
+
   return isBlockingError(diagnostic) ? "severityError" : "severityWarning";
 }
 

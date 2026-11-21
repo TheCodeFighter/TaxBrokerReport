@@ -232,7 +232,10 @@ that combination produces `partial_success`.
 Every application diagnostic contains:
 
 - a deterministic diagnostic ID;
-- severity: `warning` or `error`;
+- severity: `warning`, `error` or `info`. An `info` diagnostic is a notice for a row the app does
+  not read on purpose: it names no form, never blocks, does not make a run "completed with
+  warnings" and is counted neither as an error nor as a warning (the parser summary has its own
+  `infoCount`);
 - one pipeline stage;
 - a stable machine-readable code;
 - a message key with named parameters, from which the frontend builds the user-facing text (see
@@ -1075,18 +1078,35 @@ each skipped private-market event of the selected year; a rejected private-marke
 error on a private-market event affects no report. The cases and their scope are in
 [`architecture.md`](architecture.md), "CLI report command (walking skeleton)".
 
-### Planned Interactive Brokers behaviour
+### Interactive Brokers parser diagnostics
 
-The Interactive Brokers parser has not been written. These are the behaviours its
-export contract (`architecture.md`, "Interactive Brokers export contract") needs a diagnostic
-for. The codes and message keys are named when the parser is written; each keeps the privacy
-rules above (no value, no absolute path).
+The Interactive Brokers parser (`architecture.md`, "Interactive Brokers export contract") reports
+these. Each keeps the privacy rules above (no value, no absolute path). A row diagnostic has the
+line of the element in the file as its row. A rejected row has one error, the first check that
+fails: cancellation, a missing attribute, the format of a field, then the signs.
 
-- A file that is not a Flex Query XML (a Flex Query CSV, an Activity Statement): a file-level
-  `invalid_header` error with a hint to export the Flex Query as XML.
-- A cancelled or corrected trade row: an error on that row, never netted.
-- Ignored closed lots (`Lot`) and other trade rows that are not executions: one file-level info
-  with the count.
+| Case | Code, severity | Message key |
+| --- | --- | --- |
+| Not a Flex Query XML: a Flex Query CSV, an Activity Statement, another root, not well-formed or empty | `invalid_header`, error, file | `invalid_header.flex_query_xml_required` |
+| The file has a `DOCTYPE` | `invalid_header`, error, file | `invalid_header.doctype_not_allowed` |
+| An attribute the row needs is not there | `invalid_header`, error, row and field | `invalid_header.missing_attribute` |
+| An empty required field (a `transactionID` or a `levelOfDetail` too), or a value that is not valid (a `multiplier` too, on its own field) | `missing_field` or `invalid_value`, error | the shared keys of the Trade Republic parser |
+| A tax row without an ISIN | `missing_field` or `invalid_header`, error, row kind tax row: blocks Doh-Div and the broker's interest form | the shared keys |
+| A sign that disagrees with `buySell` | `inconsistent_value`, error | `inconsistent_value.trade_side` |
+| A cancelled or corrected trade | `unsupported_row_type`, error, row | `unsupported_row_type.cancelled_trade` |
+| An unknown cash `type` | `unknown_row_type`, error, no form named | `unknown_row_type` |
+| A class that is empty or not known | `missing_field` or `unsupported_asset_class`, error, the row is kept | the shared keys of the Trade Republic parser |
+| Closed lots, orders and other children of the trades section | `unsupported_row_type`, info, file, no form named | `unsupported_row_type.not_execution` (`count`) |
+| Cash rows that are not `DETAIL` (totals) and other children of the cash and corporate-action sections | `unsupported_row_type`, info, file, no form named | `unsupported_row_type.not_detail` (`count`) |
+| Currency conversions | `unsupported_row_type`, info, file, no form named | `unsupported_row_type.currency_conversion` (`count`) |
+| A crypto trade without an ISIN | `unsupported_row_type`, info, row, no form named | `unsupported_row_type.crypto_without_isin` |
+| An amount that does not match price times units | `trade_amount_mismatch`, warning, the row is kept | `trade_amount_mismatch` |
+
+The four notices above (closed lots, the cash totals, the currency conversion, the crypto trade
+without an ISIN) have the severity `info`: they name no form and block nothing. The derivative and
+margin rows are stored as left-out rows, and the following are the work of the steps after the
+parser; their codes and keys are named there:
+
 - Derivative and margin rows left out of every form: one warning per broker and run ("one or more
   margin or leverage rows are not supported", with the number of rows), never blocking.
 - A payment in lieu of dividends: a warning "substitute payment, check".
@@ -1161,7 +1181,7 @@ filesystem order, or log timing. Before serialization, sort them by these keys i
 4. tax date, with no date last;
 5. affected report order: capital gains, dividends, bank-deposit interest, other interest, then no report;
 6. ISIN, with no ISIN last;
-7. severity, with errors before warnings;
+7. severity, with errors first, then warnings, then notices (`info`);
 8. diagnostic code, in the order in which the code list of the stage declares the codes (not
    alphabetical); and
 9. deterministic stage-local creation sequence.

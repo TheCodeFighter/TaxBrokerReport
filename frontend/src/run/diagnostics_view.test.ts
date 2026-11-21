@@ -263,6 +263,20 @@ describe("labels and texts", () => {
     expect(severityText(kept)).toBe("severityWarning");
   });
 
+  it("has a notice text for an info diagnostic", () => {
+    const notice: Diagnostic = {
+      id: "diagnostic-0004",
+      severity: "info",
+      stage: "parsing",
+      code: "unsupported_row_type",
+      affectedReports: [],
+      blocking: false,
+      sources: [],
+    };
+
+    expect(severityText(notice)).toBe("severityInfo");
+  });
+
   it("has a text for each of the six stages and none for an unknown stage", () => {
     expect(stageText("parsing")).toBe("stageParsing");
     expect(stageText("merging")).toBe("stageMerging");

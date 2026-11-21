@@ -163,6 +163,14 @@ enum class MessageKey {
     ParseErrorInvalidFilename,
     InputFileTooLarge,
     InputFileOutOfMemory,
+    InvalidHeaderFlexQueryXmlRequired,
+    InvalidHeaderDoctypeNotAllowed,
+    InvalidHeaderMissingAttribute,
+    UnsupportedRowTypeCancelledTrade,
+    UnsupportedRowTypeNotExecution,
+    UnsupportedRowTypeCurrencyConversion,
+    UnsupportedRowTypeCryptoWithoutIsin,
+    UnsupportedRowTypeNotDetail,
 };
 
 enum class MessageParamKind {
@@ -188,6 +196,8 @@ inline constexpr std::string_view kRowKindCorporateAction = "row_kind.corporate_
 inline constexpr std::string_view kRowKindBenefit = "row_kind.benefit";
 inline constexpr std::string_view kRowKindPrivateMarket = "row_kind.private_market";
 inline constexpr std::string_view kRowKindBondRedemption = "row_kind.bond_redemption";
+inline constexpr std::string_view kRowKindIncomeTax = "row_kind.income_tax";
+inline constexpr std::string_view kRowKindCash = "row_kind.cash";
 
 } // namespace term
 
