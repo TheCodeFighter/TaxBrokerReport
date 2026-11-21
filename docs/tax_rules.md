@@ -678,7 +678,7 @@ Classify the legal instrument and income, not just the broker name or its CSV ca
 | Ordinary debt-security disposals | No taxable capital gain or deductible capital loss in Doh-KDVP; retain the source and explain the exclusion. A bond is a *rule exclusion*: every bond with a purchase, sale or maturity row in the selected year gets an entry in `excludedItems` (no warning: a tax rule leaves it out on purpose) with the units bought, sold and matured and the maturity date, and it is skipped by FIFO, the corporate-action stage, the loss rule and the Doh-KDVP builder. A Trade Republic bond maturity, its cancellation and its payout (also a corrected one) are parsed as information-only redemption events (units out or back, amount paid or taken back, tax) and are never a sale (`architecture.md`, "Trade Republic bond rows"). Matured units are added up by sum (units out minus units back), never by row order. Bonds are a separate category outside capital gains: the application lists every bond and reports only the bond interest (coupons), in Doh-Obr. |
 | Discount or zero-coupon debt | Interest may arise on disposal or redemption; require instrument terms and acquisition data. Until these calculations are implemented, return `unsupported_tax_treatment` rather than silently excluding possible interest. A bond with a sale or maturity in the year asks its type (`ordinary`, or `discount_or_zero_coupon` meaning issued below its nominal value; the wording is unconfirmed against FURS): a discount or zero-coupon answer, or no answer, stops Doh-Obr for that bond, while an ordinary bond with a sale only gets a warning, because the accrued interest received at a sale is Doh-Obr income that is not calculated yet (see "Accrued interest" in the Doh-Obr form contract; `diagnostics.md`, "Choosing whether to exclude failed other-interest ISINs"). |
 | Ordinary private crypto disposals | Left out of Doh-KDVP for every year: crypto never belongs in this form. Every crypto instrument with a trade or corporate-action row in the selected year gets an entry in `excludedItems` and no warning (a tax rule leaves it out on purpose; the summary tells the user to check whether a separate crypto return applies); it is skipped by every capital stage. The tax treatment of crypto disposals depends on the year and is unconfirmed here; confirm it against the official FURS guidance (below) before relying on it. Business activity and tokens qualifying as securities or derivatives are not covered by this exclusion. |
-| Derivatives | *Izvedeni finančni instrumenti* (options, futures, CFDs, leveraged products) have their own return (Doh-IFI) and rules. Not supported yet: `unsupported_tax_treatment` blocks the sale as for any unsupported class, until a dedicated processor and form exist. Trade Republic has none of them in scope; Interactive Brokers exports will (see "IBKR extension" in `plan.md`), so the IBKR parser must map them to the derivative class and the user is told that they are not reported. A resident who sold derivatives files Doh-IFI themselves. |
+| Derivatives and margin | *Izvedeni finančni instrumenti* (options, futures, CFDs, warrants, leveraged and knock-out products) and margin borrowing (*finančni vzvodi*) have their own return (Doh-IFI) and rules. They are not supported, **for any broker**: the rows are left out of every form with one warning per broker and run that says the files hold one or more such rows, that they are not reported and that the user files Doh-IFI themselves. They never block a form and are never asked about. This replaces the earlier `unsupported_tax_treatment` block of their sales; until the Interactive Brokers parser is written, the code still blocks them that way. Trade Republic has none of them in scope; Interactive Brokers exports do (see "IBKR extension" in `plan.md` and "Interactive Brokers export contract" in `architecture.md`). |
 | Unknown instruments and private-market events | Ask for classification and required facts; cash movements alone do not establish a purchase quantity or cost basis. |
 | Broker benefits (saveback, stock perks, bonuses, referrals) | Information only: no units, lot, classification request or form. They are shown as totals by broker, type and currency in the benefit summary (`calculations.md`). Purchase rows come only from trades (date, units, unit price); a benefit never lowers a purchase value. eDavki applies the standard costs (*normirani stroški*) itself, so the application never writes them. |
 
@@ -773,6 +773,36 @@ This list is distinct from per-report capital and other-interest `excludedInvest
 warning without blocking unrelated reports. Unanswered unknown classifications leave every
 potentially affected report `needs_input`. Cancellation alone is not an exclusion or a successful
 empty result.
+
+### IBKR row kinds and forms
+
+How the rows of an Interactive Brokers Flex Query XML export (`architecture.md`, "Interactive
+Brokers export contract") reach the forms. The trade rows are confirmed on a real export; the cash
+and corporate-action names are unconfirmed until a real file has such rows.
+
+| IBKR row | Form or result |
+| --- | --- |
+| Trades (`assetCategory`): `STK` (common, preferred, ADR, REIT), `STK` `ETF`, `FUND` | Doh-KDVP, by the FIFO rules above. |
+| Trades: `BOND`, `BILL` | A bond: outside Doh-KDVP, listed in `excludedItems`; its coupons go to Doh-Obr. |
+| Trades: `OPT`, `FUT`, `FOP`, `FSFOP`, `FSOPT`, `CFD`, `FXCFD`, `WAR`, `IOPT` | Derivatives: left out of every form; one warning per broker and run for all of them (Doh-IFI is the user's own). |
+| Trades: `CASH` (currency conversion) | Not a disposal of a security: ignored with an info, no form. |
+| Trades: `CRYPTO` | The crypto rule above. |
+| Cash: `Dividends`, `Withholding Tax` | Doh-Div, one payment per `isin` and `actionID` (gross, foreign tax). |
+| Cash: `Payment In Lieu Of Dividends` | Doh-Div like a dividend, with a warning "substitute payment, check". The borrower pays it, not the company, so it may not be a dividend under ZDoh-2: unconfirmed, a question for FURS. |
+| Cash: `Broker Interest Received` | Doh-Obr, other interest; payer = the IBKR entity of the account (`broker_payers.csv`). |
+| Cash: `Broker Interest Paid` | Margin interest: left out with one warning. |
+| Cash: `Bond Interest Received` / `Bond Interest Paid` | Doh-Obr bond coupon / the accrued-interest warning. |
+| Cash: fees, commission adjustments, deposits and withdrawals | Not a form; fee summary only. |
+| Trades: closed lots (`Lot`) | Ignored: IBKR's own matching is never used; FIFO is rebuilt from the executions. |
+| Corporate actions: forward and reverse splits | The ratio question (the text of the action is evidence only). |
+| Corporate actions: mergers, spin-offs, rights, tenders, stock and choice dividends, others | `unsupported_corporate_action` (mergers until they are processed). |
+| Corporate actions: bond and T-bill maturity | Information only (redemption event). |
+| Transfers | Not read (no FIFO effect; missing buys show as `incomplete_history` at a sale). |
+
+A dividend reversal or a withholding correction can be in a later file than its dividend, so the
+parser keeps one row per cash row, and one broker-neutral step after the merger nets the rows of
+each payment before they reach the income stage; a net of zero or less is left out with a warning
+(the FURS answer on zero-income rows applies).
 
 ## Payer lists, settled Slovenian tax and foreign-tax relief
 
