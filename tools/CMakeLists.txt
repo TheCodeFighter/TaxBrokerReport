@@ -10,6 +10,17 @@ target_link_libraries(taxbroker_tr_dump PRIVATE
     taxbroker_xml
 )
 
+add_executable(taxbroker_ibkr_dump
+    ibkr_parser_dump.cpp
+)
+
+target_include_directories(taxbroker_ibkr_dump PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(taxbroker_ibkr_dump PRIVATE
+    taxbroker_core
+    taxbroker_ibkr
+)
+
 add_executable(taxbroker_exact_dump exact_arithmetic_dump.cpp)
 target_include_directories(taxbroker_exact_dump PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(taxbroker_exact_dump PRIVATE taxbroker_core)

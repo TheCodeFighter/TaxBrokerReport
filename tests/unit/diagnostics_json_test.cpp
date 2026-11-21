@@ -49,6 +49,12 @@ TEST(DiagnosticsJsonTest, SerializesStableFrontendFieldsAndSummary) {
             .mSourceFile = "Synthetic Export.csv",
             .mMessage = "The CSV could not be parsed.",
         },
+        ParseDiagnostic{
+            .mSeverity = DiagnosticSeverity::Info,
+            .mCode = DiagnosticCode::UnsupportedRowType,
+            .mSourceFile = "Synthetic Export.csv",
+            .mMessage = "A row that is not read on purpose.",
+        },
     };
 
     const auto response = nlohmann::json::parse(api::serializeDiagnosticsJson(parseResult, 2));
@@ -56,7 +62,8 @@ TEST(DiagnosticsJsonTest, SerializesStableFrontendFieldsAndSummary) {
     EXPECT_EQ(response.at("status"), "completed_with_errors");
     EXPECT_EQ(response.at("summary").at("warningCount"), 1U);
     EXPECT_EQ(response.at("summary").at("errorCount"), 1U);
-    EXPECT_EQ(response.at("summary").at("totalCount"), 2U);
+    EXPECT_EQ(response.at("summary").at("infoCount"), 1U);
+    EXPECT_EQ(response.at("summary").at("totalCount"), 3U);
 
     const auto& warning = response.at("diagnostics").at(0);
     EXPECT_EQ(warning.at("severity"), "warning");
@@ -76,6 +83,9 @@ TEST(DiagnosticsJsonTest, SerializesStableFrontendFieldsAndSummary) {
     // A diagnostic without a message key sends neither a key nor parameters.
     EXPECT_FALSE(error.contains("messageKey"));
     EXPECT_FALSE(error.contains("messageParams"));
+
+    const auto& notice = response.at("diagnostics").at(2);
+    EXPECT_EQ(notice.at("severity"), "info");
 }
 
 TEST(DiagnosticsJsonTest, SerializesTheMessageKeyAndParameters) {

@@ -58,13 +58,13 @@ TEST(MessagesJsonTest, TermParameterHasTheTermKind) {
     EXPECT_EQ(params[1], nlohmann::json::parse(R"({"name":"rowKind","kind":"term"})"));
 }
 
-TEST(MessagesJsonTest, NineTermsHaveBothLanguages) {
+TEST(MessagesJsonTest, ElevenTermsHaveBothLanguages) {
     const nlohmann::json body = nlohmann::json::parse(api::messagesJson());
 
     const nlohmann::json& terms = body.at("terms");
 
-    // kTermKeys has nine ids.
-    EXPECT_EQ(terms.size(), 9U);
+    // kTermKeys has eleven ids.
+    EXPECT_EQ(terms.size(), 11U);
     EXPECT_FALSE(terms.at("row_kind.trade").at("en").get<std::string>().empty());
     EXPECT_FALSE(terms.at("row_kind.trade").at("sl").get<std::string>().empty());
 

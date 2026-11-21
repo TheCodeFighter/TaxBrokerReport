@@ -41,10 +41,10 @@ Account `U0000000` (`ibEntity` `IB-IE`):
 | --- | --- | --- | --- |
 | `Trade` | 1001 | Buy of a share, fee in the trade currency | Buy 10 units at USD 150.25, fee USD 1.00 (fee currency USD), tax date 2024-03-05 |
 | `Trade` | 1002 | Fractional sell (`FracShare`), fee in another currency, `notes` `P` | Sell 0.5 units at USD 200, fee EUR 0.35 (fee currency EUR) |
-| `Lot` | 1001 | Closed lot of 1002, reuses the ID of buy 1001 | Ignored, one file-level info; no duplicate-ID conflict with 1001 |
+| `Lot` | 1001 | Closed lot of 1002, reuses the ID of buy 1001 | Ignored, one file-level notice; no duplicate-ID conflict with 1001 |
 | `Trade` | 1003 | Buy of an ETF, `notes` `IA` | Buy 4 units at EUR 50, fee EUR 1.25, fund |
 | `Trade` | 1004 | Option sale (`OPT`, no ISIN, multiplier 100) | Derivative: left out of every form; counted in the one margin and leverage warning |
-| `Trade` | 1006 | Currency conversion (`CASH`) | Ignored, info |
+| `Trade` | 1006 | Currency conversion (`CASH`) | Ignored, counted in one file-level notice |
 | `Trade` | 1007 | Cancelled trade (`BUY (Ca.)`, `TradeCancel`) | Error on that row |
 | `Trade` | 1008 | Bond buy, 1000 nominal at 99.5 % (multiplier 0.01) | Bond: outside Doh-KDVP, listed in `excludedItems` |
 | `Trade` | 1009 | Fund buy (`FUND`), fee 0 | Buy 3 units at EUR 100, fund |
@@ -71,7 +71,9 @@ Account `U0000001` (`ibEntity` `IB-CE`), the same taxpayer:
 | `CorporateAction` | 5002 | The same split as 3001 (`S9001`): 2 units → 8 | One split for the ISIN, asked once |
 
 Not in the example: `CRYPTO` and `CMDTY` trades. IBKR writes them without an ISIN, and the app
-never makes one up; the parser task decides how such a row is named and left out.
+never makes one up. A crypto trade without an ISIN is not read and leaves one notice
+(`unsupported_row_type.crypto_without_isin`); a `CMDTY` trade without an ISIN is a `missing_field`
+error on `isin`. The parser tests write these rows themselves.
 
 # `supported.xml`
 
@@ -90,8 +92,9 @@ Trades:
 | 1010 | Buy, stock, `taxes` −0.8 | FR0000000077 | 10 | 20 | EUR | 1.25 (EUR) and a second fee 0.80 (EUR) | 2024-04-16 | 2024-04-16T08:30:00Z |
 | 5001 (`U0000001`) | Buy, stock, same ISIN as 1001 | US0000000010 | 2 | 160 | USD | 1.00 (USD) | 2024-07-01 | 2024-07-01T15:30:00Z |
 
-The bond 1008 is class Bond (outside Doh-KDVP); its amount is EUR 995.00 (1000 × 99.5 × 0.01), and
-how the units and the percent price are stored is decided with the parser. Trade 5001 is in the
+The bond 1008 is class Bond (outside Doh-KDVP); its amount is EUR 995.00 (1000 × 99.5 × 0.01). The
+units are the nominal (1000) and the unit price is `tradePrice` × `multiplier` = 0.995, as for a
+Trade Republic bond. Trade 5001 is in the
 same FIFO pool as 1001 and 1002.
 
 Cash rows (one event per row; `reportDate` is not a tax date):
@@ -129,8 +132,8 @@ Result: **0 events**, and these diagnostics only.
 
 | Row | Why | Diagnostic |
 | --- | --- | --- |
-| `Lot` 1001 (`CLOSED_LOT`), `Order` 1021 (`ORDER`) | Not an execution | One file-level info, count 2 |
-| `Trade` 1006 (`CASH`, `EUR.USD`) | Currency conversion | One info |
+| `Lot` 1001 (`CLOSED_LOT`), `Order` 1021 (`ORDER`) | Not an execution | One file-level notice (severity `info`), count 2 |
+| `Trade` 1006 (`CASH`, `EUR.USD`) | Currency conversion | One file-level notice (severity `info`), count 1 |
 | `Trade` 1004 (`OPT`), 1022 (`FUT`), 1023 (`CFD`), `CashTransaction` 2008 (`Broker Interest Paid`) | Margin and leverage | One warning, count 4, never blocking |
 | `CashTransaction` 2011 (`Other Fees`), 2012 (`Deposits/Withdrawals`) | Ignored cash rows | None |
 | `Transfers`, `OpenPositions`, `CashReport` sections | Sections that are not read | None |
@@ -143,13 +146,14 @@ has a wrong sign and a positive fee) gets only the cancelled-row error.
 
 Result: **1 event**, the valid buy 8001 (5 units at USD 20, fee USD 1.00, 2024-07-01, UTC
 2024-07-01T18:00:00Z), and one error on each other row, which is not read. The file has no other
-diagnostic. A code marked "named in the parser" is named when the parser is written.
+diagnostic. A cancelled row is `unsupported_row_type.cancelled_trade`, and its `field` is the
+attribute that shows it (`buySell`, `transactionType` or `notes`).
 
 | `transactionID` | What is wrong | Error |
 | --- | --- | --- |
-| 8002 | `buySell` `BUY (Ca.)`, `transactionType` `TradeCancel`, `notes` `Ca` | Cancelled row, code named in the parser |
-| 8003 | `transactionType` `TradeCorrect` | Cancelled row, code named in the parser |
-| 8004 | `notes` `Ca;P` (code `Ca` among others) | Cancelled row, code named in the parser |
+| 8002 | `buySell` `BUY (Ca.)`, `transactionType` `TradeCancel`, `notes` `Ca` | `unsupported_row_type`, field `buySell` |
+| 8003 | `transactionType` `TradeCorrect` | `unsupported_row_type`, field `transactionType` |
+| 8004 | `notes` `Ca;P` (code `Ca` among others) | `unsupported_row_type`, field `notes` |
 | 8005 | `buySell` `BUY` with `quantity` −5 and `proceeds` 100 | `inconsistent_value` (sign, as for Trade Republic) |
 | 8006 | Stock row without the `isin` attribute | `invalid_header` (a missing attribute) |
 | 8007 | `tradeDate` `2024-03-05` | `invalid_value`, field `tradeDate` |
@@ -245,7 +249,7 @@ sale 9104 (`docs/fifo.md`). Trade 9105 has no usable source decimal: nothing is 
 | `activity_statement.csv` | An Activity Statement (CSV) | Same |
 | `wrong_root.xml` | Root `FlexStatementResponse` (the web service reply, not the report) | Same |
 | `truncated.xml` | A valid file cut off inside `Trades` (not well-formed XML) | Same |
-| `doctype_entity.xml` | A DOCTYPE that declares an external entity and uses it | Rejected with a file-level error; the entity is never read (the file it names does not exist) |
+| `doctype_entity.xml` | A DOCTYPE that declares an external entity and uses it | One file-level `invalid_header` error (`invalid_header.doctype_not_allowed`); the entity is never read (the file it names does not exist) |
 | `empty_statements.xml` | `FlexStatements count="0"` | 0 events, no diagnostic |
 | `bom.xml` | A valid file with a UTF-8 byte order mark | Read as normal: 1 buy (10 units of US0000000010 at USD 150.25, fee USD 1.00) |
 

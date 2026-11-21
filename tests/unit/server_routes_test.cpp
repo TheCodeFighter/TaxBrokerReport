@@ -487,7 +487,7 @@ TEST_F(ServerRoutesTest, MessagesWithTheSessionAreJson) {
     const nlohmann::json body = nlohmann::json::parse(response.mBody);
 
     EXPECT_TRUE(body.at("messages").contains("parse_error.unclosed_quote"));
-    EXPECT_EQ(body.at("terms").size(), 9U);
+    EXPECT_EQ(body.at("terms").size(), 11U);
 }
 
 TEST_F(ServerRoutesTest, PostToMessagesIsNotAllowed) {
