@@ -7,11 +7,13 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF'
-Usage: build.sh [dev|image|docker-build|prod]
+Usage: build.sh [dev|image|e2e-image|docker-build|prod]
 
     dev            Remove build/dev, then compile the backend and the debug tools
                    from scratch with Clang + Ninja (default). Needs the dev image.
     image          Build only the dev image.
+    e2e-image      Build the browser test image (the dev image plus Chromium) for
+                   scripts/e2e.sh. Needs the dev image.
     docker-build   Build the dev image, then run the dev build.
     prod           Build the production image and copy its static taxbroker and
                    taxbroker_server binaries to build/static.
@@ -47,6 +49,11 @@ elif [[ "$mode" == "prod" ]]; then
 elif [[ "$mode" == "image" ]]; then
     echo "==> Building Docker dev image..."
     compose build dev
+elif [[ "$mode" == "e2e-image" ]]; then
+    # The e2e stage starts from the built dev image; it never builds that image.
+    ensure_dev_image
+    echo "==> Building Docker browser test image..."
+    compose build e2e
 else
     if [[ "$mode" != "dev" && "$mode" != "docker-build" ]]; then
         echo "Unknown build mode: $mode" >&2

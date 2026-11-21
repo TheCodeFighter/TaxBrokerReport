@@ -173,19 +173,22 @@ _tbr_complete() {
     _tbr_reply "words:${candidates[*]}" "$current"
 }
 
-_tbr_build() { _tbr_complete --help :: "words:dev image docker-build prod"; }
+_tbr_build() { _tbr_complete --help :: "words:dev image e2e-image docker-build prod"; }
 _tbr_coverage() { _tbr_complete --help; }
 _tbr_cppcheck() { _tbr_complete --reuse-build --help; }
 _tbr_valgrind() {
     _tbr_complete --reuse-build "--part=words:regular csv ecb reference messages all" --help
 }
-_tbr_fuzz() { _tbr_complete --seconds=none --replay=file --help; }
+_tbr_fuzz() {
+    _tbr_complete "--target=words:parser multipart answers" --seconds=none --replay=file --help
+}
 _tbr_run() {
     _tbr_complete --reuse-build-backend --reuse-build-frontend --reuse-build --no-browser --help
 }
+_tbr_e2e() { _tbr_complete --reuse-build --help :: none; }
 _tbr_frontend() { _tbr_complete --rebuild-all --help :: "words:install typecheck test build check all"; }
-_tbr_format() { _tbr_complete --check --help; }
-_tbr_test() { _tbr_complete --reuse-build "--suite=words:unit integration" --help :: none; }
+_tbr_format() { _tbr_complete --check -- --help :: file+; }
+_tbr_test() { _tbr_complete --reuse-build "--suite=words:unit integration boundary" --help :: none; }
 _tbr_debug_tests() { _tbr_complete --help :: "words:build" "words:unit integration"; }
 _tbr_dump_tr_parse() { _tbr_complete --help :: csv file file; }
 _tbr_dump_tr_merge() { _tbr_complete --help :: csv file dir; }
@@ -210,7 +213,7 @@ _tbr_report() {
 
 _tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse
     dump_tr_merge dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_ecb_rates dump_exact_arithmetic
-    report run frontend)
+    report run frontend e2e)
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     # The shared functions above expect bash's zero-based arrays.

@@ -112,3 +112,11 @@ USER app
 
 EXPOSE 8080
 CMD ["./taxbroker_server"]
+
+# Stage 5: Browser tests. The development image plus Chromium, for the end-to-end tests of the
+# frontend (frontend/e2e). It starts from the built taxbrokerreport-dev image (made
+# by scripts/build.sh image, loaded in CI), so it never builds the dev stage again. Playwright's
+# own browser builds need glibc, so the Alpine package is used.
+FROM taxbrokerreport-dev AS e2e
+
+RUN apk add --no-cache chromium

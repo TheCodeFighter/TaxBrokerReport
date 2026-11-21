@@ -6,13 +6,16 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
+    "test": "vitest run",
+    "test:e2e": "vitest run -c vitest.e2e.config.ts"
   },
   "dependencies": {
     "preact": "10.29.8"
   },
   "devDependencies": {
+    "@types/node": "24.19.2",
+    "playwright-core": "1.65.0",
     "typescript": "5.9.3",
     "vite": "7.3.8",
     "vitest": "4.1.12"

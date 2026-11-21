@@ -1,8 +1,9 @@
 # Manual test files (Trade Republic, 2022 to 2025, and one developer-mode file for 2021)
 
 Four synthetic Trade Republic exports, one for each year (and a fifth, standalone one for developer mode, see below), for trying the application by hand in the
-browser and for checking the XML in eDavki. Every name, amount and date is made up. No test reads
-these files: they are for people. Each file has the rows of its own year, so together they are
+browser and for checking the XML in eDavki. Every name, amount and date is made up. The browser
+tests (`frontend/e2e/`) read these files and answer as the tables below say: change the files, this
+README and those tests together. Each file has the rows of its own year, so together they are
 one history, the way consecutive exports from the broker are.
 
 Rules for these files:
@@ -99,9 +100,9 @@ payer question leaves the payer empty with a warning; `exclude` on the unknown-c
 
 ## What the browser shows
 
-Every question above has a screen in the browser, except the exclusion (failure) questions of the
-ruble share, the certificate, the missing-history share and Bond B: the page still says it cannot
-take them. Nothing is preselected on any screen.
+Every question above has a screen in the browser, including the exclusion (failure) questions of
+the ruble share, the certificate, the missing-history share and Bond B. Nothing is preselected on
+any screen.
 
 | Year | Question screens | Result blocks |
 | --- | --- | --- |
