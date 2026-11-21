@@ -1,0 +1,2 @@
+"ClientAccountID","AssetClass","CurrencyPrimary","Symbol","ISIN","TradeDate","DateTime","Buy/Sell","Quantity","TradePrice","Proceeds","IBCommission","Notes/Codes"
+"U0000000","STK","USD","SYNA","US0000000010","20240305","20240305;154210","BUY","10","150.25","-1502.5","-1","IA"

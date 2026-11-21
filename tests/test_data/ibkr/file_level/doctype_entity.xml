@@ -1,0 +1,7 @@
+<!DOCTYPE FlexQueryResponse [
+  <!ENTITY probe SYSTEM "file:///nonexistent/taxbroker_entity_probe">
+]>
+<FlexQueryResponse queryName="TaxBrokerReport entity" type="AF">
+  &probe;
+  <FlexStatements count="0"/>
+</FlexQueryResponse>

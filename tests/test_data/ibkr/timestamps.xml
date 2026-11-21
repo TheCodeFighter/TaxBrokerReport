@@ -1,0 +1,17 @@
+<FlexQueryResponse queryName="TaxBrokerReport timestamps" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="9001" tradeID="9001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" isin="US0000000010" currency="USD" tradeDate="20240305" dateTime="20240305;094210" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="9002" tradeID="9002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" isin="US0000000010" currency="USD" tradeDate="20240308" dateTime="20240308;155959" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="9003" tradeID="9003" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" isin="US0000000010" currency="USD" tradeDate="20240311" dateTime="20240311;093000" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="9004" tradeID="9004" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" isin="US0000000010" currency="USD" tradeDate="20240306" dateTime="20240305;203000" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="9005" tradeID="9005" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" isin="US0000000010" currency="USD" tradeDate="20241101" dateTime="20241101;160000" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="9006" tradeID="9006" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" isin="US0000000010" currency="USD" tradeDate="20241104" dateTime="20241104;093000" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions/>
+      <CashTransactions/>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

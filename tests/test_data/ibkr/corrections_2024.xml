@@ -1,0 +1,15 @@
+<FlexQueryResponse queryName="TaxBrokerReport corrections 2024" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="6001" tradeID="6001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNC" description="SYNTHETIC EXAMPLE C INC" isin="US0000000036" currency="USD" tradeDate="20241112" dateTime="20241112;100000" buySell="BUY" quantity="3" tradePrice="20" proceeds="-60" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" transactionID="2101" actionID="A9101" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="SYNC" description="SYNC CASH DIVIDEND USD 1.00 PER SHARE" isin="US0000000036" currency="USD" dateTime="20241115" settleDate="20241115" reportDate="20241115" amount="10" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="2102" actionID="A9101" levelOfDetail="DETAIL" type="Withholding Tax" assetCategory="STK" symbol="SYNC" description="SYNC CASH DIVIDEND USD 1.00 PER SHARE - US TAX" isin="US0000000036" currency="USD" dateTime="20241115" settleDate="20241115" reportDate="20241115" amount="-1.5" issuerCountryCode="US"/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

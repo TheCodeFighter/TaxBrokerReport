@@ -1,0 +1,5 @@
+<FlexStatementResponse timestamp="01 March, 2025 10:15 AM EST">
+  <Status>Success</Status>
+  <ReferenceCode>0000000000</ReferenceCode>
+  <Url>https://example.invalid/flex</Url>
+</FlexStatementResponse>
