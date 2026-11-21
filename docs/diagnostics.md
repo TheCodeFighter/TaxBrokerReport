@@ -844,7 +844,10 @@ The classification stage runs before FIFO, from the asset class of each trade in
 reads a name or a symbol. Shares and fund units stay in capital gains. A bond and a crypto
 instrument are left out by a tax rule; an unknown class asks the question above; a derivative and
 a private fund are not changed by it (the capital gates give their `unsupported_tax_treatment`
-error, and the capital failure question can leave them out into `excludedInvestments`).
+error, and the capital failure question can leave them out into `excludedInvestments`). Planned
+change (with the Interactive Brokers parser, `tax_rules.md` "Derivatives and margin"): a derivative is left out
+of every form with one warning instead of blocking, for every broker; the private fund is
+unchanged.
 
 Every instrument that is left out has one entry in the top-level `excludedItems` list, sorted by
 ISIN and always present (`[]` when empty). It is distinct from the `excludedInvestments` of a
@@ -1071,6 +1074,25 @@ ends, they stay open and the summary lists them. `unsupported_tax_treatment` is 
 each skipped private-market event of the selected year; a rejected private-market row or a merger
 error on a private-market event affects no report. The cases and their scope are in
 [`architecture.md`](architecture.md), "CLI report command (walking skeleton)".
+
+### Planned Interactive Brokers behaviour
+
+The Interactive Brokers parser has not been written. These are the behaviours its
+export contract (`architecture.md`, "Interactive Brokers export contract") needs a diagnostic
+for. The codes and message keys are named when the parser is written; each keeps the privacy
+rules above (no value, no absolute path).
+
+- A file that is not a Flex Query XML (a Flex Query CSV, an Activity Statement): a file-level
+  `invalid_header` error with a hint to export the Flex Query as XML.
+- A cancelled or corrected trade row: an error on that row, never netted.
+- Ignored closed lots (`Lot`) and other trade rows that are not executions: one file-level info
+  with the count.
+- Derivative and margin rows left out of every form: one warning per broker and run ("one or more
+  margin or leverage rows are not supported", with the number of rows), never blocking.
+- A payment in lieu of dividends: a warning "substitute payment, check".
+- A dividend reversal without its dividend, or a correction booked in a later year than its pay
+  date: a warning.
+- An `ibEntity` that is not in the broker payer list: empty payer facts and a warning.
 
 ## Message keys and translation
 

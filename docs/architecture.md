@@ -261,6 +261,186 @@ loss rule and the corporate-action stage do not read them. The classification st
 per bond into the excluded items (see "Classification" below); the reporting of bond interest only
 (Doh-Obr) builds on them later.
 
+### Interactive Brokers export contract
+
+Status: **contract, partly verified on a real export.** The file structure, the account and trade
+attributes, the date format, the time zone, the signs and the closed-lot rows were checked on a
+real export (names, counts and shapes only, never values). That export holds only buys and sells of
+exchange-traded funds in EUR, so the cash-transaction and corporate-action attributes and
+their `type` values come from the column names IBKR writes for the same query and from public
+descriptions; they are confirmed on the first real file that has such rows, and a name that differs
+is corrected here. Nothing in this section is implemented yet (`src/parsers/ibkr_parser.cpp` is an
+empty stub).
+
+**The export.** One **Activity Flex Query** in **XML** format, one file per run, one run per
+calendar year (overlapping files are fine; the longest period of one run is unconfirmed, and a
+leap year has 366 days). The query that Slovenian users of other eDavki converters already have
+works as it is. Not read: the Flex Query as CSV (no section codes in the usual setting, so a
+section is known only by the shape of its header row) and the **Activity Statement** (a human
+report: trade rows without ISIN, subtotal rows, a layout that changes). A file whose root element
+is not `FlexQueryResponse` is rejected with one file-level `invalid_header` error and a hint to
+export the Flex Query as XML. The step-by-step guide for the user is written with the user
+documentation.
+
+**File shape.** The parser reads the XML once into a tree (no DTD, no external entities; the file
+size limit of the other input files applies):
+
+```xml
+<FlexQueryResponse queryName="..." type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250105;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades> <Trade .../> <Lot .../> </Trades>
+      <CorporateActions> <CorporateAction .../> </CorporateActions>
+      <CashTransactions> <CashTransaction .../> </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+```
+
+There is one `FlexStatement` per account. A section element may be empty or missing; a missing
+section is read as empty. Any other section element (transfers, open positions, cash report, NAV,
+performance summaries, financial instrument information, accruals, borrow and lending) is not
+read, as a whole and without a diagnostic: its rows are never events. Each row element is
+checked for the attributes it needs before it is read; a missing one rejects that row with
+`invalid_header`. Extra attributes are allowed and ignored.
+
+| Element | Attributes read | Used for |
+| --- | --- | --- |
+| `AccountInformation` | `accountId`, `ibEntity` | The Doh-Obr payer of broker interest: `ibEntity` is the `code` of `broker_payers.csv` (`IB-IE`, `IB-CE`, `IB-UK`, `IB-LUX`, `IBLLC-US`). An unknown entity gives empty payer facts and a warning, never a block. |
+| `Trade` | `accountId`, `transactionID`, `tradeID`, `levelOfDetail`, `transactionType`, `assetCategory`, `subCategory`, `symbol`, `description`, `isin`, `currency`, `tradeDate`, `dateTime`, `buySell`, `quantity`, `tradePrice`, `proceeds`, `ibCommission`, `ibCommissionCurrency`, `taxes`, `openCloseIndicator`, `notes`, `multiplier` | Buys and sells, fees, asset class, derivatives, cancellations. |
+| `Lot` | none | A closed lot: IBKR's own matching of a sale to its buys. Ignored. |
+| `CashTransaction` | `accountId`, `transactionID`, `actionID`, `levelOfDetail`, `type`, `assetCategory`, `symbol`, `description`, `isin`, `currency`, `dateTime`, `settleDate`, `reportDate`, `amount`, `issuerCountryCode` | Dividends, withholding tax, payment in lieu, broker interest, bond coupons and accrued interest, fees, deposits. |
+| `CorporateAction` | `accountId`, `transactionID`, `actionID`, `type`, `assetCategory`, `symbol`, `description`, `actionDescription`, `isin`, `currency`, `dateTime`, `reportDate`, `quantity`, `proceeds`, `value` | Splits, reverse splits, mergers and the rest, bond maturity. |
+
+Rules (each one is a row of the parser fixtures):
+
+1. **Dates and times.** A date is `yyyyMMdd` (`20240305`); a date and time is `yyyyMMdd;HHmmss`
+   (`20240305;154210`). Any other format is `invalid_value` on that attribute. `tradeDate`
+   (trades) and the date part of `dateTime` (cash rows, corporate actions) are the tax dates,
+   exactly as IBKR gives them; the parser never moves a date. `dateTime` is only the ordering
+   timestamp and is in US Eastern time (confirmed: trades on European exchanges show 03:00 to
+   11:30). The two dates differ only for a trade between 18:00 and 24:00 Eastern time (US
+   after-hours and the IBKR overnight session); IBKR already gives an overnight trade the next
+   trading day as `tradeDate`. Whether the Slovenian return uses the exchange's trade date or the
+   Slovenian calendar date is unconfirmed (a question for FURS); until it is answered the
+   exchange's trade date is used.
+2. **Signs.** Buy: `quantity` > 0 and `proceeds` < 0. Sell: `quantity` < 0 and `proceeds` > 0.
+   `ibCommission` ≤ 0 (a fee paid; 0 occurs). A sign that disagrees with `buySell` rejects the
+   row, as for Trade Republic.
+3. **Numbers.** Plain dot decimals without grouping. Quantities can be fractional
+   (`transactionType` `FracShare`); the unit rounding and evidence rules of Trade Republic apply.
+4. **Identity.** Broker + `transactionID`, unique among `Trade` elements. A `Lot` reuses the
+   `transactionID` of the buy it closes (also in a later year's file), so it is never read as an
+   event. Overlapping files give the same IDs, so the merger drops exact duplicates. `actionID`
+   groups the rows of one corporate action or one dividend payment. Several accounts (one
+   `FlexStatement` each) are one taxpayer: one FIFO pool per ISIN, nothing is keyed on the account.
+5. **Level of detail.** Only `Trade` elements with `levelOfDetail` `EXECUTION` are read. `Lot`
+   elements and any other child of `Trades` (orders, wash sales) are ignored with one file-level
+   info with the count (IBKR's own FIFO and wash-sale results are never used).
+6. **Asset class.**
+
+   | `assetCategory` | `subCategory` | Model class | Result |
+   | --- | --- | --- | --- |
+   | `STK` | `COMMON`, `PREFERRED`, `ADR`, `REIT`, … | Stock | Doh-KDVP |
+   | `STK` | `ETF` | Fund | Doh-KDVP |
+   | `FUND` | any | Fund | Doh-KDVP |
+   | `BOND`, `BILL` | any | Bond | Outside Doh-KDVP, as Trade Republic bonds |
+   | `OPT`, `FUT`, `FOP`, `FSFOP`, `FSOPT`, `CFD`, `FXCFD`, `WAR`, `IOPT` | any | Derivative | Left out of every form with one warning (rule 13) |
+   | `CRYPTO` | any | Crypto | Left out of Doh-KDVP (the existing crypto rule) |
+   | `CASH` | any | none | A currency conversion (`EUR.USD`): ignored with an info, no form |
+   | `CMDTY` and unknown | any | Unknown | The existing classification request |
+
+7. **Cancellations and corrections.** A row with `buySell` `BUY (Ca.)` or `SELL (Ca.)`,
+   `transactionType` `TradeCancel` or `TradeCorrect`, or the code `Ca` in `notes` is rejected with
+   an error on that row. It is never netted silently. Other `notes` codes (for example `IA`, `P`,
+   `ST`, several joined by `;`) are normal and ignored.
+8. **Fees.** `ibCommission` is booked in `ibCommissionCurrency`, which can differ from `currency`:
+   the fee currency is `ibCommissionCurrency`, never the trade currency or the amount's currency.
+   `taxes` (stamp duty, financial transaction tax) is a second fee in `currency`. Fees stay
+   informational. `fxRateToBase` is not read: the official ECB rate is used, as for Trade
+   Republic.
+9. **Cash transactions** (`type`):
+
+   | `type` | Maps to |
+   | --- | --- |
+   | `Dividends` | A dividend row, gross = `amount`. |
+   | `Withholding Tax` | A tax row of the payment with the same `isin` and `actionID`. A positive row (refund) lowers the tax. |
+   | `Payment In Lieu Of Dividends` | A dividend row like `Dividends` (Doh-Div, payer by ISIN), with a warning "substitute payment, check". Unconfirmed, a question for FURS. |
+   | `Broker Interest Received` | Interest, `CashHolder::Broker` (Doh-Obr), payer = the `ibEntity` of the account. |
+   | `Broker Interest Paid` | Margin interest: left out with one warning (rule 13). |
+   | `Bond Interest Received` | A bond coupon (Doh-Obr, payer = issuer by ISIN). |
+   | `Bond Interest Paid` | Accrued interest paid at a purchase: the existing accrued-interest warning. |
+   | `Other Fees`, `Commission Adjustments`, `Advisor Fees` | Ignored, fee summary only. |
+   | `Deposits/Withdrawals` | An ignored cash movement. |
+
+10. **Corporate actions** (`type` code):
+
+    | Code | Result |
+    | --- | --- |
+    | `FS` forward split, `RS` reverse split, same ISIN before and after | `UnresolvedSplit`: the ratio is asked, as for Trade Republic. The text in `actionDescription` (for example "SPLIT 4 FOR 1") is evidence only, never a verified ratio. |
+    | `FS` or `RS` where the ISIN changes, `TC` merger, `IC` issue change | `unsupported_corporate_action` until mergers are processed. |
+    | `SO` spin-off, `SD` stock dividend, `RI`, `DI`, `ED`, `SR` rights, `TO`, `TI` tender, `DW` delisted worthless, `CH`, `HD`, `HI` choice dividend, `BC`, `CI`, any other | `unsupported_corporate_action`. |
+    | `BM` bond maturity, `TM` T-bill maturity | `BondRedemptionEvent`, information only. |
+    | `CD` cash dividend, `CP` coupon | Ignored here; the cash row is the payment. |
+
+11. **Transfers.** The `Transfers` section is not read. One FIFO pool per ISIN across brokers
+    makes a position transfer a no-op, and units that came in without their buys in the files are
+    caught where they matter: a later sale gives `incomplete_history`. A warning per transfer would
+    only repeat that.
+12. **Facts the export does not give** stay shared requests, never an IBKR guess downstream: the
+    legal class beyond `assetCategory` (a non-UCITS fund, an ETC: the existing classification
+    request), the dividend payer's address (reference files by ISIN, else empty facts and a
+    warning), the bond type question and the split ratio.
+13. **Margin and leverage are not supported, for any broker.** Margin borrowing, CFDs, options,
+    futures, leveraged and knock-out products (*finančni vzvodi*, *izvedeni finančni
+    instrumenti*) are filed by the user in Doh-IFI or not at all. When such rows occur the user gets
+    **one warning per broker and run** that the files hold one or more margin or leverage rows that
+    are not supported (with the number of rows), and that is all: the rows are left out of every
+    form, never block a form and are never asked about. A derivative often has no ISIN; none is
+    made up. The IBKR rows are the derivative asset classes of rule 6 and
+    `Broker Interest Paid` (rule 9).
+
+**Normalization to the common model.** After the parser an IBKR event looks exactly like a Trade
+Republic event of the same kind: the merger, FIFO and the forms never see an IBKR format, time
+zone, sign or attribute name.
+
+- **Tax date:** a calendar date from `tradeDate` or the date part of `dateTime`, as given (rule 1).
+- **Timestamps:** `mSourceTimestamp` is UTC in milliseconds, as for Trade Republic. The parser
+  converts IBKR's US Eastern `dateTime` with the US daylight-saving rule in force since 2007
+  (second Sunday of March to first Sunday of November, at 02:00 local time; EST is UTC−5, EDT is
+  UTC−4), written in the parser, with no time-zone database at run time, so the static and the
+  Windows builds behave the same. A time in the repeated hour of November is read as EDT. A
+  converted UTC date that differs from the tax date is normal for IBKR (no `inconsistent_value`
+  warning as for Trade Republic), because the tax date is the exchange's date.
+- **Signs and amounts:** units, prices, amounts, fees and tax are stored positive, and the side or
+  the kind carries the direction. IBKR's negative `quantity`, `proceeds`, `ibCommission` and
+  withholding amounts are turned around in the parser.
+- **One event per cash row, netted after the merger.** The rows of one payment can be in two files
+  (a dividend in one year's file, its reversal and correction in the next year's), so the parser
+  does not net them. It makes one income event per cash row (a dividend, a tax or a reversal row)
+  with its own identity and a broker-neutral payment group ID from `actionID`. After the merger has
+  removed duplicate rows, one broker-neutral step adds up the rows of each payment (same broker,
+  payment group ID and ISIN) into one dividend (gross, tax, pay date), dated on the pay date in the
+  pay date's year. A net of zero or less gives no dividend and a warning. A reversal without its
+  dividend in the files gets a warning. A correction booked (`reportDate`) in a later year than its
+  pay date gets a warning that the return of that year may need a correction. A broker without
+  such rows (Trade Republic) gives one row per payment, which the step passes through unchanged.
+- **Currencies:** IBKR codes map to the shared currency type; an unknown code rejects the row.
+  The fee currency is `ibCommissionCurrency` (rule 8).
+- **Identity:** broker + `transactionID` for every event; a netted dividend keeps every source row
+  in its provenance.
+
+Behaviour to list for the parser task (codes are named there, not here): a file that is not a Flex
+Query XML; a cancelled or corrected trade row; ignored closed lots and other trade rows (info); the
+derivative and margin rows left out (one warning per broker and run); a payment in lieu
+(warning); a dividend reversal without its dividend and a correction in a later year (warnings);
+an unknown `ibEntity` (warning).
+
+`tests/test_data/ibkr/contract_example.xml` is a synthetic file with one row for each kind above
+(account `U0000000`, made-up ISINs with valid check digits). It defines the literal rows the parser
+tests are built from; it holds no real value.
+
 ### Stable input sequence
 
 The stable input sequence is scoped to the complete input request. `mSourceIndex` is the zero-based

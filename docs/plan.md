@@ -393,10 +393,16 @@ income collections does not justify synchronization and nondeterministic error h
 
 Add Interactive Brokers only after the Trade Republic application is complete.
 
-Interactive Brokers exports will contain derivatives (*izvedeni finančni instrumenti*: options,
-futures, CFDs, leveraged products), which Trade Republic does not. They are not supported yet: the
-parser maps them to the derivative class, the capital report blocks their sales with
-`unsupported_tax_treatment`, and the user is told that they are filed in Doh-IFI outside the app.
+Interactive Brokers exports contain derivatives and margin (*izvedeni finančni instrumenti*,
+*finančni vzvodi*: options, futures, CFDs, leveraged products, margin interest), which Trade
+Republic does not. They are not supported, for any broker: the rows are left out of every form,
+the user gets one warning per broker and run that the files hold one or more such rows, that they
+are not reported and are filed in Doh-IFI outside the app, and they never block a form or raise a
+question.
+
+The export contract (an Activity Flex Query as XML, its elements, attributes and rules) is in
+`architecture.md`, "Interactive Brokers export contract". The row kinds and forms are in
+`tax_rules.md`, "IBKR row kinds and forms".
 
 The IBKR work consists of:
 
