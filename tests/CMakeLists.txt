@@ -61,6 +61,7 @@ add_executable(taxbroker_unit_tests
     unit/interest_payments_test.cpp
     unit/other_interest_failure_test.cpp
     unit/ecb_rate_file_test.cpp
+    unit/ibkr_fixture_test.cpp
     unit/input_file_test.cpp
     unit/official_rate_selection_test.cpp
     unit/quantity_reconciliation_test.cpp
@@ -123,6 +124,7 @@ target_link_libraries(taxbroker_unit_tests
     taxbroker_xml
     GTest::gtest_main
     nlohmann_json::nlohmann_json
+    pugixml::static
 )
 
 target_compile_definitions(taxbroker_unit_tests

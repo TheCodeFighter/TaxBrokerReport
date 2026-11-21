@@ -1,0 +1,6 @@
+Statement,Header,Field Name,Field Value
+Statement,Data,BrokerName,Synthetic Broker
+Statement,Data,Account,U0000000
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,Proceeds,Comm/Fee
+Trades,Data,Order,Stocks,USD,SYNA,"2024-03-05, 15:42:10",10,150.25,-1502.5,-1
+Trades,Total,,Stocks,USD,,,10,,-1502.5,-1

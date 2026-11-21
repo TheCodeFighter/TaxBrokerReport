@@ -277,13 +277,14 @@ calendar year (overlapping files are fine; the longest period of one run is unco
 leap year has 366 days). The query that Slovenian users of other eDavki converters already have
 works as it is. Not read: the Flex Query as CSV (no section codes in the usual setting, so a
 section is known only by the shape of its header row) and the **Activity Statement** (a human
-report: trade rows without ISIN, subtotal rows, a layout that changes). A file whose root element
-is not `FlexQueryResponse` is rejected with one file-level `invalid_header` error and a hint to
-export the Flex Query as XML. The step-by-step guide for the user is written with the user
-documentation.
+report: trade rows without ISIN, subtotal rows, a layout that changes). A file that is not
+well-formed XML, or whose root element is not `FlexQueryResponse`, is rejected with one file-level
+`invalid_header` error and a hint to export the Flex Query as XML. The step-by-step guide for the
+user is written with the user documentation.
 
-**File shape.** The parser reads the XML once into a tree (no DTD, no external entities; the file
-size limit of the other input files applies):
+**File shape.** The parser reads the XML once into a tree (no DTD, no external entities; a file
+with a `DOCTYPE` is rejected with a file-level error and is never expanded; a UTF-8 byte order mark
+at the start is accepted; the file size limit of the other input files applies):
 
 ```xml
 <FlexQueryResponse queryName="..." type="AF">
@@ -324,7 +325,9 @@ Rules (each one is a row of the parser fixtures):
    after-hours and the IBKR overnight session); IBKR already gives an overnight trade the next
    trading day as `tradeDate`. Whether the Slovenian return uses the exchange's trade date or the
    Slovenian calendar date is unconfirmed (a question for FURS); until it is answered the
-   exchange's trade date is used.
+   exchange's trade date is used. A time in the hour that does not exist in US Eastern time
+   (02:00 to 02:59 on the second Sunday of March) is `invalid_value`: IBKR never writes it, so it
+   means a broken file.
 2. **Signs.** Buy: `quantity` > 0 and `proceeds` < 0. Sell: `quantity` < 0 and `proceeds` > 0.
    `ibCommission` ≤ 0 (a fee paid; 0 occurs). A sign that disagrees with `buySell` rejects the
    row, as for Trade Republic.
@@ -423,7 +426,8 @@ zone, sign or attribute name.
   removed duplicate rows, one broker-neutral step adds up the rows of each payment (same broker,
   payment group ID and ISIN) into one dividend (gross, tax, pay date), dated on the pay date in the
   pay date's year. A net of zero or less gives no dividend and a warning. A reversal without its
-  dividend in the files gets a warning. A correction booked (`reportDate`) in a later year than its
+  dividend in the files gets that one warning instead (the net-of-zero warning is for a payment
+  that has a dividend row). A correction booked (`reportDate`) in a later year than its
   pay date gets a warning that the return of that year may need a correction. A broker without
   such rows (Trade Republic) gives one row per payment, which the step passes through unchanged.
 - **Currencies:** IBKR codes map to the shared currency type; an unknown code rejects the row.
@@ -437,9 +441,13 @@ derivative and margin rows left out (one warning per broker and run); a payment 
 (warning); a dividend reversal without its dividend and a correction in a later year (warnings);
 an unknown `ibEntity` (warning).
 
-`tests/test_data/ibkr/contract_example.xml` is a synthetic file with one row for each kind above
-(account `U0000000`, made-up ISINs with valid check digits). It defines the literal rows the parser
-tests are built from; it holds no real value.
+`tests/test_data/ibkr/` holds the synthetic fixtures (made-up accounts and ISINs with valid check
+digits, no real value). `contract_example.xml` has one row for each kind above; the other files
+each cover one part (supported rows, ignored rows, rejected rows, corrections across two years,
+time zone edges, quantity digits, a conflicting duplicate, an unknown `ibEntity`, file-level
+errors, and the same trades as a Trade Republic CSV).
+`tests/test_data/ibkr/README.md` has the expected result of every row; the parser tests take their
+literals from it.
 
 ### Stable input sequence
 

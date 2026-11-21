@@ -1,0 +1,12 @@
+<FlexQueryResponse queryName="TaxBrokerReport unknown entity" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000002" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000002" ibEntity="IB-XX"/>
+      <Trades/>
+      <CorporateActions/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000002" transactionID="2301" actionID="" levelOfDetail="DETAIL" type="Broker Interest Received" assetCategory="CASH" symbol="" description="EUR CREDIT INT FOR APR-2024" isin="" currency="EUR" dateTime="20240503" settleDate="20240503" reportDate="20240503" amount="1.75" issuerCountryCode=""/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

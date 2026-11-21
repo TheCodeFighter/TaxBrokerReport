@@ -1,0 +1,18 @@
+<FlexQueryResponse queryName="TaxBrokerReport equivalence" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20231101" toDate="20240630" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="7001" tradeID="7001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNG" description="SYNTHETIC EXAMPLE G SA" isin="FR0000000077" currency="EUR" tradeDate="20240305" dateTime="20240305;094210" buySell="BUY" quantity="5" tradePrice="20" proceeds="-100" ibCommission="-1" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="7002" tradeID="7002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNG" description="SYNTHETIC EXAMPLE G SA" isin="FR0000000077" currency="EUR" tradeDate="20240610" dateTime="20240610;101500" buySell="SELL" quantity="-2" tradePrice="25" proceeds="50" ibCommission="-1" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" transactionID="7003" actionID="A9201" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="SYNG" description="SYNG CASH DIVIDEND EUR 2.00 PER SHARE" isin="FR0000000077" currency="EUR" dateTime="20240415" settleDate="20240415" reportDate="20240415" amount="10" issuerCountryCode="FR"/>
+        <CashTransaction accountId="U0000000" transactionID="7004" actionID="A9201" levelOfDetail="DETAIL" type="Withholding Tax" assetCategory="STK" symbol="SYNG" description="SYNG CASH DIVIDEND EUR 2.00 PER SHARE - FR TAX" isin="FR0000000077" currency="EUR" dateTime="20240415" settleDate="20240415" reportDate="20240415" amount="-1.5" issuerCountryCode="FR"/>
+        <CashTransaction accountId="U0000000" transactionID="7005" actionID="A9202" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="SYNA" description="SYNA CASH DIVIDEND USD 10.00" isin="US0000000010" currency="USD" dateTime="20240516" settleDate="20240516" reportDate="20240516" amount="10" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="7006" actionID="" levelOfDetail="DETAIL" type="Broker Interest Received" assetCategory="CASH" symbol="" description="EUR CREDIT INT FOR OCT-2023" isin="" currency="EUR" dateTime="20231115" settleDate="20231115" reportDate="20231115" amount="2.5" issuerCountryCode=""/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
