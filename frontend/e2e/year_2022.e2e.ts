@@ -13,16 +13,15 @@ import {
   startRun,
   typeInto,
 } from "./support/report_page";
+import { MANUAL_FILE_NAMES } from "./support/scenarios";
 import { useSession } from "./support/session";
-
-const YEARS = ["2022", "2023", "2024", "2025"];
 
 describe("year 2022 of the manual files", () => {
   const session = useSession();
 
   /** Loads the four files, picks 2022 and answers the four questions of the README. */
   async function runAndAnswer(page: Page): Promise<void> {
-    const files = await Promise.all(YEARS.map((year) => manualFile(`trade_republic_${year}.csv`)));
+    const files = await Promise.all(MANUAL_FILE_NAMES.map((name) => manualFile(name)));
 
     await startRun(page, { files, year: 2022 });
 

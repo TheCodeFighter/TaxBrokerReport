@@ -131,7 +131,17 @@ again after `scripts/build.sh image`.
   folders, and logs in once with the printed link (it works once). One Chromium serves a file.
 - **Inputs.** The year walk-throughs load the files of `tests/test_data/manual/` and answer as its
   README says, so the tests keep the README true: change the files and the tests together. Small
-  cases write their CSV inside the test.
+  cases write their CSV inside the test; a renamed or edited copy of a manual file is made in the
+  test too (`renamed`, `edited` in `support/files.ts`).
+- **Limits** (`limits.e2e.ts`). The upload limits are tested at the real numbers: 32 and 33
+  files, and a file of exactly 100 MiB (104,857,600 bytes) and one byte more, which the page
+  refuses and the server refuses with 413 when the page check is bypassed. The large files are
+  written to a new folder in the system temp folder by `tradeRepublicFileOfSize` (header and
+  deposit rows with unique IDs, padded to the size) and deleted in a `finally`; the repository
+  never holds them. Writing, uploading and reading 100 MiB takes about 2 s and the server peaks
+  at about 400 MB, so these tests run in every `Browser tests` run.
+- **No polling.** `quality.e2e.ts` (F15) counts the requests of the page while it waits on a
+  question and on a finished result: there must be none, so the page never polls.
 - **Selectors** are roles and the visible Slovenian texts of `ui_texts.ts` (a question by its
   title, a form by its code). The answer words of a question (`other_activity`,
   `exclude_failed_instruments`) are the `value` of its radio buttons. The page has no test
