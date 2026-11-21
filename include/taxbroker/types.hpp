@@ -222,6 +222,9 @@ struct TradeTransaction {
     Currency mCurrency{Currency::Unknown};
     /// Currency of mFeePaid; the export's `currency` field.
     Currency mFeeCurrency{Currency::Unknown};
+    /// Positive second fee the export books with the trade (stamp duty, financial transaction tax),
+    /// in mCurrency; zero when there is none.
+    Money mTransactionTaxPaid{};
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };
@@ -275,6 +278,9 @@ struct InterestTransaction {
     /// Who held the cash on the receipt date; absent for a bond coupon and for a row of unknown
     /// type. Always set by the parser for the interest on cash.
     std::optional<CashHolder> mCashHolder;
+    /// The `code` of the `broker_payers.csv` row of the entity that paid the interest on cash, when
+    /// the export names it; absent otherwise (the payer is then found another way or stays empty).
+    std::optional<std::string> mPayerCode;
 };
 
 struct InterestInstrument {
@@ -336,6 +342,41 @@ struct PrivateMarketEvent {
     std::string mDescription;
 };
 
+/// What one cash row of an income payment is. Every amount is positive; the kind carries the sign.
+enum class IncomePaymentKind {
+    Dividend,         ///< A dividend paid, a payment in lieu of one included.
+    DividendReversal, ///< A dividend taken back.
+    Tax,              ///< Foreign tax withheld.
+    TaxRefund,        ///< Foreign tax given back.
+};
+
+/// One cash row of an income payment, before the rows of the payment are added up. A broker that
+/// books a dividend, its tax and its corrections as separate rows (in separate files, too) fills
+/// this list; a later step turns the rows of each payment into one dividend.
+struct IncomePaymentRow {
+    EventMetadata mMetadata;               ///< The tax date is the day the payment was made.
+    IncomePaymentKind mKind{};             ///< Always set by the creator.
+    std::string mName;                     ///< Empty when the row does not name the instrument.
+    Isin mIsin;                            ///< The instrument the payment is for.
+    Money mAmount{};                       ///< Positive; the kind carries the sign.
+    Currency mCurrency{Currency::Unknown}; ///< Currency of mAmount; always set by the creator.
+    std::optional<Date> mBookedDate;       ///< The day the broker booked the row.
+    std::string mPaymentGroupId;           ///< The same for every row of one payment.
+    bool mSubstitutePayment{};             ///< A payment in lieu of a dividend.
+    std::vector<InstrumentSourceEvidence> mInstrumentEvidence; ///< Class evidence of the row.
+};
+
+/// Why a row of the export is not read into any event.
+enum class LeftOutReason {
+    MarginOrLeverage, ///< A derivative, a leveraged product or margin interest.
+};
+
+/// A row that is left out of every form on purpose. The count per broker is reported once.
+struct LeftOutRow {
+    EventMetadata mMetadata;
+    LeftOutReason mReason{}; ///< Always set by the creator.
+};
+
 struct BrokerStatement {
     std::vector<TradeInstrument> mTradeInstruments;
     std::vector<DividendInstrument> mDividendInstruments;
@@ -343,6 +384,8 @@ struct BrokerStatement {
     std::vector<BenefitEvent> mBenefitEvents;
     std::vector<BondRedemptionEvent> mBondRedemptions; ///< Information only
     std::vector<PrivateMarketEvent> mPrivateMarketEvents;
+    std::vector<IncomePaymentRow> mIncomePaymentRows; ///< Added up after the merge.
+    std::vector<LeftOutRow> mLeftOutRows;             ///< Not an event; counted in one warning.
 };
 
 // Broker data with structured diagnostics used throughout the processing

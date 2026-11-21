@@ -27,6 +27,8 @@ std::string_view toString(DiagnosticSeverity aSeverity) {
         return "warning";
     case DiagnosticSeverity::Error:
         return "error";
+    case DiagnosticSeverity::Info:
+        return "info";
     }
 
     return "error";

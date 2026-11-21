@@ -44,7 +44,7 @@ export function DiagnosticList({ language, groups, fileLabels, catalogue, showFo
         const instrumentText = [instrument?.name, instrument?.isin === undefined ? undefined : `(${instrument.isin})`]
           .filter((part) => part !== undefined)
           .join(" ");
-        const tone = isBlockingError(diagnostic) ? "fail" : "warn";
+        const tone = isBlockingError(diagnostic) ? "fail" : diagnostic.severity === "info" ? "neutral" : "warn";
         const { requestId } = diagnostic;
 
         return (

@@ -409,6 +409,14 @@ scripts/dump_tr_diagnostics.sh runtime/debug/tr_merge_inputs/tr_merge_part_1.csv
 
 Use `--output runtime/path.txt` before the CSV paths to choose another local output file.
 
+To check how the Interactive Brokers parser reads a Flex Query XML file, run it on the file. It
+writes only counts, never a value: the events and rows per kind, and the diagnostics per severity
+and message key (default output `runtime/debug/ibkr_parse_counts.txt`):
+
+```sh
+scripts/dump_ibkr_parse.sh tmp/IBKR/export_1.xml tmp/IBKR/export_2.xml
+```
+
 To inspect FIFO matching for one year, run:
 
 ```sh

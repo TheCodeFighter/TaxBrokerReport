@@ -87,6 +87,9 @@ void normalizeReports(ReportList& aReports) {
         return {ReportType::BankDepositInterest, ReportType::OtherInterest};
     case ParsedRowKind::Benefit:
         return {};
+    // The tax is on a dividend or on interest, and the row does not say which.
+    case ParsedRowKind::IncomeTax:
+        return unionOf({ReportType::Dividends}, brokerInterestScope(aBroker, aReportingYear));
     }
 
     return kAllReports;
@@ -386,6 +389,21 @@ struct DraftDiagnostic {
     return DraftDiagnostic{std::move(diagnostic), aIndex};
 }
 
+/// Errors come first, then warnings, then notices.
+[[nodiscard]] int severityRank(DiagnosticSeverity aSeverity) {
+    switch (aSeverity)
+    {
+    case DiagnosticSeverity::Error:
+        return 0;
+    case DiagnosticSeverity::Warning:
+        return 1;
+    case DiagnosticSeverity::Info:
+        break;
+    }
+
+    return 2;
+}
+
 /// The deterministic order of diagnostics. The creation sequence is the position in the
 /// combined input, which is stage by stage in processing order.
 [[nodiscard]] auto sortKey(const ApplicationDiagnostic& aDiagnostic, std::size_t aSequence) {
@@ -397,7 +415,7 @@ struct DraftDiagnostic {
                            dateKey(aDiagnostic.mTaxDate),
                            reportKey(aDiagnostic.mAffectedReports),
                            noneLast(aDiagnostic.mIsin),
-                           aDiagnostic.mSeverity == DiagnosticSeverity::Error ? 0 : 1,
+                           severityRank(aDiagnostic.mSeverity),
                            aDiagnostic.mCode.index(),
                            std::visit(codeIndex, aDiagnostic.mCode),
                            aSequence);
@@ -435,7 +453,10 @@ struct DraftDiagnostic {
     const bool hasNonBlocking = std::any_of(
         aResult.mDiagnostics.begin(),
         aResult.mDiagnostics.end(),
-        [](const ApplicationDiagnostic& aDiagnostic) { return !aDiagnostic.mBlocking; });
+        [](const ApplicationDiagnostic& aDiagnostic) {
+            return !aDiagnostic.mBlocking && (aDiagnostic.mSeverity == DiagnosticSeverity::Error ||
+                                              aDiagnostic.mSeverity == DiagnosticSeverity::Warning);
+        });
 
     return hasNonBlocking ? OverallStatus::CompletedWithWarnings : OverallStatus::Success;
 }

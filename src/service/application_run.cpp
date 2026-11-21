@@ -1,5 +1,6 @@
 #include "taxbroker/application_run.hpp"
 
+#include "parsers/ibkr_parser.hpp"
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/application_summaries.hpp"
 #include "processors/capital_gains_report_builder.hpp"
@@ -89,16 +90,31 @@ void logLoadStages(const ApplicationRequest& aRequest,
     {
         if (const auto* parse = std::get_if<SourcedParseDiagnostic>(&diagnostic))
         {
-            const bool isError = parse->mDiagnostic.mSeverity == DiagnosticSeverity::Error;
+            const auto severity = parse->mDiagnostic.mSeverity;
 
-            ++(isError ? parseErrors : parseWarnings);
+            if (severity == DiagnosticSeverity::Error)
+            {
+                ++parseErrors;
+            }
+            else if (severity == DiagnosticSeverity::Warning)
+            {
+                ++parseWarnings;
+            }
+
             continue;
         }
 
         const auto& merge = std::get<MergeDiagnostic>(diagnostic);
-        const bool isError = merge.mSeverity == DiagnosticSeverity::Error;
 
-        ++(isError ? mergeErrors : mergeWarnings);
+        if (merge.mSeverity == DiagnosticSeverity::Error)
+        {
+            ++mergeErrors;
+        }
+        else if (merge.mSeverity == DiagnosticSeverity::Warning)
+        {
+            ++mergeWarnings;
+        }
+
         conflicts += merge.mCode == MergeDiagnosticCode::ConflictingDuplicate ? 1U : 0U;
     }
 
@@ -484,6 +500,7 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
 /// request is the source index.
 StatementMergeResult parseAndMerge(const std::vector<BrokerInputFile>& aFiles) {
     tr::TradeRepublicParser tradeRepublic;
+    ibkr::IbkrParser interactiveBrokers;
     std::vector<StatementMergeInput> inputs;
 
     for (std::size_t index = 0; index < aFiles.size(); ++index)
@@ -497,6 +514,9 @@ StatementMergeResult parseAndMerge(const std::vector<BrokerInputFile>& aFiles) {
                 {index, tradeRepublic.parse(file.mFile.mContent, file.mFile.mName, index)});
             break;
         case Broker::InteractiveBrokers:
+            inputs.push_back(
+                {index, interactiveBrokers.parse(file.mFile.mContent, file.mFile.mName, index)});
+            break;
         case Broker::Unknown:
             // No other parser exists yet.
             throw std::logic_error("A broker file has a broker without a parser.");

@@ -1111,6 +1111,7 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mExchangeRate = exchangeRate,
         .mCurrency = currency,
         .mFeeCurrency = feeCurrency,
+        .mTransactionTaxPaid = 0, // Trade Republic books no second fee.
         .mUnitEvidence = {std::move(evidence)},
         .mInstrumentEvidence = std::move(instrumentEvidence),
     });

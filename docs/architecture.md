@@ -269,8 +269,10 @@ real export (names, counts and shapes only, never values). That export holds onl
 exchange-traded funds in EUR, so the cash-transaction and corporate-action attributes and
 their `type` values come from the column names IBKR writes for the same query and from public
 descriptions; they are confirmed on the first real file that has such rows, and a name that differs
-is corrected here. Nothing in this section is implemented yet (`src/parsers/ibkr_parser.cpp` is an
-empty stub).
+is corrected here. The parser (`src/parsers/ibkr_parser.cpp`, its own target `taxbroker_ibkr`) reads
+every row of the fixtures in `tests/test_data/ibkr/` and gives the events and diagnostics below. The
+steps after it (adding up the rows of a payment, the one margin and leverage warning, the payer by
+entity code) are not written yet, and no file kind selects this parser in the CLI or the browser.
 
 **The export.** One **Activity Flex Query** in **XML** format, one file per run, one run per
 calendar year (overlapping files are fine; the longest period of one run is unconfirmed, and a
@@ -279,11 +281,12 @@ works as it is. Not read: the Flex Query as CSV (no section codes in the usual s
 section is known only by the shape of its header row) and the **Activity Statement** (a human
 report: trade rows without ISIN, subtotal rows, a layout that changes). A file that is not
 well-formed XML, or whose root element is not `FlexQueryResponse`, is rejected with one file-level
-`invalid_header` error and a hint to export the Flex Query as XML. The step-by-step guide for the
-user is written with the user documentation.
+`invalid_header` error (`invalid_header.flex_query_xml_required`) and a hint to export the Flex Query
+as XML. The step-by-step guide for the user is written with the user documentation.
 
 **File shape.** The parser reads the XML once into a tree (no DTD, no external entities; a file
-with a `DOCTYPE` is rejected with a file-level error and is never expanded; a UTF-8 byte order mark
+with a `DOCTYPE` is rejected with a file-level `invalid_header` error
+(`invalid_header.doctype_not_allowed`) and is never expanded; a UTF-8 byte order mark
 at the start is accepted; the file size limit of the other input files applies):
 
 ```xml
@@ -304,7 +307,10 @@ section is read as empty. Any other section element (transfers, open positions, 
 performance summaries, financial instrument information, accruals, borrow and lending) is not
 read, as a whole and without a diagnostic: its rows are never events. Each row element is
 checked for the attributes it needs before it is read; a missing one rejects that row with
-`invalid_header`. Extra attributes are allowed and ignored.
+`invalid_header` (`invalid_header.missing_attribute`, naming the attribute). An attribute that is
+there but empty is a missing field instead. A derivative or a currency conversion needs only its
+class and its ID, and an ignored cash type needs nothing more. Extra attributes are allowed and
+ignored.
 
 | Element | Attributes read | Used for |
 | --- | --- | --- |
@@ -327,20 +333,38 @@ Rules (each one is a row of the parser fixtures):
    Slovenian calendar date is unconfirmed (a question for FURS); until it is answered the
    exchange's trade date is used. A time in the hour that does not exist in US Eastern time
    (02:00 to 02:59 on the second Sunday of March) is `invalid_value`: IBKR never writes it, so it
-   means a broken file.
+   means a broken file. A time before 2007 is `invalid_value` too: the daylight-saving rule of that
+   time is not written, and no value is made up. Trades and corporate actions need the time
+   (`yyyyMMdd;HHmmss`); a cash row may have only the date (`yyyyMMdd`), and then it has no
+   timestamp. Both forms are read on a cash row, so the first real cash row settles which one IBKR
+   writes. The source row of an event is the line of its element's start tag (IBKR writes one row
+   element per line), so the user finds it in any text editor.
 2. **Signs.** Buy: `quantity` > 0 and `proceeds` < 0. Sell: `quantity` < 0 and `proceeds` > 0.
-   `ibCommission` ≤ 0 (a fee paid; 0 occurs). A sign that disagrees with `buySell` rejects the
-   row, as for Trade Republic.
+   `ibCommission` ≤ 0 and `taxes` ≤ 0 (a cost; 0 occurs, a blank one is 0). A sign that disagrees
+   with `buySell` rejects the row, as for Trade Republic. A rejected row gets one error, the first
+   check that fails, in this order: cancellation (rule 7), a missing attribute, the format of each
+   field (an empty value is a missing field, any other is an invalid value), then the signs. A row
+   with several faults is therefore reported one at a time.
 3. **Numbers.** Plain dot decimals without grouping. Quantities can be fractional
    (`transactionType` `FracShare`); the unit rounding and evidence rules of Trade Republic apply.
+   The unit price is `tradePrice` × `multiplier`, rounded once to 8 decimals. Both must be greater
+   than zero, and each is checked on its own: a bad `multiplier` is an error on `multiplier`, not
+   on `tradePrice`.
 4. **Identity.** Broker + `transactionID`, unique among `Trade` elements. A `Lot` reuses the
    `transactionID` of the buy it closes (also in a later year's file), so it is never read as an
-   event. Overlapping files give the same IDs, so the merger drops exact duplicates. `actionID`
-   groups the rows of one corporate action or one dividend payment. Several accounts (one
-   `FlexStatement` each) are one taxpayer: one FIFO pool per ISIN, nothing is keyed on the account.
+   event. Overlapping files give the same IDs, so the merger drops exact duplicates. A row that
+   becomes an event and has an empty `transactionID` is rejected as a missing field, because its
+   repeat in an overlapping file could not be dropped. A row that is not read (an ignored cash
+   type, a cash dividend action, a conversion) needs no ID, and a left-out row (a derivative,
+   margin interest) belongs to no form, so it is kept without one; the later warning may then
+   count a repeated row twice. `actionID` groups the rows of one corporate action or one dividend
+   payment. Several accounts (one `FlexStatement` each) are one taxpayer: one FIFO pool per ISIN,
+   nothing is keyed on the account.
 5. **Level of detail.** Only `Trade` elements with `levelOfDetail` `EXECUTION` are read. `Lot`
    elements and any other child of `Trades` (orders, wash sales) are ignored with one file-level
-   info with the count (IBKR's own FIFO and wash-sale results are never used).
+   notice with the count (`unsupported_row_type.not_execution`; IBKR's own FIFO and wash-sale
+   results are never used). A `levelOfDetail` that is empty is a missing field, not a notice,
+   so that a lost trade is never hidden.
 6. **Asset class.**
 
    | `assetCategory` | `subCategory` | Model class | Result |
@@ -350,13 +374,22 @@ Rules (each one is a row of the parser fixtures):
    | `FUND` | any | Fund | Doh-KDVP |
    | `BOND`, `BILL` | any | Bond | Outside Doh-KDVP, as Trade Republic bonds |
    | `OPT`, `FUT`, `FOP`, `FSFOP`, `FSOPT`, `CFD`, `FXCFD`, `WAR`, `IOPT` | any | Derivative | Left out of every form with one warning (rule 13) |
-   | `CRYPTO` | any | Crypto | Left out of Doh-KDVP (the existing crypto rule) |
-   | `CASH` | any | none | A currency conversion (`EUR.USD`): ignored with an info, no form |
-   | `CMDTY` and unknown | any | Unknown | The existing classification request |
+   | `CRYPTO` | any | Crypto | Left out of Doh-KDVP (the existing crypto rule). IBKR writes it without an ISIN and none is made up, so the row is not read and leaves one notice (`unsupported_row_type.crypto_without_isin`); a crypto row with an ISIN is a trade of class Crypto |
+   | `CASH` | any | none | A currency conversion (`EUR.USD`): not read, counted in one file-level notice (`unsupported_row_type.currency_conversion`, `count`), no form |
+   | `CMDTY` and unknown | any | Unknown | A trade with an ISIN is kept with the unknown class and the existing classification request; without an ISIN it is a `missing_field` error on `isin` |
+
+   A notice is an `info` diagnostic that names no form. The notices of this contract (the ignored
+   rows of rule 5, the cash totals of rule 9, the conversion and the crypto row) block nothing.
+   The `subCategory` of an ETF is on trade rows only, so only a trade names the class of an
+   instrument: a corporate action row gives no class evidence and never changes it.
+   In the merger, an action row that names no class (no evidence, and an unknown class in its own
+   file) does not vote on the class of the instrument, so a split row in one file never
+   conflicts with the trades of another.
 
 7. **Cancellations and corrections.** A row with `buySell` `BUY (Ca.)` or `SELL (Ca.)`,
    `transactionType` `TradeCancel` or `TradeCorrect`, or the code `Ca` in `notes` is rejected with
-   an error on that row. It is never netted silently. Other `notes` codes (for example `IA`, `P`,
+   an error on that row (`unsupported_row_type.cancelled_trade`, naming the attribute that shows
+   it). It is never netted silently. Other `notes` codes (for example `IA`, `P`,
    `ST`, several joined by `;`) are normal and ignored.
 8. **Fees.** `ibCommission` is booked in `ibCommissionCurrency`, which can differ from `currency`:
    the fee currency is `ibCommissionCurrency`, never the trade currency or the amount's currency.
@@ -376,6 +409,25 @@ Rules (each one is a row of the parser fixtures):
    | `Bond Interest Paid` | Accrued interest paid at a purchase: the existing accrued-interest warning. |
    | `Other Fees`, `Commission Adjustments`, `Advisor Fees` | Ignored, fee summary only. |
    | `Deposits/Withdrawals` | An ignored cash movement. |
+   | any other `type` | An `unknown_row_type` error on the row, with no form named (it may belong to any form). |
+
+   A dividend, a tax and a payment in lieu need `isin` and `actionID` (an empty one is a missing
+   field, because the rows of a payment are added up by them) and `reportDate`; a coupon needs
+   `isin`. A coupon cannot be negative. Interest on cash is read with its sign (debit interest is
+   negative), as for Trade Republic, and has no instrument. A tax row on interest has no ISIN and
+   cannot be added to a payment, so it is reported as a missing field until a real file shows how
+   IBKR books it. The tax may be on a dividend or on interest, so the error names the tax row
+   (`row_kind.income_tax`) and blocks Doh-Div and the interest form of the broker, not capital
+   gains. The name of an instrument is not on a cash row (`description` is the text of the
+   payment), so a payment row has none.
+
+   **Level of detail.** Only a `CashTransaction` with `levelOfDetail` `DETAIL` (one booking) is
+   read, and the attribute is needed (a missing one is `invalid_header`, an empty one a missing
+   field). Any other value (a total row, which would count a booking twice, and may have no ID or
+   ISIN) is not read and is counted, with any other child of the `CashTransactions` or
+   `CorporateActions` section, in one file-level notice (`unsupported_row_type.not_detail`). Which
+   values IBKR writes is confirmed on the first real file with cash rows. A cash row whose `type`
+   is missing is named a cash row in its error.
 
 10. **Corporate actions** (`type` code):
 
@@ -387,6 +439,12 @@ Rules (each one is a row of the parser fixtures):
     | `BM` bond maturity, `TM` T-bill maturity | `BondRedemptionEvent`, information only. |
     | `CD` cash dividend, `CP` coupon | Ignored here; the cash row is the payment. |
 
+    A split whose ISIN changes is found by its `actionID`: rows of one split action with two ISINs
+    in one statement. A unit or `quantity` that is not a number rejects the row. `BM` and `TM`
+    count as a maturity only on a bond or a bill; the same code on another class is
+    unsupported. A positive `quantity` on a maturity is a cancelled maturity. Every other action
+    keeps its quantity as evidence and is stored with the merger type, which the corporate-action
+    stage blocks.
 11. **Transfers.** The `Transfers` section is not read. One FIFO pool per ISIN across brokers
     makes a position transfer a no-op, and units that came in without their buys in the files are
     caught where they matter: a later sale gives `incomplete_history`. A warning per transfer would
@@ -435,11 +493,18 @@ zone, sign or attribute name.
 - **Identity:** broker + `transactionID` for every event; a netted dividend keeps every source row
   in its provenance.
 
-Behaviour to list for the parser task (codes are named there, not here): a file that is not a Flex
-Query XML; a cancelled or corrected trade row; ignored closed lots and other trade rows (info); the
-derivative and margin rows left out (one warning per broker and run); a payment in lieu
-(warning); a dividend reversal without its dividend and a correction in a later year (warnings);
-an unknown `ibEntity` (warning).
+Diagnostics of the parser (`diagnostics.md`, "Interactive Brokers parser diagnostics"): a file that
+is not a Flex Query XML or has a `DOCTYPE`; a missing attribute; a cancelled or corrected trade
+row; the ignored closed lots and other trade rows, the currency conversion and the crypto row
+without an ISIN (notices). Left to the steps after the parser: the derivative and margin rows left
+out (one warning per broker and run); a payment in lieu (warning); a dividend reversal without its
+dividend and a correction in a later year (warnings); an unknown `ibEntity` (warning).
+
+The parser stores what the later steps need in neutral lists of the statement, which TR never
+fills: an income payment row per cash row of a payment (kind, positive amount, pay date, booked
+date, payment group ID, substitute flag), a left-out row per derivative or margin row, a second
+fee per trade (`taxes`) and the payer code (`ibEntity`) of interest on cash. Until the merger
+handles the first two lists it refuses a statement that has one.
 
 `tests/test_data/ibkr/` holds the synthetic fixtures (made-up accounts and ISINs with valid check
 digits, no real value). `contract_example.xml` has one row for each kind above; the other files
@@ -1965,6 +2030,7 @@ must never parse log messages.
   "summary": {
     "warningCount": 1,
     "errorCount": 1,
+    "infoCount": 0,
     "totalCount": 2
   },
   "diagnostics": [

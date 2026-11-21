@@ -194,6 +194,7 @@ _tbr_dump_tr_parse() { _tbr_complete --help :: csv file file; }
 _tbr_dump_tr_merge() { _tbr_complete --help :: csv file dir; }
 _tbr_dump_tr_diagnostics() { _tbr_complete --output=file --help :: csv+; }
 _tbr_dump_tr_fifo() { _tbr_complete --year=year --output=file --help :: csv+; }
+_tbr_dump_ibkr_parse() { _tbr_complete --output=file --help :: file+; }
 
 _tbr_dump_tr_kdvp() {
     _tbr_complete --synthetic --year=year --tax-number=none --self-report --output=file --help :: csv+
@@ -212,8 +213,8 @@ _tbr_report() {
 }
 
 _tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse
-    dump_tr_merge dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_ecb_rates dump_exact_arithmetic
-    report run frontend e2e)
+    dump_tr_merge dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_ibkr_parse dump_ecb_rates
+    dump_exact_arithmetic report run frontend e2e)
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     # The shared functions above expect bash's zero-based arrays.

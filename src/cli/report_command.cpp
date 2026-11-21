@@ -624,6 +624,8 @@ std::string_view severityText(DiagnosticSeverity aSeverity) {
     {
     case DiagnosticSeverity::Warning:
         return "warning";
+    case DiagnosticSeverity::Info:
+        return "info";
     case DiagnosticSeverity::Error:
         break;
     }
@@ -1423,8 +1425,15 @@ void writeFormDiagnostics(std::ostream& aOut, const RunOutcome& aOutcome, const 
             continue;
         }
 
-        (diagnostic.mSeverity == DiagnosticSeverity::Error ? errors : warnings)
-            .push_back(&diagnostic);
+        // A notice is neither an error nor a warning, so it is not listed here.
+        if (diagnostic.mSeverity == DiagnosticSeverity::Error)
+        {
+            errors.push_back(&diagnostic);
+        }
+        else if (diagnostic.mSeverity == DiagnosticSeverity::Warning)
+        {
+            warnings.push_back(&diagnostic);
+        }
     }
 
     if (aForm.mType != ReportType::CapitalGains && errors.empty() && warnings.empty())

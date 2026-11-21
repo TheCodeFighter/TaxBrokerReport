@@ -25,6 +25,9 @@ constexpr std::array kExpectedAndFound{
     MessageParamDefinition{"expected", MessageParamKind::Number},
     MessageParamDefinition{"found", MessageParamKind::Number},
 };
+constexpr std::array kCount{
+    MessageParamDefinition{"count", MessageParamKind::Number},
+};
 constexpr std::array kRowCount{
     MessageParamDefinition{"rowCount", MessageParamKind::Number},
 };
@@ -452,6 +455,26 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::ParseErrorInvalidFilename, "parse_error.invalid_filename", {}},
     MessageDefinition{MessageKey::InputFileTooLarge, "input_file.too_large", kLimitMb},
     MessageDefinition{MessageKey::InputFileOutOfMemory, "input_file.out_of_memory", {}},
+    MessageDefinition{MessageKey::InvalidHeaderFlexQueryXmlRequired,
+                      "invalid_header.flex_query_xml_required",
+                      {}},
+    MessageDefinition{
+        MessageKey::InvalidHeaderDoctypeNotAllowed, "invalid_header.doctype_not_allowed", {}},
+    MessageDefinition{MessageKey::InvalidHeaderMissingAttribute,
+                      "invalid_header.missing_attribute",
+                      kFieldAndRowKind},
+    MessageDefinition{
+        MessageKey::UnsupportedRowTypeCancelledTrade, "unsupported_row_type.cancelled_trade", {}},
+    MessageDefinition{
+        MessageKey::UnsupportedRowTypeNotExecution, "unsupported_row_type.not_execution", kCount},
+    MessageDefinition{MessageKey::UnsupportedRowTypeCurrencyConversion,
+                      "unsupported_row_type.currency_conversion",
+                      kCount},
+    MessageDefinition{MessageKey::UnsupportedRowTypeCryptoWithoutIsin,
+                      "unsupported_row_type.crypto_without_isin",
+                      {}},
+    MessageDefinition{
+        MessageKey::UnsupportedRowTypeNotDetail, "unsupported_row_type.not_detail", kCount},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -467,10 +490,11 @@ constexpr bool definitionsFollowKeyOrder() {
 }
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
-static_assert(kDefinitions.size() == static_cast<std::size_t>(MessageKey::InputFileOutOfMemory) + 1,
+static_assert(kDefinitions.size() ==
+                  static_cast<std::size_t>(MessageKey::UnsupportedRowTypeNotDetail) + 1,
               "Every MessageKey needs one definition");
 
-constexpr std::array<std::string_view, 9> kTermKeys{
+constexpr std::array<std::string_view, 11> kTermKeys{
     taxbroker::term::kRowKindTrade,
     taxbroker::term::kRowKindDividend,
     taxbroker::term::kRowKindBondInterest,
@@ -480,6 +504,8 @@ constexpr std::array<std::string_view, 9> kTermKeys{
     taxbroker::term::kRowKindBenefit,
     taxbroker::term::kRowKindPrivateMarket,
     taxbroker::term::kRowKindBondRedemption,
+    taxbroker::term::kRowKindIncomeTax,
+    taxbroker::term::kRowKindCash,
 };
 
 /// Throws when the parameters differ from the definition. Wrong parameters are a programming

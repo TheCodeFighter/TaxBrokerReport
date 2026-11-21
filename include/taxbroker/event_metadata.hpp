@@ -107,7 +107,8 @@ struct StableInputSequence {
 struct SourceReference {
     Broker mBroker{Broker::Unknown};
     SourceFilename mFilename;
-    // One-based logical record; CSV headers count as row 1.
+    // One-based logical record (CSV headers count as row 1) or, for an XML file, the line of the
+    // element's start tag.
     std::size_t mSourceRow{};
     std::optional<std::string> mTransactionId;
     StableInputSequence mInputSequence;

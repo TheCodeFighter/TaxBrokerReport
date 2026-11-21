@@ -46,7 +46,6 @@ configure_file(utils/built_in_ecb_rates.cpp.in ${EMBEDDED_DIR}/built_in_ecb_rate
 add_library(taxbroker_core STATIC
     parsers/csv_parser.cpp
     parsers/ecb_rate_file.cpp
-    parsers/ibkr_parser.cpp
     parsers/input_file.cpp
     parsers/reference_catalogue.cpp
     parsers/traderepublic_parser.cpp
@@ -167,6 +166,27 @@ target_link_libraries(taxbroker_xml
     pugixml::static
 )
 
+# The Interactive Brokers parser reads XML, so it is its own target and pugixml stays out of the
+# core. The service links it with the parser of each other broker.
+add_library(taxbroker_ibkr STATIC
+    parsers/ibkr_parser.cpp
+    parsers/ibkr_time.cpp
+)
+
+target_include_directories(taxbroker_ibkr
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(taxbroker_ibkr
+    PUBLIC
+    taxbroker_core
+    PRIVATE
+    pugixml::static
+)
+
 # The application service: one run parses, merges and calculates every report and writes the XML.
 # It lives outside the core because the XML writers (pugixml) link the core.
 add_library(taxbroker_service STATIC
@@ -188,6 +208,7 @@ target_link_libraries(taxbroker_service
     spdlog::spdlog
     PRIVATE
     taxbroker_core
+    taxbroker_ibkr
     taxbroker_xml
 )
 
