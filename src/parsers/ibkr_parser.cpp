@@ -7,6 +7,7 @@
 #include "taxbroker/input_file.hpp"
 #include "taxbroker/logging.hpp"
 #include "taxbroker/text_format.hpp"
+#include "utils/country_codes.hpp"
 #include "utils/numeric_util.hpp"
 
 #include <pugixml.hpp>
@@ -104,6 +105,24 @@ constexpr Money kTradeAmountTolerance = 100;
 /// The attribute text; empty for an attribute that is not there.
 std::string_view textOf(const pugi::xml_node& aRow, const char* aName) {
     return aRow.attribute(aName).value();
+}
+
+/// The `issuerCountryCode` of a cash row in capital letters, when it is an ISO 3166-1 country.
+/// Anything else (empty, `XS`, `EU`, `XX`, a three-letter code) is no country and is not reported.
+std::optional<std::string> payerCountryOf(const pugi::xml_node& aRow) {
+    std::string code{textOf(aRow, "issuerCountryCode")};
+
+    std::transform(code.begin(), code.end(), code.begin(), [](const char aCharacter) {
+        return aCharacter >= 'a' && aCharacter <= 'z' ? static_cast<char>(aCharacter - 'a' + 'A')
+                                                      : aCharacter;
+    });
+
+    if (!isIsoCountryCode(code))
+    {
+        return std::nullopt;
+    }
+
+    return code;
 }
 
 /// The first attribute of the list that the row does not have at all, or none.
@@ -1578,6 +1597,7 @@ class FlexReader {
                 .mAssetClass = assetClass,
                 .mAssetClassLabel = std::string{textOf(aRow, "assetCategory")},
             }},
+            .mPayerCountry = payerCountryOf(aRow),
         });
     }
 
@@ -1654,6 +1674,7 @@ class FlexReader {
             .mCashHolder = aIsBond ? std::nullopt : std::optional{CashHolder::Broker},
             .mPayerCode = aIsBond || mEntityCode.empty() ? std::nullopt
                                                          : std::optional<std::string>{mEntityCode},
+            .mPayerCountry = aIsBond ? payerCountryOf(aRow) : std::nullopt,
         });
     }
 

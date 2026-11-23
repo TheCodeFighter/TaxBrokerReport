@@ -138,6 +138,39 @@ bool sameCurrency(const std::vector<const IncomePaymentRow*>& aFirst,
            std::all_of(aSecond.begin(), aSecond.end(), matches);
 }
 
+/// The first country that a dividend or reversal row names; none when no such row names one. The
+/// rows of tax are not read: a tax row may carry the country of the one who withheld it.
+std::optional<std::string> countryOf(const std::vector<const IncomePaymentRow*>& aDividends,
+                                     const std::vector<const IncomePaymentRow*>& aReversals) {
+    const auto hasCountry = [](const IncomePaymentRow* aRow) {
+        return aRow->mPayerCountry.has_value();
+    };
+
+    for (const auto* rows : {&aDividends, &aReversals})
+    {
+        const auto found = std::find_if(rows->begin(), rows->end(), hasCountry);
+
+        if (found != rows->end())
+        {
+            return (*found)->mPayerCountry;
+        }
+    }
+
+    return std::nullopt;
+}
+
+/// True when no dividend or reversal row names a country other than the one that countryOf finds.
+bool sameCountry(const std::vector<const IncomePaymentRow*>& aDividends,
+                 const std::vector<const IncomePaymentRow*>& aReversals) {
+    const auto country = countryOf(aDividends, aReversals);
+    const auto matches = [&country](const IncomePaymentRow* aRow) {
+        return !aRow->mPayerCountry || aRow->mPayerCountry == country;
+    };
+
+    return std::all_of(aDividends.begin(), aDividends.end(), matches) &&
+           std::all_of(aReversals.begin(), aReversals.end(), matches);
+}
+
 bool samePayDate(const std::vector<const IncomePaymentRow*>& aDividends) {
     return std::all_of(aDividends.begin(), aDividends.end(), [&aDividends](const auto* aRow) {
         return aRow->mMetadata.mTaxDate == aDividends.front()->mMetadata.mTaxDate;
@@ -181,8 +214,9 @@ void netGroup(const PaymentGroup& aGroup, IncomePaymentNettingResult& aResult) {
 
     const bool fits = sameCurrency(aGroup.mDividends, aGroup.mReversals) &&
                       sameCurrency(aGroup.mTaxes, aGroup.mRefunds) &&
-                      samePayDate(aGroup.mDividends) && gross && reversed && tax && refunded &&
-                      *refunded <= *tax;
+                      samePayDate(aGroup.mDividends) &&
+                      sameCountry(aGroup.mDividends, aGroup.mReversals) && gross && reversed &&
+                      tax && refunded && *refunded <= *tax;
 
     if (!fits)
     {
@@ -223,6 +257,7 @@ void netGroup(const PaymentGroup& aGroup, IncomePaymentNettingResult& aResult) {
         .mTaxPaid = hasTaxRows ? std::optional<Money>{*tax - *refunded} : std::nullopt,
         .mCurrency = currency,
         .mTaxCurrency = taxCurrency,
+        .mPayerCountry = countryOf(aGroup.mDividends, aGroup.mReversals),
     };
 
     for (const auto* row : aGroup.mAll)

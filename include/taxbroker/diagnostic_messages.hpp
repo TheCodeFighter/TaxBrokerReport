@@ -178,6 +178,9 @@ enum class MessageKey {
     IncomeCorrectionLaterYear,
     MarginOrLeverageRowsLeftOut,
     InterestPayerNotFoundUnknownEntity,
+    DividendPayerNotFoundCountryKnown,
+    InterestPayerNotFoundCountryKnown,
+    PayerCountryFromIsin,
 };
 
 enum class MessageParamKind {

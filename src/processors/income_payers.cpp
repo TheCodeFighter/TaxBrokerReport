@@ -1,6 +1,7 @@
 #include "processors/income_payers.hpp"
 
 #include "taxbroker/currency.hpp"
+#include "utils/country_codes.hpp"
 #include "utils/tax_number.hpp"
 
 #include <algorithm>
@@ -14,6 +15,7 @@ namespace taxbroker {
 namespace {
 
 constexpr std::string_view kSlovenia = "SI";
+constexpr std::size_t kCountryLength = 2;
 
 /// The reference rows of a conflict as the options of a payer choice question, sorted.
 PayerChoiceQuestion
@@ -34,14 +36,15 @@ questionOf(const Isin& aIsin, const IsinPayments& aPayments, const PayerLookup& 
     return std::get<PayerChoiceQuestion>(normalizedData(std::move(question)));
 }
 
-/// The payer of an ISIN whose reference rows disagree: the row the user picked, or no facts for a
-/// skip or an open question (which is asked and warned about).
-PayerOutcome askPayer(const PayerForm& aForm,
-                      const PayerSinks& aSinks,
-                      const Isin& aIsin,
-                      const IsinPayments& aPayments,
-                      const PayerLookup& aLookup,
-                      RunDecisions& aDecisions) {
+/// The reference row the user picked among rows that disagree, or null for a skip or an open
+/// question (which is asked and warned about, with aCountry as the country that stays).
+const PayerEntry* askPayer(const PayerForm& aForm,
+                           const PayerSinks& aSinks,
+                           const Isin& aIsin,
+                           const IsinPayments& aPayments,
+                           const PayerLookup& aLookup,
+                           RunDecisions& aDecisions,
+                           const std::optional<std::string>& aCountry) {
     auto data = questionOf(aIsin, aPayments, aLookup);
     DecisionQuestion question{
         .mType = RequestType::IncomeDetailsRequired,
@@ -58,9 +61,9 @@ PayerOutcome askPayer(const PayerForm& aForm,
         aSinks.mRequests.push_back(
             RequestInput{.mQuestion = std::move(question),
                          .mProcessingDiagnostics = {aSinks.mDiagnostics.size()}});
-        addPayerNotFound(aForm, aSinks, aIsin, aPayments);
+        addPayerNotFound(aForm, aSinks, aIsin, aPayments, aCountry);
 
-        return {};
+        return nullptr;
     }
 
     // The session accepts only a payer choice, and only a position among the options; std::get and
@@ -69,9 +72,9 @@ PayerOutcome askPayer(const PayerForm& aForm,
 
     if (!choice.mPickedOption)
     {
-        addPayerNotFound(aForm, aSinks, aIsin, aPayments);
+        addPayerNotFound(aForm, aSinks, aIsin, aPayments, aCountry);
 
-        return {};
+        return nullptr;
     }
 
     const auto& picked = data.mOptions.at(*choice.mPickedOption);
@@ -81,7 +84,7 @@ PayerOutcome askPayer(const PayerForm& aForm,
         [&picked](const PayerEntry* aEntry) { return aEntry->mSource == picked.mSource; });
     const auto position = static_cast<std::size_t>(entry - aLookup.mEntries.begin());
 
-    return payerOutcomeOf(*aLookup.mEntries.at(position));
+    return aLookup.mEntries.at(position);
 }
 
 /// Whether every reference row of the lookup has the residence country SI. Nothing found is not.
@@ -90,6 +93,65 @@ bool isSlovenianLookup(const PayerLookup& aLookup) {
            std::all_of(aLookup.mEntries.begin(),
                        aLookup.mEntries.end(),
                        [](const PayerEntry* aEntry) { return aEntry->mCountry == kSlovenia; });
+}
+
+/// The country of an income row and where it came from.
+struct CountryChoice {
+    std::optional<std::string> mCountry;
+    bool mFromIsin{};
+};
+
+/// The first of: the export country, the country of the reference row in use, the one country of
+/// all rows of the ISIN, the ISIN prefix when it is a country.
+CountryChoice chooseCountry(const std::optional<std::string>& aExportCountry,
+                            const PayerEntry* aUsed,
+                            const PayerLookup& aLookup,
+                            const Isin& aIsin) {
+    if (aExportCountry)
+    {
+        return {.mCountry = aExportCountry, .mFromIsin = false};
+    }
+
+    if (aUsed != nullptr)
+    {
+        return {.mCountry = aUsed->mCountry, .mFromIsin = false};
+    }
+
+    const auto& entries = aLookup.mEntries;
+    const auto sameAsFirst = [&entries](const PayerEntry* aEntry) {
+        return aEntry->mCountry == entries.front()->mCountry;
+    };
+
+    if (!entries.empty() && std::all_of(entries.begin(), entries.end(), sameAsFirst))
+    {
+        return {.mCountry = entries.front()->mCountry, .mFromIsin = false};
+    }
+
+    // Rows that disagree on the country give no country; the ISIN prefix is the last step.
+    const auto prefix = aIsin.substr(0, kCountryLength);
+
+    if (isIsoCountryCode(prefix))
+    {
+        return {.mCountry = prefix, .mFromIsin = true};
+    }
+
+    return {};
+}
+
+/// The warning that the country of the rows of an ISIN is the first two letters of the ISIN.
+ProcessingDiagnostic countryFromIsinWarning(const PayerForm& aForm,
+                                            const IsinPayments& aPayments,
+                                            const Isin& aIsin,
+                                            const std::string& aCountry) {
+    return incomeDiagnostic(
+        aForm.mReport,
+        DiagnosticSeverity::Warning,
+        ProcessingDiagnosticCode::PayerCountryFromIsin,
+        makeDiagnosticMessage(MessageKey::PayerCountryFromIsin, {textParam("country", aCountry)}),
+        aPayments.mSources,
+        aPayments.mFirstDate,
+        aPayments.mName,
+        aIsin);
 }
 
 /// The payer facts for a number from a reference row. A Slovenian payer's number is its tax number
@@ -225,14 +287,28 @@ std::optional<std::pair<std::string, CatalogueSource>> treatyTextOf(
     return std::pair{std::string{text}, rows.front()->mSource};
 }
 
+std::optional<std::string> exportCountryOf(const IsinPayments& aPayments) {
+    if (aPayments.mExportCountries.size() != 1)
+    {
+        return std::nullopt;
+    }
+
+    return *aPayments.mExportCountries.begin();
+}
+
 void addPayerNotFound(const PayerForm& aForm,
                       const PayerSinks& aSinks,
                       const Isin& aIsin,
-                      const IsinPayments& aPayments) {
+                      const IsinPayments& aPayments,
+                      const std::optional<std::string>& aCountry) {
+    auto message = aCountry ? makeDiagnosticMessage(aForm.mNotFoundCountryKnownKey,
+                                                    {textParam("country", *aCountry)})
+                            : makeDiagnosticMessage(aForm.mNotFoundKey);
+
     aSinks.mDiagnostics.push_back(incomeDiagnostic(aForm.mReport,
                                                    DiagnosticSeverity::Warning,
                                                    aForm.mNotFoundCode,
-                                                   makeDiagnosticMessage(aForm.mNotFoundKey),
+                                                   std::move(message),
                                                    aPayments.mSources,
                                                    aPayments.mFirstDate,
                                                    aPayments.mName,
@@ -246,12 +322,15 @@ PayerOutcome resolvePayer(const PayerForm& aForm,
                           const ReferenceCatalogue& aCatalogue,
                           RunDecisions& aDecisions) {
     const auto lookup = aCatalogue.findPayer(aIsin);
-    PayerOutcome outcome;
+    const auto exportCountry = exportCountryOf(aPayments);
+    // The country that stays when no reference row is used.
+    const auto withoutRow = chooseCountry(exportCountry, nullptr, lookup, aIsin);
+    const PayerEntry* used = nullptr;
 
     switch (lookup.mStatus)
     {
     case PayerLookupStatus::Found:
-        outcome = payerOutcomeOf(*lookup.mEntries.front());
+        used = lookup.mEntries.front();
         break;
     case PayerLookupStatus::Conflict:
         // Every row says SI: a Slovenian company settles the tax itself, whichever row is meant.
@@ -260,11 +339,37 @@ PayerOutcome resolvePayer(const PayerForm& aForm,
             return PayerOutcome{.mPayer = {}, .mIsSlovenian = true};
         }
 
-        outcome = askPayer(aForm, aSinks, aIsin, aPayments, lookup, aDecisions);
+        used = askPayer(aForm, aSinks, aIsin, aPayments, lookup, aDecisions, withoutRow.mCountry);
         break;
     case PayerLookupStatus::NotFound:
-        addPayerNotFound(aForm, aSinks, aIsin, aPayments);
+        addPayerNotFound(aForm, aSinks, aIsin, aPayments, withoutRow.mCountry);
         break;
+    }
+
+    PayerOutcome outcome;
+
+    if (used != nullptr)
+    {
+        // The country of the row's number is the winning country; the exclusion of a Slovenian
+        // payer is decided by the reference row alone.
+        const auto country = chooseCountry(exportCountry, used, lookup, aIsin);
+
+        outcome = payerOutcomeOfNumber(used->mName,
+                                       used->mAddress,
+                                       *country.mCountry,
+                                       used->mTaxNumber,
+                                       used->mSource);
+        outcome.mIsSlovenian = used->mCountry == kSlovenia;
+    }
+    else
+    {
+        outcome.mPayer.mCountry = withoutRow.mCountry;
+
+        if (withoutRow.mFromIsin)
+        {
+            aSinks.mDiagnostics.push_back(
+                countryFromIsinWarning(aForm, aPayments, aIsin, *withoutRow.mCountry));
+        }
     }
 
     // A form that reports a Slovenian payer's income too treats the payer as any other.

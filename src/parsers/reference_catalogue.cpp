@@ -1,5 +1,6 @@
 #include "parsers/reference_catalogue.hpp"
 
+#include "utils/country_codes.hpp"
 #include "utils/csv_text_reader.hpp"
 #include "utils/date_utils.hpp"
 
@@ -148,11 +149,10 @@ bool isDigit(char aChar) {
     return aChar >= '0' && aChar <= '9';
 }
 
-/// Two capital letters, but not `XS` or `EU`: they are the ISIN prefixes of international issues,
-/// not countries, and eDavki rejects them. The issuer's real country is used instead.
+/// An ISO 3166-1 country code in capital letters. `XS`, `EU` and `XX` are ISIN prefixes or
+/// placeholders, not countries, and eDavki rejects them. The issuer's real country is used instead.
 bool isCountry(std::string_view aValue) {
-    return aValue.size() == 2 && isUpperLetter(aValue[0]) && isUpperLetter(aValue[1]) &&
-           aValue != "XS" && aValue != "EU";
+    return isIsoCountryCode(aValue);
 }
 
 /// ISO 6166: 2 letters, 9 letters or digits and a check digit. Letters count as 10 to 35, and
@@ -260,7 +260,7 @@ void requireCountry(std::string_view aFile, std::size_t aRow, const std::string&
     {
         failRow(aFile,
                 aRow,
-                "the country is not 2 uppercase letters or is XS or EU",
+                "the country is not an ISO 3166-1 country code",
                 MessageKey::ReferenceFileInvalidCountry);
     }
 }

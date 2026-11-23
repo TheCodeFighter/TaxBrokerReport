@@ -821,8 +821,9 @@ verified source-country and treaty references separately, with their own sources
 dates. Match exact identifiers; names, exchange location, trading currency, broker country and an
 ISIN prefix alone do not prove payer residence or tax treatment.
 When no entry is found for the ISIN, the income row keeps the amount and the ISIN, leaves the
-payer facts and the source country empty, and the result warns the user to complete them in eDavki
-(the report is not blocked). When the ISIN has several entries and every one has the residence
+payer name, address and numbers empty, and the result warns the user to complete them in eDavki
+(the report is not blocked). The payer country and the source country of the row still come from
+the cascade below ("Payer country of an income row"). When the ISIN has several entries and every one has the residence
 country `SI`, the payer of a dividend is a Slovenian company that deducts the tax itself: nothing is asked and
 the income is an excluded item, whichever entry is meant. When the entries disagree otherwise
 (for example `SI` and `FR`), the app never guesses between them: it offers the user the entries, listed with their facts, and a skip choice
@@ -856,7 +857,8 @@ complete them in eDavki before filing. A missing payer never blocks Doh-Div and 
 
 A payer found by exact identifier, or several rows with the same facts, fills the payer facts of
 every dividend row of the ISIN without a question; the result lists the reference row. The source
-country of a Doh-Div row is the payer's country, and empty when the payer is not known. A Doh-Div
+country of a Doh-Div row is the payer country of the cascade below, and empty when no step gives
+one. A Doh-Div
 row with a foreign tax makes a treaty claim when the reference files give the treaty text of its
 payer country (see below); without a claim the `ReliefStatement` element is left out. It is the
 treaty paragraph and article, never a yes or no (FURS written answer to the developer contact,
@@ -875,9 +877,37 @@ treaty provision. Do not replace actual tax with a catalogue percentage, subtrac
 income, or describe the entire payment as exempt merely because a tax treaty exists. FURS decides
 the allowable credit. Fund-level withholding is not automatically tax paid by the investor.
 
+**Payer country of an income row.** A dividend and a bond coupon take one country, which is both
+the payer country (`PayerCountry`, `Country`) and the source country (`SourceCountry`, `Country2`),
+from the first step that has one:
+
+1. the country the broker's export gives for the payment (`issuerCountryCode` of an Interactive
+   Brokers row), read in upper case; a value that is not an ISO 3166-1 country (`XS`, `EU`, `XX`,
+   a three-letter code, empty) is no country. Several payments of one ISIN that give different
+   countries use no export country;
+2. the residence country of the reference row used for the payer;
+3. the one country of all reference rows of the ISIN when they disagree on the payer and the user
+   skipped the question or did not answer it, and all of them give the same country;
+4. the first two letters of the ISIN, when they are an ISO 3166-1 country. The result warns once
+   per ISIN and form (`payer_country_from_isin`) that the country is taken from the ISIN and must be
+   checked in eDavki;
+5. none: the row has no country, no treaty claim and no question.
+
+The export country overwrites the country of the reference row; the name, address and number still
+come from that row, and its number follows the winning country (a Slovenian payer has a tax number
+when the reference number is a valid one and never an identification number, any other payer has
+the identification number). The exclusion of a Slovenian dividend payer
+(`slovenian_tax_settled`) is decided only by the reference rows: an export country `SI` never makes
+a payer Slovenian and an export country of another country never removes that exclusion. The ISIN
+prefix is a last resort for the country only; it never makes a payer Slovenian. When the payer is
+not found and a country is known, the warning says so (`dividend_payer_not_found.country_known`,
+`interest_payer_not_found.country_known`): the name, address and number are missing, the country
+is filled.
+
 **Treaty claim on dividends.** A foreign tax paid on a dividend means the treaty of the payer
 country applies, and eDavki needs the treaty text to apply the relief. So a row with a foreign tax
-above 0 and a payer country gets a claim, without a question and without a warning, when the
+above 0 and a payer country other than `SI` gets a claim, without a question and without a
+warning, when the
 reference files give one treaty text for that country (`relief_statements.csv`; several rows with
 the same text count as one, and the first row is the claim's reference row). A reference or typed
 text is used without the spaces and no-break spaces at its start and end, and the limits apply to
@@ -885,7 +915,7 @@ the text without them. The claim writes the text as the `ReliefStatement` value.
 foreign tax and no usable text (no row, rows with different texts, or a text that no claim may
 carry) gives one question that never blocks: the user types the treaty text (1 to 100 characters,
 valid UTF-8, no control characters, not the word `true` or `false`) or makes no claim, and no answer
-is no claim. Rows without foreign tax, rows without a payer country and rows of other countries keep
+is no claim. Rows without foreign tax, rows without a payer country, rows of the country `SI` and rows of other countries keep
 `false`. The gross and the foreign tax never change. Unconfirmed: the reference rows have no
 effective dates, so the app cannot check that the treaty text applies on the income date; the user
 checks it in eDavki.
@@ -1195,14 +1225,15 @@ The application writes only two:
 - Broker cash interest (Trade Republic before 6 December 2023, IBKR): code `4`. FURS confirmed it
   in writing: code `3` is only for deposits at banks outside the EU.
 
-**Source country.** `Country2` is the country code of the verified payer data (the payer's
-country), for a coupon and for cash interest alike. The ISIN prefix is never used: it is not
-always a country and does not prove the payer's country, residence or tax treatment (ZDoh-2
-Article 10: the source is the payer's residence). `XS` and `EU` are not valid country codes and
-eDavki rejects them, so a reference row with such a country is an error of the reference file; the
-issuer's real country is used instead (for example `LU` for the EIB). When the payer data has no
-country, the row is still made without `Country2`, and the result warns the user to complete it
-in eDavki.
+**Source country.** `Country2` is the payer country of a coupon or of cash interest. For a coupon it
+comes from the cascade in "Payer country of an income row" (the export, the reference row, the
+ISIN prefix with a warning); for cash interest it is the country of the broker company's
+`broker_payers.csv` row. The ISIN prefix does not prove the payer's residence or tax treatment
+(ZDoh-2 Article 10: the source is the payer's residence), so it is the last step and is warned
+about. `XS`, `EU` and `XX` are not countries and eDavki rejects them, so a reference row with such
+a country is an error of the reference file; the issuer's real country is used instead (for
+example `LU` for the EIB). When no step has a country, the row is still made without `Country2`,
+and the result warns the user to complete it in eDavki.
 
 **Payer facts.** `Name`, `Address`, `Country` and `IdentificationNumber` are required by the
 instructions for a foreign payer. They come from the verified payer resource. A missing fact is

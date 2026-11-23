@@ -317,7 +317,7 @@ ignored.
 | `AccountInformation` | `accountId`, `ibEntity` | The Doh-Obr payer of broker interest: `ibEntity` is the `code` of `broker_payers.csv` (`IB-IE`, `IB-CE`, `IB-UK`, `IB-LUX`, `IBLLC-US`). An unknown entity gives empty payer facts and a warning, never a block. |
 | `Trade` | `accountId`, `transactionID`, `tradeID`, `levelOfDetail`, `transactionType`, `assetCategory`, `subCategory`, `symbol`, `description`, `isin`, `currency`, `tradeDate`, `dateTime`, `buySell`, `quantity`, `tradePrice`, `proceeds`, `ibCommission`, `ibCommissionCurrency`, `taxes`, `openCloseIndicator`, `notes`, `multiplier` | Buys and sells, fees, asset class, derivatives, cancellations. |
 | `Lot` | none | A closed lot: IBKR's own matching of a sale to its buys. Ignored. |
-| `CashTransaction` | `accountId`, `transactionID`, `actionID`, `levelOfDetail`, `type`, `assetCategory`, `symbol`, `description`, `isin`, `currency`, `dateTime`, `settleDate`, `reportDate`, `amount`, `issuerCountryCode` | Dividends, withholding tax, payment in lieu, broker interest, bond coupons and accrued interest, fees, deposits. |
+| `CashTransaction` | `accountId`, `transactionID`, `actionID`, `levelOfDetail`, `type`, `assetCategory`, `symbol`, `description`, `isin`, `currency`, `dateTime`, `settleDate`, `reportDate`, `amount`, `issuerCountryCode` | Dividends, withholding tax, payment in lieu, broker interest, bond coupons and accrued interest, fees, deposits. `issuerCountryCode` is read (upper case, only an ISO 3166-1 country) into the payer country of a dividend, a dividend payment row and a bond coupon; it is optional, and empty on rows that are not an income payment. |
 | `CorporateAction` | `accountId`, `transactionID`, `actionID`, `type`, `assetCategory`, `symbol`, `description`, `actionDescription`, `isin`, `currency`, `dateTime`, `reportDate`, `quantity`, `proceeds`, `value` | Splits, reverse splits, mergers and the rest, bond maturity. |
 
 Rules (each one is a row of the parser fixtures):
@@ -1227,10 +1227,16 @@ payer questions, the diagnostics and the rates it used.
 
 - **Per ISIN, first.** The payments of the year are grouped by ISIN (one payer lookup each, in ISIN
   order). The payer is found by `findPayer`: one entry gives the facts and the reference row;
-  nothing found gives empty facts and `dividend_payer_not_found`; entries that disagree ask a
+  nothing found gives empty payer name, address and numbers and `dividend_payer_not_found`; entries that disagree ask a
   `PayerChoiceQuestion` (`income_details_required`) and the answer picks one row or skips. A skip
   and an open question both give empty facts and the same warning. The question never stops a form:
   `ApplicationResultBuilder` lists it with Doh-Div but does not make the form `needs_input`.
+- **Country.** The country of a row (payer and source country, for a dividend and a coupon) is the
+  first of: the export country of the payments (`mPayerCountry`; payments that disagree give none),
+  the used reference row, the one country of the reference rows that disagree, the first two letters
+  of the ISIN when they are an ISO 3166-1 country (`payer_country_from_isin`, once per ISIN and
+  form). The list of countries is `isIsoCountryCode`, also used by the reference files and the XML
+  check. `tax_rules.md`, "Payer country of an income row", has the rules.
 - **Slovenian payer.** A dividend payer with the country `SI` has no row. One excluded item per ISIN
   (`dividend`, `slovenian_tax_settled`) lists the sources of its payments, without a warning
   (a tax rule leaves it out on purpose). Its payments need no rate.
