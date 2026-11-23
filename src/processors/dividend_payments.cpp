@@ -16,11 +16,14 @@
 namespace taxbroker {
 namespace {
 
+constexpr std::string_view kSlovenia = "SI";
+
 /// The dividend form's share of the payer helpers.
 const PayerForm kForm{
     .mReport = ReportType::Dividends,
     .mNotFoundCode = ProcessingDiagnosticCode::DividendPayerNotFound,
     .mNotFoundKey = MessageKey::DividendPayerNotFound,
+    .mNotFoundCountryKnownKey = MessageKey::DividendPayerNotFoundCountryKnown,
     .mSlovenianExclusion = ExcludedCategory::Dividend,
     .mNeedsPayerNumber = false,
 };
@@ -81,6 +84,11 @@ std::map<Isin, IsinPayments> groupByIsin(const std::vector<Payment>& aPayments) 
                               metadata.mSources.begin(),
                               metadata.mSources.end());
         group.mFirstDate = std::min(group.mFirstDate, metadata.mTaxDate);
+
+        if (payment.mTransaction->mPayerCountry)
+        {
+            group.mExportCountries.insert(*payment.mTransaction->mPayerCountry);
+        }
     }
 
     return groups;
@@ -317,8 +325,9 @@ DividendPaymentsResult prepareDividendPayments(const MergedStatement& aStatement
 
         if (row->mWithholding.mForeignTax > 0)
         {
-            // A claim needs the payer's country; a row without it has no question.
-            if (row->mSourceCountry)
+            // A claim needs the payer's country; a row without it has no question. A Slovenian
+            // payer has no foreign tax and no treaty.
+            if (row->mSourceCountry && *row->mSourceCountry != kSlovenia)
             {
                 auto [position, inserted] = treatyGroups.try_emplace(*row->mSourceCountry);
                 auto& group = position->second;

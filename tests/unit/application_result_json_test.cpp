@@ -643,6 +643,7 @@ TEST(ApplicationResultJsonTest, TheMergeCodesOfAnIncomePaymentHaveTheirOwnNames)
               "income_correction_later_year");
     EXPECT_EQ(toString(ProcessingDiagnosticCode::MarginOrLeverageRowsLeftOut),
               "margin_or_leverage_rows_left_out");
+    EXPECT_EQ(toString(ProcessingDiagnosticCode::PayerCountryFromIsin), "payer_country_from_isin");
 }
 
 TEST(ApplicationResultJsonTest, WritesEveryMergeCode) {

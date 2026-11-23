@@ -399,6 +399,15 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::InterestPayerNotFoundUnknownEntity,
          "interest_payer_not_found.unknown_entity",
          {{"code", MessageParamKind::Text}}},
+        {MessageKey::DividendPayerNotFoundCountryKnown,
+         "dividend_payer_not_found.country_known",
+         {{"country", MessageParamKind::Text}}},
+        {MessageKey::InterestPayerNotFoundCountryKnown,
+         "interest_payer_not_found.country_known",
+         {{"country", MessageParamKind::Text}}},
+        {MessageKey::PayerCountryFromIsin,
+         "payer_country_from_isin",
+         {{"country", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -463,8 +472,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 166U);
-    ASSERT_EQ(expectedMessages().size(), 166U);
+    ASSERT_EQ(definitions.size(), 169U);
+    ASSERT_EQ(expectedMessages().size(), 169U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -498,8 +507,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 166U);
-    EXPECT_EQ(keys.size(), 166U);
+    EXPECT_EQ(ids.size(), 169U);
+    EXPECT_EQ(keys.size(), 169U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -524,7 +533,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 177U); // 166 message keys and 11 terms.
+    ASSERT_EQ(table.size(), 180U); // 169 message keys and 11 terms.
 
     std::set<std::string> tableKeys;
 

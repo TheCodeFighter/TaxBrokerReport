@@ -249,6 +249,8 @@ struct DividendTransaction {
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
+    /// The ISO 3166-1 country of the payer as the export names it; absent when it does not.
+    std::optional<std::string> mPayerCountry;
 };
 
 struct DividendInstrument {
@@ -281,6 +283,9 @@ struct InterestTransaction {
     /// The `code` of the `broker_payers.csv` row of the entity that paid the interest on cash, when
     /// the export names it; absent otherwise (the payer is then found another way or stays empty).
     std::optional<std::string> mPayerCode;
+    /// The ISO 3166-1 country of the payer as the export names it; absent when it does not (the
+    /// payer of cash interest comes from `mPayerCode`).
+    std::optional<std::string> mPayerCountry;
 };
 
 struct InterestInstrument {
@@ -364,6 +369,7 @@ struct IncomePaymentRow {
     std::string mPaymentGroupId;           ///< The same for every row of one payment.
     bool mSubstitutePayment{};             ///< A payment in lieu of a dividend.
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence; ///< Class evidence of the row.
+    std::optional<std::string> mPayerCountry; ///< ISO 3166-1 country the export names; or none.
 };
 
 /// Why a row of the export is not read into any event.

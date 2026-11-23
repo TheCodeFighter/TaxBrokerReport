@@ -235,6 +235,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "taxpayer_tax_number_check_digit";
     case ProcessingDiagnosticCode::MarginOrLeverageRowsLeftOut:
         return "margin_or_leverage_rows_left_out";
+    case ProcessingDiagnosticCode::PayerCountryFromIsin:
+        return "payer_country_from_isin";
     }
 
     return "unrepresentable_value";

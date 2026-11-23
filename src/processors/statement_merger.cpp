@@ -561,7 +561,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mTaxPaid == aRight.mEvent.mTaxPaid &&
            aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
-           aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency;
+           aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency &&
+           aLeft.mEvent.mPayerCountry == aRight.mEvent.mPayerCountry;
 }
 
 [[nodiscard]] bool sameEventFacts(const InterestRecord& aLeft, const InterestRecord& aRight) {
@@ -579,7 +580,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
            aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency &&
            aLeft.mEvent.mCashHolder == aRight.mEvent.mCashHolder &&
-           aLeft.mEvent.mPayerCode == aRight.mEvent.mPayerCode;
+           aLeft.mEvent.mPayerCode == aRight.mEvent.mPayerCode &&
+           aLeft.mEvent.mPayerCountry == aRight.mEvent.mPayerCountry;
 }
 
 [[nodiscard]] bool sameEventFacts(const IncomePaymentRecord& aLeft,
@@ -591,6 +593,7 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mBookedDate == aRight.mEvent.mBookedDate &&
            aLeft.mEvent.mPaymentGroupId == aRight.mEvent.mPaymentGroupId &&
            aLeft.mEvent.mSubstitutePayment == aRight.mEvent.mSubstitutePayment &&
+           aLeft.mEvent.mPayerCountry == aRight.mEvent.mPayerCountry &&
            sameOriginalClassification(aLeft.mEvent.mInstrumentEvidence,
                                       aRight.mEvent.mInstrumentEvidence);
 }

@@ -1,0 +1,22 @@
+<FlexQueryResponse queryName="TaxBrokerReport payer country 2024" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades/>
+      <CorporateActions/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" transactionID="2401" actionID="A9401" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="US" description="US CASH DIVIDEND" isin="US0000000010" currency="USD" dateTime="20240410" settleDate="20240410" reportDate="20240410" amount="20" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="2402" actionID="A9401" levelOfDetail="DETAIL" type="Withholding Tax" assetCategory="STK" symbol="US" description="US CASH DIVIDEND - TAX" isin="US0000000010" currency="USD" dateTime="20240410" settleDate="20240410" reportDate="20240410" amount="-3" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="2403" actionID="A9402" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="NL" description="NL CASH DIVIDEND" isin="NL0000000081" currency="EUR" dateTime="20240510" settleDate="20240510" reportDate="20240510" amount="8" issuerCountryCode=""/>
+        <CashTransaction accountId="U0000000" transactionID="2404" actionID="A9403" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="FR" description="FR CASH DIVIDEND" isin="FR0000000010" currency="EUR" dateTime="20240610" settleDate="20240610" reportDate="20240610" amount="6" issuerCountryCode="XS"/>
+        <CashTransaction accountId="U0000000" transactionID="2405" actionID="A9404" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="DE" description="DE CASH DIVIDEND" isin="DE0000000033" currency="EUR" dateTime="20240620" settleDate="20240620" reportDate="20240620" amount="10" issuerCountryCode="DE"/>
+        <CashTransaction accountId="U0000000" transactionID="2406" actionID="A9404" levelOfDetail="DETAIL" type="Withholding Tax" assetCategory="STK" symbol="DE" description="DE CASH DIVIDEND - TAX" isin="DE0000000033" currency="EUR" dateTime="20240620" settleDate="20240620" reportDate="20240620" amount="-2.64" issuerCountryCode="CA"/>
+        <CashTransaction accountId="U0000000" transactionID="2407" actionID="A9405" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="DE" description="DE CASH DIVIDEND" isin="DE0000000058" currency="EUR" dateTime="20240715" settleDate="20240715" reportDate="20240715" amount="5" issuerCountryCode="DE"/>
+        <CashTransaction accountId="U0000000" transactionID="2408" actionID="A9405" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="DE" description="DE CASH DIVIDEND" isin="DE0000000058" currency="EUR" dateTime="20240715" settleDate="20240715" reportDate="20240715" amount="-1" issuerCountryCode="AT"/>
+        <CashTransaction accountId="U0000000" transactionID="2410" actionID="A9406" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="CH" description="CH CASH DIVIDEND" isin="CH0000000015" currency="EUR" dateTime="20240812" settleDate="20240812" reportDate="20240812" amount="4" issuerCountryCode="ch"/>
+        <CashTransaction accountId="U0000000" transactionID="2411" actionID="A9407" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="BE" description="BE CASH DIVIDEND" isin="BE0000000001" currency="EUR" dateTime="20240910" settleDate="20240910" reportDate="20240910" amount="3" issuerCountryCode="USA"/>
+        <CashTransaction accountId="U0000000" transactionID="2409" actionID="" levelOfDetail="DETAIL" type="Bond Interest Received" assetCategory="BOND" symbol="ITB" description="IT BOND COUPON" isin="IT0000000007" currency="EUR" dateTime="20240701" settleDate="20240701" reportDate="20240701" amount="30" issuerCountryCode="IT"/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

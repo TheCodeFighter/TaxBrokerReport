@@ -301,6 +301,7 @@ const std::vector<std::string>& allXmlFixtures() {
                                                 "unknown_entity.xml",
                                                 "timestamps.xml",
                                                 "quantities.xml",
+                                                "payer_country_2024.xml",
                                                 "equivalence/ibkr.xml"};
 
     return names;
@@ -420,7 +421,13 @@ TEST(IbkrFixtureTest, EveryIsinHasAValidCheckDigitAndIsOneOfTheKnownIsins) {
                                       "US0000000051",
                                       "LU0000000066",
                                       "FR0000000077",
-                                      "NL0000000081"};
+                                      "NL0000000081",
+                                      "BE0000000001",
+                                      "CH0000000015",
+                                      "DE0000000033",
+                                      "DE0000000058",
+                                      "FR0000000010",
+                                      "IT0000000007"};
     EXPECT_EQ(isins, known);
 }
 

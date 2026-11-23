@@ -9,6 +9,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,7 +21,12 @@ struct IsinPayments {
     std::string mName;
     std::vector<SourceReference> mSources;
     Date mFirstDate;
+    std::set<std::string> mExportCountries; ///< The countries the export names for the payments.
 };
+
+/// The country the export names for the payments of the ISIN: the one country, or none when no
+/// payment names one or the payments name different ones.
+[[nodiscard]] std::optional<std::string> exportCountryOf(const IsinPayments& aPayments);
 
 /// The payer of an ISIN as the rows will carry it.
 struct PayerOutcome {
@@ -41,6 +47,8 @@ struct PayerForm {
     ReportType mReport{};                     ///< The form the diagnostics and questions affect.
     ProcessingDiagnosticCode mNotFoundCode{}; ///< The warning for a payer without facts.
     MessageKey mNotFoundKey{};                ///< Its message.
+    /// Its message when the payer's country is known from elsewhere than the reference files.
+    MessageKey mNotFoundCountryKnownKey{};
     /// The category of the excluded item of a Slovenian payer. Empty when the form reports the
     /// income of a Slovenian payer too, because no Slovenian payer settles the tax on it.
     std::optional<ExcludedCategory> mSlovenianExclusion;
@@ -89,16 +97,20 @@ slovenianTaxNumberMissingWarning(ReportType aReport,
                                                              std::optional<std::string> aName,
                                                              std::optional<Isin> aIsin);
 
-/// The warning that the payer has no facts: not found, or several rows and none picked.
+/// The warning that the payer has no facts: not found, or several rows and none picked. The
+/// message says that the country is filled when aCountry is set.
 void addPayerNotFound(const PayerForm& aForm,
                       const PayerSinks& aSinks,
                       const Isin& aIsin,
-                      const IsinPayments& aPayments);
+                      const IsinPayments& aPayments,
+                      const std::optional<std::string>& aCountry);
 
 /// The payer of an ISIN from the catalogue and the user's answer. A payer that is not found, or
 /// that the user skipped, has no facts and a warning; several rows are a question that never
 /// blocks. For a form that leaves a Slovenian payer out, a payer whose every row has the residence
-/// country SI is Slovenian without a question.
+/// country SI is Slovenian without a question. The payer country (also the source country) is the
+/// first of the export country, the used row's country, the one country of all rows and the ISIN
+/// prefix, which is warned about; a payer without a row has only that country.
 [[nodiscard]] PayerOutcome resolvePayer(const PayerForm& aForm,
                                         const PayerSinks& aSinks,
                                         const Isin& aIsin,

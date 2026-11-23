@@ -82,6 +82,7 @@ add_library(taxbroker_core STATIC
     ${EMBEDDED_DIR}/relief_statements_csv.cpp
     utils/build_info.cpp
     utils/csv_text_reader.cpp
+    utils/country_codes.cpp
     utils/currency.cpp
     utils/date_utils.cpp
     utils/diagnostic_messages.cpp

@@ -142,6 +142,9 @@ constexpr std::array kPayYearAndBookedYear{
 constexpr std::array kCode{
     MessageParamDefinition{"code", MessageParamKind::Text},
 };
+constexpr std::array kCountry{
+    MessageParamDefinition{"country", MessageParamKind::Text},
+};
 constexpr std::array kYearRange{
     MessageParamDefinition{"minYear", MessageParamKind::Number},
     MessageParamDefinition{"maxYear", MessageParamKind::Number},
@@ -495,6 +498,13 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::InterestPayerNotFoundUnknownEntity,
                       "interest_payer_not_found.unknown_entity",
                       kCode},
+    MessageDefinition{MessageKey::DividendPayerNotFoundCountryKnown,
+                      "dividend_payer_not_found.country_known",
+                      kCountry},
+    MessageDefinition{MessageKey::InterestPayerNotFoundCountryKnown,
+                      "interest_payer_not_found.country_known",
+                      kCountry},
+    MessageDefinition{MessageKey::PayerCountryFromIsin, "payer_country_from_isin", kCountry},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -510,8 +520,7 @@ constexpr bool definitionsFollowKeyOrder() {
 }
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
-static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::InterestPayerNotFoundUnknownEntity) + 1,
+static_assert(kDefinitions.size() == static_cast<std::size_t>(MessageKey::PayerCountryFromIsin) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 11> kTermKeys{

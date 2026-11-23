@@ -89,6 +89,9 @@ enum class ProcessingDiagnosticCode {
     /// A warning: rows of a broker (derivatives, margin) were left out of every form; the count is
     /// for the selected year.
     MarginOrLeverageRowsLeftOut,
+    /// A warning: the country of an income row is the ISIN prefix, because neither the export nor
+    /// a reference row gave one.
+    PayerCountryFromIsin,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

@@ -2635,3 +2635,130 @@ TEST(IbkrParserFileLevelTest, RunningOutOfMemoryGivesAStructuredErrorNotAnExcept
     EXPECT_EQ(result.mDiagnostics.front().mMessageKey, MessageKey::InputFileOutOfMemory);
     EXPECT_EQ(result.mDiagnostics.front().mSourceFile, "memory.xml");
 }
+
+// payer_country_2024.xml: the country of the payer, from `issuerCountryCode` of a cash row
+
+namespace {
+
+const ParseResult& payerCountry() {
+    static const ParseResult result = parseFixture("payer_country_2024.xml");
+
+    return result;
+}
+
+} // namespace
+
+TEST(IbkrParserPayerCountryTest, TheFileGivesNoDiagnostic) {
+    EXPECT_TRUE(payerCountry().mDiagnostics.empty());
+    EXPECT_EQ(payerCountry().mStatement.mIncomePaymentRows.size(), 10U); // 2401 to 2408, 2410, 2411
+    EXPECT_EQ(payerCountry().mStatement.mInterestInstruments.size(), 1U); // the coupon 2409
+}
+
+TEST(IbkrParserPayerCountryTest, ADividendAndItsTaxKeepTheExportCountry2401And2402) {
+    const auto* dividend = findPayment(payerCountry(), "2401");
+    const auto* tax = findPayment(payerCountry(), "2402");
+
+    ASSERT_NE(dividend, nullptr);
+    ASSERT_NE(tax, nullptr);
+
+    EXPECT_EQ(dividend->mPayerCountry, "US");
+    EXPECT_EQ(tax->mPayerCountry, "US");
+}
+
+TEST(IbkrParserPayerCountryTest, AnEmptyCountryIsNone2403) {
+    const auto* dividend = findPayment(payerCountry(), "2403");
+
+    ASSERT_NE(dividend, nullptr);
+
+    EXPECT_FALSE(dividend->mPayerCountry.has_value());
+}
+
+TEST(IbkrParserPayerCountryTest, AnInternationalSecuritiesPrefixIsNoCountry2404) {
+    const auto* dividend = findPayment(payerCountry(), "2404");
+
+    ASSERT_NE(dividend, nullptr);
+
+    EXPECT_FALSE(dividend->mPayerCountry.has_value()); // `XS`
+}
+
+TEST(IbkrParserPayerCountryTest, ALowerCaseCodeIsReadInCapitalLetters2410) {
+    const auto* dividend = findPayment(payerCountry(), "2410");
+
+    ASSERT_NE(dividend, nullptr);
+
+    EXPECT_EQ(dividend->mPayerCountry, "CH"); // `ch`
+}
+
+TEST(IbkrParserPayerCountryTest, AThreeLetterCodeIsNoCountry2411) {
+    const auto* dividend = findPayment(payerCountry(), "2411");
+
+    ASSERT_NE(dividend, nullptr);
+
+    EXPECT_FALSE(dividend->mPayerCountry.has_value()); // `USA`
+}
+
+TEST(IbkrParserPayerCountryTest, TheReversalKeepsItsOwnCountry2407And2408) {
+    const auto* dividend = findPayment(payerCountry(), "2407");
+    const auto* reversal = findPayment(payerCountry(), "2408");
+
+    ASSERT_NE(dividend, nullptr);
+    ASSERT_NE(reversal, nullptr);
+
+    EXPECT_EQ(dividend->mPayerCountry, "DE");
+    EXPECT_EQ(reversal->mPayerCountry, "AT");
+}
+
+TEST(IbkrParserPayerCountryTest, ABondCouponKeepsTheCountry2409) {
+    const auto* coupon = findInterest(payerCountry(), "2409");
+
+    ASSERT_NE(coupon, nullptr);
+
+    EXPECT_EQ(coupon->mPayerCountry, "IT");
+}
+
+TEST(IbkrParserPayerCountryTest, ACouponWithALowerCaseCodeIsReadInCapitalLetters) {
+    const auto result = parseText(statementWithRows(
+        "",
+        "",
+        R"(<CashTransaction transactionID="C1" actionID="" levelOfDetail="DETAIL" type="Bond Interest Received" assetCategory="BOND" symbol="SYNB" description="SYNB COUPON" isin="DE0000000041" currency="EUR" dateTime="20240617" settleDate="20240617" reportDate="20240617" amount="45" issuerCountryCode="de"/>)"));
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+
+    const auto* coupon = findInterest(result, "C1");
+
+    ASSERT_NE(coupon, nullptr);
+
+    EXPECT_EQ(coupon->mPayerCountry, "DE");
+}
+
+TEST(IbkrParserPayerCountryTest, CashInterestHasNoCountryEvenWhenTheRowGivesOne) {
+    // The payer of cash interest is the broker entity, not the country of the row.
+    const auto result = parseText(statementWithRows(
+        "",
+        "",
+        R"(<CashTransaction transactionID="C3" actionID="" levelOfDetail="DETAIL" type="Broker Interest Received" assetCategory="CASH" symbol="" description="EUR CREDIT INT FOR MAR-2024" isin="" currency="EUR" dateTime="20240403" settleDate="20240403" reportDate="20240403" amount="3.21" issuerCountryCode="IE"/>)"));
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+
+    const auto* interest = findInterest(result, "C3");
+
+    ASSERT_NE(interest, nullptr);
+
+    EXPECT_EQ(interest->mPayerCode, "IB-IE");
+    EXPECT_FALSE(interest->mPayerCountry.has_value());
+}
+
+TEST(IbkrParserPayerCountryTest, ARowWithoutTheAttributeHasNoCountry) {
+    const auto result = parseText(statementWithRows(
+        "",
+        "",
+        R"(<CashTransaction transactionID="C2" actionID="A1" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="SYN" description="SYN CASH DIVIDEND" isin="US0000000010" currency="USD" dateTime="20240410" settleDate="20240410" reportDate="20240410" amount="20"/>)"));
+
+    ASSERT_TRUE(result.mDiagnostics.empty());
+
+    const auto* dividend = findPayment(result, "C2");
+
+    ASSERT_NE(dividend, nullptr);
+
+    EXPECT_FALSE(dividend->mPayerCountry.has_value());
+}

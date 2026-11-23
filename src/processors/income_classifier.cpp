@@ -110,6 +110,8 @@ InterestTransaction asInterest(const Transaction& aTransaction,
         .mTaxCurrency = aTransaction.mTaxCurrency,
         .mInstrumentEvidence = aTransaction.mInstrumentEvidence,
         .mCashHolder = aHolder,
+        .mPayerCode = std::nullopt,
+        .mPayerCountry = aTransaction.mPayerCountry,
     };
 }
 
@@ -122,6 +124,7 @@ DividendTransaction asDividend(const InterestTransaction& aTransaction) {
         .mCurrency = aTransaction.mCurrency,
         .mTaxCurrency = aTransaction.mTaxCurrency,
         .mInstrumentEvidence = aTransaction.mInstrumentEvidence,
+        .mPayerCountry = aTransaction.mPayerCountry,
     };
 }
 

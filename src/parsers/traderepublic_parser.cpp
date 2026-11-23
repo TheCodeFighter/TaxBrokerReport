@@ -1243,6 +1243,7 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
         .mCurrency = income->mCurrency,
         .mTaxCurrency = income->mTaxCurrency,
         .mInstrumentEvidence = std::move(evidence),
+        .mPayerCountry = std::nullopt,
     });
 }
 
@@ -1350,6 +1351,8 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         .mInstrumentEvidence = std::move(evidence),
         .mCashHolder =
             hasInstrument ? std::nullopt : std::optional{tradeRepublicCashHolder(taxDate)},
+        .mPayerCode = std::nullopt,
+        .mPayerCountry = std::nullopt,
     });
 }
 

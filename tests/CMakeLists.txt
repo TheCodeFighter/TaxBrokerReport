@@ -109,6 +109,7 @@ add_executable(taxbroker_unit_tests
     unit/obr_schema_test.cpp
     unit/split_ratio_test.cpp
     unit/support_report_json_test.cpp
+    unit/country_codes_test.cpp
     unit/tax_number_test.cpp
 )
 

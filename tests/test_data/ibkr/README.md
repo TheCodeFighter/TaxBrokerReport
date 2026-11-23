@@ -18,6 +18,7 @@ timestamp.
 | `corrections_2024.xml`, `corrections_2025.xml` | A dividend, its reversal and correction across two years |
 | `conflicts_2024.xml`, `conflicts_2025.xml` | The same trade ID with different quantities in two files |
 | `unknown_entity.xml` | An account whose `ibEntity` is not in the payer list |
+| `payer_country_2024.xml` | `issuerCountryCode` on dividends, a reversal, taxes and a coupon: valid, lower case, empty, `XS`, three letters, different countries |
 | `timestamps.xml` | Daylight-saving edges and an overnight trade |
 | `quantities.xml` | Quantities with more than eight decimals |
 | `file_level/` | Files that are not read as a Flex Query XML, and edge cases of the file |
@@ -202,6 +203,24 @@ interest received 2301 (EUR 1.75, 2024-05-03, cash holder Broker).
 Result: 1 interest event with empty payer facts, and one warning that the entity is unknown (the row is
 never rejected and never asks a question).
 
+# `payer_country_2024.xml`
+
+Account `U0000000` (`ibEntity` `IB-IE`), no trades. The country of the payer is the
+`issuerCountryCode` of a dividend, reversal or coupon row, in capital letters when it is an ISO 3166-1
+country code, otherwise none (no diagnostic). The country of a tax row is read too, but the netting
+step ignores it.
+
+| `transactionID` | Row | ISIN | `issuerCountryCode` | Date | Expected |
+| --- | --- | --- | --- | --- | --- |
+| 2401, 2402 | Dividend USD 20.00 (`A9401`) and its tax USD 3.00 | US0000000010 | `US` | 2024-04-10 | One dividend, country `US` |
+| 2403 | Dividend EUR 8.00 (`A9402`) | NL0000000081 | empty | 2024-05-10 | Country none |
+| 2404 | Dividend EUR 6.00 (`A9403`) | FR0000000010 | `XS` | 2024-06-10 | Country none (`XS` is no country) |
+| 2405, 2406 | Dividend EUR 10.00 and tax EUR 2.64 (`A9404`) | DE0000000033 | `DE` / `CA` | 2024-06-20 | One dividend, country `DE` (the tax row's `CA` is ignored) |
+| 2409 | Bond coupon EUR 30.00 | IT0000000007 | `IT` | 2024-07-01 | Coupon, country `IT` |
+| 2407, 2408 | Dividend EUR 5.00 and reversal EUR 1.00 (`A9405`) | DE0000000058 | `DE` / `AT` | 2024-07-15 | `income_payment_rows_disagree` error, no dividend |
+| 2410 | Dividend EUR 4.00 (`A9406`) | CH0000000015 | `ch` | 2024-08-12 | Country `CH` (upper-cased) |
+| 2411 | Dividend EUR 3.00 (`A9407`) | BE0000000001 | `USA` | 2024-09-10 | Country none (three letters) |
+
 # `timestamps.xml`
 
 Six buys of 1 unit at USD 100 of US0000000010, fee USD 1.00. The reasons are the US daylight-saving
@@ -258,7 +277,8 @@ sale 9104 (`docs/fifo.md`). Trade 9105 has no usable source decimal: nothing is 
 `tr.csv` (Trade Republic) and `ibkr.xml` (IBKR) hold the same trades. After the parser, each pair
 of events is equal apart from broker, transaction ID and source (file, row). Names are not
 compared. The interest payer differs too: it comes from the broker (Trade Republic) or from the
-account's `ibEntity` (IBKR, `IB-IE`).
+account's `ibEntity` (IBKR, `IB-IE`). So does the payer country of a dividend: Trade Republic has
+none, IBKR gives `FR` for the euro dividend and `US` for the dollar dividend (`issuerCountryCode`).
 
 | Event | Trade Republic row | IBKR row | Equal fields |
 | --- | --- | --- | --- |

@@ -1,4 +1,5 @@
 #include "xml_common.hpp"
+#include "utils/country_codes.hpp"
 #include "utils/numeric_util.hpp"
 
 #include <algorithm>
@@ -29,7 +30,6 @@ constexpr std::size_t kTaxNumberDigits = 8;
 constexpr int kMaximumYear = 9999;
 // `xs:date` holds a year from 1 to 9999 in four digits.
 constexpr int kMinimumDateYear = 1;
-constexpr std::size_t kCountryLength = 2;
 constexpr std::size_t kPostNumberDigits = 4;
 
 // `Money` has four decimals and the form two, so a cent is 100 stored steps.
@@ -48,12 +48,8 @@ bool isPostNumber(std::string_view aText) {
 }
 
 bool isCountryCode(std::string_view aText) {
-    // `XS` and `EU` are the ISIN prefixes of international issues, not countries: eDavki rejects
-    // them.
-    return aText.size() == kCountryLength && aText != "XS" && aText != "EU" &&
-           std::all_of(aText.begin(), aText.end(), [](char aCharacter) {
-               return aCharacter >= 'A' && aCharacter <= 'Z';
-           });
+    // `XS`, `EU` and `XX` are ISIN prefixes or placeholders, not countries: eDavki rejects them.
+    return isIsoCountryCode(aText);
 }
 
 std::int64_t roundedCents(Money aValue) {

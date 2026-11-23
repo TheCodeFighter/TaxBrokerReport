@@ -19,6 +19,7 @@ datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,am
 2025-05-06T09:00:00Z,2025-05-06,DEFAULT,TRADING,SELL,STOCK,Synthetic Split Share,XX0000000107,-6,80,480.00,,,EUR,,,,,manual-2025-010,,,,
 2025-05-08T09:00:00Z,2025-05-08,DEFAULT,CASH,DIVIDEND,STOCK,British American Tobacco plc,GB0002875804,5,,17.70,,,EUR,15.00,GBP,1.179802,,manual-2025-022,,,,
 2025-05-14T11:00:00Z,2025-05-14,DEFAULT,CASH,CARD_TRANSACTION,,Synthetic Merchant,,,,-6.00,,,EUR,,,,Synthetic card payment,manual-2025-039,,,,
+2025-05-15T09:00:00Z,2025-05-15,DEFAULT,CASH,DIVIDEND,STOCK,Synthetic German Share,DE0000000066,5,,20.00,,-5.28,EUR,,,,,manual-2025-042,,,,
 2025-05-20T16:00:00.000001Z,2025-05-20,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Slovenian Bond,SI0031102153,,,30.00,,,EUR,,,,Interest Payment for ISIN SI0031102153,manual-2025-016,,,,
 2025-05-30T10:00:00Z,2025-05-30,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,95.00,,,EUR,,,,Synthetic bank interest,manual-2025-028,,,,
 2025-06-02T11:00:00Z,2025-06-02,DEFAULT,CASH,STOCKPERK,STOCK,Synthetic Reward Share,XX0000000125,,,7.50,,,EUR,,,,Synthetic stock reward,manual-2025-037,,,,

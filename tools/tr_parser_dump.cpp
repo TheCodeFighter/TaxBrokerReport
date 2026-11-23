@@ -1063,6 +1063,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "TaxpayerTaxNumberCheckDigit";
     case ProcessingDiagnosticCode::MarginOrLeverageRowsLeftOut:
         return "MarginOrLeverageRowsLeftOut";
+    case ProcessingDiagnosticCode::PayerCountryFromIsin:
+        return "PayerCountryFromIsin";
     }
 
     return "Unknown";

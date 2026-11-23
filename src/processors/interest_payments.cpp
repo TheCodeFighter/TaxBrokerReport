@@ -40,6 +40,7 @@ const PayerForm kCouponForm{
     .mReport = ReportType::OtherInterest,
     .mNotFoundCode = ProcessingDiagnosticCode::InterestPayerNotFound,
     .mNotFoundKey = MessageKey::InterestPayerNotFound,
+    .mNotFoundCountryKnownKey = MessageKey::InterestPayerNotFoundCountryKnown,
     .mSlovenianExclusion = std::nullopt,
     .mNeedsPayerNumber = true,
 };
@@ -318,6 +319,11 @@ std::map<Isin, IsinPayments> couponsByIsin(const std::vector<Payment>& aPayments
                               metadata.mSources.begin(),
                               metadata.mSources.end());
         group.mFirstDate = std::min(group.mFirstDate, metadata.mTaxDate);
+
+        if (payment.mTransaction->mPayerCountry)
+        {
+            group.mExportCountries.insert(*payment.mTransaction->mPayerCountry);
+        }
     }
 
     return groups;
