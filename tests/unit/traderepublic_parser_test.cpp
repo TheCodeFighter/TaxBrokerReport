@@ -2539,7 +2539,8 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
     const ParseResult parseResult = parseSupportedFixture();
     const auto& statement = parseResult.mStatement;
 
-    EXPECT_EQ(tradeTransactionCount(statement), 6U);
+    // The saveback execution of the derivative is not a trade: it is a left-out row.
+    EXPECT_EQ(tradeTransactionCount(statement), 5U);
 
     const auto* buy = findTradeTransaction(statement, "synthetic-buy-001");
     ASSERT_NE(buy, nullptr);
@@ -2574,7 +2575,6 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
     const std::array expectedExecutions{
         std::pair{"synthetic-savings-001", AssetClass::Fund},
         std::pair{"synthetic-spare-001", AssetClass::Bond},
-        std::pair{"synthetic-saveback-execution-001", AssetClass::Derivative},
         std::pair{"synthetic-crypto-001", AssetClass::Crypto},
     };
     for (const auto& [expectedTransactionId, expectedAssetClass] : expectedExecutions)
@@ -2600,6 +2600,16 @@ TEST(TradeRepublicParserTest, ParsesAndNormalizesEverySupportedTradeExecution) {
 
     // Crypto is left out by a tax rule on purpose, so its row has no asset class warning.
     EXPECT_EQ(countDiagnostics(parseResult, DiagnosticCode::UnsupportedAssetClass), 0U);
+
+    // The execution of a derivative (a certificate) becomes one left-out row, and no instrument.
+    ASSERT_EQ(statement.mLeftOutRows.size(), 1U);
+
+    const auto& leftOut = statement.mLeftOutRows.front();
+
+    EXPECT_EQ(leftOut.mReason, LeftOutReason::MarginOrLeverage);
+    EXPECT_EQ(leftOut.mMetadata.mTaxDate, makeDate(2024, 3, 4));
+    EXPECT_EQ(::transactionId(leftOut.mMetadata), "synthetic-saveback-execution-001");
+    EXPECT_EQ(findTradeInstrument(statement, "XX0000000004"), nullptr);
 }
 
 TEST(TradeRepublicParserTest, ParsesLocalAndForeignIncomeCurrenciesExactly) {

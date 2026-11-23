@@ -109,6 +109,80 @@ TEST(FeeSummaryTest, DocumentedExampleTotalsFourEuro) {
     EXPECT_EQ(summary.mEurTotal, 40'000);
 }
 
+TEST(FeeSummaryTest, TheSecondFeeOfATradeAddsToTheTotalOfItsCurrency) {
+    // A trade with a fee of EUR 1.25 and a financial transaction tax of EUR 0.80.
+    MergedStatement statement;
+    statement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = date("2025-03-03"),
+                               .mSources = {source(Broker::InteractiveBrokers, 2, "a-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mFeePaid = 12'500, // EUR 1.25
+                 .mCurrency = Currency::EUR,
+                 .mFeeCurrency = Currency::EUR,
+                 .mTransactionTaxPaid = 8'000}, // EUR 0.80
+            },
+    }};
+    auto ledger = ledger2025();
+    addTradesToLedger(ledger, 1);
+
+    const auto summary = summarizeFeesAndBenefits(statement, ledger).mFees;
+
+    ASSERT_EQ(summary.mBrokers.size(), 1U);
+
+    const auto& broker = summary.mBrokers.at(0);
+
+    ASSERT_EQ(broker.mByCurrency.size(), 1U);
+    EXPECT_EQ(broker.mByCurrency.at(0).mCurrency, Currency::EUR);
+    EXPECT_EQ(broker.mByCurrency.at(0).mCount, 2U);
+    EXPECT_EQ(broker.mByCurrency.at(0).mTotal, 20'500); // EUR 1.25 + EUR 0.80 = EUR 2.05
+    EXPECT_EQ(broker.mEurTotal, 20'500);
+    EXPECT_EQ(summary.mEurTotal, 20'500);
+}
+
+TEST(FeeSummaryTest, TheSecondFeeInAnotherCurrencyIsConvertedWithTheRateOfItsOwnTrade) {
+    // Fee EUR 1.25 in euro; second fee USD 2.50 in the trade currency, 1 EUR = 1.25 USD.
+    MergedStatement statement;
+    statement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = date("2025-03-03"),
+                               .mSources = {source(Broker::InteractiveBrokers, 2, "a-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mFeePaid = 12'500, // EUR 1.25
+                 .mExchangeRate =
+                     BrokerExchangeRate{.mValue = 125'000'000, // 1 EUR = 1.25 USD
+                                        .mDirection = ExchangeRateDirection::ForeignPerEur,
+                                        .mVerification =
+                                            RateDirectionVerification::VerifiedBySourceSamples},
+                 .mCurrency = Currency::USD,
+                 .mFeeCurrency = Currency::EUR,
+                 .mTransactionTaxPaid = 25'000}, // USD 2.50
+            },
+    }};
+    auto ledger = ledger2025();
+    addTradesToLedger(ledger, 1);
+
+    const auto summary = summarizeFeesAndBenefits(statement, ledger).mFees;
+
+    ASSERT_EQ(summary.mBrokers.size(), 1U);
+
+    const auto& broker = summary.mBrokers.at(0);
+
+    ASSERT_EQ(broker.mByCurrency.size(), 2U);
+    EXPECT_EQ(broker.mByCurrency.at(0).mCurrency, Currency::EUR);
+    EXPECT_EQ(broker.mByCurrency.at(0).mTotal, 12'500);
+    EXPECT_EQ(broker.mByCurrency.at(1).mCurrency, Currency::USD);
+    EXPECT_EQ(broker.mByCurrency.at(1).mTotal, 25'000);
+    EXPECT_EQ(broker.mEurTotal, 32'500); // EUR 1.25 + USD 2.50 / 1.25 = EUR 3.25
+    EXPECT_EQ(broker.mBrokerRateCount, 1U);
+}
+
 TEST(FeeSummaryTest, MissingBrokerRateLeavesEurTotalsOpen) {
     MergedStatement statement;
     statement.mPresentation.mTradeInstruments = {{

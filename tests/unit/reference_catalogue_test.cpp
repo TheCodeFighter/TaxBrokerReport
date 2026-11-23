@@ -275,6 +275,24 @@ TEST(ReferenceCatalogueTest, FindsABrokerPayerByBrokerAndCode) {
     EXPECT_EQ(catalogue.brokerPayer("IBKR", "IB-XX"), nullptr); // another code
 }
 
+TEST(ReferenceCatalogueTest, FindsABrokerPayerOfABrokerByItsCode) {
+    const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
+                                 "BE,dividend,Treaty text,manual,\n",
+                                 "IBKR,IB-UK,Broker UK,03958476,Level 20,GB,ib-edavki,abc123\n"
+                                 "TR,TR-DE,Broker DE,DE307510626,Main Street,DE,manual,\n");
+
+    const BrokerPayerEntry* found =
+        catalogue.brokerPayerByCode(Broker::InteractiveBrokers, "IB-UK");
+
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->mName, "Broker UK");
+    EXPECT_EQ(catalogue.brokerPayerByCode(Broker::InteractiveBrokers, "TR-DE"),
+              nullptr); // other broker
+    EXPECT_EQ(catalogue.brokerPayerByCode(Broker::InteractiveBrokers, "IB-XX"),
+              nullptr);                                                        // other code
+    EXPECT_EQ(catalogue.brokerPayerByCode(Broker::Unknown, "IB-UK"), nullptr); // no broker
+}
+
 TEST(ReferenceCatalogueTest, ListsTheReliefStatementsOfACountryInFileOrder) {
     const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                                  "BE,dividend,Text one,manual,\n"

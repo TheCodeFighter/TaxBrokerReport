@@ -323,7 +323,7 @@ TEST(CapitalReportGatesTest, BondSaleGivesNoGateError) {
     EXPECT_TRUE(diagnostics.empty());
 }
 
-TEST(CapitalReportGatesTest, DerivativeSaleIsUnsupported) {
+TEST(CapitalReportGatesTest, ADerivativeSaleIsALogicError) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Derivative",
@@ -346,12 +346,8 @@ TEST(CapitalReportGatesTest, DerivativeSaleIsUnsupported) {
             },
     }};
 
-    const auto diagnostics = checkYear(merged, 2024);
-
-    ASSERT_EQ(diagnostics.size(), 1U);
-    EXPECT_EQ(diagnostics.at(0).mCode, ProcessingDiagnosticCode::UnsupportedTaxTreatment);
-    EXPECT_EQ(diagnostics.at(0).mMessageParams,
-              (std::vector<MessageParam>{textParam("assetClass", "derivative")}));
+    // A parser leaves a derivative out, so a derivative that reaches the gate is a bug.
+    EXPECT_THROW(checkYear(merged, 2024), std::logic_error);
 }
 
 TEST(CapitalReportGatesTest, CryptoPurchaseWithoutASaleThisYearIsNotChecked) {

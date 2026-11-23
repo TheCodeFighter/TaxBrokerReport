@@ -2919,4 +2919,172 @@ TEST(InterestPaymentsTest, ACouponWithNoPurchaseSinceTheLastCouponHasNoWarning) 
     EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 }
 
+// --- The payer of the cash interest by the entity code of the export ---
+
+TEST(InterestPaymentsTest, TheEntityCodeOfTheExportPicksThePayerAmongSeveralBrokerRows) {
+    // The catalogue has two rows for Interactive Brokers (IB-X and IB-Y), so without a code no row
+    // is chosen.
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "",
+        .mIsin = std::nullopt,
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-04-03"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 32'100, // EUR 3.21
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerCode = "IB-X"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+
+    const auto& row = run.mLast.mOtherReport.mRows.at(0);
+
+    EXPECT_EQ(row.mGrossInterest, 32'100);
+    EXPECT_EQ(row.mPayer.mName, std::optional<std::string>{"Broker X"});
+    EXPECT_EQ(row.mPayer.mAddress, std::optional<std::string>{"1 Side Street"});
+    EXPECT_EQ(row.mPayer.mCountry, std::optional<std::string>{"GB"});
+    EXPECT_EQ(row.mPayer.mIdentificationNumber, std::optional<std::string>{"123"});
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+}
+
+TEST(InterestPaymentsTest, TwoEntityCodesOfOneBrokerGiveTwoPayers) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "",
+        .mIsin = std::nullopt,
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-04-03"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 32'100, // EUR 3.21 paid by IB-X
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerCode = "IB-X"},
+                {.mMetadata =
+                     {.mTaxDate = day("2025-05-05"),
+                      .mSources = {source(Broker::InteractiveBrokers, 3, "synthetic-int-2")}},
+                 .mGrossAmount = 17'500, // EUR 1.75 paid by IB-Y
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerCode = "IB-Y"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mName,
+              std::optional<std::string>{"Broker X"});
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mCountry, std::optional<std::string>{"GB"});
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mPayer.mName,
+              std::optional<std::string>{"Broker Y"});
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mPayer.mCountry, std::optional<std::string>{"IE"});
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+}
+
+TEST(InterestPaymentsTest,
+     AnEntityCodeThatIsNotInTheReferenceFilesLeavesThePayerEmptyWithAWarning) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "",
+        .mIsin = std::nullopt,
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-04-03"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 32'100, // EUR 3.21 paid by IB-X
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerCode = "IB-X"},
+                {.mMetadata =
+                     {.mTaxDate = day("2025-05-05"),
+                      .mSources = {source(Broker::InteractiveBrokers, 3, "synthetic-int-2")}},
+                 .mGrossAmount = 17'500, // EUR 1.75 paid by an entity the files do not know
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerCode = "IB-Z"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mName,
+              std::optional<std::string>{"Broker X"});
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mPayer, IncomePayer{});
+
+    // One warning, for the entity that is not known; the report is still made.
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+
+    const auto& warning = run.mLast.mDiagnostics.at(0);
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mCode, ProcessingDiagnosticCode::InterestPayerNotFound);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::InterestPayerNotFoundUnknownEntity);
+    EXPECT_EQ(warning.mMessageParams, (std::vector<MessageParam>{textParam("code", "IB-Z")}));
+    EXPECT_EQ(warning.mContext.mAffectedReports, (std::vector{ReportType::OtherInterest}));
+}
+
+TEST(InterestPaymentsTest, CashInterestWithoutAnEntityCodeStillNeedsTheOnlyBrokerRow) {
+    // Two rows for Interactive Brokers and no code in the export: no row is chosen.
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "",
+        .mIsin = std::nullopt,
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-04-03"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 32'100, // EUR 3.21
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer, IncomePayer{});
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::InterestPayerNotFound);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey, MessageKey::InterestPayerNotFound);
+    EXPECT_TRUE(run.mLast.mDiagnostics.at(0).mMessageParams.empty());
+}
+
 } // namespace

@@ -58,9 +58,11 @@ add_executable(taxbroker_unit_tests
     unit/div_xml_writer_test.cpp
     unit/income_classifier_test.cpp
     unit/income_payers_test.cpp
+    unit/income_payment_netting_test.cpp
     unit/interest_payments_test.cpp
     unit/other_interest_failure_test.cpp
     unit/ecb_rate_file_test.cpp
+    unit/ibkr_equivalence_test.cpp
     unit/ibkr_fixture_test.cpp
     unit/ibkr_parser_test.cpp
     unit/ibkr_time_test.cpp
@@ -91,6 +93,7 @@ add_executable(taxbroker_unit_tests
     unit/statement_merger_property_test.cpp
     unit/statement_merger_test.cpp
     unit/left_out_instruments_test.cpp
+    unit/left_out_rows_test.cpp
     unit/tax_classifier_test.cpp
     unit/tax_processor_test.cpp
     unit/taxpayer_file_test.cpp

@@ -1243,10 +1243,6 @@ TEST(IbkrParserConflictTest, TheSameTradeWithTheSameFactsInTwoFilesIsOneTrade) {
     auto first = parser.parseFile(fixtureFolder() / "corrections_2024.xml", 0);
     auto second = parser.parseFile(fixtureFolder() / "corrections_2025.xml", 1);
 
-    // The payment rows are added up by a later step, so only the buy is merged here.
-    first.mStatement.mIncomePaymentRows.clear();
-    second.mStatement.mIncomePaymentRows.clear();
-
     std::vector<taxbroker::StatementMergeInput> inputs;
 
     inputs.push_back({0, std::move(first)});
@@ -1260,26 +1256,6 @@ TEST(IbkrParserConflictTest, TheSameTradeWithTheSameFactsInTwoFilesIsOneTrade) {
                   .mTransactions.front()
                   .mMetadata.mSources.size(),
               2U); // the two files
-}
-
-TEST(IbkrParserConflictTest, TheMergerRefusesRowsItCannotMergeYet) {
-    IbkrParser parser;
-    std::vector<taxbroker::StatementMergeInput> inputs;
-
-    inputs.push_back({0, parser.parseFile(fixtureFolder() / "supported.xml", 0)});
-
-    EXPECT_THROW((void)taxbroker::DeterministicStatementMerger{}.merge(std::move(inputs)),
-                 std::logic_error);
-}
-
-TEST(IbkrParserConflictTest, TheMergerRefusesLeftOutRowsItCannotCountYet) {
-    IbkrParser parser;
-    std::vector<taxbroker::StatementMergeInput> inputs;
-
-    inputs.push_back({0, parser.parseFile(fixtureFolder() / "ignored.xml", 0)});
-
-    EXPECT_THROW((void)taxbroker::DeterministicStatementMerger{}.merge(std::move(inputs)),
-                 std::logic_error);
 }
 
 // Rows written in the test: trades

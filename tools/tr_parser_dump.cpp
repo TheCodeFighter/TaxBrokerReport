@@ -386,6 +386,16 @@ std::string_view toString(MergeDiagnosticCode aDiagnosticCode) {
         return "InstrumentAssetClassConflict";
     case MergeDiagnosticCode::DuplicateTransactionInFile:
         return "DuplicateTransactionInFile";
+    case MergeDiagnosticCode::IncomePaymentRowsDisagree:
+        return "IncomePaymentRowsDisagree";
+    case MergeDiagnosticCode::DividendReversalWithoutPayment:
+        return "DividendReversalWithoutPayment";
+    case MergeDiagnosticCode::DividendNetNotPositive:
+        return "DividendNetNotPositive";
+    case MergeDiagnosticCode::SubstituteDividendPayment:
+        return "SubstituteDividendPayment";
+    case MergeDiagnosticCode::IncomeCorrectionLaterYear:
+        return "IncomeCorrectionLaterYear";
     }
 
     return "Unknown";
@@ -1051,6 +1061,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "DeveloperExportUnavailable";
     case ProcessingDiagnosticCode::TaxpayerTaxNumberCheckDigit:
         return "TaxpayerTaxNumberCheckDigit";
+    case ProcessingDiagnosticCode::MarginOrLeverageRowsLeftOut:
+        return "MarginOrLeverageRowsLeftOut";
     }
 
     return "Unknown";
