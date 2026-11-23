@@ -234,4 +234,22 @@ TEST(IbkrEquivalenceTest, ABrokerHasOnlyTheDifferencesTheReadmeNames) {
                      .mMetadata.mSourceTimestamp.has_value());
 }
 
+TEST(IbkrEquivalenceTest, TheExportCountryOfADividendIsADifferenceTheReadmeNames) {
+    // Trade Republic has no country in the export; IBKR names the country of each payment.
+    const auto* tradeRepublicEuro = findDividendInstrument(tradeRepublic(), "FR0000000077");
+    const auto* ibkrEuro = findDividendInstrument(interactiveBrokers(), "FR0000000077");
+    const auto* tradeRepublicDollar = findDividendInstrument(tradeRepublic(), "US0000000010");
+    const auto* ibkrDollar = findDividendInstrument(interactiveBrokers(), "US0000000010");
+
+    ASSERT_NE(tradeRepublicEuro, nullptr);
+    ASSERT_NE(ibkrEuro, nullptr);
+    ASSERT_NE(tradeRepublicDollar, nullptr);
+    ASSERT_NE(ibkrDollar, nullptr);
+
+    EXPECT_FALSE(tradeRepublicEuro->mTransactions.front().mPayerCountry.has_value());
+    EXPECT_EQ(ibkrEuro->mTransactions.front().mPayerCountry, "FR");
+    EXPECT_FALSE(tradeRepublicDollar->mTransactions.front().mPayerCountry.has_value());
+    EXPECT_EQ(ibkrDollar->mTransactions.front().mPayerCountry, "US");
+}
+
 } // namespace

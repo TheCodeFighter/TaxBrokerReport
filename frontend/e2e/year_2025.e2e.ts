@@ -52,12 +52,12 @@ describe("year 2025 of the manual files", () => {
     await pickWord(kdvpFailure, "exclude_failed_instruments");
     await sendAnswer(kdvpFailure);
 
-    // README, 2025: Doh-KDVP without the missing-history share; Doh-Div 7 rows; Doh-DHO 1 row
+    // README, 2025: Doh-KDVP without the missing-history share; Doh-Div 8 rows; Doh-DHO 1 row
     // and no reminder (EUR 1,140 is above the EUR 1,000 limit); Doh-Obr 3 rows.
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
     expect(await excludedInvestments(page, "Doh-KDVP").getByText("Synthetic Missing History Share (XX0000000111)").count()).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
-    expect(await card(page, "Doh-Div").getByText(/Vrstice: 7,/).count()).toBe(1);
+    expect(await card(page, "Doh-Div").getByText(/Vrstice: 8,/).count()).toBe(1);
     expect(await cardStatus(page, "Doh-DHO")).toBe("pripravljeno");
     expect(await card(page, "Doh-DHO").getByText(/Vrstice: 1,/).count()).toBe(1);
     expect(await card(page, "Doh-DHO").getByText(/Obresti drugih bank niso vključene/).count()).toBe(0);

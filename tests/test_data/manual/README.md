@@ -65,6 +65,7 @@ runs), so 2024 and 2025 also ask the classification of the unknown-class share a
 | Rows | Years | What it shows |
 | --- | --- | --- |
 | Apple (US), Johnson & Johnson (US), Novartis (CH), TotalEnergies (FR) dividends | most years | foreign dividends in USD, CHF and EUR with foreign tax; the treaty text of the country is claimed; no tax (J&J) is a blank tax |
+| Synthetic German Share (`DE0000000066`) dividend with tax | 2025 | a payer that is not in the reference files: the country `DE` comes from the ISIN (warnings `dividend_payer_not_found` with the country filled and `payer_country_from_isin`), the row has `PayerCountry` and `SourceCountry` `DE`, no payer name or address, and the treaty text of `DE`; no question |
 | Krka (SI) dividend | 2022 to 2025 | a Slovenian payer deducts the tax itself: an excluded item, not in Doh-Div |
 | Banco Bradesco (BR) dividend in BRL, with tax | 2022 | no treaty text for the country: the treaty question (`other` and a text, or `no`) |
 | NVIDIA (US) dividend with tax | 2022, 2024 | two reference rows that differ: the payer question (pick a row or skip) |
@@ -91,11 +92,11 @@ The answers below make every year succeed. The order is the order the command li
 | 2022 | 30-day loss (Partly Blocked), 30-day loss (Loss Share), treaty text for BR, payer of NVIDIA | `yes`, `no`, `other` and a text such as `Article 10`, `1` | Doh-KDVP; Doh-Div 7 rows; Doh-DHO no data; Doh-Obr 14 rows (12 interest payments and 2 coupons) |
 | 2023 | class of the unknown share, split ratio, payer of BAT, type of the unknown dividend, bond type, deposit total, exclusion (ruble share) | `capital`; `2 : 1`, an empty line (the row date), `yes`; `1`; `dividends`; `ordinary`; `yes`; `exclude` | Doh-KDVP without the ruble share; Doh-Div 6 rows; Doh-DHO 1 row; Doh-Obr 14 rows |
 | 2024 | class of the unknown share, bond type (Bond B), deposit total, reverse split ratio, payer of NVIDIA, 30-day loss (Dollar Share), quantity, exclusion (Doh-Obr, Bond B) | `capital`; `discount`; `no`; `1 : 10`, an empty line, `yes`; `1`; `yes`; an empty line (the units left); `exclude` | Doh-KDVP generated for the four investments with a sale (the certificate is not one of them); Doh-Div 5 rows; Doh-DHO no data; Doh-Obr 3 rows without Bond B; the warning `margin_or_leverage_rows_left_out` with 2 rows |
-| 2025 | class of the unknown share, split ratio, quantity (2024 sale), payer of BAT, bond type (maturity), exclusion (missing history) | `capital`; `2 : 1`, an empty line, `yes`; an empty line; `1`; `ordinary`; `exclude` | Doh-KDVP without the missing-history share; Doh-Div 7 rows; Doh-DHO 1 row; Doh-Obr 3 rows |
+| 2025 | class of the unknown share, split ratio, quantity (2024 sale), payer of BAT, bond type (maturity), exclusion (missing history) | `capital`; `2 : 1`, an empty line, `yes`; an empty line; `1`; `ordinary`; `exclude` | Doh-KDVP without the missing-history share; Doh-Div 8 rows; Doh-DHO 1 row; Doh-Obr 3 rows |
 
 Other answers to try: `no` to a loss question writes `F10` true and `yes` writes `F10` false with a
 warning; `cancel` blocks; a deposit answer `yes` in 2024 makes Doh-DHO from EUR 427.80; `skip` on a
-payer question leaves the payer empty with a warning; `exclude` on the unknown-class share removes it
+payer question leaves the payer name and address empty with a warning (the country of the rows stays: `US` for NVIDIA, `GB` for BAT, and the treaty text with it); `exclude` on the unknown-class share removes it
 (a warning says so).
 
 ## What the browser shows

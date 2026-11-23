@@ -294,6 +294,7 @@ TEST(IncomePayersTest, AFormThatReportsASlovenianPayerWarnsWhenItsNumberIsMissin
     const PayerForm form{.mReport = ReportType::OtherInterest,
                          .mNotFoundCode = ProcessingDiagnosticCode::InterestPayerNotFound,
                          .mNotFoundKey = MessageKey::InterestPayerNotFound,
+                         .mNotFoundCountryKnownKey = MessageKey::InterestPayerNotFoundCountryKnown,
                          .mSlovenianExclusion = std::nullopt,
                          .mNeedsPayerNumber = false};
     std::vector<ProcessingDiagnostic> diagnostics;
@@ -323,6 +324,7 @@ TEST(IncomePayersTest, AFormThatExcludesASlovenianPayerDoesNotWarnAboutItsNumber
     const PayerForm form{.mReport = ReportType::Dividends,
                          .mNotFoundCode = ProcessingDiagnosticCode::DividendPayerNotFound,
                          .mNotFoundKey = MessageKey::DividendPayerNotFound,
+                         .mNotFoundCountryKnownKey = MessageKey::DividendPayerNotFoundCountryKnown,
                          .mSlovenianExclusion = ExcludedCategory::Dividend,
                          .mNeedsPayerNumber = false};
     std::vector<ProcessingDiagnostic> diagnostics;

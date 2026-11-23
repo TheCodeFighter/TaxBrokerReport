@@ -736,6 +736,135 @@ TEST(IncomePaymentNettingTest, TheInstrumentNameAndTheClassEvidenceOfTheRowsAreK
     EXPECT_EQ(result.mDividends.front().mEvent.mInstrumentEvidence.size(), 2U);
 }
 
+// The country of the payer: dividend and reversal rows name it, tax rows are not read
+
+TEST(IncomePaymentNettingTest, TwoRowsWithTheSameCountryGiveThatCountry) {
+    const std::vector<IncomePaymentRow> rows{
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 5, "1")}},
+         .mKind = IncomePaymentKind::Dividend,
+         .mIsin = "US0000000010",
+         .mAmount = 120'000, // USD 12.00
+         .mCurrency = Currency::USD,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "US"},
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 6, "2")}},
+         .mKind = IncomePaymentKind::DividendReversal,
+         .mIsin = "US0000000010",
+         .mAmount = 20'000, // USD 2.00
+         .mCurrency = Currency::USD,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "US"},
+    };
+
+    const auto result = netIncomePayments(rows);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mDividends.size(), 1U);
+    EXPECT_EQ(result.mDividends.front().mEvent.mPayerCountry, "US");
+}
+
+TEST(IncomePaymentNettingTest, ARowWithoutACountryTakesTheCountryOfAnotherRow) {
+    const std::vector<IncomePaymentRow> rows{
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 5, "1")}},
+         .mKind = IncomePaymentKind::Dividend,
+         .mIsin = "US0000000010",
+         .mAmount = 120'000, // USD 12.00
+         .mCurrency = Currency::USD,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = std::nullopt},
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 6, "2")}},
+         .mKind = IncomePaymentKind::DividendReversal,
+         .mIsin = "US0000000010",
+         .mAmount = 20'000, // USD 2.00
+         .mCurrency = Currency::USD,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "US"},
+    };
+
+    const auto result = netIncomePayments(rows);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mDividends.size(), 1U);
+    EXPECT_EQ(result.mDividends.front().mEvent.mPayerCountry, "US");
+}
+
+TEST(IncomePaymentNettingTest, NoRowWithACountryGivesNoCountry) {
+    const std::vector<IncomePaymentRow> rows{
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 5, "1")}},
+         .mKind = IncomePaymentKind::Dividend,
+         .mIsin = "US0000000010",
+         .mAmount = 120'000, // USD 12.00
+         .mCurrency = Currency::USD,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = std::nullopt},
+    };
+
+    const auto result = netIncomePayments(rows);
+
+    ASSERT_EQ(result.mDividends.size(), 1U);
+    EXPECT_FALSE(result.mDividends.front().mEvent.mPayerCountry.has_value());
+}
+
+TEST(IncomePaymentNettingTest, ADividendAndItsReversalWithDifferentCountriesAreAnError) {
+    const std::vector<IncomePaymentRow> rows{
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 5, "1")}},
+         .mKind = IncomePaymentKind::Dividend,
+         .mIsin = "DE0000000058",
+         .mAmount = 50'000, // EUR 5.00
+         .mCurrency = Currency::EUR,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "DE"},
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 6, "2")}},
+         .mKind = IncomePaymentKind::DividendReversal,
+         .mIsin = "DE0000000058",
+         .mAmount = 10'000, // EUR 1.00
+         .mCurrency = Currency::EUR,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "AT"},
+    };
+
+    const auto result = netIncomePayments(rows);
+
+    EXPECT_TRUE(result.mDividends.empty());
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.front().mCode, MergeDiagnosticCode::IncomePaymentRowsDisagree);
+    EXPECT_EQ(result.mDiagnostics.front().mSeverity, DiagnosticSeverity::Error);
+}
+
+TEST(IncomePaymentNettingTest, TheCountryOfATaxRowIsIgnored) {
+    const std::vector<IncomePaymentRow> rows{
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 5, "1")}},
+         .mKind = IncomePaymentKind::Dividend,
+         .mIsin = "DE0000000033",
+         .mAmount = 100'000, // EUR 10.00
+         .mCurrency = Currency::EUR,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "DE"},
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 6, "2")}},
+         .mKind = IncomePaymentKind::Tax,
+         .mIsin = "DE0000000033",
+         .mAmount = 26'400, // EUR 2.64
+         .mCurrency = Currency::EUR,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "CA"},
+    };
+
+    const auto result = netIncomePayments(rows);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mDividends.size(), 1U);
+    EXPECT_EQ(result.mDividends.front().mEvent.mPayerCountry, "DE"); // not the tax row's `CA`
+}
+
 // The merger with the fixtures
 
 TEST(IncomePaymentMergeTest, ADividendItsReversalAndTheCorrectedDividendOfOneYearAreOneDividend) {
@@ -991,6 +1120,28 @@ TEST(IncomePaymentMergeTest, AnotherCurrencyOfTheSameTransactionIsAConflict) {
          .mCurrency = Currency::EUR, // EUR 12.00
          .mBookedDate = date("2024-03-18"),
          .mPaymentGroupId = "G1"});
+
+    EXPECT_EQ(mergeDiagnosticsOf(merged, MergeDiagnosticCode::ConflictingDuplicate).size(), 1U);
+}
+
+TEST(IncomePaymentMergeTest, AnotherCountryOfTheSameTransactionIsAConflict) {
+    const auto merged = mergeTwoCopies(
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(0, 5, "2001")}},
+         .mKind = IncomePaymentKind::Dividend,
+         .mIsin = "US0000000010",
+         .mAmount = 120'000, // USD 12.00
+         .mCurrency = Currency::USD,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = "US"},
+        {.mMetadata = {.mTaxDate = date("2024-03-15"), .mSources = {ibkrSource(1, 5, "2001")}},
+         .mKind = IncomePaymentKind::Dividend,
+         .mIsin = "US0000000010",
+         .mAmount = 120'000, // USD 12.00
+         .mCurrency = Currency::USD,
+         .mBookedDate = date("2024-03-18"),
+         .mPaymentGroupId = "G1",
+         .mPayerCountry = std::nullopt});
 
     EXPECT_EQ(mergeDiagnosticsOf(merged, MergeDiagnosticCode::ConflictingDuplicate).size(), 1U);
 }

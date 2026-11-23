@@ -1547,7 +1547,7 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedCorporateActionFact) {
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
-    const std::array<FieldChange<DividendInstrument>, 10> changes{{
+    const std::array<FieldChange<DividendInstrument>, 11> changes{{
         {"ISIN", [](DividendInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
         {"gross", [](DividendInstrument& aValue) { ++aValue.mTransactions.front().mGrossAmount; }},
         {"tax",
@@ -1576,6 +1576,8 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
          [](DividendInstrument& aValue) {
              aValue.mTransactions.front().mTaxCurrency = Currency::USD;
          }},
+        {"payer country",
+         [](DividendInstrument& aValue) { aValue.mTransactions.front().mPayerCountry = "US"; }},
     }};
 
     expectFieldConflicts(StatementEventKind::Dividend,
@@ -1586,7 +1588,7 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedDividendFact) {
 }
 
 TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
-    const std::array<FieldChange<InterestInstrument>, 14> changes{{
+    const std::array<FieldChange<InterestInstrument>, 15> changes{{
         {"name without ISIN", [](InterestInstrument& aValue) { aValue.mName = "Other payer"; }},
         {"ISIN presence", [](InterestInstrument& aValue) { aValue.mIsin = "XX0000000099"; }},
         {"type",
@@ -1624,6 +1626,8 @@ TEST(DeterministicStatementMergerTest, RejectsEachChangedInterestFact) {
          }},
         {"payer code",
          [](InterestInstrument& aValue) { aValue.mTransactions.front().mPayerCode = "IB-IE"; }},
+        {"payer country",
+         [](InterestInstrument& aValue) { aValue.mTransactions.front().mPayerCountry = "US"; }},
     }};
 
     expectFieldConflicts(StatementEventKind::Interest,
