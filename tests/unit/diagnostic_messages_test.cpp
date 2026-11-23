@@ -386,6 +386,19 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::UnsupportedRowTypeNotDetail,
          "unsupported_row_type.not_detail",
          {{"count", MessageParamKind::Number}}},
+        {MessageKey::IncomePaymentRowsDisagree, "income_payment_rows_disagree", {}},
+        {MessageKey::DividendReversalWithoutPayment, "dividend_reversal_without_payment", {}},
+        {MessageKey::DividendNetNotPositive, "dividend_net_not_positive", {}},
+        {MessageKey::SubstituteDividendPayment, "substitute_dividend_payment", {}},
+        {MessageKey::IncomeCorrectionLaterYear,
+         "income_correction_later_year",
+         {{"payYear", MessageParamKind::Number}, {"bookedYear", MessageParamKind::Number}}},
+        {MessageKey::MarginOrLeverageRowsLeftOut,
+         "margin_or_leverage_rows_left_out",
+         {{"count", MessageParamKind::Number}}},
+        {MessageKey::InterestPayerNotFoundUnknownEntity,
+         "interest_payer_not_found.unknown_entity",
+         {{"code", MessageParamKind::Text}}},
     };
 
     return messages;
@@ -450,8 +463,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 159U);
-    ASSERT_EQ(expectedMessages().size(), 159U);
+    ASSERT_EQ(definitions.size(), 166U);
+    ASSERT_EQ(expectedMessages().size(), 166U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -485,8 +498,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 159U);
-    EXPECT_EQ(keys.size(), 159U);
+    EXPECT_EQ(ids.size(), 166U);
+    EXPECT_EQ(keys.size(), 166U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -511,7 +524,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 170U); // 159 message keys and 11 terms.
+    ASSERT_EQ(table.size(), 177U); // 166 message keys and 11 terms.
 
     std::set<std::string> tableKeys;
 

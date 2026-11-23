@@ -86,6 +86,9 @@ enum class ProcessingDiagnosticCode {
     DeveloperExportUnavailable,
     /// A warning: the check digit of the taxpayer's tax number is wrong, so it may be a typo.
     TaxpayerTaxNumberCheckDigit,
+    /// A warning: rows of a broker (derivatives, margin) were left out of every form; the count is
+    /// for the selected year.
+    MarginOrLeverageRowsLeftOut,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

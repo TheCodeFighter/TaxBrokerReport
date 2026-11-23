@@ -135,6 +135,13 @@ constexpr std::array kYearAndLastDate{
     MessageParamDefinition{"year", MessageParamKind::Number},
     MessageParamDefinition{"lastDate", MessageParamKind::Text},
 };
+constexpr std::array kPayYearAndBookedYear{
+    MessageParamDefinition{"payYear", MessageParamKind::Number},
+    MessageParamDefinition{"bookedYear", MessageParamKind::Number},
+};
+constexpr std::array kCode{
+    MessageParamDefinition{"code", MessageParamKind::Text},
+};
 constexpr std::array kYearRange{
     MessageParamDefinition{"minYear", MessageParamKind::Number},
     MessageParamDefinition{"maxYear", MessageParamKind::Number},
@@ -475,6 +482,19 @@ constexpr std::array kDefinitions{
                       {}},
     MessageDefinition{
         MessageKey::UnsupportedRowTypeNotDetail, "unsupported_row_type.not_detail", kCount},
+    MessageDefinition{MessageKey::IncomePaymentRowsDisagree, "income_payment_rows_disagree", {}},
+    MessageDefinition{
+        MessageKey::DividendReversalWithoutPayment, "dividend_reversal_without_payment", {}},
+    MessageDefinition{MessageKey::DividendNetNotPositive, "dividend_net_not_positive", {}},
+    MessageDefinition{MessageKey::SubstituteDividendPayment, "substitute_dividend_payment", {}},
+    MessageDefinition{MessageKey::IncomeCorrectionLaterYear,
+                      "income_correction_later_year",
+                      kPayYearAndBookedYear},
+    MessageDefinition{
+        MessageKey::MarginOrLeverageRowsLeftOut, "margin_or_leverage_rows_left_out", kCount},
+    MessageDefinition{MessageKey::InterestPayerNotFoundUnknownEntity,
+                      "interest_payer_not_found.unknown_entity",
+                      kCode},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -491,7 +511,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::UnsupportedRowTypeNotDetail) + 1,
+                  static_cast<std::size_t>(MessageKey::InterestPayerNotFoundUnknownEntity) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 11> kTermKeys{

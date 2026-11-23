@@ -797,4 +797,53 @@ TEST(FullPipelineIntegrationTest, ARestartWithAnotherCatalogueAsksThePayerAgain)
     EXPECT_FALSE(result.mDecisions[0].mUsed);
 }
 
+// A derivative (a certificate) is left out of every form by the parser: no question, no error, one
+// warning with the count of its rows in the year. The share beside it is reported as before.
+constexpr std::string_view kShareBuy =
+    R"(2024-02-01T09:00:00Z,2024-02-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-share-buy-1,,,,)";
+constexpr std::string_view kShareSell =
+    R"(2024-06-03T09:00:00Z,2024-06-03,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,12,120,,,EUR,,,,,synthetic-share-sell-1,,,,)";
+constexpr std::string_view kCertificateBuy =
+    R"(2024-04-09T09:00:00Z,2024-04-09,DEFAULT,TRADING,BUY,DERIVATIVE,Synthetic Index Certificate,XX0000000119,5,20,-100,,,EUR,,,,,synthetic-certificate-buy-1,,,,)";
+constexpr std::string_view kCertificateSell =
+    R"(2024-07-10T09:00:00Z,2024-07-10,DEFAULT,TRADING,SELL,DERIVATIVE,Synthetic Index Certificate,XX0000000119,-5,25,125,,,EUR,,,,,synthetic-certificate-sell-1,,,,)";
+
+TEST(FullPipelineIntegrationTest, ADerivativeIsLeftOutWithOneWarningAndNoQuestion) {
+    auto run = startRun(
+        requestOf(2024,
+                  {fileOfRows("derivative.csv",
+                              {kShareBuy, kCertificateBuy, kShareSell, kCertificateSell})}));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+
+    // The certificate buy (EUR 100) and sale (EUR 125) are not a loss question or an exclusion
+    // question, and the share (10 units, EUR 100 to EUR 120) gives the Doh-KDVP form.
+    EXPECT_TRUE(result.mRequests.empty());
+    EXPECT_TRUE(result.mExcludedItems.empty());
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& warning = result.mDiagnostics[0];
+
+    EXPECT_EQ(warning.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(warning.mMessageKey, MessageKey::MarginOrLeverageRowsLeftOut);
+    EXPECT_EQ(warning.mMessageParams, (std::vector<MessageParam>{numberParam("count", 2)}));
+    EXPECT_FALSE(warning.mBlocking);
+}
+
+TEST(FullPipelineIntegrationTest, ADerivativeOfAnotherYearGivesNoWarning) {
+    auto run = startRun(
+        requestOf(2025, {fileOfRows("derivative.csv", {kCertificateBuy, kCertificateSell})}));
+
+    ASSERT_TRUE(run.has_value());
+
+    EXPECT_TRUE(run->result().mDiagnostics.empty());
+    EXPECT_TRUE(run->result().mRequests.empty());
+    EXPECT_EQ(run->result().report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
+}
+
 } // namespace

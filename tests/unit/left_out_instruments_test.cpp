@@ -291,9 +291,9 @@ TEST(LeftOutInstrumentsTest, ARatioQuestionIsNotAskedForALeftOutInstrument) {
 TEST(LeftOutInstrumentsTest, TheGatesGiveNoClassErrorForALeftOutInstrument) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
-        .mName = "Synthetic Derivative",
+        .mName = "Synthetic Private Fund",
         .mIsin = "XX0000000001",
-        .mAssetClass = AssetClass::Derivative,
+        .mAssetClass = AssetClass::PrivateFund,
         .mTransactions =
             {
                 {.mMetadata = {.mTaxDate = day("2024-01-10"),

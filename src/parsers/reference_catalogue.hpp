@@ -121,6 +121,10 @@ class ReferenceCatalogue {
     /// The broker payers of a broker, in file order; none for an unknown broker.
     [[nodiscard]] std::vector<const BrokerPayerEntry*> brokerPayersOf(Broker aBroker) const;
 
+    /// The broker payer of a broker with this code, or null (also for an unknown broker).
+    [[nodiscard]] const BrokerPayerEntry* brokerPayerByCode(Broker aBroker,
+                                                            std::string_view aCode) const;
+
     [[nodiscard]] const std::vector<PayerEntry>& payers() const;
     [[nodiscard]] const std::vector<ReliefStatementEntry>& allReliefStatements() const;
     [[nodiscard]] const std::vector<BrokerPayerEntry>& brokerPayers() const;

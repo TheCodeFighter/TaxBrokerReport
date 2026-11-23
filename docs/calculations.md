@@ -730,6 +730,9 @@ For the selected reporting year, the frontend shows:
 
 Only deduplicated events whose tax date is in the selected year contribute to this summary. Fees
 from older events remain preserved in history but are not included in the selected-year totals.
+A trade's second fee (a stamp duty or financial transaction tax, in the trade's currency) is one
+more amount in the same total as its commission: a fee of EUR 1.25 and a second fee of EUR 0.80
+give a count of 2 and EUR 2.05.
 
 Fee conversion never requests an official rate. A non-EUR fee uses a broker-provided rate only
 when the parser knows its direction, the rate is positive, and the broker associates it with that

@@ -105,10 +105,6 @@ describe("capital screens of the manual files", () => {
     await pickWord(loss, "other_activity");
     await sendAnswer(loss);
 
-    const failure = question(page, "Doh-KDVP: nadaljevanje brez teh naložb?");
-    await pickWord(failure, "exclude_failed_instruments");
-    await sendAnswer(failure);
-
     const sentBefore = requests.count();
 
     // The quantity question: 1 unit sold, 0.99999999 bought. 1 is above the units left.

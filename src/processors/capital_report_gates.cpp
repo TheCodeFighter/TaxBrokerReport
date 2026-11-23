@@ -74,8 +74,8 @@ ProcessingDiagnostic capitalDiagnostic(DiagnosticSeverity aSeverity,
     };
 }
 
-/// The class name for a message parameter. Only a derivative and a private fund get a name; the
-/// other classes never get here (checkClassification handles them first).
+/// The class name for a message parameter. Only a private fund gets a name; the other classes
+/// never get here (checkClassification handles them first).
 std::optional<std::string_view> unsupportedClassName(AssetClass aAssetClass) {
     switch (aAssetClass)
     {
@@ -83,10 +83,9 @@ std::optional<std::string_view> unsupportedClassName(AssetClass aAssetClass) {
     case AssetClass::Fund:
     case AssetClass::Bond:
     case AssetClass::Crypto:
+    case AssetClass::Derivative:
     case AssetClass::Unknown:
         return std::nullopt;
-    case AssetClass::Derivative:
-        return "derivative";
     case AssetClass::PrivateFund:
         return "private_fund";
     }
@@ -94,10 +93,10 @@ std::optional<std::string_view> unsupportedClassName(AssetClass aAssetClass) {
     return std::nullopt;
 }
 
-/// One error for an ISIN with a sale of the year whose class has no capital treatment: a
-/// derivative or a private fund. The sources are those of all its sales of the year; the date is
-/// the first sale's. A bond or crypto instrument must already be left out by the classification
-/// stage, so one that reaches this gate is a logic error.
+/// One error for an ISIN with a sale of the year whose class has no capital treatment: a private
+/// fund. The sources are those of all its sales of the year; the date is the first sale's. A bond
+/// or crypto instrument must already be left out by the classification stage, and a derivative by
+/// the parser, so one that reaches this gate is a logic error.
 void checkClassification(const TradeInstrument& aInstrument,
                          const std::vector<StatementEventReference>& aYearSales,
                          const std::vector<TradeInstrument>& aInstruments,
@@ -118,7 +117,12 @@ void checkClassification(const TradeInstrument& aInstrument,
                                "stage.");
     }
 
-    // Only a derivative and a private fund are left, so the name is always there.
+    if (aInstrument.mAssetClass == AssetClass::Derivative)
+    {
+        throw std::logic_error("A derivative must be left out by the parser.");
+    }
+
+    // Only a private fund is left, so the name is always there.
     const auto className = unsupportedClassName(aInstrument.mAssetClass).value();
 
     std::vector<SourceReference> sources;

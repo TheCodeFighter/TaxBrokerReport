@@ -171,6 +171,13 @@ enum class MessageKey {
     UnsupportedRowTypeCurrencyConversion,
     UnsupportedRowTypeCryptoWithoutIsin,
     UnsupportedRowTypeNotDetail,
+    IncomePaymentRowsDisagree,
+    DividendReversalWithoutPayment,
+    DividendNetNotPositive,
+    SubstituteDividendPayment,
+    IncomeCorrectionLaterYear,
+    MarginOrLeverageRowsLeftOut,
+    InterestPayerNotFoundUnknownEntity,
 };
 
 enum class MessageParamKind {

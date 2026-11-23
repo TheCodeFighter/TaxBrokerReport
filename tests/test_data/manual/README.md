@@ -50,7 +50,7 @@ runs), so 2024 and 2025 also ask the classification of the unknown-class share a
 | Synthetic Dollar Share | `XX0000000112` | USD buys 2022 (one on a Saturday), sales 2022 and 2024 | trades in USD converted with the ECB rate of the day; the Saturday takes the rate of the Friday with a note; the 2024 sale is a loss with the loss question |
 | Synthetic Token | `XX0000000114` | crypto 2023 | crypto: left out of Doh-KDVP by rule, listed in the excluded items |
 | Synthetic Unknown Class Share | `XX0000000118` | blank asset class 2023 | classification question (answer `capital`), and its dividend asks the income type (`dividends`) |
-| Synthetic Index Certificate | `XX0000000119` | derivative 2024 | derivative: not supported, the exclusion question |
+| Synthetic Index Certificate | `XX0000000119` | derivative 2024 | derivative: left out of every form, not an investment of any form; one warning for the run with the count of its rows (2: the buy and the sale), no question |
 | Synthetic Ruble Share | `XX0000000121` | RUB 2023 (buy, sale and a dividend of 25.00 RUB on 2023-07-03) | the ECB has no ruble rate in 2023: `missing_exchange_rate`, the exclusion question of Doh-KDVP and a second one of Doh-Div (leave out: Doh-Div keeps its other rows and lists the ruble share; make no XML: no Doh-Div file; cancel: Doh-Div failed) |
 | Synthetic Two Row Share | `XX0000000122` | buy 2022, one sale in two rows 2023 | two sale rows on one day |
 | Synthetic Accumulating ETF | `XX0000000123` | savings plan and sale 2025 | sale over three lots |
@@ -90,7 +90,7 @@ The answers below make every year succeed. The order is the order the command li
 | --- | --- | --- | --- |
 | 2022 | 30-day loss (Partly Blocked), 30-day loss (Loss Share), treaty text for BR, payer of NVIDIA | `yes`, `no`, `other` and a text such as `Article 10`, `1` | Doh-KDVP; Doh-Div 7 rows; Doh-DHO no data; Doh-Obr 14 rows (12 interest payments and 2 coupons) |
 | 2023 | class of the unknown share, split ratio, payer of BAT, type of the unknown dividend, bond type, deposit total, exclusion (ruble share) | `capital`; `2 : 1`, an empty line (the row date), `yes`; `1`; `dividends`; `ordinary`; `yes`; `exclude` | Doh-KDVP without the ruble share; Doh-Div 6 rows; Doh-DHO 1 row; Doh-Obr 14 rows |
-| 2024 | class of the unknown share, bond type (Bond B), deposit total, reverse split ratio, payer of NVIDIA, 30-day loss (Dollar Share), quantity, exclusion (Doh-Obr, Bond B), exclusion (Doh-KDVP, certificate) | `capital`; `discount`; `no`; `1 : 10`, an empty line, `yes`; `1`; `yes`; an empty line (the units left); `exclude`; `exclude` | Doh-KDVP without the certificate; Doh-Div 5 rows; Doh-DHO no data; Doh-Obr 3 rows without Bond B |
+| 2024 | class of the unknown share, bond type (Bond B), deposit total, reverse split ratio, payer of NVIDIA, 30-day loss (Dollar Share), quantity, exclusion (Doh-Obr, Bond B) | `capital`; `discount`; `no`; `1 : 10`, an empty line, `yes`; `1`; `yes`; an empty line (the units left); `exclude` | Doh-KDVP generated for the four investments with a sale (the certificate is not one of them); Doh-Div 5 rows; Doh-DHO no data; Doh-Obr 3 rows without Bond B; the warning `margin_or_leverage_rows_left_out` with 2 rows |
 | 2025 | class of the unknown share, split ratio, quantity (2024 sale), payer of BAT, bond type (maturity), exclusion (missing history) | `capital`; `2 : 1`, an empty line, `yes`; an empty line; `1`; `ordinary`; `exclude` | Doh-KDVP without the missing-history share; Doh-Div 7 rows; Doh-DHO 1 row; Doh-Obr 3 rows |
 
 Other answers to try: `no` to a loss question writes `F10` true and `yes` writes `F10` false with a
@@ -101,14 +101,14 @@ payer question leaves the payer empty with a warning; `exclude` on the unknown-c
 ## What the browser shows
 
 Every question above has a screen in the browser, including the exclusion (failure) questions of
-the ruble share, the certificate, the missing-history share and Bond B. Nothing is preselected on
+the ruble share, the missing-history share and Bond B. Nothing is preselected on
 any screen.
 
 | Year | Question screens | Result blocks |
 | --- | --- | --- |
 | 2022 | 30-day loss (2), treaty text (BR: text or no claim), payer (NVIDIA: two rows or skip) | Doh-Div rows with the treaty text of each country, the Krka dividend in the excluded items, Doh-Obr rows grouped into interest on cash and bond coupons, the fee block, benefits |
 | 2023 | class of the unknown share, split ratio, payer (BAT), income type of the unknown dividend, bond type, deposit total (EUR 12.50, no cancel button) | the reminder to add other banks in the Doh-DHO card after `yes`, a payer that is not found in the rows, fees and benefits |
-| 2024 | class, bond type (`discount`), deposit total (EUR 427.80), reverse split ratio, payer, 30-day loss, quantity | Doh-DHO no data after `no`, from EUR 427.80 and the reminder after `yes`; a coupon with tax in the export (evidence mark) |
+| 2024 | class, bond type (`discount`), deposit total (EUR 427.80), reverse split ratio, payer, 30-day loss, quantity | Doh-DHO no data after `no`, from EUR 427.80 and the reminder after `yes`; a coupon with tax in the export (evidence mark); the warning about the 2 rows of the certificate in the shared list |
 | 2025 | class, split ratio, quantity, payer, bond type | Doh-DHO above EUR 1,000 with no reminder, the dividend without a name, benefits |
 
 Not reachable from a Trade Republic export, covered by the frontend tests: an interest payment of

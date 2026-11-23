@@ -42,6 +42,11 @@ enum class MergeDiagnosticCode {
     InstrumentNameConflict,
     InstrumentAssetClassConflict,
     DuplicateTransactionInFile,
+    IncomePaymentRowsDisagree,
+    DividendReversalWithoutPayment,
+    DividendNetNotPositive,
+    SubstituteDividendPayment,
+    IncomeCorrectionLaterYear, ///< Warning: a row booked in a later year than the pay date.
 };
 
 struct InstrumentNameVariant {

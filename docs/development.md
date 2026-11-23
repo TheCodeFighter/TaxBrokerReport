@@ -56,6 +56,9 @@ the paths after it up to the next option. For Tab completion of the script optio
 source /path/to/TaxBrokerReport/scripts/completion.bash
 ```
 
+A path completes only the folders and the files of the kind the script takes: `.csv` for the
+Trade Republic scripts, `.json` for a taxpayer file and `.xml` for `dump_ibkr_parse.sh`.
+
 ## Frontend
 
 The browser interface is in `frontend/` (Preact 10, TypeScript, Vite; the choice and the rules

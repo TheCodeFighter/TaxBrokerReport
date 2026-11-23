@@ -1,5 +1,6 @@
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/api/diagnostics_json.hpp"
+#include "server/api/json_strings.hpp"
 #include "taxbroker/application_result.hpp"
 #include "utils/date_utils.hpp"
 
@@ -626,6 +627,22 @@ TEST(ApplicationResultJsonTest, WritesEveryCapitalGateCode) {
     EXPECT_EQ(diagnostics[2].at("code"), "tax_classification_unknown");
     EXPECT_EQ(diagnostics[3].at("code"), "missing_exchange_rate");
     EXPECT_EQ(diagnostics[4].at("code"), "loss_eligibility_unresolved");
+}
+
+TEST(ApplicationResultJsonTest, TheMergeCodesOfAnIncomePaymentHaveTheirOwnNames) {
+    using api::detail::toString;
+
+    EXPECT_EQ(toString(MergeDiagnosticCode::IncomePaymentRowsDisagree),
+              "income_payment_rows_disagree");
+    EXPECT_EQ(toString(MergeDiagnosticCode::DividendReversalWithoutPayment),
+              "dividend_reversal_without_payment");
+    EXPECT_EQ(toString(MergeDiagnosticCode::DividendNetNotPositive), "dividend_net_not_positive");
+    EXPECT_EQ(toString(MergeDiagnosticCode::SubstituteDividendPayment),
+              "substitute_dividend_payment");
+    EXPECT_EQ(toString(MergeDiagnosticCode::IncomeCorrectionLaterYear),
+              "income_correction_later_year");
+    EXPECT_EQ(toString(ProcessingDiagnosticCode::MarginOrLeverageRowsLeftOut),
+              "margin_or_leverage_rows_left_out");
 }
 
 TEST(ApplicationResultJsonTest, WritesEveryMergeCode) {

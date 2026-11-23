@@ -141,6 +141,16 @@ TEST(ParserChecksTest, ARowOfEveryOtherEventKindCountsAsKept) {
     EXPECT_EQ(test::droppedRowFailure(result, {2, 3, 4, 5, 6}), std::nullopt);
 }
 
+TEST(ParserChecksTest, ALeftOutRowCountsAsKept) {
+    // Row 2: a derivative row that the parser counts but leaves out.
+    ParseResult result;
+    result.mStatement.mLeftOutRows.push_back(
+        LeftOutRow{.mMetadata = {.mSources = {SourceReference{.mSourceRow = 2}}},
+                   .mReason = LeftOutReason::MarginOrLeverage});
+
+    EXPECT_EQ(test::droppedRowFailure(result, {2}), std::nullopt);
+}
+
 TEST(ParserChecksTest, AFileLevelErrorGivesUpTheRowCheck) {
     // An unclosed quote discards every row; the error has no row number.
     ParseResult result;

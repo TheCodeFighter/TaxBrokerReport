@@ -485,7 +485,11 @@ zone, sign or attribute name.
   payment group ID and ISIN) into one dividend (gross, tax, pay date), dated on the pay date in the
   pay date's year. A net of zero or less gives no dividend and a warning. A reversal without its
   dividend in the files gets that one warning instead (the net-of-zero warning is for a payment
-  that has a dividend row). A correction booked (`reportDate`) in a later year than its
+  that has a dividend row). Rows that cannot be added up (two currencies, two pay dates, a refund
+  above the tax) give one error and no dividend. The step is `netIncomePayments`
+  (`processors/income_payment_netting.hpp`); the merger calls it after the duplicates are gone and
+  before the presentation lists are built, and the netted dividend adds no name of its own when its
+  rows name no instrument. A correction booked (`reportDate`) in a later year than its
   pay date gets a warning that the return of that year may need a correction. A broker without
   such rows (Trade Republic) gives one row per payment, which the step passes through unchanged.
 - **Currencies:** IBKR codes map to the shared currency type; an unknown code rejects the row.
@@ -496,15 +500,21 @@ zone, sign or attribute name.
 Diagnostics of the parser (`diagnostics.md`, "Interactive Brokers parser diagnostics"): a file that
 is not a Flex Query XML or has a `DOCTYPE`; a missing attribute; a cancelled or corrected trade
 row; the ignored closed lots and other trade rows, the currency conversion and the crypto row
-without an ISIN (notices). Left to the steps after the parser: the derivative and margin rows left
+without an ISIN (notices). The steps after the parser give: the derivative and margin rows left
 out (one warning per broker and run); a payment in lieu (warning); a dividend reversal without its
 dividend and a correction in a later year (warnings); an unknown `ibEntity` (warning).
 
 The parser stores what the later steps need in neutral lists of the statement, which TR never
 fills: an income payment row per cash row of a payment (kind, positive amount, pay date, booked
 date, payment group ID, substitute flag), a left-out row per derivative or margin row, a second
-fee per trade (`taxes`) and the payer code (`ibEntity`) of interest on cash. Until the merger
-handles the first two lists it refuses a statement that has one.
+fee per trade (`taxes`) and the payer code (`ibEntity`) of interest on cash. The merger removes
+duplicate payment rows like duplicate events (broker and transaction ID, all facts equal, otherwise
+`conflicting_duplicate`) and nets them; it removes duplicate left-out rows by broker and
+transaction ID without comparing facts (a row without an ID is never merged) and keeps them in
+the merged statement (`MergedStatement::mLeftOutRows`), where the processing stage counts them for
+the selected year. The second fee is one more amount in the fee total of the trade's currency, and
+the payer code picks the broker payer row of the Doh-Obr row, so two accounts of one taxpayer can
+have two payers. Trade Republic leaves out a trading row of class `DERIVATIVE` the same way.
 
 `tests/test_data/ibkr/` holds the synthetic fixtures (made-up accounts and ISINs with valid check
 digits, no real value). `contract_example.xml` has one row for each kind above; the other files
