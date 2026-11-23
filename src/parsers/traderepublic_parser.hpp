@@ -47,6 +47,7 @@ class TradeRepublicParser final : public CsvParser {
 
     bool parseTradeRow(const csv::CSVRow& aCsvRow,
                        std::vector<TradeInstrument>& aInstruments,
+                       std::vector<LeftOutRow>& aLeftOutRows,
                        const RowParsedValues& aParsedValues,
                        const RowContext& aContext);
     void parseDividendRow(const csv::CSVRow& aCsvRow,

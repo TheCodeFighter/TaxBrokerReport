@@ -2,6 +2,8 @@
 #include "taxbroker/diagnostic_messages.hpp"
 
 #include <chrono>
+#include <cstdint>
+#include <map>
 #include <stdexcept>
 #include <utility>
 
@@ -40,6 +42,50 @@ const EventMetadata& eventMetadata(const MergedStatement& aStatement,
     }
 
     throw std::logic_error{"Unknown statement event kind"};
+}
+
+/// One warning for each broker that has rows left out of every form dated in the selected year,
+/// with the count. A row whose date could not be read (the epoch) counts in every year, so it is
+/// not hidden.
+void addLeftOutRowWarnings(const std::vector<LeftOutRow>& aRows,
+                           const ReportingYearLedger& aLedger,
+                           std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    std::map<Broker, std::pair<std::uint64_t, SourceReference>> countByBroker;
+
+    for (const auto& row : aRows)
+    {
+        const auto date = row.mMetadata.mTaxDate;
+        const bool inYear = date >= aLedger.mYearStart && date <= aLedger.mYearEnd;
+
+        if (!inYear && date != Date{})
+        {
+            continue;
+        }
+
+        const auto& source = primarySource(row.mMetadata);
+        const auto position = countByBroker.try_emplace(source.mBroker, 0, source).first;
+
+        ++position->second.first;
+    }
+
+    for (const auto& [broker, entry] : countByBroker)
+    {
+        auto message = makeDiagnosticMessage(MessageKey::MarginOrLeverageRowsLeftOut,
+                                             {numberParam("count", entry.first)});
+
+        aDiagnostics.push_back({
+            .mSeverity = DiagnosticSeverity::Warning,
+            .mCode = ProcessingDiagnosticCode::MarginOrLeverageRowsLeftOut,
+            .mContext =
+                {
+                    .mStage = PipelineStage::HistoricalValidation,
+                    .mSources = {entry.second},
+                },
+            .mMessage = std::move(message.mEnglish),
+            .mMessageKey = message.mKey,
+            .mMessageParams = std::move(message.mParams),
+        });
+    }
 }
 
 } // namespace
@@ -121,6 +167,8 @@ TaxProcessingResult TaxProcessor::prepareReportingYear(TaxProcessingRequest aReq
             ledger.mLossAnalysisEvents.push_back(reference);
         }
     }
+
+    addLeftOutRowWarnings(result.mMerged.mStatement.mLeftOutRows, ledger, result.mDiagnostics);
 
     result.mLedger = std::move(ledger);
 

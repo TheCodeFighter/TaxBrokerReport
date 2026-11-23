@@ -18,6 +18,9 @@ struct MergedStatement {
     BrokerStatement mPresentation;
     // Cross-collection chronology; same-day split priority belongs to tax processing.
     std::vector<StatementEventReference> mChronologicalOrder;
+    /// The rows left out on purpose, without duplicates across files, in source order. They are
+    /// no event: the processing stage counts them for the selected year.
+    std::vector<LeftOutRow> mLeftOutRows;
 };
 
 /// Builds the chronological order of the statement again from its events, for a stage that moves

@@ -1,4 +1,5 @@
 #include "processors/statement_merger.hpp"
+#include "processors/income_payment_netting.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 
 #include <algorithm>
@@ -8,7 +9,6 @@
 #include <map>
 #include <numeric>
 #include <set>
-#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -59,6 +59,8 @@ std::vector<SourceReference> statementSources(const BrokerStatement& aStatement)
     appendEventSources(sources, aStatement.mBenefitEvents);
     appendEventSources(sources, aStatement.mPrivateMarketEvents);
     appendEventSources(sources, aStatement.mBondRedemptions);
+    appendEventSources(sources, aStatement.mIncomePaymentRows);
+    appendEventSources(sources, aStatement.mLeftOutRows);
 
     normalizeSources(sources);
 
@@ -256,10 +258,18 @@ struct InterestRecord {
     InterestTransaction mEvent;
 };
 
+/// One cash row of a payment; the rows of a payment are added up after the duplicates are gone.
+struct IncomePaymentRecord {
+    std::string mName;
+    Isin mIsin;
+    IncomePaymentRow mEvent;
+};
+
 using MergeEvent = std::variant<TradeRecord,
                                 CorporateActionRecord,
                                 DividendRecord,
                                 InterestRecord,
+                                IncomePaymentRecord,
                                 BenefitEvent,
                                 PrivateMarketEvent,
                                 BondRedemptionEvent>;
@@ -396,6 +406,11 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
         else if constexpr (std::is_same_v<Value, InterestRecord>)
         {
             return StatementEventKind::Interest;
+        }
+        else if constexpr (std::is_same_v<Value, IncomePaymentRecord>)
+        {
+            // The rows become a dividend, so a problem with a row belongs to the dividend form.
+            return StatementEventKind::Dividend;
         }
         else if constexpr (std::is_same_v<Value, BenefitEvent>)
         {
@@ -567,6 +582,19 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mPayerCode == aRight.mEvent.mPayerCode;
 }
 
+[[nodiscard]] bool sameEventFacts(const IncomePaymentRecord& aLeft,
+                                  const IncomePaymentRecord& aRight) {
+    return sameMetadataFacts(aLeft.mEvent.mMetadata, aRight.mEvent.mMetadata) &&
+           aLeft.mIsin == aRight.mIsin && aLeft.mEvent.mKind == aRight.mEvent.mKind &&
+           aLeft.mEvent.mAmount == aRight.mEvent.mAmount &&
+           aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
+           aLeft.mEvent.mBookedDate == aRight.mEvent.mBookedDate &&
+           aLeft.mEvent.mPaymentGroupId == aRight.mEvent.mPaymentGroupId &&
+           aLeft.mEvent.mSubstitutePayment == aRight.mEvent.mSubstitutePayment &&
+           sameOriginalClassification(aLeft.mEvent.mInstrumentEvidence,
+                                      aRight.mEvent.mInstrumentEvidence);
+}
+
 [[nodiscard]] bool sameEventFacts(const BenefitEvent& aLeft, const BenefitEvent& aRight) {
     return sameMetadataFacts(aLeft.mMetadata, aRight.mMetadata) && aLeft.mType == aRight.mType &&
            aLeft.mName == aRight.mName && aLeft.mIsin == aRight.mIsin &&
@@ -619,6 +647,13 @@ void mergeExactEvent(MergeEvent& aDestination, const MergeEvent& aSource) {
         {
             appendSources(aDestinationValue.mMetadata.mSources, source.mMetadata);
             normalizeSources(aDestinationValue.mMetadata.mSources);
+        }
+        else if constexpr (std::is_same_v<Value, IncomePaymentRecord>)
+        {
+            appendSources(aDestinationValue.mEvent.mMetadata.mSources, source.mEvent.mMetadata);
+            normalizeSources(aDestinationValue.mEvent.mMetadata.mSources);
+            mergeInstrumentEvidence(aDestinationValue.mEvent.mInstrumentEvidence,
+                                    source.mEvent.mInstrumentEvidence);
         }
         else if constexpr (std::is_same_v<Value, TradeRecord> ||
                            std::is_same_v<Value, CorporateActionRecord> ||
@@ -1001,6 +1036,62 @@ template <typename Event>
     };
 }
 
+/// The name contributions of a netted dividend. A blank name says nothing about the instrument,
+/// so it must not count as a name that differs from another broker's name.
+[[nodiscard]] std::vector<NameContribution>
+nettedNameContributions(const NettedDividend& aDividend) {
+    auto contributions = nameContributions(aDividend.mEvent, aDividend.mName);
+
+    contributions.erase(std::remove_if(contributions.begin(),
+                                       contributions.end(),
+                                       [](const NameContribution& aContribution) {
+                                           return aContribution.mName.empty();
+                                       }),
+                        contributions.end());
+
+    return contributions;
+}
+
+/// Removes repeated left-out rows of overlapping exports: the same broker and transaction ID is one
+/// row with all the sources. Nothing else is compared, because no value is read from these rows.
+/// A row without a transaction ID is never merged with another one.
+[[nodiscard]] std::vector<LeftOutRow> deduplicateLeftOutRows(std::vector<LeftOutRow>&& aRows) {
+    std::stable_sort(aRows.begin(),
+                     aRows.end(),
+                     [](const LeftOutRow& aLeft, const LeftOutRow& aRight) {
+                         return StableSourceOrder{}(primarySource(aLeft.mMetadata),
+                                                    primarySource(aRight.mMetadata));
+                     });
+
+    std::map<TransactionIdentity, std::size_t, TransactionIdentityOrder> positionByIdentity;
+    std::vector<LeftOutRow> kept;
+
+    for (auto& row : aRows)
+    {
+        const auto identity = transactionIdentity(row.mMetadata);
+
+        if (identity)
+        {
+            const auto [position, inserted] =
+                positionByIdentity.try_emplace(*identity, kept.size());
+
+            if (!inserted)
+            {
+                auto& first = kept[position->second];
+
+                appendSources(first.mMetadata.mSources, row.mMetadata);
+                normalizeSources(first.mMetadata.mSources);
+
+                continue;
+            }
+        }
+
+        kept.push_back(std::move(row));
+    }
+
+    return kept;
+}
+
 [[nodiscard]] auto mergeDiagnosticKey(const MergeDiagnostic& aDiagnostic) {
     const auto missing = std::numeric_limits<std::size_t>::max();
     std::size_t sourceIndex = aDiagnostic.mSourceIndex.value_or(missing);
@@ -1036,21 +1127,6 @@ void rebuildChronologicalOrder(MergedStatement& aStatement) {
 
 StatementMergeResult
 DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) const {
-    // The rows of an income payment and the left-out rows are not merged yet; a parser that fills
-    // them must not lose them silently.
-    const bool hasUnmergedRows =
-        std::any_of(aInputs.begin(), aInputs.end(), [](const StatementMergeInput& aInput) {
-            const auto& statement = aInput.mParseResult.mStatement;
-
-            return !statement.mIncomePaymentRows.empty() || !statement.mLeftOutRows.empty();
-        });
-
-    if (hasUnmergedRows)
-    {
-        throw std::logic_error{"The merger does not handle income payment rows or left-out rows "
-                               "yet."};
-    }
-
     StatementMergeResult result;
     std::vector<StatementMergeInput*> orderedInputs(aInputs.size());
 
@@ -1128,6 +1204,7 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
     }
 
     std::vector<MergeEvent> events;
+    std::vector<LeftOutRow> leftOutRows;
 
     for (auto* input : orderedInputs)
     {
@@ -1269,6 +1346,34 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
                 events.emplace_back(std::move(event));
             }
         }
+
+        for (auto& row : input->mParseResult.mStatement.mIncomePaymentRows)
+        {
+            if (normalizeAndValidateEvent(row,
+                                          input->mSourceIndex,
+                                          row.mName,
+                                          row.mIsin,
+                                          mergeDiagnostics))
+            {
+                events.emplace_back(IncomePaymentRecord{
+                    .mName = row.mName,
+                    .mIsin = row.mIsin,
+                    .mEvent = std::move(row),
+                });
+            }
+        }
+
+        for (auto& row : input->mParseResult.mStatement.mLeftOutRows)
+        {
+            if (normalizeAndValidateEvent(row,
+                                          input->mSourceIndex,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          mergeDiagnostics))
+            {
+                leftOutRows.push_back(std::move(row));
+            }
+        }
     }
 
     deduplicateEvents(events, mergeDiagnostics);
@@ -1279,6 +1384,7 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
     std::vector<BenefitEvent> benefitEvents;
     std::vector<PrivateMarketEvent> privateMarketEvents;
     std::vector<BondRedemptionEvent> bondRedemptions;
+    std::vector<IncomePaymentRow> paymentRows;
 
     const auto addToPresentation = [&](auto& aValue) {
         using Value = std::decay_t<decltype(aValue)>;
@@ -1339,6 +1445,11 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
 
             bucket.mTransactions.push_back(std::move(aValue.mEvent));
         }
+        else if constexpr (std::is_same_v<Value, IncomePaymentRecord>)
+        {
+            // Added up below, once every row of every file is here.
+            paymentRows.push_back(std::move(aValue.mEvent));
+        }
         else if constexpr (std::is_same_v<Value, BenefitEvent>)
         {
             benefitEvents.push_back(std::move(aValue));
@@ -1361,6 +1472,24 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
     for (auto& event : events)
     {
         std::visit(addToPresentation, event);
+    }
+
+    auto netting = netIncomePayments(paymentRows);
+
+    mergeDiagnostics.insert(mergeDiagnostics.end(),
+                            std::make_move_iterator(netting.mDiagnostics.begin()),
+                            std::make_move_iterator(netting.mDiagnostics.end()));
+
+    for (auto& netted : netting.mDividends)
+    {
+        DividendRecord record{
+            .mName = netted.mName,
+            .mIsin = netted.mIsin,
+            .mNameContributions = nettedNameContributions(netted),
+            .mEvent = std::move(netted.mEvent),
+        };
+
+        addToPresentation(record);
     }
 
     for (auto& [isin, bucket] : tradeBuckets)
@@ -1432,6 +1561,7 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
     result.mStatement.mPresentation.mBondRedemptions = std::move(bondRedemptions);
 
     buildChronologicalOrder(result.mStatement);
+    result.mStatement.mLeftOutRows = deduplicateLeftOutRows(std::move(leftOutRows));
 
     // Each key is made once; a key holds an ISIN, so making it in every comparison copies it.
     using MergeDiagnosticKey = decltype(mergeDiagnosticKey(std::declval<const MergeDiagnostic&>()));

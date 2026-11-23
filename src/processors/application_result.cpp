@@ -164,6 +164,11 @@ void normalizeReports(ReportList& aReports) {
     case MergeDiagnosticCode::ConflictingDuplicate:
     case MergeDiagnosticCode::DuplicateTransactionInFile:
     case MergeDiagnosticCode::InstrumentNameConflict:
+    case MergeDiagnosticCode::IncomePaymentRowsDisagree:
+    case MergeDiagnosticCode::DividendReversalWithoutPayment:
+    case MergeDiagnosticCode::DividendNetNotPositive:
+    case MergeDiagnosticCode::SubstituteDividendPayment:
+    case MergeDiagnosticCode::IncomeCorrectionLaterYear:
         break;
     }
 

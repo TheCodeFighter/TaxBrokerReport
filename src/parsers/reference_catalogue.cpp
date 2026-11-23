@@ -617,6 +617,13 @@ std::vector<const BrokerPayerEntry*> ReferenceCatalogue::brokerPayersOf(Broker a
     return entries;
 }
 
+const BrokerPayerEntry* ReferenceCatalogue::brokerPayerByCode(Broker aBroker,
+                                                              std::string_view aCode) const {
+    const auto key = brokerPayersKey(aBroker);
+
+    return key.empty() ? nullptr : brokerPayer(key, aCode);
+}
+
 const std::vector<PayerEntry>& ReferenceCatalogue::payers() const {
     return mPayers->mEntries;
 }

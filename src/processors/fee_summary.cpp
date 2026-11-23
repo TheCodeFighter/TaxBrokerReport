@@ -196,6 +196,14 @@ FeeAndBenefitSummary summarizeFeesAndBenefits(const MergedStatement& aStatement,
                     .mAmount = trade.mFeePaid},
                    trade.mExchangeRate,
                    trade.mCurrency);
+
+            // The second fee (stamp duty, a financial transaction tax) is in the trade's currency
+            // and adds to the same total.
+            addFee({.mBroker = primarySource(trade.mMetadata).mBroker,
+                    .mCurrency = trade.mCurrency,
+                    .mAmount = trade.mTransactionTaxPaid},
+                   trade.mExchangeRate,
+                   trade.mCurrency);
             break;
         }
         case StatementEventKind::BondRedemption: {

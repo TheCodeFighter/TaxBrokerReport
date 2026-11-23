@@ -323,25 +323,46 @@ std::map<Isin, IsinPayments> couponsByIsin(const std::vector<Payment>& aPayments
     return groups;
 }
 
-/// The payer of the cash a broker holds: its only broker payer row, or none with one warning
-/// (for the forms of its payments) when the reference files have no row or several.
-std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayments,
-                                            const ReferenceCatalogue& aCatalogue,
-                                            std::vector<ProcessingDiagnostic>& aDiagnostics) {
-    std::map<Broker, std::vector<const Payment*>> byBroker;
-    std::map<Broker, PayerOutcome> payers;
+/// The payers of the cash a broker holds are told apart by the entity code the export names, if
+/// any.
+using CashPayerKey = std::pair<Broker, std::optional<std::string>>;
+
+CashPayerKey cashPayerKeyOf(const Payment& aPayment) {
+    return {brokerOf(aPayment), aPayment.mTransaction->mPayerCode};
+}
+
+/// The payer of the cash a broker holds. With an entity code in the export it is the broker payer
+/// row with that code; without one it is the broker's only row. Otherwise the payer stays empty,
+/// with one warning (for the forms of its payments) saying that the code is unknown or that the
+/// reference files have no row or several.
+std::map<CashPayerKey, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayments,
+                                                  const ReferenceCatalogue& aCatalogue,
+                                                  std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    std::map<CashPayerKey, std::vector<const Payment*>> byKey;
+    std::map<CashPayerKey, PayerOutcome> payers;
 
     for (const auto& payment : aPayments)
     {
         if (payment.mRoute != Route::Coupon)
         {
-            byBroker[brokerOf(payment)].push_back(&payment);
+            byKey[cashPayerKeyOf(payment)].push_back(&payment);
         }
     }
 
-    for (const auto& [broker, payments] : byBroker)
+    for (const auto& [key, payments] : byKey)
     {
-        const auto entries = aCatalogue.brokerPayersOf(broker);
+        const auto& [broker, code] = key;
+        const BrokerPayerEntry* entry = nullptr;
+
+        if (code)
+        {
+            entry = aCatalogue.brokerPayerByCode(broker, *code);
+        }
+        else if (const auto entries = aCatalogue.brokerPayersOf(broker); entries.size() == 1)
+        {
+            entry = entries.front();
+        }
+
         std::set<ReportType> reports;
         std::vector<SourceReference> sources;
 
@@ -355,9 +376,9 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
 
         const auto& first = *payments.front()->mTransaction;
 
-        if (entries.size() == 1)
+        if (entry != nullptr)
         {
-            const auto outcome = payerOutcomeOf(*entries.front());
+            const auto outcome = payerOutcomeOf(*entry);
 
             if (outcome.mSlovenianTaxNumberMissing)
             {
@@ -383,15 +404,18 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
                 aDiagnostics.push_back(std::move(warning));
             }
 
-            payers.emplace(broker, outcome);
+            payers.emplace(key, outcome);
 
             continue;
         }
 
+        auto message = code ? makeDiagnosticMessage(MessageKey::InterestPayerNotFoundUnknownEntity,
+                                                    {textParam("code", *code)})
+                            : makeDiagnosticMessage(MessageKey::InterestPayerNotFound);
         auto warning = incomeDiagnostic(*reports.begin(),
                                         DiagnosticSeverity::Warning,
                                         ProcessingDiagnosticCode::InterestPayerNotFound,
-                                        makeDiagnosticMessage(MessageKey::InterestPayerNotFound),
+                                        std::move(message),
                                         std::move(sources),
                                         first.mMetadata.mTaxDate,
                                         nameOf(*payments.front()),
@@ -399,7 +423,7 @@ std::map<Broker, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayment
 
         warning.mContext.mAffectedReports.assign(reports.begin(), reports.end());
         aDiagnostics.push_back(std::move(warning));
-        payers.emplace(broker, PayerOutcome{});
+        payers.emplace(key, PayerOutcome{});
     }
 
     return payers;
@@ -629,16 +653,16 @@ bool addChecked(Money& aSum,
     return true;
 }
 
-/// The Doh-DHO rows, one per broker (its payer), sorted by payer name and country.
-std::vector<DhoInterestRow> depositRows(const std::map<Broker, DepositGroup>& aGroups,
-                                        const std::map<Broker, PayerOutcome>& aPayers) {
+/// The Doh-DHO rows, one per payer of the deposit interest, sorted by payer name and country.
+std::vector<DhoInterestRow> depositRows(const std::map<CashPayerKey, DepositGroup>& aGroups,
+                                        const std::map<CashPayerKey, PayerOutcome>& aPayers) {
     std::vector<DhoInterestRow> rows;
 
     rows.reserve(aGroups.size());
 
-    for (const auto& [broker, group] : aGroups)
+    for (const auto& [key, group] : aGroups)
     {
-        const auto& payer = aPayers.at(broker).mPayer;
+        const auto& payer = aPayers.at(key).mPayer;
 
         rows.push_back(DhoInterestRow{.mPayments = group.mPayments,
                                       .mPayer = payer,
@@ -661,8 +685,8 @@ std::vector<DhoInterestRow> depositRows(const std::map<Broker, DepositGroup>& aG
 /// Decides, by the allowance, whether the deposit rows are made. At or below it the rows are made
 /// too, with a reminder, unless the user answers that the total of all banks is not above it.
 void applyAllowance(InterestPaymentsResult& aResult,
-                    const std::map<Broker, DepositGroup>& aGroups,
-                    const std::map<Broker, PayerOutcome>& aPayers,
+                    const std::map<CashPayerKey, DepositGroup>& aGroups,
+                    const std::map<CashPayerKey, PayerOutcome>& aPayers,
                     const std::vector<Payment>& aPayments,
                     int aYear,
                     RunDecisions& aDecisions) {
@@ -943,7 +967,7 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
     }
 
     IncomeEurConverter converter{selection, result.mDiagnostics};
-    std::map<Broker, DepositGroup> deposits;
+    std::map<CashPayerKey, DepositGroup> deposits;
     TreatyTextCache treatyTexts;
     const auto bondDates = bondDatesOf(aStatement, payments);
     Money total = 0;
@@ -974,7 +998,7 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
 
         if (payment.mRoute == Route::Deposit)
         {
-            auto& group = deposits[brokerOf(payment)];
+            auto& group = deposits[cashPayerKeyOf(payment)];
 
             depositComplete &=
                 addChecked(total, amounts->mGross, payment, result.mDiagnostics) &&
@@ -994,7 +1018,7 @@ InterestPaymentsResult prepareInterestPayments(const MergedStatement& aStatement
         }
 
         const auto& payer = isCoupon ? couponPayers.at(payment.mInstrument->mIsin.value())
-                                     : cashPayers.at(brokerOf(payment));
+                                     : cashPayers.at(cashPayerKeyOf(payment));
 
         // The tax of a Slovenian issuer's coupon cannot be foreign tax; the user checks it.
         if (isCoupon && payer.mPayer.mCountry == kSlovenia && amounts->mTax > 0)

@@ -9,7 +9,7 @@
 # A spec is "--flag", "--option=kind" (one value per comma-separated kind) or "+--option=..."
 # for an option that can repeat. An option whose kind ends in "+" (--option=csv+) takes a list:
 # every word after it up to the next option is one of that kind. After "::" come the kinds of the
-# positional arguments; a last kind ending in "+" repeats. Kinds: csv, json, file, dir, year,
+# positional arguments; a last kind ending in "+" repeats. Kinds: csv, json, xml, file, dir, year,
 # none, "words:a b c".
 
 # Prints the bash candidates of one kind for the word being completed.
@@ -20,7 +20,7 @@ _tbr_candidates() {
     local IFS=$' \t\n'
 
     case "$kind" in
-        csv | json)
+        csv | json | xml)
             compgen -d -- "$current"
             compgen -f -X "!*.$kind" -- "$current"
             ;;
@@ -49,7 +49,7 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
         local year=$(( $(date +%Y) - 1 ))
 
         case "$1" in
-            csv | json) _files -g "*.$1(-.)" ;;
+            csv | json | xml) _files -g "*.$1(-.)" ;;
             file) _files ;;
             dir) _directories ;;
             year) compadd -- $year $(( year - 1 )) $(( year - 2 )) $(( year - 3 )) $(( year - 4 )) ;;
@@ -194,7 +194,7 @@ _tbr_dump_tr_parse() { _tbr_complete --help :: csv file file; }
 _tbr_dump_tr_merge() { _tbr_complete --help :: csv file dir; }
 _tbr_dump_tr_diagnostics() { _tbr_complete --output=file --help :: csv+; }
 _tbr_dump_tr_fifo() { _tbr_complete --year=year --output=file --help :: csv+; }
-_tbr_dump_ibkr_parse() { _tbr_complete --output=file --help :: file+; }
+_tbr_dump_ibkr_parse() { _tbr_complete --output=file --help :: xml+; }
 
 _tbr_dump_tr_kdvp() {
     _tbr_complete --synthetic --year=year --tax-number=none --self-report --output=file --help :: csv+

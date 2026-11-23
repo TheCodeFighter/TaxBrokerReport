@@ -845,12 +845,11 @@ without blocking unrelated reports; an unknown category cannot be silently assig
 
 The classification stage runs before FIFO, from the asset class of each trade investment; it never
 reads a name or a symbol. Shares and fund units stay in capital gains. A bond and a crypto
-instrument are left out by a tax rule; an unknown class asks the question above; a derivative and
-a private fund are not changed by it (the capital gates give their `unsupported_tax_treatment`
-error, and the capital failure question can leave them out into `excludedInvestments`). Planned
-change (with the Interactive Brokers parser, `tax_rules.md` "Derivatives and margin"): a derivative is left out
-of every form with one warning instead of blocking, for every broker; the private fund is
-unchanged.
+instrument are left out by a tax rule; an unknown class asks the question above; a private fund is
+not changed by it (the capital gates give its `unsupported_tax_treatment` error, and the capital
+failure question can leave it out into `excludedInvestments`). A derivative never reaches this
+stage: a parser leaves its rows out (`tax_rules.md`, "Derivatives and margin"), and the capital
+gates treat a derivative that arrives anyway as a programming error.
 
 Every instrument that is left out has one entry in the top-level `excludedItems` list, sorted by
 ISIN and always present (`[]` when empty). It is distinct from the `excludedInvestments` of a
@@ -1014,6 +1013,17 @@ The later stages use the codes defined by their rule documents. These include:
   warning that blocks no report, one per file and transaction ID, with that file's rows in its
   source references. The copies are merged into one event, as for copies across files, which add
   no warning;
+- the merging codes of the cash rows of one income payment (the event kind is a dividend, so the
+  scope is Doh-Div; every source row of the payment is listed): `income_payment_rows_disagree`
+  (error: two currencies, two pay dates, a refund above the tax or an amount that does not fit, so
+  no dividend is made), `dividend_reversal_without_payment` (warning: a reversal, a tax or a refund
+  without a dividend row in the loaded files), `dividend_net_not_positive` (warning: the dividend
+  rows net to 0 or less), `substitute_dividend_payment` (warning: a payment in lieu of a dividend)
+  and `income_correction_later_year` (warning, parameters `payYear` and `bookedYear`: a row booked
+  in a later year than the pay date);
+- `margin_or_leverage_rows_left_out` (a warning of the processing stage, parameter `count`, no
+  form): one per broker and run, counting the left-out rows of the selected year (and the rows with
+  an unreadable date), never blocking;
 - `invalid_reporting_year` and `incomplete_history` for historical validation;
 - the `corporate_action_*` and `unsupported_corporate_action` codes in
   [`fifo.md`](fifo.md);
@@ -1104,15 +1114,17 @@ fails: cancellation, a missing attribute, the format of a field, then the signs.
 
 The four notices above (closed lots, the cash totals, the currency conversion, the crypto trade
 without an ISIN) have the severity `info`: they name no form and block nothing. The derivative and
-margin rows are stored as left-out rows, and the following are the work of the steps after the
-parser; their codes and keys are named there:
+margin rows are stored as left-out rows, and the steps after the parser give the following (codes
+and keys in the list of later-stage codes above and in the message table):
 
-- Derivative and margin rows left out of every form: one warning per broker and run ("one or more
-  margin or leverage rows are not supported", with the number of rows), never blocking.
-- A payment in lieu of dividends: a warning "substitute payment, check".
-- A dividend reversal without its dividend, or a correction booked in a later year than its pay
-  date: a warning.
-- An `ibEntity` that is not in the broker payer list: empty payer facts and a warning.
+- Derivative and margin rows left out of every form: one warning per broker and run
+  (`margin_or_leverage_rows_left_out`, with the number of rows of the selected year), never blocking.
+- A payment in lieu of dividends: the warning `substitute_dividend_payment`.
+- A dividend reversal without its dividend: `dividend_reversal_without_payment`; a correction
+  booked in a later year than its pay date: `income_correction_later_year`.
+- An `ibEntity` that is not in the broker payer list: empty payer facts and the warning
+  `interest_payer_not_found` with the message key `interest_payer_not_found.unknown_entity`
+  (parameter `code`).
 
 ## Message keys and translation
 

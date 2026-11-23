@@ -644,6 +644,7 @@ ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
             case RowType::Trade: {
                 const bool wasParsed = parseTradeRow(row,
                                                      parsedResult.mStatement.mTradeInstruments,
+                                                     parsedResult.mStatement.mLeftOutRows,
                                                      rowMeta.mParsedValues,
                                                      context);
                 const auto assetClass = parseAssetClass(rowMeta.mParsedValues.mAssetClass);
@@ -946,6 +947,7 @@ TradeRepublicParser::pickAmountField(const csv::CSVRow& aRow) {
 
 bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
                                         std::vector<TradeInstrument>& aInstruments,
+                                        std::vector<LeftOutRow>& aLeftOutRows,
                                         const RowParsedValues& aParsedValues,
                                         const RowContext& aContext) {
 
@@ -1090,6 +1092,17 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
             makeDiagnosticMessage(MessageKey::TradeAmountMismatch,
                                   {textParam("field", std::string{amountField})}),
             std::string{amountField});
+    }
+
+    // A derivative has no capital treatment here: its row is counted, never read as a trade.
+    if (assetClass == AssetClass::Derivative)
+    {
+        aLeftOutRows.push_back(LeftOutRow{
+            .mMetadata = aContext.metadata(*date),
+            .mReason = LeftOutReason::MarginOrLeverage,
+        });
+
+        return true;
     }
 
     auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);

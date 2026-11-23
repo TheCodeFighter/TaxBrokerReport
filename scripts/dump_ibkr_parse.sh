@@ -15,6 +15,8 @@ Usage: dump_ibkr_parse.sh [--output runtime/path.txt] xml-path ...
     Paths are relative to the repository. Output stays below ignored runtime/.
     Options and XML paths can come in any order.
 
+    Example: scripts/dump_ibkr_parse.sh tmp/IBKR/export_1.xml
+
     Default output: runtime/debug/ibkr_parse_counts.txt
 EOF_USAGE
 }

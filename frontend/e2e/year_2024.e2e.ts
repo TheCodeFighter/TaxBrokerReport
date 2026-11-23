@@ -9,6 +9,7 @@ import {
   openReportPage,
   pickWord,
   question,
+  resultRegion,
   sendAnswer,
   startRun,
 } from "./support/report_page";
@@ -19,7 +20,7 @@ const YEARS = ["2022", "2023", "2024", "2025"];
 describe("year 2024 of the manual files", () => {
   const session = useSession();
 
-  it("E7 answers the questions of 2024 and leaves out Bond B and the certificate", async () => {
+  it("E7 answers the questions of 2024, leaves out Bond B and warns about the certificate", async () => {
     const page = await openReportPage(session.context, session.server);
     const files = await Promise.all(YEARS.map((year) => manualFile(`trade_republic_${year}.csv`)));
 
@@ -57,19 +58,18 @@ describe("year 2024 of the manual files", () => {
     // Quantity: the units left, which the field already holds.
     await sendAnswer(question(page, "Synthetic Quantity Share (XX0000000109)"));
 
-    // Exclusion from Doh-Obr (Bond B) and from Doh-KDVP (the certificate).
+    // Exclusion from Doh-Obr (Bond B). The certificate is a derivative: the parser leaves it out, so
+    // Doh-KDVP asks nothing about it.
     const obrFailure = question(page, "Doh-Obr: nadaljevanje brez teh naložb?");
     await pickWord(obrFailure, "exclude_failed_instruments");
     await sendAnswer(obrFailure);
 
-    const kdvpFailure = question(page, "Doh-KDVP: nadaljevanje brez teh naložb?");
-    await pickWord(kdvpFailure, "exclude_failed_instruments");
-    await sendAnswer(kdvpFailure);
-
-    // README, 2024: Doh-KDVP without the certificate; Doh-Div 5 rows; Doh-DHO no data;
-    // Doh-Obr 3 rows without Bond B.
+    // README, 2024: Doh-KDVP generated, without the certificate; Doh-Div 5 rows; Doh-DHO no data;
+    // Doh-Obr 3 rows without Bond B; the warning about the 2 rows of the certificate.
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
-    expect(await excludedInvestments(page, "Doh-KDVP").getByText("Synthetic Index Certificate (XX0000000119)").count()).toBe(1);
+    expect(await excludedInvestments(page, "Doh-KDVP").count()).toBe(0);
+    expect(await page.getByText("Synthetic Index Certificate").count()).toBe(0);
+    expect(await resultRegion(page).getByText("(število vrstic: 2)").count()).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
     expect(await card(page, "Doh-Div").getByText(/Vrstice: 5,/).count()).toBe(1);
     expect(await cardStatus(page, "Doh-DHO")).toBe("ni podatkov");
