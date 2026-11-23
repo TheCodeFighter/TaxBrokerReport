@@ -188,6 +188,7 @@ inline std::optional<std::string> droppedRowFailure(const ParseResult& aResult,
     detail::collectRows(aResult.mStatement.mBenefitEvents, eventRows);
     detail::collectRows(aResult.mStatement.mPrivateMarketEvents, eventRows);
     detail::collectRows(aResult.mStatement.mBondRedemptions, eventRows);
+    detail::collectRows(aResult.mStatement.mLeftOutRows, eventRows);
 
     for (const auto& diagnostic : aResult.mDiagnostics)
     {
