@@ -66,6 +66,11 @@ namespace {
                    std::holds_alternative<ExcludeFromReportsAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
+        else if constexpr (std::is_same_v<Data, CorporateActionIdentityQuestion>)
+        {
+            return std::holds_alternative<CorporateActionGroupingAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
         else if constexpr (std::is_same_v<Data, QuantityCorrectionQuestion>)
         {
             return std::holds_alternative<QuantityCorrectionAnswer>(aAnswer) ||
@@ -262,6 +267,59 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
     return std::nullopt;
 }
 
+/// Checks a grouping answer: one number for every row, from 1 without gaps, and the rows of one
+/// action at most kSameActionWindowDays apart.
+[[nodiscard]] std::optional<RejectedAnswer>
+checkGroupingAnswer(std::size_t aIndex,
+                    const DecisionRequest& aRequest,
+                    const CorporateActionGroupingAnswer& aAnswer) {
+    const auto& rows = std::get<CorporateActionIdentityQuestion>(aRequest.mData).mRows;
+    const auto& numbers = aAnswer.mActionOfRow;
+
+    // The distinct numbers must be 1, 2, ... up to their count.
+    auto distinct = numbers;
+
+    std::sort(distinct.begin(), distinct.end());
+    distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
+
+    if (numbers.size() != rows.size() || distinct.front() != 1 ||
+        distinct.back() != distinct.size())
+    {
+        return rejectedAnswer(aIndex,
+                              AnswerRejection::GroupingIncomplete,
+                              MessageKey::AnswerRejectedGroupingIncomplete,
+                              aRequest.mId);
+    }
+
+    for (std::size_t first = 0; first < rows.size(); ++first)
+    {
+        for (std::size_t second = first + 1; second < rows.size(); ++second)
+        {
+            const auto distance = rows[first].mDate < rows[second].mDate
+                                      ? rows[second].mDate - rows[first].mDate
+                                      : rows[first].mDate - rows[second].mDate;
+
+            if (numbers[first] == numbers[second] && distance > DayDuration{kSameActionWindowDays})
+            {
+                auto message = makeDiagnosticMessage(
+                    MessageKey::AnswerRejectedGroupingWindow,
+                    {textParam("requestId", aRequest.mId),
+                     numberParam("days", static_cast<std::uint64_t>(kSameActionWindowDays))});
+
+                return RejectedAnswer{
+                    .mIndex = aIndex,
+                    .mReason = AnswerRejection::GroupingWindow,
+                    .mMessage = std::move(message.mEnglish),
+                    .mMessageKey = message.mKey,
+                    .mMessageParams = std::move(message.mParams),
+                };
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 /// Checks a corrected sale quantity: above 0, not above the open units, less than 0.00000100 below
 /// the sale, and with the removed units valued at the unit value of the question, within the
 /// EUR 0.01 budget together with the roundings that came before.
@@ -419,6 +477,14 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
         if (const auto* ratio = std::get_if<SplitRatioAnswer>(&given.mValue))
         {
             if (auto rejection = checkRatioAnswer(index, *request, *ratio))
+            {
+                rejections.push_back(std::move(*rejection));
+            }
+        }
+
+        if (const auto* grouping = std::get_if<CorporateActionGroupingAnswer>(&given.mValue))
+        {
+            if (auto rejection = checkGroupingAnswer(index, *request, *grouping))
             {
                 rejections.push_back(std::move(*rejection));
             }

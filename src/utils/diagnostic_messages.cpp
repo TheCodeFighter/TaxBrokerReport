@@ -64,6 +64,10 @@ constexpr std::array kRequestId{
 constexpr std::array kDecisionId{
     MessageParamDefinition{"decisionId", MessageParamKind::Text},
 };
+constexpr std::array kRequestIdAndDays{
+    MessageParamDefinition{"requestId", MessageParamKind::Text},
+    MessageParamDefinition{"days", MessageParamKind::Number},
+};
 constexpr std::array kRequestIdAndField{
     MessageParamDefinition{"requestId", MessageParamKind::Text},
     MessageParamDefinition{"field", MessageParamKind::Text},
@@ -72,9 +76,6 @@ constexpr std::array kNewAndOldSharesAndDate{
     MessageParamDefinition{"newShares", MessageParamKind::Number},
     MessageParamDefinition{"oldShares", MessageParamKind::Number},
     MessageParamDefinition{"effectiveDate", MessageParamKind::Text},
-};
-constexpr std::array kDays{
-    MessageParamDefinition{"days", MessageParamKind::Number},
 };
 constexpr std::array kSaleDateAndDays{
     MessageParamDefinition{"saleDate", MessageParamKind::Text},
@@ -283,8 +284,9 @@ constexpr std::array kDefinitions{
                       {}},
     MessageDefinition{
         MessageKey::CorporateActionAmbiguousCancelled, "corporate_action_ambiguous.cancelled", {}},
-    MessageDefinition{
-        MessageKey::CorporateActionAmbiguousSameDay, "corporate_action_ambiguous.same_day", {}},
+    MessageDefinition{MessageKey::CorporateActionAmbiguousIdentityRequired,
+                      "corporate_action_ambiguous.identity_required",
+                      {}},
     MessageDefinition{MessageKey::CorporateActionNotAppliedWaitingForEarlierAction,
                       "corporate_action_not_applied.waiting_for_earlier_action",
                       kEarlierDate},
@@ -317,9 +319,9 @@ constexpr std::array kDefinitions{
                       {}},
     MessageDefinition{
         MessageKey::CorporateActionMissingPosition, "corporate_action_missing_position", {}},
-    MessageDefinition{MessageKey::CorporateActionAmbiguousDifferentDates,
-                      "corporate_action_ambiguous.different_dates",
-                      kDays},
+    MessageDefinition{MessageKey::CorporateActionAmbiguousSameDayOrder,
+                      "corporate_action_ambiguous.same_day_order",
+                      {}},
     MessageDefinition{
         MessageKey::UnsupportedCorporateActionMerger, "unsupported_corporate_action.merger", {}},
     MessageDefinition{MessageKey::CorporateActionAmbiguousRatioRequiredBeforeSale,
@@ -395,6 +397,15 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::AnswerRejectedCorrectionOverBudget,
                       "answer_rejected.correction_over_budget",
                       kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedGroupingIncomplete,
+                      "answer_rejected.grouping_incomplete",
+                      kRequestId},
+    MessageDefinition{MessageKey::AnswerRejectedGroupingWindow,
+                      "answer_rejected.grouping_window",
+                      kRequestIdAndDays},
+    MessageDefinition{MessageKey::CorporateActionSourcesMismatchPossible,
+                      "corporate_action_sources_mismatch_possible",
+                      kYear},
     MessageDefinition{MessageKey::ReferenceFileUnknownName, "reference_file.unknown_name", kName},
     MessageDefinition{MessageKey::ReferenceFileRepeatedName, "reference_file.repeated_name", kName},
     MessageDefinition{MessageKey::ReferenceFileUnreadable, "reference_file.unreadable", {}},

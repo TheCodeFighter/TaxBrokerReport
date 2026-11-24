@@ -50,6 +50,9 @@ enum class ProcessingDiagnosticCode {
     CorporateActionMissingPosition,
     CorporateActionQuantityRounded,
     CorporateActionApplied,
+    /// A warning: the action rows of one ISIN and year come from more than one file, so the files
+    /// may disagree about the actions.
+    CorporateActionSourcesMismatchPossible,
     UnsupportedCorporateAction,
     TaxCategoryNotReported, ///< A warning for an instrument left out by a tax rule or the user.
     /// A warning: a rate file starts after the beginning or ends before the end of its year.

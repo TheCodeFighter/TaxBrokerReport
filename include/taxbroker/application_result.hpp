@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -240,6 +241,43 @@ struct CorporateActionRatioQuestion {
 [[nodiscard]] const EffectiveDateRange*
 findEffectiveDateRange(const CorporateActionRatioQuestion& aQuestion, Date aDate);
 
+/// The rows of one corporate action are booked at most this many days apart: a broker may book an
+/// action some days after it took effect, and the identity question never joins rows further
+/// apart.
+inline constexpr int kSameActionWindowDays = 10;
+
+/// One action row of an identity question. Any broker; the question never depends on which.
+struct CorporateActionIdentityRow {
+    Broker mBroker{Broker::Unknown};
+    std::optional<std::string> mTransactionId;
+    Date mDate;
+    CorporateActionType mType{};
+    /// The broker's own quantity field as an exact decimal, shown read-only like in a ratio
+    /// question.
+    std::optional<std::string> mSourceValue;
+    /// The broker's own ID of the action, when its export has one.
+    std::optional<std::string> mBrokerActionId;
+
+    bool operator==(const CorporateActionIdentityRow&) const = default;
+
+    /// The order of the rows in the question: date, broker, transaction ID, then the rest.
+    [[nodiscard]] auto sortKey() const {
+        return std::tie(mDate, mBroker, mTransactionId, mType, mSourceValue, mBrokerActionId);
+    }
+};
+
+/// The question data of `corporate_action_identity_required`: action rows of one ISIN that may be
+/// one action or several (rows of one broker on one day, or of two brokers a few days apart that
+/// the one-split question cannot ask about). The user says which rows are one action.
+struct CorporateActionIdentityQuestion {
+    Isin mIsin;
+    std::string mName;
+    /// Two or more rows, sorted by date, broker and transaction ID (sortKey).
+    std::vector<CorporateActionIdentityRow> mRows;
+
+    bool operator==(const CorporateActionIdentityQuestion&) const = default;
+};
+
 /// The question data of `tax_classification_required` for a trade investment whose asset class is
 /// missing, not recognized or different between rows.
 struct TaxClassificationQuestion {
@@ -419,6 +457,7 @@ using QuestionData = std::variant<std::monostate,
                                   FailureResolutionQuestion,
                                   LossEligibilityQuestion,
                                   CorporateActionRatioQuestion,
+                                  CorporateActionIdentityQuestion,
                                   TaxClassificationQuestion,
                                   QuantityCorrectionQuestion,
                                   PayerChoiceQuestion,
@@ -490,6 +529,15 @@ struct SplitRatioAnswer {
 /// `no` to the question whether the rows of a ratio question with mAskSameEvent are one event.
 struct SeparateEventsAnswer {
     bool operator==(const SeparateEventsAnswer&) const = default;
+};
+
+/// The answer to an identity question: for each row of the question, in its order, the number of
+/// the action it belongs to (1, 2, and so on). The numbers run from 1 without gaps, and the rows
+/// of one action are at most kSameActionWindowDays apart. The session accepts nothing else.
+struct CorporateActionGroupingAnswer {
+    std::vector<std::size_t> mActionOfRow;
+
+    bool operator==(const CorporateActionGroupingAnswer&) const = default;
 };
 
 /// `capital_gains` to a classification question: treat the investment as shares or fund units
@@ -575,6 +623,7 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  OtherActivityAnswer,
                                  SplitRatioAnswer,
                                  SeparateEventsAnswer,
+                                 CorporateActionGroupingAnswer,
                                  CapitalGainsAnswer,
                                  ExcludeFromReportsAnswer,
                                  QuantityCorrectionAnswer,

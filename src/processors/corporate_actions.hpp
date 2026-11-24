@@ -12,8 +12,10 @@
 namespace taxbroker {
 
 /// Split rows of one ISIN from different brokers at most this many days apart may be one split
-/// booked on different dates: the question asks whether they are, or they block when it cannot.
+/// booked on different dates: the question asks whether they are, or the identity question asks
+/// which rows are one action. The rows of one action are never further apart.
 inline constexpr int kDifferentDatesWindowDays = kBrokerDateMarginDays;
+static_assert(kDifferentDatesWindowDays == kSameActionWindowDays);
 
 enum class CorporateActionState {
     Applied,
@@ -21,13 +23,12 @@ enum class CorporateActionState {
     WaitingForRatio,
     WaitingForEarlierAction,
     Cancelled,
-    /// The same broker has more than one action row of the ISIN on that day: one action or
-    /// several, and in which order, is unknown.
-    SameDayAmbiguous,
-    /// Another broker has a split row of the ISIN on another date at most
-    /// kDifferentDatesWindowDays away, and the rows cannot be asked as one split or the user said
-    /// they are two splits.
-    DifferentDatesAmbiguous,
+    /// The rows may be one action or several (one broker twice on a day, or several brokers a few
+    /// days apart) and the identity question is open.
+    WaitingForIdentity,
+    /// The user grouped the rows into actions that start on the same day, so their order is
+    /// unknown.
+    SameDayOrderAmbiguous,
     /// A merger, which the app does not support.
     Unsupported,
     /// No open units just before the action, so there is nothing to ask about.
@@ -36,8 +37,9 @@ enum class CorporateActionState {
     NumericFailure,
 };
 
-/// One economic action: every action row of one ISIN on one date, one per broker, or the rows of
-/// two brokers on two dates at most kDifferentDatesWindowDays apart.
+/// One economic action: every action row of one ISIN on one date (one per broker and account), the
+/// rows of two brokers on two dates at most kDifferentDatesWindowDays apart, or the rows the user
+/// grouped as one action. A state of WaitingForIdentity holds all rows of the open question.
 struct ResolvedCorporateAction {
     Isin mIsin;
     std::string mName;

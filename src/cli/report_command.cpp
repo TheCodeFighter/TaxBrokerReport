@@ -1220,6 +1220,7 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
             return aQuestion.mName;
         }
         else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion> ||
+                           std::is_same_v<Question, CorporateActionIdentityQuestion> ||
                            std::is_same_v<Question, PayerChoiceQuestion> ||
                            std::is_same_v<Question, PayerCountryQuestion> ||
                            std::is_same_v<Question, IncomeClassificationQuestion> ||

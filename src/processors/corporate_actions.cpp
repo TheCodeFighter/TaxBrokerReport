@@ -4,6 +4,7 @@
 #include "utils/date_utils.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
@@ -76,7 +77,16 @@ actionsByDate(const std::vector<TradeInstrument>& aInstruments,
             return;
         }
 
-        const auto date = actionOf(aInstruments, aEvent).mMetadata.mTaxDate;
+        const auto& action = actionOf(aInstruments, aEvent);
+
+        // No supported export gives a verified ratio: every ratio is asked. A parser that sets
+        // one needs its rule written first.
+        if (action.mRatio)
+        {
+            throw std::logic_error("A verified corporate-action ratio is not supported yet.");
+        }
+
+        const auto date = action.mMetadata.mTaxDate;
 
         if (aAfterYear != (date > aLedger.mYearEnd))
         {
@@ -126,21 +136,27 @@ std::vector<SourceReference> sourcesOf(const std::vector<TradeInstrument>& aInst
     return sources;
 }
 
-/// Tells whether one broker has more than one action row in the group.
+/// Tells whether one broker has more than one action in the group. Rows of one broker with the
+/// same broker action ID are one action; a row without an ID is an action of its own.
 bool hasSameBrokerTwice(const std::vector<TradeInstrument>& aInstruments,
                         const std::vector<StatementEventReference>& aEvents) {
-    std::vector<Broker> brokers;
+    std::vector<std::pair<Broker, std::optional<std::string>>> seen;
 
     for (const auto& event : aEvents)
     {
-        const auto broker = brokerOf(actionOf(aInstruments, event));
+        const auto& action = actionOf(aInstruments, event);
+        const auto broker = brokerOf(action);
+        const auto& actionId = action.mBrokerActionId;
+        const bool isOtherAction = std::any_of(seen.begin(), seen.end(), [&](const auto& aSeen) {
+            return aSeen.first == broker && !(actionId && aSeen.second == actionId);
+        });
 
-        if (std::find(brokers.begin(), brokers.end(), broker) != brokers.end())
+        if (isOtherAction)
         {
             return true;
         }
 
-        brokers.push_back(broker);
+        seen.emplace_back(broker, actionId);
     }
 
     return false;
@@ -202,45 +218,196 @@ splitsOfAnotherBrokerNearby(const std::vector<TradeInstrument>& aInstruments,
     return nearby;
 }
 
-/// Joins a group and the next one into one action when each is the other's only group with a
-/// split row of another broker nearby, neither has a merger row and no broker has two rows: the
-/// rows may be one split that each broker booked on its own date, and the question asks whether
-/// they are (maintainer decision, 2026-10-29). Other nearby rows stay apart and are ambiguous.
-std::vector<std::vector<StatementEventReference>>
-joinOneEventPairs(const std::vector<TradeInstrument>& aInstruments,
-                  const std::vector<std::vector<StatementEventReference>>& aGroups) {
-    std::vector<std::vector<StatementEventReference>> joined;
+/// The action rows of one ISIN that the resolver handles as one step.
+struct ActionGroup {
+    std::vector<StatementEventReference> mEvents;
+    /// Rows of two brokers on two dates that may be one split: the ratio question asks whether
+    /// they are.
+    bool mAskSameEvent{};
+    /// Rows that may be one action or several, all of them in mEvents: the identity question
+    /// asks which rows belong together.
+    bool mNeedsIdentity{};
+    /// The user grouped the rows into actions that start on the same day, so their order is
+    /// unknown.
+    bool mOrderUnknown{};
+};
 
-    for (std::size_t index = 0; index < aGroups.size(); ++index)
+/// The steps of one ISIN in date order. Each date is one step, with these exceptions: two dates
+/// that may be one split booked by two brokers on their own dates are one step when each is the
+/// other's only date with a split row of another broker nearby, neither has a merger row and no
+/// broker has two actions (the question asks whether they are one split); the dates linked by
+/// nearby rows of other brokers, or with one broker's rows on one day that are not one action, are
+/// one step for the identity question. A merger row is never part of such a step.
+std::vector<ActionGroup>
+actionGroupsOf(const std::vector<TradeInstrument>& aInstruments,
+               const std::vector<std::vector<StatementEventReference>>& aDateGroups) {
+    std::vector<std::vector<std::size_t>> nearby;
+
+    nearby.reserve(aDateGroups.size());
+
+    for (std::size_t index = 0; index < aDateGroups.size(); ++index)
     {
-        const auto next = index + 1;
-        const bool pairWithNext = next < aGroups.size() &&
-                                  splitsOfAnotherBrokerNearby(aInstruments, aGroups, index) ==
-                                      std::vector<std::size_t>{next} &&
-                                  splitsOfAnotherBrokerNearby(aInstruments, aGroups, next) ==
-                                      std::vector<std::size_t>{index};
-
-        if (!pairWithNext)
-        {
-            joined.push_back(aGroups[index]);
-            continue;
-        }
-
-        auto rows = aGroups[index];
-
-        rows.insert(rows.end(), aGroups[next].begin(), aGroups[next].end());
-
-        if (hasMerger(aInstruments, rows) || hasSameBrokerTwice(aInstruments, rows))
-        {
-            joined.push_back(aGroups[index]);
-            continue;
-        }
-
-        joined.push_back(std::move(rows));
-        ++index;
+        nearby.push_back(splitsOfAnotherBrokerNearby(aInstruments, aDateGroups, index));
     }
 
-    return joined;
+    std::vector<bool> taken(aDateGroups.size(), false);
+    std::vector<ActionGroup> groups;
+
+    for (std::size_t index = 0; index < aDateGroups.size(); ++index)
+    {
+        if (taken[index])
+        {
+            continue;
+        }
+
+        taken[index] = true;
+
+        const auto next = index + 1;
+        const bool mayBeOneSplit = next < aDateGroups.size() &&
+                                   nearby[index] == std::vector<std::size_t>{next} &&
+                                   nearby[next] == std::vector<std::size_t>{index};
+
+        if (mayBeOneSplit)
+        {
+            auto rows = aDateGroups[index];
+
+            rows.insert(rows.end(), aDateGroups[next].begin(), aDateGroups[next].end());
+
+            if (!hasMerger(aInstruments, rows) && !hasSameBrokerTwice(aInstruments, rows))
+            {
+                taken[next] = true;
+                groups.push_back({.mEvents = std::move(rows), .mAskSameEvent = true});
+                continue;
+            }
+        }
+
+        const bool needsIdentity =
+            !hasMerger(aInstruments, aDateGroups[index]) &&
+            (hasSameBrokerTwice(aInstruments, aDateGroups[index]) || !nearby[index].empty());
+        ActionGroup group{.mEvents = aDateGroups[index], .mNeedsIdentity = needsIdentity};
+
+        if (needsIdentity)
+        {
+            // The dates linked by nearby rows, which may be one action or several.
+            std::vector<std::size_t> cluster{index};
+
+            for (std::size_t at = 0; at < cluster.size(); ++at)
+            {
+                for (const auto other : nearby[cluster[at]])
+                {
+                    if (!taken[other] && !hasMerger(aInstruments, aDateGroups[other]))
+                    {
+                        taken[other] = true;
+                        cluster.push_back(other);
+                    }
+                }
+            }
+
+            std::sort(cluster.begin(), cluster.end());
+            group.mEvents.clear();
+
+            for (const auto member : cluster)
+            {
+                group.mEvents.insert(group.mEvents.end(),
+                                     aDateGroups[member].begin(),
+                                     aDateGroups[member].end());
+            }
+
+            // A merger next to a lone row leaves one row, which has nothing to group.
+            group.mNeedsIdentity = group.mEvents.size() > 1;
+        }
+
+        groups.push_back(std::move(group));
+    }
+
+    return groups;
+}
+
+/// One row of an identity question with the event it was made from.
+struct IdentityRow {
+    CorporateActionIdentityRow mFacts;
+    StatementEventReference mEvent;
+};
+
+/// The rows of an identity question in the order of the question.
+std::vector<IdentityRow> identityRowsOf(const std::vector<TradeInstrument>& aInstruments,
+                                        const std::vector<StatementEventReference>& aEvents) {
+    std::vector<IdentityRow> rows;
+
+    rows.reserve(aEvents.size());
+
+    for (const auto& event : aEvents)
+    {
+        const auto& action = actionOf(aInstruments, event);
+        const auto identity = transactionIdentity(action.mMetadata);
+        IdentityRow row{.mFacts = {.mBroker = brokerOf(action),
+                                   .mDate = action.mMetadata.mTaxDate,
+                                   .mType = action.mType,
+                                   .mBrokerActionId = action.mBrokerActionId},
+                        .mEvent = event};
+
+        if (identity)
+        {
+            row.mFacts.mTransactionId = identity->mTransactionId;
+        }
+
+        // Copies of one record share the value, so the first evidence is enough.
+        if (!action.mUnitEvidence.empty())
+        {
+            row.mFacts.mSourceValue = action.mUnitEvidence.front().mCanonicalValue;
+        }
+
+        rows.push_back(std::move(row));
+    }
+
+    std::stable_sort(rows.begin(),
+                     rows.end(),
+                     [](const IdentityRow& aLeft, const IdentityRow& aRight) {
+                         return aLeft.mFacts.sortKey() < aRight.mFacts.sortKey();
+                     });
+
+    return rows;
+}
+
+/// The actions of an answered identity question, in date order: the rows with the same number
+/// are one action, which starts on its earliest row. Actions that start on the same day have no
+/// known order.
+std::vector<ActionGroup> actionsOfGrouping(const std::vector<IdentityRow>& aRows,
+                                           const CorporateActionGroupingAnswer& aAnswer) {
+    const auto count = *std::max_element(aAnswer.mActionOfRow.begin(), aAnswer.mActionOfRow.end());
+    std::vector<std::vector<std::size_t>> rowsOfAction(count);
+
+    for (std::size_t row = 0; row < aRows.size(); ++row)
+    {
+        rowsOfAction.at(aAnswer.mActionOfRow.at(row) - 1).push_back(row);
+    }
+
+    // The rows are in date order, so the first row of an action gives its place.
+    std::sort(rowsOfAction.begin(), rowsOfAction.end(), [](const auto& aLeft, const auto& aRight) {
+        return aLeft.front() < aRight.front();
+    });
+
+    const auto dateOf = [&aRows, &rowsOfAction](std::size_t aAction) {
+        return aRows[rowsOfAction[aAction].front()].mFacts.mDate;
+    };
+    std::vector<ActionGroup> actions;
+
+    for (std::size_t action = 0; action < rowsOfAction.size(); ++action)
+    {
+        ActionGroup group{};
+
+        for (const auto row : rowsOfAction[action])
+        {
+            group.mEvents.push_back(aRows[row].mEvent);
+        }
+
+        group.mOrderUnknown =
+            (action > 0 && dateOf(action - 1) == dateOf(action)) ||
+            (action + 1 < rowsOfAction.size() && dateOf(action + 1) == dateOf(action));
+        actions.push_back(std::move(group));
+    }
+
+    return actions;
 }
 
 /// The context of a capital-gains diagnostic of the action, with the sources of all its events.
@@ -471,6 +638,7 @@ std::vector<EffectiveDateRange> dateRanges(const std::vector<TradeInstrument>& a
 /// date (or the earlier sale it must come before) and the dates it may have, each with the
 /// position before it.
 DecisionQuestion questionOf(const ResolvedCorporateAction& aAction,
+                            bool aAskSameEvent,
                             std::optional<Units> aPositionBefore,
                             std::optional<Date> aEarlierSaleDate,
                             std::vector<EffectiveDateRange> aDateRanges,
@@ -482,6 +650,7 @@ DecisionQuestion questionOf(const ResolvedCorporateAction& aAction,
         .mPositionBefore = aPositionBefore,
         .mEarlierSaleDate = aEarlierSaleDate,
         .mDateRanges = std::move(aDateRanges),
+        .mAskSameEvent = aAskSameEvent,
     };
 
     for (const auto& event : aAction.mEvents)
@@ -502,7 +671,6 @@ DecisionQuestion questionOf(const ResolvedCorporateAction& aAction,
             facts.mSourceValue = action.mUnitEvidence.front().mCanonicalValue;
         }
 
-        data.mAskSameEvent |= facts.mDate != aAction.mEffectiveDate;
         data.mSources.push_back(std::move(facts));
     }
 
@@ -516,13 +684,68 @@ DecisionQuestion questionOf(const ResolvedCorporateAction& aAction,
     };
 }
 
+/// The identity question of a step whose rows may be one action or several.
+DecisionQuestion identityQuestionOf(const ResolvedCorporateAction& aAction,
+                                    const std::vector<IdentityRow>& aRows,
+                                    const std::vector<TradeInstrument>& aInstruments) {
+    CorporateActionIdentityQuestion data{.mIsin = aAction.mIsin, .mName = aAction.mName};
+
+    for (const auto& row : aRows)
+    {
+        data.mRows.push_back(row.mFacts);
+    }
+
+    return DecisionQuestion{
+        .mType = RequestType::CorporateActionIdentityRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mSources = sourcesOf(aInstruments, aAction),
+        .mTaxDate = aAction.mEffectiveDate,
+        .mIsin = aAction.mIsin,
+        .mData = std::move(data),
+    };
+}
+
+/// Asks the identity question of a step, or, when the question was closed without an answer,
+/// blocks the sales of the ISIN. Returns the index of the open request, if there is one.
+std::optional<std::size_t> askIdentity(ResolvedCorporateAction& aAction,
+                                       DecisionQuestion aQuestion,
+                                       const AnswerValue* aAnswer,
+                                       const std::vector<TradeInstrument>& aInstruments,
+                                       CorporateActionResult& aResult) {
+    // The session accepts only a grouping or a cancel, and a grouping is already applied.
+    if (aAnswer != nullptr)
+    {
+        aAction.mState = CorporateActionState::Cancelled;
+        aResult.mDiagnostics.push_back(
+            actionDiagnostic(ProcessingDiagnosticCode::CorporateActionAmbiguous,
+                             makeDiagnosticMessage(MessageKey::CorporateActionAmbiguousCancelled),
+                             aAction,
+                             aInstruments));
+
+        return std::nullopt;
+    }
+
+    aAction.mState = CorporateActionState::WaitingForIdentity;
+
+    RequestInput request{.mQuestion = std::move(aQuestion)};
+
+    request.mProcessingDiagnostics.push_back(aResult.mDiagnostics.size());
+    aResult.mDiagnostics.push_back(actionDiagnostic(
+        ProcessingDiagnosticCode::CorporateActionAmbiguous,
+        makeDiagnosticMessage(MessageKey::CorporateActionAmbiguousIdentityRequired),
+        aAction,
+        aInstruments));
+    aResult.mRequests.push_back(std::move(request));
+
+    return aResult.mRequests.size() - 1;
+}
+
 /// The checks that every action of an ISIN needs before its ratio can be asked: a merger is
-/// unsupported, and rows that may be one action or several are ambiguous. Returns false after
-/// adding the error.
+/// unsupported, and actions that the user grouped to start on one day have no known order.
+/// Returns false after adding the error.
 bool checkActionRows(ResolvedCorporateAction& aAction,
+                     const ActionGroup& aGroup,
                      const std::vector<TradeInstrument>& aInstruments,
-                     const std::vector<std::vector<StatementEventReference>>& aGroups,
-                     std::size_t aGroup,
                      CorporateActionResult& aResult) {
     if (hasMerger(aInstruments, aAction.mEvents))
     {
@@ -536,26 +759,12 @@ bool checkActionRows(ResolvedCorporateAction& aAction,
         return false;
     }
 
-    if (hasSameBrokerTwice(aInstruments, aAction.mEvents))
+    if (aGroup.mOrderUnknown)
     {
-        aAction.mState = CorporateActionState::SameDayAmbiguous;
-        aResult.mDiagnostics.push_back(
-            actionDiagnostic(ProcessingDiagnosticCode::CorporateActionAmbiguous,
-                             makeDiagnosticMessage(MessageKey::CorporateActionAmbiguousSameDay),
-                             aAction,
-                             aInstruments));
-
-        return false;
-    }
-
-    if (!splitsOfAnotherBrokerNearby(aInstruments, aGroups, aGroup).empty())
-    {
-        aAction.mState = CorporateActionState::DifferentDatesAmbiguous;
+        aAction.mState = CorporateActionState::SameDayOrderAmbiguous;
         aResult.mDiagnostics.push_back(actionDiagnostic(
             ProcessingDiagnosticCode::CorporateActionAmbiguous,
-            makeDiagnosticMessage(
-                MessageKey::CorporateActionAmbiguousDifferentDates,
-                {numberParam("days", static_cast<std::uint64_t>(kDifferentDatesWindowDays))}),
+            makeDiagnosticMessage(MessageKey::CorporateActionAmbiguousSameDayOrder),
             aAction,
             aInstruments));
 
@@ -724,23 +933,29 @@ std::optional<RangeAnchor> rangeAnchor(const ResolvedCorporateAction& aAction,
                        .mShortSale = aPool.mShortSale};
 }
 
+/// What resolving the first action of a pool gave.
+struct FirstActionOutcome {
+    /// The index of its open ratio request, if it has one.
+    std::optional<std::size_t> mOpenRequest;
+    /// The user said that the rows of the question are two actions, not one: the caller makes two
+    /// steps of them and asks again.
+    bool mSeparated{};
+};
+
 /// Resolves the first action a pool stopped at: asks its ratio, or takes a recorded answer.
-/// Returns the index of its open ratio request, if it has one.
-std::optional<std::size_t>
-resolveFirstAction(ResolvedCorporateAction& aAction,
-                   const FifoIsinResult& aPool,
-                   const std::vector<TradeInstrument>& aInstruments,
-                   const ReportingYearLedger& aLedger,
-                   const std::vector<std::vector<StatementEventReference>>& aGroups,
-                   std::size_t aGroup,
-                   NeighbourDates aNeighbours,
-                   RunDecisions& aDecisions,
-                   CorporateActionResult& aResult) {
+FirstActionOutcome resolveFirstAction(ResolvedCorporateAction& aAction,
+                                      const ActionGroup& aGroup,
+                                      const FifoIsinResult& aPool,
+                                      const std::vector<TradeInstrument>& aInstruments,
+                                      const ReportingYearLedger& aLedger,
+                                      NeighbourDates aNeighbours,
+                                      RunDecisions& aDecisions,
+                                      CorporateActionResult& aResult) {
     const auto instrumentIndex = aAction.mEvents.front().mInstrumentIndex.value();
 
-    if (!checkActionRows(aAction, aInstruments, aGroups, aGroup, aResult))
+    if (!checkActionRows(aAction, aGroup, aInstruments, aResult))
     {
-        return std::nullopt;
+        return {};
     }
 
     const auto openUnits = openUnitsOf(aPool);
@@ -751,7 +966,7 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
         aResult.mDiagnostics.push_back(numericDiagnostic(std::get<NumericError>(openUnits),
                                                          actionContext(aAction, aInstruments)));
 
-        return std::nullopt;
+        return {};
     }
 
     const auto foundAnchor =
@@ -763,7 +978,7 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
         aResult.mDiagnostics.push_back(
             numericDiagnostic(NumericError::Overflow, actionContext(aAction, aInstruments)));
 
-        return std::nullopt;
+        return {};
     }
 
     const auto& anchor = *foundAnchor;
@@ -787,12 +1002,13 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
                              aAction,
                              aInstruments));
 
-        return std::nullopt;
+        return {};
     }
 
     const auto positionBefore =
         anchor.mEarlierSaleDate ? std::nullopt : std::optional<Units>{anchor.mPosition};
     auto question = questionOf(aAction,
+                               aGroup.mAskSameEvent,
                                positionBefore,
                                anchor.mEarlierSaleDate,
                                std::move(ranges),
@@ -820,10 +1036,12 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
                              aInstruments));
         aResult.mRequests.push_back(std::move(request));
 
-        return aResult.mRequests.size() - 1;
+        return {.mOpenRequest = aResult.mRequests.size() - 1};
     }
 
-    const auto apply = [&aAction, &aPool, &anchor, &aInstruments, &aResult](const auto& aAnswer) {
+    FirstActionOutcome outcome;
+    const auto apply = [&aAction, &aPool, &anchor, &aInstruments, &aResult, &outcome](
+                           const auto& aAnswer) {
         using Answer = std::decay_t<decltype(aAnswer)>;
 
         if constexpr (std::is_same_v<Answer, SplitRatioAnswer>)
@@ -855,19 +1073,13 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
         }
         else if constexpr (std::is_same_v<Answer, SeparateEventsAnswer>)
         {
-            // Two splits within a few days need the identity question, which does not exist yet.
-            aAction.mState = CorporateActionState::DifferentDatesAmbiguous;
-            aResult.mDiagnostics.push_back(actionDiagnostic(
-                ProcessingDiagnosticCode::CorporateActionAmbiguous,
-                makeDiagnosticMessage(
-                    MessageKey::CorporateActionAmbiguousDifferentDates,
-                    {numberParam("days", static_cast<std::uint64_t>(kDifferentDatesWindowDays))}),
-                aAction,
-                aInstruments));
+            // Two splits a few days apart: the caller asks the first one alone, then the second.
+            outcome.mSeparated = true;
         }
         else
         {
             static_assert(std::is_same_v<Answer, FailureResolutionAnswer> ||
+                          std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
                           std::is_same_v<Answer, NoOtherActivityAnswer> ||
                           std::is_same_v<Answer, OtherActivityAnswer> ||
                           std::is_same_v<Answer, CapitalGainsAnswer> ||
@@ -887,7 +1099,7 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
 
     std::visit(apply, *answer);
 
-    return std::nullopt;
+    return outcome;
 }
 
 /// The applied action of the pool that starts with this action row, if there is one: applied to
@@ -962,6 +1174,89 @@ void markApplied(ResolvedCorporateAction& aAction,
     aResult.mDiagnostics.push_back(std::move(diagnostic));
 }
 
+/// Replaces a step of rows on two dates by two steps, one for each date, which the ratio
+/// questions ask in date order.
+void splitByDate(std::vector<ActionGroup>& aGroups,
+                 std::size_t aPosition,
+                 const std::vector<TradeInstrument>& aInstruments) {
+    const auto firstDate =
+        actionOf(aInstruments, aGroups[aPosition].mEvents.front()).mMetadata.mTaxDate;
+    const auto events = aGroups[aPosition].mEvents;
+    ActionGroup later{};
+
+    aGroups[aPosition].mEvents.clear();
+    aGroups[aPosition].mAskSameEvent = false;
+
+    for (const auto& event : events)
+    {
+        auto& target = actionOf(aInstruments, event).mMetadata.mTaxDate == firstDate
+                           ? aGroups[aPosition].mEvents
+                           : later.mEvents;
+
+        target.push_back(event);
+    }
+
+    aGroups.insert(aGroups.begin() + static_cast<std::ptrdiff_t>(aPosition) + 1, std::move(later));
+}
+
+/// The calendar year of a date.
+int yearOf(Date aDate) {
+    const std::chrono::year_month_day day{std::chrono::sys_days{aDate.time_since_epoch()}};
+
+    return static_cast<int>(day.year());
+}
+
+/// Adds a warning for each calendar year in which the action rows of the ISIN come from more than
+/// one file: the files may describe the same actions differently, and only the announcements
+/// can say. The rows of one file, or the copies of one row from one file, never differ this way.
+void warnAboutSourceMismatch(const FifoIsinResult& aPool,
+                             const std::vector<TradeInstrument>& aInstruments,
+                             const std::vector<std::vector<StatementEventReference>>& aDateGroups,
+                             CorporateActionResult& aResult) {
+    const auto dateOf = [&](std::size_t aGroup) {
+        return actionOf(aInstruments, aDateGroups[aGroup].front()).mMetadata.mTaxDate;
+    };
+    std::size_t group = 0;
+
+    // The date groups are in date order, so the rows of a year are next to each other.
+    while (group < aDateGroups.size())
+    {
+        const auto year = yearOf(dateOf(group));
+        ResolvedCorporateAction rows{.mIsin = aPool.mIsin,
+                                     .mName = aPool.mName,
+                                     .mEffectiveDate = dateOf(group)};
+
+        for (; group < aDateGroups.size() && yearOf(dateOf(group)) == year; ++group)
+        {
+            rows.mEvents.insert(rows.mEvents.end(),
+                                aDateGroups[group].begin(),
+                                aDateGroups[group].end());
+        }
+
+        const auto sources = sourcesOf(aInstruments, rows);
+        const auto fileOf = [](const SourceReference& aSource) {
+            return aSource.mInputSequence.mSourceIndex;
+        };
+        const bool fromSeveralFiles =
+            std::any_of(sources.begin(), sources.end(), [&](const SourceReference& aSource) {
+                return fileOf(aSource) != fileOf(sources.front());
+            });
+
+        if (fromSeveralFiles)
+        {
+            auto diagnostic = actionDiagnostic(
+                ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible,
+                makeDiagnosticMessage(MessageKey::CorporateActionSourcesMismatchPossible,
+                                      {numberParam("year", static_cast<std::uint64_t>(year))}),
+                rows,
+                aInstruments);
+
+            diagnostic.mSeverity = DiagnosticSeverity::Warning;
+            aResult.mDiagnostics.push_back(std::move(diagnostic));
+        }
+    }
+}
+
 } // namespace
 
 CorporateActionResult
@@ -986,21 +1281,60 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
             continue;
         }
 
-        const auto groups =
-            joinOneEventPairs(instruments, actionsByDate(instruments, aLedger, index));
+        const auto dateGroups = actionsByDate(instruments, aLedger, index);
+
+        warnAboutSourceMismatch(pool, instruments, dateGroups, result);
+
+        auto groups = actionGroupsOf(instruments, dateGroups);
         std::optional<std::size_t> openRequest;
         std::optional<Date> previousDate;
         bool reachedFirst = false;
+        std::size_t position = 0;
 
-        for (std::size_t position = 0; position < groups.size(); ++position)
+        while (position < groups.size())
         {
             ResolvedCorporateAction action{
                 .mIsin = pool.mIsin,
                 .mName = pool.mName,
                 .mEffectiveDate =
-                    actionOf(instruments, groups[position].front()).mMetadata.mTaxDate,
-                .mEvents = groups[position],
+                    actionOf(instruments, groups[position].mEvents.front()).mMetadata.mTaxDate,
+                .mEvents = groups[position].mEvents,
             };
+
+            // Rows that may be one action or several wait for the user's grouping, which turns
+            // them into the actions of the user's answer.
+            std::optional<DecisionQuestion> identityQuestion;
+            const AnswerValue* identityAnswer = nullptr;
+
+            if (groups[position].mNeedsIdentity)
+            {
+                const auto rows = identityRowsOf(instruments, groups[position].mEvents);
+
+                identityQuestion = identityQuestionOf(action, rows, instruments);
+                identityAnswer = aDecisions.find(*identityQuestion);
+
+                if (const auto* grouping =
+                        identityAnswer ? std::get_if<CorporateActionGroupingAnswer>(identityAnswer)
+                                       : nullptr)
+                {
+                    auto actions = actionsOfGrouping(rows, *grouping);
+
+                    groups.erase(groups.begin() + static_cast<std::ptrdiff_t>(position));
+                    groups.insert(groups.begin() + static_cast<std::ptrdiff_t>(position),
+                                  actions.begin(),
+                                  actions.end());
+                    std::stable_sort(
+                        groups.begin() + static_cast<std::ptrdiff_t>(position),
+                        groups.end(),
+                        [&instruments](const ActionGroup& aLeft, const ActionGroup& aRight) {
+                            return actionOf(instruments, aLeft.mEvents.front()).mMetadata.mTaxDate <
+                                   actionOf(instruments, aRight.mEvents.front()).mMetadata.mTaxDate;
+                        });
+
+                    continue;
+                }
+            }
+
             const bool reachesNextYear = std::any_of(
                 action.mEvents.begin(),
                 action.mEvents.end(),
@@ -1017,11 +1351,21 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
 
             if (!reachedFirst)
             {
-                if (const auto* applied = appliedActionOf(pool, groups[position].front()))
+                if (const auto* applied = appliedActionOf(pool, groups[position].mEvents.front()))
                 {
+                    // The first of two dates was applied alone: the user said they are two splits.
+                    // Only a step of two dates can be split; a split step is never one again.
+                    if (groups[position].mAskSameEvent &&
+                        applied->mEvents != groups[position].mEvents)
+                    {
+                        splitByDate(groups, position, instruments);
+                        continue;
+                    }
+
                     markApplied(action, *applied, aConfirmedActions, instruments, result);
                     previousDate = applied->mEffectiveDate;
                     result.mActions.push_back(std::move(action));
+                    ++position;
                     continue;
                 }
 
@@ -1042,31 +1386,69 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
                 const Date lastDate = reachesNextYear ? aLedger.mLossWindowEnd : aLedger.mYearEnd;
                 const auto nextRowDate =
                     position + 1 < groups.size()
-                        ? std::optional<Date>{actionOf(instruments, groups[position + 1].front())
+                        ? std::optional<Date>{actionOf(instruments,
+                                                       groups[position + 1].mEvents.front())
                                                   .mMetadata.mTaxDate}
                         : std::nullopt;
                 const auto nextActionDate =
                     nextRowDate && *nextRowDate <= lastDate ? nextRowDate : std::nullopt;
 
                 reachedFirst = true;
-                openRequest = resolveFirstAction(
+
+                if (identityQuestion)
+                {
+                    openRequest = askIdentity(action,
+                                              std::move(*identityQuestion),
+                                              identityAnswer,
+                                              instruments,
+                                              result);
+                    result.mActions.push_back(std::move(action));
+                    ++position;
+                    continue;
+                }
+
+                const auto outcome = resolveFirstAction(
                     action,
+                    groups[position],
                     pool,
                     instruments,
                     aLedger,
-                    groups,
-                    position,
                     {.mPrevious = previousDate, .mNext = nextActionDate, .mLast = lastDate},
                     aDecisions,
                     result);
+
+                // "Not one split" gives the two dates as two steps; the first is asked again.
+                if (outcome.mSeparated)
+                {
+                    splitByDate(groups, position, instruments);
+                    reachedFirst = false;
+                    continue;
+                }
+
+                openRequest = outcome.mOpenRequest;
                 result.mActions.push_back(std::move(action));
+                ++position;
                 continue;
             }
 
-            // One action or several is unknown, or a merger, whatever happens to the earlier one.
-            if (!checkActionRows(action, instruments, groups, position, result))
+            // Whether the rows are one action or several is unknown, or they are a merger,
+            // whatever happens to the earlier action.
+            if (identityQuestion)
+            {
+                askIdentity(action,
+                            std::move(*identityQuestion),
+                            identityAnswer,
+                            instruments,
+                            result);
+                result.mActions.push_back(std::move(action));
+                ++position;
+                continue;
+            }
+
+            if (!checkActionRows(action, groups[position], instruments, result))
             {
                 result.mActions.push_back(std::move(action));
+                ++position;
                 continue;
             }
 
@@ -1089,6 +1471,7 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
                 action,
                 instruments));
             result.mActions.push_back(std::move(action));
+            ++position;
         }
     }
 

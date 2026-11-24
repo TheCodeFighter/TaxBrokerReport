@@ -195,6 +195,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "corporate_action_quantity_rounded";
     case ProcessingDiagnosticCode::CorporateActionApplied:
         return "corporate_action_applied";
+    case ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible:
+        return "corporate_action_sources_mismatch_possible";
     case ProcessingDiagnosticCode::UnsupportedCorporateAction:
         return "unsupported_corporate_action";
     case ProcessingDiagnosticCode::TaxCategoryNotReported:

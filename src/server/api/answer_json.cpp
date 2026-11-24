@@ -132,6 +132,32 @@ Parsed ratioFrom(const Json& aJson) {
     };
 }
 
+/// The answer to an identity question: `{"type": "grouping", "actionOfRow": [1, 1, 2]}`, one
+/// whole number from 1 for each row. The session checks the count and the numbers.
+Parsed groupingFrom(const Json& aJson) {
+    if (!hasExactKeys(aJson, {"type", "actionOfRow"}) || aJson["type"] != "grouping" ||
+        !aJson["actionOfRow"].is_array())
+    {
+        return std::nullopt;
+    }
+
+    CorporateActionGroupingAnswer answer;
+
+    for (const auto& number : aJson["actionOfRow"])
+    {
+        const auto whole = wholeNumberFrom(number);
+
+        if (!whole || *whole < 1)
+        {
+            return std::nullopt;
+        }
+
+        answer.mActionOfRow.push_back(static_cast<std::size_t>(*whole));
+    }
+
+    return answer;
+}
+
 Parsed incomeTreatmentFrom(const Json& aJson) {
     if (aJson.is_object())
     {
@@ -212,6 +238,10 @@ Parsed answerFor(const Json& aJson, const DecisionRequest& aRequest) {
             }
 
             return fromWords(aJson, {{"separate_events", SeparateEventsAnswer{}}});
+        }
+        else if constexpr (std::is_same_v<Data, CorporateActionIdentityQuestion>)
+        {
+            return groupingFrom(aJson);
         }
         else if constexpr (std::is_same_v<Data, TaxClassificationQuestion>)
         {
