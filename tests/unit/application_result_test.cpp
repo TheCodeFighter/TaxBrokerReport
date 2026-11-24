@@ -2599,6 +2599,51 @@ TEST(ApplicationResultRequestTest, ARatioQuestionNeedsASourceAndOpenUnits) {
                  std::invalid_argument);
 }
 
+TEST(ApplicationResultRequestTest, AnIdentityQuestionNeedsAnIsinAndTwoRows) {
+    // One row has nothing to group.
+    ApplicationResultInput oneRow{.mReportingYear = 2024};
+    oneRow.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionIdentityRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionIdentityQuestion{
+                                 .mIsin = "XX0000000001",
+                                 .mName = "Synthetic Share",
+                                 .mRows = {{.mBroker = Broker::TradeRepublic,
+                                            .mTransactionId = "synthetic-split-1",
+                                            .mDate = day(2024, 6, 1),
+                                            .mType = CorporateActionType::UnresolvedSplit}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(oneRow)), std::invalid_argument);
+
+    // Two rows without an ISIN.
+    ApplicationResultInput withoutIsin{.mReportingYear = 2024};
+    withoutIsin.mRequests = {
+        RequestInput{.mQuestion = {
+                         .mType = RequestType::CorporateActionIdentityRequired,
+                         .mAffectedReports = {kCapital},
+                         .mData =
+                             CorporateActionIdentityQuestion{
+                                 .mIsin = "",
+                                 .mName = "Synthetic Share",
+                                 .mRows = {{.mBroker = Broker::TradeRepublic,
+                                            .mTransactionId = "synthetic-split-1",
+                                            .mDate = day(2024, 6, 1),
+                                            .mType = CorporateActionType::UnresolvedSplit},
+                                           {.mBroker = Broker::TradeRepublic,
+                                            .mTransactionId = "synthetic-split-2",
+                                            .mDate = day(2024, 6, 1),
+                                            .mType = CorporateActionType::UnresolvedSplit}},
+                             },
+                     }}};
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutIsin)),
+                 std::invalid_argument);
+}
+
 TEST(ApplicationResultRequestTest, ARatioQuestionNeedsADateRangeAroundItsDate) {
     // The range starts after the row date of 2024-06-01.
     ApplicationResultInput lateStart{.mReportingYear = 2024};
@@ -2812,7 +2857,8 @@ TEST(ApplicationResultRequestTest, ARatioQuestionBeforeASaleNeedsTheSaleDateInst
 }
 
 TEST(ApplicationResultRequestTest, OnlyARatioQuestionWithRowsOnTwoDatesAsksForOneEvent) {
-    // Rows on 2024-06-01 and 2024-06-05 without the question whether they are one event.
+    // Rows on 2024-06-01 and 2024-06-05 without the question whether they are one event: the user
+    // grouped them as one action in an identity question, so this is a valid question.
     ApplicationResultInput twoDates{.mReportingYear = 2024};
     twoDates.mRequests = {
         RequestInput{
@@ -2835,7 +2881,7 @@ TEST(ApplicationResultRequestTest, OnlyARatioQuestionWithRowsOnTwoDatesAsksForOn
                     },
             }}};
 
-    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(twoDates)), std::invalid_argument);
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(std::move(twoDates)));
 
     // One row with the question: there is nothing to tell apart.
     ApplicationResultInput oneDate{.mReportingYear = 2024};

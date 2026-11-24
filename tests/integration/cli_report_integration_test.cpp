@@ -1168,6 +1168,133 @@ TEST(CliReportIntegrationTest, ASplitAnsweredAfterTheSaleOfTheYearGivesTheReport
                          "              <F9>30.0000</F9>\n"));
 }
 
+TEST(CliReportIntegrationTest, TwoSplitRowsOnOneDayAreGroupedAsOneActionInTheTerminal) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,10,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2024-06-01T09:00:00Z,2024-06-01,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,10,,,,,,,,,,synthetic-split-2,,,,)",
+            R"(2024-09-01T09:00:00Z,2024-09-01,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-20,6,120,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    // The rows 1 and 2 are one action; the ratio 2 : 1, an empty line for the broker's date, and
+    // yes to the preview: 10 units become 20.
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history},
+                            "1 1\n2 : 1\n\nyes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut,
+                         "  1. 2024-06-01, Trade Republic, unresolved split (direction not known), "
+                         "transaction synthetic-split-1, shares 10 (the broker's own value, not a "
+                         "ratio)\n"
+                         "  2. 2024-06-01, Trade Republic, unresolved split (direction not known), "
+                         "transaction synthetic-split-2, shares 10 (the broker's own value, not a "
+                         "ratio)\n"));
+    EXPECT_TRUE(
+        contains(result.mOut, "After it you hold 20.0000 units (2 : 1 from 2024-06-01).\n"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml\n"));
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+
+    // One sale row of 20 units at EUR 6 (EUR 120); the 10 units bought for EUR 100 are 20 units
+    // after the split, EUR 5 each.
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml,
+                         "<Sale>\n"
+                         "              <F6>2024-09-01</F6>\n"
+                         "              <F7>20.0000</F7>\n"
+                         "              <F9>6.0000</F9>\n"));
+}
+
+TEST(CliReportIntegrationTest, OneSplitBookedByTwoBrokersOnTwoDatesIsAppliedOnceToTheWholePool) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // Trade Republic: 10 units bought for EUR 500, its split row on 2024-06-10 and the sale of 30
+    // units for EUR 900.
+    const auto trHistory = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,50,-500,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-06-10T09:00:00Z,2024-06-10,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,10,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2024-09-16T09:00:00Z,2024-09-16,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-30,30,900,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+    // Interactive Brokers: 5 units bought for EUR 250 and its row of the same split two days later.
+    const auto ibkrFile = folder.writeText("ibkr.xml",
+                                           R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="synthetic-ibkr-buy-1" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Share" isin="XX0000000001" currency="EUR" tradeDate="20240111" dateTime="20240111;040000" buySell="BUY" quantity="5" tradePrice="50" proceeds="-250" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions>
+        <CorporateAction accountId="U0000000" transactionID="synthetic-ibkr-split-1" actionID="S1" type="FS" assetCategory="STK" description="Synthetic Share" isin="XX0000000001" currency="EUR" dateTime="20240612;202500" reportDate="20240612" quantity="5" proceeds="0" value="0"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml");
+
+    // The two rows are one split (yes), 2 : 1 from the first row's date, and yes to the preview:
+    // 10 + 5 units become 30.
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             trHistory,
+                             "--ibkr",
+                             ibkrFile},
+                            "yes\n2 : 1\n\nyes\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut, "Trade Republic"));
+    EXPECT_TRUE(contains(result.mOut, "Interactive Brokers"));
+    EXPECT_TRUE(
+        contains(result.mOut, "After it you hold 30.0000 units (2 : 1 from 2024-06-10).\n"));
+    EXPECT_TRUE(contains(result.mOut, "corporate-action rows from more than one file in 2024"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "Capital gains (Doh-KDVP): generated, written to Doh-KDVP_2024.xml\n"));
+    ASSERT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+
+    // One sale of 30 units at EUR 30. The purchases are listed in the units after the split:
+    // 10 units for EUR 500 are 20 units at EUR 25, and 5 units for EUR 250 are 10 units at EUR 25.
+    const auto xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml,
+                         "<Sale>\n"
+                         "              <F6>2024-09-16</F6>\n"
+                         "              <F7>30.0000</F7>\n"
+                         "              <F9>30.0000</F9>\n"));
+    EXPECT_TRUE(contains(xml,
+                         "<Purchase>\n"
+                         "              <F1>2024-01-10</F1>\n"
+                         "              <F2>B</F2>\n"
+                         "              <F3>20.0000</F3>\n"
+                         "              <F4>25.0000</F4>\n"));
+    EXPECT_TRUE(contains(xml,
+                         "<Purchase>\n"
+                         "              <F1>2024-01-11</F1>\n"
+                         "              <F2>B</F2>\n"
+                         "              <F3>10.0000</F3>\n"
+                         "              <F4>25.0000</F4>\n"));
+}
+
 TEST(CliReportIntegrationTest, ADateWithoutUnitsIsRejectedAndAskedAgain) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -2804,13 +2931,14 @@ TEST(CliReportIntegrationTest, ACancelledRatioQuestionBlocksTheReport) {
                             "Cancel\n");
 
     EXPECT_EQ(result.mExitCode, kExitBlocked);
-    EXPECT_TRUE(contains(result.mOut,
-                         "Doh-KDVP errors: 1\n"
-                         "  diagnostic-0001 corporate_action_ambiguous, XX0000000001 Synthetic "
-                         "Share, 2023-01-15, history.csv row 3\n"
-                         "    The question about the ratio of this corporate action was closed "
-                         "without an answer, so the sales of this investment cannot be reported. "
-                         "No Doh-KDVP file was written.\n"));
+    EXPECT_TRUE(
+        contains(result.mOut,
+                 "Doh-KDVP errors: 1\n"
+                 "  diagnostic-0001 corporate_action_ambiguous, XX0000000001 Synthetic "
+                 "Share, 2023-01-15, history.csv row 3\n"
+                 "    The question about the corporate action of this investment was "
+                 "closed without an answer, so the sales of this investment cannot be reported. "
+                 "No Doh-KDVP file was written.\n"));
     EXPECT_TRUE(
         contains(result.mOut,
                  "Open questions: 1\n"

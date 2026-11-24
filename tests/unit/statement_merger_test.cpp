@@ -2994,6 +2994,103 @@ TEST(DeterministicStatementMergerTest, DoesNotUseTransactionIdsForCorporateActio
     EXPECT_EQ(findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
 }
 
+TEST(DeterministicStatementMergerTest, ActionCopiesWithTheSameBrokerActionIdMergeIntoOneEvent) {
+    // The same row of Interactive Brokers in two files, both with the action ID S1.
+    StatementMergeInput first{.mSourceIndex = 0};
+    first.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(0,
+                                      0,
+                                      makeDate(2024, 6, 1),
+                                      Broker::InteractiveBrokers,
+                                      "first.xml",
+                                      std::nullopt,
+                                      "action-1"),
+            .mType = CorporateActionType::UnresolvedSplit,
+            .mUnitsDelta = UNITS_SCALE,
+            .mBrokerActionId = "S1",
+        }},
+    });
+    StatementMergeInput second{.mSourceIndex = 1};
+    second.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(1,
+                                      0,
+                                      makeDate(2024, 6, 1),
+                                      Broker::InteractiveBrokers,
+                                      "second.xml",
+                                      std::nullopt,
+                                      "action-1"),
+            .mType = CorporateActionType::UnresolvedSplit,
+            .mUnitsDelta = UNITS_SCALE,
+            .mBrokerActionId = "S1",
+        }},
+    });
+
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{first, second});
+
+    EXPECT_EQ(findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
+
+    const auto& actions =
+        result.mStatement.mPresentation.mTradeInstruments.front().mCorporateActions;
+
+    ASSERT_EQ(actions.size(), 1U);
+    EXPECT_EQ(actions.front().mBrokerActionId, "S1");
+    EXPECT_EQ(actions.front().mMetadata.mSources.size(), 2U);
+}
+
+TEST(DeterministicStatementMergerTest, ActionCopiesWithDifferentBrokerActionIdsConflict) {
+    // The same broker and transaction ID in two files, with the action IDs S1 and S2.
+    StatementMergeInput first{.mSourceIndex = 0};
+    first.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(0,
+                                      0,
+                                      makeDate(2024, 6, 1),
+                                      Broker::InteractiveBrokers,
+                                      "first.xml",
+                                      std::nullopt,
+                                      "action-1"),
+            .mType = CorporateActionType::UnresolvedSplit,
+            .mUnitsDelta = UNITS_SCALE,
+            .mBrokerActionId = "S1",
+        }},
+    });
+    StatementMergeInput second{.mSourceIndex = 1};
+    second.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mCorporateActions = {CorporateAction{
+            .mMetadata = makeMetadata(1,
+                                      0,
+                                      makeDate(2024, 6, 1),
+                                      Broker::InteractiveBrokers,
+                                      "second.xml",
+                                      std::nullopt,
+                                      "action-1"),
+            .mType = CorporateActionType::UnresolvedSplit,
+            .mUnitsDelta = UNITS_SCALE,
+            .mBrokerActionId = "S2",
+        }},
+    });
+
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{first, second});
+
+    EXPECT_NE(findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
+}
+
 TEST(DeterministicStatementMergerTest, MergesDividendsAndPreservesNameConflictProvenance) {
     StatementMergeInput later{.mSourceIndex = 1};
     later.mParseResult.mStatement.mDividendInstruments.push_back(DividendInstrument{

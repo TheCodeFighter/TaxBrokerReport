@@ -70,6 +70,31 @@ TEST(AnswerJsonTest, RatioQuestionReadsSeparateEventsAndCancel) {
     EXPECT_EQ(fit(R"("cancel")", kRatioRequest), AnswerValue{CancelAnswer{}});
 }
 
+TEST(AnswerJsonTest, IdentityQuestionReadsAGroupingAndCancel) {
+    const auto request =
+        requestOf(RequestType::CorporateActionIdentityRequired, CorporateActionIdentityQuestion{});
+
+    EXPECT_EQ(fit(R"({"type":"grouping","actionOfRow":[1,1,2]})", request),
+              (AnswerValue{CorporateActionGroupingAnswer{.mActionOfRow = {1, 1, 2}}}));
+    EXPECT_EQ(fit(R"("cancel")", request), AnswerValue{CancelAnswer{}});
+}
+
+TEST(AnswerJsonTest, IdentityGroupingWithBadNumbersOrKeysIsRefused) {
+    const auto request =
+        requestOf(RequestType::CorporateActionIdentityRequired, CorporateActionIdentityQuestion{});
+
+    EXPECT_EQ(fit(R"({"type":"grouping","actionOfRow":[0,1]})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"type":"grouping","actionOfRow":["1","1"]})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"type":"grouping","actionOfRow":[-1,1]})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"type":"grouping","actionOfRow":[1.5,1]})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"type":"grouping","actionOfRow":"1 1"})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"type":"other","actionOfRow":[1,1]})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"actionOfRow":[1,1]})", request), std::nullopt);
+    EXPECT_EQ(fit(R"("grouping")", request), std::nullopt);
+    // A ratio is not an answer to an identity question.
+    EXPECT_EQ(fit(R"("separate_events")", request), std::nullopt);
+}
+
 TEST(AnswerJsonTest, RatioUnitsWithFewerDecimalsAreAccepted) {
     const auto answer = fit(R"({"newShares":2,"oldShares":1,"effectiveDate":"2024-06-01",
                                 "confirmedUnits":"6"})",

@@ -995,6 +995,19 @@ TEST(ApplicationResultJsonTest, WritesEveryRequestTypeWithItsDateAndIsin) {
                     .mTaxDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 11 / 30}
                                          .time_since_epoch()},
                     .mIsin = "XX0000000001",
+                    .mData =
+                        CorporateActionIdentityQuestion{
+                            .mIsin = "XX0000000001",
+                            .mName = "Synthetic Share",
+                            .mRows = {{.mBroker = Broker::TradeRepublic,
+                                       .mTransactionId = "synthetic-split-1",
+                                       .mDate = day("2024-11-30"),
+                                       .mType = CorporateActionType::UnresolvedSplit},
+                                      {.mBroker = Broker::TradeRepublic,
+                                       .mTransactionId = "synthetic-split-2",
+                                       .mDate = day("2024-11-30"),
+                                       .mType = CorporateActionType::UnresolvedSplit}},
+                        },
                 },
         },
         RequestInput{
@@ -1170,6 +1183,13 @@ TEST(ApplicationResultJsonTest, TheCodesOfAppliedCorporateActionsHaveTheirDocume
     EXPECT_EQ(api::diagnosticCodeName(rounded), "corporate_action_quantity_rounded");
     EXPECT_EQ(api::diagnosticCodeName(applied), "corporate_action_applied");
     EXPECT_EQ(api::diagnosticCodeName(unsupported), "unsupported_corporate_action");
+}
+
+TEST(ApplicationResultJsonTest, TheMismatchWarningHasItsDocumentedName) {
+    const ApplicationDiagnosticCode mismatch =
+        ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible;
+
+    EXPECT_EQ(api::diagnosticCodeName(mismatch), "corporate_action_sources_mismatch_possible");
 }
 
 TEST(ApplicationResultJsonTest, ARecordedAnswerIsListedWithoutSources) {
@@ -1463,6 +1483,121 @@ TEST(ApplicationResultJsonTest, RowsOnTwoDatesAnsweredAsTwoSplitsAreListedWithTh
     EXPECT_EQ(decision.at("ratioCheck").at("askSameEvent"), true);
     EXPECT_EQ(decision.at("ratioCheck").at("sources").at(0).at("date"), "2024-06-01");
     EXPECT_EQ(decision.at("ratioCheck").at("sources").at(1).at("date"), "2024-06-05");
+}
+
+TEST(ApplicationResultJsonTest, AnIdentityRequestListsItsRowsInTheOrderOfTheAnswer) {
+    // Two rows of Trade Republic and one of Interactive Brokers; listed out of order, the request
+    // sorts them by date, broker and transaction ID.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CorporateActionIdentityRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-11-10"),
+                .mIsin = "XX0000000001",
+                .mData =
+                    CorporateActionIdentityQuestion{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mRows = {{.mBroker = Broker::InteractiveBrokers,
+                                   .mTransactionId = "synthetic-ibkr-split-1",
+                                   .mDate = day("2024-11-14"),
+                                   .mType = CorporateActionType::Split,
+                                   .mBrokerActionId = "S1"},
+                                  {.mBroker = Broker::TradeRepublic,
+                                   .mTransactionId = "synthetic-split-1",
+                                   .mDate = day("2024-11-10"),
+                                   .mType = CorporateActionType::UnresolvedSplit,
+                                   .mSourceValue = "3"}},
+                    },
+            },
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& check = json.at("requests").at(0).at("identityCheck");
+
+    EXPECT_EQ(json.at("requests").at(0).at("type"), "corporate_action_identity_required");
+    EXPECT_EQ(check.at("name"), "Synthetic Share");
+    EXPECT_EQ(check.at("isin"), "XX0000000001");
+    ASSERT_EQ(check.at("rows").size(), 2U);
+    EXPECT_EQ(check.at("rows").at(0),
+              (nlohmann::json{{"broker", "trade_republic"},
+                              {"date", "2024-11-10"},
+                              {"type", "unresolved_split"},
+                              {"transactionId", "synthetic-split-1"},
+                              {"sourceValue", "3"}}));
+    EXPECT_EQ(check.at("rows").at(1),
+              (nlohmann::json{{"broker", "interactive_brokers"},
+                              {"date", "2024-11-14"},
+                              {"type", "split"},
+                              {"transactionId", "synthetic-ibkr-split-1"},
+                              {"brokerActionId", "S1"}}));
+}
+
+TEST(ApplicationResultJsonTest, AnIdentityRequestNamesEveryRowType) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CorporateActionIdentityRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-11-10"),
+                .mIsin = "XX0000000001",
+                .mData =
+                    CorporateActionIdentityQuestion{
+                        .mIsin = "XX0000000001",
+                        .mName = "Synthetic Share",
+                        .mRows = {{.mBroker = Broker::TradeRepublic,
+                                   .mTransactionId = "synthetic-split-1",
+                                   .mDate = day("2024-11-10"),
+                                   .mType = CorporateActionType::ReverseSplit},
+                                  {.mBroker = Broker::TradeRepublic,
+                                   .mTransactionId = "synthetic-split-2",
+                                   .mDate = day("2024-11-11"),
+                                   .mType = CorporateActionType::Merger}},
+                    },
+            },
+    }};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& rows = json.at("requests").at(0).at("identityCheck").at("rows");
+
+    ASSERT_EQ(rows.size(), 2U);
+    EXPECT_EQ(rows.at(0).at("type"), "reverse_split");
+    EXPECT_EQ(rows.at(1).at("type"), "merger");
+}
+
+TEST(ApplicationResultJsonTest, AGroupingAnswerIsListedWithItsRows) {
+    auto result = ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    result.mDecisions = {
+        RecordedDecision{
+            .mId = "decision-0001",
+            .mType = RequestType::CorporateActionIdentityRequired,
+            .mData =
+                CorporateActionIdentityQuestion{
+                    .mIsin = "XX0000000001",
+                    .mName = "Synthetic Share",
+                    .mRows = {{.mBroker = Broker::TradeRepublic,
+                               .mTransactionId = "synthetic-split-1",
+                               .mDate = day("2024-11-10"),
+                               .mType = CorporateActionType::UnresolvedSplit},
+                              {.mBroker = Broker::TradeRepublic,
+                               .mTransactionId = "synthetic-split-2",
+                               .mDate = day("2024-11-10"),
+                               .mType = CorporateActionType::UnresolvedSplit}},
+                },
+            .mAnswer = CorporateActionGroupingAnswer{.mActionOfRow = {1, 2}},
+        },
+    };
+
+    const auto json = nlohmann::json::parse(api::serializeApplicationResultJson(result));
+    const auto& decision = json.at("decisions").at(0);
+
+    EXPECT_EQ(decision.at("answer"),
+              (nlohmann::json{{"type", "grouping"}, {"actionOfRow", {1, 2}}}));
+    EXPECT_EQ(decision.at("identityCheck").at("rows").size(), 2U);
 }
 
 TEST(ApplicationResultJsonTest, ALossRequestHasItsOptionsAndItsSales) {

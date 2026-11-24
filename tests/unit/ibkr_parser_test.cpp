@@ -556,6 +556,7 @@ TEST(IbkrParserSupportedTest, ForwardSplitIsAnUnresolvedSplit3001And5002) {
     ASSERT_NE(first, nullptr);
     ASSERT_NE(second, nullptr);
 
+    EXPECT_EQ(first->mBrokerActionId, "S9001"); // the broker's ID, shared by both accounts
     EXPECT_EQ(first->mType, CorporateActionType::UnresolvedSplit);
     EXPECT_FALSE(first->mRatio.has_value());      // "SPLIT 4 FOR 1" is evidence, never the ratio
     EXPECT_EQ(first->mUnitsDelta, 2'850'000'000); // quantity 28.5
@@ -565,6 +566,7 @@ TEST(IbkrParserSupportedTest, ForwardSplitIsAnUnresolvedSplit3001And5002) {
     EXPECT_EQ(first->mUnitEvidence.front().mSourceText, "28.5");
     EXPECT_TRUE(first->mInstrumentEvidence.empty()); // a corporate action row gives no class
 
+    EXPECT_EQ(second->mBrokerActionId, "S9001"); // the same action as 3001, in another account
     EXPECT_EQ(second->mType, CorporateActionType::UnresolvedSplit);
     EXPECT_EQ(second->mUnitsDelta, 600'000'000); // quantity 6
     EXPECT_EQ(second->mMetadata.mTaxDate, date(2024, 8, 1));
@@ -583,6 +585,7 @@ TEST(IbkrParserSupportedTest, ReverseSplitIsAnUnresolvedSplit3004) {
     EXPECT_EQ(action->mMetadata.mTaxDate, date(2024, 10, 14));
     EXPECT_EQ(action->mMetadata.mSourceTimestamp, utc(2024, 10, 15, 0, 25, 0)); // 20:25 EDT
     EXPECT_EQ(action->mUnitEvidence.front().mSourceText, "-3");
+    EXPECT_EQ(action->mBrokerActionId, "S9002");
 }
 
 TEST(IbkrParserSupportedTest, SplitOfAnEtfKeepsTheFundClassOfItsTrades) {

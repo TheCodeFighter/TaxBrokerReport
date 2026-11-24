@@ -171,7 +171,9 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "corporate_action_ambiguous.ratio_required",
          {}},
         {MessageKey::CorporateActionAmbiguousCancelled, "corporate_action_ambiguous.cancelled", {}},
-        {MessageKey::CorporateActionAmbiguousSameDay, "corporate_action_ambiguous.same_day", {}},
+        {MessageKey::CorporateActionAmbiguousIdentityRequired,
+         "corporate_action_ambiguous.identity_required",
+         {}},
         {MessageKey::CorporateActionNotAppliedWaitingForEarlierAction,
          "corporate_action_not_applied.waiting_for_earlier_action",
          {{"earlierDate", MessageParamKind::Text}}},
@@ -208,9 +210,9 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          "corporate_action_unrepresentable.unit_value",
          {}},
         {MessageKey::CorporateActionMissingPosition, "corporate_action_missing_position", {}},
-        {MessageKey::CorporateActionAmbiguousDifferentDates,
-         "corporate_action_ambiguous.different_dates",
-         {{"days", MessageParamKind::Number}}},
+        {MessageKey::CorporateActionAmbiguousSameDayOrder,
+         "corporate_action_ambiguous.same_day_order",
+         {}},
         {MessageKey::UnsupportedCorporateActionMerger, "unsupported_corporate_action.merger", {}},
         {MessageKey::CorporateActionAmbiguousRatioRequiredBeforeSale,
          "corporate_action_ambiguous.ratio_required_before_sale",
@@ -294,6 +296,15 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::AnswerRejectedCorrectionOverBudget,
          "answer_rejected.correction_over_budget",
          {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedGroupingIncomplete,
+         "answer_rejected.grouping_incomplete",
+         {{"requestId", MessageParamKind::Text}}},
+        {MessageKey::AnswerRejectedGroupingWindow,
+         "answer_rejected.grouping_window",
+         {{"requestId", MessageParamKind::Text}, {"days", MessageParamKind::Number}}},
+        {MessageKey::CorporateActionSourcesMismatchPossible,
+         "corporate_action_sources_mismatch_possible",
+         {{"year", MessageParamKind::Number}}},
         {MessageKey::ReferenceFileUnknownName,
          "reference_file.unknown_name",
          {{"name", MessageParamKind::Text}}},
@@ -474,8 +485,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 171U);
-    ASSERT_EQ(expectedMessages().size(), 171U);
+    ASSERT_EQ(definitions.size(), 174U);
+    ASSERT_EQ(expectedMessages().size(), 174U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -509,8 +520,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 171U);
-    EXPECT_EQ(keys.size(), 171U);
+    EXPECT_EQ(ids.size(), 174U);
+    EXPECT_EQ(keys.size(), 174U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -535,7 +546,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 182U); // 171 message keys and 11 terms.
+    ASSERT_EQ(table.size(), 185U); // 174 message keys and 11 terms.
 
     std::set<std::string> tableKeys;
 
