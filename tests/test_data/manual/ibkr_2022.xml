@@ -1,0 +1,16 @@
+<FlexQueryResponse queryName="Manual test 2022" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20220101" toDate="20221231" period="" whenGenerated="20230301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="m22-001" tradeID="m22-001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="MUS" description="Synthetic US Share" isin="XX0000000115" currency="USD" tradeDate="20220215" dateTime="20220215;100000" buySell="BUY" quantity="10" tradePrice="100" proceeds="-1000" ibCommission="-1" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" transactionID="m22-101" actionID="M22A" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="MUS" description="MUS CASH DIVIDEND USD 2.00 PER SHARE" isin="XX0000000115" currency="USD" dateTime="20220310" settleDate="20220310" reportDate="20220310" amount="20" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="m22-102" actionID="M22A" levelOfDetail="DETAIL" type="Withholding Tax" assetCategory="STK" symbol="MUS" description="MUS CASH DIVIDEND USD 2.00 PER SHARE - US TAX" isin="XX0000000115" currency="USD" dateTime="20220310" settleDate="20220310" reportDate="20220310" amount="-3" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="m22-103" actionID="" levelOfDetail="DETAIL" type="Broker Interest Received" assetCategory="CASH" symbol="" description="USD CREDIT INT FOR MAR-2022" isin="" currency="USD" dateTime="20220404" settleDate="20220404" reportDate="20220404" amount="5" issuerCountryCode=""/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

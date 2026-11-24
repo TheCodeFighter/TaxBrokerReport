@@ -407,6 +407,166 @@ TEST(ApplicationRunIntegrationTest, AnInteractiveBrokersFileThatIsNotXmlFailsThe
     EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
 }
 
+// An Interactive Brokers file with only a sale of 5 units of XX0000000003 that was never bought.
+constexpr std::string_view kIbkrSaleWithoutPurchase =
+    R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="synthetic-ib-sale" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Third Share" isin="XX0000000003" currency="EUR" tradeDate="20240402" dateTime="20240402;040000" buySell="SELL" quantity="-5" tradePrice="10" proceeds="50" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml";
+
+/// The diagnostics of one code (of any of the three stage enums), in the order of the result.
+template <typename Code>
+std::vector<const ApplicationDiagnostic*> diagnosticsOf(const ApplicationResult& aResult,
+                                                        const Code aCode) {
+    std::vector<const ApplicationDiagnostic*> found;
+
+    for (const auto& diagnostic : aResult.mDiagnostics)
+    {
+        const auto* code = std::get_if<Code>(&diagnostic.mCode);
+
+        if (code != nullptr && *code == aCode)
+        {
+            found.push_back(&diagnostic);
+        }
+    }
+
+    return found;
+}
+
+TEST(ApplicationRunIntegrationTest, TwoBrokersWithTheSameFileNameKeepTheirSourceIds) {
+    // Both files are called export.xml. File 0 is read by the Trade Republic parser (a sale of
+    // XX0000000002 that was never bought), file 1 by the Interactive Brokers parser (a sale of
+    // XX0000000003 that was never bought). The file name never picks the parser.
+    auto request = requestWithRows({kSellWithoutPurchase});
+
+    request.mBrokerFiles[0].mFile.mName = "export.xml";
+    request.mBrokerFiles.push_back(
+        {.mBroker = Broker::InteractiveBrokers,
+         .mFile = {.mName = "export.xml", .mContent = std::string{kIbkrSaleWithoutPurchase}}});
+
+    auto run = startRun(std::move(request));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+    const auto incomplete = diagnosticsOf(result, ProcessingDiagnosticCode::IncompleteHistory);
+
+    EXPECT_TRUE(diagnosticsOf(result, MergeDiagnosticCode::ConflictingDuplicate).empty());
+
+    ASSERT_EQ(incomplete.size(), 2U);
+
+    ASSERT_EQ(incomplete[0]->mSources.size(), 1U);
+    EXPECT_EQ(incomplete[0]->mIsin, "XX0000000002");
+    EXPECT_EQ(incomplete[0]->mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(incomplete[0]->mSources[0].mSourceIndex, 0U);
+
+    ASSERT_EQ(incomplete[1]->mSources.size(), 1U);
+    EXPECT_EQ(incomplete[1]->mIsin, "XX0000000003");
+    EXPECT_EQ(incomplete[1]->mSources[0].mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(incomplete[1]->mSources[0].mSourceIndex, 1U);
+
+    // The JSON names the files source-0001 and source-0002 in request order.
+    const auto json = api::serializeApplicationResultJson(result);
+
+    EXPECT_NE(json.find("\"source-0001\""), std::string::npos);
+    EXPECT_NE(json.find("\"source-0002\""), std::string::npos);
+}
+
+TEST(ApplicationRunIntegrationTest, TheRequestOrderNotTheParserDecidesTheSourceIds) {
+    // The same two files as above, the Interactive Brokers file first: it is source index 0.
+    auto request = requestWithRows({kSellWithoutPurchase});
+
+    request.mBrokerFiles.insert(
+        request.mBrokerFiles.begin(),
+        BrokerInputFile{
+            .mBroker = Broker::InteractiveBrokers,
+            .mFile = {.mName = "export.xml", .mContent = std::string{kIbkrSaleWithoutPurchase}}});
+
+    auto run = startRun(std::move(request));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto incomplete =
+        diagnosticsOf(run->result(), ProcessingDiagnosticCode::IncompleteHistory);
+
+    ASSERT_EQ(incomplete.size(), 2U);
+
+    // The diagnostics follow the source order: file 0 (Interactive Brokers, XX0000000003) first.
+    ASSERT_EQ(incomplete[0]->mSources.size(), 1U);
+    EXPECT_EQ(incomplete[0]->mIsin, "XX0000000003");
+    EXPECT_EQ(incomplete[0]->mSources[0].mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(incomplete[0]->mSources[0].mSourceIndex, 0U);
+
+    ASSERT_EQ(incomplete[1]->mSources.size(), 1U);
+    EXPECT_EQ(incomplete[1]->mIsin, "XX0000000002");
+    EXPECT_EQ(incomplete[1]->mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(incomplete[1]->mSources[0].mSourceIndex, 1U);
+}
+
+TEST(ApplicationRunIntegrationTest, ATradeRepublicFileUnderInteractiveBrokersFailsWithItsSourceId) {
+    // File 0 is a valid Interactive Brokers file; file 1 is a Trade Republic CSV given as an
+    // Interactive Brokers file. Only file 1 gets the error.
+    auto request = requestWithInteractiveBrokersXml(std::string{kIbkrSaleWithoutPurchase});
+
+    request.mBrokerFiles.push_back(
+        {.mBroker = Broker::InteractiveBrokers,
+         .mFile = {.mName = "export.csv",
+                   .mContent = std::string{kTradeRepublicHeader} + std::string{kBuy1} + "\n"}});
+
+    auto run = startRun(std::move(request));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+    const auto wrongFile = diagnosticsOf(result, DiagnosticCode::InvalidHeader);
+
+    ASSERT_EQ(wrongFile.size(), 1U);
+
+    EXPECT_EQ(wrongFile[0]->mMessageKey, MessageKey::InvalidHeaderFlexQueryXmlRequired);
+
+    ASSERT_EQ(wrongFile[0]->mSources.size(), 1U);
+    EXPECT_EQ(wrongFile[0]->mSources[0].mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(wrongFile[0]->mSources[0].mSourceIndex, 1U);
+    EXPECT_FALSE(wrongFile[0]->mSources[0].mRow.has_value());
+
+    // The rows of file 0 are still read: its sale without a purchase is reported.
+    EXPECT_EQ(diagnosticsOf(result, ProcessingDiagnosticCode::IncompleteHistory).size(), 1U);
+}
+
+TEST(ApplicationRunIntegrationTest,
+     AnInteractiveBrokersFileUnderTradeRepublicFailsWithItsSourceId) {
+    // File 0 is a valid Trade Republic file; file 1 is a Flex Query XML given as a Trade Republic
+    // file. Only file 1 gets the error.
+    auto request = requestWithRows({kSellWithoutPurchase});
+
+    request.mBrokerFiles.push_back(
+        {.mBroker = Broker::TradeRepublic,
+         .mFile = {.mName = "flex.xml", .mContent = std::string{kIbkrSaleWithoutPurchase}}});
+
+    auto run = startRun(std::move(request));
+
+    ASSERT_TRUE(run.has_value());
+
+    const auto& result = run->result();
+    const auto wrongFile = diagnosticsOf(result, DiagnosticCode::InvalidHeader);
+
+    ASSERT_EQ(wrongFile.size(), 1U);
+
+    ASSERT_EQ(wrongFile[0]->mSources.size(), 1U);
+    EXPECT_EQ(wrongFile[0]->mSources[0].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(wrongFile[0]->mSources[0].mSourceIndex, 1U);
+    EXPECT_FALSE(wrongFile[0]->mSources[0].mRow.has_value());
+
+    EXPECT_EQ(diagnosticsOf(result, ProcessingDiagnosticCode::IncompleteHistory).size(), 1U);
+}
+
 TEST(ApplicationRunIntegrationTest, ABadSuppliedRateFileIsAFault) {
     auto request = requestWithRows({kBuy1});
 

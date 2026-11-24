@@ -1,0 +1,16 @@
+<FlexQueryResponse queryName="Manual test 2023" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20230101" toDate="20231231" period="" whenGenerated="20240301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="m23-001" tradeID="m23-001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="BOND" subCategory="CORP" symbol="MBOND" description="Synthetic IB Bond 2025" isin="XS0000000203" currency="USD" tradeDate="20230201" dateTime="20230201;050000" buySell="BUY" quantity="1000" tradePrice="98" proceeds="-980" ibCommission="-2" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="0.01"/>
+      </Trades>
+      <CorporateActions/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" transactionID="m23-101" actionID="" levelOfDetail="DETAIL" type="Bond Interest Paid" assetCategory="BOND" symbol="MBOND" description="MBOND 2025 ACCRUED INTEREST" isin="XS0000000203" currency="USD" dateTime="20230201" settleDate="20230201" reportDate="20230201" amount="-5" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="m23-102" actionID="" levelOfDetail="DETAIL" type="Bond Interest Received" assetCategory="BOND" symbol="MBOND" description="MBOND 2025 COUPON" isin="XS0000000203" currency="USD" dateTime="20230615" settleDate="20230615" reportDate="20230615" amount="30" issuerCountryCode="US"/>
+        <CashTransaction accountId="U0000000" transactionID="m23-103" actionID="M23A" levelOfDetail="DETAIL" type="Payment In Lieu Of Dividends" assetCategory="STK" symbol="MUS" description="MUS PAYMENT IN LIEU OF DIVIDEND" isin="XX0000000115" currency="USD" dateTime="20230614" settleDate="20230614" reportDate="20230614" amount="2" issuerCountryCode="US"/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

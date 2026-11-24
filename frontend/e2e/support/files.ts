@@ -15,7 +15,9 @@ export interface UploadFile {
 export async function manualFile(name: string): Promise<UploadFile> {
   const path = resolve(process.cwd(), "../tests/test_data/manual", name);
 
-  return { name, mimeType: "text/csv", buffer: await readFile(path) };
+  const mimeType = name.endsWith(".xml") ? "application/xml" : "text/csv";
+
+  return { name, mimeType, buffer: await readFile(path) };
 }
 
 /** A small CSV written inside the test. */
@@ -101,6 +103,14 @@ export async function tradeRepublicFileOfSize(name: string, bytes: number): Prom
 /** Puts the files (contents or paths on disk) into the first file input, the Trade Republic area. */
 export async function chooseBrokerFiles(page: Page, files: UploadFile[] | string[]): Promise<void> {
   await page.locator('input[type="file"]').first().setInputFiles(files);
+}
+
+/** Puts the files into the file area with that title (for example the area of one broker). */
+export async function chooseFilesInArea(page: Page, title: string, files: UploadFile[]): Promise<void> {
+  await page
+    .locator(".file-area", { has: page.getByRole("heading", { name: title }) })
+    .locator('input[type="file"]')
+    .setInputFiles(files);
 }
 
 /** Puts the files into the last file input of the page (the reference files, in "Druge datoteke"). */

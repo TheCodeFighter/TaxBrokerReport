@@ -33,7 +33,11 @@ interface Props {
 interface FileListProps {
   language: Language;
   title: string;
+  /** A short line under the title naming the export to pick (the broker areas only). */
+  format?: string;
   hint: string;
+  /** The `accept` filter of the file dialog. */
+  accept: string;
   files: File[];
   labels: string[];
   /** True for the broker files, where the order matters and is set with the arrows. */
@@ -42,7 +46,7 @@ interface FileListProps {
 }
 
 /** One area of the form: a button that opens the file dialog and the list of the chosen files. */
-function FileArea({ language, title, hint, files, labels, ordered, onChange }: FileListProps) {
+function FileArea({ language, title, format, hint, accept, files, labels, ordered, onChange }: FileListProps) {
   const pick = (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
 
@@ -54,10 +58,11 @@ function FileArea({ language, title, hint, files, labels, ordered, onChange }: F
   return (
     <div class="file-area">
       <h3>{title}</h3>
+      {format === undefined ? null : <p class="hint">{format}</p>}
       <p class="hint">{hint}</p>
       <label class="button button-secondary">
         {uiText(language, "chooseFiles")}
-        <input class="visually-hidden" type="file" accept=".csv,text/csv" multiple onChange={pick} />
+        <input class="visually-hidden" type="file" accept={accept} multiple onChange={pick} />
       </label>
       {files.length === 0 ? (
         <p class="hint">{uiText(language, "noFilesChosen")}</p>
@@ -147,6 +152,8 @@ export function RunForm({
                 key={kind.broker}
                 language={language}
                 title={kind.title[language]}
+                format={kind.format[language]}
+                accept={kind.accept}
                 hint={uiText(language, "brokerFilesHint")}
                 files={files}
                 labels={areaLabels}
@@ -166,6 +173,7 @@ export function RunForm({
                 first: FIRST_BUILT_IN_RATE_YEAR,
                 last: LAST_BUILT_IN_RATE_YEAR,
               })}
+              accept=".csv,text/csv"
               files={inputs.rateFiles}
               labels={labels.rate}
               ordered={false}
@@ -175,6 +183,7 @@ export function RunForm({
               language={language}
               title={uiText(language, "referenceFilesTitle")}
               hint={uiText(language, "referenceFilesHint")}
+              accept=".csv,text/csv"
               files={inputs.referenceFiles}
               labels={labels.reference}
               ordered={false}

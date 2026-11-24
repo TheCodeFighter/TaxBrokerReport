@@ -308,6 +308,7 @@ export const uiTexts = {
   detailsSummary: { sl: "Podrobnosti ({count})", en: "Details ({count})" },
   sourceFile: { sl: "datoteka {n}", en: "file {n}" },
   sourceRow: { sl: "vrstica {row}", en: "row {row}" },
+  questionFiles: { sl: "Posrednik in datoteka:", en: "Broker and file:" },
   sourceTransaction: { sl: "ID transakcije {id}", en: "transaction ID {id}" },
   sessionEndedTitle: { sl: "Odprite povezavo znova", en: "Open the link again" },
   sessionEndedBody: {

@@ -5069,7 +5069,7 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "[--log-level LEVEL]\n"
                          "                   [--ecb-rates FILE...] [--reference-files "
                          "FILE...] --out DIR\n"
-                         "                   --trade-republic FILE...\n"));
+                         "                   [--trade-republic FILE...] [--ibkr FILE...]\n"));
 
     const auto report = run({"report", "--help"});
 
@@ -5082,6 +5082,7 @@ TEST(CliReportIntegrationTest, HelpExplainsTheCommand) {
                          "  --log-level LEVEL  How much the log file holds for this run: error "
                          "(the default), warn, info\n"));
     EXPECT_TRUE(contains(report.mOut, "  --trade-republic FILE...\n"));
+    EXPECT_TRUE(contains(report.mOut, "  --ibkr FILE...     One or more Interactive Brokers"));
     EXPECT_TRUE(contains(report.mOut, "  --reference-files FILE...\n"));
     EXPECT_TRUE(contains(report.mOut,
                          "Foreign currencies:\n"
@@ -5360,7 +5361,7 @@ TEST(CliReportIntegrationTest, MissingOutputOptionFails) {
               "taxbroker: --out is missing.\nRun 'taxbroker report --help' for the usage.\n");
 }
 
-TEST(CliReportIntegrationTest, NoCsvFails) {
+TEST(CliReportIntegrationTest, NoBrokerFileFails) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
 
@@ -5369,7 +5370,7 @@ TEST(CliReportIntegrationTest, NoCsvFails) {
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
-              "taxbroker: Give at least one Trade Republic CSV file with --trade-republic.\n"
+              "taxbroker: Give at least one broker file (--trade-republic or --ibkr).\n"
               "Run 'taxbroker report --help' for the usage.\n");
 }
 
@@ -7859,6 +7860,115 @@ TEST(CliReportIntegrationTest, AGeneratedDohDivReplacesTheOldFile) {
     EXPECT_FALSE(contains(result.mOut, "from an earlier run"));
     EXPECT_EQ(folder.fileNames("out"),
               (std::vector<std::string>{"Doh-Div_2025.xml", "summary_2025.txt"}));
+}
+
+// Interactive Brokers files (Flex Query XML), all synthetic.
+
+TEST(CliReportIntegrationTest, TheCliReadsAnIbkrFileWithoutAnyTradeRepublicFile) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // A buy of 10 at EUR 10.00 with a commission of EUR 1.00 and a sale of 10 at EUR 12.00 in
+    // 2024. The commission is informational and never changes a FURS value.
+    const auto flexQuery =
+        folder.writeText("flex.xml",
+                         R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="synthetic-1" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Share" isin="XX0000000001" currency="EUR" tradeDate="20240110" dateTime="20240110;040000" buySell="BUY" quantity="10" tradePrice="10" proceeds="-100" ibCommission="-1" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+        <Trade transactionID="synthetic-2" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Share" isin="XX0000000001" currency="EUR" tradeDate="20240310" dateTime="20240310;040000" buySell="SELL" quantity="-10" tradePrice="12" proceeds="120" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml");
+
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--ibkr",
+                             flexQuery});
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(result.mErr.empty());
+    EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+
+    const std::string xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    // One purchase row (10 at 10.0000) and one sale row (10 at 12.0000): the gain is
+    // 10 x 12 - 10 x 10 = EUR 20.00.
+    EXPECT_TRUE(contains(xml, "<ISIN>XX0000000001</ISIN>"));
+    EXPECT_TRUE(contains(xml, "<F4>10.0000</F4>"));
+    EXPECT_TRUE(contains(xml, "<F9>12.0000</F9>"));
+    EXPECT_TRUE(contains(xml, "<F10>true</F10>"));
+}
+
+TEST(CliReportIntegrationTest, TheCliPutsTheTradeRepublicFilesBeforeTheIbkrFiles) {
+    const TemporaryCliFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // A sale that was never bought in each file: XX0000000003 on Trade Republic, XX0000000002 on
+    // Interactive Brokers. The ISIN order is the reverse of the source order.
+    const auto history = folder.writeCsv(
+        "a.csv",
+        {
+            R"(2024-04-02T09:00:00Z,2024-04-02,DEFAULT,TRADING,SELL,STOCK,Other Share,XX0000000003,-5,10,50,,,EUR,,,,,synthetic-sale-3,,,,)",
+        });
+    const auto flexQuery =
+        folder.writeText("b.xml",
+                         R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="synthetic-ib-sale" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Third Share" isin="XX0000000002" currency="EUR" tradeDate="20240402" dateTime="20240402;040000" buySell="SELL" quantity="-5" tradePrice="10" proceeds="50" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml");
+
+    // The Interactive Brokers option is first on the command line, but its file is source 2.
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--support-report",
+                             "--no-input",
+                             "--ibkr",
+                             flexQuery,
+                             "--trade-republic",
+                             history});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+
+    const std::string report = folder.readOutput("support_2024.json");
+
+    // A diagnostic lists its "isin" before its "sources", so the first "source" after an ISIN of
+    // the diagnostics list is the source of that ISIN's sale.
+    const auto diagnostics = report.find("\"diagnostics\"");
+
+    ASSERT_NE(diagnostics, std::string::npos);
+
+    const auto trSale = report.find("\"isin\": \"XX0000000003\"", diagnostics);
+    const auto ibkrSale = report.find("\"isin\": \"XX0000000002\"", diagnostics);
+
+    ASSERT_NE(trSale, std::string::npos);
+    ASSERT_NE(ibkrSale, std::string::npos);
+
+    // The Trade Republic sale is source 1 and the Interactive Brokers sale is source 2,
+    // although --ibkr came first on the command line.
+    EXPECT_EQ(report.compare(report.find("\"source\": ", trSale), 11, "\"source\": 1"), 0);
+    EXPECT_EQ(report.compare(report.find("\"source\": ", ibkrSale), 11, "\"source\": 2"), 0);
+    EXPECT_FALSE(contains(report, "a.csv"));
+    EXPECT_FALSE(contains(report, "b.xml"));
 }
 
 } // namespace

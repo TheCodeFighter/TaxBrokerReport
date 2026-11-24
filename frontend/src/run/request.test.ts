@@ -34,6 +34,22 @@ describe("buildRunRequest", () => {
     expect((form.get("file2") as File).name).toBe("r.csv");
   });
 
+  it("names the broker of each file, Trade Republic first and Interactive Brokers second", () => {
+    const inputs = emptyInputs(new Date(2026, 10, 16));
+
+    inputs.brokerFiles.interactive_brokers = [new File(["x"], "flex.xml")];
+    inputs.brokerFiles.trade_republic = [new File(["a"], "tr.csv")];
+
+    const form = buildRunRequest(inputs);
+
+    expect(JSON.parse(form.get("request") as string).files).toEqual([
+      { part: "file0", kind: "broker", broker: "trade_republic" },
+      { part: "file1", kind: "broker", broker: "interactive_brokers" },
+    ]);
+    expect((form.get("file0") as File).name).toBe("tr.csv");
+    expect((form.get("file1") as File).name).toBe("flex.xml");
+  });
+
   it("sends a self-report and, with the switch off, no developer mode key", () => {
     const inputs = inputsWithFiles();
 

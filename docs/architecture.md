@@ -124,7 +124,8 @@ Trade Republic exports contain neither.
 
 Different selected files may have the same sanitized filename. The application therefore derives
 a run-local source ID from the file's request position: `source-0001`, `source-0002`, and so on.
-The frontend keeps the selected-file list in that same order. When filenames collide, it shows a
+The frontend keeps the selected files in that same order: the broker areas in the order of the
+broker table, and within an area the order the user set. When filenames collide, it shows a
 label such as `taxreport.csv (file 2)` instead of exposing either file's directory. The source ID
 identifies an upload only within that report run and does not change event ordering or duplicate
 detection.
@@ -1424,15 +1425,22 @@ too. The report command writes no file for a form without rows.
 ```text
 taxbroker report --year YYYY --taxpayer taxpayer.json [--self-report] [--no-input]
                  [--developer-export] [--support-report] [--ecb-rates FILE...]
-                 [--reference-files FILE...] --out DIR --trade-republic FILE...
+                 [--reference-files FILE...] --out DIR
+                 [--trade-republic FILE...] [--ibkr FILE...]
 ```
 
 Every input file comes after its own option, as a list: the files after `--trade-republic`,
-`--ecb-rates` or `--reference-files` up to the next argument that starts with `-` (or the end).
-The same option may be given again and adds to its list. A list option without a file is an
+`--ibkr`, `--ecb-rates` or `--reference-files` up to the next argument that starts with `-` (or
+the end). The same option may be given again and adds to its list. A list option without a file is an
 error, and so is a file outside a list or `--`; a file whose name starts with `-` is given as
-`./-name.csv`. The broker comes from the option (`--trade-republic` now, an IBKR option later),
-never from guessing the file.
+`./-name.csv`. The broker comes from the option (`--trade-republic` for the CSV export, `--ibkr`
+for the Flex Query XML), never from guessing the file: a file under the wrong option fails with the file-level
+error of the parser that read it, with its source ID. At least one file of any broker is needed
+(`Give at least one broker file (--trade-republic or --ibkr).`); no broker is required on its own.
+The request order is the order of the broker table: all `--trade-republic` files, then all
+`--ibkr` files, each in command-line order, so the same files get the same source IDs in the
+command line and in the browser. A new broker adds one option, one list in this rule and one row
+in the request table; nothing after the parser changes.
 
 The `taxbroker` executable (`src/cli/`) produces a real Doh-KDVP file for a bounded set of cases
 and blocks every other case with a structured error; it never guesses. It also writes Doh-Div,
@@ -1463,8 +1471,9 @@ tested on its own.
 
 **Pipeline.** The command reads every user file into memory once and builds an
 `ApplicationRequest` (`include/taxbroker/application_request.hpp`); a file that cannot be read
-fails the run (exit 2) before anything is calculated. Each `--trade-republic` file is parsed with
-`parse` of the Trade Republic parser, with its position on the command line as the source index.
+fails the run (exit 2) before anything is calculated. Each broker file is parsed with the
+parser of the broker it was given for (`--trade-republic` or `--ibkr`), with its position in the
+request as the source index.
 The rates are loaded with `loadOfficialRates` (the built-in years and the `--ecb-rates` files; a
 supplied file replaces the built-in year it covers) and the reference data with
 `loadReferenceData` (the built-in files and the `--reference-files` files, each replacing the
@@ -1854,7 +1863,10 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   line, built only when it is opened. A source is the shown name of sent file N for `source-000N` (with `(file N)` on a
   repeated name), else the sanitized server name, else "file N", then the row and transaction ID.
   The classification exclusions (`excludedItems`) are their own list. The pure code is
-  `run/diagnostics_view.ts` and `run/result_view.ts`.
+  `run/diagnostics_view.ts` and `run/result_view.ts`. Every open question shows under its
+  heading the broker and the shown file name of each file in its `sources` ("Broker and file"),
+  once per file and without rows (`run/question_files.ts`). The fee and benefit block shows each
+  amount rounded to two decimals, half away from zero (`roundToCents`); the server keeps four.
 - **Tests.** Vitest tests of the login, the client, the page hashes, the version call, the language, the theme, the message texts,
   the input screen's pure code (labels, years, list changes, the request, the answers), the profile calls and the state of the "Remember my details" box,
   and the result screen's pure code (source labels, placement, grouping, the cards); the
@@ -1917,8 +1929,8 @@ guard and the session cookie. The JSON readers and writers are in `taxbroker_api
   layer (empty body) and leaves the run as it was.
 - The `request` part: `reportingYear`, `filingType` (`original` or `self_report`), optional
   `developerMode`, the `taxpayer` object (the keys of the taxpayer file) and `files`, a list of
-  `{"part":"file0","kind":"broker","broker":"trade_republic"}`, `"kind":"ecb_rates"` or
-  `"kind":"reference"` (up to 32; more is `too_many_files`). An unknown key is `bad_request`.
+  `{"part":"file0","kind":"broker","broker":"trade_republic"}` (or `"broker":"interactive_brokers"`),
+  `"kind":"ecb_rates"` or `"kind":"reference"` (up to 32; more is `too_many_files`). An unknown key is `bad_request`.
   A taxpayer object that the taxpayer reader refuses (a tax number that is not eight digits, an
   empty text, a date that does not exist, ...) is 400 `{"error":"bad_taxpayer","field":"taxNumber"}`
   with the key it is about, so the form can mark its input; the field is a fixed key of the
@@ -2123,8 +2135,8 @@ Running `scripts/report.sh` runs `taxbroker report` in Docker and writes to
 `runtime/report/<year>/`; with `--synthetic` it reads `tests/test_data/cli/report_fixture.csv`,
 `report_income_fixture.csv` (2024 dividends, bank interest and bond coupons), the made-up USD rates
 `report_ecb_rates.csv` and `tests/test_data/cli/taxpayer.json`, so all four forms are written. A real taxpayer file stays below `runtime/`. The script takes
-the same file options (`--trade-republic`, `--ecb-rates`, `--reference-files`) with the same
-list rule.
+the same file options (`--trade-republic`, `--ibkr`, `--ecb-rates`, `--reference-files`) with the
+same list rule.
 
 Parser logs may later be shared for support, so they follow a stricter boundary: source index, CSV
 row, and diagnostic reason are allowed; paths, transaction IDs, and raw financial values are not.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { manualFile, renamed } from "./support/files";
+import { chooseFilesInArea, manualFile, renamed } from "./support/files";
 import {
   card,
   cardStatus,
@@ -35,7 +35,7 @@ describe("files with the same name and in another order", () => {
 
     await answerYear2022(page);
 
-    // The result is the one of E5: Doh-Div 7 rows, Doh-DHO no data, Doh-Obr 14 rows.
+    // Only the two Trade Republic files are loaded: Doh-Div 7 rows, Doh-DHO no data, Doh-Obr 14 rows.
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
     expect(await cardStatus(page, "Doh-DHO")).toBe("ni podatkov");
     expect(await card(page, "Doh-Div").getByText(/Vrstice: 7,/).count()).toBe(1);
@@ -101,5 +101,24 @@ describe("files with the same name and in another order", () => {
     } finally {
       await otherServer.stop();
     }
+  });
+
+  it("F3 lists an Interactive Brokers file in its own area, which only takes XML files", async () => {
+    const page = await openReportPage(session.context, session.server);
+    const trArea = page.locator(".file-area", { has: page.getByRole("heading", { name: "Trade Republic" }) });
+    const ibkrArea = page.locator(".file-area", { has: page.getByRole("heading", { name: "Interactive Brokers" }) });
+
+    await chooseFilesInArea(page, "Interactive Brokers", [await manualFile("ibkr_2022.xml")]);
+
+    // The file is in the Interactive Brokers list and not in the Trade Republic list.
+    expect(await ibkrArea.locator(".file-list").innerText()).toContain("ibkr_2022.xml");
+    expect(await trArea.locator(".file-list").count()).toBe(0);
+
+    // Each area filters its file dialog by its own export type and names the export to pick.
+    expect(await trArea.locator('input[type="file"]').getAttribute("accept")).toBe(".csv,text/csv");
+    expect(await ibkrArea.locator('input[type="file"]').getAttribute("accept")).toBe(
+      ".xml,application/xml,text/xml",
+    );
+    expect(await ibkrArea.getByText("Flex Query (XML)").count()).toBe(1);
   });
 });

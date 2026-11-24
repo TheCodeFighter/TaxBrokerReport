@@ -159,7 +159,7 @@ describe("feeView", () => {
       rows: [
         {
           title: "Trade Republic",
-          lines: ["EUR 3.0000 (count: 3)", "USD 1.0000 (count: 1)"],
+          lines: ["EUR 3.00 (count: 3)", "USD 1.00 (count: 1)"],
           total: "Total in EUR: not available (an amount has no exchange rate)",
         },
       ],
@@ -188,9 +188,10 @@ describe("feeView", () => {
       "en",
     );
 
-    expect(view?.rows[0]?.total).toBe("Total in EUR: 4.9000");
+    // 4.9000 is shown with two decimals.
+    expect(view?.rows[0]?.total).toBe("Total in EUR: 4.90");
     expect(view?.rows[0]?.converted).toBe("Converted at the broker's own rate: 1");
-    expect(view?.total).toBe("Total in EUR: 4.9000");
+    expect(view?.total).toBe("Total in EUR: 4.90");
   });
 
   it("is undefined without any fee", () => {

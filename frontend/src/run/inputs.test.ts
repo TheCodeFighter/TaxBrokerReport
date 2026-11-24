@@ -23,7 +23,7 @@ describe("emptyInputs", () => {
   it("starts with no files, the year before this one and an original filing", () => {
     const inputs = emptyInputs(new Date(2026, 10, 16));
 
-    expect(inputs.brokerFiles).toEqual({ trade_republic: [] });
+    expect(inputs.brokerFiles).toEqual({ trade_republic: [], interactive_brokers: [] });
     expect(inputs.rateFiles).toEqual([]);
     expect(inputs.referenceFiles).toEqual([]);
     expect(inputs.reportingYear).toBe(2025);
@@ -44,6 +44,18 @@ describe("orderedBrokerFiles", () => {
     expect(orderedBrokerFiles(inputs).map((entry) => [entry.file.name, entry.broker])).toEqual([
       ["b.csv", "trade_republic"],
       ["a.csv", "trade_republic"],
+    ]);
+  });
+
+  it("puts the Trade Republic files before the Interactive Brokers files, whatever was added first", () => {
+    const inputs = emptyInputs(new Date(2026, 10, 16));
+
+    inputs.brokerFiles.interactive_brokers = [new File(["x"], "flex.xml")];
+    inputs.brokerFiles.trade_republic = [new File(["a"], "tr.csv")];
+
+    expect(orderedBrokerFiles(inputs).map((entry) => [entry.file.name, entry.broker])).toEqual([
+      ["tr.csv", "trade_republic"],
+      ["flex.xml", "interactive_brokers"],
     ]);
   });
 });

@@ -15,6 +15,7 @@ import {
   sendAnswer,
   startRun,
 } from "./support/report_page";
+import { IBKR_FILE_NAMES } from "./support/scenarios";
 import { useSession } from "./support/session";
 
 const YEARS = ["2022", "2023", "2024", "2025"];
@@ -25,8 +26,9 @@ describe("year 2023 of the manual files", () => {
   /** Runs 2023 and answers everything except the exclusion question of Doh-Div. */
   async function runAndAnswerUpToDohDiv(page: Page): Promise<void> {
     const files = await Promise.all(YEARS.map((year) => manualFile(`trade_republic_${year}.csv`)));
+    const ibkrFiles = await Promise.all(IBKR_FILE_NAMES.map((name) => manualFile(name)));
 
-    await startRun(page, { files, year: 2023 });
+    await startRun(page, { files, areaFiles: [{ title: "Interactive Brokers", files: ibkrFiles }], year: 2023 });
 
     // Class of the unknown share: capital gains.
     const classification = question(page, "Synthetic Unknown Class Share (XX0000000118)", "Doh-KDVP");
@@ -73,16 +75,17 @@ describe("year 2023 of the manual files", () => {
     await pickWord(divFailure, "exclude_failed_instruments");
     await sendAnswer(divFailure);
 
-    // README, 2023: Doh-KDVP without the ruble share; Doh-Div 6 rows; Doh-DHO 1 row; Doh-Obr 14 rows.
+    // README, 2023: Doh-KDVP without the ruble share; Doh-Div 7 rows (the IBKR payment
+    // in lieu is one); Doh-DHO 1 row; Doh-Obr 15 rows (the IBKR coupon is one).
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
     expect(await excludedInvestments(page, "Doh-KDVP").getByText("Synthetic Ruble Share (XX0000000121)").count()).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
-    expect(await card(page, "Doh-Div").getByText(/Vrstice: 6,/).count()).toBe(1);
+    expect(await card(page, "Doh-Div").getByText(/Vrstice: 7,/).count()).toBe(1);
     expect(await cardStatus(page, "Doh-DHO")).toBe("pripravljeno");
     expect(await card(page, "Doh-DHO").getByText(/Vrstice: 1,/).count()).toBe(1);
     expect(await card(page, "Doh-DHO").getByText(/Obresti drugih bank niso vključene/).count()).toBe(1);
     expect(await cardStatus(page, "Doh-Obr")).toBe("pripravljeno");
-    expect(await card(page, "Doh-Obr").getByText(/Vrstice: 14,/).count()).toBe(1);
+    expect(await card(page, "Doh-Obr").getByText(/Vrstice: 15,/).count()).toBe(1);
   });
 
   it("E9 keeps Doh-KDVP when the Doh-Div question is cancelled", async () => {

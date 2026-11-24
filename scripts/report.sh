@@ -16,10 +16,10 @@ usage() {
 Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.json]
                  [--self-report] [--no-input] [--support-report] [--log-level LEVEL]
                  [--out runtime/dir]
-                 [--trade-republic path.csv ...] [--ecb-rates path.csv ...]
+                 [--trade-republic path.csv ...] [--ibkr path.xml ...] [--ecb-rates path.csv ...]
                  [--reference-files path.csv ...]
 
-    Runs 'taxbroker report' inside Docker: Trade Republic CSVs in, the Doh-KDVP XML
+    Runs 'taxbroker report' inside Docker: broker exports in, the Doh-KDVP XML
     and summary_<year>.txt out. Paths are relative to the repository. The output can
     contain private financial data and stays below ignored runtime/. The exit code is
     the command's: 0 written or no data, 1 blocked, 2 failed.
@@ -42,7 +42,9 @@ Usage: report.sh [--reuse-build] [--synthetic] [--year YYYY] [--taxpayer path.js
     --support-report  also write support_<year>.json, the privacy-safe report for a problem report
     --log-level     error (the default), warn, info or debug: how much the log holds; the
                     log is runtime/logs/taxbroker_report.log
-    --trade-republic  one or more Trade Republic exports (default: $default_csv)
+    --trade-republic  one or more Trade Republic exports (default without any broker file:
+                    $default_csv)
+    --ibkr          one or more Interactive Brokers Flex Query XML files
     --ecb-rates     ECB rate files (one calendar year each, EXR csvdata). The years 2016 to
                     2025 are built in; a file replaces its built-in year and adds other years
     --reference-files  a newer payers.csv, relief_statements.csv or broker_payers.csv; each
@@ -64,6 +66,7 @@ cli_options=()
 ecb_inputs=()
 reference_inputs=()
 csv_inputs=()
+ibkr_inputs=()
 # The file option that takes the next plain paths, and how many it has so far.
 list_option=""
 list_count=0
@@ -84,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 0
             ;;
-        --trade-republic|--ecb-rates|--reference-files)
+        --trade-republic|--ibkr|--ecb-rates|--reference-files)
             end_list
             list_option="$1"
             list_count=0
@@ -174,6 +177,9 @@ while [[ $# -gt 0 ]]; do
                 --trade-republic)
                     csv_inputs+=("$1")
                     ;;
+                --ibkr)
+                    ibkr_inputs+=("$1")
+                    ;;
                 --ecb-rates)
                     ecb_inputs+=("$1")
                     ;;
@@ -229,7 +235,7 @@ if [[ -z "$taxpayer" ]]; then
     exit 2
 fi
 
-if [[ ${#csv_inputs[@]} -eq 0 ]]; then
+if [[ ${#csv_inputs[@]} -eq 0 && ${#ibkr_inputs[@]} -eq 0 ]]; then
     csv_inputs=("$default_csv")
 fi
 
@@ -242,7 +248,7 @@ if [[ "$output_dir" != runtime/* || "$output_absolute" != "$runtime_absolute/"* 
     exit 2
 fi
 
-for input_path in "$taxpayer" "${csv_inputs[@]}" "${ecb_inputs[@]}" "${reference_inputs[@]}"; do
+for input_path in "$taxpayer" "${csv_inputs[@]}" "${ibkr_inputs[@]}" "${ecb_inputs[@]}" "${reference_inputs[@]}"; do
     if [[ "$input_path" == /* || "$input_path" == -* || ! -f "$repo_root/$input_path" ]]; then
         echo "Input must be an existing repository-relative path: $input_path" >&2
         exit 2
@@ -254,6 +260,22 @@ csv_paths=()
 for csv_path in "${csv_inputs[@]}"; do
     csv_paths+=("/workspace/$csv_path")
 done
+
+if [[ ${#csv_inputs[@]} -gt 0 ]]; then
+    cli_options+=(--trade-republic)
+
+    for csv_path in "${csv_paths[@]}"; do
+        cli_options+=("$csv_path")
+    done
+fi
+
+if [[ ${#ibkr_inputs[@]} -gt 0 ]]; then
+    cli_options+=(--ibkr)
+
+    for ibkr_path in "${ibkr_inputs[@]}"; do
+        cli_options+=("/workspace/$ibkr_path")
+    done
+fi
 
 if [[ ${#ecb_inputs[@]} -gt 0 ]]; then
     cli_options+=(--ecb-rates)
@@ -289,8 +311,7 @@ compose run --rm "${tty_options[@]}" \
     --year "$year" \
     --taxpayer "/workspace/$taxpayer" \
     "${cli_options[@]}" \
-    --out "/workspace/$output_dir" \
-    --trade-republic "${csv_paths[@]}"
+    --out "/workspace/$output_dir"
 exit_code=$?
 set -e
 

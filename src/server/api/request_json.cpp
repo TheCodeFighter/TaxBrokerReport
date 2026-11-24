@@ -18,8 +18,9 @@ namespace {
 using Json = nlohmann::json;
 
 /// The broker names of the request. A new broker adds one row; no route branches on a broker.
-constexpr std::array<std::pair<std::string_view, Broker>, 1> kBrokers{{
+constexpr std::array<std::pair<std::string_view, Broker>, 2> kBrokers{{
     {"trade_republic", Broker::TradeRepublic},
+    {"interactive_brokers", Broker::InteractiveBrokers},
 }};
 
 /// The kinds of a file entry.

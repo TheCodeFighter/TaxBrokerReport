@@ -29,6 +29,15 @@ describe("fileLabels", () => {
 });
 
 describe("inputLabels", () => {
+  it("numbers two files with the same name even when they belong to different brokers", () => {
+    const inputs = emptyInputs(new Date(2026, 10, 16));
+
+    inputs.brokerFiles.trade_republic = [new File(["1"], "export.xml")];
+    inputs.brokerFiles.interactive_brokers = [new File(["2"], "export.xml")];
+
+    expect(inputLabels(inputs).broker).toEqual(["export.xml (file 1)", "export.xml (file 2)"]);
+  });
+
   it("numbers only the broker files, not the rate and reference files with the same name", () => {
     const inputs = emptyInputs(new Date(2026, 10, 16));
 

@@ -12,6 +12,7 @@ import {
   sendAnswer,
   startRun,
 } from "./support/report_page";
+import { IBKR_FILE_NAMES } from "./support/scenarios";
 import { useSession } from "./support/session";
 
 const YEARS = ["2022", "2023", "2024", "2025"];
@@ -22,8 +23,9 @@ describe("year 2025 of the manual files", () => {
   it("E8 answers the questions of 2025 and leaves out the missing-history share", async () => {
     const page = await openReportPage(session.context, session.server);
     const files = await Promise.all(YEARS.map((year) => manualFile(`trade_republic_${year}.csv`)));
+    const ibkrFiles = await Promise.all(IBKR_FILE_NAMES.map((name) => manualFile(name)));
 
-    await startRun(page, { files, year: 2025 });
+    await startRun(page, { files, areaFiles: [{ title: "Interactive Brokers", files: ibkrFiles }], year: 2025 });
 
     // Class of the unknown share: capital gains.
     const classification = question(page, "Synthetic Unknown Class Share (XX0000000118)", "Doh-KDVP");
@@ -46,6 +48,15 @@ describe("year 2025 of the manual files", () => {
     const bond = question(page, "Synthetic Bond A 2025 (XS0000000201)");
     await pickWord(bond, "ordinary");
     await sendAnswer(bond);
+
+    // Split ratio 2 : 1 of the Interactive Brokers share, with the date of the row, confirmed.
+    const ibkrRatio = question(page, "Synthetic US Share (XX0000000115)");
+    await answerRatio(ibkrRatio, "2", "1");
+
+    // Bond type at maturity of the Interactive Brokers bond: ordinary.
+    const ibkrBond = question(page, "Synthetic IB Bond 2025 (XS0000000203)");
+    await pickWord(ibkrBond, "ordinary");
+    await sendAnswer(ibkrBond);
 
     // Exclusion of the missing-history share from Doh-KDVP.
     const kdvpFailure = question(page, "Doh-KDVP: nadaljevanje brez teh naložb?");
