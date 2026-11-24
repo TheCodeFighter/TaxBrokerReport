@@ -65,6 +65,7 @@ add_executable(taxbroker_unit_tests
     unit/ibkr_equivalence_test.cpp
     unit/ibkr_fixture_test.cpp
     unit/ibkr_parser_test.cpp
+    unit/ibkr_rows_to_check_test.cpp
     unit/ibkr_time_test.cpp
     unit/input_file_test.cpp
     unit/official_rate_selection_test.cpp
@@ -102,7 +103,7 @@ add_executable(taxbroker_unit_tests
     unit/profile_routes_test.cpp
     unit/profile_store_test.cpp
     unit/trade_conversion_test.cpp
-    unit/trade_republic_parser_checks_test.cpp
+    unit/parser_checks_test.cpp
     unit/traderepublic_parser_test.cpp
     unit/csv_text_reader_test.cpp
     unit/numeric_util_test.cpp
@@ -157,6 +158,7 @@ add_executable(taxbroker_integration_tests
     integration/fifo_matching_integration_test.cpp
     integration/full_pipeline_integration_test.cpp
     integration/historical_scenario_integration_test.cpp
+    integration/ibkr_pipeline_integration_test.cpp
     integration/income_reports_integration_test.cpp
     integration/income_xml_integration_test.cpp
     integration/kdvp_xml_integration_test.cpp
@@ -180,6 +182,7 @@ target_link_libraries(taxbroker_integration_tests
     taxbroker_core
     taxbroker_api
     taxbroker_cli
+    taxbroker_ibkr
     taxbroker_server_lib
     taxbroker_service
     taxbroker_xml

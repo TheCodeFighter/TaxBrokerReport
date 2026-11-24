@@ -1,0 +1,10 @@
+<FlexQueryResponse queryName="seed" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" transactionID="2006" actionID="A9003" levelOfDetail="DETAIL" type="Payment In Lieu Of Dividends" assetCategory="STK" symbol="SYNA" description="SYNA PAYMENT IN LIEU OF DIVIDEND" isin="US0000000010" currency="USD" dateTime="20240614" settleDate="20240614" reportDate="20240617" amount="3" issuerCountryCode="US"/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

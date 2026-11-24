@@ -1,0 +1,10 @@
+<FlexQueryResponse queryName="seed" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="FracShare" assetCategory="STK" subCategory="COMMON" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" isin="US0000000010" currency="USD" tradeDate="20240610" dateTime="20240610;101500" buySell="SELL" quantity="0.5" tradePrice="200" proceeds="100" ibCommission="-0.35" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="P" multiplier="1"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

@@ -1,0 +1,10 @@
+<FlexQueryResponse queryName="seed" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="1003" tradeID="1003" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="ETF" symbol="SYNB" description="SYNTHETIC EXAMPLE B ETF" isin="IE0000000020" currency="EUR" tradeDate="20240402" dateTime="20240402;040000" buySell="BUY" quantity="4" tradePrice="50" proceeds="-200" ibCommission="-1.25" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="IA" multiplier="1"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

@@ -155,6 +155,7 @@ Dev image ─┬─ Development build ─┬─ Required tests   (test.sh --reus
            ├─ format-check                  (pull requests only)
            ├─ Frontend                      (frontend.sh, only when frontend files change)
            ├─ Fuzz (Trade Republic parser)  (fuzz.sh, 240 s, own sanitizer build)
+           ├─ Fuzz (IBKR parser)            (fuzz.sh --target ibkr, 240 s, own sanitizer build)
            └─ Coverage (current) ─┬─ coverage      (pull requests only)
               Coverage (baseline) ┘
 Production image ── Browser tests    (e2e.sh; also needs Dev image; only when related files change)

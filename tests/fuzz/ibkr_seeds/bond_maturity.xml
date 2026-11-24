@@ -1,0 +1,10 @@
+<FlexQueryResponse queryName="seed" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <CorporateActions>
+        <CorporateAction accountId="U0000000" transactionID="3003" actionID="B9001" type="BM" assetCategory="BOND" symbol="SYNBOND" description="SYNBOND 4.5% 2024" actionDescription="SYNBOND(DE0000000041) BOND MATURITY (SYNBOND, SYNBOND 4.5% 2024)" isin="DE0000000041" currency="EUR" dateTime="20241216;202500" reportDate="20241216" quantity="-1000" proceeds="1000" value="1000"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

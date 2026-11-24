@@ -180,7 +180,7 @@ _tbr_valgrind() {
     _tbr_complete --reuse-build "--part=words:regular csv ecb reference messages all" --help
 }
 _tbr_fuzz() {
-    _tbr_complete "--target=words:parser multipart answers" --seconds=none --replay=file --help
+    _tbr_complete "--target=words:parser ibkr multipart answers" --seconds=none --replay=file --help
 }
 _tbr_run() {
     _tbr_complete --reuse-build-backend --reuse-build-frontend --reuse-build --no-browser --help

@@ -7,13 +7,15 @@ source "$script_dir/lib.sh"
 
 usage() {
     cat <<'EOF_USAGE'
-Usage: fuzz.sh [--target parser|multipart|answers] [--seconds N] [--replay FILE]
+Usage: fuzz.sh [--target parser|ibkr|multipart|answers] [--seconds N] [--replay FILE]
 
   Builds a libFuzzer target with AddressSanitizer and UndefinedBehaviorSanitizer in build/fuzz
   (from scratch, with Clang) and runs it inside the development container for N seconds (default
   60) with the fixed libFuzzer seed 1.
   --target parser (the default) fuzzes the Trade Republic parser. Its seeds are the synthetic CSV
   files under tests/test_data and tests/fuzz/seeds. New inputs go to runtime/fuzz/corpus.
+  --target ibkr fuzzes the Interactive Brokers Flex Query XML parser. Its seeds are the synthetic
+  XML files under tests/test_data/ibkr and tests/fuzz/ibkr_seeds (corpus runtime/fuzz/corpus-ibkr).
   --target multipart fuzzes the multipart reader of the local server (seeds in
   tests/fuzz/multipart_seeds, corpus runtime/fuzz/corpus-multipart).
   --target answers fuzzes the JSON readers of the answer, delete and upload calls (seeds in
@@ -35,8 +37,8 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         --target)
-            if [[ $# -lt 2 || ! "$2" =~ ^(parser|multipart|answers)$ ]]; then
-                echo "--target requires parser, multipart or answers." >&2
+            if [[ $# -lt 2 || ! "$2" =~ ^(parser|ibkr|multipart|answers)$ ]]; then
+                echo "--target requires parser, ibkr, multipart or answers." >&2
                 usage >&2
                 exit 1
             fi
@@ -91,6 +93,14 @@ case "$target" in
         max_len=8192
         dict_option="-dict=/workspace/tests/fuzz/traderepublic.dict"
         corpus_suffix=""
+        ;;
+    ibkr)
+        binary="ibkr_parser_fuzz"
+        seed_dirs="/workspace/tests/test_data/ibkr /workspace/tests/fuzz/ibkr_seeds"
+        seed_pattern="*.xml"
+        max_len=16384
+        dict_option="-dict=/workspace/tests/fuzz/ibkr.dict"
+        corpus_suffix="-ibkr"
         ;;
     multipart)
         binary="multipart_fuzz"

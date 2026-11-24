@@ -2,21 +2,17 @@
 
 #include "taxbroker/types.hpp"
 
-#include <csv.hpp>
-
 #include <algorithm>
-#include <array>
 #include <cstddef>
-#include <exception>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <string>
-#include <string_view>
 #include <vector>
+
+// Checks that every parser's fuzz target and unit tests share. They read only the broker-neutral
+// result, so they hold for any broker. The rows to check (which rows of an input must end as an
+// event or an error) are per broker: see trade_republic_rows_to_check.hpp and
+// ibkr_rows_to_check.hpp.
 
 namespace taxbroker::test {
 
@@ -63,88 +59,6 @@ inline std::optional<std::string> tradeSignFailure(const ParseResult& aResult) {
     return std::nullopt;
 }
 
-/// The cash movements the parser ignores on purpose: category CASH with one of these types. The
-/// list is written out here on purpose, so a change in the parser's own list shows as a finding.
-constexpr std::array kIgnoredCashTypes{
-    std::string_view{"CARD_FAILED_TRANSACTION"},
-    std::string_view{"CARD_ORDER_BILLED"},
-    std::string_view{"CARD_ORDERING_FEE"},
-    std::string_view{"CARD_TRANSACTION"},
-    std::string_view{"CARD_TRANSACTION_INTERNATIONAL"},
-    std::string_view{"CUSTOMER_INBOUND"},
-    std::string_view{"CUSTOMER_INPAYMENT"},
-    std::string_view{"CUSTOMER_OUTBOUND_REQUEST"},
-    std::string_view{"TRANSFER_INSTANT_INBOUND"},
-    std::string_view{"TRANSFER_INSTANT_OUTBOUND"},
-    std::string_view{"TRANSFER_OUTBOUND"},
-};
-
-/// The logical rows (header = 1) that must end as an event or an error, read with the same CSV
-/// format as the parser. A record with the header's field count and an ignored cash type is left
-/// out. Gives an empty list when the text has no category or type column or cannot be read.
-inline std::vector<std::size_t> recordRowsToCheck(std::string_view aText) {
-    std::vector<std::size_t> rows;
-
-    try
-    {
-        csv::CSVFormat format;
-        format.delimiter(',').variable_columns(csv::VariableColumnPolicy::KEEP);
-        std::stringstream stream{std::string{aText}};
-        csv::CSVReader reader(stream, format);
-
-        const auto names = reader.get_col_names();
-        const auto hasColumn = [&names](std::string_view aName) {
-            return std::find(names.begin(), names.end(), aName) != names.end();
-        };
-
-        if (!hasColumn("category") || !hasColumn("type"))
-        {
-            return rows;
-        }
-
-        std::size_t rowIndex = 1;
-
-        for (const csv::CSVRow& row : reader)
-        {
-            ++rowIndex;
-
-            if (row.size() == names.size())
-            {
-                const auto category = row["category"].get<std::string>();
-                const auto type = row["type"].get<std::string>();
-                const bool isIgnored =
-                    category == "CASH" &&
-                    std::find(kIgnoredCashTypes.begin(), kIgnoredCashTypes.end(), type) !=
-                        kIgnoredCashTypes.end();
-
-                if (isIgnored)
-                {
-                    continue;
-                }
-            }
-
-            rows.push_back(rowIndex);
-        }
-    } catch (const std::exception&)
-    { rows.clear(); }
-
-    return rows;
-}
-
-/// The same for a file; an empty list when the file cannot be read.
-inline std::vector<std::size_t> recordRowsToCheck(const std::filesystem::path& aPath) {
-    std::ifstream input{aPath, std::ios::binary};
-
-    if (!input)
-    {
-        return {};
-    }
-
-    const std::string text{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-
-    return recordRowsToCheck(std::string_view{text});
-}
-
 namespace detail {
 
 template <typename Event>
@@ -188,6 +102,7 @@ inline std::optional<std::string> droppedRowFailure(const ParseResult& aResult,
     detail::collectRows(aResult.mStatement.mBenefitEvents, eventRows);
     detail::collectRows(aResult.mStatement.mPrivateMarketEvents, eventRows);
     detail::collectRows(aResult.mStatement.mBondRedemptions, eventRows);
+    detail::collectRows(aResult.mStatement.mIncomePaymentRows, eventRows);
     detail::collectRows(aResult.mStatement.mLeftOutRows, eventRows);
 
     for (const auto& diagnostic : aResult.mDiagnostics)

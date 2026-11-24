@@ -351,6 +351,39 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # The same as the job above for the Interactive Brokers parser. Keep this name stable: the
+  # main-branch protection rule should require this check. The two jobs run in parallel, so the
+  # whole run is not longer.
+  fuzz-ibkr:
+    name: Fuzz (IBKR parser)
+    needs: dev-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Load development image
+        uses: ./.github/actions/load-dev-image
+
+      - name: Fuzz the Interactive Brokers parser for 240 seconds
+        run: scripts/fuzz.sh --target ibkr --seconds 240
+
+      - name: Upload the input that broke a check
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: fuzz-findings-ibkr
+          path: |
+            runtime/fuzz/crash-*
+            runtime/fuzz/leak-*
+            runtime/fuzz/oom-*
+            runtime/fuzz/slow-unit-*
+            runtime/fuzz/timeout-*
+          if-no-files-found: ignore
+          retention-days: 14
+
   format-check:
     # Keep this job id stable: it is the check name that the main-branch protection rule requires.
     if: github.event_name == 'pull_request'

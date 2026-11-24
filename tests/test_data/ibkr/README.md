@@ -11,7 +11,7 @@ timestamp.
 
 | File | Purpose |
 | --- | --- |
-| `contract_example.xml` | One row of every kind in one file (overview, later a fuzz seed) |
+| `contract_example.xml` | One row of every kind in one file (overview and a fuzz seed) |
 | `supported.xml` | Only rows that become events |
 | `ignored.xml` | Rows and sections that give no event |
 | `rejected_rows.xml` | One valid buy and one bad row for each way a row is rejected |
@@ -23,6 +23,10 @@ timestamp.
 | `quantities.xml` | Quantities with more than eight decimals |
 | `file_level/` | Files that are not read as a Flex Query XML, and edge cases of the file |
 | `equivalence/` | The same trades in a Trade Republic CSV and an IBKR XML |
+
+Every `.xml` file here is also a seed of the IBKR fuzz target (`scripts/fuzz.sh --target ibkr`),
+together with the small files in `tests/fuzz/ibkr_seeds`. A file that changes here changes the fuzz
+seeds.
 
 # IBKR contract example
 
