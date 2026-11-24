@@ -113,6 +113,20 @@ export interface PayerCheck {
   options: PayerOption[];
 }
 
+/** One country a payer country question offers, with where it comes from. */
+export interface CountryCandidate {
+  country: string;
+  /** `export`, `reference` or `export_and_reference`. */
+  origin: string;
+}
+
+/** The sources name different countries for the payer of an ISIN. */
+export interface CountryCheck {
+  name: string;
+  isin: string;
+  candidates: CountryCandidate[];
+}
+
 /** A bond with a sale or a maturity in the year, whose kind decides the income. */
 export interface BondCheck {
   isin: string;
@@ -170,6 +184,7 @@ export interface DecisionRequest {
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
   payerCheck?: PayerCheck;
+  countryCheck?: CountryCheck;
   bondCheck?: BondCheck;
   treatyCheck?: TreatyCheck;
   depositCheck?: DepositCheck;
@@ -192,6 +207,7 @@ export interface Decision {
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
   payerCheck?: PayerCheck;
+  countryCheck?: CountryCheck;
   bondCheck?: BondCheck;
   treatyCheck?: TreatyCheck;
   depositCheck?: DepositCheck;
@@ -227,6 +243,7 @@ export type QuestionKind =
   | "classification"
   | "income"
   | "payer"
+  | "country"
   | "bond"
   | "treaty"
   | "deposit"
@@ -250,6 +267,7 @@ interface KindSource {
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
   payerCheck?: PayerCheck;
+  countryCheck?: CountryCheck;
   bondCheck?: BondCheck;
   treatyCheck?: TreatyCheck;
 }
@@ -271,6 +289,10 @@ export function questionKind(source: KindSource): QuestionKind | undefined {
   if (source.type === "income_details_required") {
     if (source.payerCheck !== undefined) {
       return "payer";
+    }
+
+    if (source.countryCheck !== undefined) {
+      return "country";
     }
 
     if (source.bondCheck !== undefined) {

@@ -1,4 +1,5 @@
 import type { UiTextKey } from "../i18n/ui_texts";
+import { isCountryCode } from "./country_codes";
 import type { AnswerValue } from "./questions";
 
 /** The answer that withdraws an optional treaty claim. */
@@ -56,6 +57,25 @@ export function shownClassLabels(labels: string[]): string[] {
 /** The answer that picks the reference row at this position of the options. */
 export function payerAnswer(position: number | undefined): AnswerValue | undefined {
   return position === undefined ? undefined : { option: position };
+}
+
+/** A typed country code as the server takes it (an assigned two-letter code in capitals), or `undefined`. */
+export function typedCountry(input: string): string | undefined {
+  const code = input.trim().toUpperCase();
+
+  return isCountryCode(code) ? code : undefined;
+}
+
+/** Whether the typed text has two letters but is no country, so the user must change it. */
+export function typedCountryIsWrong(input: string): boolean {
+  const code = input.trim();
+
+  return code.length >= 2 && typedCountry(code) === undefined;
+}
+
+/** The answer that gives this country code; the server checks that it is a country. */
+export function countryAnswer(code: string | undefined): AnswerValue | undefined {
+  return code === undefined ? undefined : { country: code };
 }
 
 /** What is wrong with a treaty text. */

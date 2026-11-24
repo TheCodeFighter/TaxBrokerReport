@@ -237,6 +237,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "margin_or_leverage_rows_left_out";
     case ProcessingDiagnosticCode::PayerCountryFromIsin:
         return "payer_country_from_isin";
+    case ProcessingDiagnosticCode::PayerCountryUnresolved:
+        return "payer_country_unresolved";
     }
 
     return "unrepresentable_value";

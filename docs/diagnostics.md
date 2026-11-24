@@ -256,6 +256,14 @@ Optional details are:
 
 Optional fields are omitted when unavailable. They are not sent as empty strings or `null`.
 
+**Notices from a parser.** A parser leaves one `info` notice for a row it does not read on purpose when the row belongs to
+no form (a crypto row, a currency conversion, a closed lot): per row, or one per file with a
+count. A row that may change a form (an unsupported type that could be income, tax, a sale or a
+repayment), a rejected row or a wrong row is a warning or an error. A cash movement of a kind
+the parser names as having no tax meaning (card payment, deposit, transfer) leaves nothing.
+A notice never blocks, never counts as a warning and never changes a run to "completed with
+warnings".
+
 A diagnostic ID is assigned only after final deterministic sorting. IDs use the form
 `diagnostic-0001`, `diagnostic-0002`, and so on. The ID is stable for identical input and choices;
 it is not a permanent identity across different report runs.
@@ -786,6 +794,17 @@ never makes the form `needs_input` and never blocks. A recorded answer lists the
 The question changes (a new question, a new answer) when a reference row changes. The same question
 is asked for the issuer of a bond coupon; it then affects Doh-Obr.
 
+A payer country request (`income_details_required` when the export countries and the country of the
+reference row in use differ for one ISIN and form) has no `options` and `"countryCheck"` with
+`name`, `isin` and `candidates`: the countries sorted by code, each with `country` and `origin`
+(`export`, `reference` or `export_and_reference`). It is answered with `{"country":"US"}`, any
+ISO 3166-1 code in capital letters (also one that is not a candidate), or `"skip"`; a text that is
+no country code is rejected with `answer_does_not_fit`, and a cancel is a skip. A skip, like no
+answer, gives rows without a country and the warning `payer_country_unresolved`. The request is
+listed with its form (`requestIds`), but it never makes the form `needs_input` and never blocks. It
+is asked after the payer request of the same ISIN is answered or skipped. A recorded answer lists
+the same `countryCheck`. The question changes when a candidate or its origin changes.
+
 A treaty claim request (`income_details_required` for the dividends of one payer country with
 foreign tax in the year and no usable treaty text in the reference files) has no `options` and no
 `isin` and `"treatyCheck"` with `year`, `country` and `isins` (the ISINs of the taxed rows, sorted).
@@ -1056,8 +1075,9 @@ Additional codes and their default scope are:
 | `tax_classification_unknown` | Error from the classification stage (never from the capital gates) for capital gains on an investment with an unknown asset class: key `.confirmation_required` while its classification request is open (linked to it), `.cancelled` after a cancel (no request). The parse and merge errors about the class of that investment stay errors but no longer block. The same code, with the keys `.income_confirmation_required` and `.income_cancelled`, is the error for one interest or dividend payment of unknown type; it affects Doh-Div (only with an ISIN), Doh-DHO and Doh-Obr. |
 | `unsupported_tax_treatment` | Warning for a positively identified outside-scope category; error for a needed but unimplemented calculation in an otherwise selected report. |
 | `tax_category_not_reported` | Warning for an explicit classification exclusion by the user, never for a tax-rule exclusion (a bond, crypto, a Slovenian dividend payer: those are listed in `excludedItems` without a warning). Key `.user_choice`: the user left an unknown-class investment out, with the sources of the trade and action rows up to 31 December. Key `.user_choice_income`: the user left an interest or dividend payment of unknown type out of every form; key `.user_choice_income_missing_isin`: the same for a payment of a share, fund or bond that has no ISIN. |
-| `dividend_payer_not_found` | Warning for Doh-Div, once per ISIN: no reference row gave the payer, or several rows disagree and the user skipped them or has not answered. The rows of the ISIN are made without payer name, address and numbers and the user completes them in eDavki. Key `.country_known` (parameter `country`) when a country is known from the export, from reference rows that all name one country, or from the ISIN: the country of the rows is filled. Its sources are those of all the ISIN's payments in the year; with an open payer request it is linked to it. |
+| `dividend_payer_not_found` | Warning for Doh-Div, once per ISIN: no reference row gave the payer, or several rows disagree and the user skipped them or has not answered. The rows of the ISIN are made without payer name, address and numbers and the user completes them in eDavki. Key `.country_known` (parameter `country`) when a country is known from the export, from the user's answer to the payer country question, from reference rows that all name one country, or from the ISIN: the country of the rows is filled. Its sources are those of all the ISIN's payments in the year; with an open payer request it is linked to it. |
 | `payer_country_from_isin` | Warning for Doh-Div and Doh-Obr, once per ISIN and form: the payer and source country of the rows come from the first two letters of the ISIN, because neither the export nor a reference row gave a country. The user checks it in eDavki. Sources: those of the ISIN's payments in the year. |
+| `payer_country_unresolved` | Warning for Doh-Div and Doh-Obr, once per ISIN and form, key `.dividend` or `.interest`: the sources of the payer country differ (see the payer country request) and the user skipped the question, cancelled it or has not answered, so the rows have no country and the user completes it in eDavki. Linked to the open country request; not linked while the payer request of the ISIN is still open (the country request comes after it). Sources: those of the ISIN's payments in the year. |
 | `foreign_tax_evidence_required` | Warning for Doh-Div and Doh-Obr, once per form per run when a row left in the form has a foreign tax above 0 (a Doh-Obr row of a Slovenian payer does not count, its tax is not written; an investment the user leaves out of the form does not count either): the user attaches the evidence of the payment and the tax in eDavki; the app attaches nothing. The sources are those of the payments with tax. |
 | `official_rate_files_required` | Warning for the capital gains report: the years of the ECB rate files that the missing rates of investments sold in the year need. Key `.not_loaded` (`years`: the files are not loaded) or `.ends_early` (`years`: the files end before a trade day); `years` is a text such as `2023, 2024`. No ISIN or date; the sources are those of the trades behind the years. Given once per key after the per-ISIN `missing_exchange_rate` errors, and not given for a rate that no file can fix. |
 | `missing_exchange_rate` | Error for every report that needs one currency and tax date for which no official rate was found, one error per pair with all its sources: key `.no_rate_file` (parameters `currency`, `date`, `year`: the rate file of that year is not loaded), `.rate_file_ends_early` (`currency`, `date`, `lastDate`: the file of that year ends before the date), `.no_rate_on_date` (`currency`, `date`: the loaded files have no rate for it within 4 days before the date, or the currency was stopped) or `.replaced_by_eur` (`currency`, `date`, `euroDate`). For the capital gains report the error is given per ISIN, not per pair: the first foreign trade of an ISIN that has no rate names its date and sources, and the ISIN can be excluded. A trade with no known currency has the key `.trade` (no parameters). |

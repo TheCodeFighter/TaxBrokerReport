@@ -253,6 +253,21 @@ Parsed answerFor(const Json& aJson, const DecisionRequest& aRequest) {
 
             return PayerChoiceAnswer{aJson["option"].get<std::size_t>()};
         }
+        else if constexpr (std::is_same_v<Data, PayerCountryQuestion>)
+        {
+            if (aJson == "skip")
+            {
+                return PayerCountryAnswer{std::nullopt};
+            }
+
+            // The session checks that the string is a country code.
+            if (!hasExactKeys(aJson, {"country"}) || !aJson["country"].is_string())
+            {
+                return std::nullopt;
+            }
+
+            return PayerCountryAnswer{aJson["country"].get<std::string>()};
+        }
         else if constexpr (std::is_same_v<Data, DepositInterestTotalQuestion>)
         {
             return fromWords(aJson,

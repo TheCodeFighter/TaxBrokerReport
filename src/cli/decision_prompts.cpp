@@ -2,6 +2,7 @@
 
 #include "cli_text.hpp"
 #include "taxbroker/api/application_result_json.hpp"
+#include "taxbroker/country_codes.hpp"
 #include "taxbroker/currency.hpp"
 #include "taxbroker/split_ratio.hpp"
 #include "taxbroker/text_format.hpp"
@@ -961,6 +962,112 @@ readPayerAnswer(const PayerChoiceQuestion& aQuestion, std::istream& aIn, std::os
     }
 }
 
+/// The words that tell where a country of a payer country question comes from.
+std::string_view originText(CountryOrigin aOrigin) {
+    switch (aOrigin)
+    {
+    case CountryOrigin::Export:
+        return "the broker's export";
+    case CountryOrigin::Reference:
+        return "the reference files";
+    case CountryOrigin::ExportAndReference:
+        break;
+    }
+
+    return "the broker's export and the reference files";
+}
+
+/// The question which country the payer of an income payment is in, when the sources differ.
+void writePayerCountryQuestion(std::ostream& aOut,
+                               const DecisionRequest& aRequest,
+                               const PayerCountryQuestion& aQuestion) {
+    aOut << "Question " << aRequest.mId
+         << ": the sources name different countries for the payer of "
+         << investmentText(aQuestion.mIsin, aQuestion.mName) << ":\n";
+
+    for (std::size_t index = 0; index < aQuestion.mCandidates.size(); ++index)
+    {
+        const auto& candidate = aQuestion.mCandidates[index];
+
+        aOut << "  " << index + 1 << ": " << candidate.mCountry << " ("
+             << originText(candidate.mOrigin) << ")\n";
+    }
+
+    aOut << "  Enter the number of a country, other to type another country code, or skip: the\n"
+            "  country stays empty and you complete it in eDavki. The report is made either way.\n";
+}
+
+/// Asks for a country code until it is one. Empty when the input has ended.
+std::optional<std::string> readCountryCode(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Country code (2 letters):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        std::string code = *line;
+
+        std::transform(code.begin(), code.end(), code.begin(), [](unsigned char aChar) {
+            return static_cast<char>(std::toupper(aChar));
+        });
+
+        if (isIsoCountryCode(code))
+        {
+            return code;
+        }
+
+        aOut << "That is not a country code. Use 2 letters, for example SI.\n";
+    }
+}
+
+std::optional<AnswerValue> readPayerCountryAnswer(const PayerCountryQuestion& aQuestion,
+                                                  std::istream& aIn,
+                                                  std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(aIn, aOut, "Your answer (a number, other or skip):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const auto word = lowerCase(*line);
+
+        if (word == "skip")
+        {
+            return PayerCountryAnswer{.mCountry = std::nullopt};
+        }
+
+        if (word == "other")
+        {
+            const auto code = readCountryCode(aIn, aOut);
+
+            if (!code)
+            {
+                return std::nullopt;
+            }
+
+            return PayerCountryAnswer{.mCountry = *code};
+        }
+
+        const auto number = wholeNumber(word);
+
+        if (number && *number >= 1 &&
+            *number <= static_cast<std::int64_t>(aQuestion.mCandidates.size()))
+        {
+            return PayerCountryAnswer{
+                .mCountry = aQuestion.mCandidates[static_cast<std::size_t>(*number - 1)].mCountry};
+        }
+
+        aOut << "Answer a number from 1 to " << aQuestion.mCandidates.size()
+             << ", other or skip.\n";
+    }
+}
+
 /// The question what an income payment of unknown type is.
 void writeIncomeClassificationQuestion(std::ostream& aOut,
                                        const DecisionRequest& aRequest,
@@ -1066,6 +1173,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
         {
             writePayerQuestion(aOut, aRequest, aQuestion);
             return readPayerAnswer(aQuestion, aIn, aOut);
+        }
+        else if constexpr (std::is_same_v<Question, PayerCountryQuestion>)
+        {
+            writePayerCountryQuestion(aOut, aRequest, aQuestion);
+            return readPayerCountryAnswer(aQuestion, aIn, aOut);
         }
         else if constexpr (std::is_same_v<Question, TreatyClaimQuestion>)
         {
@@ -1217,6 +1329,11 @@ std::string answerText(const AnswerValue& aAnswer, bool aHasBrokers) {
             return aValue.mPickedOption ? "payer row " + std::to_string(*aValue.mPickedOption + 1)
                                         : std::string{"skipped, the payer is completed in eDavki"};
         }
+        else if constexpr (std::is_same_v<Value, PayerCountryAnswer>)
+        {
+            return aValue.mCountry ? "payer country " + *aValue.mCountry
+                                   : std::string{"skipped, the country is completed in eDavki"};
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -1257,6 +1374,7 @@ bool canAsk(const QuestionData& aData) {
             return true;
         }
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion> ||
+                           std::is_same_v<Question, PayerCountryQuestion> ||
                            std::is_same_v<Question, TreatyClaimQuestion> ||
                            std::is_same_v<Question, DepositInterestTotalQuestion> ||
                            std::is_same_v<Question, IncomeClassificationQuestion> ||
@@ -1402,6 +1520,10 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
         {
             return investmentText(aQuestion.mIsin, aQuestion.mName) + ", payer";
+        }
+        else if constexpr (std::is_same_v<Question, PayerCountryQuestion>)
+        {
+            return investmentText(aQuestion.mIsin, aQuestion.mName) + ", payer country";
         }
         else if constexpr (std::is_same_v<Question, TreatyClaimQuestion>)
         {

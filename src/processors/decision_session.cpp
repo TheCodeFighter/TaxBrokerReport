@@ -1,5 +1,6 @@
 #include "taxbroker/decision_session.hpp"
 #include "processors/fifo_matcher.hpp"
+#include "taxbroker/country_codes.hpp"
 #include "taxbroker/split_ratio.hpp"
 #include "utils/date_utils.hpp"
 #include "utils/numbered_id.hpp"
@@ -20,7 +21,8 @@ namespace {
 /// a classification question `capital_gains`, an exclusion or a cancel, and a ratio question a
 /// ratio or a cancel, or, when its rows are on different dates, that they are separate events, and
 /// a quantity question a corrected quantity or a cancel. A payer choice question takes a row among
-/// its options or a skip, never a cancel, and a deposit interest total question yes or no, and a
+/// its options or a skip, never a cancel, and a payer country question a valid country code, a
+/// skip or a cancel, and a deposit interest total question yes or no, and a
 /// bond type question a bond type or a cancel, a developer export question a confirmation or a
 /// cancel, and the developer export as a failure choice only when the question offers it, and a
 /// treaty claim question a valid text or no claim, and an interest treaty claim question yes or no,
@@ -75,6 +77,18 @@ namespace {
 
             return answer != nullptr &&
                    (!answer->mPickedOption || *answer->mPickedOption < aData.mOptions.size());
+        }
+        else if constexpr (std::is_same_v<Data, PayerCountryQuestion>)
+        {
+            // A typed country is any ISO 3166-1 code, not only a candidate; a cancel is a skip.
+            const auto* answer = std::get_if<PayerCountryAnswer>(&aAnswer);
+
+            if (answer != nullptr)
+            {
+                return !answer->mCountry || isIsoCountryCode(*answer->mCountry);
+            }
+
+            return std::holds_alternative<CancelAnswer>(aAnswer);
         }
         else if constexpr (std::is_same_v<Data, DepositInterestTotalQuestion>)
         {

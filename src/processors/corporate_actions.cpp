@@ -874,6 +874,7 @@ resolveFirstAction(ResolvedCorporateAction& aAction,
                           std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
                           std::is_same_v<Answer, QuantityCorrectionAnswer> ||
                           std::is_same_v<Answer, PayerChoiceAnswer> ||
+                          std::is_same_v<Answer, PayerCountryAnswer> ||
                           std::is_same_v<Answer, DepositInterestTotalAnswer> ||
                           std::is_same_v<Answer, IncomeTreatmentAnswer> ||
                           std::is_same_v<Answer, BondTypeAnswer> ||

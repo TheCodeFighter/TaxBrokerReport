@@ -2,6 +2,7 @@ import { uiTextWith } from "../../i18n/ui_texts";
 import { questionKind, type DecisionRequest } from "../../run/questions";
 import { BondQuestion } from "./bond_question";
 import { ClassificationQuestion } from "./classification_question";
+import { CountryQuestion } from "./country_question";
 import { DepositQuestion } from "./deposit_question";
 import { DeveloperConfirmation } from "./developer_confirmation";
 import { FailureQuestion } from "./failure_question";
@@ -35,6 +36,8 @@ function QuestionView({ env, request }: { env: QuestionEnv; request: DecisionReq
       return <IncomeQuestion env={env} request={request} />;
     case "payer":
       return <PayerQuestion env={env} request={request} />;
+    case "country":
+      return <CountryQuestion env={env} request={request} />;
     case "bond":
       return <BondQuestion env={env} request={request} />;
     case "treaty":

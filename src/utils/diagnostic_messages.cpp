@@ -505,6 +505,10 @@ constexpr std::array kDefinitions{
                       "interest_payer_not_found.country_known",
                       kCountry},
     MessageDefinition{MessageKey::PayerCountryFromIsin, "payer_country_from_isin", kCountry},
+    MessageDefinition{
+        MessageKey::PayerCountryUnresolvedDividend, "payer_country_unresolved.dividend", {}},
+    MessageDefinition{
+        MessageKey::PayerCountryUnresolvedInterest, "payer_country_unresolved.interest", {}},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -520,7 +524,8 @@ constexpr bool definitionsFollowKeyOrder() {
 }
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
-static_assert(kDefinitions.size() == static_cast<std::size_t>(MessageKey::PayerCountryFromIsin) + 1,
+static_assert(kDefinitions.size() ==
+                  static_cast<std::size_t>(MessageKey::PayerCountryUnresolvedInterest) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 11> kTermKeys{
