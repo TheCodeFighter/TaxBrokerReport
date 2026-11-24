@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   choiceText,
+  countryAnswer,
   incomeAnswer,
   NO_CLAIM_ANSWER,
   payerAnswer,
@@ -9,6 +10,8 @@ import {
   SKIP_ANSWER,
   treatyAnswer,
   treatyText,
+  typedCountry,
+  typedCountryIsWrong,
 } from "./income_questions";
 
 describe("incomeAnswer", () => {
@@ -32,6 +35,37 @@ describe("incomeAnswer", () => {
   it("does not send a kind with a choice that has none", () => {
     // The user picked a kind, then changed the choice to dividends: the kind is not sent.
     expect(incomeAnswer("dividends", "broker_cash")).toBe("dividends");
+  });
+});
+
+describe("countryAnswer and typedCountry", () => {
+  it("sends a country code, and nothing while there is none", () => {
+    expect(countryAnswer(undefined)).toBeUndefined();
+    expect(countryAnswer("US")).toEqual({ country: "US" });
+  });
+
+  it("takes two letters, trimmed and in capitals, as a typed code", () => {
+    expect(typedCountry("de")).toBe("DE");
+    expect(typedCountry(" ca ")).toBe("CA");
+    expect(typedCountry("")).toBeUndefined();
+    expect(typedCountry("U")).toBeUndefined();
+    expect(typedCountry("USA")).toBeUndefined();
+    expect(typedCountry("1A")).toBeUndefined();
+  });
+
+  it("takes only an assigned country code", () => {
+    expect(typedCountry("XX")).toBeUndefined(); // two letters, but no country
+    expect(typedCountry("EU")).toBeUndefined();
+    expect(typedCountry("si")).toBe("SI");
+    expect(typedCountry("ZW")).toBe("ZW"); // the last code of the list
+    expect(typedCountry("AD")).toBe("AD"); // the first
+  });
+
+  it("calls a typed text wrong only at two letters, not while it is being typed", () => {
+    expect(typedCountryIsWrong("")).toBe(false);
+    expect(typedCountryIsWrong("U")).toBe(false);
+    expect(typedCountryIsWrong("US")).toBe(false);
+    expect(typedCountryIsWrong("XX")).toBe(true);
   });
 });
 

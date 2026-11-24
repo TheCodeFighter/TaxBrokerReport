@@ -1856,6 +1856,121 @@ TEST(DecisionPromptsTest, AnInputEndingAtThePayerQuestionLeavesItOpen) {
     EXPECT_EQ(session.result().mRequests.size(), 1U);
 }
 
+/// A payer country question: the reference row says `IE`, the export says `US`.
+DecisionQuestion payerCountryQuestion() {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {ReportType::Dividends},
+        .mIsin = "XX0000000010",
+        .mData =
+            PayerCountryQuestion{
+                .mIsin = "XX0000000010",
+                .mName = "Synthetic Payer",
+                .mCandidates = {{.mCountry = "IE", .mOrigin = CountryOrigin::Reference},
+                                {.mCountry = "US", .mOrigin = CountryOrigin::Export}}},
+    };
+}
+
+TEST(DecisionPromptsTest,
+     APayerCountryQuestionListsTheCountriesWithTheirOriginAndTheNumberPicksOne) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerCountryQuestion()}));
+
+    const auto output = ask(session, "2\n");
+
+    EXPECT_TRUE(cli::canAsk(payerCountryQuestion().mData));
+    EXPECT_TRUE(contains(output,
+                         "Question request-0001: the sources name different countries for the "
+                         "payer of XX0000000010 Synthetic Payer:\n"
+                         "  1: IE (the reference files)\n"
+                         "  2: US (the broker's export)\n"));
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerCountryAnswer{.mCountry = "US"}});
+}
+
+TEST(DecisionPromptsTest, ACountryBothSourcesNameIsShownWithBothOrigins) {
+    auto question = payerCountryQuestion();
+
+    std::get<PayerCountryQuestion>(question.mData).mCandidates[0].mOrigin =
+        CountryOrigin::ExportAndReference;
+
+    DecisionSession session;
+    session.start(asksUntilAnswered({question}));
+
+    const auto output = ask(session, "1\n");
+
+    EXPECT_TRUE(contains(output, "  1: IE (the broker's export and the reference files)\n"));
+}
+
+TEST(DecisionPromptsTest, OtherAndALowerCaseCodeAnswersAPayerCountryQuestionWithThatCountry) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerCountryQuestion()}));
+
+    (void)ask(session, "other\nde\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerCountryAnswer{.mCountry = "DE"}});
+}
+
+TEST(DecisionPromptsTest, ATypedTextThatIsNoCountryIsAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerCountryQuestion()}));
+
+    const auto output = ask(session, "other\nXX\nCA\n");
+
+    EXPECT_EQ(countOf(output, "That is not a country code. Use 2 letters, for example SI.\n"), 1U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerCountryAnswer{.mCountry = "CA"}});
+}
+
+TEST(DecisionPromptsTest, ASkipAnswersAPayerCountryQuestionWithNoCountry) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerCountryQuestion()}));
+
+    (void)ask(session, "skip\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerCountryAnswer{.mCountry = std::nullopt}});
+}
+
+TEST(DecisionPromptsTest, ANumberOutsideTheCountriesIsAskedAgain) {
+    // The question has 2 countries, so 0, 3 and a word are not answers.
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerCountryQuestion()}));
+
+    const auto output = ask(session, "0\n3\nfirst\n1\n");
+
+    EXPECT_EQ(countOf(output, "Answer a number from 1 to 2, other or skip.\n"), 3U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              AnswerValue{PayerCountryAnswer{.mCountry = "IE"}});
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtThePayerCountryQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerCountryQuestion()}));
+
+    const auto output = ask(session, "");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheCountryCodeLeavesThePayerCountryQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({payerCountryQuestion()}));
+
+    const auto output = ask(session, "other\n");
+
+    EXPECT_TRUE(contains(output, "Input ended: the open questions are listed in the summary."));
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
 /// A treaty claim question for a country without a treaty text in the reference files.
 DecisionQuestion treatyQuestion() {
     return DecisionQuestion{

@@ -2186,7 +2186,7 @@ TEST(DividendPaymentsTest, TwoPaymentsOfOneIsinGiveOneIsinCountryWarning) {
     EXPECT_EQ(countOf(result.mDiagnostics, ProcessingDiagnosticCode::PayerCountryFromIsin), 1U);
 }
 
-TEST(DividendPaymentsTest, TwoDifferentExportCountriesOfOneIsinAreNotUsed) {
+TEST(DividendPaymentsTest, TwoExportCountriesOfOneIsinAreAQuestionAndWithoutAnAnswerNoCountry) {
     const auto catalogue = catalogueOf("");
     OfficialRateTable rates;
     MergedStatement statement;
@@ -2218,11 +2218,240 @@ TEST(DividendPaymentsTest, TwoDifferentExportCountriesOfOneIsinAreNotUsed) {
     const auto result =
         prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
 
-    // Neither `US` nor `IE` is picked; the ISIN prefix `NL` is the last step.
+    // One question: the export names `US` and `IE` for the one ISIN. It never blocks.
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& question = result.mRequests.at(0).mQuestion;
+
+    EXPECT_EQ(question.mType, RequestType::IncomeDetailsRequired);
+    EXPECT_EQ(question.mAffectedReports, std::vector<ReportType>{ReportType::Dividends});
+    EXPECT_EQ(question.mIsin, std::optional<Isin>{"NL0000000081"});
+    EXPECT_EQ(std::get<PayerCountryQuestion>(question.mData),
+              (PayerCountryQuestion{
+                  .mIsin = "NL0000000081",
+                  .mName = "Synthetic Payer A",
+                  .mCandidates = {{.mCountry = "IE", .mOrigin = CountryOrigin::Export},
+                                  {.mCountry = "US", .mOrigin = CountryOrigin::Export}}}));
+
+    // Both rows are written without a country, and the ISIN prefix `NL` is not used.
     ASSERT_EQ(result.mReport.mRows.size(), 2U);
-    EXPECT_EQ(result.mReport.mRows.at(0).mSourceCountry, std::optional<std::string>{"NL"});
-    EXPECT_EQ(result.mReport.mRows.at(1).mSourceCountry, std::optional<std::string>{"NL"});
-    EXPECT_EQ(countOf(result.mDiagnostics, ProcessingDiagnosticCode::PayerCountryFromIsin), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mPayer.mCountry, std::nullopt);
+    EXPECT_EQ(result.mReport.mRows.at(0).mSourceCountry, std::nullopt);
+    EXPECT_EQ(result.mReport.mRows.at(1).mPayer.mCountry, std::nullopt);
+    EXPECT_EQ(result.mReport.mRows.at(1).mSourceCountry, std::nullopt);
+
+    // The payer is not found (the plain message, as no country is known) and the country is open;
+    // the question is linked to the country warning.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::DividendPayerNotFound);
+    EXPECT_EQ(result.mDiagnostics.at(1).mCode, ProcessingDiagnosticCode::PayerCountryUnresolved);
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey, MessageKey::PayerCountryUnresolvedDividend);
+    EXPECT_EQ(result.mDiagnostics.at(1).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mRequests.at(0).mProcessingDiagnostics, std::vector<std::size_t>{1U});
+}
+
+TEST(DividendPaymentsTest, ACandidateAnswerOfTheCountryQuestionIsTheCountryOfEveryRow) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "NL0000000081",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 80'000, // EUR 8.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+                {.mMetadata = {.mTaxDate = day("2025-08-15"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 90'000, // EUR 9.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "IE"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "US"});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.mLast.mRequests.empty());
+
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mPayer.mCountry, std::optional<std::string>{"US"});
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mSourceCountry, std::optional<std::string>{"US"});
+    EXPECT_EQ(run.mLast.mReport.mRows.at(1).mPayer.mCountry, std::optional<std::string>{"US"});
+    EXPECT_EQ(run.mLast.mReport.mRows.at(1).mSourceCountry, std::optional<std::string>{"US"});
+
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryUnresolved),
+              0U);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryFromIsin), 0U);
+}
+
+TEST(DividendPaymentsTest, ATypedCountryThatIsNoCandidateIsTheCountryOfEveryRow) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "NL0000000081",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 80'000, // EUR 8.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+                {.mMetadata = {.mTaxDate = day("2025-08-15"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 90'000, // EUR 9.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "IE"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "DE"});
+
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mSourceCountry, std::optional<std::string>{"DE"});
+    EXPECT_EQ(run.mLast.mReport.mRows.at(1).mSourceCountry, std::optional<std::string>{"DE"});
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryUnresolved),
+              0U);
+}
+
+TEST(DividendPaymentsTest, ASkippedCountryQuestionGivesNoCountryAndOneWarning) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "NL0000000081",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 80'000, // EUR 8.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+                {.mMetadata = {.mTaxDate = day("2025-08-15"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 90'000, // EUR 9.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "IE"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = std::nullopt});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.mLast.mRequests.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mSourceCountry, std::nullopt);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(1).mSourceCountry, std::nullopt);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryUnresolved),
+              1U);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::DividendPayerNotFound), 1U);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryFromIsin), 0U);
+}
+
+TEST(DividendPaymentsTest, ACancelledCountryQuestionIsASkip) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "NL0000000081",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 80'000, // EUR 8.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+                {.mMetadata = {.mTaxDate = day("2025-08-15"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 90'000, // EUR 9.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "IE"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(CancelAnswer{});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.mLast.mRequests.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mSourceCountry, std::nullopt);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryUnresolved),
+              1U);
+}
+
+TEST(DividendPaymentsTest, ATypedCountryWithoutATreatyTextAsksTheTreatyQuestionForIt) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "NL0000000081",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 80'000, // EUR 8.00
+                 .mTaxPaid = 30'000,     // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+                {.mMetadata = {.mTaxDate = day("2025-08-15"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 90'000, // EUR 9.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "IE"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "CA"});
+
+    // No treaty text for `CA` in the reference files: one treaty question, which never blocks.
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(run.mLast.mRequests.size(), 1U);
+    EXPECT_EQ(std::get<TreatyClaimQuestion>(run.mLast.mRequests.at(0).mQuestion.mData),
+              (TreatyClaimQuestion{.mYear = 2025, .mCountry = "CA", .mIsins = {"NL0000000081"}}));
+    EXPECT_NE(dividendStatus(run.result()), ReportStatus::Failed);
 }
 
 TEST(DividendPaymentsTest, ASyntheticIsinPrefixIsNoCountryAndTheRowHasNoCountryClaimOrQuestion) {
@@ -2289,7 +2518,7 @@ TEST(DividendPaymentsTest, AnInternationalSecuritiesPrefixIsNoCountry) {
     EXPECT_EQ(countOf(result.mDiagnostics, ProcessingDiagnosticCode::PayerCountryFromIsin), 0U);
 }
 
-TEST(DividendPaymentsTest, TheExportCountryWinsOverTheCountryOfTheReferenceRow) {
+TEST(DividendPaymentsTest, AnExportCountryThatDiffersFromTheReferenceRowIsAQuestion) {
     const auto catalogue = treatyCatalogueOf(
         "XX0000000010,Payer A,IE1234567X,1 Main Street,IE,,,issuer,manual,\n",
         "US,dividend,US treaty text,manual,\nIE,dividend,IE treaty text,manual,\n");
@@ -2316,22 +2545,111 @@ TEST(DividendPaymentsTest, TheExportCountryWinsOverTheCountryOfTheReferenceRow) 
     const auto result =
         prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
 
+    // The export says `US`, the reference row says `IE`: one question, no country until answered.
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(std::get<PayerCountryQuestion>(result.mRequests.at(0).mQuestion.mData),
+              (PayerCountryQuestion{
+                  .mIsin = "XX0000000010",
+                  .mName = "Synthetic Payer A",
+                  .mCandidates = {{.mCountry = "IE", .mOrigin = CountryOrigin::Reference},
+                                  {.mCountry = "US", .mOrigin = CountryOrigin::Export}}}));
     ASSERT_EQ(result.mReport.mRows.size(), 1U);
 
     const auto& row = result.mReport.mRows.at(0);
 
-    // The name, address and number stay from the reference row; the country is the export's.
+    // The name and address of the row stay; no country, no number and no treaty claim.
     EXPECT_EQ(row.mPayer.mName, std::optional<std::string>{"Payer A"});
     EXPECT_EQ(row.mPayer.mAddress, std::optional<std::string>{"1 Main Street"});
+    EXPECT_EQ(row.mPayer.mCountry, std::nullopt);
+    EXPECT_EQ(row.mPayer.mIdentificationNumber, std::nullopt);
+    EXPECT_EQ(row.mSourceCountry, std::nullopt);
+    EXPECT_EQ(row.mTreatyClaim, std::nullopt);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::PayerCountryUnresolved);
+}
+
+TEST(DividendPaymentsTest, ThePickedCountryOfTheReferenceRowKeepsItsNumberAndTreatyText) {
+    const auto catalogue = treatyCatalogueOf(
+        "XX0000000010,Payer A,IE1234567X,1 Main Street,IE,,,issuer,manual,\n",
+        "US,dividend,US treaty text,manual,\nIE,dividend,IE treaty text,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 200000, // EUR 20.00
+                 .mTaxPaid = 30000,      // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "IE"});
+
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+
+    const auto& row = run.mLast.mReport.mRows.at(0);
+
     EXPECT_EQ(row.mPayer.mIdentificationNumber, std::optional<std::string>{"IE1234567X"});
+    EXPECT_EQ(row.mPayer.mCountry, std::optional<std::string>{"IE"});
+    EXPECT_EQ(row.mSourceCountry, std::optional<std::string>{"IE"});
+    ASSERT_TRUE(row.mTreatyClaim.has_value());
+    EXPECT_EQ(row.mTreatyClaim->mStatement, "IE treaty text");
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+}
+
+TEST(DividendPaymentsTest, AnotherPickedCountryTakesTheNumberOfTheReferenceRowAway) {
+    const auto catalogue = treatyCatalogueOf(
+        "XX0000000010,Payer A,IE1234567X,1 Main Street,IE,,,issuer,manual,\n",
+        "US,dividend,US treaty text,manual,\nIE,dividend,IE treaty text,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 200000, // EUR 20.00
+                 .mTaxPaid = 30000,      // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "US"});
+
+    // The number `IE1234567X` belongs to the country `IE` of its row, so `US` gets none.
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+
+    const auto& row = run.mLast.mReport.mRows.at(0);
+
+    EXPECT_EQ(row.mPayer.mName, std::optional<std::string>{"Payer A"});
     EXPECT_EQ(row.mPayer.mCountry, std::optional<std::string>{"US"});
+    EXPECT_EQ(row.mPayer.mIdentificationNumber, std::nullopt);
     EXPECT_EQ(row.mSourceCountry, std::optional<std::string>{"US"});
     ASSERT_TRUE(row.mTreatyClaim.has_value());
     EXPECT_EQ(row.mTreatyClaim->mStatement, "US treaty text");
-    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty()); // Doh-Div does not need the number.
 }
 
-TEST(DividendPaymentsTest, AnExportCountryOfSloveniaOverAForeignReferenceRowDropsTheForeignNumber) {
+TEST(DividendPaymentsTest,
+     ASloveniaExportCountryOverAForeignRowIsAQuestionAndSloveniaIsNoExclusion) {
     const auto catalogue =
         treatyCatalogueOf("XX0000000010,Payer A,IE1234567X,1 Main Street,IE,,,issuer,manual,\n",
                           "IE,dividend,IE treaty text,manual,\n");
@@ -2353,28 +2671,209 @@ TEST(DividendPaymentsTest, AnExportCountryOfSloveniaOverAForeignReferenceRowDrop
     }};
 
     orderChronologically(statement);
-    RunDecisions decisions;
+    DividendRun run{statement, catalogue, rates};
 
-    const auto result =
-        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+    // Open: candidates `IE` (reference) and `SI` (export), no country.
+    ASSERT_EQ(run.mLast.mRequests.size(), 1U);
+    EXPECT_EQ(
+        std::get<PayerCountryQuestion>(run.mLast.mRequests.at(0).mQuestion.mData).mCandidates,
+        (std::vector<PayerCountryCandidate>{{.mCountry = "IE", .mOrigin = CountryOrigin::Reference},
+                                            {.mCountry = "SI", .mOrigin = CountryOrigin::Export}}));
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mPayer.mCountry, std::nullopt);
 
-    // Not excluded: only the reference rows make a payer Slovenian. The row is written with the
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "SI"});
+
+    // Not excluded: only the reference row makes a payer Slovenian. The row is written with the
     // country `SI`, no number (an identification number on a Slovenian payer is rejected) and
     // the warning that the Slovenian tax number is missing. A Slovenian payer has no treaty.
-    EXPECT_TRUE(result.mExcludedItems.empty());
-    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.mLast.mExcludedItems.empty());
+    EXPECT_TRUE(run.mLast.mRequests.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
 
-    const auto& row = result.mReport.mRows.at(0);
+    const auto& row = run.mLast.mReport.mRows.at(0);
 
     EXPECT_EQ(row.mPayer.mCountry, std::optional<std::string>{"SI"});
     EXPECT_EQ(row.mPayer.mTaxNumber, std::nullopt);
     EXPECT_EQ(row.mPayer.mIdentificationNumber, std::nullopt);
     EXPECT_EQ(row.mSourceCountry, std::optional<std::string>{"SI"});
     EXPECT_EQ(row.mTreatyClaim, std::nullopt);
-    EXPECT_TRUE(result.mRequests.empty());
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode,
               ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing);
+}
+
+TEST(DividendPaymentsTest, AnExportCountryLikeTheCountryOfTheReferenceRowIsNoQuestion) {
+    const auto catalogue =
+        treatyCatalogueOf("XX0000000010,Payer A,US-TAX-1,1 Main Street,US,,,issuer,manual,\n",
+                          "US,dividend,US treaty text,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 200000, // EUR 20.00
+                 .mTaxPaid = 30000,      // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    // Both sources say `US`: no question, no diagnostic, and the number stays.
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mReport.mRows.size(), 1U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mPayer.mCountry, std::optional<std::string>{"US"});
+    EXPECT_EQ(result.mReport.mRows.at(0).mPayer.mIdentificationNumber,
+              std::optional<std::string>{"US-TAX-1"});
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(DividendPaymentsTest, TheCountryIsAskedOnlyAfterThePayerQuestionIsAnswered) {
+    // Two rows of different payers and countries disagree: the payer question comes first.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Payer A,IE1234567X,1 Main Street,IE,,,issuer,manual,\n"
+                    "XX0000000010,Payer B,US-TAX-2,2 Main Street,US,,,wikidata,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 200000, // EUR 20.00
+                 .mTaxPaid = 0,          // EUR 0.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "DE"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    // Round 1: only the payer question; no country question yet.
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    EXPECT_TRUE(std::holds_alternative<PayerChoiceQuestion>(run.result().mRequests.at(0).mData));
+
+    // The user picks the row of "Payer A" (the first option, sorted by name): `IE`. Round 2 asks
+    // the country with `DE` (export) and `IE` (reference).
+    const auto rejections = run.answerFirst(PayerChoiceAnswer{.mPickedOption = 0U});
+
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    EXPECT_EQ(std::get<PayerCountryQuestion>(run.result().mRequests.at(0).mData).mCandidates,
+              (std::vector<PayerCountryCandidate>{
+                  {.mCountry = "DE", .mOrigin = CountryOrigin::Export},
+                  {.mCountry = "IE", .mOrigin = CountryOrigin::Reference}}));
+}
+
+TEST(DividendPaymentsTest, TwoExportCountriesWithAnOpenPayerQuestionGiveNoCountryAndNoIsinPrefix) {
+    // The payer rows disagree and the payments name `DE` and `FR`; no answer to the payer question.
+    // The ISIN starts with `NL`, a country: without the rule the rows would take `NL`.
+    const auto catalogue =
+        catalogueOf("NL0000000081,Payer A,IE1234567X,1 Main Street,IE,,,issuer,manual,\n"
+                    "NL0000000081,Payer B,US-TAX-2,2 Main Street,US,,,wikidata,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "NL0000000081",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 80000, // EUR 8.00
+                 .mTaxPaid = 0,         // EUR 0.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "DE"},
+                {.mMetadata = {.mTaxDate = day("2025-08-15"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 90000, // EUR 9.00
+                 .mTaxPaid = 0,         // EUR 0.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "FR"},
+            },
+    }};
+
+    orderChronologically(statement);
+    RunDecisions decisions;
+
+    const auto result =
+        prepareDividendPayments(statement, ledger2025(), catalogue, rates, decisions);
+
+    // Only the payer question is open; the country question follows in the next round. Until
+    // then the rows have no country, and the first two letters of the ISIN are not used.
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_TRUE(
+        std::holds_alternative<PayerChoiceQuestion>(result.mRequests.at(0).mQuestion.mData));
+    ASSERT_EQ(result.mReport.mRows.size(), 2U);
+    EXPECT_EQ(result.mReport.mRows.at(0).mPayer.mCountry, std::nullopt);
+    EXPECT_EQ(result.mReport.mRows.at(1).mPayer.mCountry, std::nullopt);
+    EXPECT_EQ(result.mReport.mRows.at(0).mSourceCountry, std::nullopt);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::DividendPayerNotFound);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::DividendPayerNotFound);
+    EXPECT_EQ(result.mDiagnostics.at(1).mCode, ProcessingDiagnosticCode::PayerCountryUnresolved);
+    EXPECT_EQ(countOf(result.mDiagnostics, ProcessingDiagnosticCode::PayerCountryFromIsin), 0U);
+}
+
+TEST(DividendPaymentsTest, ASkippedPayerQuestionAsksTheCountryWithTheExportCountriesOnly) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Payer A,IE1234567X,1 Main Street,IE,,,issuer,manual,\n"
+                    "XX0000000010,Payer B,US-TAX-2,2 Main Street,US,,,wikidata,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-05-15"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 80000, // EUR 8.00
+                 .mTaxPaid = 0,         // EUR 0.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "DE"},
+                {.mMetadata = {.mTaxDate = day("2025-08-15"),
+                               .mSources = {source(3, "synthetic-div-2")}},
+                 .mGrossAmount = 90000, // EUR 9.00
+                 .mTaxPaid = 0,         // EUR 0.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "FR"},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerChoiceAnswer{.mPickedOption = std::nullopt});
+
+    // No reference row is in use after the skip, so only `DE` and `FR` (both from the export) are
+    // offered; `IE` and `US` of the rows are not.
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    EXPECT_EQ(
+        std::get<PayerCountryQuestion>(run.result().mRequests.at(0).mData).mCandidates,
+        (std::vector<PayerCountryCandidate>{{.mCountry = "DE", .mOrigin = CountryOrigin::Export},
+                                            {.mCountry = "FR", .mOrigin = CountryOrigin::Export}}));
 }
 
 TEST(DividendPaymentsTest, ASlovenianReferenceRowStaysExcludedWhateverTheExportCountry) {

@@ -644,6 +644,8 @@ TEST(ApplicationResultJsonTest, TheMergeCodesOfAnIncomePaymentHaveTheirOwnNames)
     EXPECT_EQ(toString(ProcessingDiagnosticCode::MarginOrLeverageRowsLeftOut),
               "margin_or_leverage_rows_left_out");
     EXPECT_EQ(toString(ProcessingDiagnosticCode::PayerCountryFromIsin), "payer_country_from_isin");
+    EXPECT_EQ(toString(ProcessingDiagnosticCode::PayerCountryUnresolved),
+              "payer_country_unresolved");
 }
 
 TEST(ApplicationResultJsonTest, WritesEveryMergeCode) {
@@ -2416,6 +2418,69 @@ TEST(ApplicationResultJsonTest, RecordedPayerAnswersAreAPositionOrASkip) {
     EXPECT_EQ(decisions[1].at("answer"), "skip");
     EXPECT_EQ(decisions[0].at("payerCheck").at("isin"), "XX0000000010");
     EXPECT_EQ(decisions[0].at("payerCheck").at("options").size(), 2U);
+}
+
+TEST(ApplicationResultJsonTest, APayerCountryRequestListsTheCandidatesWithTheirOrigin) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion = {
+            .mType = RequestType::IncomeDetailsRequired,
+            .mAffectedReports = {ReportType::Dividends},
+            .mIsin = "NL0000000081",
+            // Given in the wrong order on purpose: the result sorts them by country.
+            .mData =
+                PayerCountryQuestion{
+                    .mIsin = "NL0000000081",
+                    .mName = "Synthetic Payer A",
+                    .mCandidates = {{.mCountry = "US", .mOrigin = CountryOrigin::Export},
+                                    {.mCountry = "IE", .mOrigin = CountryOrigin::Export},
+                                    {.mCountry = "GB",
+                                     .mOrigin = CountryOrigin::ExportAndReference},
+                                    {.mCountry = "DE", .mOrigin = CountryOrigin::Reference}}},
+        }}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto& request = json.at("requests").at(0);
+
+    EXPECT_EQ(request.at("type"), "income_details_required");
+    EXPECT_EQ(request.at("isin"), "NL0000000081");
+    EXPECT_EQ(request.at("countryCheck"),
+              (nlohmann::json{{"name", "Synthetic Payer A"},
+                              {"isin", "NL0000000081"},
+                              {"candidates",
+                               {{{"country", "DE"}, {"origin", "reference"}},
+                                {{"country", "GB"}, {"origin", "export_and_reference"}},
+                                {{"country", "IE"}, {"origin", "export"}},
+                                {{"country", "US"}, {"origin", "export"}}}}}));
+}
+
+TEST(ApplicationResultJsonTest, RecordedPayerCountryAnswersAreACodeOrASkip) {
+    ApplicationResult result;
+    const PayerCountryQuestion question{
+        .mIsin = "NL0000000081",
+        .mName = "Synthetic Payer A",
+        .mCandidates = {{.mCountry = "IE", .mOrigin = CountryOrigin::Export},
+                        {.mCountry = "US", .mOrigin = CountryOrigin::Export}}};
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = PayerCountryAnswer{.mCountry = "DE"}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::IncomeDetailsRequired,
+                         .mData = question,
+                         .mAnswer = PayerCountryAnswer{.mCountry = std::nullopt}},
+    };
+
+    const auto json = serialize(result);
+    const auto& decisions = json.at("decisions");
+
+    ASSERT_EQ(decisions.size(), 2U);
+    EXPECT_EQ(decisions[0].at("answer"), (nlohmann::json{{"country", "DE"}}));
+    EXPECT_EQ(decisions[1].at("answer"), "skip");
+    EXPECT_EQ(decisions[0].at("countryCheck").at("isin"), "NL0000000081");
+    EXPECT_EQ(decisions[0].at("countryCheck").at("candidates").size(), 2U);
 }
 
 TEST(ApplicationResultJsonTest, ASlovenianPayerItemWritesItsDividendCategoryAndTaxRuleBasis) {

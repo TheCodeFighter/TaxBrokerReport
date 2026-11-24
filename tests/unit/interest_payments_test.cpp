@@ -3205,9 +3205,7 @@ TEST(InterestPaymentsTest, ASyntheticIsinPrefixGivesACouponNoCountry) {
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey, MessageKey::InterestPayerNotFound);
 }
 
-TEST(InterestPaymentsTest, TheExportCountryOfATaxedCouponGivesBothCountriesAndTheClaim) {
-    // The reference row says `GB`; the export says `US`, which wins for both countries. The
-    // identification number stays from the reference row.
+TEST(InterestPaymentsTest, AnExportCountryThatDiffersFromTheReferenceRowIsAQuestion) {
     const auto catalogue =
         catalogueWithReliefOf("XX0000000010,Issuer A,GB-REG-1,1 Main Street,GB,,,issuer,manual,\n",
                               "US,bond_coupon,2. odstavek 11. člena,manual,\n");
@@ -3236,21 +3234,82 @@ TEST(InterestPaymentsTest, TheExportCountryOfATaxedCouponGivesBothCountriesAndTh
 
     InterestRun run{statement, catalogue, rates};
 
+    // The reference row says `GB`, the export says `US`: Doh-Obr gets a question.
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    EXPECT_EQ(run.result().mRequests.at(0).mAffectedReports,
+              std::vector<ReportType>{ReportType::OtherInterest});
+    EXPECT_EQ(
+        std::get<PayerCountryQuestion>(run.result().mRequests.at(0).mData).mCandidates,
+        (std::vector<PayerCountryCandidate>{{.mCountry = "GB", .mOrigin = CountryOrigin::Reference},
+                                            {.mCountry = "US", .mOrigin = CountryOrigin::Export}}));
+
+    // Without an answer the row keeps the name and address, but has no country, no number and no
+    // claim.
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+
+    const auto& open = run.mLast.mOtherReport.mRows.at(0);
+
+    EXPECT_EQ(open.mPayer.mName, std::optional<std::string>{"Issuer A"});
+    EXPECT_EQ(open.mPayer.mCountry, std::nullopt);
+    EXPECT_EQ(open.mPayer.mIdentificationNumber, std::nullopt);
+    EXPECT_EQ(open.mSourceCountry, std::nullopt);
+    EXPECT_EQ(open.mTreatyClaim, std::nullopt);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryUnresolved),
+              1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey, MessageKey::PayerCountryUnresolvedInterest);
+}
+
+TEST(InterestPaymentsTest, ThePickedExportCountryOfATaxedCouponGivesBothCountriesAndTheClaim) {
+    const auto catalogue =
+        catalogueWithReliefOf("XX0000000010,Issuer A,GB-REG-1,1 Main Street,GB,,,issuer,manual,\n",
+                              "US,bond_coupon,2. odstavek 11. člena,manual,\n");
+    OfficialRateTable rates;
+
+    MergedStatement statement;
+
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "Synthetic Bond",
+        .mIsin = "XX0000000010",
+        .mInterestType = InterestType::BondInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-03-14"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 250'000, // EUR 25.00
+                 .mTaxPaid = 30000,       // EUR 3.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "US"});
+
+    // The number `GB-REG-1` belongs to the country `GB` of its row, so `US` gets none: Doh-Obr
+    // warns that the number is missing.
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.mLast.mRequests.empty());
     ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
 
     const auto& row = run.mLast.mOtherReport.mRows.at(0);
 
     EXPECT_EQ(row.mPayer.mName, std::optional<std::string>{"Issuer A"});
-    EXPECT_EQ(row.mPayer.mIdentificationNumber, std::optional<std::string>{"GB-REG-1"});
+    EXPECT_EQ(row.mPayer.mIdentificationNumber, std::nullopt);
     EXPECT_EQ(row.mPayer.mCountry, std::optional<std::string>{"US"});
     EXPECT_EQ(row.mSourceCountry, std::optional<std::string>{"US"});
     ASSERT_TRUE(row.mTreatyClaim.has_value());
     EXPECT_EQ(row.mTreatyClaim->mStatement, std::optional<std::string>{"2. odstavek 11. člena"});
-    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode,
+              ProcessingDiagnosticCode::InterestPayerNumberMissing);
 }
 
-TEST(InterestPaymentsTest,
-     AnExportCountryOfSloveniaOverAForeignIssuerDropsTheIdentificationNumber) {
+TEST(InterestPaymentsTest, ThePickedCountryOfTheReferenceRowKeepsItsNumber) {
     const auto catalogue =
         catalogueOf("XX0000000010,Issuer A,GB-REG-1,1 Main Street,GB,,,issuer,manual,\n");
     OfficialRateTable rates;
@@ -3267,7 +3326,45 @@ TEST(InterestPaymentsTest,
                      {.mTaxDate = day("2025-03-14"),
                       .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
                  .mGrossAmount = 250'000, // EUR 25.00
-                 .mTaxPaid = 0,
+                 .mTaxPaid = 0,           // EUR 0.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "GB"});
+
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mCountry, std::optional<std::string>{"GB"});
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mIdentificationNumber,
+              std::optional<std::string>{"GB-REG-1"});
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
+}
+
+TEST(InterestPaymentsTest, ASloveniaExportCountryOverAForeignIssuerIsAQuestionOfItsOwn) {
+    const auto catalogue =
+        catalogueOf("XX0000000010,Issuer A,GB-REG-1,1 Main Street,GB,,,issuer,manual,\n");
+    OfficialRateTable rates;
+
+    MergedStatement statement;
+
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "Synthetic Bond",
+        .mIsin = "XX0000000010",
+        .mInterestType = InterestType::BondInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-03-14"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 250'000, // EUR 25.00
+                 .mTaxPaid = 0,           // EUR 0.00
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
                  .mPayerCountry = "SI"},
@@ -3278,8 +3375,11 @@ TEST(InterestPaymentsTest,
 
     InterestRun run{statement, catalogue, rates};
 
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "SI"});
+
     // A Slovenian payer never has an identification number (the form rejects it) and needs a
     // Slovenian tax number, which the reference row does not have: one warning, no error.
+    EXPECT_TRUE(rejections.empty());
     ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
 
     const auto& row = run.mLast.mOtherReport.mRows.at(0);
@@ -3292,6 +3392,71 @@ TEST(InterestPaymentsTest,
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode,
               ProcessingDiagnosticCode::SlovenianPayerTaxNumberMissing);
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+}
+
+TEST(InterestPaymentsTest, TwoExportCountriesOfOneCouponIsinWithoutARowAreAQuestion) {
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+
+    MergedStatement statement;
+
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "Synthetic Bond",
+        .mIsin = "XX0000000010",
+        .mInterestType = InterestType::BondInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-03-14"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 250'000, // EUR 25.00
+                 .mTaxPaid = 0,           // EUR 0.00
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "US"},
+                {.mMetadata =
+                     {.mTaxDate = day("2025-04-14"),
+                      .mSources = {source(Broker::InteractiveBrokers, 3, "synthetic-int-2")}},
+                 .mGrossAmount = 250'000, // EUR 25.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mPayerCountry = "IE"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    // The export names `US` and `IE` for the one ISIN; no reference row. Doh-Obr is asked.
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    EXPECT_EQ(run.result().mRequests.at(0).mAffectedReports,
+              std::vector<ReportType>{ReportType::OtherInterest});
+    EXPECT_EQ(
+        std::get<PayerCountryQuestion>(run.result().mRequests.at(0).mData).mCandidates,
+        (std::vector<PayerCountryCandidate>{{.mCountry = "IE", .mOrigin = CountryOrigin::Export},
+                                            {.mCountry = "US", .mOrigin = CountryOrigin::Export}}));
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mCountry, std::nullopt);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryUnresolved),
+              1U);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryFromIsin), 0U);
+
+    const auto rejections = run.answerFirst(PayerCountryAnswer{.mCountry = "US"});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(run.mLast.mRequests.empty());
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 2U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mCountry, std::optional<std::string>{"US"});
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(1).mPayer.mCountry, std::optional<std::string>{"US"});
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::PayerCountryUnresolved),
+              0U);
+    // No reference row: the payer is not found (its own warning, with the country filled), and
+    // the number-missing warning is only for a payer that was found.
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::InterestPayerNotFound), 1U);
+    EXPECT_EQ(countOf(run.mLast.mDiagnostics, ProcessingDiagnosticCode::InterestPayerNumberMissing),
+              0U);
 }
 
 } // namespace

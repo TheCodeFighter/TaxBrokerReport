@@ -34,6 +34,7 @@ std::vector<DecisionRequest> allRequests() {
         make(RequestType::TaxClassificationRequired, IncomeClassificationQuestion{}),
         make(RequestType::QuantityCorrectionRequired, QuantityCorrectionQuestion{}),
         make(RequestType::IncomeDetailsRequired, PayerChoiceQuestion{}),
+        make(RequestType::IncomeDetailsRequired, PayerCountryQuestion{}),
         make(RequestType::IncomeDetailsRequired, TreatyClaimQuestion{}),
         make(RequestType::IncomeDetailsRequired, BondTypeQuestion{}),
         make(RequestType::DepositInterestTotalRequired, DepositInterestTotalQuestion{}),

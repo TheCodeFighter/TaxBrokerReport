@@ -318,6 +318,32 @@ describe("decisionRows for the income and classification answers", () => {
     expect(rows[1]?.answer).toBe("Skipped (payer facts empty)");
   });
 
+  it("describes the typed or picked payer country and a skip", () => {
+    const check = {
+      name: "Example Corp",
+      isin: "US0000000001",
+      candidates: [
+        { country: "IE", origin: "export" },
+        { country: "US", origin: "reference" },
+      ],
+    };
+    const picked: Decision = {
+      ...base,
+      id: "decision-0001",
+      type: "income_details_required",
+      countryCheck: check,
+      answer: { country: "DE" },
+    };
+    const skipped: Decision = { ...picked, id: "decision-0002", answer: "skip" };
+
+    const rows = decisionRows([picked, skipped], "en");
+
+    expect(rows[0]?.title).toBe("Payer country");
+    expect(rows[0]?.investment).toBe("Example Corp (US0000000001)");
+    expect(rows[0]?.answer).toBe("Country: DE");
+    expect(rows[1]?.answer).toBe("Skipped (country empty)");
+  });
+
   it("describes a bond type, a treaty text, no claim and a deposit total", () => {
     const bond: Decision = {
       ...base,
