@@ -1,4 +1,4 @@
-import { localizeNumber } from "../i18n/number_format";
+import { localizeNumber, roundToCents } from "../i18n/number_format";
 import { uiText, uiTextWith, type Language, type UiTextKey } from "../i18n/ui_texts";
 import { brokerTitle } from "./result_view";
 import type {
@@ -119,18 +119,27 @@ export function depositReminder(deposit: DepositInterest | undefined, language: 
   return uiTextWith(language, "depositReminder", { imported: deposit.importedInterestEur, limit: deposit.limitEur });
 }
 
+/** An amount of the fee and benefit block, two decimals (the text then gets the language's comma). */
+function amountText(amount: string): string {
+  return roundToCents(amount);
+}
+
 /** An EUR total as text, or the "not available" text: never a sum of the known part. */
 function totalText(total: string | null, language: Language): string {
   return total === null
     ? uiText(language, "summaryTotalUnavailable")
-    : uiTextWith(language, "summaryTotal", { total });
+    : uiTextWith(language, "summaryTotal", { total: amountText(total) });
 }
 
 function currencyLines(totals: CurrencyTotal[], language: Language): string[] {
   return totals.map((entry) =>
     entry.total === null
       ? uiTextWith(language, "summaryLineNoTotal", { currency: entry.currency, count: entry.count })
-      : uiTextWith(language, "summaryLine", { currency: entry.currency, total: entry.total, count: entry.count }),
+      : uiTextWith(language, "summaryLine", {
+          currency: entry.currency,
+          total: amountText(entry.total),
+          count: entry.count,
+        }),
   );
 }
 

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 
 import { newContext } from "./browser";
-import { chooseBrokerFiles, chooseReferenceFiles, type UploadFile } from "./files";
+import { chooseBrokerFiles, chooseFilesInArea, chooseReferenceFiles, type UploadFile } from "./files";
 import type { RunningServer } from "./server";
 
 /** The made-up tax number of tests/test_data/cli/taxpayer.json (it has a correct check digit). */
@@ -38,6 +38,8 @@ export async function openReportPage(context: BrowserContext, server: RunningSer
 export interface RunInput {
   /** File contents, or paths of files on disk for a very large file. */
   files: UploadFile[] | string[];
+  /** Files added to the file area with the given title, after the first area's files. */
+  areaFiles?: { title: string; files: UploadFile[] }[];
   year: number;
   /** Reference files (payers and treaty texts), added in "Druge datoteke". */
   referenceFiles?: UploadFile[];
@@ -55,6 +57,10 @@ export async function startRun(page: Page, input: RunInput): Promise<void> {
 /** Fills the files, the year and the taxpayer, and sends nothing. */
 export async function fillRunForm(page: Page, input: RunInput): Promise<void> {
   await chooseBrokerFiles(page, input.files);
+
+  for (const area of input.areaFiles ?? []) {
+    await chooseFilesInArea(page, area.title, area.files);
+  }
 
   if (input.referenceFiles !== undefined) {
     await chooseReferenceFiles(page, input.referenceFiles);

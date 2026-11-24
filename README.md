@@ -63,11 +63,12 @@ scripts/report.sh --synthetic         # try it on the synthetic example data
 scripts/report.sh --command-help      # the options, the taxpayer file and every blocked case
 ```
 
-For your own report, put your Trade Republic exports and a taxpayer file below the ignored
-`runtime/` folder, then run:
+For your own report, put your Trade Republic exports (CSV) and Interactive Brokers exports (Flex
+Query XML) and a taxpayer file below the ignored `runtime/` folder, then run:
 
 ```sh
-scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json --trade-republic runtime/export.csv
+scripts/report.sh --year 2025 --taxpayer runtime/taxpayer.json \
+  --trade-republic runtime/export.csv --ibkr runtime/flex_query.xml
 ```
 
 Give your whole history, not only the tax year. The XML and a readable summary are written to

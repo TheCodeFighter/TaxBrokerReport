@@ -49,13 +49,13 @@ namespace taxbroker::cli {
 namespace {
 
 constexpr std::string_view kGeneralHelp =
-    R"(taxbroker: turns broker CSV exports into Slovenian FURS tax forms (XML for eDavki).
+    R"(taxbroker: turns broker exports into Slovenian FURS tax forms (XML for eDavki).
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
                    [--developer-export] [--support-report] [--log-level LEVEL]
                    [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
-                   --trade-republic FILE...
+                   [--trade-republic FILE...] [--ibkr FILE...]
   taxbroker report --help
   taxbroker --help
 
@@ -70,11 +70,12 @@ constexpr std::string_view kReportHelp =
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
                    [--developer-export] [--support-report] [--log-level LEVEL]
                    [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
-                   --trade-republic FILE...
+                   [--trade-republic FILE...] [--ibkr FILE...]
 
 Writes the forms Doh-KDVP (capital gains from selling shares and funds), Doh-Div (dividends),
 Doh-DHO (bank-deposit interest) and Doh-Obr (other interest and bond coupons) for one year
-from Trade Republic CSV exports, and a readable summary. The XML can be imported into eDavki
+from Trade Republic CSV exports and Interactive Brokers Flex Query XML files, and a readable
+summary. The XML can be imported into eDavki
 as a draft. Nothing is sent anywhere: everything stays on this computer. Each form is
 made on its own: a blocked form never stops another.
 
@@ -109,6 +110,10 @@ whose name starts with "-" is given as ./-name.csv.
                      One or more Trade Republic exports. Give your whole history, not
                      only the tax year: FIFO needs the older purchases. Overlapping files
                      are fine; a transaction in two files is counted once.
+  --ibkr FILE...     One or more Interactive Brokers Flex Query XML files (the Activity Flex
+                     Query). Give your whole history, as for Trade Republic. At least one file
+                     of any broker is needed. The file numbers in the messages follow this
+                     order: all --trade-republic files, then all --ibkr files, each as given.
   --ecb-rates FILE...
                      ECB reference-rate files (CSV from the ECB Data Portal, dataset EXR),
                      one per calendar year. The years 2016 to 2025 are built in; a file for
@@ -158,7 +163,7 @@ Supported for now:
   - The 30-day loss rule: a sale at a loss whose loss a purchase of the same investment
     within 30 days before or after it blocks in full is written with F10 false. A loss
     that the files alone cannot decide is written as you answer (see "Questions").
-  - Dividends (Doh-Div), Trade Republic interest (Doh-DHO or Doh-Obr) and bond coupons
+  - Dividends (Doh-Div), broker interest (Doh-DHO or Doh-Obr) and bond coupons
     (Doh-Obr), in EUR or a currency with an official ECB rate.
 
 Questions:
@@ -279,6 +284,7 @@ struct ReportOptions {
     std::optional<spdlog::level::level_enum> mLogLevel; ///< --log-level; empty keeps the default.
     std::filesystem::path mOutputDirectory;
     std::vector<std::filesystem::path> mTradeRepublicPaths; ///< The --trade-republic files.
+    std::vector<std::filesystem::path> mIbkrPaths;          ///< The --ibkr files.
     std::vector<std::filesystem::path> mEcbRatePaths;       ///< The --ecb-rates files.
     std::vector<std::filesystem::path> mReferencePaths;     ///< The --reference-files files.
 };
@@ -365,6 +371,10 @@ parseReportArguments(std::span<const std::string> aArguments) {
         if (argument == "--trade-republic")
         {
             list = &options.mTradeRepublicPaths;
+        }
+        else if (argument == "--ibkr")
+        {
+            list = &options.mIbkrPaths;
         }
         else if (argument == "--ecb-rates")
         {
@@ -494,9 +504,9 @@ parseReportArguments(std::span<const std::string> aArguments) {
         return UsageError{"--out is missing."};
     }
 
-    if (options.mTradeRepublicPaths.empty())
+    if (options.mTradeRepublicPaths.empty() && options.mIbkrPaths.empty())
     {
-        return UsageError{"Give at least one Trade Republic CSV file with --trade-republic."};
+        return UsageError{"Give at least one broker file (--trade-republic or --ibkr)."};
     }
 
     if (logLevelText.has_value())
@@ -539,6 +549,18 @@ std::optional<UsageError> checkInputFiles(const ReportOptions& aOptions) {
     if (missingCsv != aOptions.mTradeRepublicPaths.end())
     {
         return UsageError{"The CSV file " + fileNameOf(*missingCsv) +
+                          " does not exist or is not a file."};
+    }
+
+    const auto missingXml = std::find_if(aOptions.mIbkrPaths.begin(),
+                                         aOptions.mIbkrPaths.end(),
+                                         [&error](const std::filesystem::path& aPath) {
+                                             return !std::filesystem::is_regular_file(aPath, error);
+                                         });
+
+    if (missingXml != aOptions.mIbkrPaths.end())
+    {
+        return UsageError{"The XML file " + fileNameOf(*missingXml) +
                           " does not exist or is not a file."};
     }
 
@@ -1997,6 +2019,14 @@ int runReportCommand(std::span<const std::string> aArguments,
             [&request](InputFile&& aFile) {
                 request.mBrokerFiles.push_back(
                     {.mBroker = Broker::TradeRepublic, .mFile = std::move(aFile)});
+            },
+            aErr) ||
+        !readInputFiles(
+            options.mIbkrPaths,
+            "XML file",
+            [&request](InputFile&& aFile) {
+                request.mBrokerFiles.push_back(
+                    {.mBroker = Broker::InteractiveBrokers, .mFile = std::move(aFile)});
             },
             aErr) ||
         !readInputFiles(

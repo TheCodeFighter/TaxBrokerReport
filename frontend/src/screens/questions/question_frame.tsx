@@ -14,6 +14,7 @@ import {
   type DecisionRequest,
   type RejectionTarget,
 } from "../../run/questions";
+import { questionFiles } from "../../run/question_files";
 import type { Diagnostic, RunResult } from "../../run/submit";
 
 /** What every question and answer list needs from the result screen. */
@@ -100,6 +101,7 @@ export function QuestionFrame({ env, request, title, answer, allowCancel, cancel
   const [problem, setProblem] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const anchor = questionAnchor(request.id);
+  const files = questionFiles(request.sources, env.fileLabels, env.language);
 
   const post = async (value: AnswerValue) => {
     setBusy(true);
@@ -137,6 +139,16 @@ export function QuestionFrame({ env, request, title, answer, allowCancel, cancel
       <h5 id={`${anchor}-title`} tabIndex={-1}>
         {title}
       </h5>
+      {files.length === 0 ? null : (
+        <div class="question-files">
+          <p class="hint">{uiText(env.language, "questionFiles")}</p>
+          <ul class="plain-list">
+            {files.map((file) => (
+              <li key={file}>{file}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <fieldset class="question-fields" disabled={busy || env.disabled}>
         {children(messagesFor)}
         <div class="question-actions">

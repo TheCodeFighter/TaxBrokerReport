@@ -49,8 +49,9 @@ A script that needs the image stops with a hint when it is missing. `test.sh`, `
 when it is missing. CI uses the same flag in the jobs that follow the build job.
 
 Options can come in any order, so `scripts/report.sh --trade-republic runtime/export.csv
---self-report` works: a file option (`--trade-republic`, `--ecb-rates`, `--reference-files`) takes
-the paths after it up to the next option. For Tab completion of the script options, years and paths in bash or zsh, add this line to
+--self-report` works: a file option (`--trade-republic`, `--ibkr`, `--ecb-rates`,
+`--reference-files`) takes the paths after it up to the next option. For Tab completion of the
+script options, years and paths in bash or zsh, add this line to
 `~/.bashrc` or `~/.zshrc` (in zsh after `compinit`):
 
 ```sh

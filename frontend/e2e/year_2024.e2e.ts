@@ -13,6 +13,7 @@ import {
   sendAnswer,
   startRun,
 } from "./support/report_page";
+import { IBKR_FILE_NAMES } from "./support/scenarios";
 import { useSession } from "./support/session";
 
 const YEARS = ["2022", "2023", "2024", "2025"];
@@ -23,8 +24,9 @@ describe("year 2024 of the manual files", () => {
   it("E7 answers the questions of 2024, leaves out Bond B and warns about the certificate", async () => {
     const page = await openReportPage(session.context, session.server);
     const files = await Promise.all(YEARS.map((year) => manualFile(`trade_republic_${year}.csv`)));
+    const ibkrFiles = await Promise.all(IBKR_FILE_NAMES.map((name) => manualFile(name)));
 
-    await startRun(page, { files, year: 2024 });
+    await startRun(page, { files, areaFiles: [{ title: "Interactive Brokers", files: ibkrFiles }], year: 2024 });
 
     // Class of the unknown share: capital gains.
     const classification = question(page, "Synthetic Unknown Class Share (XX0000000118)", "Doh-KDVP");
@@ -65,11 +67,13 @@ describe("year 2024 of the manual files", () => {
     await sendAnswer(obrFailure);
 
     // README, 2024: Doh-KDVP generated, without the certificate; Doh-Div 5 rows; Doh-DHO no data;
-    // Doh-Obr 3 rows without Bond B; the warning about the 2 rows of the certificate.
+    // Doh-Obr 3 rows without Bond B; two warnings about left-out derivative rows: 2 rows of the
+    // certificate (Trade Republic) and 1 row of the option (Interactive Brokers).
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
     expect(await excludedInvestments(page, "Doh-KDVP").count()).toBe(0);
     expect(await page.getByText("Synthetic Index Certificate").count()).toBe(0);
     expect(await resultRegion(page).getByText("(število vrstic: 2)").count()).toBe(1);
+    expect(await resultRegion(page).getByText("(število vrstic: 1)").count()).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
     expect(await card(page, "Doh-Div").getByText(/Vrstice: 5,/).count()).toBe(1);
     expect(await cardStatus(page, "Doh-DHO")).toBe("ni podatkov");

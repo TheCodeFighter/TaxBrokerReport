@@ -24,7 +24,7 @@ function SummaryList({ language, title, view }: { language: Language; title: str
             </ul>
           </li>
         ))}
-        <li>
+        <li class="summary-total">
           <strong>{`${uiText(language, "summaryOverall")}: `}</strong>
           {view.total}
         </li>

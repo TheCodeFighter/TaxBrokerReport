@@ -10,6 +10,9 @@ export const MANUAL_FILE_NAMES = [
   "trade_republic_2025.csv",
 ];
 
+/** The Interactive Brokers manual files of the four years, in the order of the history. */
+export const IBKR_FILE_NAMES = ["ibkr_2022.xml", "ibkr_2023.xml", "ibkr_2024.xml", "ibkr_2025.xml"];
+
 /**
  * The four answers of 2022 from tests/test_data/manual/README.md: 30-day loss of the Partly
  * Blocked Share yes, of the Loss Share no, treaty text for BR "Article 10", the first payer of

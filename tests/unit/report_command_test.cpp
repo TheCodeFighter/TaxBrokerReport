@@ -121,13 +121,13 @@ bool contains(const std::string& aText, std::string_view aPart) {
 constexpr std::string_view kTaxpayer = R"({"taxNumber": "12345679", "isResident": true})";
 
 constexpr std::string_view kGeneralHelp =
-    R"(taxbroker: turns broker CSV exports into Slovenian FURS tax forms (XML for eDavki).
+    R"(taxbroker: turns broker exports into Slovenian FURS tax forms (XML for eDavki).
 
 Usage:
   taxbroker report --year YYYY --taxpayer FILE [--self-report] [--no-input]
                    [--developer-export] [--support-report] [--log-level LEVEL]
                    [--ecb-rates FILE...] [--reference-files FILE...] --out DIR
-                   --trade-republic FILE...
+                   [--trade-republic FILE...] [--ibkr FILE...]
   taxbroker report --help
   taxbroker --help
 
@@ -202,7 +202,7 @@ TEST(ReportCommandTest, ReportHelpStartsWithTheUsageAndEndsWithTheExample) {
                                 "[--log-level LEVEL]\n"
                                 "                   [--ecb-rates FILE...] [--reference-files "
                                 "FILE...] --out DIR\n"
-                                "                   --trade-republic FILE...\n",
+                                "                   [--trade-republic FILE...] [--ibkr FILE...]\n",
                                 0),
               0U);
     EXPECT_TRUE(contains(result.mOut,
@@ -212,6 +212,12 @@ TEST(ReportCommandTest, ReportHelpStartsWithTheUsageAndEndsWithTheExample) {
     EXPECT_TRUE(contains(result.mOut,
                          "  --trade-republic FILE...\n"
                          "                     One or more Trade Republic exports."));
+    EXPECT_TRUE(contains(result.mOut,
+                         "  --ibkr FILE...     One or more Interactive Brokers Flex Query XML "
+                         "files"));
+    EXPECT_TRUE(contains(result.mOut,
+                         "order: all --trade-republic files, then all --ibkr files, each as "
+                         "given."));
     EXPECT_TRUE(contains(result.mOut,
                          "  --ecb-rates FILE...\n"
                          "                     ECB reference-rate files"));
@@ -606,14 +612,40 @@ TEST(ReportCommandTest, MissingOutputFails) {
     EXPECT_EQ(result.mErr, "taxbroker: --out is missing.\n" + std::string{kUsageHint});
 }
 
-TEST(ReportCommandTest, NoCsvFails) {
+TEST(ReportCommandTest, NoBrokerFileFails) {
     const auto result =
         run({"report", "--year", "2024", "--taxpayer", "taxpayer.json", "--out", "out"});
 
     EXPECT_EQ(result.mExitCode, kExitFailure);
     EXPECT_EQ(result.mErr,
-              "taxbroker: Give at least one Trade Republic CSV file with --trade-republic.\n" +
+              "taxbroker: Give at least one broker file (--trade-republic or --ibkr).\n" +
                   std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, AnIbkrFileAloneIsEnough) {
+    // No --trade-republic file: the run goes on to the file check, which names the XML file.
+    const auto result = run({"report",
+                             "--year",
+                             "2024",
+                             "--taxpayer",
+                             "taxpayer.json",
+                             "--out",
+                             "out",
+                             "--ibkr",
+                             "missing.xml"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: The XML file missing.xml does not exist or is not a file.\n" +
+                  std::string{kUsageHint});
+}
+
+TEST(ReportCommandTest, IbkrNeedsAFile) {
+    const auto result = run({"report", "--ibkr", "--out", "out"});
+
+    EXPECT_EQ(result.mExitCode, kExitFailure);
+    EXPECT_EQ(result.mErr,
+              "taxbroker: --ibkr needs at least one file.\n" + std::string{kUsageHint});
 }
 
 TEST(ReportCommandTest, TheTradeRepublicListMayComeBeforeTheOtherOptions) {

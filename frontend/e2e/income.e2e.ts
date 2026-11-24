@@ -51,11 +51,11 @@ describe("income screens of the manual files", () => {
     // Fees: EUR 3 in three rows and USD 2 in one row (the fee column of the 2022 file).
     const fees = page.getByRole("region", { name: "Stroški in ugodnosti" });
 
-    expect(await fees.textContent()).toContain("EUR 3,0000 (število: 3)");
-    expect(await fees.textContent()).toContain("USD 2,0000 (število: 1)");
+    expect(await fees.textContent()).toContain("EUR 3,00 (število: 3)");
+    expect(await fees.textContent()).toContain("USD 2,00 (število: 1)");
 
     // Benefits: saveback 2.50, stock perk 7.50, bonus 3.00 and referral 20.00 are 33.00 in all.
-    expect(await fees.textContent()).toContain("Skupaj v EUR: 33,0000");
+    expect(await fees.textContent()).toContain("Skupaj v EUR: 33,00");
   });
 
   it("F8 skips the payer and says that other banks' interest is missing", async () => {
@@ -66,6 +66,11 @@ describe("income screens of the manual files", () => {
 
     // Payer of NVIDIA: skip. The row is made without the payer and with a warning.
     const payer = question(page, NVIDIA_TITLE);
+
+    // Every question names the broker and the file it is about.
+    expect(await payer.textContent()).toContain("Posrednik in datoteka:");
+    expect(await payer.textContent()).toContain("Trade Republic: trade_republic_");
+
     await pickWord(payer, "skip");
     await sendAnswer(payer);
 

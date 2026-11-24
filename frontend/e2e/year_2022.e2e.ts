@@ -13,17 +13,18 @@ import {
   startRun,
   typeInto,
 } from "./support/report_page";
-import { MANUAL_FILE_NAMES } from "./support/scenarios";
+import { IBKR_FILE_NAMES, MANUAL_FILE_NAMES } from "./support/scenarios";
 import { useSession } from "./support/session";
 
 describe("year 2022 of the manual files", () => {
   const session = useSession();
 
-  /** Loads the four files, picks 2022 and answers the four questions of the README. */
+  /** Loads the eight files, picks 2022 and answers the four questions of the README. */
   async function runAndAnswer(page: Page): Promise<void> {
     const files = await Promise.all(MANUAL_FILE_NAMES.map((name) => manualFile(name)));
+    const ibkrFiles = await Promise.all(IBKR_FILE_NAMES.map((name) => manualFile(name)));
 
-    await startRun(page, { files, year: 2022 });
+    await startRun(page, { files, areaFiles: [{ title: "Interactive Brokers", files: ibkrFiles }], year: 2022 });
 
     // 30-day loss, Partly Blocked Share: yes.
     const partlyBlocked = question(page, "Synthetic Partly Blocked Share (XX0000000104)");
@@ -52,13 +53,14 @@ describe("year 2022 of the manual files", () => {
 
     await runAndAnswer(page);
 
-    // README, 2022: Doh-KDVP generated; Doh-Div 7 rows; Doh-DHO no data; Doh-Obr 14 rows.
+    // README, 2022: Doh-KDVP generated; Doh-Div 8 rows (the IBKR dividend is one); Doh-DHO no data;
+    // Doh-Obr 15 rows (the IBKR broker interest is one).
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
     expect(await cardStatus(page, "Doh-DHO")).toBe("ni podatkov");
     expect(await cardStatus(page, "Doh-Obr")).toBe("pripravljeno");
-    expect(await card(page, "Doh-Div").getByText(/Vrstice: 7,/).count()).toBe(1);
-    expect(await card(page, "Doh-Obr").getByText(/Vrstice: 14,/).count()).toBe(1);
+    expect(await card(page, "Doh-Div").getByText(/Vrstice: 8,/).count()).toBe(1);
+    expect(await card(page, "Doh-Obr").getByText(/Vrstice: 15,/).count()).toBe(1);
 
     const saved = await download(page, card(page, "Doh-KDVP").getByRole("button", { name: "Shrani datoteko Doh-KDVP" }));
 

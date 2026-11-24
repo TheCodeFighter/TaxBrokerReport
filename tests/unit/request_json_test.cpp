@@ -441,6 +441,39 @@ TEST(RequestJsonTest, TwoUploadedPartsWithOneNameAreADuplicate) {
     EXPECT_EQ(errorOf(buildApplicationRequest(parts)), RunRequestError::DuplicatePart);
 }
 
+TEST(RequestJsonTest, AnInteractiveBrokersFileIsAccepted) {
+    const std::string json = R"({
+        "reportingYear": 2024,
+        "filingType": "original",
+        "taxpayer": {"taxNumber": "12345679", "isResident": true},
+        "files": [
+            {"part": "file0", "kind": "broker", "broker": "interactive_brokers"},
+            {"part": "file1", "kind": "broker", "broker": "trade_republic"}
+        ]
+    })";
+    const std::vector<UploadedPart> parts{
+        {.mName = "request", .mFileName = std::nullopt, .mContent = json},
+        {.mName = "file0", .mFileName = "export.xml", .mContent = "<xml/>"},
+        {.mName = "file1", .mFileName = "export.xml", .mContent = "csv bytes"},
+    };
+
+    const auto result = buildApplicationRequest(parts);
+
+    ASSERT_TRUE(std::holds_alternative<ApplicationRequest>(result));
+
+    const auto& request = std::get<ApplicationRequest>(result);
+
+    // The request order is kept: the broker named in the request decides the parser, not the
+    // file name (both files are called export.xml).
+    ASSERT_EQ(request.mBrokerFiles.size(), 2U);
+
+    EXPECT_EQ(request.mBrokerFiles[0].mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(request.mBrokerFiles[0].mFile.mContent, "<xml/>");
+
+    EXPECT_EQ(request.mBrokerFiles[1].mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(request.mBrokerFiles[1].mFile.mContent, "csv bytes");
+}
+
 TEST(RequestJsonTest, BrokerThatIsNotReadIsUnsupported) {
     const std::string json = R"({
         "reportingYear": 2024,
