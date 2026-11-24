@@ -58,6 +58,8 @@ enum class AnswerRejection {
     CorrectionAboveOpenUnits, ///< A quantity answer above the open units of the question.
     CorrectionTooLarge,       ///< A quantity answer 0.00000100 units or more below the sale.
     CorrectionOverBudget,     ///< A quantity answer whose impact reaches EUR 0.01.
+    GroupingIncomplete,       ///< A grouping answer without one valid number per row.
+    GroupingWindow,           ///< A grouping answer with rows of one action over 10 days apart.
 };
 
 struct RejectedAnswer {

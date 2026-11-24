@@ -1405,6 +1405,7 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
         .mType = CorporateActionType::UnresolvedSplit,
         .mUnitsDelta = unitsDelta->mValue,
         .mRatio = std::nullopt,
+        .mBrokerActionId = std::nullopt,
         .mUnitEvidence = {std::move(evidence)},
         .mInstrumentEvidence = std::move(instrumentEvidence),
     });

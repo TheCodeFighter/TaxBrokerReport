@@ -1,3 +1,4 @@
+#include "parsers/ibkr_parser.hpp"
 #include "parsers/traderepublic_parser.hpp"
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
@@ -488,10 +489,12 @@ TEST(CorporateActionIntegrationTest, TheSameRowInTwoFilesIsOneQuestion) {
 
     EXPECT_TRUE(rejections.empty());
     EXPECT_TRUE(session.result().mRequests.empty());
-    // One action applied once (one warning), and the report is written.
-    EXPECT_EQ(
-        codesOf(session.result()),
-        (std::vector<ApplicationDiagnosticCode>{ProcessingDiagnosticCode::CorporateActionApplied}));
+    // One action applied once (one warning), the warning that the rows of 2024 come from two
+    // files, and the report is written.
+    EXPECT_EQ(codesOf(session.result()),
+              (std::vector<ApplicationDiagnosticCode>{
+                  ProcessingDiagnosticCode::CorporateActionApplied,
+                  ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible}));
     EXPECT_EQ(session.result().report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
 }
 
@@ -584,7 +587,7 @@ TEST(CorporateActionIntegrationTest, TwoSplitsAreAskedOneAtATime) {
                                                 ProcessingDiagnosticCode::CorporateActionApplied}));
 }
 
-TEST(CorporateActionIntegrationTest, TwoSplitRowsOnOneDayAreAmbiguous) {
+TEST(CorporateActionIntegrationTest, TwoSplitRowsOnOneDayAskWhichRowsAreOneAction) {
     const TemporaryActionInputs files;
     const auto history = files.write(
         "history.csv",
@@ -601,12 +604,115 @@ TEST(CorporateActionIntegrationTest, TwoSplitRowsOnOneDayAreAmbiguous) {
         return calculateCapitalGains(parsed, 2024, aDecisions);
     });
 
-    EXPECT_TRUE(result.mRequests.empty());
-    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    // Two rows of one broker on one day with no broker action ID: one identity question.
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.mRequests.at(0).mType, RequestType::CorporateActionIdentityRequired);
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionAmbiguousSameDay);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::CorporateActionAmbiguousIdentityRequired);
     EXPECT_EQ(result.mDiagnostics.at(0).mSources.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mRequestId, "request-0001");
+}
+
+TEST(CorporateActionIntegrationTest, RowsOfTwoBrokersAreGroupedByTheUserAndAskedOneActionAtATime) {
+    // Trade Republic books a split row on 2024-11-10; Interactive Brokers books two rows with
+    // their own action IDs on 2024-11-14 and 2024-11-20. The three rows are within 10 days, so the
+    // files cannot say which are one action: the identity question asks.
+    const TemporaryActionInputs files;
+    const auto trHistory = files.write(
+        "history.csv",
+        {
+            R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2024-11-10T09:00:00Z,2024-11-10,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Share,XX0000000001,10,,,,,,,,,,synthetic-split-1,,,,)",
+            R"(2024-12-02T09:00:00Z,2024-12-02,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-1,6,6,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+    constexpr std::string_view ibkrXml = R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <CorporateActions>
+        <CorporateAction accountId="U0000000" transactionID="synthetic-ibkr-split-1" actionID="S1" type="FS" assetCategory="STK" description="Synthetic Share" isin="XX0000000001" currency="EUR" dateTime="20241114;202500" reportDate="20241114" quantity="10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="synthetic-ibkr-split-2" actionID="S2" type="FS" assetCategory="STK" description="Synthetic Share" isin="XX0000000001" currency="EUR" dateTime="20241120;202500" reportDate="20241120" quantity="20" proceeds="0" value="0"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>)xml";
+    const std::vector<ParseResult> parsed{tr::TradeRepublicParser{}.parseFile(trHistory, 0),
+                                          ibkr::IbkrParser{}.parse(ibkrXml, "ibkr.xml", 1)};
+    DecisionSession session;
+    const auto& asked = session.start([&parsed](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions);
+    });
+
+    // One identity question with the three rows in date order, and no ratio question yet.
+    ASSERT_EQ(asked.mRequests.size(), 1U);
+    EXPECT_EQ(asked.mRequests.at(0).mType, RequestType::CorporateActionIdentityRequired);
+
+    const auto& rows = std::get<CorporateActionIdentityQuestion>(asked.mRequests.at(0).mData).mRows;
+
+    ASSERT_EQ(rows.size(), 3U);
+    EXPECT_EQ(rows.at(0).mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(rows.at(0).mDate, day("2024-11-10"));
+    EXPECT_EQ(rows.at(1).mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(rows.at(1).mDate, day("2024-11-14"));
+    EXPECT_EQ(rows.at(1).mBrokerActionId, "S1");
+    EXPECT_EQ(rows.at(2).mBroker, Broker::InteractiveBrokers);
+    EXPECT_EQ(rows.at(2).mDate, day("2024-11-20"));
+    EXPECT_EQ(rows.at(2).mBrokerActionId, "S2");
+
+    // Rows 1 and 2 are one split booked by two brokers; row 3 is another split.
+    const auto grouped = session.answer(
+        {{"request-0001", 1, CorporateActionGroupingAnswer{.mActionOfRow = {1, 1, 2}}}});
+
+    EXPECT_TRUE(grouped.empty());
+
+    // The first action has the rows of both brokers and is asked as one split, not as a question
+    // whether the rows are one split. It holds 10 units just before 2024-11-10.
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRequests.at(0).mType, RequestType::CorporateActionRatioRequired);
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mEffectiveDate, day("2024-11-10"));
+    EXPECT_FALSE(ratioCheckAt(session.result(), 0).mAskSameEvent);
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mPositionBefore, 1'000'000'000); // 10 units
+    ASSERT_EQ(ratioCheckAt(session.result(), 0).mSources.size(), 2U);
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mSources.at(0).mBroker, Broker::TradeRepublic);
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mSources.at(1).mBroker, Broker::InteractiveBrokers);
+
+    // 10 units with 2 / 1 are 20 units (the confirmed units are those after the action); the
+    // second action is asked with them.
+    const auto first = session.answer({{"request-0001",
+                                        2,
+                                        SplitRatioAnswer{.mNewShares = 2,
+                                                         .mOldShares = 1,
+                                                         .mEffectiveDate = day("2024-11-10"),
+                                                         .mConfirmedUnits = 2'000'000'000}}});
+
+    EXPECT_TRUE(first.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mEffectiveDate, day("2024-11-20"));
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mPositionBefore, 2'000'000'000); // 20 units
+    ASSERT_EQ(ratioCheckAt(session.result(), 0).mSources.size(), 1U);
+    EXPECT_EQ(ratioCheckAt(session.result(), 0).mSources.at(0).mBroker, Broker::InteractiveBrokers);
+
+    const auto second = session.answer({{"request-0001",
+                                         3,
+                                         SplitRatioAnswer{.mNewShares = 2,
+                                                          .mOldShares = 1,
+                                                          .mEffectiveDate = day("2024-11-20"),
+                                                          .mConfirmedUnits = 4'000'000'000}}});
+
+    // Both actions are applied once (10 x 2 x 2 = 40 units), and the rows of 2024 from two files
+    // are warned about. Diagnostics follow their first source: the first action and the warning
+    // start at the Trade Republic row, the second action at the Interactive Brokers file.
+    EXPECT_TRUE(second.empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+    EXPECT_EQ(session.result().mDecisions.size(), 3U);
+    EXPECT_EQ(codesOf(session.result()),
+              (std::vector<ApplicationDiagnosticCode>{
+                  ProcessingDiagnosticCode::CorporateActionApplied,
+                  ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible,
+                  ProcessingDiagnosticCode::CorporateActionApplied}));
 }
 
 TEST(CorporateActionIntegrationTest, AnAddedPurchaseAsksANewQuestion) {

@@ -202,6 +202,9 @@ struct CorporateAction {
     Units mUnitsDelta{};
     /// A verified ratio from the source, kept exact. Empty when the source gives none.
     std::optional<SplitRatio> mRatio;
+    /// The broker's own ID of the economic action, shared by all its rows (one per account).
+    /// Empty when the export has none. IDs of different brokers are never compared.
+    std::optional<std::string> mBrokerActionId;
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
 };

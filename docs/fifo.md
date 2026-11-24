@@ -397,29 +397,45 @@ the user to check for a potential mismatch; it does not claim the records are wr
 warnings remain visible beside the download and do not themselves block processing.
 
 Action rows of one ISIN on one date from different brokers, none with a verified ratio, are one
-action with one ratio question that lists every source (maintainer decision, 2026-10-28). Two rows
-of the same broker on one date with different transaction IDs could be one action reported twice
-or two actions: the app reports `corporate_action_ambiguous` for them until the identity question
-below exists.
+action with one ratio question that lists every source. A broker's own action ID (the `actionID` of
+Interactive Brokers, shared by the rows of all its accounts) makes the rows of one broker on one
+date with the same ID one action, with no question; IDs of different brokers are never compared,
+and rows on different dates are never joined by an ID. Two rows of the same broker on one date
+without a shared action ID could be one action reported twice or two actions: the identity
+question below asks.
 
 Split rows of one ISIN from different brokers on different dates at most 10 days apart could be
 one split that each broker booked on its own date (for example 10 and 14 November). Applying both
 would apply the split twice (0.52 units → 52 instead of 5.20). Rows are never combined
 automatically by a date window: when the rows of one date have exactly one such neighbour date,
 and no broker has a row on both, one ratio question lists the rows of both dates and first asks
-whether they are one split. Yes, with the ratio and the date: one action, applied once, for every row. No (`separate_events`): two splits so close together are not supported until the identity question exists, so the app reports `corporate_action_ambiguous` (key `.different_dates`) and the ISIN blocks. This also pairs a row in December with a row in January of the loss-analysis view, even when no loss sale needs the
-January row: the next year's run pairs the same two rows anyway, and a "no" blocks on the safe
-side. The identity question will ask the dates, the ratios and the order of two such splits instead of blocking. Rows of one date with more than one such neighbour date (for example three rows of two brokers within 10 days), or with a merger row or a broker on both dates, are not asked and get `.different_dates` too. A split, a reverse split and a split of unknown direction are one kind of row here, because two brokers may name one event
-differently; a merger row never pairs with a split. Rows more than 10 days apart, or rows of one
-broker, are separate actions.
+whether they are one split. Yes, with the ratio and the date: one action, applied once, for every row. No (`separate_events`): two splits, in date order. The first is asked its own ratio and date, with dates up to the day before the second's row, and the second is asked after the first is applied. This also pairs a row in December with a row in January of the loss-analysis view, even when no loss sale needs the
+January row: the next year's run pairs the same two rows anyway. Rows of one date with more than one such neighbour date (for example three rows of two brokers within 10 days), or with a broker on both dates, are not asked this question: the identity question below asks. A split, a reverse split and a split of unknown direction are one kind of row here, because two brokers may name one event
+differently; a merger row never pairs with a split and never joins an identity question (it stays
+`unsupported_corporate_action`). Rows more than 10 days apart, or rows of one broker on different
+dates with no other broker near, are separate actions.
+
+**Identity question.** Rows of one ISIN that may be one action or several are asked together in
+one `corporate_action_identity_required` request: two or more rows of one broker on one date that
+share no broker action ID, and the rows linked by "split rows of different brokers at most 10 days
+apart" that the one-split question cannot ask (more than one neighbour date, or a broker on both
+dates). The request lists every row (broker, transaction ID, date, type, the broker's own quantity
+as read-only evidence, the broker's action ID) sorted by date, broker and transaction ID. The
+answer gives, for each row in that order, the number of its action (1, 2, and so on). It is
+accepted when every row has a number, the numbers run from 1 without gaps, and the rows of one
+action are at most 10 days apart. Each action then gets its own ratio question in date order, with
+no question about the rows being one event; an action starts on its earliest row. Two actions that
+start on the same day have no known order, so the ISIN blocks with `corporate_action_ambiguous`
+(key `.same_day_order`). Closing the question without an answer is `corporate_action_ambiguous`
+(key `.cancelled`) and goes through the normal exclusion question.
 
 The same calendar year is a warning group, never a deduplication key. Two established actions on
 different dates remain two actions. If records could describe the same action but disagree about
-the effective date, type or ratio, or could describe distinct actions on one date, return
-`corporate_action_identity_required`. Show all candidates and ask the user to confirm one action
-with its effective date or identify separate actions and their order. A user-selected ratio cannot
-silently override a contradictory verified broker ratio; the user must correct or identify the
-conflicting source. Unresolved conflicts produce `corporate_action_inconsistent` or
+the effective date, or could describe distinct actions on one date, the identity question above
+asks. No supported export gives a verified ratio (the Trade Republic `shares` and the Interactive
+Brokers `actionDescription` are evidence only), so every ratio is asked and a user ratio cannot
+override a verified broker ratio; a row that carries one is a programming error until a rule for it
+is written. Unresolved conflicts produce `corporate_action_inconsistent` or
 `corporate_action_ambiguous` as appropriate.
 
 Once identity is established, one `corporate_action_ratio_required` request covers every source of
@@ -429,7 +445,7 @@ ratio adjusts the complete ISIN pool once, including lots at a broker that omitt
 
 Example: TR and IBKR each record a 2-for-1 split for the same ISIN on 1 June 2024. Warn about the
 multiple sources, retain both references, and apply one split to the combined position. If IBKR
-records 3 June instead, the warning is accompanied by an identity-resolution request. If two
+records 3 June instead, the warning is accompanied by the one-split question. If two
 verified splits occurred in February and November, warn for their shared year but apply both once.
 
 Mergers follow the same instrument-wide principle, but a merger may change ISINs, pay cash or

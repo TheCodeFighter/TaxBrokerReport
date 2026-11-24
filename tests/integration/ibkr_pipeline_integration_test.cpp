@@ -3,6 +3,7 @@
 #include "parsers/ibkr_parser.hpp"
 #include "parsers/reference_catalogue.hpp"
 #include "processors/capital_gains_report_builder.hpp"
+#include "processors/corporate_actions.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "processors/income_reports.hpp"
 #include "processors/loss_eligibility.hpp"
@@ -244,6 +245,62 @@ TEST(IbkrPipelineIntegrationTest, TwoAccountsShareOneHoldingWithTheSplitOfEachAc
     ASSERT_NE(found, instruments.end());
     EXPECT_EQ(found->mTransactions.size(), 3U);     // buys 1001 and 5001, sale 1002
     EXPECT_EQ(found->mCorporateActions.size(), 2U); // the split of each account, one pool
+}
+
+TEST(IbkrPipelineIntegrationTest, TheSplitOfTwoAccountsWithOneActionIdIsOneRatioQuestion) {
+    // Accounts U0000000 and U0000001 hold 5 + 5 units of FR0000000077 and both book the split
+    // S9001 on 2024-08-01 as an own row (transactions 3001 and 5002). One broker action ID makes
+    // one action: one ratio question with both rows, and no identity question.
+    constexpr std::string_view xml = R"xml(<FlexQueryResponse queryName="Synthetic" type="AF">
+  <FlexStatements count="2">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNG" description="SYNTHETIC EXAMPLE G SA" isin="FR0000000077" currency="EUR" tradeDate="20240301" dateTime="20240301;094210" buySell="BUY" quantity="5" tradePrice="20" proceeds="-100" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNG" description="SYNTHETIC EXAMPLE G SA" isin="FR0000000077" currency="EUR" tradeDate="20241002" dateTime="20241002;101500" buySell="SELL" quantity="-1" tradePrice="25" proceeds="25" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions>
+        <CorporateAction accountId="U0000000" transactionID="3001" actionID="S9001" type="FS" assetCategory="STK" symbol="SYNG" description="SYNTHETIC EXAMPLE G SA" actionDescription="SYNG(FR0000000077) SPLIT 4 FOR 1 (SYNG, SYNTHETIC EXAMPLE G SA, FR0000000077)" isin="FR0000000077" currency="EUR" dateTime="20240801;202500" reportDate="20240801" quantity="15" proceeds="0" value="0"/>
+      </CorporateActions>
+    </FlexStatement>
+    <FlexStatement accountId="U0000001" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000001" ibEntity="IB-CE"/>
+      <Trades>
+        <Trade accountId="U0000001" transactionID="5001" tradeID="5001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNG" description="SYNTHETIC EXAMPLE G SA" isin="FR0000000077" currency="EUR" tradeDate="20240302" dateTime="20240302;094210" buySell="BUY" quantity="5" tradePrice="20" proceeds="-100" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions>
+        <CorporateAction accountId="U0000001" transactionID="5002" actionID="S9001" type="FS" assetCategory="STK" symbol="SYNG" description="SYNTHETIC EXAMPLE G SA" actionDescription="SYNG(FR0000000077) SPLIT 4 FOR 1 (SYNG, SYNTHETIC EXAMPLE G SA, FR0000000077)" isin="FR0000000077" currency="EUR" dateTime="20240801;202500" reportDate="20240801" quantity="15" proceeds="0" value="0"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>)xml";
+    std::vector<StatementMergeInput> inputs;
+
+    inputs.push_back({0, ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)});
+
+    const auto prepared = TaxProcessor::prepareReportingYear(
+        {2024, DeterministicStatementMerger{}.merge(std::move(inputs))});
+
+    ASSERT_TRUE(prepared.mLedger.has_value());
+
+    RunDecisions decisions;
+    const auto pools = matchCapitalPools(prepared.mMerged.mStatement, *prepared.mLedger, decisions);
+
+    ASSERT_EQ(pools.mActions.mActions.size(), 1U);
+    EXPECT_EQ(pools.mActions.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+    EXPECT_EQ(pools.mActions.mActions.at(0).mEvents.size(), 2U);
+
+    // One ratio question with both rows, and no ambiguity error.
+    ASSERT_EQ(pools.mActions.mRequests.size(), 1U);
+    EXPECT_EQ(pools.mActions.mRequests.at(0).mQuestion.mType,
+              RequestType::CorporateActionRatioRequired);
+    EXPECT_EQ(std::get<CorporateActionRatioQuestion>(pools.mActions.mRequests.at(0).mQuestion.mData)
+                  .mSources.size(),
+              2U);
+
+    ASSERT_EQ(pools.mActions.mDiagnostics.size(), 1U);
+    EXPECT_EQ(pools.mActions.mDiagnostics.at(0).mMessageKey,
+              MessageKey::CorporateActionAmbiguousRatioRequired);
 }
 
 } // namespace

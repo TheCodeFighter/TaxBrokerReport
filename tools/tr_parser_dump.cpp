@@ -1023,6 +1023,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "CorporateActionQuantityRounded";
     case ProcessingDiagnosticCode::CorporateActionApplied:
         return "CorporateActionApplied";
+    case ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible:
+        return "CorporateActionSourcesMismatchPossible";
     case ProcessingDiagnosticCode::UnsupportedCorporateAction:
         return "UnsupportedCorporateAction";
     case ProcessingDiagnosticCode::TaxCategoryNotReported:
@@ -1304,8 +1306,8 @@ std::string_view toString(CorporateActionState aState) {
     {
     case CorporateActionState::Applied:
         return "Applied";
-    case CorporateActionState::DifferentDatesAmbiguous:
-        return "DifferentDatesAmbiguous";
+    case CorporateActionState::WaitingForIdentity:
+        return "WaitingForIdentity";
     case CorporateActionState::Unsupported:
         return "Unsupported";
     case CorporateActionState::RatioConfirmed:
@@ -1316,8 +1318,8 @@ std::string_view toString(CorporateActionState aState) {
         return "WaitingForEarlierAction";
     case CorporateActionState::Cancelled:
         return "Cancelled";
-    case CorporateActionState::SameDayAmbiguous:
-        return "SameDayAmbiguous";
+    case CorporateActionState::SameDayOrderAmbiguous:
+        return "SameDayOrderAmbiguous";
     case CorporateActionState::NoPosition:
         return "NoPosition";
     case CorporateActionState::NumericFailure:
@@ -1340,8 +1342,8 @@ void writeCorporateActions(std::ostream& aOutput,
                              CorporateActionState::WaitingForRatio,
                              CorporateActionState::WaitingForEarlierAction,
                              CorporateActionState::Cancelled,
-                             CorporateActionState::SameDayAmbiguous,
-                             CorporateActionState::DifferentDatesAmbiguous,
+                             CorporateActionState::WaitingForIdentity,
+                             CorporateActionState::SameDayOrderAmbiguous,
                              CorporateActionState::Unsupported,
                              CorporateActionState::NoPosition,
                              CorporateActionState::NumericFailure})

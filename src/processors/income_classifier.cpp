@@ -55,6 +55,7 @@ Decision decisionOf(const AnswerValue& aAnswer) {
                           std::is_same_v<Answer, OtherActivityAnswer> ||
                           std::is_same_v<Answer, SplitRatioAnswer> ||
                           std::is_same_v<Answer, SeparateEventsAnswer> ||
+                          std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
                           std::is_same_v<Answer, CapitalGainsAnswer> ||
                           std::is_same_v<Answer, QuantityCorrectionAnswer> ||
                           std::is_same_v<Answer, PayerChoiceAnswer> ||

@@ -52,6 +52,12 @@ describe("year 2024 of the manual files", () => {
     await pickWord(payer, "0");
     await sendAnswer(payer);
 
+    // One split booked by two brokers on two dates (Trade Republic 2024-06-10, Interactive Brokers
+    // 2024-06-12): the rows are one split, 2 : 1.
+    const twoBroker = question(page, "Synthetic Two-Broker Split Share (XX0000000116)");
+    await pickWord(twoBroker, "yes");
+    await answerRatio(twoBroker, "2", "1");
+
     // 30-day loss, Dollar Share: yes.
     const loss = question(page, "Synthetic Dollar Share (XX0000000112)");
     await pickWord(loss, "other_activity");
@@ -66,11 +72,17 @@ describe("year 2024 of the manual files", () => {
     await pickWord(obrFailure, "exclude_failed_instruments");
     await sendAnswer(obrFailure);
 
-    // README, 2024: Doh-KDVP generated, without the certificate; Doh-Div 5 rows; Doh-DHO no data;
+    // README, 2024: Doh-KDVP generated, without the certificate, with the two-broker share; Doh-Div 5 rows; Doh-DHO no data;
     // Doh-Obr 3 rows without Bond B; two warnings about left-out derivative rows: 2 rows of the
     // certificate (Trade Republic) and 1 row of the option (Interactive Brokers).
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
     expect(await excludedInvestments(page, "Doh-KDVP").count()).toBe(0);
+    // The rows of the two-broker share come from two files: one warning for 2024.
+    expect(
+      await resultRegion(page)
+        .getByText("Ta naložba ima v letu 2024 vrstice korporacijskih dejanj iz več datotek.")
+        .count(),
+    ).toBe(1);
     expect(await page.getByText("Synthetic Index Certificate").count()).toBe(0);
     expect(await resultRegion(page).getByText("(število vrstic: 2)").count()).toBe(1);
     expect(await resultRegion(page).getByText("(število vrstic: 1)").count()).toBe(1);

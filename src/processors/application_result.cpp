@@ -480,13 +480,15 @@ bool isTwoCapitalLetters(const std::string& aText) {
 
 /// A failure-resolution type needs a list with at least one investment or broker, a loss question
 /// at least one sale, each with open units, a ratio question a source, open units and a date range
-/// around its effective date, a classification question an ISIN, a bond type question an ISIN and
+/// around its effective date, an identity question an ISIN and two rows, a classification question
+/// an ISIN, a bond type question an ISIN and
 /// sold or matured units, and a quantity question an ISIN and open units below the sale units;
 /// every other type has no question data until its processor defines it.
 void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* failure = std::get_if<FailureResolutionQuestion>(&aQuestion.mData);
     const auto* loss = std::get_if<LossEligibilityQuestion>(&aQuestion.mData);
     const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aQuestion.mData);
+    const auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aQuestion.mData);
     const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
     const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
     const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
@@ -498,6 +500,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* developer = std::get_if<DeveloperExportQuestion>(&aQuestion.mData);
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
+    const bool isIdentityType = aQuestion.mType == RequestType::CorporateActionIdentityRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
     const bool isQuantityType = aQuestion.mType == RequestType::QuantityCorrectionRequired;
     const bool isIncomeDetailsType = aQuestion.mType == RequestType::IncomeDetailsRequired;
@@ -505,6 +508,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
+        (identity != nullptr) != isIdentityType ||
         ((classification != nullptr || income != nullptr) != isClassificationType) ||
         (quantity != nullptr) != isQuantityType ||
         ((payer != nullptr || country != nullptr || bond != nullptr || treaty != nullptr) &&
@@ -514,6 +518,11 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
             (aQuestion.mType == RequestType::DeveloperExportConfirmationRequired))
     {
         throw std::invalid_argument("The question data does not fit the request type.");
+    }
+
+    if (identity != nullptr && (identity->mIsin.empty() || identity->mRows.size() < 2))
+    {
+        throw std::invalid_argument("An identity question needs an ISIN and at least two rows.");
     }
 
     if (developer != nullptr &&
@@ -607,14 +616,14 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         throw std::invalid_argument("A ratio question before a sale needs dates up to that sale.");
     }
 
-    // Rows on different dates are asked whether they are one event, and only they are.
-    if (ratio != nullptr &&
-        ratio->mAskSameEvent != std::any_of(ratio->mSources.begin(),
-                                            ratio->mSources.end(),
-                                            [ratio](const CorporateActionSourceFacts& aSource) {
-                                                return aSource.mDate !=
-                                                       ratio->mSources.front().mDate;
-                                            }))
+    // Only rows on different dates are asked whether they are one event. Rows on different dates
+    // that the user has already grouped as one action (identity question) are not asked.
+    if (ratio != nullptr && ratio->mAskSameEvent &&
+        std::all_of(ratio->mSources.begin(),
+                    ratio->mSources.end(),
+                    [ratio](const CorporateActionSourceFacts& aSource) {
+                        return aSource.mDate == ratio->mSources.front().mDate;
+                    }))
     {
         throw std::invalid_argument("Only a ratio question with rows on different dates asks "
                                     "whether they are one event.");
@@ -1173,6 +1182,16 @@ QuestionData normalizedData(QuestionData aData) {
 
         std::sort(isins.begin(), isins.end());
         isins.erase(std::unique(isins.begin(), isins.end()), isins.end());
+    }
+
+    if (auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aData))
+    {
+        std::sort(
+            identity->mRows.begin(),
+            identity->mRows.end(),
+            [](const CorporateActionIdentityRow& aLeft, const CorporateActionIdentityRow& aRight) {
+                return aLeft.sortKey() < aRight.sortKey();
+            });
     }
 
     if (auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aData))

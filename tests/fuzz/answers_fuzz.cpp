@@ -29,6 +29,7 @@ std::vector<DecisionRequest> allRequests() {
     return {
         make(RequestType::ExchangeRatesRequired, std::monostate{}),
         make(RequestType::LossEligibilityConfirmationRequired, LossEligibilityQuestion{}),
+        make(RequestType::CorporateActionIdentityRequired, CorporateActionIdentityQuestion{}),
         make(RequestType::CorporateActionRatioRequired, CorporateActionRatioQuestion{}),
         make(RequestType::TaxClassificationRequired, TaxClassificationQuestion{}),
         make(RequestType::TaxClassificationRequired, IncomeClassificationQuestion{}),

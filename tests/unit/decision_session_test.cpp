@@ -92,6 +92,30 @@ DecisionQuestion ratioQuestion(Units aPositionBefore) {
     };
 }
 
+/// An identity question with two rows of Trade Republic on 2024-06-01.
+DecisionQuestion identityQuestion() {
+    const Date date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 1}.time_since_epoch()};
+
+    return DecisionQuestion{
+        .mType = RequestType::CorporateActionIdentityRequired,
+        .mAffectedReports = {kCapital},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionIdentityQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mRows = {{.mBroker = Broker::TradeRepublic,
+                           .mTransactionId = "synthetic-split-1",
+                           .mDate = date,
+                           .mType = CorporateActionType::UnresolvedSplit},
+                          {.mBroker = Broker::TradeRepublic,
+                           .mTransactionId = "synthetic-split-2",
+                           .mDate = date,
+                           .mType = CorporateActionType::UnresolvedSplit}},
+            },
+    };
+}
+
 Date day(int aYear, unsigned aMonth, unsigned aDay) {
     return Date{std::chrono::sys_days{std::chrono::year{aYear} / aMonth / aDay}.time_since_epoch()};
 }
@@ -3000,6 +3024,104 @@ TEST(DecisionSessionTest, AChangedCandidateListAsksTheCountryQuestionAgain) {
                                 {.mCountry = "IE", .mOrigin = CountryOrigin::Export},
                                 {.mCountry = "US", .mOrigin = CountryOrigin::Reference}}));
 
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionSessionTest, AGroupingIsRecordedForAnIdentityQuestion) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = identityQuestion();
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer(
+        {{"request-0001", 1, CorporateActionGroupingAnswer{.mActionOfRow = {1, 1}}}});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mType, RequestType::CorporateActionIdentityRequired);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{CorporateActionGroupingAnswer{.mActionOfRow = {1, 1}}}));
+}
+
+TEST(DecisionSessionTest, AGroupingAnswerDoesNotFitARatioQuestion) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = ratioQuestion(300'000'000); // 3 units
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections =
+        session.answer({{"request-0001", 1, CorporateActionGroupingAnswer{.mActionOfRow = {1}}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+}
+
+TEST(DecisionSessionTest, ARatioAnswerDoesNotFitAnIdentityQuestion) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = identityQuestion();
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2024, 6, 1),
+                                                              .mConfirmedUnits = 600'000'000}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+}
+
+TEST(DecisionSessionTest, AGroupingAnswerOfAnEarlierRevisionIsStale) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = identityQuestion();
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    // The run is at revision 1; revision 0 is an earlier one.
+    const auto rejections = session.answer(
+        {{"request-0001", 0, CorporateActionGroupingAnswer{.mActionOfRow = {1, 1}}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::StaleRevision);
     EXPECT_EQ(session.result().mRequests.size(), 1U);
 }
 

@@ -76,6 +76,7 @@ runs), so 2024 and 2025 also ask the classification of the unknown-class share a
 | Synthetic Bond A 2025 | `XS0000000201` | USD bond, buy 2022, coupons 2022 to 2025, sale 2023, maturity 2025 | bond left out of Doh-KDVP, coupons in Doh-Obr, the bond-type question on a sale or maturity (`ordinary`), the maturity rows |
 | Synthetic Bond B 2030 | `XS0000000202` | 2024 | a bond sold in the year; answer `discount` to see Doh-Obr blocked for it and the exclusion question |
 | Synthetic US Share (IBKR) | `XX0000000115` | USD buy 2022, dividend 2022, payment in lieu 2023, split 2024, sale 2025 | an Interactive Brokers stock in USD: a dividend with 15 % withholding (`Dividends` and `Withholding Tax` rows with one `actionID`), a payment in lieu of a dividend (warning `substitute_dividend_payment`), a 2 : 1 split (`FS`) whose ratio is asked in 2025 (answer `2 : 1`), a sale of the 20 units after the split |
+| Synthetic Two-Broker Split Share | `XX0000000116` | buy 10 on Trade Republic 2023-03-01, buy 5 on IBKR 2023-03-02, split rows 2024-06-10 (Trade Republic) and 2024-06-12 (IBKR, own `actionID`), sale of 30 on IBKR 2024-09-16 | one split booked by two brokers on two dates: one question asks whether the rows are one split (answer `yes`, then `2 : 1`), the split is applied once to the pool of 15 units (30 after it), and the warning `corporate_action_sources_mismatch_possible` says that the rows of 2024 come from two files |
 | Synthetic Cross Broker Share | `XX0000000120` | buy 8 on Trade Republic 2023, buy 5 on IBKR 2024, sale of 10 on IBKR 2025 | one FIFO pool across two brokers: the sale uses the 8 Trade Republic units first, then 2 of the IBKR units |
 | Synthetic IB Bond 2025 (IBKR) | `XS0000000203` | USD bond buy 2023 with accrued interest, coupon 2023, maturity 2025 | an IBKR bond: left out of Doh-KDVP, the coupon is a Doh-Obr row, the bond-type question on the maturity (`ordinary`) |
 | Option on the US share (IBKR) | none | sale of one call 2024 | an `OPT` trade: a derivative, left out of every form with the warning `margin_or_leverage_rows_left_out` (Doh-IFI is yours to file) |
@@ -117,7 +118,7 @@ The answers below make every year succeed. The order is the order the command li
 | --- | --- | --- | --- |
 | 2022 | 30-day loss (Partly Blocked), 30-day loss (Loss Share), treaty text for BR, payer of NVIDIA | `yes`, `no`, `other` and a text such as `Article 10`, `1` | Doh-KDVP; Doh-Div 8 rows (one is the IBKR dividend); Doh-DHO no data; Doh-Obr 15 rows (12 interest payments, 2 coupons and the IBKR broker interest) |
 | 2023 | class of the unknown share, split ratio, payer of BAT, type of the unknown dividend, bond type, deposit total, exclusion (ruble share) | `capital`; `2 : 1`, an empty line (the row date), `yes`; `1`; `dividends`; `ordinary`; `yes`; `exclude` | Doh-KDVP without the ruble share; Doh-Div 7 rows (one is the IBKR payment in lieu); Doh-DHO 1 row; Doh-Obr 15 rows (one is the IBKR coupon) |
-| 2024 | class of the unknown share, bond type (Bond B), deposit total, reverse split ratio, payer of NVIDIA, 30-day loss (Dollar Share), quantity, exclusion (Doh-Obr, Bond B) | `capital`; `discount`; `no`; `1 : 10`, an empty line, `yes`; `1`; `yes`; an empty line (the units left); `exclude` | Doh-KDVP generated for the four investments with a sale (the certificate is not one of them); Doh-Div 5 rows; Doh-DHO no data; Doh-Obr 3 rows without Bond B; two warnings `margin_or_leverage_rows_left_out`, one for each broker (Trade Republic 2 rows, Interactive Brokers 1 row) |
+| 2024 | class of the unknown share, bond type (Bond B), deposit total, reverse split ratio, payer of NVIDIA, one split of the two-broker share, 30-day loss (Dollar Share), quantity, exclusion (Doh-Obr, Bond B) | `capital`; `discount`; `no`; `1 : 10`, an empty line, `yes`; `1`; `yes` (one split), `2 : 1`, an empty line (the row date), `yes`; `yes`; an empty line (the units left); `exclude` | Doh-KDVP generated for the five investments with a sale (the certificate is not one of them), with the warning `corporate_action_sources_mismatch_possible` for the two-broker share; Doh-Div 5 rows; Doh-DHO no data; Doh-Obr 3 rows without Bond B; two warnings `margin_or_leverage_rows_left_out`, one for each broker (Trade Republic 2 rows, Interactive Brokers 1 row) |
 | 2025 | class of the unknown share, split ratio, quantity (2024 sale), payer of BAT, bond type (maturity of Bond A), split ratio (IBKR US share), bond type (maturity of the IBKR bond), exclusion (missing history) | `capital`; `2 : 1`, an empty line, `yes`; an empty line; `1`; `ordinary`; `2 : 1`, an empty line, `yes`; `ordinary`; `exclude` | Doh-KDVP without the missing-history share; Doh-Div 8 rows; Doh-DHO 1 row; Doh-Obr 3 rows |
 
 Other answers to try: `no` to a loss question writes `F10` true and `yes` writes `F10` false with a
@@ -135,7 +136,7 @@ any screen.
 | --- | --- | --- |
 | 2022 | 30-day loss (2), treaty text (BR: text or no claim), payer (NVIDIA: two rows or skip) | Doh-Div rows (8) with the treaty text of each country, the IBKR dividend with its `US` country and no payer name, the Krka dividend in the excluded items, Doh-Obr rows grouped into interest on cash and bond coupons (15 rows, the IBKR interest among them), the fee block with Trade Republic and Interactive Brokers, benefits |
 | 2023 | class of the unknown share, split ratio, payer (BAT), income type of the unknown dividend, bond type, deposit total (EUR 12.50, no cancel button) | the reminder to add other banks in the Doh-DHO card after `yes`, a payer that is not found in the rows, fees and benefits |
-| 2024 | class, bond type (`discount`), deposit total (EUR 427.80), reverse split ratio, payer, 30-day loss, quantity | Doh-DHO no data after `no`, from EUR 427.80 and the reminder after `yes`; a coupon with tax in the export (evidence mark); the two warnings about left-out derivative rows (2 rows of Trade Republic, 1 row of Interactive Brokers) in the shared list |
+| 2024 | class, bond type (`discount`), deposit total (EUR 427.80), reverse split ratio, payer, one split of the two-broker share (both rows, `yes`, then the ratio), 30-day loss, quantity | Doh-DHO no data after `no`, from EUR 427.80 and the reminder after `yes`; a coupon with tax in the export (evidence mark); the two warnings about left-out derivative rows (2 rows of Trade Republic, 1 row of Interactive Brokers) in the shared list |
 | 2025 | class, split ratio, quantity, payer, bond type (Bond A), split ratio (IBKR US share, `2 : 1`), bond type (IBKR bond) | the cross-broker sale in Doh-KDVP, Doh-DHO above EUR 1,000 with no reminder, the dividend without a name, benefits |
 
 Not reachable from a Trade Republic export, covered by the frontend tests: an interest payment of
@@ -154,6 +155,7 @@ an unknown type (the choice `other_interest` and its kinds) and fees with a miss
 | 2023 | `XX0000000122` | purchase 2022-10-04 7 @ 10; two sale rows on 2023-12-12: 4 @ 13 and 3 @ 13.5 |
 | 2024 | `XX0000000101` | purchase 2022-03-15 5 @ 20 (the earlier 2022 sale used the other lot); sale 2024-02-20 5 @ 35 |
 | 2024 | `XX0000000108` | purchase 2022-04-12 1 @ 50 (10 units at 5 become 1 unit at 50); sale 2024-10-08 1 @ 60 |
+| 2024 | `XX0000000116` | purchase 2023-03-01 20 @ 25 (10 units at 50 become 20 units after the 2 : 1 split) and purchase 2023-03-02 10 @ 25 (Interactive Brokers, 5 units at 50 become 10); sale 2024-09-16 30 @ 30, `F10` true (gain EUR 150.00) |
 | 2024 | `XX0000000109` | purchase 2024-02-06 0.99999999 @ 30; sale 2024-09-10 0.99999999 @ 36 (corrected from 1) |
 | 2025 | `XX0000000115` | purchase 2022-02-15 20 @ 44.07227854 (10 units at USD 100, rate 1.1345, become 20 units after the 2 : 1 split); sale 2025-02-18 20 @ 57.43275582 (USD 60 at 1.0447), `F10` true |
 | 2025 | `XX0000000120` | purchases 2023-05-09 8 @ 18 (Trade Republic) and 2024-03-12 2 @ 20 (Interactive Brokers, the 3 other units are not listed); sale 2025-03-11 10 @ 25, `F10` true |
@@ -194,8 +196,11 @@ smaller 2024 case with a purchase after the gap is `tests/test_data/cli/develope
   capital form of every year, so they are in `tests/test_data/ibkr/rejected_rows.xml` and the
   parser tests. A file under the wrong broker (an XML file under Trade Republic, a CSV file under
   Interactive Brokers) gives a file error with its source number; the service tests cover it.
-- Cross-broker split identity (one split seen by two brokers): not supported yet, the ratio of
-  each broker is asked.
+- The identity question (which action rows are one action: two rows of one broker on one day with
+  no broker action ID, or three or more nearby rows of two brokers): the browser has no screen for
+  it yet, so it is not here. The command line asks it, and the integration test
+  `TwoSplitRowsOnOneDayAreGroupedAsOneActionInTheTerminal` covers it. A split that Interactive
+  Brokers books in two accounts with one `actionID` is one action without a question (unit tests).
 - A conflicting duplicate (the same transaction ID with different facts) rejects the whole group;
   see `tests/test_data/csv/merger/conflict.csv`.
 - A row type the parser does not know, a CSV with a wrong header or

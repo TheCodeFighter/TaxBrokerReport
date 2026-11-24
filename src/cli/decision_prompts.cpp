@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
@@ -416,6 +417,107 @@ std::optional<std::int64_t> wholeNumber(std::string_view aText) {
     }
 
     return value;
+}
+
+/// The row type as the identity question shows it.
+std::string_view actionTypeText(CorporateActionType aType) {
+    switch (aType)
+    {
+    case CorporateActionType::Split:
+        return "split";
+    case CorporateActionType::ReverseSplit:
+        return "reverse split";
+    case CorporateActionType::Merger:
+        return "merger";
+    case CorporateActionType::UnresolvedSplit:
+        break;
+    }
+
+    // The export does not say whether it is a split or a reverse split.
+    return "unresolved split (direction not known)";
+}
+
+void writeIdentityQuestion(std::ostream& aOut,
+                           const DecisionRequest& aRequest,
+                           const CorporateActionIdentityQuestion& aQuestion) {
+    aOut << "Question " << aRequest.mId << ": the corporate actions of "
+         << investmentText(aQuestion.mIsin, aQuestion.mName) << '\n'
+         << "  These rows may be one action or several (one action booked by several accounts or\n"
+            "  brokers, or on different days, or two actions close together):\n";
+
+    for (std::size_t index = 0; index < aQuestion.mRows.size(); ++index)
+    {
+        const auto& row = aQuestion.mRows[index];
+
+        aOut << "  " << index + 1 << ". " << formatCalendarDate(row.mDate) << ", "
+             << brokerName(row.mBroker) << ", " << actionTypeText(row.mType);
+
+        if (row.mTransactionId)
+        {
+            aOut << ", transaction " << *row.mTransactionId;
+        }
+
+        if (row.mBrokerActionId)
+        {
+            aOut << ", broker action " << *row.mBrokerActionId;
+        }
+
+        if (row.mSourceValue)
+        {
+            aOut << ", shares " << *row.mSourceValue << " (the broker's own value, not a ratio)";
+        }
+
+        aOut << '\n';
+    }
+
+    aOut << "  Rows of one action are booked at most " << kSameActionWindowDays
+         << " days apart. Check the announcements.\n";
+}
+
+/// Reads the action number of each row, or a cancel for an empty line. A wrong number of numbers
+/// or a gap is passed on as it is, so the session's rejection says what is wrong.
+std::optional<AnswerValue> readGroupingAnswer(std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const auto line = readLine(
+            aIn,
+            aOut,
+            "Action number for each row, in order (for example 1 1 2), or empty to cancel:");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        if (line->empty() || lowerCase(*line) == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        std::istringstream words{*line};
+        std::string word;
+        CorporateActionGroupingAnswer answer;
+        bool valid = true;
+
+        while (words >> word)
+        {
+            const auto number = wholeNumber(word);
+
+            valid = valid && number;
+
+            if (number)
+            {
+                answer.mActionOfRow.push_back(static_cast<std::size_t>(*number));
+            }
+        }
+
+        if (valid)
+        {
+            return answer;
+        }
+
+        aOut << "Enter one whole number for each row, for example 1 1 2.\n";
+    }
 }
 
 /// A share count above 0 with up to 8 decimals, in ticks of 10^-8 units: `0,52` and `0.52` are
@@ -1225,6 +1327,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
             writeQuantityQuestion(aOut, aRequest, aQuestion);
             return readQuantityAnswer(aQuestion, aIn, aOut);
         }
+        else if constexpr (std::is_same_v<Question, CorporateActionIdentityQuestion>)
+        {
+            writeIdentityQuestion(aOut, aRequest, aQuestion);
+            return readGroupingAnswer(aIn, aOut);
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -1279,6 +1386,17 @@ std::string answerText(const AnswerValue& aAnswer, bool aHasBrokers) {
         else if constexpr (std::is_same_v<Value, SeparateEventsAnswer>)
         {
             return "no, the rows are two splits";
+        }
+        else if constexpr (std::is_same_v<Value, CorporateActionGroupingAnswer>)
+        {
+            std::string numbers;
+
+            for (const auto number : aValue.mActionOfRow)
+            {
+                numbers += (numbers.empty() ? "" : " ") + std::to_string(number);
+            }
+
+            return "action of each row: " + numbers;
         }
         else if constexpr (std::is_same_v<Value, CapitalGainsAnswer>)
         {
@@ -1369,7 +1487,8 @@ bool canAsk(const QuestionData& aData) {
         {
             return true;
         }
-        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion>)
+        else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion> ||
+                           std::is_same_v<Question, CorporateActionIdentityQuestion>)
         {
             return true;
         }
@@ -1516,6 +1635,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
         {
             return investmentText(aQuestion.mIsin, aQuestion.mName) + ", sale on " +
                    formatCalendarDate(aQuestion.mSaleDate);
+        }
+        else if constexpr (std::is_same_v<Question, CorporateActionIdentityQuestion>)
+        {
+            return investmentText(aQuestion.mIsin, aQuestion.mName) +
+                   ", which rows are one corporate action";
         }
         else if constexpr (std::is_same_v<Question, PayerChoiceQuestion>)
         {

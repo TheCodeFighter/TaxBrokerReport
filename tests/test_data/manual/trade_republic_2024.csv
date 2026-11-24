@@ -20,6 +20,7 @@ datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,am
 2024-05-20T16:00:00.000001Z,2024-05-20,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Slovenian Bond,SI0031102153,,,30.00,,-7.50,EUR,,,,Interest Payment for ISIN SI0031102153,manual-2024-014,,,,
 2024-05-31T10:00:00Z,2024-05-31,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,35.50,,,EUR,,,,Synthetic bank interest,manual-2024-027,,,,
 2024-06-03T11:00:00Z,2024-06-03,DEFAULT,CASH,STOCKPERK,STOCK,Synthetic Reward Share,XX0000000125,,,7.50,,,EUR,,,,Synthetic stock reward,manual-2024-037,,,,
+2024-06-10T09:00:00Z,2024-06-10,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Two-Broker Split Share,XX0000000116,10,,,,,,,,,Synthetic split (ratio not in the export),manual-2024-043,,,,
 2024-06-11T09:00:00Z,2024-06-11,DEFAULT,TRADING,SELL,STOCK,Synthetic Dollar Share,XX0000000112,-9,8,72.00,,,USD,,,,,manual-2024-010,,,,
 2024-06-14T09:00:00Z,2024-06-14,DEFAULT,CASH,DIVIDEND,STOCK,Krka d.d.,SI0031102120,5,,8.00,,,EUR,,,,,manual-2024-021,,,,
 2024-06-14T10:00:00Z,2024-06-14,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,-2.40,,,EUR,,,,Synthetic debit interest,manual-2024-042,,,,

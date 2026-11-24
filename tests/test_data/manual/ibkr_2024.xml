@@ -5,9 +5,11 @@
       <Trades>
         <Trade accountId="U0000000" transactionID="m24-001" tradeID="m24-001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="MXB" description="Synthetic Cross Broker Share" isin="XX0000000120" currency="EUR" tradeDate="20240312" dateTime="20240312;050000" buySell="BUY" quantity="5" tradePrice="20" proceeds="-100" ibCommission="-1" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
         <Trade accountId="U0000000" transactionID="m24-002" tradeID="m24-002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="OPT" subCategory="" symbol="MUS 240621C00100000" description="MUS 21JUN24 100 C" isin="" currency="USD" tradeDate="20240506" dateTime="20240506;110000" buySell="SELL" quantity="-1" tradePrice="2.5" proceeds="250" ibCommission="-1.05" ibCommissionCurrency="USD" taxes="0" openCloseIndicator="O" notes="" multiplier="100"/>
+        <Trade accountId="U0000000" transactionID="m24-003" tradeID="m24-003" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="MTB" description="Synthetic Two-Broker Split Share" isin="XX0000000116" currency="EUR" tradeDate="20240916" dateTime="20240916;050000" buySell="SELL" quantity="-30" tradePrice="30" proceeds="900" ibCommission="-1" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>
       </Trades>
       <CorporateActions>
         <CorporateAction accountId="U0000000" transactionID="m24-201" actionID="M24S" type="FS" assetCategory="STK" symbol="MUS" description="Synthetic US Share" actionDescription="MUS(XX0000000115) SPLIT 2 FOR 1 (MUS, Synthetic US Share, XX0000000115)" isin="XX0000000115" currency="USD" dateTime="20240801;202500" reportDate="20240801" quantity="10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="m24-202" actionID="M24T" type="FS" assetCategory="STK" symbol="MTB" description="Synthetic Two-Broker Split Share" actionDescription="MTB(XX0000000116) SPLIT 2 FOR 1 (MTB, Synthetic Two-Broker Split Share, XX0000000116)" isin="XX0000000116" currency="EUR" dateTime="20240612;202500" reportDate="20240612" quantity="5" proceeds="0" value="0"/>
       </CorporateActions>
       <CashTransactions/>
     </FlexStatement>

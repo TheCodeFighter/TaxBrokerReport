@@ -1346,12 +1346,15 @@ class FlexReader {
         auto metadata = aContext.metadata(aDateTime.mDate, aDateTime.mTimestamp);
         auto unitEvidence =
             unitSourceEvidence(aQuantity, textOf(aRow, "quantity"), aContext.source());
+        const auto actionId = textOf(aRow, "actionID");
 
         instrument.mCorporateActions.emplace_back(CorporateAction{
             .mMetadata = std::move(metadata),
             .mType = isSplit ? CorporateActionType::UnresolvedSplit : CorporateActionType::Merger,
             .mUnitsDelta = aQuantity.mValue,
             .mRatio = std::nullopt,
+            .mBrokerActionId =
+                actionId.empty() ? std::nullopt : std::optional<std::string>{std::string{actionId}},
             .mUnitEvidence = {std::move(unitEvidence)},
             .mInstrumentEvidence = {},
         });

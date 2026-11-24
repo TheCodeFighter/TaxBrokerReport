@@ -433,6 +433,135 @@ TEST(DecisionPromptsTest, ACancelAtTheOneSplitQuestionRecordsTheCancel) {
     EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
 }
 
+DecisionQuestion identityQuestionOfTwoBrokers() {
+    return DecisionQuestion{
+        .mType = RequestType::CorporateActionIdentityRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionIdentityQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mRows = {{.mBroker = Broker::TradeRepublic,
+                           .mTransactionId = "synthetic-split-1",
+                           .mDate = day(2024, 11, 10),
+                           .mType = CorporateActionType::UnresolvedSplit,
+                           .mSourceValue = "3"},
+                          {.mBroker = Broker::InteractiveBrokers,
+                           .mTransactionId = "synthetic-ibkr-split-1",
+                           .mDate = day(2024, 11, 14),
+                           .mType = CorporateActionType::Split,
+                           .mBrokerActionId = "S1"}},
+            },
+    };
+}
+
+TEST(DecisionPromptsTest, AnIdentityQuestionListsTheRowsAndTakesOneNumberForEachRow) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({identityQuestionOfTwoBrokers()}));
+
+    const auto output = ask(session, "1 1\n");
+
+    EXPECT_EQ(textFrom(output, "Question"),
+              "Question request-0001: the corporate actions of XX0000000001 Synthetic Share\n"
+              "  These rows may be one action or several (one action booked by several accounts "
+              "or\n"
+              "  brokers, or on different days, or two actions close together):\n"
+              "  1. 2024-11-10, Trade Republic, unresolved split (direction not known), "
+              "transaction synthetic-split-1, shares 3 (the broker's own value, not a ratio)\n"
+              "  2. 2024-11-14, Interactive Brokers, split, transaction synthetic-ibkr-split-1, "
+              "broker action S1\n"
+              "  Rows of one action are booked at most 10 days apart. Check the announcements.\n"
+              "Action number for each row, in order (for example 1 1 2), or empty to cancel:\n"
+              "\n");
+
+    const AnswerValue expected = CorporateActionGroupingAnswer{.mActionOfRow = {1, 1}};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000001 Synthetic Share, which rows are one corporate action: action of each "
+              "row: 1 1");
+}
+
+TEST(DecisionPromptsTest, AnIdentityQuestionNamesAReverseSplitAndAMerger) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::CorporateActionIdentityRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000001",
+        .mData =
+            CorporateActionIdentityQuestion{
+                .mIsin = "XX0000000001",
+                .mName = "Synthetic Share",
+                .mRows = {{.mBroker = Broker::TradeRepublic,
+                           .mTransactionId = "synthetic-split-1",
+                           .mDate = day(2024, 11, 10),
+                           .mType = CorporateActionType::ReverseSplit},
+                          {.mBroker = Broker::TradeRepublic,
+                           .mTransactionId = "synthetic-split-2",
+                           .mDate = day(2024, 11, 11),
+                           .mType = CorporateActionType::Merger}},
+            },
+    }}));
+
+    const auto output = ask(session, "1 2\n");
+
+    EXPECT_TRUE(contains(output, "  1. 2024-11-10, Trade Republic, reverse split, transaction"));
+    EXPECT_TRUE(contains(output, "  2. 2024-11-11, Trade Republic, merger, transaction"));
+}
+
+TEST(DecisionPromptsTest, AnUnreadableIdentityAnswerIsAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({identityQuestionOfTwoBrokers()}));
+
+    const auto output = ask(session, "one two\n1 2\n");
+
+    EXPECT_TRUE(contains(output,
+                         "Enter one whole number for each row, for example 1 1 2.\n"
+                         "Action number for each row, in order (for example 1 1 2), or empty to "
+                         "cancel:\n"));
+
+    const AnswerValue expected = CorporateActionGroupingAnswer{.mActionOfRow = {1, 2}};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+}
+
+TEST(DecisionPromptsTest, AnIdentityAnswerWithTheWrongCountIsRejectedAndAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({identityQuestionOfTwoBrokers()}));
+
+    // One number for two rows is passed on and rejected by the session; then it is asked again.
+    const auto output = ask(session, "1\n1 1\n");
+
+    EXPECT_TRUE(contains(output, "must give an action number for every row"));
+    EXPECT_EQ(countOf(output, "Action number for each row"), 2U);
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, AnEmptyLineAtTheIdentityQuestionRecordsTheCancel) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({identityQuestionOfTwoBrokers()}));
+
+    ask(session, "\n");
+
+    const AnswerValue expected = CancelAnswer{};
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, expected);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheIdentityQuestionLeavesItOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({identityQuestionOfTwoBrokers()}));
+
+    ask(session, "");
+
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
 TEST(DecisionPromptsTest, AnInputEndingAtTheOneSplitQuestionLeavesItOpen) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{

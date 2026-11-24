@@ -193,6 +193,10 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return "separate_events";
         }
+        else if constexpr (std::is_same_v<Value, CorporateActionGroupingAnswer>)
+        {
+            return Json{{"type", "grouping"}, {"actionOfRow", aValue.mActionOfRow}};
+        }
         else if constexpr (std::is_same_v<Value, CapitalGainsAnswer>)
         {
             return "capital_gains";
@@ -359,6 +363,54 @@ Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
     check["askSameEvent"] = aQuestion.mAskSameEvent;
 
     return check;
+}
+
+/// The type of an action row as the identity question shows it.
+std::string_view actionTypeName(CorporateActionType aType) {
+    switch (aType)
+    {
+    case CorporateActionType::Split:
+        return "split";
+    case CorporateActionType::ReverseSplit:
+        return "reverse_split";
+    case CorporateActionType::Merger:
+        return "merger";
+    case CorporateActionType::UnresolvedSplit:
+        break;
+    }
+
+    return "unresolved_split";
+}
+
+/// The question data of an identity question: the ISIN, the name and every action row, in the
+/// order the answer's numbers follow. A source value is shown read-only; its meaning is not
+/// verified.
+Json identityCheckToJson(const CorporateActionIdentityQuestion& aQuestion) {
+    Json rows = Json::array();
+
+    for (const auto& row : aQuestion.mRows)
+    {
+        Json serialized{{"broker", toString(row.mBroker)},
+                        {"date", isoDate(row.mDate)},
+                        {"type", actionTypeName(row.mType)}};
+
+        if (row.mTransactionId)
+        {
+            serialized["transactionId"] = *row.mTransactionId;
+        }
+        if (row.mSourceValue)
+        {
+            serialized["sourceValue"] = *row.mSourceValue;
+        }
+        if (row.mBrokerActionId)
+        {
+            serialized["brokerActionId"] = *row.mBrokerActionId;
+        }
+
+        rows.push_back(std::move(serialized));
+    }
+
+    return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"rows", std::move(rows)}};
 }
 
 /// The question data of a classification question: the ISIN, the name and the class labels.
@@ -602,6 +654,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
     if (const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aRequest.mData))
     {
         serialized["ratioCheck"] = ratioCheckToJson(*ratio);
+    }
+
+    if (const auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aRequest.mData))
+    {
+        serialized["identityCheck"] = identityCheckToJson(*identity);
     }
 
     if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aRequest.mData))
@@ -849,6 +906,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aDecision.mData))
     {
         serialized["ratioCheck"] = ratioCheckToJson(*ratio);
+    }
+
+    if (const auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aDecision.mData))
+    {
+        serialized["identityCheck"] = identityCheckToJson(*identity);
     }
 
     if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aDecision.mData))

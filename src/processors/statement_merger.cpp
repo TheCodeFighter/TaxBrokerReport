@@ -552,7 +552,8 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mType == aRight.mEvent.mType &&
            aLeft.mEvent.mUnitsDelta == aRight.mEvent.mUnitsDelta &&
            sameUnitEvidence(aLeft.mEvent.mUnitEvidence, aRight.mEvent.mUnitEvidence) &&
-           aLeft.mEvent.mRatio == aRight.mEvent.mRatio;
+           aLeft.mEvent.mRatio == aRight.mEvent.mRatio &&
+           aLeft.mEvent.mBrokerActionId == aRight.mEvent.mBrokerActionId;
 }
 
 [[nodiscard]] bool sameEventFacts(const DividendRecord& aLeft, const DividendRecord& aRight) {

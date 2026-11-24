@@ -765,7 +765,9 @@ Grouping by ISIN and calendar year is used only for
 come from multiple source files or brokers, and show every date, type, ratio and source. The year
 is never an action identity or a reason to combine two distinct actions. Ambiguous grouping returns
 `corporate_action_identity_required`; a ratio prompt covers the combined action's complete source
-set. The detailed identity, ordering and conflict rules are in `fifo.md`.
+set. A corporate action may carry the broker's own ID of the economic action (`mBrokerActionId`,
+the `actionID` of Interactive Brokers, shared by its rows in all accounts); rows of one broker on
+one date with the same ID are one action, and the merger compares it as a fact. The detailed identity, ordering and conflict rules are in `fifo.md`.
 
 The processing request also retains a separate analysis view for 30-day loss eligibility, including
 required previous-December and next-January events. It does not mutate the selected-year closing
@@ -985,20 +987,25 @@ from one broker.
   effective date (`mConfirmedDate`) that the user supplied (never the broker); `mEffectiveDate`
   stays the broker's row date. States: `Applied`, `RatioConfirmed` (only between two rounds of
   `matchCapitalPools`), `WaitingForRatio`, `WaitingForEarlierAction`, `Cancelled`,
-  `SameDayAmbiguous`, `DifferentDatesAmbiguous`, `Unsupported`, `NoPosition` and
+  `WaitingForIdentity`, `SameDayOrderAmbiguous`, `Unsupported`, `NoPosition` and
   `NumericFailure`.
 - **Applied action.** `Applied` with the confirmed ratio and date, and one
   `corporate_action_applied` warning (key `.user_ratio`, parameters `newShares`, `oldShares` and
   `effectiveDate`) that says the user supplied the ratio.
 - **First action of the pool.** A merger row is `Unsupported` (`unsupported_corporate_action`, key
-  `.merger`, no request). Two rows of the same broker on that date are `SameDayAmbiguous`
-  (`corporate_action_ambiguous`, key `.same_day`, no request); rows of different brokers on that
-  date are one action. Split rows of different brokers on dates at most `kDifferentDatesWindowDays`
-  (10) days apart are one action with rows on two dates (`joinOneEventPairs`) when each date is the
-  other's only such neighbour, neither has a merger row and no broker has rows on both; its question
-  has `mAskSameEvent`. Other such rows make the actions `DifferentDatesAmbiguous`
-  (`corporate_action_ambiguous`, key `.different_dates`, parameter `days`, no request), until the
-  identity question exists; a merger row never pairs with a split.
+  `.merger`, no request). Rows of different brokers on that date are one action, and so are rows of
+  one broker on that date with the same `mBrokerActionId`. Split rows of different brokers on dates
+  at most `kDifferentDatesWindowDays` (10) days apart are one action with rows on two dates
+  (`actionGroupsOf`) when each date is the other's only such neighbour, neither has a merger row
+  and no broker has two actions; its question has `mAskSameEvent`. Other rows that may be one action
+  or several (two actions of one broker on one date, or the dates linked by such nearby rows) are
+  one step with state `WaitingForIdentity`: one `corporate_action_identity_required` question with
+  `CorporateActionIdentityQuestion` data and one `corporate_action_ambiguous` error (key
+  `.identity_required`) linked to it. A `CorporateActionGroupingAnswer` turns the step into the
+  actions of the answer in date order (each starts on its earliest row; no `mAskSameEvent`), and
+  actions that start on one day are `SameDayOrderAmbiguous` (key `.same_day_order`); a cancel gives
+  `Cancelled` (key `.cancelled`). A merger row never pairs with a split or joins such a step. The
+  step is asked for every action of the ISIN, also while an earlier action's question is open.
   No open units just before it is `NoPosition` (`corporate_action_missing_position`); so is a
   pool with `mShortSale` without a unit at the start of the sale's day or any date before it with
   units. Open units whose checked sum
@@ -1022,7 +1029,10 @@ from one broker.
   `RatioConfirmed`, and the next round applies it; a cancel gives `Cancelled` and
   `corporate_action_ambiguous` (key `.cancelled`, no request), or, for a pool with `mShortSale`
   (a sale up to 31 December), the `incomplete_history` error of the sale. `SeparateEventsAnswer`
-  (only for `mAskSameEvent`) gives `DifferentDatesAmbiguous` and `.different_dates`.
+  (only for `mAskSameEvent`) splits the two dates into two actions: the first is asked again with
+  its dates ending the day before the second's row, and the second waits for it.
+  For each calendar year of an ISIN's action rows with rows from more than one source file, the
+  stage adds one `corporate_action_sources_mismatch_possible` warning (parameter `year`).
   `matchCapitalPools` adds each confirmed action once, so its loop always ends.
 - **Rows after 31 December.** The stage also groups the action rows of `mLossAnalysisEvents`
   after 31 December. One is asked like a first action when the pool stopped at it (`mShortSale`,
@@ -1505,7 +1515,10 @@ date not in the form `YYYY-MM-DD`) is asked again without a session call.
   question, because an exclusion drops the loss and ratio questions of its investment.
 - Loss question: `yes` (`other_activity`), `no` (`no_other_activity`) or `cancel`, in any case.
 - Ratio question with rows on two dates (`mAskSameEvent`): first whether they are one split,
-  `yes`, `no` (`SeparateEventsAnswer`, no ratio is asked) or `cancel`.
+  `yes`, `no` (`SeparateEventsAnswer`, no ratio is asked now) or `cancel`.
+- Identity question: the rows are listed with numbers; one whole number for each row (`1 1 2`), or
+  an empty line or `cancel`. A wrong count or a gap is passed on, and the session's message says
+  what is wrong.
 - Ratio question: `new : old` (whole numbers) or `before -> after` (share counts above 0 with up
   to 8 decimals, turned into the ratio after / before as `splitRatioFromShareCounts` does), or
   `cancel`; then the effective date (an empty line takes the broker's row date); then the
