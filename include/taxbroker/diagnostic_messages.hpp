@@ -181,6 +181,8 @@ enum class MessageKey {
     DividendPayerNotFoundCountryKnown,
     InterestPayerNotFoundCountryKnown,
     PayerCountryFromIsin,
+    PayerCountryUnresolvedDividend,
+    PayerCountryUnresolvedInterest,
 };
 
 enum class MessageParamKind {

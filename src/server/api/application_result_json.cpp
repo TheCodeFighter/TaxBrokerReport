@@ -237,6 +237,16 @@ Json answerToJson(const AnswerValue& aAnswer) {
 
             return Json{{"option", *aValue.mPickedOption}};
         }
+        else if constexpr (std::is_same_v<Value, PayerCountryAnswer>)
+        {
+            // A skip is a string; a country is its code.
+            if (!aValue.mCountry)
+            {
+                return "skip";
+            }
+
+            return Json{{"country", *aValue.mCountry}};
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -402,6 +412,20 @@ std::string_view toString(CatalogueOrigin aOrigin) {
     return "supplied";
 }
 
+std::string_view toString(CountryOrigin aOrigin) {
+    switch (aOrigin)
+    {
+    case CountryOrigin::Export:
+        return "export";
+    case CountryOrigin::Reference:
+        return "reference";
+    case CountryOrigin::ExportAndReference:
+        break;
+    }
+
+    return "export_and_reference";
+}
+
 /// The question data of a payer choice question: the ISIN and the reference rows to pick from,
 /// each with the facts of the payer and the row it came from.
 Json payerCheckToJson(const PayerChoiceQuestion& aQuestion) {
@@ -428,6 +452,22 @@ Json payerCheckToJson(const PayerChoiceQuestion& aQuestion) {
     }
 
     return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"options", options}};
+}
+
+/// The question data of a payer country question: the ISIN and the countries to pick from, each
+/// with where it comes from.
+Json countryCheckToJson(const PayerCountryQuestion& aQuestion) {
+    Json candidates = Json::array();
+
+    std::transform(aQuestion.mCandidates.begin(),
+                   aQuestion.mCandidates.end(),
+                   std::back_inserter(candidates),
+                   [](const PayerCountryCandidate& aCandidate) {
+                       return Json{{"country", aCandidate.mCountry},
+                                   {"origin", toString(aCandidate.mOrigin)}};
+                   });
+
+    return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"candidates", candidates}};
 }
 
 /// The question data of a treaty claim question: the country and its taxed ISINs.
@@ -578,6 +618,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
     if (const auto* payer = std::get_if<PayerChoiceQuestion>(&aRequest.mData))
     {
         serialized["payerCheck"] = payerCheckToJson(*payer);
+    }
+
+    if (const auto* country = std::get_if<PayerCountryQuestion>(&aRequest.mData))
+    {
+        serialized["countryCheck"] = countryCheckToJson(*country);
     }
 
     if (const auto* treaty = std::get_if<TreatyClaimQuestion>(&aRequest.mData))
@@ -819,6 +864,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* payer = std::get_if<PayerChoiceQuestion>(&aDecision.mData))
     {
         serialized["payerCheck"] = payerCheckToJson(*payer);
+    }
+
+    if (const auto* country = std::get_if<PayerCountryQuestion>(&aDecision.mData))
+    {
+        serialized["countryCheck"] = countryCheckToJson(*country);
     }
 
     if (const auto* treaty = std::get_if<TreatyClaimQuestion>(&aDecision.mData))

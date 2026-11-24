@@ -111,6 +111,18 @@ function payerAnswerText(decision: Decision, language: Language): string {
   return wordAnswerText(answer, language);
 }
 
+function countryAnswerText(answer: Decision["answer"], language: Language): string {
+  if (answer === "skip") {
+    return uiText(language, "answerCountrySkipped");
+  }
+
+  if (typeof answer === "object" && typeof answer.country === "string") {
+    return uiTextWith(language, "answerCountry", { country: answer.country });
+  }
+
+  return wordAnswerText(answer, language);
+}
+
 function treatyAnswerText(answer: Decision["answer"], language: Language): string {
   if (answer === "no_claim") {
     return uiText(language, "answerNoClaim");
@@ -167,6 +179,7 @@ function investmentOf(decision: Decision, kind: QuestionKind | undefined): strin
     decision.quantityCheck ??
     decision.classificationCheck ??
     decision.payerCheck ??
+    decision.countryCheck ??
     decision.bondCheck;
 
   return check === undefined ? undefined : `${check.name} (${check.isin})`;
@@ -191,6 +204,8 @@ function describeDecision(
       return { title: uiText(language, "decisionIncome"), answer: incomeAnswerText(decision.answer, language) };
     case "payer":
       return { title: uiText(language, "decisionPayer"), answer: payerAnswerText(decision, language) };
+    case "country":
+      return { title: uiText(language, "decisionCountry"), answer: countryAnswerText(decision.answer, language) };
     case "bond":
       return { title: uiText(language, "decisionBond"), answer: wordAnswerText(decision.answer, language) };
     case "treaty":

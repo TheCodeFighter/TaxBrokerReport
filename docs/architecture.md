@@ -1231,12 +1231,18 @@ payer questions, the diagnostics and the rates it used.
   `PayerChoiceQuestion` (`income_details_required`) and the answer picks one row or skips. A skip
   and an open question both give empty facts and the same warning. The question never stops a form:
   `ApplicationResultBuilder` lists it with Doh-Div but does not make the form `needs_input`.
-- **Country.** The country of a row (payer and source country, for a dividend and a coupon) is the
-  first of: the export country of the payments (`mPayerCountry`; payments that disagree give none),
-  the used reference row, the one country of the reference rows that disagree, the first two letters
-  of the ISIN when they are an ISO 3166-1 country (`payer_country_from_isin`, once per ISIN and
-  form). The list of countries is `isIsoCountryCode`, also used by the reference files and the XML
-  check. `tax_rules.md`, "Payer country of an income row", has the rules.
+- **Country.** The country of a row (payer and source country, for a dividend and a coupon) comes
+  from the export countries of the payments (`mExportCountries`) and the used reference row. Two or
+  more different countries are a `PayerCountryQuestion` (`income_details_required`, candidates
+  sorted by country, each with its origin `export`, `reference` or `export_and_reference`), asked
+  after the payer question is answered or skipped; the answer is a country code (any ISO 3166-1
+  code, not only a candidate) or a skip. A skip or no answer gives no country and
+  `payer_country_unresolved` (key `.dividend` or `.interest`); the question never stops a form.
+  With fewer than two countries the first of: the one export country, the used reference row, the
+  one country of the reference rows that disagree, the first two letters of the ISIN when they are
+  an ISO 3166-1 country (`payer_country_from_isin`, once per ISIN and form). The list of countries
+  is `isIsoCountryCode`, also used by the reference files, the session and the XML check.
+  `tax_rules.md`, "Payer country of an income row", has the rules.
 - **Slovenian payer.** A dividend payer with the country `SI` has no row. One excluded item per ISIN
   (`dividend`, `slovenian_tax_settled`) lists the sources of its payments, without a warning
   (a tax rule leaves it out on purpose). Its payments need no rate.

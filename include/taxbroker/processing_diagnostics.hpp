@@ -92,6 +92,9 @@ enum class ProcessingDiagnosticCode {
     /// A warning: the country of an income row is the ISIN prefix, because neither the export nor
     /// a reference row gave one.
     PayerCountryFromIsin,
+    /// A warning: the sources of the country of a payer disagree and the user gave none (a skip,
+    /// no answer or no input), so the rows have no country.
+    PayerCountryUnresolved,
 };
 
 /// Caller-supplied failure scope and safe provenance; arithmetic helpers do not infer reports.

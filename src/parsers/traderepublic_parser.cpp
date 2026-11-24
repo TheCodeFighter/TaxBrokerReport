@@ -68,7 +68,6 @@ constexpr auto kTransactionTypeMappings = std::array{
         "SSP_CORPORATE_ACTION_INVOICE_CASH", "", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"WARRANT_EXERCISE", "", taxbroker::RowType::Unsupported},
     TransactionTypeMapping{"TILG", "", taxbroker::RowType::Unsupported},
-    TransactionTypeMapping{"CRYPTO_INVOICE", "", taxbroker::RowType::Unsupported},
 
     TransactionTypeMapping{"CARD_FAILED_TRANSACTION", "CASH", taxbroker::RowType::Ignored},
     TransactionTypeMapping{"CARD_ORDER_BILLED", "CASH", taxbroker::RowType::Ignored},

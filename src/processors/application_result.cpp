@@ -490,6 +490,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
     const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
     const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
+    const auto* country = std::get_if<PayerCountryQuestion>(&aQuestion.mData);
     const auto* deposit = std::get_if<DepositInterestTotalQuestion>(&aQuestion.mData);
     const auto* income = std::get_if<IncomeClassificationQuestion>(&aQuestion.mData);
     const auto* bond = std::get_if<BondTypeQuestion>(&aQuestion.mData);
@@ -506,7 +507,8 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
         ((classification != nullptr || income != nullptr) != isClassificationType) ||
         (quantity != nullptr) != isQuantityType ||
-        ((payer != nullptr || bond != nullptr || treaty != nullptr) && !isIncomeDetailsType) ||
+        ((payer != nullptr || country != nullptr || bond != nullptr || treaty != nullptr) &&
+         !isIncomeDetailsType) ||
         (deposit != nullptr) != isDepositType ||
         (developer != nullptr) !=
             (aQuestion.mType == RequestType::DeveloperExportConfirmationRequired))
@@ -532,6 +534,17 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("A payer choice question needs an ISIN and at least two "
                                     "reference rows.");
+    }
+
+    if (country != nullptr && (country->mIsin.empty() || country->mCandidates.size() < 2 ||
+                               std::any_of(country->mCandidates.begin(),
+                                           country->mCandidates.end(),
+                                           [](const PayerCountryCandidate& aCandidate) {
+                                               return !isTwoCapitalLetters(aCandidate.mCountry);
+                                           })))
+    {
+        throw std::invalid_argument("A payer country question needs an ISIN and at least two "
+                                    "candidates of two capital letters.");
     }
 
     if (treaty != nullptr && (!isTwoCapitalLetters(treaty->mCountry) || treaty->mIsins.empty()))
@@ -1125,6 +1138,15 @@ QuestionData normalizedData(QuestionData aData) {
         labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
     }
 
+    if (auto* country = std::get_if<PayerCountryQuestion>(&aData))
+    {
+        std::sort(country->mCandidates.begin(),
+                  country->mCandidates.end(),
+                  [](const PayerCountryCandidate& aLeft, const PayerCountryCandidate& aRight) {
+                      return aLeft.mCountry < aRight.mCountry;
+                  });
+    }
+
     if (auto* payer = std::get_if<PayerChoiceQuestion>(&aData))
     {
         std::sort(payer->mOptions.begin(),
@@ -1445,10 +1467,12 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
             {
                 report.mRequestIds.push_back(request.mId);
 
-                // A payer choice, a treaty claim and the deposit interest total are listed but
-                // never stop a form: a skip, no claim or no answer is a valid way to go on.
+                // A payer choice, a payer country, a treaty claim and the deposit interest total
+                // are listed but never stop a form: a skip, no claim or no answer is a valid way
+                // to go on.
                 hasBlockingRequest |=
                     !std::holds_alternative<PayerChoiceQuestion>(request.mData) &&
+                    !std::holds_alternative<PayerCountryQuestion>(request.mData) &&
                     !std::holds_alternative<DepositInterestTotalQuestion>(request.mData) &&
                     !std::holds_alternative<TreatyClaimQuestion>(request.mData);
             }

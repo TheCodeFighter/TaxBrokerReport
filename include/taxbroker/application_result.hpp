@@ -331,6 +331,34 @@ struct PayerChoiceQuestion {
     bool operator==(const PayerChoiceQuestion&) const = default;
 };
 
+/// Where a candidate country of a payer comes from.
+enum class CountryOrigin {
+    Export,
+    Reference,
+    ExportAndReference,
+};
+
+/// One country a payer country question offers.
+struct PayerCountryCandidate {
+    std::string mCountry; ///< 2 uppercase letters.
+    CountryOrigin mOrigin{};
+
+    bool operator==(const PayerCountryCandidate&) const = default;
+};
+
+/// The question data of `income_details_required` for the country of a payer when the sources
+/// (the broker's export, the reference row in use) name different countries. The user picks one
+/// candidate, types another country or skips. It never blocks: a skip, or no answer, gives rows
+/// without a country.
+struct PayerCountryQuestion {
+    Isin mIsin;
+    std::string mName; ///< The name of the income payment's instrument.
+    /// The candidates, sorted by country, two or more.
+    std::vector<PayerCountryCandidate> mCandidates;
+
+    bool operator==(const PayerCountryQuestion&) const = default;
+};
+
 /// The yearly bank-deposit interest allowance in EUR, across all qualifying banks. At or below it a
 /// return is not needed; above it all reportable amounts go in Doh-DHO.
 inline constexpr Money kDepositInterestAllowance = 1000 * MONEY_SCALE;
@@ -394,6 +422,7 @@ using QuestionData = std::variant<std::monostate,
                                   TaxClassificationQuestion,
                                   QuantityCorrectionQuestion,
                                   PayerChoiceQuestion,
+                                  PayerCountryQuestion,
                                   DepositInterestTotalQuestion,
                                   IncomeClassificationQuestion,
                                   BondTypeQuestion,
@@ -490,6 +519,14 @@ struct PayerChoiceAnswer {
     bool operator==(const PayerChoiceAnswer&) const = default;
 };
 
+/// The answer to a payer country question: the country (2 uppercase letters, an ISO 3166-1 code;
+/// a candidate or any other), or none for a skip.
+struct PayerCountryAnswer {
+    std::optional<std::string> mCountry;
+
+    bool operator==(const PayerCountryAnswer&) const = default;
+};
+
 /// The answer to a deposit interest total question: whether the year's total, with the interest
 /// of the user's other Slovenian and EU banks, is above EUR 1,000.
 struct DepositInterestTotalAnswer {
@@ -542,6 +579,7 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  ExcludeFromReportsAnswer,
                                  QuantityCorrectionAnswer,
                                  PayerChoiceAnswer,
+                                 PayerCountryAnswer,
                                  DepositInterestTotalAnswer,
                                  IncomeTreatmentAnswer,
                                  BondTypeAnswer,

@@ -49,6 +49,8 @@ struct PayerForm {
     MessageKey mNotFoundKey{};                ///< Its message.
     /// Its message when the payer's country is known from elsewhere than the reference files.
     MessageKey mNotFoundCountryKnownKey{};
+    /// The warning when the sources of the payer country disagree and the user gave none.
+    MessageKey mCountryUnresolvedKey{};
     /// The category of the excluded item of a Slovenian payer. Empty when the form reports the
     /// income of a Slovenian payer too, because no Slovenian payer settles the tax on it.
     std::optional<ExcludedCategory> mSlovenianExclusion;
@@ -110,7 +112,10 @@ void addPayerNotFound(const PayerForm& aForm,
 /// blocks. For a form that leaves a Slovenian payer out, a payer whose every row has the residence
 /// country SI is Slovenian without a question. The payer country (also the source country) is the
 /// first of the export country, the used row's country, the one country of all rows and the ISIN
-/// prefix, which is warned about; a payer without a row has only that country.
+/// prefix, which is warned about; a payer without a row has only that country. When the export
+/// countries and the used row's country are two or more, the user is asked (after the payer
+/// question is answered); a skip or no answer gives no country and a warning, and a country that
+/// is not the row's own takes the row's number away.
 [[nodiscard]] PayerOutcome resolvePayer(const PayerForm& aForm,
                                         const PayerSinks& aSinks,
                                         const Isin& aIsin,

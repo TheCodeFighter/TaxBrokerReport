@@ -1065,6 +1065,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "MarginOrLeverageRowsLeftOut";
     case ProcessingDiagnosticCode::PayerCountryFromIsin:
         return "PayerCountryFromIsin";
+    case ProcessingDiagnosticCode::PayerCountryUnresolved:
+        return "PayerCountryUnresolved";
     }
 
     return "Unknown";

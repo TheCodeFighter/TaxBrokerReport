@@ -94,12 +94,21 @@ describe("question kinds", () => {
     expect(questionKind({ type: "tax_classification_required" })).toBeUndefined();
   });
 
-  it("tells the three kinds of an income details request by its data", () => {
+  it("tells the four kinds of an income details request by its data", () => {
     const payer = { name: "Example Corp", isin: "US0000000001", options: [] };
+    const country = {
+      name: "Example Corp",
+      isin: "US0000000001",
+      candidates: [
+        { country: "IE", origin: "export" },
+        { country: "US", origin: "reference" },
+      ],
+    };
     const bond = { isin: "XS0000000001", name: "Example Bond", soldUnits: "1.00000000", maturedUnits: "0.00000000" };
     const treaty = { year: 2023, country: "BR", isins: ["BR0000000001"] };
 
     expect(questionKind({ type: "income_details_required", payerCheck: payer })).toBe("payer");
+    expect(questionKind({ type: "income_details_required", countryCheck: country })).toBe("country");
     expect(questionKind({ type: "income_details_required", bondCheck: bond })).toBe("bond");
     expect(questionKind({ type: "income_details_required", treatyCheck: treaty })).toBe("treaty");
     expect(questionKind({ type: "income_details_required" })).toBeUndefined();

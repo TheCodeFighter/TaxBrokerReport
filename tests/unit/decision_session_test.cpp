@@ -2880,4 +2880,127 @@ TEST(DecisionSessionTest, ATreatyQuestionRejectsACancelAndAnotherAnswerType) {
     EXPECT_EQ(session.result().mRunRevision, 1U);
 }
 
+// --- Payer country question ---
+
+DecisionQuestion countryQuestion(std::vector<PayerCountryCandidate> aCandidates) {
+    return DecisionQuestion{
+        .mType = RequestType::IncomeDetailsRequired,
+        .mAffectedReports = {kDividends},
+        .mIsin = "XX0000000010",
+        .mData = PayerCountryQuestion{.mIsin = "XX0000000010",
+                                      .mName = "Synthetic Payer A",
+                                      .mCandidates = std::move(aCandidates)},
+    };
+}
+
+/// A stage that asks the payer country question with these candidates until it is answered.
+RunCalculation countryStage(std::vector<PayerCountryCandidate> aCandidates) {
+    return [candidates = std::move(aCandidates)](RunDecisions& aDecisions) {
+        const auto question = countryQuestion(candidates);
+        ApplicationResultInput input{.mReportingYear = 2025};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+}
+
+std::vector<PayerCountryCandidate> usAndIeCandidates() {
+    return {{.mCountry = "IE", .mOrigin = CountryOrigin::Export},
+            {.mCountry = "US", .mOrigin = CountryOrigin::Reference}};
+}
+
+TEST(DecisionSessionTest, ACountryQuestionTakesASkip) {
+    DecisionSession session;
+
+    session.start(countryStage(usAndIeCandidates()));
+
+    EXPECT_TRUE(session.answer({{"request-0001", 1, PayerCountryAnswer{.mCountry = std::nullopt}}})
+                    .empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, ACountryQuestionTakesACandidate) {
+    DecisionSession session;
+
+    session.start(countryStage(usAndIeCandidates()));
+
+    EXPECT_TRUE(
+        session.answer({{"request-0001", 1, PayerCountryAnswer{.mCountry = "US"}}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, ACountryQuestionTakesAnyOtherCountryCode) {
+    DecisionSession session;
+
+    session.start(countryStage(usAndIeCandidates()));
+
+    EXPECT_TRUE(
+        session.answer({{"request-0001", 1, PayerCountryAnswer{.mCountry = "DE"}}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, ACountryQuestionTakesACancelAsASkip) {
+    DecisionSession session;
+
+    session.start(countryStage(usAndIeCandidates()));
+
+    EXPECT_TRUE(session.answer({{"request-0001", 1, kCancel}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+}
+
+TEST(DecisionSessionTest, ACountryQuestionRejectsTextThatIsNoCountryCode) {
+    DecisionSession session;
+
+    session.start(countryStage(usAndIeCandidates()));
+
+    // `XX` is not assigned, `us` is not in capital letters, `USA` has three letters, and an empty
+    // text is nothing.
+    for (const auto* text : {"XX", "us", "USA", ""})
+    {
+        SCOPED_TRACE(text);
+
+        const auto rejections =
+            session.answer({{"request-0001", 1, PayerCountryAnswer{.mCountry = text}}});
+
+        ASSERT_EQ(rejections.size(), 1U);
+        EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    }
+
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, ACountryQuestionRejectsAPayerChoiceAnswer) {
+    DecisionSession session;
+
+    session.start(countryStage(usAndIeCandidates()));
+
+    const auto rejections =
+        session.answer({{"request-0001", 1, PayerChoiceAnswer{.mPickedOption = 0}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections[0].mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+}
+
+TEST(DecisionSessionTest, AChangedCandidateListAsksTheCountryQuestionAgain) {
+    DecisionSession session;
+
+    session.start(countryStage(usAndIeCandidates()));
+    EXPECT_TRUE(
+        session.answer({{"request-0001", 1, PayerCountryAnswer{.mCountry = "US"}}}).empty());
+    ASSERT_TRUE(session.result().mRequests.empty());
+
+    // A new run where the export also names `DE`: the recorded answer belonged to another question.
+    session.start(countryStage({{.mCountry = "DE", .mOrigin = CountryOrigin::Export},
+                                {.mCountry = "IE", .mOrigin = CountryOrigin::Export},
+                                {.mCountry = "US", .mOrigin = CountryOrigin::Reference}}));
+
+    EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
 } // namespace

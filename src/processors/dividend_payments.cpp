@@ -24,6 +24,7 @@ const PayerForm kForm{
     .mNotFoundCode = ProcessingDiagnosticCode::DividendPayerNotFound,
     .mNotFoundKey = MessageKey::DividendPayerNotFound,
     .mNotFoundCountryKnownKey = MessageKey::DividendPayerNotFoundCountryKnown,
+    .mCountryUnresolvedKey = MessageKey::PayerCountryUnresolvedDividend,
     .mSlovenianExclusion = ExcludedCategory::Dividend,
     .mNeedsPayerNumber = false,
 };

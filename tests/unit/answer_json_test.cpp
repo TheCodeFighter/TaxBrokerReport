@@ -128,6 +128,23 @@ TEST(AnswerJsonTest, PayerQuestionReadsAnOptionOrSkip) {
     EXPECT_EQ(fit(R"("skip")", request), AnswerValue{PayerChoiceAnswer{std::nullopt}});
 }
 
+TEST(AnswerJsonTest, PayerCountryQuestionReadsACountryOrSkip) {
+    const auto request = requestOf(RequestType::IncomeDetailsRequired, PayerCountryQuestion{});
+
+    EXPECT_EQ(fit(R"({"country":"US"})", request),
+              AnswerValue{PayerCountryAnswer{std::string{"US"}}});
+    EXPECT_EQ(fit(R"("skip")", request), AnswerValue{PayerCountryAnswer{std::nullopt}});
+}
+
+TEST(AnswerJsonTest, PayerCountryAnswerThatIsNotACountryObjectOrSkipIsRefused) {
+    const auto request = requestOf(RequestType::IncomeDetailsRequired, PayerCountryQuestion{});
+
+    EXPECT_EQ(fit(R"({"country":1})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"country":"US","x":1})", request), std::nullopt);
+    EXPECT_EQ(fit(R"("other")", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"option":1})", request), std::nullopt);
+}
+
 TEST(AnswerJsonTest, DividendTreatyQuestionReadsATextOrNoClaim) {
     const auto request = requestOf(RequestType::IncomeDetailsRequired, TreatyClaimQuestion{});
 

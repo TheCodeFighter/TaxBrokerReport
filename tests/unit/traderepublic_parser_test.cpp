@@ -14543,7 +14543,6 @@ TEST(TradeRepublicParserTest, ReportsEveryRecognizedButUnsupportedTransaction) {
         UnsupportedType{"SSP_CORPORATE_ACTION_INVOICE_CASH", "SYNTHETIC_CATEGORY"},
         UnsupportedType{"WARRANT_EXERCISE", "SYNTHETIC_CATEGORY"},
         UnsupportedType{"TILG", "SYNTHETIC_CATEGORY"},
-        UnsupportedType{"CRYPTO_INVOICE", "SYNTHETIC_CATEGORY"},
     };
 
     for (const auto& unsupportedType : unsupportedTypes)

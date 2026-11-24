@@ -3462,6 +3462,85 @@ TEST(ApplicationResultRequestTest, PayerDataAndTheRequestTypeMustFitEachOther) {
                  std::invalid_argument);
 }
 
+PayerCountryQuestion countryQuestion() {
+    return PayerCountryQuestion{
+        .mIsin = "XX0000000010",
+        .mName = "Synthetic Payer",
+        .mCandidates = {{.mCountry = "US", .mOrigin = CountryOrigin::Export},
+                        {.mCountry = "IE", .mOrigin = CountryOrigin::Reference}}};
+}
+
+ApplicationResultInput countryInput(RequestType aType, PayerCountryQuestion aQuestion) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mRequests = {RequestInput{.mQuestion = {
+                                        .mType = aType,
+                                        .mAffectedReports = {kDividends},
+                                        .mIsin = "XX0000000010",
+                                        .mData = std::move(aQuestion),
+                                    }}};
+
+    return input;
+}
+
+TEST(ApplicationResultRequestTest, ThePayerCountryCandidatesAreSortedByCountry) {
+    const auto result = ApplicationResultBuilder::build(
+        countryInput(RequestType::IncomeDetailsRequired, countryQuestion()));
+
+    // The question was given with `US` first.
+    const auto& question = std::get<PayerCountryQuestion>(result.mRequests.at(0).mData);
+
+    ASSERT_EQ(question.mCandidates.size(), 2U);
+    EXPECT_EQ(question.mCandidates.at(0).mCountry, "IE");
+    EXPECT_EQ(question.mCandidates.at(1).mCountry, "US");
+}
+
+TEST(ApplicationResultRequestTest, APayerCountryQuestionIsListedButNeverBlocksItsForm) {
+    const auto result = ApplicationResultBuilder::build(
+        countryInput(RequestType::IncomeDetailsRequired, countryQuestion()));
+
+    EXPECT_EQ(result.report(kDividends).mRequestIds, std::vector<std::string>{"request-0001"});
+    EXPECT_NE(result.report(kDividends).mStatus, ReportStatus::NeedsInput);
+}
+
+TEST(ApplicationResultRequestTest,
+     APayerCountryQuestionNeedsAnIsinAndTwoCountriesOfCapitalLetters) {
+    EXPECT_NO_THROW((void)ApplicationResultBuilder::build(
+        countryInput(RequestType::IncomeDetailsRequired, countryQuestion())));
+
+    auto withoutIsin = countryQuestion();
+
+    withoutIsin.mIsin = "";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(
+                     countryInput(RequestType::IncomeDetailsRequired, std::move(withoutIsin))),
+                 std::invalid_argument);
+
+    // One country is not a choice.
+    auto oneCountry = countryQuestion();
+
+    oneCountry.mCandidates.pop_back();
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(
+                     countryInput(RequestType::IncomeDetailsRequired, std::move(oneCountry))),
+                 std::invalid_argument);
+
+    // `us` is not in capital letters.
+    auto lowerCase = countryQuestion();
+
+    lowerCase.mCandidates.at(0).mCountry = "us";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(
+                     countryInput(RequestType::IncomeDetailsRequired, std::move(lowerCase))),
+                 std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, PayerCountryDataAndTheRequestTypeMustFitEachOther) {
+    EXPECT_THROW((void)ApplicationResultBuilder::build(
+                     countryInput(RequestType::TaxClassificationRequired, countryQuestion())),
+                 std::invalid_argument);
+}
+
 TEST(ApplicationResultClassificationTest, ExcludedItemsAreSortedByIsinWithTheirDiagnosticIds) {
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mProcessingDiagnostics = {

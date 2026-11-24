@@ -41,6 +41,7 @@ const PayerForm kCouponForm{
     .mNotFoundCode = ProcessingDiagnosticCode::InterestPayerNotFound,
     .mNotFoundKey = MessageKey::InterestPayerNotFound,
     .mNotFoundCountryKnownKey = MessageKey::InterestPayerNotFoundCountryKnown,
+    .mCountryUnresolvedKey = MessageKey::PayerCountryUnresolvedInterest,
     .mSlovenianExclusion = std::nullopt,
     .mNeedsPayerNumber = true,
 };
