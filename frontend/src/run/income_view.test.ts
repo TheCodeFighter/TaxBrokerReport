@@ -232,8 +232,8 @@ describe("benefitView", () => {
     );
 
     expect(view).toEqual({
-      rows: [{ title: "Trade Republic: saveback", lines: ["EUR 30.0000 (count: 2)"], total: "Total in EUR: 30.0000" }],
-      total: "Total in EUR: 30.0000",
+      rows: [{ title: "Trade Republic: saveback", lines: ["EUR 30.00 (count: 2)"], total: "Total in EUR: 30.00" }],
+      total: "Total in EUR: 30.00",
     });
   });
 
