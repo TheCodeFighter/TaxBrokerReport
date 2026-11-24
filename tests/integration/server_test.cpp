@@ -131,7 +131,9 @@ class PathOverride {
 class UsedUpFileHandles {
   public:
     UsedUpFileHandles() {
-        // Lower the limit to the highest open handle, so the gaps below it are all there is.
+        // Lower the limit to just above the highest open handle, so the gaps below it and one
+        // more handle are all there is. That one handle keeps the list from being empty when
+        // the open handles have no gaps (it depends on the machine).
         const int highest = std::accumulate(
             std::filesystem::directory_iterator("/proc/self/fd"),
             std::filesystem::directory_iterator(),
@@ -143,7 +145,7 @@ class UsedUpFileHandles {
         ::getrlimit(RLIMIT_NOFILE, &mOldLimit);
 
         rlimit lowered = mOldLimit;
-        lowered.rlim_cur = static_cast<rlim_t>(highest) + 1;
+        lowered.rlim_cur = static_cast<rlim_t>(highest) + 2;
         ::setrlimit(RLIMIT_NOFILE, &lowered);
 
         for (;;)
