@@ -1,0 +1,10 @@
+<FlexQueryResponse queryName="seed" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <CashTransactions>
+        <CashTransaction accountId="U0000000" transactionID="2008" actionID="" levelOfDetail="DETAIL" type="Broker Interest Paid" assetCategory="CASH" symbol="" description="USD DEBIT INT FOR MAR-2024" isin="" currency="USD" dateTime="20240403" settleDate="20240403" reportDate="20240403" amount="-1.1" issuerCountryCode=""/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

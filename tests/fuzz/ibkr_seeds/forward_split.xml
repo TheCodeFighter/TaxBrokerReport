@@ -1,0 +1,10 @@
+<FlexQueryResponse queryName="seed" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <CorporateActions>
+        <CorporateAction accountId="U0000000" transactionID="3001" actionID="S9001" type="FS" assetCategory="STK" symbol="SYNA" description="SYNTHETIC EXAMPLE A INC" actionDescription="SYNA(US0000000010) SPLIT 4 FOR 1 (SYNA, SYNTHETIC EXAMPLE A INC, US0000000010)" isin="US0000000010" currency="USD" dateTime="20240801;202500" reportDate="20240801" quantity="28.5" proceeds="0" value="0"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

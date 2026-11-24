@@ -1,4 +1,5 @@
-#include "../support/trade_republic_parser_checks.hpp"
+#include "../support/parser_checks.hpp"
+#include "../support/trade_republic_rows_to_check.hpp"
 
 #include <gtest/gtest.h>
 
@@ -32,9 +33,9 @@ ParseResult resultWithTrades(std::vector<TradeTransaction> aTrades) {
     return result;
 }
 
-/// The rows that test::recordRowsToCheck finds in the CSV text.
+/// The rows that test::tr::recordRowsToCheck finds in the CSV text.
 std::vector<std::size_t> recordRowsToCheckOf(std::string_view aText) {
-    return test::recordRowsToCheck(aText);
+    return test::tr::recordRowsToCheck(aText);
 }
 
 ParseDiagnostic errorOnRow(std::size_t aRow) {
@@ -151,6 +152,16 @@ TEST(ParserChecksTest, ALeftOutRowCountsAsKept) {
     EXPECT_EQ(test::droppedRowFailure(result, {2}), std::nullopt);
 }
 
+TEST(ParserChecksTest, AnIncomePaymentRowCountsAsKept) {
+    // Row 3: a dividend or tax row that the parser keeps as a payment row, which is added up
+    // after the merge. Without it the check would report every Interactive Brokers dividend.
+    ParseResult result;
+    result.mStatement.mIncomePaymentRows.push_back(
+        IncomePaymentRow{.mMetadata = {.mSources = {SourceReference{.mSourceRow = 3}}}});
+
+    EXPECT_EQ(test::droppedRowFailure(result, {3}), std::nullopt);
+}
+
 TEST(ParserChecksTest, AFileLevelErrorGivesUpTheRowCheck) {
     // An unclosed quote discards every row; the error has no row number.
     ParseResult result;
@@ -214,7 +225,7 @@ TEST(ParserChecksTest, AFileThatCannotBeReadHasNoRowsToCheck) {
     std::error_code error;
     std::filesystem::remove(path, error);
 
-    EXPECT_TRUE(test::recordRowsToCheck(path).empty());
+    EXPECT_TRUE(test::tr::recordRowsToCheck(path).empty());
 }
 
 } // namespace

@@ -1,4 +1,5 @@
-#include "../support/trade_republic_parser_checks.hpp"
+#include "../support/parser_checks.hpp"
+#include "../support/trade_republic_rows_to_check.hpp"
 #include "parsers/traderepublic_parser.hpp"
 
 #include <spdlog/spdlog.h>
@@ -38,7 +39,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* aData, std::size_t aSi
         fail(*message);
     }
 
-    if (const auto message = test::droppedRowFailure(result, test::recordRowsToCheck(text)))
+    if (const auto message = test::droppedRowFailure(result, test::tr::recordRowsToCheck(text)))
     {
         fail(*message);
     }

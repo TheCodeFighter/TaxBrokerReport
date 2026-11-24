@@ -26,7 +26,8 @@ Valgrind and Cppcheck jobs load that build and compile nothing, so the failing c
 visible. The jobs and timings are described in [docker/docker_doc.md](../docker/docker_doc.md). The
 `main` ruleset **Required CI checks** requires **Dev image**, **Development build**, **Production
 image**, **Required tests**, **Valgrind**, **Cppcheck**, **Fuzz (Trade Republic parser)**,
-**format-check**, **Frontend**, **Browser tests**, **Coverage (current)**, **Coverage (baseline)** and **coverage**. **Required
+**Fuzz (IBKR parser)**, **format-check**, **Frontend**, **Browser tests**,
+**Coverage (current)**, **Coverage (baseline)** and **coverage**. **Required
 issue reference** is a separate workflow; it requires the pull request's `Related issue` section
 to contain an issue reference or exactly `N/A`.
 
@@ -257,7 +258,8 @@ fail is caught by the normal test run.
 
 ## Fuzzing
 
-`scripts/fuzz.sh` fuzzes the Trade Republic parser with libFuzzer (`tests/fuzz/`). It builds
+`scripts/fuzz.sh` fuzzes the Trade Republic parser (the default) and the Interactive Brokers
+parser with libFuzzer (`tests/fuzz/`). It builds
 `build/fuzz` from scratch with Clang, AddressSanitizer and UndefinedBehaviorSanitizer (the CMake
 option `TAXBROKER_BUILD_FUZZERS`; that build has no unit tests), then runs the target in the
 development container:
@@ -266,19 +268,21 @@ development container:
 scripts/fuzz.sh                  # 60 seconds, fixed libFuzzer seed 1
 scripts/fuzz.sh --seconds 600
 scripts/fuzz.sh --replay runtime/fuzz/crash-<hash>
+scripts/fuzz.sh --target ibkr        # the Interactive Brokers Flex Query XML parser
 scripts/fuzz.sh --target multipart   # the multipart reader of the local server
 scripts/fuzz.sh --target answers     # the JSON readers of the answer, delete and upload calls
 ```
 
-The two server targets take untrusted bytes from the browser. They are run by hand (the CI job
-fuzzes the parser only); a crash or a sanitizer report is the finding. `multipart` also stops
+The two server targets take untrusted bytes from the browser. They are run by hand (the CI jobs
+fuzz the two parsers only); a crash or a sanitizer report is the finding. `multipart` also stops
 when a part lies outside the body, a file part is over the limit or there are more than 33 parts.
 Replay a finding with the same `--target`.
 
 A finding prints a `Replay with:` line for each saved input. `--replay` also takes the
 `/workspace/runtime/fuzz/...` path that libFuzzer prints and an absolute path on the host.
 
-Each input is written as a CSV file and parsed. The run stops when one of these fails:
+Each input is parsed as a CSV file (Trade Republic) or as XML text (Interactive Brokers). The run
+stops when one of these fails:
 
 - the program crashes or a sanitizer reports an error;
 - one input takes longer than 10 seconds (saved as `timeout-<hash>`);
@@ -286,27 +290,40 @@ Each input is written as a CSV file and parsed. The run stops when one of these 
   `BUY` positive) or stores no positive units or amount;
 - a record row has neither an event nor an error diagnostic. Cash rows that the parser ignores on
   purpose (card and transfer types) are the only exception, and the check gives up after a
-  file-level error because the parser then discards the rows.
+  file-level error because the parser then discards the rows. In an Interactive Brokers file the
+  rows are the `Trade`, `CashTransaction` and `CorporateAction` elements, found by the line of
+  their start tag. The exceptions are the rows the parser counts in a file-level notice (not an
+  execution, not a single booking, a currency conversion), the cash types that are not income,
+  the cash dividend rows of corporate actions and crypto without an ISIN. A payment row (a
+  dividend, a tax) counts as an event. Two rows on one line count once, so the check is weaker
+  there; every seed has one row per line.
 
-The seeds are the synthetic CSV files under `tests/test_data` and the small one-row files in
-`tests/fuzz/seeds`: one for each kind of row, and one for each way the parser rejects a row (a share
-or amount with the wrong sign, a record with the wrong field count, an unknown or unsupported type,
-a missing datetime). A parser that stops rejecting one of them breaks a check on the first run;
-the fuzzer's own changes then look for new cases around them. New inputs are kept in
+The Trade Republic seeds are the synthetic CSV files under `tests/test_data` and the small
+one-row files in `tests/fuzz/seeds`: one for each kind of row, and one for each way the parser
+rejects a row (a share or amount with the wrong sign, a record with the wrong field count, an
+unknown or unsupported type, a missing datetime). A parser that stops rejecting one of them breaks a check on the first run;
+the fuzzer's own changes then look for new cases around them. The Interactive Brokers seeds are
+the synthetic XML files under `tests/test_data/ibkr` and 28 small files in
+`tests/fuzz/ibkr_seeds` (one for each kind of row and each way a row is rejected), with the
+dictionary `tests/fuzz/ibkr.dict`. New inputs are kept in
 `runtime/fuzz/corpus` and a failing input in `runtime/fuzz/crash-<hash>` (the folder is ignored by
 Git). The next local run starts from that kept corpus too, so two local runs differ even with seed
 1; delete `runtime/fuzz/corpus` to start from the seeds only, as CI does. Never put a real export
 in the seeds. The leak check of AddressSanitizer is off because it reports a leak at exit even for
 an empty program on Alpine (musl); Valgrind covers leaks.
 
-The checks and the list of rows they must account for are in
-`tests/support/trade_republic_parser_checks.hpp` and have unit tests
-(`trade_republic_parser_checks_test.cpp`) that feed them a wrong result. The CI job
-`Fuzz (Trade Republic parser)` runs `scripts/fuzz.sh --seconds 240` in parallel with the other jobs
-and uploads a failing input as the artifact `fuzz-findings`. It is a required check. A failure on
+The two checks are in `tests/support/parser_checks.hpp` and read only the broker-neutral result.
+The list of rows to account for is per broker: `trade_republic_rows_to_check.hpp` and
+`ibkr_rows_to_check.hpp`, written out on purpose so that a change in a parser's own list shows as
+a finding. Unit tests (`parser_checks_test.cpp`, `ibkr_rows_to_check_test.cpp`) feed them a wrong
+result and the fixtures. The CI job `Fuzz (Trade Republic parser)` runs `scripts/fuzz.sh --seconds
+240` in parallel with the other jobs and uploads a failing input as the artifact `fuzz-findings`;
+`Fuzz (IBKR parser)` runs `scripts/fuzz.sh --target ibkr --seconds 240` and uploads
+`fuzz-findings-ibkr`. Both are required checks. A failure on
 an unrelated pull request is still a real parser bug (the run is time-bound, so a faster runner
-tries more inputs): download `fuzz-findings`, reproduce it with `scripts/fuzz.sh --replay FILE`
-and fix the parser first, in its own pull request.
+tries more inputs): download the artifact, reproduce it with
+`scripts/fuzz.sh [--target ibkr] --replay FILE` and fix the parser first, in its own pull
+request.
 
 ## Debug tests in VS Code
 

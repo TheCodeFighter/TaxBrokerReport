@@ -885,6 +885,15 @@ ActionType actionTypeOf(const std::string_view aType) {
     return ActionType::Unsupported;
 }
 
+/// True when the document has a `<!DOCTYPE ...>` node. It uses pugixml's own search: Clang with
+/// the fuzz build's warnings as errors rejects `std::any_of` over the node iterator.
+bool hasDoctypeNode(const pugi::xml_document& aDocument) {
+    return !aDocument
+                .find_child(
+                    [](const pugi::xml_node& aNode) { return aNode.type() == pugi::node_doctype; })
+                .empty();
+}
+
 /// Reads the whole file: the statements of every account and their rows.
 class FlexReader {
   public:
@@ -1766,10 +1775,7 @@ ParseResult IbkrParser::parse(const std::string_view aXmlText,
         }
 
         const bool hasDoctype =
-            loaded.status == pugi::status_bad_doctype ||
-            std::any_of(document.begin(), document.end(), [](const pugi::xml_node& aNode) {
-                return aNode.type() == pugi::node_doctype;
-            });
+            loaded.status == pugi::status_bad_doctype || hasDoctypeNode(document);
 
         if (hasDoctype)
         {
