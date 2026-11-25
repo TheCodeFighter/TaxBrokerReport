@@ -3076,6 +3076,7 @@ TEST(DecisionSessionTest, DeletingAGroupingAnswerAlsoDeletesTheRatioAnswersOfIts
 
         return input;
     };
+
     DecisionSession session;
     session.start(calculation);
 
