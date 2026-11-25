@@ -65,6 +65,24 @@ export interface RatioCheck {
   askSameEvent: boolean;
 }
 
+/** One action row of an identity question; the broker's own quantity is shown read-only. */
+export interface IdentityRow {
+  broker: string;
+  date: string;
+  /** `split`, `reverse_split`, `unresolved_split` or `merger`. */
+  type: string;
+  transactionId?: string;
+  sourceValue?: string;
+  brokerActionId?: string;
+}
+
+/** Action rows of one ISIN that may be one action or several, sorted by date, broker and ID. */
+export interface IdentityCheck {
+  name: string;
+  isin: string;
+  rows: IdentityRow[];
+}
+
 export interface QuantityCheck {
   name: string;
   isin: string;
@@ -180,6 +198,7 @@ export interface DecisionRequest {
   options?: string[];
   lossCheck?: LossCheck;
   ratioCheck?: RatioCheck;
+  identityCheck?: IdentityCheck;
   quantityCheck?: QuantityCheck;
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
@@ -203,6 +222,7 @@ export interface Decision {
   used: boolean;
   lossCheck?: LossCheck;
   ratioCheck?: RatioCheck;
+  identityCheck?: IdentityCheck;
   quantityCheck?: QuantityCheck;
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
@@ -239,6 +259,7 @@ export interface Reconciliation {
 export type QuestionKind =
   | "loss"
   | "ratio"
+  | "identity"
   | "quantity"
   | "classification"
   | "income"
@@ -252,6 +273,7 @@ export type QuestionKind =
 
 const questionKinds = new Map<string, QuestionKind>([
   ["loss_eligibility_confirmation_required", "loss"],
+  ["corporate_action_identity_required", "identity"],
   ["corporate_action_ratio_required", "ratio"],
   ["quantity_correction_required", "quantity"],
   ["deposit_interest_total_required", "deposit"],
@@ -479,6 +501,8 @@ export type RejectionTarget =
   | "effectiveDate"
   | "confirmation"
   | "correctedUnits"
+  /** The action numbers of an identity question: shown under the list of rows. */
+  | "grouping"
   /** Not tied to one input: shown beside the send button. */
   | "form"
   /** The question or the revision is out of date: the page loads the run again. */
@@ -508,6 +532,9 @@ export function rejectionTargets(messageKey: string, params: MessageParams): Rej
     case "correction_too_large":
     case "correction_over_budget":
       return ["correctedUnits"];
+    case "grouping_incomplete":
+    case "grouping_window":
+      return ["grouping"];
     case "stale_revision":
     case "unknown_request":
       return ["reload"];

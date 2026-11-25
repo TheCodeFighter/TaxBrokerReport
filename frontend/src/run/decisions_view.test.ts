@@ -86,6 +86,46 @@ describe("decisionRows", () => {
     expect(decisionRows([decision], "en")[0]?.answer).toBe("Two separate splits");
   });
 
+  it("describes an identity answer with the number of each row", () => {
+    const decision: Decision = {
+      id: "decision-0005",
+      type: "corporate_action_identity_required",
+      fromEarlierRun: false,
+      used: true,
+      identityCheck: {
+        name: "Example Split Corp",
+        isin: "US0000000002",
+        rows: [
+          { broker: "trade_republic", date: "2025-05-12", type: "unresolved_split" },
+          { broker: "interactive_brokers", date: "2025-05-14", type: "split" },
+          { broker: "trade_republic", date: "2025-05-20", type: "unresolved_split" },
+        ],
+      },
+      answer: { type: "grouping", actionOfRow: [1, 1, 2] },
+    };
+
+    const row = decisionRows([decision], "en")[0];
+
+    expect(row?.title).toBe("Corporate actions");
+    expect(row?.investment).toBe("Example Split Corp (US0000000002)");
+    expect(row?.answer).toBe("Action of each row: 1, 1, 2");
+  });
+
+  it("describes an identity answer that makes every row one action, and a cancel", () => {
+    const allOne: Decision = {
+      id: "decision-0006",
+      type: "corporate_action_identity_required",
+      fromEarlierRun: false,
+      used: true,
+      answer: { type: "grouping", actionOfRow: [1, 1] },
+    };
+    const cancelled: Decision = { ...allOne, id: "decision-0007", answer: "cancel" };
+
+    expect(decisionRows([allOne], "en")[0]?.answer).toBe("All rows are one action");
+    expect(decisionRows([allOne], "sl")[0]?.answer).toBe("Vse vrstice so eno dejanje");
+    expect(decisionRows([cancelled], "en")[0]?.answer).toBe("Cancelled (no answer)");
+  });
+
   it("describes a corrected quantity", () => {
     const decision: Decision = {
       id: "decision-0004",

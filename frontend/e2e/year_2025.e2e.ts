@@ -5,10 +5,12 @@ import {
   answerRatio,
   card,
   cardStatus,
+  chooseActions,
   excludedInvestments,
   openReportPage,
   pickWord,
   question,
+  resultRegion,
   sendAnswer,
   startRun,
 } from "./support/report_page";
@@ -44,6 +46,31 @@ describe("year 2025 of the manual files", () => {
     await pickWord(payer, "0");
     await sendAnswer(payer);
 
+    // The three split rows of the grouped share: one action of two rows, and one of one row.
+    // The ratio questions have the same title, so each is found by its text.
+    const identity = question(page, "Synthetic Grouped Split Share (XX0000000132)").filter({
+      hasText: "Katere vrstice so eno korporacijsko dejanje?",
+    });
+    await identity.getByRole("button", { name: "Vsaka vrstica je svoje dejanje" }).click();
+    await chooseActions(identity, ["1", "1", "3"]);
+    expect(await identity.getByText("Uporabite številke od 1 naprej brez preskoka.").count()).toBe(1);
+    expect(await identity.getByRole("button", { name: "Pošlji odgovor" }).isDisabled()).toBe(true);
+    await chooseActions(identity, ["1", "1", "2"]);
+    expect(await identity.getByText("Uporabite številke od 1 naprej brez preskoka.").count()).toBe(0);
+    await sendAnswer(identity);
+
+    // Action 1 (2025-05-12 and 2025-05-14): 2 : 1, 15 units become 30. Action 2 (2025-05-20): 2 : 1.
+    await answerRatio(
+      question(page, "Synthetic Grouped Split Share (XX0000000132)").filter({ hasText: "2025-05-12" }),
+      "2",
+      "1",
+    );
+    await answerRatio(
+      question(page, "Synthetic Grouped Split Share (XX0000000132)").filter({ hasText: "2025-05-20" }),
+      "2",
+      "1",
+    );
+
     // Bond type at maturity: ordinary.
     const bond = question(page, "Synthetic Bond A 2025 (XS0000000201)");
     await pickWord(bond, "ordinary");
@@ -63,10 +90,16 @@ describe("year 2025 of the manual files", () => {
     await pickWord(kdvpFailure, "exclude_failed_instruments");
     await sendAnswer(kdvpFailure);
 
-    // README, 2025: Doh-KDVP without the missing-history share; Doh-Div 8 rows; Doh-DHO 1 row
+    // README, 2025: the grouped share is in Doh-KDVP (40 units after both splits) with the warning
+    // for rows from two files; Doh-KDVP without the missing-history share; Doh-Div 8 rows; Doh-DHO 1 row
     // and no reminder (EUR 1,140 is above the EUR 1,000 limit); Doh-Obr 3 rows.
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
     expect(await excludedInvestments(page, "Doh-KDVP").getByText("Synthetic Missing History Share (XX0000000111)").count()).toBe(1);
+    expect(
+      await resultRegion(page)
+        .getByText("Ta naložba ima v letu 2025 vrstice korporacijskih dejanj iz več datotek.")
+        .count(),
+    ).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
     expect(await card(page, "Doh-Div").getByText(/Vrstice: 8,/).count()).toBe(1);
     expect(await cardStatus(page, "Doh-DHO")).toBe("pripravljeno");

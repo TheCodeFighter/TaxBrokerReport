@@ -52,6 +52,22 @@ function ratioAnswerText(answer: Decision["answer"], language: Language): string
   return uiText(language, "answerRecorded");
 }
 
+function identityAnswerText(answer: Decision["answer"], language: Language): string {
+  if (answer === "cancel") {
+    return uiText(language, "answerCancelled");
+  }
+
+  if (typeof answer === "object" && Array.isArray(answer.actionOfRow)) {
+    const numbers = answer.actionOfRow.map(String);
+
+    return numbers.every((number) => number === "1")
+      ? uiText(language, "answerGroupingAllOne")
+      : uiTextWith(language, "answerGrouping", { numbers: numbers.join(", ") });
+  }
+
+  return uiText(language, "answerRecorded");
+}
+
 function quantityAnswerText(answer: Decision["answer"], language: Language): string {
   if (answer === "cancel") {
     return uiText(language, "answerCancelled");
@@ -176,6 +192,7 @@ function investmentOf(decision: Decision, kind: QuestionKind | undefined): strin
   const check =
     decision.lossCheck ??
     decision.ratioCheck ??
+    decision.identityCheck ??
     decision.quantityCheck ??
     decision.classificationCheck ??
     decision.payerCheck ??
@@ -196,6 +213,8 @@ function describeDecision(
       return { title: uiText(language, "decisionLoss"), answer: lossAnswerText(decision.answer, language) };
     case "ratio":
       return { title: uiText(language, "decisionRatio"), answer: ratioAnswerText(decision.answer, language) };
+    case "identity":
+      return { title: uiText(language, "decisionIdentity"), answer: identityAnswerText(decision.answer, language) };
     case "quantity":
       return { title: uiText(language, "decisionQuantity"), answer: quantityAnswerText(decision.answer, language) };
     case "classification":

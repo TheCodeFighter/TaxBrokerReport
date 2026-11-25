@@ -74,6 +74,7 @@ describe("question kinds", () => {
   it("knows the capital request types that have a screen", () => {
     expect(questionKind({ type: "loss_eligibility_confirmation_required" })).toBe("loss");
     expect(questionKind({ type: "corporate_action_ratio_required" })).toBe("ratio");
+    expect(questionKind({ type: "corporate_action_identity_required" })).toBe("identity");
     expect(questionKind({ type: "quantity_correction_required" })).toBe("quantity");
     expect(questionKind({ type: "deposit_interest_total_required" })).toBe("deposit");
   });
@@ -417,6 +418,13 @@ describe("rejectionTargets", () => {
     expect(rejectionTargets("answer_rejected.correction_not_positive", {})).toEqual(["correctedUnits"]);
     expect(rejectionTargets("answer_rejected.correction_above_open_units", {})).toEqual(["correctedUnits"]);
     expect(rejectionTargets("answer_rejected.correction_too_large", {})).toEqual(["correctedUnits"]);
+  });
+
+  it("marks the list of action numbers for an incomplete or too wide grouping", () => {
+    expect(rejectionTargets("answer_rejected.grouping_incomplete", { requestId: "request-0001" })).toEqual(["grouping"]);
+    expect(rejectionTargets("answer_rejected.grouping_window", { requestId: "request-0001", days: 10 })).toEqual([
+      "grouping",
+    ]);
   });
 
   it("loads the run again for a stale revision or an unknown question", () => {

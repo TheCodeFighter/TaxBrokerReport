@@ -131,9 +131,12 @@ class PathOverride {
 class UsedUpFileHandles {
   public:
     UsedUpFileHandles() {
-        // Lower the limit to just above the highest open handle, so the gaps below it and one
-        // more handle are all there is. That one handle keeps the list from being empty when
-        // the open handles have no gaps (it depends on the machine).
+        // One spare handle is opened first and counted in the limit. `releaseOne` closes it, so a
+        // free handle is there even when the open handles have no gaps (it depends on the machine).
+        mSpare = ::open("/dev/null", O_RDONLY);
+
+        // Lower the limit to just above the highest open handle (the spare included), so the
+        // gaps below it are all there is to fill.
         const int highest = std::accumulate(
             std::filesystem::directory_iterator("/proc/self/fd"),
             std::filesystem::directory_iterator(),
@@ -145,7 +148,7 @@ class UsedUpFileHandles {
         ::getrlimit(RLIMIT_NOFILE, &mOldLimit);
 
         rlimit lowered = mOldLimit;
-        lowered.rlim_cur = static_cast<rlim_t>(highest) + 2;
+        lowered.rlim_cur = static_cast<rlim_t>(highest) + 1;
         ::setrlimit(RLIMIT_NOFILE, &lowered);
 
         for (;;)
@@ -174,9 +177,10 @@ class UsedUpFileHandles {
         return mIsFull;
     }
 
+    /// Frees the spare handle, so exactly one handle is free for a test socket.
     void releaseOne() {
-        ::close(mHandles.back());
-        mHandles.pop_back();
+        ::close(mSpare);
+        mSpare = -1;
     }
 
     void releaseAll() {
@@ -186,11 +190,19 @@ class UsedUpFileHandles {
         }
 
         mHandles.clear();
+
+        if (mSpare >= 0)
+        {
+            ::close(mSpare);
+            mSpare = -1;
+        }
+
         ::setrlimit(RLIMIT_NOFILE, &mOldLimit);
     }
 
   private:
     std::vector<int> mHandles;
+    int mSpare = -1; ///< The handle `releaseOne` frees; -1 once it is closed.
     rlimit mOldLimit{};
     bool mIsFull = false; ///< Set by the constructor.
 };

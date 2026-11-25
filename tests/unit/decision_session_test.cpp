@@ -3053,6 +3053,60 @@ TEST(DecisionSessionTest, AGroupingIsRecordedForAnIdentityQuestion) {
               (AnswerValue{CorporateActionGroupingAnswer{.mActionOfRow = {1, 1}}}));
 }
 
+TEST(DecisionSessionTest, DeletingAGroupingAnswerAlsoDeletesTheRatioAnswersOfItsIsin) {
+    // XX0000000001 has an identity question and a ratio question; XX0000000002 has a ratio
+    // question of its own. Each is asked until it has an answer.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto identity = identityQuestion();
+        const auto ratio = ratioQuestion(300'000'000); // 3 units
+        auto otherRatio = ratioQuestion(300'000'000);
+        otherRatio.mIsin = "XX0000000002";
+        std::get<CorporateActionRatioQuestion>(otherRatio.mData).mIsin = "XX0000000002";
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        for (const auto* question :
+             {&identity, &ratio, static_cast<const DecisionQuestion*>(&otherRatio)})
+        {
+            if (aDecisions.find(*question) == nullptr)
+            {
+                input.mRequests.push_back(RequestInput{.mQuestion = *question});
+            }
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    // 3 units doubled are 6 units: the confirmed units are 600'000'000.
+    const SplitRatioAnswer doubled{.mNewShares = 2,
+                                   .mOldShares = 1,
+                                   .mEffectiveDate = day(2024, 6, 1),
+                                   .mConfirmedUnits = 600'000'000};
+    ASSERT_TRUE(
+        session
+            .answer({{"request-0001", 1, CorporateActionGroupingAnswer{.mActionOfRow = {1, 1}}},
+                     {"request-0002", 1, doubled},
+                     {"request-0003", 1, doubled}})
+            .empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 3U);
+    ASSERT_EQ(session.result().mDecisions[0].mType, RequestType::CorporateActionIdentityRequired);
+
+    const auto rejections = session.deleteAnswers({session.result().mDecisions[0].mId}, 2);
+
+    EXPECT_TRUE(rejections.empty());
+
+    // The grouping and the ratio of XX0000000001 are gone; the ratio of XX0000000002 stays.
+    const auto& result = session.result();
+
+    ASSERT_EQ(result.mDecisions.size(), 1U);
+    EXPECT_EQ(result.mDecisions[0].mType, RequestType::CorporateActionRatioRequired);
+    ASSERT_EQ(result.mRequests.size(), 2U);
+    EXPECT_EQ(result.mRequests[0].mType, RequestType::CorporateActionIdentityRequired);
+    EXPECT_EQ(result.mRequests[1].mType, RequestType::CorporateActionRatioRequired);
+}
+
 TEST(DecisionSessionTest, AGroupingAnswerDoesNotFitARatioQuestion) {
     const auto calculation = [](RunDecisions& aDecisions) {
         const auto question = ratioQuestion(300'000'000); // 3 units

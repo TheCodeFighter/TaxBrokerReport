@@ -112,6 +112,13 @@ export async function answerRatio(scope: Locator, newShares: string, oldShares: 
   await sendAnswer(scope);
 }
 
+/** Chooses the action number of each row of an identity question (row 1 first), without sending. */
+export async function chooseActions(scope: Locator, numbers: string[]): Promise<void> {
+  for (const [index, number] of numbers.entries()) {
+    await scope.getByRole("combobox", { name: `Dejanje vrstice ${index + 1}`, exact: true }).selectOption(number);
+  }
+}
+
 /** Picks the radio button with this server word, such as `no_other_activity`. */
 export async function pickWord(scope: Locator, word: string): Promise<void> {
   await scope.locator(`input[type="radio"][value="${word}"]`).check();

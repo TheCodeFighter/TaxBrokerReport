@@ -704,7 +704,9 @@ rules:
   that is not listed (`answer_rejected.unknown_decision`) or the same ID twice
   (`answer_rejected.duplicate_delete`) is rejected as a whole; these keys have the `decisionId`
   parameter (`all` when everything was to be deleted). Otherwise the run is recalculated and the
-  questions are asked again. Over HTTP (`POST /api/run/decisions/delete`) the body is
+  questions are asked again. Deleting a grouping answer (`corporate_action_identity_required`)
+  also deletes the ratio answers of the same ISIN: they belong to the grouping and would be left
+  over. Over HTTP (`POST /api/run/decisions/delete`) the body is
   `{"runRevision":3,"decisionIds":["decision-0001"]}` or `{"runRevision":3,"all":true}`, and a
   rejection has the form above.
 - **Cancellation and missing answers.** Cancel is an answer for every type with question data and
