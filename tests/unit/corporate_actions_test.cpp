@@ -2234,6 +2234,48 @@ TEST(CorporateActionResolverTest, AMergerIsUnsupportedAndNotAsked) {
               (std::vector<SourceReference>{ibkrSource(3, "synthetic-ibkr-merger-1")}));
 }
 
+TEST(CorporateActionResolverTest,
+     AnIsinChangeThatWasNotCarriedOutIsUnsupportedWithoutAnotherError) {
+    // The ISIN change has its own error and question from its stage. This stage marks the row
+    // unsupported and adds nothing, so the user does not get two errors for one row.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 300'000'000,       // 3 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-01"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 100'000'000,       // 1 unit
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-01"),
+                               .mSources = {ibkrSource(3, "synthetic-ibkr-change-1")}},
+                 .mType = CorporateActionType::IsinChange,
+                 .mUnitsDelta = -300'000'000, // 3 units out
+                 .mNewIsin = "XX0000000002"},
+            },
+    }};
+
+    const auto result = resolveYear(merged, 2024);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mActions.size(), 1U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::Unsupported);
+}
+
 TEST(CorporateActionResolverTest, AMergerAfterASplitIsUnsupportedNotWaiting) {
     // The March split is asked. The September merger is not a split, so it does not wait for
     // March: it is unsupported whatever the answer.

@@ -2644,6 +2644,131 @@ TEST(ApplicationResultRequestTest, AnIdentityQuestionNeedsAnIsinAndTwoRows) {
                  std::invalid_argument);
 }
 
+/// The ISIN change question of XX0000000001 to XX0000000002 with two rows, 2024-06-03 to
+/// 2024-06-05 and the date 2024-06-03. Valid as it is; a test breaks one thing.
+RequestInput validIsinChangeRequest() {
+    return RequestInput{.mQuestion = {
+                            .mType = RequestType::CorporateActionIsinChangeRequired,
+                            .mAffectedReports = {kCapital},
+                            .mIsin = "XX0000000001",
+                            .mData =
+                                IsinChangeQuestion{
+                                    .mOldIsin = "XX0000000001",
+                                    .mOldName = "Synthetic Old Share",
+                                    .mNewIsin = "XX0000000002",
+                                    .mNewName = "Synthetic New Share",
+                                    .mEffectiveDate = day(2024, 6, 3),
+                                    .mEarliestDate = day(2024, 6, 3),
+                                    .mLatestDate = day(2024, 6, 5),
+                                    .mSources = {{.mBroker = Broker::TradeRepublic,
+                                                  .mTransactionId = "synthetic-out",
+                                                  .mDate = day(2024, 6, 3),
+                                                  .mSourceValue = "-10"},
+                                                 {.mBroker = Broker::TradeRepublic,
+                                                  .mTransactionId = "synthetic-in",
+                                                  .mDate = day(2024, 6, 5),
+                                                  .mSourceValue = "10"}},
+                                },
+                        }};
+}
+
+TEST(ApplicationResultRequestTest, AValidIsinChangeQuestionIsBuilt) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {validIsinChangeRequest()};
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.mRequests.at(0).mType, RequestType::CorporateActionIsinChangeRequired);
+}
+
+TEST(ApplicationResultRequestTest, AnIsinChangeQuestionNeedsTwoDifferentIsins) {
+    ApplicationResultInput withoutOldIsin{.mReportingYear = 2024};
+    withoutOldIsin.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(withoutOldIsin.mRequests[0].mQuestion.mData).mOldIsin = "";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutOldIsin)),
+                 std::invalid_argument);
+
+    ApplicationResultInput withoutNewIsin{.mReportingYear = 2024};
+    withoutNewIsin.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(withoutNewIsin.mRequests[0].mQuestion.mData).mNewIsin = "";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(withoutNewIsin)),
+                 std::invalid_argument);
+
+    ApplicationResultInput sameIsin{.mReportingYear = 2024};
+    sameIsin.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(sameIsin.mRequests[0].mQuestion.mData).mNewIsin = "XX0000000001";
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(sameIsin)), std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, AnIsinChangeQuestionNeedsAtLeastTwoRows) {
+    ApplicationResultInput oneRow{.mReportingYear = 2024};
+    oneRow.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(oneRow.mRequests[0].mQuestion.mData).mSources.pop_back();
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(oneRow)), std::invalid_argument);
+}
+
+TEST(ApplicationResultRequestTest, AnIsinChangeQuestionNeedsItsDateBetweenTheEarliestAndLatest) {
+    // The date is one day before the earliest row (2024-06-03).
+    ApplicationResultInput tooEarly{.mReportingYear = 2024};
+    tooEarly.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(tooEarly.mRequests[0].mQuestion.mData).mEffectiveDate =
+        day(2024, 6, 2);
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(tooEarly)), std::invalid_argument);
+
+    // The date is one day after the latest row (2024-06-05).
+    ApplicationResultInput tooLate{.mReportingYear = 2024};
+    tooLate.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(tooLate.mRequests[0].mQuestion.mData).mEffectiveDate =
+        day(2024, 6, 6);
+
+    EXPECT_THROW((void)ApplicationResultBuilder::build(std::move(tooLate)), std::invalid_argument);
+
+    // The latest date itself is allowed.
+    ApplicationResultInput onTheLastDay{.mReportingYear = 2024};
+    onTheLastDay.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(onTheLastDay.mRequests[0].mQuestion.mData).mEffectiveDate =
+        day(2024, 6, 5);
+
+    EXPECT_EQ(ApplicationResultBuilder::build(std::move(onTheLastDay)).mRequests.size(), 1U);
+}
+
+TEST(ApplicationResultRequestTest, TheRowsOfAnIsinChangeQuestionAreSortedByDateBrokerAndId) {
+    // Listed in the wrong order: by date first, and on one date by broker, then by transaction.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {validIsinChangeRequest()};
+    std::get<IsinChangeQuestion>(input.mRequests[0].mQuestion.mData).mSources = {
+        {.mBroker = Broker::TradeRepublic,
+         .mTransactionId = "synthetic-b",
+         .mDate = day(2024, 6, 5),
+         .mSourceValue = "10"},
+        {.mBroker = Broker::TradeRepublic,
+         .mTransactionId = "synthetic-z",
+         .mDate = day(2024, 6, 3),
+         .mSourceValue = "-4"},
+        {.mBroker = Broker::TradeRepublic,
+         .mTransactionId = "synthetic-a",
+         .mDate = day(2024, 6, 3),
+         .mSourceValue = "-6"},
+    };
+
+    const auto result = ApplicationResultBuilder::build(std::move(input));
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& data = std::get<IsinChangeQuestion>(result.mRequests.at(0).mData);
+
+    ASSERT_EQ(data.mSources.size(), 3U);
+    EXPECT_EQ(data.mSources.at(0).mTransactionId, "synthetic-a"); // 2024-06-03, id a
+    EXPECT_EQ(data.mSources.at(1).mTransactionId, "synthetic-z"); // 2024-06-03, id z
+    EXPECT_EQ(data.mSources.at(2).mTransactionId, "synthetic-b"); // 2024-06-05
+}
+
 TEST(ApplicationResultRequestTest, ARatioQuestionNeedsADateRangeAroundItsDate) {
     // The range starts after the row date of 2024-06-01.
     ApplicationResultInput lateStart{.mReportingYear = 2024};

@@ -4187,4 +4187,74 @@ TEST(LossEligibilityTest, AFifoResultOfThePoolsInAnotherOrderIsAnInternalError) 
                  std::logic_error);
 }
 
+TEST(LossEligibilityTest, ASaleMadeUnderAnOldIsinIsAskedWithTheOldIsinAndName) {
+    // The pool is XX0000000002; the sale was made when the instrument was XX0000000001.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic New Share",
+        .mIsin = "XX0000000002",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 1'000'000'000,   // 10 units
+                 .mCurrency = Currency::EUR,
+                 .mListedAs =
+                     ListedInstrument{.mIsin = "XX0000000001", .mName = "Synthetic Old Share"}},
+            },
+    }};
+
+    const auto result = checkYear(merged, 2024);
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& question =
+        std::get<LossEligibilityQuestion>(result.mRequests.at(0).mQuestion.mData);
+
+    EXPECT_EQ(question.mIsin, "XX0000000002");
+    ASSERT_EQ(question.mSales.size(), 1U);
+    EXPECT_EQ(question.mSales.at(0).mSoldAs,
+              (ListedInstrument{.mIsin = "XX0000000001", .mName = "Synthetic Old Share"}));
+}
+
+TEST(LossEligibilityTest, ASaleListedUnderTheIsinOfItsPoolHasNoOldIsin) {
+    // The sale is listed as the pool's own ISIN, so there is nothing to show besides the question.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-10")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 1'000'000'000,   // 10 units
+                 .mCurrency = Currency::EUR,
+                 .mListedAs =
+                     ListedInstrument{.mIsin = "XX0000000001", .mName = "Synthetic Share"}},
+            },
+    }};
+
+    const auto result = checkYear(merged, 2024);
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const auto& question =
+        std::get<LossEligibilityQuestion>(result.mRequests.at(0).mQuestion.mData);
+
+    ASSERT_EQ(question.mSales.size(), 1U);
+    EXPECT_FALSE(question.mSales.at(0).mSoldAs.has_value());
+}
+
 } // namespace

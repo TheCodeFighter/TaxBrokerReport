@@ -1178,7 +1178,10 @@ TEST(ApplicationResultJsonTest, TheCodesOfAppliedCorporateActionsHaveTheirDocume
     const ApplicationDiagnosticCode applied = ProcessingDiagnosticCode::CorporateActionApplied;
     const ApplicationDiagnosticCode unsupported =
         ProcessingDiagnosticCode::UnsupportedCorporateAction;
+    const ApplicationDiagnosticCode inconsistent =
+        ProcessingDiagnosticCode::CorporateActionInconsistent;
 
+    EXPECT_EQ(api::diagnosticCodeName(inconsistent), "corporate_action_inconsistent");
     EXPECT_EQ(api::diagnosticCodeName(missing), "corporate_action_missing_position");
     EXPECT_EQ(api::diagnosticCodeName(rounded), "corporate_action_quantity_rounded");
     EXPECT_EQ(api::diagnosticCodeName(applied), "corporate_action_applied");

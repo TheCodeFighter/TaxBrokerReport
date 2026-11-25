@@ -1991,6 +1991,35 @@ TEST(IbkrParserActionRowTest, CashMergerWithNegativeProceedsIsRejected) {
     EXPECT_EQ(diagnosticsOf(result, "M6").front()->mField, "proceeds");
 }
 
+TEST(IbkrParserActionRowTest, CashMergerWithoutTheProceedsAttributeIsRejected) {
+    // The row has no `proceeds` attribute at all, which is not the same as an empty one.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M5A" actionID="M9003" type="TC" assetCategory="STK" description="SYNTHETIC CASH TARGET INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-10" value="500"/>)",
+        ""));
+
+    ASSERT_EQ(diagnosticsOf(result, "M5A").size(), 1U);
+
+    EXPECT_EQ(findTrade(result, "M5A"), nullptr);
+    EXPECT_EQ(findAction(result, "M5A"), nullptr);
+    EXPECT_EQ(diagnosticsOf(result, "M5A").front()->mField, "proceeds");
+}
+
+TEST(IbkrParserActionRowTest, CashMergerWhoseUnitPriceRoundsToZeroIsRejected) {
+    // USD 0.0001 (the smallest amount at 4 decimals) over 100000 units is USD 0.000000001 a unit,
+    // which is 0 at 8 decimals. A sale at price 0 is not made up.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M6A" actionID="M9004" type="TC" assetCategory="STK" description="SYNTHETIC CASH TARGET INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-100000" proceeds="0.0001" value="0.0001"/>)",
+        ""));
+
+    ASSERT_EQ(diagnosticsOf(result, "M6A").size(), 1U);
+
+    EXPECT_EQ(findTrade(result, "M6A"), nullptr);
+    EXPECT_EQ(findAction(result, "M6A"), nullptr);
+    EXPECT_EQ(diagnosticsOf(result, "M6A").front()->mField, "proceeds");
+}
+
 TEST(IbkrParserActionRowTest, MergerWithoutCashOrWithGainedUnitsStaysUnsupported) {
     const ParseResult result = parseText(statementWithRows(
         "",

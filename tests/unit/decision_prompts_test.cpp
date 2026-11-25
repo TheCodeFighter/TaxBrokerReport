@@ -658,6 +658,52 @@ TEST(DecisionPromptsTest, CancelClosesAnIsinChangeQuestion) {
     EXPECT_EQ(session.result().mDecisions[0].mAnswer, (AnswerValue{CancelAnswer{}}));
 }
 
+TEST(DecisionPromptsTest, CancelAtTheRatioOfAnIsinChangeClosesTheQuestion) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    // yes, then cancel instead of a ratio.
+    ask(session, "yes\ncancel\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, (AnswerValue{CancelAnswer{}}));
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheFirstPromptOfAnIsinChangeLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "");
+
+    EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheRatioOfAnIsinChangeLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "yes\n");
+
+    EXPECT_TRUE(contains(output, "Ratio:"));
+    EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheDateOfAnIsinChangeLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "yes\n1 : 1\n");
+
+    EXPECT_TRUE(contains(output, "Effective date (YYYY-MM-DD,"));
+    EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
 TEST(DecisionPromptsTest, AnIdentityQuestionNamesAReverseSplitAndAMerger) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{

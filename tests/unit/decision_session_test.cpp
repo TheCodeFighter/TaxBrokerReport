@@ -92,6 +92,40 @@ DecisionQuestion ratioQuestion(Units aPositionBefore) {
     };
 }
 
+/// The ISIN change question of XX0000000001 to XX0000000002 with the rows of 2024-06-01 to
+/// 2024-06-05. aSuggestedRatio is the ratio the rows show, or empty when they give none.
+DecisionQuestion isinChangeQuestion(std::optional<SplitRatio> aSuggestedRatio) {
+    return DecisionQuestion{
+        .mType = RequestType::CorporateActionIsinChangeRequired,
+        .mAffectedReports = {kCapital},
+        .mIsin = "XX0000000001",
+        .mData =
+            IsinChangeQuestion{
+                .mOldIsin = "XX0000000001",
+                .mOldName = "Synthetic Old Share",
+                .mNewIsin = "XX0000000002",
+                .mNewName = "Synthetic New Share",
+                .mEffectiveDate =
+                    Date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 1}.time_since_epoch()},
+                .mEarliestDate =
+                    Date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 1}.time_since_epoch()},
+                .mLatestDate =
+                    Date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 5}.time_since_epoch()},
+                .mSources = {{.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-out",
+                              .mDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 1}
+                                                .time_since_epoch()},
+                              .mSourceValue = "-10"},
+                             {.mBroker = Broker::TradeRepublic,
+                              .mTransactionId = "synthetic-in",
+                              .mDate = Date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 5}
+                                                .time_since_epoch()},
+                              .mSourceValue = "20"}},
+                .mSuggestedRatio = aSuggestedRatio,
+            },
+    };
+}
+
 /// An identity question with two rows of Trade Republic on 2024-06-01.
 DecisionQuestion identityQuestion() {
     const Date date{std::chrono::sys_days{std::chrono::year{2024} / 6 / 1}.time_since_epoch()};
@@ -3178,6 +3212,335 @@ TEST(DecisionSessionTest, AGroupingAnswerOfAnEarlierRevisionIsStale) {
     ASSERT_EQ(rejections.size(), 1U);
     EXPECT_EQ(rejections[0].mReason, AnswerRejection::StaleRevision);
     EXPECT_EQ(session.result().mRequests.size(), 1U);
+}
+
+// ISIN change questions.
+
+TEST(DecisionSessionTest, AnIsinChangeAnswerIsRecordedReduced) {
+    // The rows show 2 new units for 1 old unit; 20 / 10 is the same ratio, kept as 2 / 1.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(SplitRatio{.mNewShares = 2, .mOldShares = 1});
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             IsinChangeAnswer{.mSameIssuer = true,
+                                                              .mNewShares = 20,
+                                                              .mOldShares = 10,
+                                                              .mEffectiveDate = day(2024, 6, 3)}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const auto& result = session.result();
+    const AnswerValue reduced = IsinChangeAnswer{.mSameIssuer = true,
+                                                 .mNewShares = 2,
+                                                 .mOldShares = 1,
+                                                 .mEffectiveDate = day(2024, 6, 3)};
+
+    EXPECT_EQ(result.mRunRevision, 2U);
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mDecisions.size(), 1U);
+    EXPECT_EQ(result.mDecisions[0].mType, RequestType::CorporateActionIsinChangeRequired);
+    EXPECT_EQ(result.mDecisions[0].mAnswer, reduced);
+
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_FALSE(seen[0].has_value());
+    EXPECT_EQ(seen[1], reduced);
+}
+
+TEST(DecisionSessionTest, AnIsinChangeWithTheSameUnitsOnBothSidesIsKeptAsOneToOne) {
+    // 5 units for 5 units is 1 / 1: the units do not change.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(SplitRatio{.mNewShares = 1, .mOldShares = 1});
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             IsinChangeAnswer{.mSameIssuer = true,
+                                                              .mNewShares = 5,
+                                                              .mOldShares = 5,
+                                                              .mEffectiveDate = day(2024, 6, 1)}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const AnswerValue reduced = IsinChangeAnswer{.mSameIssuer = true,
+                                                 .mNewShares = 1,
+                                                 .mOldShares = 1,
+                                                 .mEffectiveDate = day(2024, 6, 1)};
+
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_EQ(seen[1], reduced);
+}
+
+TEST(DecisionSessionTest, AnIsinChangeAnswerNeedsPositiveNumbers) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(SplitRatio{.mNewShares = 1, .mOldShares = 1});
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto zeroNew = session.answer({{"request-0001",
+                                          1,
+                                          IsinChangeAnswer{.mSameIssuer = true,
+                                                           .mNewShares = 0,
+                                                           .mOldShares = 1,
+                                                           .mEffectiveDate = day(2024, 6, 1)}}});
+    const auto negativeOld =
+        session.answer({{"request-0001",
+                         1,
+                         IsinChangeAnswer{.mSameIssuer = true,
+                                          .mNewShares = 1,
+                                          .mOldShares = -1,
+                                          .mEffectiveDate = day(2024, 6, 1)}}});
+
+    ASSERT_EQ(zeroNew.size(), 1U);
+    EXPECT_EQ(zeroNew[0].mReason, AnswerRejection::RatioNotPositive);
+    EXPECT_EQ(zeroNew[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("field", "newShares")}));
+
+    ASSERT_EQ(negativeOld.size(), 1U);
+    EXPECT_EQ(negativeOld[0].mReason, AnswerRejection::RatioNotPositive);
+    EXPECT_EQ(negativeOld[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("field", "oldShares")}));
+
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionSessionTest, AnIsinChangeRatioThatDiffersFromTheRowsIsRejected) {
+    // The rows show 2 new units for 1 old unit. 3 / 1 and 1 / 2 are other ratios; 4 / 2 is 2 / 1.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(SplitRatio{.mNewShares = 2, .mOldShares = 1});
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto otherNew = session.answer({{"request-0001",
+                                           1,
+                                           IsinChangeAnswer{.mSameIssuer = true,
+                                                            .mNewShares = 3,
+                                                            .mOldShares = 1,
+                                                            .mEffectiveDate = day(2024, 6, 1)}}});
+    const auto invertedRatio =
+        session.answer({{"request-0001",
+                         1,
+                         IsinChangeAnswer{.mSameIssuer = true,
+                                          .mNewShares = 1,
+                                          .mOldShares = 2,
+                                          .mEffectiveDate = day(2024, 6, 1)}}});
+
+    ASSERT_EQ(otherNew.size(), 1U);
+    EXPECT_EQ(otherNew[0].mReason, AnswerRejection::IsinChangeRatioMismatch);
+    EXPECT_EQ(otherNew[0].mMessageKey, MessageKey::AnswerRejectedIsinChangeRatioMismatch);
+    EXPECT_EQ(otherNew[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         numberParam("newShares", 2),
+                                         numberParam("oldShares", 1)}));
+
+    ASSERT_EQ(invertedRatio.size(), 1U);
+    EXPECT_EQ(invertedRatio[0].mReason, AnswerRejection::IsinChangeRatioMismatch);
+
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
+TEST(DecisionSessionTest, AnIsinChangeWithoutRatioFromTheRowsTakesAnyPositiveRatio) {
+    // The rows give no totals (for example units on one side only), so nothing to compare with.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(std::nullopt);
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             IsinChangeAnswer{.mSameIssuer = true,
+                                                              .mNewShares = 7,
+                                                              .mOldShares = 3,
+                                                              .mEffectiveDate = day(2024, 6, 1)}}});
+
+    EXPECT_TRUE(rejections.empty());
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{IsinChangeAnswer{.mSameIssuer = true,
+                                            .mNewShares = 7,
+                                            .mOldShares = 3,
+                                            .mEffectiveDate = day(2024, 6, 1)}}));
+}
+
+TEST(DecisionSessionTest, AnIsinChangeDateMustBeBetweenTheFirstAndLastRow) {
+    // The rows are on 2024-06-01 to 2024-06-05; both ends are allowed.
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(SplitRatio{.mNewShares = 1, .mOldShares = 1});
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto tooEarly = session.answer({{"request-0001",
+                                           1,
+                                           IsinChangeAnswer{.mSameIssuer = true,
+                                                            .mNewShares = 1,
+                                                            .mOldShares = 1,
+                                                            .mEffectiveDate = day(2024, 5, 31)}}});
+    const auto tooLate = session.answer({{"request-0001",
+                                          1,
+                                          IsinChangeAnswer{.mSameIssuer = true,
+                                                           .mNewShares = 1,
+                                                           .mOldShares = 1,
+                                                           .mEffectiveDate = day(2024, 6, 6)}}});
+
+    ASSERT_EQ(tooEarly.size(), 1U);
+    EXPECT_EQ(tooEarly[0].mReason, AnswerRejection::EffectiveDateOutOfRange);
+    EXPECT_EQ(tooEarly[0].mMessageKey, MessageKey::AnswerRejectedEffectiveDateOutOfRange);
+    EXPECT_EQ(tooEarly[0].mMessageParams,
+              (std::vector<MessageParam>{textParam("requestId", "request-0001"),
+                                         textParam("earliestDate", "2024-06-01"),
+                                         textParam("latestDate", "2024-06-05")}));
+
+    ASSERT_EQ(tooLate.size(), 1U);
+    EXPECT_EQ(tooLate[0].mReason, AnswerRejection::EffectiveDateOutOfRange);
+
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+
+    const auto lastDay = session.answer({{"request-0001",
+                                          1,
+                                          IsinChangeAnswer{.mSameIssuer = true,
+                                                           .mNewShares = 1,
+                                                           .mOldShares = 1,
+                                                           .mEffectiveDate = day(2024, 6, 5)}}});
+
+    EXPECT_TRUE(lastDay.empty());
+    EXPECT_EQ(session.result().mRunRevision, 2U);
+}
+
+TEST(DecisionSessionTest, AnIsinChangeAnsweredNoKeepsNoRatioAndNeedsNoChecks) {
+    // "Not the same issuer": the numbers and the date of the answer are ignored, even when they
+    // would be wrong for "same issuer" (ratio 9 / 1, a date outside the rows). They are cleared.
+    SeenAnswers seen;
+    const auto calculation = [&seen](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(SplitRatio{.mNewShares = 2, .mOldShares = 1});
+        const auto* answer = aDecisions.find(question);
+
+        seen.push_back(copyOf(answer));
+
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (answer == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             IsinChangeAnswer{.mSameIssuer = false,
+                                                              .mNewShares = 9,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day(2030, 1, 1)}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    ASSERT_EQ(seen.size(), 2U);
+    EXPECT_EQ(seen[1], (AnswerValue{IsinChangeAnswer{}}));
+}
+
+TEST(DecisionSessionTest, AnIsinChangeQuestionTakesACancelAndNoOtherAnswerType) {
+    const auto calculation = [](RunDecisions& aDecisions) {
+        const auto question = isinChangeQuestion(SplitRatio{.mNewShares = 1, .mOldShares = 1});
+        ApplicationResultInput input{.mReportingYear = 2024};
+
+        if (aDecisions.find(question) == nullptr)
+        {
+            input.mRequests = {RequestInput{.mQuestion = question}};
+        }
+
+        return input;
+    };
+    DecisionSession session;
+    session.start(calculation);
+
+    const auto ratioAnswer = session.answer({{"request-0001",
+                                              1,
+                                              SplitRatioAnswer{.mNewShares = 2,
+                                                               .mOldShares = 1,
+                                                               .mEffectiveDate = day(2024, 6, 1),
+                                                               .mConfirmedUnits = 200'000'000}}});
+
+    ASSERT_EQ(ratioAnswer.size(), 1U);
+    EXPECT_EQ(ratioAnswer[0].mReason, AnswerRejection::AnswerDoesNotFit);
+
+    const auto cancel = session.answer({{"request-0001", 1, CancelAnswer{}}});
+
+    EXPECT_TRUE(cancel.empty());
+    EXPECT_EQ(session.result().mRunRevision, 2U);
 }
 
 } // namespace
