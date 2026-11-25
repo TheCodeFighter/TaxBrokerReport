@@ -435,7 +435,9 @@ Rules (each one is a row of the parser fixtures):
     | Code | Result |
     | --- | --- |
     | `FS` forward split, `RS` reverse split, same ISIN before and after | `UnresolvedSplit`: the ratio is asked, as for Trade Republic. The text in `actionDescription` (for example "SPLIT 4 FOR 1") is evidence only, never a verified ratio. |
-    | `FS` or `RS` where the ISIN changes, `TC` merger, `IC` issue change | `unsupported_corporate_action` until mergers are processed. |
+    | `TC` of one ISIN with an `actionID`: `quantity` negative and `proceeds` above 0 | Takeover for cash: a `TradeTransaction` sale (`mFromCashMerger`) of the units at `proceeds` divided by the units, on the date of the row, in the currency of the row, without a fee. `proceeds` missing or not a number rejects the row; a negative `proceeds` rejects it by sign; 0, a positive `quantity` or no `actionID` (the rows of another ISIN of the same merger cannot be seen) is stored as an unsupported action. |
+    | `IC` issue change, and `FS` or `RS` where the action has two ISINs | `IsinChange`: one ISIN with negative quantities (the old one, the row names the new ISIN in `mNewIsin`) and one with positive ones; any other shape is unsupported. The processor asks the user before it uses it. |
+    | `TC` with the rows of two ISINs in one action | `StockMerger`: `unsupported_corporate_action`, key `.stock_merger`. |
     | `SO` spin-off, `SD` stock dividend, `RI`, `DI`, `ED`, `SR` rights, `TO`, `TI` tender, `DW` delisted worthless, `CH`, `HD`, `HI` choice dividend, `BC`, `CI`, any other | `unsupported_corporate_action`. |
     | `BM` bond maturity, `TM` T-bill maturity | `BondRedemptionEvent`, information only. |
     | `CD` cash dividend, `CP` coupon | Ignored here; the cash row is the payment. |
@@ -445,7 +447,10 @@ Rules (each one is a row of the parser fixtures):
     count as a maturity only on a bond or a bill; the same code on another class is
     unsupported. A positive `quantity` on a maturity is a cancelled maturity. Every other action
     keeps its quantity as evidence and is stored with the merger type, which the corporate-action
-    stage blocks.
+    stage blocks. The rows of one action ID are matched in one statement, by the sign of the
+    quantity; the rows of one action ID in different files are not compared (unconfirmed: a `TC`
+    cash row in one file and the share row of the same action in another is read as a takeover for
+    cash only).
 11. **Transfers.** The `Transfers` section is not read. One FIFO pool per ISIN across brokers
     makes a position transfer a no-op, and units that came in without their buys in the files are
     caught where they matter: a later sale gives `incomplete_history`. A warning per transfer would
@@ -752,6 +757,15 @@ Current consumers preserve this distinction:
 - the parser dump labels an unresolved value as `source_quantity` and the ratio as unresolved;
 - the exact-arithmetic dump shows labeled hypothetical previews or an explicit caller-supplied
   preview ratio, without establishing the real economics from the CSV quantity.
+
+A row with `mRatio` set is applied from the start of every run, without a question. No parser
+sets it: the ISIN change stage leaves one for an answered ISIN change with a ratio other than
+1 / 1 (`CorporateActionType::IsinChange` rows before the stage hold the units of the old and new
+ISIN and `mNewIsin`, the ISIN the old row's units become). That stage (`processors/isin_change.hpp`)
+runs after the merge and before the reporting year ledger of the calculation is made: it asks the
+question, moves the trades and actions of the old ISIN to the new instrument, removes the old
+instrument and rebuilds the chronological order, so the ledger and every later stage read one
+instrument. A takeover for cash is a sale from the parser (`TradeTransaction::mFromCashMerger`).
 
 Ratio confirmation belongs to the corporate-action stage ("Corporate-action contract" below);
 the remaining identity rules and inventory application belong to the corporate-action processor
@@ -1775,7 +1789,7 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   one exception is the link to the project's repository on the About page, which the user opens
   and the page never fetches.
   `scripts/frontend.sh check` fails the build when the output has another file, when a file is
-  over its size budget (`app.js` 140 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
+  over its size budget (`app.js` 144 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
   compressed), when an address other than an XML namespace name or that repository link appears
   in a file, or when
   `index.html` has an inline script or style.

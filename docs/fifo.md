@@ -284,9 +284,10 @@ action's row date or 31 December of the selected year. A date is rejected when:
   total of the trades after the action (`mLowestChangeAfter`), and the preview plus that total
   must not be below 0. For example, 10 units, a sale of 5 on 1 May and a row on 1 June: `1 / 10`
   from 1 March leaves 1 unit for the sale of 5 and is rejected; `1 / 2` from 1 March leaves 5 and
-  is accepted. A trade at most 10 days before the next action's row is not counted: the next
-  action may have taken effect before it and been booked later (see below), and its own question
-  checks that trade in the units after it. For example, 10 units, split rows on 1 March and
+  is accepted. A trade at most 10 days before the next action's row is not counted when
+  the next action is a split: it may have taken effect before the trade and been booked later
+  (see below), and its own question checks that trade in the units after it. A merger or an ISIN
+  change has no such question, so every trade up to its row counts. For example, 10 units, split rows on 1 March and
   5 June, and a sale of 40 on 3 June: `2 / 1` from 1 March is accepted (20 units), and the second
   split is then asked with dates up to 3 June; `2 / 1` from 1 June makes 40 units for the sale.
   The trades on the action's own date always count, because the next action comes after it: in
@@ -348,10 +349,10 @@ selected year's report (maintainer decision, 2026-10-30). A row 11 or more days 
 December loss sale that empties the holding and before a January rebuy: a broker books a split
 only for units held, so purchases are missing.
 
-Known limit: a split row dated after the window end of a December loss is not asked, although a
-broker may book an action up to 10 days after it took effect. A reverse split that took effect
-inside the window is then compared in the old units, which blocks too little loss. This is later
-work (support for reverse splits and mergers that change the ISIN).
+A broker may book an action up to 10 days after it took effect, so a split row up to 10 days
+after the window end of a December loss is asked too, and a merger row there blocks the loss sale
+(`.loss_window`). A row more than 10 days after the window end stays outside, and so does every
+row after 30 January, the end of the loss-analysis view.
 
 The confirmation applies only to the combined action identity, its complete source set (by broker
 and transaction ID) and the units held just before it. A new or changed source record, or another
@@ -449,8 +450,19 @@ records 3 June instead, the warning is accompanied by the one-split question. If
 verified splits occurred in February and November, warn for their shared year but apply both once.
 
 Mergers follow the same instrument-wide principle, but a merger may change ISINs, pay cash or
-require tax deferral rules. They remain unsupported until old-to-new instrument mapping and tax
-treatment are specified. A split-ratio confirmation does not authorize a merger.
+require tax deferral rules. Only two are supported ([`tax_rules.md`](tax_rules.md), "Corporate
+actions that change the ISIN"): a takeover for cash, which is a sale in the FIFO pool, and an ISIN
+change of the same issuer, after its question. A split-ratio confirmation does not authorize a
+merger.
+
+An ISIN change is carried out before the pools are built. After the answer "same issuer" the
+trades and action rows of the old ISIN move to the new ISIN, in ledger order, and the old ISIN is
+gone from the statement. A ratio other than 1 / 1 leaves one action row of the new ISIN, dated
+with the answer's date and marked as confirmed, which the pool applies like a confirmed split
+(units by the exact ratio, the same rounding rules, each lot keeps its purchase date and exact
+basis); no ratio question is asked for it, and it gets no `corporate_action_applied.user_ratio`
+warning (the stage has its own warning). A ratio of 1 / 1 leaves no row. A row with a confirmed
+ratio is applied from the start of every run.
 
 The ratio is kept as an exact fraction during processing. The app must not round it to the
 eight-decimal `CorpRatio` scale and then use the rounded value to adjust lots.
@@ -562,10 +574,10 @@ Corporate-action errors use these diagnostic codes:
 | Code | When it is used |
 | --- | --- |
 | `corporate_action_missing_position` | No positive covered position exists immediately before the action on its row date. |
-| `corporate_action_inconsistent` | Reliable source ratios conflict with each other, or a confirmed ratio conflicts with an unambiguous source value. |
+| `corporate_action_inconsistent` | Reliable source ratios conflict with each other, or a confirmed ratio conflicts with an unambiguous source value. Key `.units_left_after_cash_merger`: units are still held after the last row of a takeover for cash. Key `.trade_across_isin_change`: a trade of the old ISIN on or after the date of an ISIN change, or of the new ISIN before it. |
 | `corporate_action_ambiguous` | A reliable ratio is unavailable, the user does not confirm one, or the order of several same-day actions cannot be established. |
 | `corporate_action_unrepresentable` | Arithmetic overflows or the action cannot preserve lots and their purchase values at the required precision: a lot would become 0 units, or the rounding of the ISIN's actions reaches EUR 0.01 (key `.rounding_budget`). |
-| `unsupported_corporate_action` | The action needs tax rules that are not documented here, for example a merger (key `.merger`). |
+| `unsupported_corporate_action` | The action needs tax rules that are not documented here: key `.stock_merger` for a merger of two companies, `.merger` for any other action. |
 
 Every error includes the investment name, ISIN, action source, and a clear reason. The affected
 ISIN is unsafe and follows the normal exclusion flow in this document. Other ISINs, dividends, and
@@ -579,10 +591,10 @@ treatment to use.
 
 The app does not currently process:
 
-- mergers;
+- mergers of two companies;
 - spin-offs;
 - rights or subscription issues;
-- conversions or changes to another ISIN;
+- conversions or changes to another ISIN that are not the same issuer (the user says so);
 - cash paid instead of fractional units;
 - capital repayments; or
 - any action that changes both units and another asset or cash balance.
