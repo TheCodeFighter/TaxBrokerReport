@@ -8,7 +8,7 @@ set -euo pipefail
 # The four files the server embeds, with their size budget in bytes (not compressed).
 declare -A budget=(
     ["index.html"]=4096
-    ["assets/app.js"]=143360
+    ["assets/app.js"]=147456
     ["assets/app.css"]=15360
     ["assets/logo.webp"]=12288
 )

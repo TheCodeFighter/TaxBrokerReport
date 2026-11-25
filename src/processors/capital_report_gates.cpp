@@ -212,8 +212,7 @@ mergerOnDate(const std::vector<TradeInstrument>& aInstruments,
 
     const auto merger =
         std::find_if(actions.begin(), actions.end(), [date](const CorporateAction& aAction) {
-            return aAction.mType == CorporateActionType::Merger &&
-                   aAction.mMetadata.mTaxDate == date;
+            return isNonSplitActionType(aAction.mType) && aAction.mMetadata.mTaxDate == date;
         });
 
     if (merger == actions.end())

@@ -149,9 +149,21 @@ std::optional<KdvpBlockedIsin> findBlock(const FifoIsinResult& aPool,
                            .mSales = std::move(lossSales)};
 }
 
+/// The ISIN and name a sale is listed under: the ones it had on its date after an ISIN change, else
+/// those of its pool.
+ListedInstrument listedAsOf(const std::vector<TradeInstrument>& aInstruments,
+                            const FifoIsinResult& aPool,
+                            const StatementEventReference& aSale) {
+    const TradeTransaction& trade =
+        aInstruments.at(aSale.mInstrumentIndex.value()).mTransactions.at(aSale.mEventIndex);
+
+    return trade.mListedAs.value_or(ListedInstrument{.mIsin = aPool.mIsin, .mName = aPool.mName});
+}
+
 /// Returns the tax-free units of each sale of the year, past the holding period.
 std::vector<KdvpLongHeldUnits>
-collectLongHeldUnits(const FifoIsinResult& aPool,
+collectLongHeldUnits(const std::vector<TradeInstrument>& aInstruments,
+                     const FifoIsinResult& aPool,
                      const std::vector<StatementEventReference>& aYearSales) {
     std::vector<KdvpLongHeldUnits> longHeld;
 
@@ -169,8 +181,10 @@ collectLongHeldUnits(const FifoIsinResult& aPool,
 
         if (units > 0)
         {
+            const ListedInstrument listed = listedAsOf(aInstruments, aPool, sale);
+
             longHeld.push_back(
-                {.mIsin = aPool.mIsin, .mName = aPool.mName, .mSale = sale, .mUnits = units});
+                {.mIsin = listed.mIsin, .mName = listed.mName, .mSale = sale, .mUnits = units});
         }
     }
 
@@ -186,13 +200,18 @@ struct PurchaseGroup {
 
 /// The listed units of the sales of the year, by purchase and exact unit value, in the order the
 /// sales use them. A purchase sold before and after a split has one group for each unit state; a
-/// sale in a different state than the last one of its purchase starts a new group.
-std::vector<PurchaseGroup> purchaseGroupsOf(const FifoIsinResult& aPool) {
+/// sale in a different state than the last one of its purchase starts a new group. With aSales,
+/// only the units of those sales count (the sales listed under one ISIN).
+std::vector<PurchaseGroup>
+purchaseGroupsOf(const FifoIsinResult& aPool,
+                 const std::vector<StatementEventReference>* aSales = nullptr) {
     std::vector<PurchaseGroup> groups;
 
     for (const auto& match : aPool.mMatches)
     {
-        if (isPastHoldingPeriod(match))
+        if (isPastHoldingPeriod(match) ||
+            (aSales != nullptr &&
+             std::find(aSales->begin(), aSales->end(), match.mSale) == aSales->end()))
         {
             continue;
         }
@@ -237,18 +256,21 @@ bool hasBasisDifference(const PurchaseGroup& aGroup) {
            roundToScaled(std::get<ExactRational>(exact), MONEY_SCALE);
 }
 
-/// The purchase rows of the list of an ISIN that have a basis difference.
-std::vector<KdvpBasisDifference> basisDifferencesOf(const FifoIsinResult& aPool,
-                                                    std::size_t aInstrumentIndex) {
+/// The purchase rows of one list that have a basis difference, for the sales listed under aListed.
+std::vector<KdvpBasisDifference>
+basisDifferencesOf(const FifoIsinResult& aPool,
+                   std::size_t aInstrumentIndex,
+                   const ListedInstrument& aListed,
+                   const std::vector<StatementEventReference>& aSales) {
     std::vector<KdvpBasisDifference> differences;
 
-    for (const auto& group : purchaseGroupsOf(aPool))
+    for (const PurchaseGroup& group : purchaseGroupsOf(aPool, &aSales))
     {
         if (hasBasisDifference(group))
         {
             differences.push_back({
-                .mIsin = aPool.mIsin,
-                .mName = aPool.mName,
+                .mIsin = aListed.mIsin,
+                .mName = aListed.mName,
                 .mPurchase = {StatementEventKind::Trade, aInstrumentIndex, group.mPurchaseIndex},
             });
         }
@@ -307,17 +329,53 @@ std::vector<SalePart> salePartsOf(const FifoIsinResult& aPool,
     return parts;
 }
 
-/// Builds the list of an ISIN that findBlock did not block. Units past the holding period get no
-/// row.
+/// The sales of the year of one pool that are listed under one ISIN and name.
+struct ListedSales {
+    ListedInstrument mListed;
+    std::vector<StatementEventReference> mSales;
+};
+
+/// Groups the year's sales of a pool by the ISIN they are listed under, in the order of their first
+/// sale. A pool without an ISIN change has one group, under its own ISIN.
+std::vector<ListedSales> listedSalesOf(const std::vector<TradeInstrument>& aInstruments,
+                                       const FifoIsinResult& aPool,
+                                       const std::vector<StatementEventReference>& aYearSales) {
+    std::vector<ListedSales> groups;
+
+    for (const StatementEventReference& sale : aYearSales)
+    {
+        const ListedInstrument listed = listedAsOf(aInstruments, aPool, sale);
+        auto group =
+            std::find_if(groups.begin(), groups.end(), [&listed](const ListedSales& aGroup) {
+                return aGroup.mListed.mIsin == listed.mIsin;
+            });
+
+        if (group == groups.end())
+        {
+            groups.push_back({.mListed = listed});
+            group = groups.end() - 1;
+        }
+
+        group->mSales.push_back(sale);
+    }
+
+    return groups;
+}
+
+/// Builds the list of the sales listed under one ISIN of a pool that findBlock did not block. The
+/// purchase rows hold only the units those sales use. Units past the holding period get no row.
 KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
                             std::size_t aInstrumentIndex,
                             const ReportingYearLedger& aLedger,
                             const FifoIsinResult& aPool,
-                            const LossEligibilityIsin& aLoss) {
-    // A purchase used only by earlier sales has no group and gets no row.
-    const auto groups = purchaseGroupsOf(aPool);
+                            const LossEligibilityIsin& aLoss,
+                            const ListedSales& aListedSales) {
+    // A purchase used only by earlier sales or by sales of another list has no group and gets no
+    // row.
+    const std::vector<PurchaseGroup> groups = purchaseGroupsOf(aPool, &aListedSales.mSales);
 
-    KdvpInventoryList list{.mIsin = aPool.mIsin, .mName = aPool.mName};
+    KdvpInventoryList list{.mIsin = aListedSales.mListed.mIsin,
+                           .mName = aListedSales.mListed.mName};
     Units stock = 0;
 
     for (std::size_t position = 0; position < aLedger.mCapitalEvents.size(); ++position)
@@ -353,7 +411,9 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
                      .mStock = stock});
             }
         }
-        else if (position >= aLedger.mHistoricalCapitalEventCount)
+        else if (position >= aLedger.mHistoricalCapitalEventCount &&
+                 std::find(aListedSales.mSales.begin(), aListedSales.mSales.end(), event) !=
+                     aListedSales.mSales.end())
         {
             const auto* loss = lossOf(aLoss, event);
             const Units blockedUnits = loss != nullptr ? loss->ineligibleUnits() : Units{0};
@@ -648,15 +708,27 @@ CapitalGainsBuildResult CapitalGainsReportBuilder::build(const MergedStatement& 
             continue;
         }
 
-        auto list = buildList(instruments, index, aLedger, pool, loss);
-        const auto longHeld = collectLongHeldUnits(pool, yearSales.at(index));
-        const auto differences = basisDifferencesOf(pool, index);
-
-        if (!list.mRows.empty())
+        // One list for each ISIN the sales are listed under (two after an ISIN change that follows
+        // a sale of the old ISIN).
+        for (const ListedSales& listedSales : listedSalesOf(instruments, pool, yearSales.at(index)))
         {
-            report.mLists.push_back(std::move(list));
-            basisDifferences.insert(basisDifferences.end(), differences.begin(), differences.end());
+            KdvpInventoryList list =
+                buildList(instruments, index, aLedger, pool, loss, listedSales);
+
+            if (!list.mRows.empty())
+            {
+                const std::vector<KdvpBasisDifference> differences =
+                    basisDifferencesOf(pool, index, listedSales.mListed, listedSales.mSales);
+
+                report.mLists.push_back(std::move(list));
+                basisDifferences.insert(basisDifferences.end(),
+                                        differences.begin(),
+                                        differences.end());
+            }
         }
+
+        const std::vector<KdvpLongHeldUnits> longHeld =
+            collectLongHeldUnits(instruments, pool, yearSales.at(index));
 
         result.mLongHeld.insert(result.mLongHeld.end(), longHeld.begin(), longHeld.end());
     }

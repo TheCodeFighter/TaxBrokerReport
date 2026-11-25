@@ -1,0 +1,11 @@
+<FlexQueryResponse queryName="seed" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000" fromDate="20240101" toDate="20241231" period="" whenGenerated="20250301;101500">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <CorporateActions>
+        <CorporateAction accountId="U0000000" transactionID="3007" actionID="M9002" type="TC" assetCategory="STK" symbol="SYNE" description="SYNTHETIC EXAMPLE E INC" actionDescription="seed" isin="US0000000051" currency="USD" dateTime="20240903;202500" reportDate="20240903" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3008" actionID="M9002" type="TC" assetCategory="STK" symbol="SYNE" description="SYNTHETIC EXAMPLE F INC" actionDescription="seed" isin="US0000000069" currency="USD" dateTime="20240903;202500" reportDate="20240903" quantity="4" proceeds="0" value="0"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

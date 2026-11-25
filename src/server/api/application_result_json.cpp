@@ -197,6 +197,19 @@ Json answerToJson(const AnswerValue& aAnswer) {
         {
             return Json{{"type", "grouping"}, {"actionOfRow", aValue.mActionOfRow}};
         }
+        else if constexpr (std::is_same_v<Value, IsinChangeAnswer>)
+        {
+            if (!aValue.mSameIssuer)
+            {
+                return "different_issuer";
+            }
+
+            return Json{
+                {"newShares", aValue.mNewShares},
+                {"oldShares", aValue.mOldShares},
+                {"effectiveDate", isoDate(aValue.mEffectiveDate)},
+            };
+        }
         else if constexpr (std::is_same_v<Value, CapitalGainsAnswer>)
         {
             return "capital_gains";
@@ -292,6 +305,12 @@ Json lossCheckToJson(const LossEligibilityQuestion& aQuestion) {
             };
         }
 
+        if (sale.mSoldAs)
+        {
+            serialized["soldAs"] =
+                Json{{"isin", sale.mSoldAs->mIsin}, {"name", sale.mSoldAs->mName}};
+        }
+
         serialized["saleUnits"] = unitsString(sale.mSaleUnits);
         serialized["lossUnits"] = unitsString(sale.mLossUnits);
         serialized["windowStart"] = isoDate(sale.mWindowStart);
@@ -305,14 +324,12 @@ Json lossCheckToJson(const LossEligibilityQuestion& aQuestion) {
     return Json{{"name", aQuestion.mName}, {"isin", aQuestion.mIsin}, {"sales", std::move(sales)}};
 }
 
-/// The question data of a ratio question: the action, every source record, the position before
-/// it on its row date (or the earlier sale it must come before) and the date ranges an answer may
-/// give, each with its position before and the lowest change after. A source value is shown
-/// read-only; its meaning is not verified.
-Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
+/// The source records of a corporate action question. A source value is shown read-only; its
+/// meaning is not verified.
+Json actionSourcesToJson(const std::vector<CorporateActionSourceFacts>& aSources) {
     Json sources = Json::array();
 
-    for (const auto& source : aQuestion.mSources)
+    for (const CorporateActionSourceFacts& source : aSources)
     {
         Json serialized{{"broker", toString(source.mBroker)}, {"date", isoDate(source.mDate)}};
 
@@ -328,6 +345,38 @@ Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
         sources.push_back(std::move(serialized));
     }
 
+    return sources;
+}
+
+/// The question data of an ISIN change question: both ISINs and names, the date of the old row
+/// (pre-filled), the dates an answer may give, the ratio the rows show (when they give one) and
+/// every row of the action.
+Json isinChangeCheckToJson(const IsinChangeQuestion& aQuestion) {
+    Json serialized{
+        {"oldIsin", aQuestion.mOldIsin},
+        {"oldName", aQuestion.mOldName},
+        {"newIsin", aQuestion.mNewIsin},
+        {"newName", aQuestion.mNewName},
+        {"effectiveDate", isoDate(aQuestion.mEffectiveDate)},
+        {"earliestDate", isoDate(aQuestion.mEarliestDate)},
+        {"latestDate", isoDate(aQuestion.mLatestDate)},
+        {"sources", actionSourcesToJson(aQuestion.mSources)},
+    };
+
+    if (aQuestion.mSuggestedRatio)
+    {
+        serialized["suggestedRatio"] = Json{{"newShares", aQuestion.mSuggestedRatio->mNewShares},
+                                            {"oldShares", aQuestion.mSuggestedRatio->mOldShares}};
+    }
+
+    return serialized;
+}
+
+/// The question data of a ratio question: the action, every source record, the position before
+/// it on its row date (or the earlier sale it must come before) and the date ranges an answer may
+/// give, each with its position before and the lowest change after. A source value is shown
+/// read-only; its meaning is not verified.
+Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
     Json dateRanges = Json::array();
 
     std::transform(aQuestion.mDateRanges.begin(),
@@ -346,7 +395,7 @@ Json ratioCheckToJson(const CorporateActionRatioQuestion& aQuestion) {
         {"name", aQuestion.mName},
         {"isin", aQuestion.mIsin},
         {"effectiveDate", isoDate(aQuestion.mEffectiveDate)},
-        {"sources", std::move(sources)},
+        {"sources", actionSourcesToJson(aQuestion.mSources)},
     };
 
     // A question before a sale with too few units has no position on the row date.
@@ -375,6 +424,10 @@ std::string_view actionTypeName(CorporateActionType aType) {
         return "reverse_split";
     case CorporateActionType::Merger:
         return "merger";
+    case CorporateActionType::IsinChange:
+        return "isin_change";
+    case CorporateActionType::StockMerger:
+        return "stock_merger";
     case CorporateActionType::UnresolvedSplit:
         break;
     }
@@ -661,6 +714,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["identityCheck"] = identityCheckToJson(*identity);
     }
 
+    if (const IsinChangeQuestion* isinChange = std::get_if<IsinChangeQuestion>(&aRequest.mData))
+    {
+        serialized["isinChangeCheck"] = isinChangeCheckToJson(*isinChange);
+    }
+
     if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aRequest.mData))
     {
         serialized["options"] = Json::array({"capital_gains", "exclude_from_supported_reports"});
@@ -911,6 +969,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
     if (const auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aDecision.mData))
     {
         serialized["identityCheck"] = identityCheckToJson(*identity);
+    }
+
+    if (const IsinChangeQuestion* isinChange = std::get_if<IsinChangeQuestion>(&aDecision.mData))
+    {
+        serialized["isinChangeCheck"] = isinChangeCheckToJson(*isinChange);
     }
 
     if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aDecision.mData))

@@ -44,6 +44,7 @@ enum class NoDataReason {
 enum class RequestType {
     ExchangeRatesRequired,
     CorporateActionIdentityRequired,
+    CorporateActionIsinChangeRequired,
     CorporateActionRatioRequired,
     QuantityCorrectionRequired,
     LossEligibilityConfirmationRequired,
@@ -161,6 +162,9 @@ struct LossSaleFacts {
     Units mKnownIneligibleUnits{};
     /// mLossUnits - mKnownIneligibleUnits, always more than 0.
     Units mOpenUnits{};
+    /// The ISIN and name the sale is listed under when they differ from the question's: the sale
+    /// was made before an ISIN change. Empty otherwise.
+    std::optional<ListedInstrument> mSoldAs;
 
     bool operator==(const LossSaleFacts&) const = default;
 };
@@ -276,6 +280,30 @@ struct CorporateActionIdentityQuestion {
     std::vector<CorporateActionIdentityRow> mRows;
 
     bool operator==(const CorporateActionIdentityQuestion&) const = default;
+};
+
+/// The question data of `corporate_action_isin_change_required`: the rows of one action in which
+/// units of one ISIN left and units of another ISIN came in. The user says whether it is the same
+/// issuer and the same kind of share with no cash (then the units carry on under the new ISIN with
+/// the ratio and date given), or not (then it is a merger the app does not support).
+struct IsinChangeQuestion {
+    Isin mOldIsin;
+    std::string mOldName;
+    Isin mNewIsin;
+    std::string mNewName;
+    Date mEffectiveDate; ///< The date of the row of the old ISIN, shown pre-filled.
+    /// The dates of the earliest and of the latest row of the action; the answer's date is
+    /// between them, both included.
+    Date mEarliestDate;
+    Date mLatestDate;
+    /// Every row of the action, of both ISINs; the value is the broker's quantity, negative for
+    /// units that left.
+    std::vector<CorporateActionSourceFacts> mSources;
+    /// The units that came in over the units that left, reduced; empty when they do not give one.
+    /// An answer "same issuer" must have this ratio.
+    std::optional<SplitRatio> mSuggestedRatio;
+
+    bool operator==(const IsinChangeQuestion&) const = default;
 };
 
 /// The question data of `tax_classification_required` for a trade investment whose asset class is
@@ -458,6 +486,7 @@ using QuestionData = std::variant<std::monostate,
                                   LossEligibilityQuestion,
                                   CorporateActionRatioQuestion,
                                   CorporateActionIdentityQuestion,
+                                  IsinChangeQuestion,
                                   TaxClassificationQuestion,
                                   QuantityCorrectionQuestion,
                                   PayerChoiceQuestion,
@@ -538,6 +567,20 @@ struct CorporateActionGroupingAnswer {
     std::vector<std::size_t> mActionOfRow;
 
     bool operator==(const CorporateActionGroupingAnswer&) const = default;
+};
+
+/// The answer to an ISIN change question. With mSameIssuer the units carry on under the new ISIN
+/// from mEffectiveDate: every old unit becomes new / old units (1 / 1 when the number does not
+/// change), and the lots keep their purchase dates and values. Without it the other fields are
+/// not used (the session clears them to 0 and the default date), and the change is a merger of
+/// two companies.
+struct IsinChangeAnswer {
+    bool mSameIssuer{};
+    std::int64_t mNewShares{};
+    std::int64_t mOldShares{};
+    Date mEffectiveDate; ///< Between mEarliestDate and mLatestDate of the question.
+
+    bool operator==(const IsinChangeAnswer&) const = default;
 };
 
 /// `capital_gains` to a classification question: treat the investment as shares or fund units
@@ -624,6 +667,7 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  SplitRatioAnswer,
                                  SeparateEventsAnswer,
                                  CorporateActionGroupingAnswer,
+                                 IsinChangeAnswer,
                                  CapitalGainsAnswer,
                                  ExcludeFromReportsAnswer,
                                  QuantityCorrectionAnswer,

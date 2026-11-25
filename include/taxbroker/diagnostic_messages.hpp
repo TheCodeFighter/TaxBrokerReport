@@ -186,6 +186,13 @@ enum class MessageKey {
     PayerCountryFromIsin,
     PayerCountryUnresolvedDividend,
     PayerCountryUnresolvedInterest,
+    UnsupportedCorporateActionStockMerger,
+    CorporateActionAppliedCashMerger,
+    CorporateActionAppliedIsinChange,
+    CorporateActionInconsistentUnitsLeftAfterCashMerger,
+    CorporateActionInconsistentTradeAcrossIsinChange,
+    CorporateActionAmbiguousIsinChangeRequired,
+    AnswerRejectedIsinChangeRatioMismatch,
 };
 
 enum class MessageParamKind {

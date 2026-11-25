@@ -58,6 +58,7 @@ add_library(taxbroker_core STATIC
     processors/capital_gains_report_builder.cpp
     processors/capital_report_gates.cpp
     processors/corporate_actions.cpp
+    processors/isin_change.cpp
     processors/decision_session.cpp
     processors/dividend_payments.cpp
     processors/fifo_basis.cpp

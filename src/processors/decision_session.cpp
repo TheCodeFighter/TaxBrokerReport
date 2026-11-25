@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -69,6 +70,11 @@ namespace {
         else if constexpr (std::is_same_v<Data, CorporateActionIdentityQuestion>)
         {
             return std::holds_alternative<CorporateActionGroupingAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
+        else if constexpr (std::is_same_v<Data, IsinChangeQuestion>)
+        {
+            return std::holds_alternative<IsinChangeAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
         else if constexpr (std::is_same_v<Data, QuantityCorrectionQuestion>)
@@ -262,6 +268,77 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
                               AnswerRejection::LaterSaleTooLarge,
                               MessageKey::AnswerRejectedLaterSaleTooLarge,
                               aRequest.mId);
+    }
+
+    return std::nullopt;
+}
+
+/// Checks an ISIN change answer. A "same issuer" answer needs both numbers positive, the ratio of
+/// the rows (when they give one; it may be 1 / 1) and a date between the earliest and the latest
+/// row of the action. A "not the same issuer" answer has nothing to check.
+[[nodiscard]] std::optional<RejectedAnswer> checkIsinChangeAnswer(std::size_t aIndex,
+                                                                  const DecisionRequest& aRequest,
+                                                                  const IsinChangeAnswer& aAnswer) {
+    if (!aAnswer.mSameIssuer)
+    {
+        return std::nullopt;
+    }
+
+    const IsinChangeQuestion& question = std::get<IsinChangeQuestion>(aRequest.mData);
+
+    if (aAnswer.mNewShares <= 0)
+    {
+        return rejectedRatioField(aIndex, aRequest.mId, "newShares");
+    }
+
+    if (aAnswer.mOldShares <= 0)
+    {
+        return rejectedRatioField(aIndex, aRequest.mId, "oldShares");
+    }
+
+    // The ratio of the answer, reduced, is the ratio of the rows: the units that came in over the
+    // units that left. Two reduced ratios are equal when both numbers are.
+    if (question.mSuggestedRatio)
+    {
+        const std::int64_t divisor = std::gcd(aAnswer.mNewShares, aAnswer.mOldShares);
+
+        if (aAnswer.mNewShares / divisor != question.mSuggestedRatio->mNewShares ||
+            aAnswer.mOldShares / divisor != question.mSuggestedRatio->mOldShares)
+        {
+            DiagnosticMessage message = makeDiagnosticMessage(
+                MessageKey::AnswerRejectedIsinChangeRatioMismatch,
+                {textParam("requestId", aRequest.mId),
+                 numberParam("newShares",
+                             static_cast<std::uint64_t>(question.mSuggestedRatio->mNewShares)),
+                 numberParam("oldShares",
+                             static_cast<std::uint64_t>(question.mSuggestedRatio->mOldShares))});
+
+            return RejectedAnswer{
+                .mIndex = aIndex,
+                .mReason = AnswerRejection::IsinChangeRatioMismatch,
+                .mMessage = std::move(message.mEnglish),
+                .mMessageKey = message.mKey,
+                .mMessageParams = std::move(message.mParams),
+            };
+        }
+    }
+
+    if (aAnswer.mEffectiveDate < question.mEarliestDate ||
+        aAnswer.mEffectiveDate > question.mLatestDate)
+    {
+        DiagnosticMessage message = makeDiagnosticMessage(
+            MessageKey::AnswerRejectedEffectiveDateOutOfRange,
+            {textParam("requestId", aRequest.mId),
+             textParam("earliestDate", formatCalendarDate(question.mEarliestDate)),
+             textParam("latestDate", formatCalendarDate(question.mLatestDate))});
+
+        return RejectedAnswer{
+            .mIndex = aIndex,
+            .mReason = AnswerRejection::EffectiveDateOutOfRange,
+            .mMessage = std::move(message.mEnglish),
+            .mMessageKey = message.mKey,
+            .mMessageParams = std::move(message.mParams),
+        };
     }
 
     return std::nullopt;
@@ -497,6 +574,15 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
             }
         }
 
+        if (const IsinChangeAnswer* change = std::get_if<IsinChangeAnswer>(&given.mValue))
+        {
+            if (std::optional<RejectedAnswer> rejection =
+                    checkIsinChangeAnswer(index, *request, *change))
+            {
+                rejections.push_back(std::move(*rejection));
+            }
+        }
+
         if (const auto* grouping = std::get_if<CorporateActionGroupingAnswer>(&given.mValue))
         {
             if (auto rejection = checkGroupingAnswer(index, *request, *grouping))
@@ -536,6 +622,21 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
 
             ratio->mNewShares = reduced.mNewShares;
             ratio->mOldShares = reduced.mOldShares;
+        }
+
+        // A checked ISIN change ratio is kept reduced too: 20 / 10 as 2 / 1, 5 / 5 as 1 / 1.
+        if (IsinChangeAnswer* change = std::get_if<IsinChangeAnswer>(&value);
+            change && change->mSameIssuer)
+        {
+            const std::int64_t divisor = std::gcd(change->mNewShares, change->mOldShares);
+
+            change->mNewShares /= divisor;
+            change->mOldShares /= divisor;
+        }
+        else if (change != nullptr)
+        {
+            // The unused fields of a "not the same issuer" answer are not kept.
+            *change = IsinChangeAnswer{};
         }
 
         // A checked treaty text is kept without the spaces at its start and end.

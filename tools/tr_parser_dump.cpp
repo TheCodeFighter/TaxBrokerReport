@@ -209,6 +209,10 @@ std::string_view toString(CorporateActionType aCorporateActionType) {
         return "Merger";
     case CorporateActionType::UnresolvedSplit:
         return "UnresolvedSplit";
+    case CorporateActionType::IsinChange:
+        return "IsinChange";
+    case CorporateActionType::StockMerger:
+        return "StockMerger";
     }
 
     return "Unknown";
@@ -1023,6 +1027,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "CorporateActionQuantityRounded";
     case ProcessingDiagnosticCode::CorporateActionApplied:
         return "CorporateActionApplied";
+    case ProcessingDiagnosticCode::CorporateActionInconsistent:
+        return "CorporateActionInconsistent";
     case ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible:
         return "CorporateActionSourcesMismatchPossible";
     case ProcessingDiagnosticCode::UnsupportedCorporateAction:

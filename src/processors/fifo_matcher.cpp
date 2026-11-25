@@ -1,4 +1,5 @@
 #include "processors/fifo_matcher.hpp"
+#include "taxbroker/text_format.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -274,6 +275,74 @@ void applySale(FifoIsinResult& aPool,
                 std::make_move_iterator(matches.end()));
 }
 
+/// The diagnostic of a takeover for cash, which the broker books as a corporate action but the
+/// app treats as a sale. No units or amounts in the message.
+ProcessingDiagnostic cashMergerDiagnostic(DiagnosticSeverity aSeverity,
+                                          ProcessingDiagnosticCode aCode,
+                                          DiagnosticMessage aMessage,
+                                          const FifoIsinResult& aPool,
+                                          const TradeTransaction& aSale) {
+    return ProcessingDiagnostic{
+        .mSeverity = aSeverity,
+        .mCode = aCode,
+        .mContext =
+            {
+                .mStage = PipelineStage::CorporateAction,
+                .mAffectedReports = {ReportType::CapitalGains},
+                .mSources = aSale.mMetadata.mSources,
+                .mTaxDate = aSale.mMetadata.mTaxDate,
+                .mInstrumentName = aPool.mName,
+                .mIsin = aPool.mIsin,
+            },
+        .mMessage = std::move(aMessage.mEnglish),
+        .mMessageKey = aMessage.mKey,
+        .mMessageParams = std::move(aMessage.mParams),
+    };
+}
+
+/// After a sale that is a takeover for cash: the warning about its date (for a sale of the selected
+/// year), and the error when units of the ISIN are still held after the last row of the takeover
+/// of that day. Rows of one takeover (one per broker) come one after the other on the same date,
+/// so only the last of them checks. The error stops the pool, so its sales are not reported.
+void checkCashMerger(FifoIsinResult& aPool,
+                     const TradeTransaction& aSale,
+                     const StatementEventReference& aEvent,
+                     const TradeInstrument& aInstrument,
+                     bool aInSelectedYear,
+                     std::vector<ProcessingDiagnostic>& aDiagnostics) {
+    if (aInSelectedYear)
+    {
+        aDiagnostics.push_back(cashMergerDiagnostic(
+            DiagnosticSeverity::Warning,
+            ProcessingDiagnosticCode::CorporateActionApplied,
+            makeDiagnosticMessage(
+                MessageKey::CorporateActionAppliedCashMerger,
+                {textParam("saleDate", formatCalendarDate(aSale.mMetadata.mTaxDate))}),
+            aPool,
+            aSale));
+    }
+
+    const bool hasLaterRow = std::any_of(
+        aInstrument.mTransactions.begin() + static_cast<std::ptrdiff_t>(aEvent.mEventIndex) + 1,
+        aInstrument.mTransactions.end(),
+        [&aSale](const TradeTransaction& aOther) {
+            return aOther.mFromCashMerger && aOther.mMetadata.mTaxDate == aSale.mMetadata.mTaxDate;
+        });
+
+    if (hasLaterRow || aPool.mOpenLots.empty())
+    {
+        return;
+    }
+
+    aDiagnostics.push_back(cashMergerDiagnostic(
+        DiagnosticSeverity::Error,
+        ProcessingDiagnosticCode::CorporateActionInconsistent,
+        makeDiagnosticMessage(MessageKey::CorporateActionInconsistentUnitsLeftAfterCashMerger),
+        aPool,
+        aSale));
+    stopPool(aPool, FifoIsinStatus::NumericFailure, aEvent);
+}
+
 /// The confirmed action that has this action row, or nullptr.
 const ConfirmedCorporateAction*
 confirmedActionOf(const StatementEventReference& aEvent,
@@ -353,8 +422,7 @@ splitShortlyAfter(const TradeTransaction& aSale,
     const auto& action = aInstrument.mCorporateActions.at(aFirstAction->mEventIndex);
     const auto daysAfter = action.mMetadata.mTaxDate - aSale.mMetadata.mTaxDate;
 
-    if (action.mType == CorporateActionType::Merger ||
-        daysAfter > DayDuration{kBrokerDateMarginDays})
+    if (isNonSplitActionType(action.mType) || daysAfter > DayDuration{kBrokerDateMarginDays})
     {
         return std::nullopt;
     }
@@ -730,6 +798,17 @@ FifoMatcher::match(const MergedStatement& aStatement,
                       actionAfter,
                       correction == aCorrections.end() ? nullptr : &*correction,
                       result.mDiagnostics);
+
+            if (trade.mFromCashMerger && pool.mStatus == FifoIsinStatus::Matched)
+            {
+                checkCashMerger(pool,
+                                trade,
+                                event,
+                                instruments.at(instrumentIndex),
+                                trade.mMetadata.mTaxDate >= aLedger.mYearStart,
+                                result.mDiagnostics);
+            }
+
             break;
         }
         }

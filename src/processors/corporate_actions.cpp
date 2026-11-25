@@ -79,13 +79,6 @@ actionsByDate(const std::vector<TradeInstrument>& aInstruments,
 
         const auto& action = actionOf(aInstruments, aEvent);
 
-        // No supported export gives a verified ratio: every ratio is asked. A parser that sets
-        // one needs its rule written first.
-        if (action.mRatio)
-        {
-            throw std::logic_error("A verified corporate-action ratio is not supported yet.");
-        }
-
         const auto date = action.mMetadata.mTaxDate;
 
         if (aAfterYear != (date > aLedger.mYearEnd))
@@ -162,14 +155,14 @@ bool hasSameBrokerTwice(const std::vector<TradeInstrument>& aInstruments,
     return false;
 }
 
-/// Tells whether the group has a merger row.
+/// Tells whether the group has a row that is not a split: a merger of any kind, or an ISIN change
+/// that the ISIN change stage has not carried out.
 bool hasMerger(const std::vector<TradeInstrument>& aInstruments,
                const std::vector<StatementEventReference>& aEvents) {
     return std::any_of(aEvents.begin(),
                        aEvents.end(),
                        [&aInstruments](const StatementEventReference& aEvent) {
-                           return actionOf(aInstruments, aEvent).mType ==
-                                  CorporateActionType::Merger;
+                           return isNonSplitActionType(actionOf(aInstruments, aEvent).mType);
                        });
 }
 
@@ -189,9 +182,9 @@ splitsOfAnotherBrokerNearby(const std::vector<TradeInstrument>& aInstruments,
         const auto otherDate = other.mMetadata.mTaxDate;
         const auto distance = date < otherDate ? otherDate - date : date - otherDate;
 
-        return action.mType != CorporateActionType::Merger &&
-               other.mType != CorporateActionType::Merger && brokerOf(action) != brokerOf(other) &&
-               distance > DayDuration{0} && distance <= DayDuration{kDifferentDatesWindowDays};
+        return !isNonSplitActionType(action.mType) && !isNonSplitActionType(other.mType) &&
+               brokerOf(action) != brokerOf(other) && distance > DayDuration{0} &&
+               distance <= DayDuration{kDifferentDatesWindowDays};
     };
     std::vector<std::size_t> nearby;
 
@@ -518,7 +511,8 @@ std::vector<EffectiveDateRange> dateRanges(const std::vector<TradeInstrument>& a
                                            Units aAnchorPosition,
                                            std::optional<Date> aPreviousDate,
                                            std::optional<Date> aNextActionDate,
-                                           Date aLastDate) {
+                                           Date aLastDate,
+                                           bool aNextAsksItsTrades) {
     // The trades of the ISIN per date, in date order.
     std::vector<TradeDay> days;
 
@@ -547,9 +541,10 @@ std::vector<EffectiveDateRange> dateRanges(const std::vector<TradeInstrument>& a
     const Date latest = aNextActionDate ? *aNextActionDate - DayDuration{1} : aLastDate;
 
     // A trade at most kBrokerDateMarginDays before the next action's row may come after that
-    // action, which the broker booked later; the next action's own question checks it.
+    // action, which the broker booked later; the next action's own question checks it. Only a
+    // split has such a question: every trade up to a merger's row must fit.
     const std::optional<Date> checkedUntil =
-        aNextActionDate
+        aNextActionDate && aNextAsksItsTrades
             ? std::optional<Date>{*aNextActionDate - DayDuration{kBrokerDateMarginDays + 1}}
             : std::nullopt;
 
@@ -747,12 +742,31 @@ bool checkActionRows(ResolvedCorporateAction& aAction,
                      const ActionGroup& aGroup,
                      const std::vector<TradeInstrument>& aInstruments,
                      CorporateActionResult& aResult) {
-    if (hasMerger(aInstruments, aAction.mEvents))
+    const auto blocked =
+        std::find_if(aAction.mEvents.begin(),
+                     aAction.mEvents.end(),
+                     [&aInstruments](const StatementEventReference& aEvent) {
+                         return isNonSplitActionType(actionOf(aInstruments, aEvent).mType);
+                     });
+
+    if (blocked != aAction.mEvents.end())
     {
         aAction.mState = CorporateActionState::Unsupported;
+
+        // An ISIN change that was not carried out has its own error and question from its stage.
+        if (actionOf(aInstruments, *blocked).mType == CorporateActionType::IsinChange)
+        {
+            return false;
+        }
+
+        const MessageKey key =
+            actionOf(aInstruments, *blocked).mType == CorporateActionType::StockMerger
+                ? MessageKey::UnsupportedCorporateActionStockMerger
+                : MessageKey::UnsupportedCorporateActionMerger;
+
         aResult.mDiagnostics.push_back(
             actionDiagnostic(ProcessingDiagnosticCode::UnsupportedCorporateAction,
-                             makeDiagnosticMessage(MessageKey::UnsupportedCorporateActionMerger),
+                             makeDiagnosticMessage(key),
                              aAction,
                              aInstruments));
 
@@ -781,6 +795,9 @@ struct NeighbourDates {
     std::optional<Date> mPrevious;
     std::optional<Date> mNext;
     Date mLast;
+    /// The next action is a split, whose own question checks the trades up to
+    /// kBrokerDateMarginDays before its row. A merger or an ISIN change has no such question.
+    bool mNextAsksItsTrades{}; ///< Always set by the creator.
 };
 
 /// Where the date ranges of the first action start from: the row date with the open units, or,
@@ -989,7 +1006,8 @@ FirstActionOutcome resolveFirstAction(ResolvedCorporateAction& aAction,
                              anchor.mPosition,
                              aNeighbours.mPrevious,
                              aNeighbours.mNext,
-                             aNeighbours.mLast);
+                             aNeighbours.mLast,
+                             aNeighbours.mNextAsksItsTrades);
 
     // A broker row for an action while the files show no units points to missing history. Before
     // a sale with too few units the same holds when no date before it has units.
@@ -1080,6 +1098,7 @@ FirstActionOutcome resolveFirstAction(ResolvedCorporateAction& aAction,
         {
             static_assert(std::is_same_v<Answer, FailureResolutionAnswer> ||
                           std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
+                          std::is_same_v<Answer, IsinChangeAnswer> ||
                           std::is_same_v<Answer, NoOtherActivityAnswer> ||
                           std::is_same_v<Answer, OtherActivityAnswer> ||
                           std::is_same_v<Answer, CapitalGainsAnswer> ||
@@ -1123,16 +1142,18 @@ const AppliedCorporateAction* appliedActionOf(const FifoIsinResult& aPool,
     return nullptr;
 }
 
-/// Tells whether a loss sale of the selected year has its 30-day window up to aDate or later, so
-/// the loss rule needs an action on that date. Units past the holding period are not checked.
+/// Tells whether a loss sale of the selected year has its 30-day window, with the days a broker
+/// may book an action late, up to aDate or later, so the loss rule needs an action on that date:
+/// an action may have taken effect inside the window and be booked up to
+/// kBrokerDateMarginDays after its end. Units past the holding period are not checked.
 bool isInLossWindow(const FifoIsinResult& aPool, Date aDate) {
-    return std::any_of(aPool.mMatches.begin(),
-                       aPool.mMatches.end(),
-                       [aDate](const FifoMatch& aMatch) {
-                           return aMatch.mGainTicks.numerator() < 0 &&
-                                  !isPastHoldingPeriod(aMatch) &&
-                                  aMatch.mSaleDate + DayDuration{kLossWindowDays} >= aDate;
-                       });
+    return std::any_of(
+        aPool.mMatches.begin(),
+        aPool.mMatches.end(),
+        [aDate](const FifoMatch& aMatch) {
+            return aMatch.mGainTicks.numerator() < 0 && !isPastHoldingPeriod(aMatch) &&
+                   aMatch.mSaleDate + DayDuration{kLossWindowDays + kBrokerDateMarginDays} >= aDate;
+        });
 }
 
 /// The confirmed action that starts with this action row; the caller knows it exists.
@@ -1147,7 +1168,8 @@ confirmedActionOf(const std::vector<ConfirmedCorporateAction>& aConfirmedActions
 }
 
 /// Marks an action that the pool applied, or keeps for the loss rule, and adds the warning that
-/// the user supplied its ratio.
+/// the user supplied its ratio. A row that carries its ratio from the start (an answered ISIN
+/// change) has its own warning from that stage, so it gets none here.
 void markApplied(ResolvedCorporateAction& aAction,
                  const AppliedCorporateAction& aApplied,
                  const std::vector<ConfirmedCorporateAction>& aConfirmedActions,
@@ -1158,6 +1180,11 @@ void markApplied(ResolvedCorporateAction& aAction,
     aAction.mState = CorporateActionState::Applied;
     aAction.mRatio = confirmed.mRatio;
     aAction.mConfirmedDate = aApplied.mEffectiveDate;
+
+    if (actionOf(aInstruments, aApplied.mEvents.front()).mRatio)
+    {
+        return;
+    }
 
     // A warning, so the result shows beside the download that the broker did not give the ratio.
     auto diagnostic = actionDiagnostic(
@@ -1413,7 +1440,11 @@ CorporateActionResolver::resolve(const MergedStatement& aStatement,
                     pool,
                     instruments,
                     aLedger,
-                    {.mPrevious = previousDate, .mNext = nextActionDate, .mLast = lastDate},
+                    {.mPrevious = previousDate,
+                     .mNext = nextActionDate,
+                     .mLast = lastDate,
+                     .mNextAsksItsTrades =
+                         nextActionDate && !hasMerger(instruments, groups[position + 1].mEvents)},
                     aDecisions,
                     result);
 
@@ -1492,6 +1523,25 @@ CapitalPools matchCapitalPools(const MergedStatement& aStatement,
     std::vector<ConfirmedCorporateAction> confirmed;
     std::vector<QuantityCorrection> corrections;
     std::optional<MergedStatement> corrected;
+
+    // A row with a verified ratio (the ISIN change stage leaves one for a ratio other than 1 / 1)
+    // is confirmed from the start, with the date of its row.
+    for (std::size_t instrument = 0; instrument < instruments.size(); ++instrument)
+    {
+        for (std::size_t row = 0; row < instruments[instrument].mCorporateActions.size(); ++row)
+        {
+            const CorporateAction& action = instruments[instrument].mCorporateActions[row];
+
+            if (action.mRatio)
+            {
+                confirmed.push_back({
+                    .mEvents = {{StatementEventKind::CorporateAction, instrument, row}},
+                    .mRatio = *action.mRatio,
+                    .mEffectiveDate = action.mMetadata.mTaxDate,
+                });
+            }
+        }
+    }
 
     // A round that confirms nothing new and corrects nothing returns. An action is confirmed once
     // and a sale is corrected once, so one round per action row and sale and a last one are

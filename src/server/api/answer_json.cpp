@@ -132,6 +132,41 @@ Parsed ratioFrom(const Json& aJson) {
     };
 }
 
+/// The answer to an ISIN change question: `"different_issuer"`, or the ratio and the date,
+/// `{"newShares": 1, "oldShares": 1, "effectiveDate": "2024-03-04"}`. The session checks them.
+Parsed isinChangeFrom(const Json& aJson) {
+    if (!aJson.is_object())
+    {
+        return fromWords(aJson, {{"different_issuer", IsinChangeAnswer{}}});
+    }
+
+    if (!hasExactKeys(aJson, {"newShares", "oldShares", "effectiveDate"}))
+    {
+        return std::nullopt;
+    }
+
+    const std::optional<std::int64_t> newShares = wholeNumberFrom(aJson["newShares"]);
+    const std::optional<std::int64_t> oldShares = wholeNumberFrom(aJson["oldShares"]);
+
+    if (!newShares || !oldShares || !aJson["effectiveDate"].is_string())
+    {
+        return std::nullopt;
+    }
+
+    const std::optional<Date> date =
+        parseCalendarDate(aJson["effectiveDate"].get_ref<const std::string&>());
+
+    if (!date)
+    {
+        return std::nullopt;
+    }
+
+    return IsinChangeAnswer{.mSameIssuer = true,
+                            .mNewShares = *newShares,
+                            .mOldShares = *oldShares,
+                            .mEffectiveDate = *date};
+}
+
 /// The answer to an identity question: `{"type": "grouping", "actionOfRow": [1, 1, 2]}`, one
 /// whole number from 1 for each row. The session checks the count and the numbers.
 Parsed groupingFrom(const Json& aJson) {
@@ -242,6 +277,10 @@ Parsed answerFor(const Json& aJson, const DecisionRequest& aRequest) {
         else if constexpr (std::is_same_v<Data, CorporateActionIdentityQuestion>)
         {
             return groupingFrom(aJson);
+        }
+        else if constexpr (std::is_same_v<Data, IsinChangeQuestion>)
+        {
+            return isinChangeFrom(aJson);
         }
         else if constexpr (std::is_same_v<Data, TaxClassificationQuestion>)
         {

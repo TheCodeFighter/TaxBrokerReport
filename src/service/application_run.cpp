@@ -6,6 +6,7 @@
 #include "processors/capital_gains_report_builder.hpp"
 #include "processors/capital_report_gates.hpp"
 #include "processors/corporate_actions.hpp"
+#include "processors/isin_change.hpp"
 #include "processors/failure_resolution_stage.hpp"
 #include "processors/fee_summary.hpp"
 #include "processors/fifo_matcher.hpp"
@@ -309,10 +310,26 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
         return failed;
     }
 
-    // The classification comes first: the instruments it leaves out are not part of the capital
-    // stages.
-    auto ledger = *aPrepared.mLedger;
-    const auto& statement = aPrepared.mMerged.mStatement;
+    // The ISIN changes come first: after an answered one the old lots are under the new ISIN, so
+    // the statement and its ledger are made again from it. The new statement is moved in and the
+    // merge diagnostics stay with the prepared result, which the stages below read.
+    IsinChangeResult isinChanges =
+        applyIsinChanges(aPrepared.mMerged.mStatement, *aPrepared.mLedger, aDecisions);
+    std::optional<TaxProcessingResult> carriedOut;
+
+    if (isinChanges.mStatement)
+    {
+        carriedOut = TaxProcessor::prepareReportingYear(
+            {aRequest.mReportingYear,
+             StatementMergeResult{.mStatement = std::move(*isinChanges.mStatement)}});
+    }
+
+    // The classification comes next: the instruments it leaves out are not part of the capital
+    // stages. The ledger is changed below, so it is copied, unless the carried-out one is moved.
+    ReportingYearLedger ledger =
+        carriedOut ? std::move(*carriedOut->mLedger) : ReportingYearLedger{*aPrepared.mLedger};
+    const MergedStatement& statement =
+        carriedOut ? carriedOut->mMerged.mStatement : aPrepared.mMerged.mStatement;
     auto classification =
         TaxClassifier::classify(statement, ledger, aPrepared.mMerged.mDiagnostics, aDecisions);
 
@@ -360,6 +377,7 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
               conversion.mDiagnostics.end(),
               std::back_inserter(processing));
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
+    appendStageOutput(input, std::move(isinChanges.mDiagnostics), std::move(isinChanges.mRequests));
     appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
     appendStageOutput(input, std::move(quantities.mDiagnostics), std::move(quantities.mRequests));
     appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));

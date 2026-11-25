@@ -2899,4 +2899,278 @@ TEST(FifoMatcherTest, AFifoResultWithAnotherCountOfPoolsIsAnInternalError) {
     EXPECT_THROW((void)fifoPoolAt(fifo, instruments, 0), std::logic_error);
 }
 
+// Takeover for cash: the broker books it as a corporate action, the app treats it as a sale.
+
+TEST(FifoMatcherTest, ACashMergerOfAllUnitsIsASaleWithAWarning) {
+    // 10 units bought at EUR 10 and taken over for EUR 12 each on 2024-06-03.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments =
+        {
+            {
+                .mName = "Synthetic Share",
+                .mIsin = "XX0000000001",
+                .mTransactions =
+                    {
+                        {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                         .mTradeSide = TradeSide::Buy,
+                         .mUnitPrice = 1'000'000'000, // EUR 10
+                         .mUnits = 1'000'000'000,     // 10 units
+                         .mCurrency = Currency::EUR},
+                        {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                                       .mSources = {{.mBroker = Broker::InteractiveBrokers,
+                                                     .mFilename =
+                                                         SourceFilename::fromPath("ibkr.xml"),
+                                                     .mSourceRow = 4,
+                                                     .mInputSequence = {0, 1}}}},
+                         .mTradeSide = TradeSide::Sell,
+                         .mUnitPrice = 1'200'000'000, // EUR 12
+                         .mUnits = 1'000'000'000,     // 10 units
+                         .mCurrency = Currency::EUR,
+                         .mFromCashMerger = true},
+                    },
+            }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+
+    const auto& isin = result.mIsins.at(0);
+
+    EXPECT_EQ(isin.mStatus, FifoIsinStatus::Matched);
+    EXPECT_TRUE(isin.mOpenLots.empty());
+    ASSERT_EQ(isin.mMatches.size(), 1U);
+    EXPECT_EQ(isin.mMatches.at(0).mGainTicks, ticks(200'000'000'000'000'000)); // 10 * (12 - 10)
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = result.mDiagnostics.at(0);
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(diagnostic.mCode, ProcessingDiagnosticCode::CorporateActionApplied);
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::CorporateActionAppliedCashMerger);
+    EXPECT_EQ(diagnostic.mMessageParams,
+              (std::vector<MessageParam>{textParam("saleDate", "2024-06-03")}));
+    EXPECT_EQ(diagnostic.mContext.mStage, PipelineStage::CorporateAction);
+    EXPECT_EQ(diagnostic.mContext.mAffectedReports,
+              (std::vector<ReportType>{ReportType::CapitalGains}));
+    EXPECT_EQ(diagnostic.mContext.mTaxDate, day("2024-06-03"));
+    EXPECT_EQ(diagnostic.mContext.mInstrumentName, "Synthetic Share");
+    EXPECT_EQ(diagnostic.mContext.mIsin, "XX0000000001");
+    ASSERT_EQ(diagnostic.mContext.mSources.size(), 1U);
+    EXPECT_EQ(diagnostic.mContext.mSources.at(0).mSourceRow, 4U);
+}
+
+TEST(FifoMatcherTest, ACashMergerOfAnEarlierYearGivesNoWarning) {
+    // The takeover is in 2023 and uses all units: nothing to report or warn about for 2024.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2023-06-03")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR,
+                 .mFromCashMerger = true},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::Matched);
+    EXPECT_TRUE(result.mIsins.at(0).mMatches.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(FifoMatcherTest, UnitsLeftAfterACashMergerStopThePool) {
+    // 10 units bought, the takeover pays for 6: 4 units are still held, which a takeover for all
+    // units cannot leave.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 600'000'000,       // 6 units
+                 .mCurrency = Currency::EUR,
+                 .mFromCashMerger = true},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::NumericFailure);
+    EXPECT_EQ(result.mIsins.at(0).mStoppedAt,
+              (StatementEventReference{StatementEventKind::Trade, 0, 1}));
+
+    // The warning of the takeover first, then the error.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionAppliedCashMerger);
+
+    const auto& error = result.mDiagnostics.at(1);
+
+    EXPECT_EQ(error.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(error.mCode, ProcessingDiagnosticCode::CorporateActionInconsistent);
+    EXPECT_EQ(error.mMessageKey, MessageKey::CorporateActionInconsistentUnitsLeftAfterCashMerger);
+    EXPECT_EQ(error.mContext.mStage, PipelineStage::CorporateAction);
+    EXPECT_EQ(error.mContext.mIsin, "XX0000000001");
+    EXPECT_EQ(error.mContext.mTaxDate, day("2024-06-03"));
+}
+
+TEST(FifoMatcherTest, UnitsLeftAfterACashMergerOfAnEarlierYearStillStopThePool) {
+    // The error does not depend on the year of the takeover: the pool is wrong for every later
+    // year too, but only the selected year has the warning of the sale.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2023-06-03")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 600'000'000,       // 6 units
+                 .mCurrency = Currency::EUR,
+                 .mFromCashMerger = true},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::NumericFailure);
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::CorporateActionInconsistentUnitsLeftAfterCashMerger);
+}
+
+TEST(FifoMatcherTest, OnlyTheLastRowOfACashMergerOfOneDayChecksTheUnitsLeft) {
+    // Two accounts hold 6 and 4 units. The first row alone leaves 4 units, but the second row of
+    // the same day follows, so only after it the pool is checked: nothing is left.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 600'000'000,       // 6 units
+                 .mCurrency = Currency::EUR,
+                 .mFromCashMerger = true},
+                {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 400'000'000,       // 4 units
+                 .mCurrency = Currency::EUR,
+                 .mFromCashMerger = true},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::Matched);
+    EXPECT_TRUE(result.mIsins.at(0).mOpenLots.empty());
+
+    // One warning for each row of the takeover, no error.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics.at(1).mSeverity, DiagnosticSeverity::Warning);
+}
+
+TEST(FifoMatcherTest, ACashMergerRowOfAnotherDayDoesNotDeferTheCheck) {
+    // The second row of the takeover is a day later, so it is another takeover: after the first
+    // row 4 units are left, and that is an error.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 600'000'000,       // 6 units
+                 .mCurrency = Currency::EUR,
+                 .mFromCashMerger = true},
+                {.mMetadata = {.mTaxDate = day("2024-06-04")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 400'000'000,       // 4 units
+                 .mCurrency = Currency::EUR,
+                 .mFromCashMerger = true},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::NumericFailure);
+    EXPECT_EQ(result.mIsins.at(0).mStoppedAt,
+              (StatementEventReference{StatementEventKind::Trade, 0, 1}));
+}
+
+TEST(FifoMatcherTest, AnOrdinarySaleThatLeavesUnitsGivesNoCashMergerDiagnostic) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-01-10")},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-06-03")},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'200'000'000, // EUR 12
+                 .mUnits = 600'000'000,       // 6 units
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+
+    const auto result = matchYear(merged, 2024);
+
+    ASSERT_EQ(result.mIsins.size(), 1U);
+    EXPECT_EQ(result.mIsins.at(0).mStatus, FifoIsinStatus::Matched);
+    EXPECT_EQ(result.mIsins.at(0).mOpenLots.size(), 1U);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
 } // namespace

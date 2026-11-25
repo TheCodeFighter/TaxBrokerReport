@@ -150,9 +150,22 @@ enum class EventType {
 enum class CorporateActionType {
     Split,
     ReverseSplit,
+    /// Any action the app does not support (a spin-off, rights, a tender, a stock dividend, ...).
     Merger,
-    UnresolvedSplit
+    UnresolvedSplit,
+    /// Units of one ISIN leave and units of another ISIN come in, one action. The user is asked
+    /// whether it is the same issuer, the same kind of share and no cash (see mNewIsin).
+    IsinChange,
+    /// Shares of one company become shares of another, with or without cash. Unsupported.
+    StockMerger
 };
+
+/// True for a row that is not a split or a reverse split. The corporate-action stage never asks
+/// the ratio of such a row; it is unsupported, or an ISIN change that has its own question.
+[[nodiscard]] constexpr bool isNonSplitActionType(CorporateActionType aType) noexcept {
+    return aType == CorporateActionType::Merger || aType == CorporateActionType::StockMerger ||
+           aType == CorporateActionType::IsinChange;
+}
 
 enum class InterestType {
     BondInterest,
@@ -205,8 +218,19 @@ struct CorporateAction {
     /// The broker's own ID of the economic action, shared by all its rows (one per account).
     /// Empty when the export has none. IDs of different brokers are never compared.
     std::optional<std::string> mBrokerActionId;
+    /// For IsinChange on the row of the old ISIN: the ISIN the units become. Empty on every other
+    /// row, also on the row of the new ISIN.
+    std::optional<std::string> mNewIsin;
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
+};
+
+/// The ISIN and name an instrument had when a trade was made.
+struct ListedInstrument {
+    Isin mIsin;
+    std::string mName;
+
+    bool operator==(const ListedInstrument&) const = default;
 };
 
 struct TradeTransaction {
@@ -230,6 +254,12 @@ struct TradeTransaction {
     Money mTransactionTaxPaid{};
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
+    /// True for the units that left the holding in a takeover for cash only: a sale at the cash
+    /// paid, at the date of the broker's action row, not a trade the user made.
+    bool mFromCashMerger{};
+    /// Set only by the ISIN change stage on a trade it moved to the new ISIN: the ISIN and name
+    /// the trade had, under which a sale is listed. Empty on every other trade.
+    std::optional<ListedInstrument> mListedAs;
 };
 
 struct TradeInstrument {

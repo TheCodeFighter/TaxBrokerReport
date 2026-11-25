@@ -22,6 +22,8 @@ export interface TransactionRef {
 export interface LossSale {
   saleDate: string;
   transaction?: TransactionRef;
+  /** Present when the sale was made under another ISIN, before an ISIN change. */
+  soldAs?: { isin: string; name: string };
   saleUnits: string;
   lossUnits: string;
   windowStart: string;
@@ -69,7 +71,7 @@ export interface RatioCheck {
 export interface IdentityRow {
   broker: string;
   date: string;
-  /** `split`, `reverse_split`, `unresolved_split` or `merger`. */
+  /** `split`, `reverse_split`, `unresolved_split`, `merger`, `isin_change` or `stock_merger`. */
   type: string;
   transactionId?: string;
   sourceValue?: string;
@@ -81,6 +83,23 @@ export interface IdentityCheck {
   name: string;
   isin: string;
   rows: IdentityRow[];
+}
+
+/** The rows of an ISIN change: the old ISIN lost units and the new one got them. */
+export interface IsinChangeCheck {
+  oldIsin: string;
+  oldName: string;
+  newIsin: string;
+  newName: string;
+  /** The date of the row of the old ISIN, shown pre-filled. */
+  effectiveDate: string;
+  /** The answer's date is between these two dates, both included. */
+  earliestDate: string;
+  latestDate: string;
+  /** Every row of both ISINs; the value is negative for the units that left. */
+  sources: RatioSource[];
+  /** The units that came in over the units that left, reduced; the only ratio the server accepts. */
+  suggestedRatio?: { newShares: number; oldShares: number };
 }
 
 export interface QuantityCheck {
@@ -199,6 +218,7 @@ export interface DecisionRequest {
   lossCheck?: LossCheck;
   ratioCheck?: RatioCheck;
   identityCheck?: IdentityCheck;
+  isinChangeCheck?: IsinChangeCheck;
   quantityCheck?: QuantityCheck;
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
@@ -223,6 +243,7 @@ export interface Decision {
   lossCheck?: LossCheck;
   ratioCheck?: RatioCheck;
   identityCheck?: IdentityCheck;
+  isinChangeCheck?: IsinChangeCheck;
   quantityCheck?: QuantityCheck;
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
@@ -260,6 +281,7 @@ export type QuestionKind =
   | "loss"
   | "ratio"
   | "identity"
+  | "isinChange"
   | "quantity"
   | "classification"
   | "income"
@@ -274,6 +296,7 @@ export type QuestionKind =
 const questionKinds = new Map<string, QuestionKind>([
   ["loss_eligibility_confirmation_required", "loss"],
   ["corporate_action_identity_required", "identity"],
+  ["corporate_action_isin_change_required", "isinChange"],
   ["corporate_action_ratio_required", "ratio"],
   ["quantity_correction_required", "quantity"],
   ["deposit_interest_total_required", "deposit"],
@@ -519,6 +542,7 @@ export function rejectionTargets(messageKey: string, params: MessageParams): Rej
       return params.field === "newShares" || params.field === "oldShares" ? [params.field] : ["newShares", "oldShares"];
     case "ratio_unchanged":
     case "ratio_out_of_range":
+    case "isin_change_ratio_mismatch":
       return ["newShares", "oldShares"];
     case "later_sale_too_large":
       return ["newShares", "oldShares", "effectiveDate"];

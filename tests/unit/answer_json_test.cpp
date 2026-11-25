@@ -70,6 +70,35 @@ TEST(AnswerJsonTest, RatioQuestionReadsSeparateEventsAndCancel) {
     EXPECT_EQ(fit(R"("cancel")", kRatioRequest), AnswerValue{CancelAnswer{}});
 }
 
+TEST(AnswerJsonTest, IsinChangeQuestionReadsARatioWithItsDateTheWordNoAndCancel) {
+    const DecisionRequest request =
+        requestOf(RequestType::CorporateActionIsinChangeRequired, IsinChangeQuestion{});
+
+    EXPECT_EQ(fit(R"({"newShares":1,"oldShares":1,"effectiveDate":"2024-03-04"})", request),
+              (AnswerValue{IsinChangeAnswer{.mSameIssuer = true,
+                                            .mNewShares = 1,
+                                            .mOldShares = 1,
+                                            .mEffectiveDate = *parseCalendarDate("2024-03-04")}}));
+    EXPECT_EQ(fit(R"("different_issuer")", request), AnswerValue{IsinChangeAnswer{}});
+    EXPECT_EQ(fit(R"("cancel")", request), AnswerValue{CancelAnswer{}});
+}
+
+TEST(AnswerJsonTest, IsinChangeAnswerWithABadShapeIsRefused) {
+    const DecisionRequest request =
+        requestOf(RequestType::CorporateActionIsinChangeRequired, IsinChangeQuestion{});
+
+    // A missing date, an extra key, a text number, a bad date and another word.
+    EXPECT_EQ(fit(R"({"newShares":1,"oldShares":1})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"newShares":1,"oldShares":1,"effectiveDate":"2024-03-04","x":1})", request),
+              std::nullopt);
+    EXPECT_EQ(fit(R"({"newShares":"1","oldShares":1,"effectiveDate":"2024-03-04"})", request),
+              std::nullopt);
+    EXPECT_EQ(fit(R"({"newShares":1,"oldShares":1,"effectiveDate":"2024-13-04"})", request),
+              std::nullopt);
+    EXPECT_EQ(fit(R"("same_issuer")", request), std::nullopt);
+    EXPECT_EQ(fit(R"("separate_events")", request), std::nullopt);
+}
+
 TEST(AnswerJsonTest, IdentityQuestionReadsAGroupingAndCancel) {
     const auto request =
         requestOf(RequestType::CorporateActionIdentityRequired, CorporateActionIdentityQuestion{});
