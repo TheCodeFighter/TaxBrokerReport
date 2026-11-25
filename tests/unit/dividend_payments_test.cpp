@@ -962,8 +962,8 @@ TEST(DividendPaymentsTest, AChangedReferenceRowAsksThePayerChoiceAgain) {
 }
 
 TEST(DividendPaymentsTest, AnotherCatalogueRevisionAsksThePayerChoiceAgain) {
-    // Two disagreeing rows of the upstream catalogue, at revision 1111111 and then at 2222222.
-    // Every fact of both rows is the same; only the revision of the "Payer Y" row differs.
+    // Two disagreeing rows: "Payer Y" from the upstream catalogue at revision 1111111, then at
+    // 2222222, and a "manual" row "Payer X" without a revision. Only that one revision differs.
     const auto catalogue =
         catalogueOf("XX0000000010,Payer Y,TAX-Y,2 Main Street,FR,,,wikidata,ib-edavki,1111111\n"
                     "XX0000000010,Payer X,TAX-X,1 Main Street,DE,,,issuer,manual,\n");
@@ -994,6 +994,8 @@ TEST(DividendPaymentsTest, AnotherCatalogueRevisionAsksThePayerChoiceAgain) {
 
     ASSERT_TRUE(rejections.empty());
     ASSERT_TRUE(run.result().mRequests.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mPayer.mName, std::optional<std::string>{"Payer Y"});
 
     run.start(statement, newerCatalogue, rates);
 
