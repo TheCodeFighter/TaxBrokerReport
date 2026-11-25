@@ -1535,6 +1535,98 @@ TEST(ApplicationResultJsonTest, AnIdentityRequestListsItsRowsInTheOrderOfTheAnsw
                               {"brokerActionId", "S1"}}));
 }
 
+TEST(ApplicationResultJsonTest, AnIsinChangeRequestWritesItsIsinsDatesAndRows) {
+    ApplicationResultInput input{.mReportingYear = 2025};
+
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CorporateActionIsinChangeRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-03-04"),
+                .mIsin = "XX0000000134",
+                .mData =
+                    IsinChangeQuestion{
+                        .mOldIsin = "XX0000000134",
+                        .mOldName = "Old Synthetic Share",
+                        .mNewIsin = "XX0000000135",
+                        .mNewName = "New Synthetic Share",
+                        .mEffectiveDate = day("2024-03-04"),
+                        .mEarliestDate = day("2024-03-04"),
+                        .mLatestDate = day("2024-03-06"),
+                        // Listed out of order: the request sorts the rows by date.
+                        .mSources = {{.mBroker = Broker::InteractiveBrokers,
+                                      .mTransactionId = "synthetic-4",
+                                      .mDate = day("2024-03-06"),
+                                      .mSourceValue = "20"},
+                                     {.mBroker = Broker::InteractiveBrokers,
+                                      .mTransactionId = "synthetic-3",
+                                      .mDate = day("2024-03-04"),
+                                      .mSourceValue = "-20"}},
+                        .mSuggestedRatio = SplitRatio{.mNewShares = 1, .mOldShares = 1},
+                    },
+            },
+    }};
+
+    const nlohmann::json json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const nlohmann::json& request = json.at("requests").at(0);
+    const nlohmann::json& check = request.at("isinChangeCheck");
+
+    EXPECT_EQ(request.at("type"), "corporate_action_isin_change_required");
+    EXPECT_EQ(check.at("oldIsin"), "XX0000000134");
+    EXPECT_EQ(check.at("oldName"), "Old Synthetic Share");
+    EXPECT_EQ(check.at("newIsin"), "XX0000000135");
+    EXPECT_EQ(check.at("newName"), "New Synthetic Share");
+    EXPECT_EQ(check.at("effectiveDate"), "2024-03-04");
+    EXPECT_EQ(check.at("earliestDate"), "2024-03-04");
+    EXPECT_EQ(check.at("latestDate"), "2024-03-06");
+    EXPECT_EQ(check.at("suggestedRatio"), (nlohmann::json{{"newShares", 1}, {"oldShares", 1}}));
+    ASSERT_EQ(check.at("sources").size(), 2U);
+    EXPECT_EQ(check.at("sources").at(0),
+              (nlohmann::json{{"broker", "interactive_brokers"},
+                              {"date", "2024-03-04"},
+                              {"transactionId", "synthetic-3"},
+                              {"sourceValue", "-20"}}));
+}
+
+TEST(ApplicationResultJsonTest, AnIsinChangeAnswerIsWrittenAsARatioOrTheWordNo) {
+    ApplicationResult result =
+        ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2025});
+    const IsinChangeQuestion question{
+        .mOldIsin = "XX0000000134",
+        .mOldName = "Old Synthetic Share",
+        .mNewIsin = "XX0000000135",
+        .mNewName = "New Synthetic Share",
+        .mEffectiveDate = day("2024-03-04"),
+        .mEarliestDate = day("2024-03-04"),
+        .mLatestDate = day("2024-03-04"),
+        .mSources = {{.mBroker = Broker::InteractiveBrokers, .mDate = day("2024-03-04")},
+                     {.mBroker = Broker::InteractiveBrokers, .mDate = day("2024-03-04")}},
+    };
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::CorporateActionIsinChangeRequired,
+                         .mData = question,
+                         .mAnswer = IsinChangeAnswer{.mSameIssuer = true,
+                                                     .mNewShares = 2,
+                                                     .mOldShares = 1,
+                                                     .mEffectiveDate = day("2024-03-04")}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::CorporateActionIsinChangeRequired,
+                         .mData = question,
+                         .mAnswer = IsinChangeAnswer{}},
+    };
+
+    const nlohmann::json json = nlohmann::json::parse(api::serializeApplicationResultJson(result));
+
+    EXPECT_EQ(
+        json.at("decisions").at(0).at("answer"),
+        (nlohmann::json{{"newShares", 2}, {"oldShares", 1}, {"effectiveDate", "2024-03-04"}}));
+    EXPECT_EQ(json.at("decisions").at(1).at("answer"), "different_issuer");
+    EXPECT_EQ(json.at("decisions").at(0).at("isinChangeCheck").at("newIsin"), "XX0000000135");
+}
+
 TEST(ApplicationResultJsonTest, AnIdentityRequestNamesEveryRowType) {
     ApplicationResultInput input{.mReportingYear = 2024};
 
@@ -1556,7 +1648,15 @@ TEST(ApplicationResultJsonTest, AnIdentityRequestNamesEveryRowType) {
                                   {.mBroker = Broker::TradeRepublic,
                                    .mTransactionId = "synthetic-split-2",
                                    .mDate = day("2024-11-11"),
-                                   .mType = CorporateActionType::Merger}},
+                                   .mType = CorporateActionType::Merger},
+                                  {.mBroker = Broker::TradeRepublic,
+                                   .mTransactionId = "synthetic-split-3",
+                                   .mDate = day("2024-11-12"),
+                                   .mType = CorporateActionType::IsinChange},
+                                  {.mBroker = Broker::TradeRepublic,
+                                   .mTransactionId = "synthetic-split-4",
+                                   .mDate = day("2024-11-13"),
+                                   .mType = CorporateActionType::StockMerger}},
                     },
             },
     }};
@@ -1564,9 +1664,11 @@ TEST(ApplicationResultJsonTest, AnIdentityRequestNamesEveryRowType) {
     const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
     const auto& rows = json.at("requests").at(0).at("identityCheck").at("rows");
 
-    ASSERT_EQ(rows.size(), 2U);
+    ASSERT_EQ(rows.size(), 4U);
     EXPECT_EQ(rows.at(0).at("type"), "reverse_split");
     EXPECT_EQ(rows.at(1).at("type"), "merger");
+    EXPECT_EQ(rows.at(2).at("type"), "isin_change");
+    EXPECT_EQ(rows.at(3).at("type"), "stock_merger");
 }
 
 TEST(ApplicationResultJsonTest, AGroupingAnswerIsListedWithItsRows) {
@@ -1693,6 +1795,43 @@ TEST(ApplicationResultJsonTest, ALossRequestHasItsOptionsAndItsSales) {
               (nlohmann::ordered_json{"no_other_activity", "other_activity"}));
     EXPECT_EQ(request.at("lossCheck"), expected);
     EXPECT_FALSE(request.contains("investments"));
+}
+
+TEST(ApplicationResultJsonTest, ALossSaleMadeBeforeAnIsinChangeHasItsOldIsinAndName) {
+    // The question is about the new ISIN; the one sale was listed under the old one.
+    ApplicationResultInput input{.mReportingYear = 2024};
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::LossEligibilityConfirmationRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-02-20"),
+                .mIsin = "XX0000000135",
+                .mData =
+                    LossEligibilityQuestion{
+                        .mIsin = "XX0000000135",
+                        .mName = "New Synthetic Inc",
+                        .mSales = {LossSaleFacts{
+                            .mSaleDate = day("2024-02-20"),
+                            .mSaleUnits = 1'000'000'000, // 10 units
+                            .mLossUnits = 1'000'000'000,
+                            .mWindowStart = day("2024-01-21"),
+                            .mWindowEnd = day("2024-03-20"),
+                            .mOpenUnits = 1'000'000'000,
+                            .mSoldAs = ListedInstrument{.mIsin = "XX0000000134",
+                                                        .mName = "Old Synthetic Inc"},
+                        }},
+                    },
+            },
+    }};
+
+    const nlohmann::ordered_json json = nlohmann::ordered_json::parse(
+        api::serializeApplicationResultJson(ApplicationResultBuilder::build(std::move(input))));
+    const nlohmann::ordered_json& sale =
+        json.at("requests").at(0).at("lossCheck").at("sales").at(0);
+
+    EXPECT_EQ(sale.at("soldAs"),
+              (nlohmann::ordered_json{{"isin", "XX0000000134"}, {"name", "Old Synthetic Inc"}}));
 }
 
 TEST(ApplicationResultJsonTest, ARecordedLossAnswerIsListedWithItsQuestion) {

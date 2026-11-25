@@ -112,11 +112,13 @@ describe("groupingAnswer", () => {
 });
 
 describe("rowTypeText", () => {
-  it("names the four row types and leaves an unknown one to the caller", () => {
+  it("names the six row types and leaves an unknown one to the caller", () => {
     expect(rowTypeText("split")).toBe("actionSplit");
     expect(rowTypeText("reverse_split")).toBe("actionReverseSplit");
     expect(rowTypeText("unresolved_split")).toBe("actionUnresolvedSplit");
     expect(rowTypeText("merger")).toBe("actionMerger");
+    expect(rowTypeText("isin_change")).toBe("actionIsinChange");
+    expect(rowTypeText("stock_merger")).toBe("actionStockMerger");
     expect(rowTypeText("spin_off")).toBeUndefined();
   });
 });

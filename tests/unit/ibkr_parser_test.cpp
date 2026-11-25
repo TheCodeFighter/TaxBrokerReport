@@ -1165,18 +1165,26 @@ TEST(IbkrParserContractExampleTest, EveryKindOfRowGivesItsEvent) {
         actions += instrument.mCorporateActions.size();
     }
 
-    EXPECT_EQ(trades, 7U);                            // 1001, 1002, 1003, 1008, 1009, 1010, 5001
-    EXPECT_EQ(actions, 4U);                           // splits 3001, 5002, 3004 and the merger 3002
-    EXPECT_EQ(statement.mBondRedemptions.size(), 1U); // 3003
+    EXPECT_EQ(trades, 8U);  // 1001, 1002, 1003, 1008, 1009, 1010, 5001 and the cash merger 3002
+    EXPECT_EQ(actions, 3U); // the splits 3001, 5002 and 3004
+    EXPECT_EQ(statement.mBondRedemptions.size(), 1U);   // 3003
     EXPECT_EQ(statement.mIncomePaymentRows.size(), 7U); // 2001-2006 and 2013
     EXPECT_EQ(statement.mLeftOutRows.size(), 2U); // the option 1004 and the margin interest 2008
     EXPECT_EQ(statement.mInterestInstruments.size(), 2U);
 
-    const auto* merger = findAction(result, "3002");
+    // The takeover for cash is a sale of the 10 units at USD 500.
+    const TradeTransaction* merger = findTrade(result, "3002");
 
     ASSERT_NE(merger, nullptr);
 
-    EXPECT_EQ(merger->mType, CorporateActionType::Merger); // the type the processor blocks
+    EXPECT_EQ(merger->mTradeSide, TradeSide::Sell);
+    EXPECT_TRUE(merger->mFromCashMerger);
+    EXPECT_EQ(merger->mMetadata.mTaxDate, date(2024, 9, 3));
+    EXPECT_EQ(merger->mUnits, 1'000'000'000);     // 10 units at 8 decimals
+    EXPECT_EQ(merger->mUnitPrice, 5'000'000'000); // USD 500 / 10 units = USD 50 at 8 decimals
+    EXPECT_EQ(merger->mAmount, std::optional<taxbroker::Money>{5'000'000}); // USD 500 at 4 decimals
+    EXPECT_EQ(merger->mFeePaid, 0);
+    EXPECT_EQ(merger->mCurrency, Currency::USD);
 }
 
 TEST(IbkrParserContractExampleTest, TheDiagnosticsAreTheFourOfTheReadme) {
@@ -1853,7 +1861,7 @@ TEST(IbkrParserActionRowTest, UnknownCodeIsTheUnsupportedTypeToo) {
     EXPECT_TRUE(result.mDiagnostics.empty());
 }
 
-TEST(IbkrParserActionRowTest, SplitThatChangesTheIsinIsUnsupported) {
+TEST(IbkrParserActionRowTest, SplitThatChangesTheIsinIsAnIsinChange) {
     // Two rows with one action ID and two ISINs: the old ISIN leaves and the new one arrives.
     const auto result = parseText(statementWithRows(
         "",
@@ -1863,8 +1871,152 @@ TEST(IbkrParserActionRowTest, SplitThatChangesTheIsinIsUnsupported) {
 
     ASSERT_NE(findAction(result, "S3"), nullptr);
     ASSERT_NE(findAction(result, "S4"), nullptr);
-    EXPECT_EQ(findAction(result, "S3")->mType, CorporateActionType::Merger);
-    EXPECT_EQ(findAction(result, "S4")->mType, CorporateActionType::Merger);
+    EXPECT_EQ(findAction(result, "S3")->mType, CorporateActionType::IsinChange);
+    EXPECT_EQ(findAction(result, "S4")->mType, CorporateActionType::IsinChange);
+    EXPECT_EQ(findAction(result, "S3")->mNewIsin, std::optional<std::string>{"US0000000044"});
+    EXPECT_FALSE(findAction(result, "S4")->mNewIsin.has_value()); // only the old row names it
+}
+
+TEST(IbkrParserActionRowTest, SplitOfThreeIsinsInOneActionIsUnsupported) {
+    // One ISIN out and two in: not one old and one new ISIN, so no ISIN change.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="S11" actionID="X11" type="FS" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240801;202500" quantity="-10" proceeds="0"/>
+        <CorporateAction transactionID="S12" actionID="X11" type="FS" assetCategory="STK" description="NEW SYNTHETIC INC" isin="US0000000044" currency="USD" dateTime="20240801;202500" quantity="40" proceeds="0"/>
+        <CorporateAction transactionID="S13" actionID="X11" type="FS" assetCategory="STK" description="THIRD SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240801;202500" quantity="5" proceeds="0"/>)",
+        ""));
+
+    EXPECT_EQ(findAction(result, "S11")->mType, CorporateActionType::Merger);
+    EXPECT_EQ(findAction(result, "S12")->mType, CorporateActionType::Merger);
+    EXPECT_EQ(findAction(result, "S13")->mType, CorporateActionType::Merger);
+}
+
+TEST(IbkrParserActionRowTest, IssueChangeRowsAreOneIsinChange) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="I1" actionID="C1" type="IC" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240304;202500" quantity="-20" proceeds="0"/>
+        <CorporateAction transactionID="I2" actionID="C1" type="IC" assetCategory="STK" description="NEW SYNTHETIC INC" isin="US0000000044" currency="USD" dateTime="20240304;202500" quantity="20" proceeds="0"/>)",
+        ""));
+
+    ASSERT_NE(findAction(result, "I1"), nullptr);
+    ASSERT_NE(findAction(result, "I2"), nullptr);
+    EXPECT_EQ(findAction(result, "I1")->mType, CorporateActionType::IsinChange);
+    EXPECT_EQ(findAction(result, "I2")->mType, CorporateActionType::IsinChange);
+    EXPECT_EQ(findAction(result, "I1")->mUnitsDelta, -2'000'000'000); // -20 units at 8 decimals
+    EXPECT_EQ(findAction(result, "I1")->mNewIsin, std::optional<std::string>{"US0000000044"});
+    EXPECT_FALSE(findAction(result, "I2")->mNewIsin.has_value());
+}
+
+TEST(IbkrParserActionRowTest, IssueChangeOfOneIsinIsUnsupported) {
+    // An issue change with the rows of one ISIN only: the new ISIN is not known.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="I3" actionID="C2" type="IC" assetCategory="STK" description="SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240304;202500" quantity="-20" proceeds="0"/>)",
+        ""));
+
+    EXPECT_EQ(findAction(result, "I3")->mType, CorporateActionType::Merger);
+    EXPECT_FALSE(findAction(result, "I3")->mNewIsin.has_value());
+}
+
+TEST(IbkrParserActionRowTest, MergerWithSharesIsAStockMerger) {
+    // The units of one ISIN leave and units of another ISIN come in, with one action ID.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M1" actionID="M9" type="TC" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240903;202500" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction transactionID="M2" actionID="M9" type="TC" assetCategory="STK" description="OTHER SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="4" proceeds="0" value="0"/>)",
+        ""));
+
+    EXPECT_EQ(findAction(result, "M1")->mType, CorporateActionType::StockMerger);
+    EXPECT_EQ(findAction(result, "M2")->mType, CorporateActionType::StockMerger);
+    EXPECT_EQ(findTrade(result, "M1"), nullptr); // no sale is made up
+}
+
+TEST(IbkrParserActionRowTest, CashMergerRowIsStoredAsASaleAtItsProceeds) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M3" actionID="M9001" type="TC" assetCategory="STK" description="SYNTHETIC CASH TARGET INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-10" proceeds="500" value="500"/>)",
+        ""));
+
+    const TradeTransaction* sale = findTrade(result, "M3");
+
+    ASSERT_NE(sale, nullptr);
+
+    EXPECT_EQ(findAction(result, "M3"), nullptr);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_EQ(sale->mTradeSide, TradeSide::Sell);
+    EXPECT_TRUE(sale->mFromCashMerger);
+    EXPECT_EQ(sale->mUnits, 1'000'000'000);     // 10 units at 8 decimals
+    EXPECT_EQ(sale->mUnitPrice, 5'000'000'000); // USD 500 / 10 units = USD 50 at 8 decimals
+    EXPECT_EQ(sale->mAmount, std::optional<taxbroker::Money>{5'000'000}); // USD 500 at 4 decimals
+    EXPECT_EQ(sale->mCurrency, Currency::USD);
+}
+
+TEST(IbkrParserActionRowTest, CashMergerUnitPriceIsRoundedOnceToEightDecimals) {
+    // USD 100 / 3 units = 33.33333333... rounds to 33.33333333 at 8 decimals.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M4" actionID="M9002" type="TC" assetCategory="STK" description="SYNTHETIC CASH TARGET INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-3" proceeds="100" value="100"/>)",
+        ""));
+
+    const TradeTransaction* sale = findTrade(result, "M4");
+
+    ASSERT_NE(sale, nullptr);
+
+    EXPECT_EQ(sale->mUnitPrice, 3'333'333'333);
+    EXPECT_EQ(sale->mAmount, std::optional<taxbroker::Money>{1'000'000}); // USD 100 at 4 decimals
+}
+
+TEST(IbkrParserActionRowTest, CashMergerWithoutProceedsIsRejected) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M5" actionID="M9003" type="TC" assetCategory="STK" description="SYNTHETIC CASH TARGET INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-10" proceeds="" value=""/>)",
+        ""));
+
+    ASSERT_EQ(diagnosticsOf(result, "M5").size(), 1U);
+
+    EXPECT_EQ(findTrade(result, "M5"), nullptr);
+    EXPECT_EQ(findAction(result, "M5"), nullptr);
+    EXPECT_EQ(diagnosticsOf(result, "M5").front()->mField, "proceeds");
+}
+
+TEST(IbkrParserActionRowTest, CashMergerWithNegativeProceedsIsRejected) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M6" actionID="M9004" type="TC" assetCategory="STK" description="SYNTHETIC CASH TARGET INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-10" proceeds="-500" value="-500"/>)",
+        ""));
+
+    ASSERT_EQ(diagnosticsOf(result, "M6").size(), 1U);
+
+    EXPECT_EQ(findTrade(result, "M6"), nullptr);
+    EXPECT_EQ(diagnosticsOf(result, "M6").front()->mField, "proceeds");
+}
+
+TEST(IbkrParserActionRowTest, MergerWithoutCashOrWithGainedUnitsStaysUnsupported) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M7" actionID="M9005" type="TC" assetCategory="STK" description="SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction transactionID="M8" actionID="M9006" type="TC" assetCategory="STK" description="SYNTHETIC INC" isin="US0000000069" currency="USD" dateTime="20240903;202500" quantity="10" proceeds="500" value="500"/>)",
+        ""));
+
+    // M7: the units left and no cash came. M8: units came in and no units left (one ISIN only).
+    EXPECT_EQ(findAction(result, "M7")->mType, CorporateActionType::Merger);
+    EXPECT_EQ(findAction(result, "M8")->mType, CorporateActionType::Merger);
+    EXPECT_EQ(findTrade(result, "M7"), nullptr);
+    EXPECT_EQ(findTrade(result, "M8"), nullptr);
+}
+
+TEST(IbkrParserActionRowTest, MergerWithCashButWithoutAnActionIdStaysUnsupported) {
+    // Without an action ID a row of shares of another ISIN in the same merger cannot be seen, so
+    // the cash may be only part of what the units were exchanged for.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M9" actionID="" type="TC" assetCategory="STK" description="SYNTHETIC CASH TARGET INC" isin="US0000000051" currency="USD" dateTime="20240903;202500" quantity="-10" proceeds="500" value="500"/>)",
+        ""));
+
+    ASSERT_NE(findAction(result, "M9"), nullptr);
+
+    EXPECT_EQ(findAction(result, "M9")->mType, CorporateActionType::Merger);
+    EXPECT_EQ(findTrade(result, "M9"), nullptr);
 }
 
 TEST(IbkrParserActionRowTest, SplitsOfTwoIsinsWithoutAnActionIdAreNotGrouped) {

@@ -2556,7 +2556,9 @@ TEST(LossEligibilityTest, ACorporateActionOnTheLastDayOfTheWindowStopsTheCheck) 
 }
 
 TEST(LossEligibilityTest, ACorporateActionAfterTheWindowDoesNotStopTheCheck) {
-    // The split of 2025-01-20 is one day after the window of the 2024-12-20 loss.
+    // The window of the 2024-12-20 loss ends on 2025-01-19, and a broker may book an action up to
+    // 10 days after it took effect, so up to 2025-01-29. The split row of 2025-01-30 is after
+    // both.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Share",
@@ -2581,7 +2583,7 @@ TEST(LossEligibilityTest, ACorporateActionAfterTheWindowDoesNotStopTheCheck) {
             },
         .mCorporateActions =
             {
-                {.mMetadata = {.mTaxDate = day("2025-01-20")},
+                {.mMetadata = {.mTaxDate = day("2025-01-30")},
                  .mType = CorporateActionType::UnresolvedSplit,
                  .mUnitsDelta = 10'000'000'000}, // 100 units
             },

@@ -75,6 +75,7 @@ describe("question kinds", () => {
     expect(questionKind({ type: "loss_eligibility_confirmation_required" })).toBe("loss");
     expect(questionKind({ type: "corporate_action_ratio_required" })).toBe("ratio");
     expect(questionKind({ type: "corporate_action_identity_required" })).toBe("identity");
+    expect(questionKind({ type: "corporate_action_isin_change_required" })).toBe("isinChange");
     expect(questionKind({ type: "quantity_correction_required" })).toBe("quantity");
     expect(questionKind({ type: "deposit_interest_total_required" })).toBe("deposit");
   });
@@ -400,6 +401,7 @@ describe("rejectionTargets", () => {
   it("marks both numbers for an unchanged or an out-of-range ratio", () => {
     expect(rejectionTargets("answer_rejected.ratio_unchanged", {})).toEqual(["newShares", "oldShares"]);
     expect(rejectionTargets("answer_rejected.ratio_out_of_range", {})).toEqual(["newShares", "oldShares"]);
+    expect(rejectionTargets("answer_rejected.isin_change_ratio_mismatch", {})).toEqual(["newShares", "oldShares"]);
   });
 
   it("marks the ratio and the date when a later sale is too large", () => {

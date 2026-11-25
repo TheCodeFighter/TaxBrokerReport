@@ -144,6 +144,50 @@ Your answer (yes, no or cancel):
     EXPECT_EQ(session.result().mDecisions[0].mAnswer, AnswerValue{NoOtherActivityAnswer{}});
 }
 
+TEST(DecisionPromptsTest, ALossQuestionNamesTheIsinOfASaleMadeBeforeAnIsinChange) {
+    // The question is about the new ISIN; the sale was made as the old one and says so.
+    DecisionSession session;
+    session.start(asksUntilAnswered({DecisionQuestion{
+        .mType = RequestType::LossEligibilityConfirmationRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mIsin = "XX0000000135",
+        .mData =
+            LossEligibilityQuestion{
+                .mIsin = "XX0000000135",
+                .mName = "New Synthetic Inc",
+                .mSales =
+                    {
+                        {
+                            .mSaleDate = day(2024, 2, 20),
+                            .mSaleUnits = 1'000'000'000, // 10 units at 8 decimals
+                            .mLossUnits = 1'000'000'000,
+                            .mWindowStart = day(2024, 1, 21),
+                            .mWindowEnd = day(2024, 3, 20),
+                            .mKnownReplacements = {},
+                            .mKnownIneligibleUnits = 0,
+                            .mOpenUnits = 1'000'000'000,
+                            .mSoldAs = ListedInstrument{.mIsin = "XX0000000134",
+                                                        .mName = "Old Synthetic Inc"},
+                        },
+                    },
+            },
+    }}));
+
+    const std::string output = ask(session, "no\n");
+
+    EXPECT_EQ(output,
+              R"(Question request-0001: the 30-day loss rule for XX0000000135 New Synthetic Inc
+  Your files cannot decide the loss of 1 sale:
+    sale 2024-02-20 (sold as XX0000000134 Old Synthetic Inc): 10.0000 units, 10.0000 at a loss, 10.0000 open; window 2024-01-21 to 2024-03-20, no purchase in your files counts against it
+  Within 30 days before or after the sale, did you also buy or sell this investment
+  anywhere that is not in your files (another broker, another account, or after the
+  export)? yes: the open loss is not deductible (F10 false). no: it is deductible.
+  cancel: no answer, and the sales cannot be reported.
+Your answer (yes, no or cancel):
+
+)");
+}
+
 TEST(DecisionPromptsTest, AnInvalidLossAnswerIsAskedAgainAndCaseAndSpacesDoNotMatter) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{
@@ -484,6 +528,136 @@ TEST(DecisionPromptsTest, AnIdentityQuestionListsTheRowsAndTakesOneNumberForEach
               "row: 1 1");
 }
 
+DecisionQuestion isinChangeQuestionOfOneBroker() {
+    return DecisionQuestion{
+        .mType = RequestType::CorporateActionIsinChangeRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mTaxDate = day(2024, 3, 4),
+        .mIsin = "XX0000000134",
+        .mData =
+            IsinChangeQuestion{
+                .mOldIsin = "XX0000000134",
+                .mOldName = "Old Synthetic Share",
+                .mNewIsin = "XX0000000135",
+                .mNewName = "New Synthetic Share",
+                .mEffectiveDate = day(2024, 3, 4),
+                .mEarliestDate = day(2024, 3, 4),
+                .mLatestDate = day(2024, 3, 6),
+                .mSources = {{.mBroker = Broker::InteractiveBrokers,
+                              .mTransactionId = "synthetic-3",
+                              .mDate = day(2024, 3, 4),
+                              .mSourceValue = "-20"},
+                             {.mBroker = Broker::InteractiveBrokers,
+                              .mTransactionId = "synthetic-4",
+                              .mDate = day(2024, 3, 6),
+                              .mSourceValue = "20"}},
+            },
+    };
+}
+
+TEST(DecisionPromptsTest, AnIsinChangeQuestionListsTheRowsAndTakesYesARatioAndADate) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    // yes, 1 : 1 and the date 2024-03-05, inside the dates of the rows.
+    const std::string output = ask(session, "yes\n1 : 1\n2024-03-05\n");
+
+    EXPECT_TRUE(contains(output,
+                         "the ISIN of Old Synthetic Share (XX0000000134) changed to XX0000000135 "
+                         "(New Synthetic Share) on 2024-03-04\n"));
+    EXPECT_TRUE(contains(output,
+                         "  Source: Interactive Brokers, row of 2024-03-04, transaction "
+                         "synthetic-3, quantity -20\n"));
+    EXPECT_TRUE(contains(output,
+                         "Effective date (YYYY-MM-DD, 2024-03-04 to 2024-03-06, or empty "
+                         "for 2024-03-04):"));
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{IsinChangeAnswer{.mSameIssuer = true,
+                                            .mNewShares = 1,
+                                            .mOldShares = 1,
+                                            .mEffectiveDate = day(2024, 3, 5)}}));
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000134 Old Synthetic Share changed to XX0000000135 on 2024-03-04: same "
+              "company, 1 : 1 from 2024-03-05");
+}
+
+TEST(DecisionPromptsTest, AnEmptyRatioOfAnIsinChangeIsTheRatioOfItsRows) {
+    // The rows show 20 units out and 40 in: 2 new for 1 old.
+    DecisionQuestion question = isinChangeQuestionOfOneBroker();
+    IsinChangeQuestion& data = std::get<IsinChangeQuestion>(question.mData);
+
+    data.mSources.at(1).mSourceValue = "40";
+    data.mSuggestedRatio = SplitRatio{.mNewShares = 2, .mOldShares = 1};
+
+    DecisionSession session;
+    session.start(asksUntilAnswered({question}));
+
+    // yes, an empty ratio line, an empty date line.
+    const std::string output = ask(session, "yes\n\n\n");
+
+    EXPECT_TRUE(contains(output, "  The rows show 2 : 1.\n"));
+    EXPECT_TRUE(contains(output, "Ratio (empty for 2 : 1):"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{IsinChangeAnswer{.mSameIssuer = true,
+                                            .mNewShares = 2,
+                                            .mOldShares = 1,
+                                            .mEffectiveDate = day(2024, 3, 4)}}));
+}
+
+TEST(DecisionPromptsTest, AnEmptyDateOfAnIsinChangeIsTheDateOfTheOldRow) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    ask(session, "yes\n2 : 1\n\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{IsinChangeAnswer{.mSameIssuer = true,
+                                            .mNewShares = 2,
+                                            .mOldShares = 1,
+                                            .mEffectiveDate = day(2024, 3, 4)}}));
+}
+
+TEST(DecisionPromptsTest, NoToAnIsinChangeIsAMergerOfTwoCompanies) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    ask(session, "no\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, (AnswerValue{IsinChangeAnswer{}}));
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000134 Old Synthetic Share changed to XX0000000135 on 2024-03-04: not the "
+              "same company: a merger, not supported yet");
+}
+
+TEST(DecisionPromptsTest, AnUnreadableIsinChangeAnswerIsAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "maybe\nyes\nten\n1 : 1\nsoon\n\n");
+
+    EXPECT_TRUE(contains(output, "Answer yes, no or cancel.\n"));
+    EXPECT_TRUE(contains(output,
+                         "Enter the ratio as new : old, the shares as before -> after, or "
+                         "cancel.\n"));
+    EXPECT_TRUE(contains(output, "Enter the date as YYYY-MM-DD.\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, CancelClosesAnIsinChangeQuestion) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({isinChangeQuestionOfOneBroker()}));
+
+    ask(session, "cancel\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, (AnswerValue{CancelAnswer{}}));
+}
+
 TEST(DecisionPromptsTest, AnIdentityQuestionNamesAReverseSplitAndAMerger) {
     DecisionSession session;
     session.start(asksUntilAnswered({DecisionQuestion{
@@ -501,14 +675,25 @@ TEST(DecisionPromptsTest, AnIdentityQuestionNamesAReverseSplitAndAMerger) {
                           {.mBroker = Broker::TradeRepublic,
                            .mTransactionId = "synthetic-split-2",
                            .mDate = day(2024, 11, 11),
-                           .mType = CorporateActionType::Merger}},
+                           .mType = CorporateActionType::Merger},
+                          {.mBroker = Broker::TradeRepublic,
+                           .mTransactionId = "synthetic-split-3",
+                           .mDate = day(2024, 11, 12),
+                           .mType = CorporateActionType::IsinChange},
+                          {.mBroker = Broker::TradeRepublic,
+                           .mTransactionId = "synthetic-split-4",
+                           .mDate = day(2024, 11, 13),
+                           .mType = CorporateActionType::StockMerger}},
             },
     }}));
 
-    const auto output = ask(session, "1 2\n");
+    const std::string output = ask(session, "1 2 3 4\n");
 
     EXPECT_TRUE(contains(output, "  1. 2024-11-10, Trade Republic, reverse split, transaction"));
     EXPECT_TRUE(contains(output, "  2. 2024-11-11, Trade Republic, merger, transaction"));
+    EXPECT_TRUE(contains(output, "  3. 2024-11-12, Trade Republic, ISIN change, transaction"));
+    EXPECT_TRUE(
+        contains(output, "  4. 2024-11-13, Trade Republic, merger of two companies, transaction"));
 }
 
 TEST(DecisionPromptsTest, AnUnreadableIdentityAnswerIsAskedAgain) {

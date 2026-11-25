@@ -80,6 +80,17 @@ describe("year 2025 of the manual files", () => {
     const ibkrRatio = question(page, "Synthetic US Share (XX0000000115)");
     await answerRatio(ibkrRatio, "2", "1");
 
+    // ISIN change of the renamed share: the same company, 1 : 1 and the date of the rows as they are.
+    const isinChange = question(
+      page,
+      "Synthetic Renamed Share (IBKR) (XX0000000134) → Synthetic Renamed Share (IBKR) (XX0000000135)",
+    );
+    expect(await isinChange.getByRole("button", { name: "Pošlji odgovor" }).isDisabled()).toBe(true);
+    await pickWord(isinChange, "yes");
+    expect(await isinChange.getByRole("textbox", { name: "Nove delnice", exact: true }).inputValue()).toBe("1");
+    expect(await isinChange.getByRole("textbox", { name: "Datum spremembe" }).inputValue()).toBe("2024-03-04");
+    await sendAnswer(isinChange);
+
     // Bond type at maturity of the Interactive Brokers bond: ordinary.
     const ibkrBond = question(page, "Synthetic IB Bond 2025 (XS0000000203)");
     await pickWord(ibkrBond, "ordinary");
@@ -90,7 +101,8 @@ describe("year 2025 of the manual files", () => {
     await pickWord(kdvpFailure, "exclude_failed_instruments");
     await sendAnswer(kdvpFailure);
 
-    // README, 2025: the grouped share is in Doh-KDVP (40 units after both splits) with the warning
+    // README, 2025: the renamed share is in Doh-KDVP under its new ISIN (the warning that the ISIN
+    // change was applied is in the list); the grouped share is in Doh-KDVP (40 units after both splits) with the warning
     // for rows from two files; Doh-KDVP without the missing-history share; Doh-Div 8 rows; Doh-DHO 1 row
     // and no reminder (EUR 1,140 is above the EUR 1,000 limit); Doh-Obr 3 rows.
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
@@ -98,6 +110,11 @@ describe("year 2025 of the manual files", () => {
     expect(
       await resultRegion(page)
         .getByText("Ta naložba ima v letu 2025 vrstice korporacijskih dejanj iz več datotek.")
+        .count(),
+    ).toBe(1);
+    expect(
+      await resultRegion(page)
+        .getByText("ISIN XX0000000134 je 2024-03-04 postal XX0000000135 v razmerju 1 novih za 1 starih enot, kot ste potrdili.")
         .count(),
     ).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");

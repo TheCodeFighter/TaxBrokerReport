@@ -66,13 +66,24 @@ describe("year 2024 of the manual files", () => {
     // Quantity: the units left, which the field already holds.
     await sendAnswer(question(page, "Synthetic Quantity Share (XX0000000109)"));
 
+    // ISIN change of the renamed share (2024 has a sale of each ISIN): the same company, 1 : 1 and
+    // the date of the rows as they are.
+    const isinChange = question(
+      page,
+      "Synthetic Renamed Share (IBKR) (XX0000000134) → Synthetic Renamed Share (IBKR) (XX0000000135)",
+    );
+    await pickWord(isinChange, "yes");
+    expect(await isinChange.getByRole("textbox", { name: "Nove delnice", exact: true }).inputValue()).toBe("1");
+    expect(await isinChange.getByRole("textbox", { name: "Datum spremembe" }).inputValue()).toBe("2024-03-04");
+    await sendAnswer(isinChange);
+
     // Exclusion from Doh-Obr (Bond B). The certificate is a derivative: the parser leaves it out, so
     // Doh-KDVP asks nothing about it.
     const obrFailure = question(page, "Doh-Obr: nadaljevanje brez teh naložb?");
     await pickWord(obrFailure, "exclude_failed_instruments");
     await sendAnswer(obrFailure);
 
-    // README, 2024: Doh-KDVP generated, without the certificate, with the two-broker share; Doh-Div 5 rows; Doh-DHO no data;
+    // README, 2024: Doh-KDVP generated, without the certificate, with the two-broker share, the cash takeover and the renamed share in two lists; Doh-Div 5 rows; Doh-DHO no data;
     // Doh-Obr 3 rows without Bond B; two warnings about left-out derivative rows: 2 rows of the
     // certificate (Trade Republic) and 1 row of the option (Interactive Brokers).
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
@@ -81,6 +92,19 @@ describe("year 2024 of the manual files", () => {
     expect(
       await resultRegion(page)
         .getByText("Ta naložba ima v letu 2024 vrstice korporacijskih dejanj iz več datotek.")
+        .count(),
+    ).toBe(1);
+    // The renamed share is listed twice (the sale before the change under the old ISIN, the one
+    // after it under the new ISIN); the warning that the ISIN change was applied is in the list.
+    expect(
+      await resultRegion(page)
+        .getByText("ISIN XX0000000134 je 2024-03-04 postal XX0000000135 v razmerju 1 novih za 1 starih enot, kot ste potrdili.")
+        .count(),
+    ).toBe(1);
+    // The takeover for cash of the Cash Takeover share is a sale; its date is the row's date.
+    expect(
+      await resultRegion(page)
+        .getByText("Enote te naložbe so bile prevzete za gotovino. Prodaja je datirana 2024-09-03")
         .count(),
     ).toBe(1);
     expect(await page.getByText("Synthetic Index Certificate").count()).toBe(0);

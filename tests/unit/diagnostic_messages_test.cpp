@@ -421,6 +421,33 @@ const std::vector<ExpectedMessage>& expectedMessages() {
          {{"country", MessageParamKind::Text}}},
         {MessageKey::PayerCountryUnresolvedDividend, "payer_country_unresolved.dividend", {}},
         {MessageKey::PayerCountryUnresolvedInterest, "payer_country_unresolved.interest", {}},
+        {MessageKey::UnsupportedCorporateActionStockMerger,
+         "unsupported_corporate_action.stock_merger",
+         {}},
+        {MessageKey::CorporateActionAppliedCashMerger,
+         "corporate_action_applied.cash_merger",
+         {{"saleDate", MessageParamKind::Text}}},
+        {MessageKey::CorporateActionAppliedIsinChange,
+         "corporate_action_applied.isin_change",
+         {{"oldIsin", MessageParamKind::Text},
+          {"newIsin", MessageParamKind::Text},
+          {"newShares", MessageParamKind::Number},
+          {"oldShares", MessageParamKind::Number},
+          {"effectiveDate", MessageParamKind::Text}}},
+        {MessageKey::CorporateActionInconsistentUnitsLeftAfterCashMerger,
+         "corporate_action_inconsistent.units_left_after_cash_merger",
+         {}},
+        {MessageKey::CorporateActionInconsistentTradeAcrossIsinChange,
+         "corporate_action_inconsistent.trade_across_isin_change",
+         {}},
+        {MessageKey::CorporateActionAmbiguousIsinChangeRequired,
+         "corporate_action_ambiguous.isin_change_required",
+         {}},
+        {MessageKey::AnswerRejectedIsinChangeRatioMismatch,
+         "answer_rejected.isin_change_ratio_mismatch",
+         {{"requestId", MessageParamKind::Text},
+          {"newShares", MessageParamKind::Number},
+          {"oldShares", MessageParamKind::Number}}},
     };
 
     return messages;
@@ -485,8 +512,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 174U);
-    ASSERT_EQ(expectedMessages().size(), 174U);
+    ASSERT_EQ(definitions.size(), 181U);
+    ASSERT_EQ(expectedMessages().size(), 181U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -520,8 +547,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 174U);
-    EXPECT_EQ(keys.size(), 174U);
+    EXPECT_EQ(ids.size(), 181U);
+    EXPECT_EQ(keys.size(), 181U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -546,7 +573,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 185U); // 174 message keys and 11 terms.
+    ASSERT_EQ(table.size(), 192U); // 181 message keys and 11 terms.
 
     std::set<std::string> tableKeys;
 

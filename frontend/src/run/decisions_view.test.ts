@@ -126,6 +126,36 @@ describe("decisionRows", () => {
     expect(decisionRows([cancelled], "en")[0]?.answer).toBe("Cancelled (no answer)");
   });
 
+  it("describes an ISIN change answer, a no and a cancel", () => {
+    const yes: Decision = {
+      id: "decision-0008",
+      type: "corporate_action_isin_change_required",
+      fromEarlierRun: false,
+      used: true,
+      isinChangeCheck: {
+        oldIsin: "XX0000000134",
+        oldName: "Old Synthetic Share",
+        newIsin: "XX0000000135",
+        newName: "New Synthetic Share",
+        effectiveDate: "2024-03-04",
+        earliestDate: "2024-03-04",
+        latestDate: "2024-03-04",
+        sources: [],
+      },
+      answer: { newShares: 2, oldShares: 1, effectiveDate: "2024-03-04" },
+    };
+    const no: Decision = { ...yes, id: "decision-0009", answer: "different_issuer" };
+    const cancelled: Decision = { ...yes, id: "decision-0010", answer: "cancel" };
+    const row = decisionRows([yes], "en")[0];
+
+    expect(row?.title).toBe("ISIN change");
+    expect(row?.investment).toBe("Old Synthetic Share (XX0000000134) → XX0000000135");
+    expect(row?.answer).toBe("Same issuer, 2 : 1 from 2024-03-04");
+    expect(decisionRows([yes], "sl")[0]?.answer).toBe("Isti izdajatelj, 2 : 1 od 2024-03-04");
+    expect(decisionRows([no], "en")[0]?.answer).toBe("Not the same issuer (a merger)");
+    expect(decisionRows([cancelled], "en")[0]?.answer).toBe("Cancelled (no answer)");
+  });
+
   it("describes a corrected quantity", () => {
     const decision: Decision = {
       id: "decision-0004",

@@ -3412,8 +3412,9 @@ TEST(CorporateActionResolverTest, AJanuarySplitRowInADecemberLossWindowIsAsked) 
 }
 
 TEST(CorporateActionResolverTest, AJanuarySplitRowAfterEveryLossWindowIsNotAsked) {
-    // The loss sale of 2024-12-10 has its window up to 2025-01-09; the row of 2025-01-15 is after
-    // it, so the loss rule does not need it.
+    // The loss sale of 2024-12-10 has its window up to 2025-01-09, and a broker may book an action
+    // up to 10 days after it took effect, so up to 2025-01-19; the row of 2025-01-25 is after
+    // both, so the loss rule does not need it.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Share",
@@ -3442,7 +3443,7 @@ TEST(CorporateActionResolverTest, AJanuarySplitRowAfterEveryLossWindowIsNotAsked
             },
         .mCorporateActions =
             {
-                {.mMetadata = {.mTaxDate = day("2025-01-15"),
+                {.mMetadata = {.mTaxDate = day("2025-01-25"),
                                .mSources = {source(4, "synthetic-split-1")}},
                  .mType = CorporateActionType::UnresolvedSplit},
             },
@@ -3520,8 +3521,8 @@ TEST(CorporateActionResolverTest, AJanuarySplitRowOnTheLastDayOfTheLossWindowIsA
                                                 .mPositionBefore = 1'000'000'000}}));
 }
 
-TEST(CorporateActionResolverTest, AJanuarySplitRowOneDayAfterTheLossWindowIsNotAsked) {
-    // As above with the split row on 2025-01-10, one day after the window of the 2024-12-10 loss
+TEST(CorporateActionResolverTest, AJanuarySplitRowElevenDaysAfterTheLossWindowIsNotAsked) {
+    // As above with the split row on 2025-01-20, 11 days after the window of the 2024-12-10 loss
     // (up to 2025-01-09), and the purchase on 2025-01-08: the loss rule does not need the row.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
@@ -3551,7 +3552,7 @@ TEST(CorporateActionResolverTest, AJanuarySplitRowOneDayAfterTheLossWindowIsNotA
             },
         .mCorporateActions =
             {
-                {.mMetadata = {.mTaxDate = day("2025-01-10"),
+                {.mMetadata = {.mTaxDate = day("2025-01-20"),
                                .mSources = {source(4, "synthetic-split-1")}},
                  .mType = CorporateActionType::UnresolvedSplit},
             },
@@ -3562,6 +3563,54 @@ TEST(CorporateActionResolverTest, AJanuarySplitRowOneDayAfterTheLossWindowIsNotA
     EXPECT_TRUE(result.mActions.empty());
     EXPECT_TRUE(result.mRequests.empty());
     EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(CorporateActionResolverTest, AJanuarySplitRowTenDaysAfterTheLossWindowIsAsked) {
+    // As above with the split row on 2025-01-19, 10 days after the window of the 2024-12-10 loss
+    // (up to 2025-01-09): the split may have taken effect inside the window and been booked up
+    // to 10 days late, so the loss rule needs the row and it is asked.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-12-10"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 800'000'000, // EUR 8
+                 .mUnits = 400'000'000,     // 4 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2025-01-08"),
+                               .mSources = {source(5, "synthetic-buy-2")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 400'000'000, // EUR 4
+                 .mUnits = 400'000'000,     // 4 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-01-19"),
+                               .mSources = {source(4, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+
+    const CorporateActionResult result = resolveYear(merged, 2024);
+
+    ASSERT_EQ(result.mActions.size(), 1U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::WaitingForRatio);
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(std::get<CorporateActionRatioQuestion>(result.mRequests.at(0).mQuestion.mData)
+                  .mEffectiveDate,
+              day("2025-01-19"));
 }
 
 TEST(CorporateActionResolverTest, AJanuaryDateKeepsTheLotsAtTheYearEnd) {
@@ -5670,9 +5719,9 @@ TEST(CorporateActionResolverTest, ADecemberAndAJanuaryRowOfTwoFilesDoNotWarn) {
                     .mAskSameEvent);
 }
 
-TEST(CorporateActionResolverTest, AVerifiedRatioIsAProgrammingError) {
-    // No supported export gives a verified ratio, so a row that has one is a parser that needs
-    // its rule written first.
+TEST(CorporateActionResolverTest, AVerifiedRatioRowIsAppliedWithoutAQuestion) {
+    // A row with a ratio confirmed before the stage (the ISIN change stage leaves one) is applied
+    // from its own date: 3 units become 6, and no ratio is asked.
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{
         .mName = "Synthetic Share",
@@ -5702,7 +5751,15 @@ TEST(CorporateActionResolverTest, AVerifiedRatioIsAProgrammingError) {
             },
     }};
 
-    EXPECT_THROW((void)resolveYear(merged, 2024), std::logic_error);
+    const CorporateActionResult result = resolveYear(merged, 2024);
+
+    EXPECT_TRUE(result.mRequests.empty());
+    ASSERT_EQ(result.mActions.size(), 1U);
+    EXPECT_EQ(result.mActions.at(0).mState, CorporateActionState::Applied);
+    EXPECT_EQ(result.mActions.at(0).mRatio, (SplitRatio{.mNewShares = 2, .mOldShares = 1}));
+    EXPECT_EQ(result.mActions.at(0).mConfirmedDate, day("2024-06-01"));
+    // No warning that the user entered the ratio: the stage that left the ratio has its own.
+    EXPECT_TRUE(result.mDiagnostics.empty());
 }
 
 } // namespace
