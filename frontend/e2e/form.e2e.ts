@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
 import { inlineFile, manualFile } from "./support/files";
 import {
   card,
   cardStatus,
+  download,
   fillRunForm,
   openReportPage,
   resultRegion,
@@ -75,5 +79,52 @@ describe("run form", () => {
     }
 
     expect(await resultRegion(page).getByText(/Datoteka ni izvoz transakcij Trade Republic/).count()).toBe(1);
+  });
+
+  it("E3a creates the reports again for the same year after the taxpayer or the filing type changed", async () => {
+    const page = await openReportPage(session.context, session.server);
+    const fixture = await readFile(resolve(process.cwd(), "../tests/test_data/cli/report_fixture.csv"), "utf8");
+    const saveKdvp = () => download(page, card(page, "Doh-KDVP").getByRole("button", { name: "Shrani datoteko Doh-KDVP" }));
+
+    await startRun(page, {
+      files: [inlineFile("report_fixture.csv", fixture)],
+      year: 2024,
+      taxpayer: { "Ime in priimek": "Prva Oseba" },
+    });
+
+    const first = await saveKdvp();
+
+    expect(first.text).toContain("Prva Oseba");
+    expect(first.text).toContain("<DocumentWorkflowID>O</DocumentWorkflowID>");
+
+    // Same year, other name and the self-report: the page asks for a new run, and the file changes.
+    const uploads: string[] = [];
+
+    page.on("request", (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/run") {
+        uploads.push(request.url());
+      }
+    });
+
+    await page.getByRole("textbox", { name: "Ime in priimek", exact: true }).fill("Druga Oseba");
+    await page.getByRole("radio", { name: "Samoprijava" }).check();
+
+    expect(await page.getByRole("button", { name: "Ustvari poročila znova" }).count()).toBe(1);
+
+    await page.getByRole("button", { name: "Ustvari poročila znova" }).click();
+    await page.getByRole("button", { name: "Ustvari poročila", exact: true }).waitFor();
+
+    const second = await saveKdvp();
+
+    expect(second.text).toContain("Druga Oseba");
+    expect(second.text).not.toContain("Prva Oseba");
+    expect(second.text).toContain("<DocumentWorkflowID>I</DocumentWorkflowID>");
+    expect(uploads.length).toBe(1);
+
+    // Nothing changed: pressing the button again is still a new run.
+    await page.getByRole("button", { name: "Ustvari poročila", exact: true }).click();
+    await page.getByRole("button", { name: "Ustvari poročila", exact: true }).waitFor();
+
+    expect(uploads.length).toBe(2);
   });
 });

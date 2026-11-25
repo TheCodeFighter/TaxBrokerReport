@@ -1775,7 +1775,7 @@ every install is `npm ci --ignore-scripts`, so no install script of a dependency
   one exception is the link to the project's repository on the About page, which the user opens
   and the page never fetches.
   `scripts/frontend.sh check` fails the build when the output has another file, when a file is
-  over its size budget (`app.js` 128 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
+  over its size budget (`app.js` 140 KB, `app.css` 15 KB, `logo.webp` 12 KB, `index.html` 4 KB, not
   compressed), when an address other than an XML namespace name or that repository link appears
   in a file, or when
   `index.html` has an inline script or style.

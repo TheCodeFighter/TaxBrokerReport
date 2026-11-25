@@ -368,6 +368,21 @@ checkGroupingAnswer(std::size_t aIndex,
     return std::nullopt;
 }
 
+/// The ISIN of a corporate action question (ratio or identity); nullptr for any other question.
+[[nodiscard]] const Isin* corporateActionIsin(const QuestionData& aData) {
+    if (const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aData))
+    {
+        return &ratio->mIsin;
+    }
+
+    if (const auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aData))
+    {
+        return &identity->mIsin;
+    }
+
+    return nullptr;
+}
+
 [[nodiscard]] RejectedAnswer rejectedDelete(std::size_t aIndex,
                                             AnswerRejection aReason,
                                             MessageKey aKey,
@@ -623,12 +638,29 @@ DecisionSession::deleteAnswers(const std::vector<std::string>& aDecisionIds,
     std::sort(positions.rbegin(), positions.rend());
 
     auto decisions = mDecisions;
+    std::vector<Isin> regrouped;
 
     for (const auto position : positions)
     {
+        const auto& entry = decisions.mEntries[position];
+
+        if (entry.mType == RequestType::CorporateActionIdentityRequired)
+        {
+            regrouped.push_back(*corporateActionIsin(entry.mData));
+        }
+
         decisions.mEntries.erase(decisions.mEntries.begin() +
                                  static_cast<std::ptrdiff_t>(position));
     }
+
+    // The ratio answers of an ISIN belong to the grouping that was answered for it: with the
+    // grouping gone they would only be left over, so they go too.
+    std::erase_if(decisions.mEntries, [&regrouped](const RunDecisions::Entry& aEntry) {
+        const auto* isin = corporateActionIsin(aEntry.mData);
+
+        return aEntry.mType == RequestType::CorporateActionRatioRequired && isin != nullptr &&
+               std::find(regrouped.begin(), regrouped.end(), *isin) != regrouped.end();
+    });
 
     auto calculated = calculate(mCalculation, decisions);
 
