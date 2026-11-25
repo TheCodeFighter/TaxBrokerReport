@@ -83,10 +83,9 @@ This contract is implemented in `ApplicationResultBuilder`
 adapters, report scope, deterministic order and IDs, report and overall status, the summaries,
 the `unsafe` marker with `unsafeInvestments`, and the JSON. The
 decision lifecycle (run revision, answers, recalculation) is in `DecisionSession`
-(`include/taxbroker/decision_session.hpp`); of the eleven request types only the three
-failure-resolution types, the loss question, the ratio question, the classification question of
-a trade investment, the payer choice, the treaty claim, the deposit interest question and the bond
-type question have question data and answers so far. The capital failure choice is applied
+(`include/taxbroker/decision_session.hpp`); every request type has question data and answers
+except `exchange_rates_required`, which is not asked yet: a foreign amount without an official
+rate blocks with `missing_exchange_rate`. The capital failure choice is applied
 (`FailureResolutionStage`, `src/processors/failure_resolution_stage.hpp`): see "Choosing
 whether to exclude failed capital ISINs". The classification of trade investments is applied
 (`TaxClassifier`, `src/processors/tax_classifier.hpp`): see "Classification and
