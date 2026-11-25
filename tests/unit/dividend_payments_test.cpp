@@ -961,6 +961,54 @@ TEST(DividendPaymentsTest, AChangedReferenceRowAsksThePayerChoiceAgain) {
     EXPECT_FALSE(run.result().mDecisions.at(0).mUsed);
 }
 
+TEST(DividendPaymentsTest, AnotherCatalogueRevisionAsksThePayerChoiceAgain) {
+    // Two disagreeing rows: "Payer Y" from the upstream catalogue at revision 1111111, then at
+    // 2222222, and a "manual" row "Payer X" without a revision. Only that one revision differs.
+    const auto catalogue =
+        catalogueOf("XX0000000010,Payer Y,TAX-Y,2 Main Street,FR,,,wikidata,ib-edavki,1111111\n"
+                    "XX0000000010,Payer X,TAX-X,1 Main Street,DE,,,issuer,manual,\n");
+    const auto newerCatalogue =
+        catalogueOf("XX0000000010,Payer Y,TAX-Y,2 Main Street,FR,,,wikidata,ib-edavki,2222222\n"
+                    "XX0000000010,Payer X,TAX-X,1 Main Street,DE,,,issuer,manual,\n");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer A",
+        .mIsin = "XX0000000010",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-14"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 50'000, // EUR 5.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR},
+            },
+    }};
+
+    orderChronologically(statement);
+    DividendRun run{statement, catalogue, rates};
+
+    // Option 1 is "Payer Y" (sorted by name).
+    const auto rejections = run.answerFirst(PayerChoiceAnswer{.mPickedOption = 1});
+
+    ASSERT_TRUE(rejections.empty());
+    ASSERT_TRUE(run.result().mRequests.empty());
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mPayer.mName, std::optional<std::string>{"Payer Y"});
+
+    run.start(statement, newerCatalogue, rates);
+
+    // The option names another source revision, so the old answer does not apply: the question
+    // is open again and the row has no payer facts.
+    ASSERT_EQ(run.result().mRequests.size(), 1U);
+    ASSERT_EQ(run.mLast.mReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mReport.mRows.at(0).mPayer, IncomePayer{});
+    ASSERT_EQ(run.result().mDecisions.size(), 1U);
+    EXPECT_TRUE(run.result().mDecisions.at(0).mFromEarlierRun);
+    EXPECT_FALSE(run.result().mDecisions.at(0).mUsed);
+}
+
 TEST(DividendPaymentsTest, TheSessionRejectsAPositionOutsideTheOptionsAndACancel) {
     const auto catalogue =
         catalogueOf("XX0000000010,Payer Y,TAX-Y,2 Main Street,FR,,,wikidata,manual,\n"

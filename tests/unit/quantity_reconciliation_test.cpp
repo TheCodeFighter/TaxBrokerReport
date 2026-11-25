@@ -688,6 +688,51 @@ TEST(QuantityReconciliationTest, ACancelledQuestionKeepsTheErrorWithoutARequest)
     EXPECT_TRUE(latest.mQuantities.mRequests.empty());
 }
 
+TEST(QuantityReconciliationTest, TheSessionTakesOnlyUnitsOrACancelForTheQuantityQuestion) {
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2023-01-10"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 3'000'000'000, // EUR 30.00
+                 .mUnits = 99'999'999,        // 0.99999999 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(3, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 3'600'000'000, // EUR 36.00
+                 .mUnits = 100'000'000,       // 1 unit: 0.00000001 more than was bought
+                 .mCurrency = Currency::EUR},
+            },
+    }};
+    CapitalPools latest;
+    DecisionSession session;
+
+    session.start(poolsCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+
+    // A loss-question answer is not units or a cancel.
+    const auto requestId = session.result().mRequests.at(0).mId;
+    const auto rejections =
+        session.answer({{requestId, session.result().mRunRevision, NoOtherActivityAnswer{}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections.at(0).mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(rejections.at(0).mMessageKey, MessageKey::AnswerRejectedAnswerDoesNotFit);
+
+    // Nothing changed: the same question is open and nothing is recorded.
+    EXPECT_EQ(session.result().mRunRevision, 1U);
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+    EXPECT_EQ(session.result().mRequests.at(0).mId, requestId);
+    EXPECT_TRUE(session.result().mDecisions.empty());
+}
+
 TEST(QuantityReconciliationTest, AChangedPurchaseIsAnotherQuestionAndTheOldAnswerIsNotUsed) {
     StatementMergeResult merged;
     merged.mStatement.mPresentation.mTradeInstruments = {{

@@ -5302,6 +5302,75 @@ TEST(CorporateActionResolverTest, ANewRowMakesANewIdentityQuestion) {
     EXPECT_FALSE(session.result().mDecisions.at(0).mUsed);
 }
 
+TEST(CorporateActionResolverTest, ARowOfAnotherBrokerMakesANewRatioQuestion) {
+    // 10 units, one split row of Trade Republic on 2024-06-03, a sale of 2 units on 2024-09-02.
+    StatementMergeResult merged;
+    merged.mStatement.mPresentation.mTradeInstruments = {{
+        .mName = "Synthetic Share",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-03-01"),
+                               .mSources = {source(2, "synthetic-buy-1")}},
+                 .mTradeSide = TradeSide::Buy,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 1'000'000'000,     // 10 units
+                 .mCurrency = Currency::EUR},
+                {.mMetadata = {.mTaxDate = day("2024-09-02"),
+                               .mSources = {source(4, "synthetic-sell-1")}},
+                 .mTradeSide = TradeSide::Sell,
+                 .mUnitPrice = 1'000'000'000, // EUR 10
+                 .mUnits = 200'000'000,       // 2 units
+                 .mCurrency = Currency::EUR},
+            },
+        .mCorporateActions =
+            {
+                {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                               .mSources = {source(3, "synthetic-split-1")}},
+                 .mType = CorporateActionType::UnresolvedSplit},
+            },
+    }};
+    CorporateActionResult latest;
+    DecisionSession session;
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+    EXPECT_EQ(latest.mRequests.at(0).mQuestion.mSources.size(), 1U);
+
+    // 2 : 1 makes the 10 units 20.
+    const auto rejections = session.answer({{"request-0001",
+                                             1,
+                                             SplitRatioAnswer{.mNewShares = 2,
+                                                              .mOldShares = 1,
+                                                              .mEffectiveDate = day("2024-06-03"),
+                                                              .mConfirmedUnits = 2'000'000'000}}});
+
+    EXPECT_TRUE(rejections.empty());
+    EXPECT_TRUE(latest.mRequests.empty());
+
+    // Interactive Brokers books the same split on the same day: a second source row.
+    merged.mStatement.mPresentation.mTradeInstruments.at(0).mCorporateActions.push_back(
+        {.mMetadata = {.mTaxDate = day("2024-06-03"),
+                       .mSources = {ibkrSource(3, "synthetic-ibkr-split-1")}},
+         .mType = CorporateActionType::UnresolvedSplit});
+
+    session.start(resolvingCalculation(merged, 2024, latest));
+
+    // The ratio question lists both rows, so the earlier answer does not answer it.
+    ASSERT_EQ(latest.mRequests.size(), 1U);
+    EXPECT_EQ(latest.mRequests.at(0).mQuestion.mType, RequestType::CorporateActionRatioRequired);
+    EXPECT_EQ(latest.mRequests.at(0).mQuestion.mSources.size(), 2U);
+    EXPECT_EQ(std::get<CorporateActionRatioQuestion>(latest.mRequests.at(0).mQuestion.mData)
+                  .mSources.size(),
+              2U);
+
+    // The old answer stays listed and is not used.
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_TRUE(session.result().mDecisions.at(0).mFromEarlierRun);
+    EXPECT_FALSE(session.result().mDecisions.at(0).mUsed);
+}
+
 TEST(CorporateActionResolverTest, SplitRowsOfTwoFilesInOneYearWarn) {
     // Trade Republic (file 0) and Interactive Brokers (file 1) both book the split on 2024-06-03.
     StatementMergeResult merged;

@@ -273,7 +273,16 @@ TEST(IncomeClassifierTest, ASessionRefusesATreatmentTheQuestionDoesNotOffer) {
     EXPECT_EQ(dividend.size(), 1U); // a dividend row needs an ISIN
     EXPECT_EQ(coupon.size(), 1U);   // a coupon needs the ISIN of the issuer
     EXPECT_EQ(capital.size(), 1U);  // income is never capital gains
+
+    EXPECT_EQ(dividend.at(0).mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(coupon.at(0).mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(capital.at(0).mReason, AnswerRejection::AnswerDoesNotFit);
+    EXPECT_EQ(dividend.at(0).mMessageKey, MessageKey::AnswerRejectedAnswerDoesNotFit);
+
+    // Nothing changed: the same question is open and nothing is recorded.
+    EXPECT_EQ(run.result().mRunRevision, 1U);
     EXPECT_EQ(run.result().mRequests.size(), 1U);
+    EXPECT_TRUE(run.result().mDecisions.empty());
 }
 
 TEST(IncomeClassifierTest, APaymentOutsideTheReportingYearIsNotAsked) {
