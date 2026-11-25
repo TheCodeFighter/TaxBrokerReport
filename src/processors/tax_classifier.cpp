@@ -48,6 +48,7 @@ Choice choiceOf(const AnswerValue& aAnswer) {
                           std::is_same_v<Answer, NoOtherActivityAnswer> ||
                           std::is_same_v<Answer, OtherActivityAnswer> ||
                           std::is_same_v<Answer, SplitRatioAnswer> ||
+                          std::is_same_v<Answer, IsinChangeAnswer> ||
                           std::is_same_v<Answer, SeparateEventsAnswer> ||
                           std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
                           std::is_same_v<Answer, QuantityCorrectionAnswer> ||

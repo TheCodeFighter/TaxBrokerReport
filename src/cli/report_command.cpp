@@ -1228,6 +1228,10 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         {
             return aQuestion.mName;
         }
+        else if constexpr (std::is_same_v<Question, IsinChangeQuestion>)
+        {
+            return aQuestion.mOldName;
+        }
         else if constexpr (std::is_same_v<Question, TreatyClaimQuestion>)
         {
             return "treaty claim for " + aQuestion.mCountry;

@@ -86,6 +86,21 @@ constexpr std::array kRequestIdAndDateRange{
     MessageParamDefinition{"earliestDate", MessageParamKind::Text},
     MessageParamDefinition{"latestDate", MessageParamKind::Text},
 };
+constexpr std::array kSaleDate{
+    MessageParamDefinition{"saleDate", MessageParamKind::Text},
+};
+constexpr std::array kIsinChange{
+    MessageParamDefinition{"oldIsin", MessageParamKind::Text},
+    MessageParamDefinition{"newIsin", MessageParamKind::Text},
+    MessageParamDefinition{"newShares", MessageParamKind::Number},
+    MessageParamDefinition{"oldShares", MessageParamKind::Number},
+    MessageParamDefinition{"effectiveDate", MessageParamKind::Text},
+};
+constexpr std::array kRequestIdAndRatio{
+    MessageParamDefinition{"requestId", MessageParamKind::Text},
+    MessageParamDefinition{"newShares", MessageParamKind::Number},
+    MessageParamDefinition{"oldShares", MessageParamKind::Number},
+};
 constexpr std::array kEarlierDate{
     MessageParamDefinition{"earlierDate", MessageParamKind::Text},
 };
@@ -520,6 +535,27 @@ constexpr std::array kDefinitions{
         MessageKey::PayerCountryUnresolvedDividend, "payer_country_unresolved.dividend", {}},
     MessageDefinition{
         MessageKey::PayerCountryUnresolvedInterest, "payer_country_unresolved.interest", {}},
+    MessageDefinition{MessageKey::UnsupportedCorporateActionStockMerger,
+                      "unsupported_corporate_action.stock_merger",
+                      {}},
+    MessageDefinition{MessageKey::CorporateActionAppliedCashMerger,
+                      "corporate_action_applied.cash_merger",
+                      kSaleDate},
+    MessageDefinition{MessageKey::CorporateActionAppliedIsinChange,
+                      "corporate_action_applied.isin_change",
+                      kIsinChange},
+    MessageDefinition{MessageKey::CorporateActionInconsistentUnitsLeftAfterCashMerger,
+                      "corporate_action_inconsistent.units_left_after_cash_merger",
+                      {}},
+    MessageDefinition{MessageKey::CorporateActionInconsistentTradeAcrossIsinChange,
+                      "corporate_action_inconsistent.trade_across_isin_change",
+                      {}},
+    MessageDefinition{MessageKey::CorporateActionAmbiguousIsinChangeRequired,
+                      "corporate_action_ambiguous.isin_change_required",
+                      {}},
+    MessageDefinition{MessageKey::AnswerRejectedIsinChangeRatioMismatch,
+                      "answer_rejected.isin_change_ratio_mismatch",
+                      kRequestIdAndRatio},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -536,7 +572,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::PayerCountryUnresolvedInterest) + 1,
+                  static_cast<std::size_t>(MessageKey::AnswerRejectedIsinChangeRatioMismatch) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 11> kTermKeys{

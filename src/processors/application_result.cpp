@@ -489,6 +489,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* loss = std::get_if<LossEligibilityQuestion>(&aQuestion.mData);
     const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aQuestion.mData);
     const auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aQuestion.mData);
+    const IsinChangeQuestion* isinChange = std::get_if<IsinChangeQuestion>(&aQuestion.mData);
     const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
     const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
     const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
@@ -501,6 +502,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const bool isLossType = aQuestion.mType == RequestType::LossEligibilityConfirmationRequired;
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isIdentityType = aQuestion.mType == RequestType::CorporateActionIdentityRequired;
+    const bool isIsinChangeType = aQuestion.mType == RequestType::CorporateActionIsinChangeRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
     const bool isQuantityType = aQuestion.mType == RequestType::QuantityCorrectionRequired;
     const bool isIncomeDetailsType = aQuestion.mType == RequestType::IncomeDetailsRequired;
@@ -508,7 +510,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
 
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
-        (identity != nullptr) != isIdentityType ||
+        (identity != nullptr) != isIdentityType || (isinChange != nullptr) != isIsinChangeType ||
         ((classification != nullptr || income != nullptr) != isClassificationType) ||
         (quantity != nullptr) != isQuantityType ||
         ((payer != nullptr || country != nullptr || bond != nullptr || treaty != nullptr) &&
@@ -523,6 +525,16 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     if (identity != nullptr && (identity->mIsin.empty() || identity->mRows.size() < 2))
     {
         throw std::invalid_argument("An identity question needs an ISIN and at least two rows.");
+    }
+
+    if (isinChange != nullptr &&
+        (isinChange->mOldIsin.empty() || isinChange->mNewIsin.empty() ||
+         isinChange->mOldIsin == isinChange->mNewIsin || isinChange->mSources.size() < 2 ||
+         isinChange->mEarliestDate > isinChange->mEffectiveDate ||
+         isinChange->mEffectiveDate > isinChange->mLatestDate))
+    {
+        throw std::invalid_argument("An ISIN change question needs two different ISINs, at least "
+                                    "two rows and a date between its earliest and latest one.");
     }
 
     if (developer != nullptr &&
@@ -1191,6 +1203,22 @@ QuestionData normalizedData(QuestionData aData) {
             identity->mRows.end(),
             [](const CorporateActionIdentityRow& aLeft, const CorporateActionIdentityRow& aRight) {
                 return aLeft.sortKey() < aRight.sortKey();
+            });
+    }
+
+    if (IsinChangeQuestion* isinChange = std::get_if<IsinChangeQuestion>(&aData))
+    {
+        std::sort(
+            isinChange->mSources.begin(),
+            isinChange->mSources.end(),
+            [](const CorporateActionSourceFacts& aLeft, const CorporateActionSourceFacts& aRight) {
+                return std::tie(aLeft.mDate,
+                                aLeft.mBroker,
+                                aLeft.mTransactionId,
+                                aLeft.mSourceValue) < std::tie(aRight.mDate,
+                                                               aRight.mBroker,
+                                                               aRight.mTransactionId,
+                                                               aRight.mSourceValue);
             });
     }
 

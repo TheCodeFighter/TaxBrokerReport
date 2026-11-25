@@ -427,12 +427,15 @@ std::optional<std::vector<LossSaleEligibility>> checkIsin(const IsinHistory& aHi
 
         sale.mReplacements = std::move(replacements);
 
-        const auto action = std::find_if(aHistory.mLaterActions.begin(),
-                                         aHistory.mLaterActions.end(),
-                                         [&sale, &aPool](const IsinEvent& aAction) {
-                                             return aAction.mDate <= sale.mWindowEnd &&
-                                                    !isConfirmed(aPool, aAction.mReference);
-                                         });
+        const auto action = std::find_if(
+            aHistory.mLaterActions.begin(),
+            aHistory.mLaterActions.end(),
+            [&sale, &aPool](const IsinEvent& aAction) {
+                // A broker may book an action up to
+                // kBrokerDateMarginDays after it took effect.
+                return aAction.mDate <= sale.mWindowEnd + DayDuration{kBrokerDateMarginDays} &&
+                       !isConfirmed(aPool, aAction.mReference);
+            });
 
         if (action != aHistory.mLaterActions.end())
         {
@@ -557,6 +560,12 @@ DecisionQuestion questionOf(const LossEligibilityIsin& aIsin,
         {
             facts.mKnownReplacements.push_back(
                 {.mDate = replacement.mDate, .mUnits = replacement.mUnits});
+        }
+
+        // The pool is the new ISIN; the sale is listed under the old one (Doh-KDVP).
+        if (trade.mListedAs && trade.mListedAs->mIsin != aIsin.mIsin)
+        {
+            facts.mSoldAs = trade.mListedAs;
         }
 
         question.mSources.insert(question.mSources.end(),
@@ -718,6 +727,7 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
             else
             {
                 static_assert(std::is_same_v<Answer, SplitRatioAnswer> ||
+                              std::is_same_v<Answer, IsinChangeAnswer> ||
                               std::is_same_v<Answer, SeparateEventsAnswer> ||
                               std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
                               std::is_same_v<Answer, CapitalGainsAnswer> ||

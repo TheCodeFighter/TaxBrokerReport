@@ -50,6 +50,9 @@ enum class ProcessingDiagnosticCode {
     CorporateActionMissingPosition,
     CorporateActionQuantityRounded,
     CorporateActionApplied,
+    /// Rows of one action that do not fit together: units left after a takeover for cash, or the
+    /// trades of an ISIN change on the wrong side of its date.
+    CorporateActionInconsistent,
     /// A warning: the action rows of one ISIN and year come from more than one file, so the files
     /// may disagree about the actions.
     CorporateActionSourcesMismatchPossible,

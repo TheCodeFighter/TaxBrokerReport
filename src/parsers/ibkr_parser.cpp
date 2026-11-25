@@ -625,6 +625,7 @@ struct TradeFields {
     Money mTransactionTax{};
     Currency mCurrency{};
     Currency mFeeCurrency{};
+    bool mFromCashMerger{}; ///< The sale is a takeover for cash, not a trade of the user.
 };
 
 /// A fee or tax attribute: a blank one is zero, a value must be zero or negative (it is a cost).
@@ -863,6 +864,8 @@ enum class ActionType {
     Split,       ///< `FS`, `RS`.
     Maturity,    ///< `BM`, `TM`.
     CashPayment, ///< `CD`, `CP`: the cash row is the payment.
+    Merger,      ///< `TC`: a merger or an acquisition, for cash, for shares or both.
+    IssueChange, ///< `IC`: the issue changes, so the ISIN does.
     Unsupported,
 };
 
@@ -870,6 +873,16 @@ ActionType actionTypeOf(const std::string_view aType) {
     if (aType == "FS" || aType == "RS")
     {
         return ActionType::Split;
+    }
+
+    if (aType == "TC")
+    {
+        return ActionType::Merger;
+    }
+
+    if (aType == "IC")
+    {
+        return ActionType::IssueChange;
     }
 
     if (aType == "BM" || aType == "TM")
@@ -883,6 +896,115 @@ ActionType actionTypeOf(const std::string_view aType) {
     }
 
     return ActionType::Unsupported;
+}
+
+/// The ISINs of the rows of one action ID in one statement: those that lose units (a negative
+/// quantity) and those that get units.
+struct ActionIsins {
+    std::set<std::string> mOut;
+    std::set<std::string> mIn;
+};
+
+/// What a corporate action row is, from its type and the ISINs of its action.
+struct ActionShape {
+    enum class Kind {
+        Split,             ///< `FS`, `RS` of one ISIN.
+        IsinChange,        ///< One ISIN out, one ISIN in.
+        StockMerger,       ///< `TC` with the rows of two or more ISINs.
+        CashMergerOrOther, ///< `TC` of one ISIN: for cash when the units leave and cash comes.
+        Other,             ///< Every other action, stored as unsupported.
+    };
+
+    Kind mKind{}; ///< Always set by the creator.
+    /// For an IsinChange row that loses units: the ISIN that gets them. Empty otherwise.
+    std::optional<std::string> mNewIsin;
+};
+
+ActionShape actionShapeOf(const ActionType aType,
+                          const ActionIsins* const aIsins,
+                          const std::string_view aIsin) {
+    using Kind = ActionShape::Kind;
+
+    const std::size_t isinCount =
+        aIsins == nullptr ? 0 : (aIsins->mOut.size() + aIsins->mIn.size());
+    const bool isOneOutOneIn = aIsins != nullptr && aIsins->mOut.size() == 1 &&
+                               aIsins->mIn.size() == 1 &&
+                               *aIsins->mOut.begin() != *aIsins->mIn.begin();
+
+    if (aType == ActionType::Split && isinCount <= 1)
+    {
+        return {.mKind = Kind::Split};
+    }
+
+    if ((aType == ActionType::Split || aType == ActionType::IssueChange) && isOneOutOneIn)
+    {
+        const bool isOut = *aIsins->mOut.begin() == aIsin;
+
+        return {.mKind = Kind::IsinChange,
+                .mNewIsin =
+                    isOut ? std::optional<std::string>{*aIsins->mIn.begin()} : std::nullopt};
+    }
+
+    if (aType == ActionType::Merger && isinCount >= 2)
+    {
+        return {.mKind = Kind::StockMerger};
+    }
+
+    // Without an action ID the rows of the other ISIN cannot be seen, so a row of one ISIN may
+    // be the cash part of a merger for shares: it is never read as a takeover for cash.
+    if (aType == ActionType::Merger && aIsins != nullptr)
+    {
+        return {.mKind = Kind::CashMergerOrOther};
+    }
+
+    return {.mKind = Kind::Other};
+}
+
+/// The neutral type of an action row that is stored as an action.
+CorporateActionType corporateActionTypeOf(const ActionShape::Kind aKind) {
+    switch (aKind)
+    {
+    case ActionShape::Kind::Split:
+        return CorporateActionType::UnresolvedSplit;
+    case ActionShape::Kind::IsinChange:
+        return CorporateActionType::IsinChange;
+    case ActionShape::Kind::StockMerger:
+        return CorporateActionType::StockMerger;
+    case ActionShape::Kind::CashMergerOrOther:
+    case ActionShape::Kind::Other:
+        break;
+    }
+
+    return CorporateActionType::Merger;
+}
+
+/// The cash paid divided by the units, rounded once to eight decimals. None when it does not fit
+/// or is zero at eight decimals.
+std::optional<UnitPrice> cashMergerUnitPrice(const ExactRational& aCash,
+                                             const ExactRational& aSignedUnits) {
+    const NumericResult<ExactRational> units = subtractExact(ExactRational{}, aSignedUnits);
+
+    if (std::holds_alternative<NumericError>(units))
+    {
+        return std::nullopt;
+    }
+
+    const NumericResult<ExactRational> price = divideExact(aCash, std::get<ExactRational>(units));
+
+    if (const ExactRational* exact = std::get_if<ExactRational>(&price))
+    {
+        const NumericResult<std::int64_t> rounded =
+            roundToScaled(*exact,
+                          UNIT_PRICE_SCALE,
+                          DestinationRange{.mPolicy = ValuePolicy::Positive});
+
+        if (const std::int64_t* value = std::get_if<std::int64_t>(&rounded))
+        {
+            return *value;
+        }
+    }
+
+    return std::nullopt;
 }
 
 /// True when the document has a `<!DOCTYPE ...>` node. It uses pugixml's own search: Clang with
@@ -1202,36 +1324,49 @@ class FlexReader {
             .mTransactionTaxPaid = aFields.mTransactionTax,
             .mUnitEvidence = {std::move(unitEvidence)},
             .mInstrumentEvidence = std::move(instrumentEvidence),
+            .mFromCashMerger = aFields.mFromCashMerger,
         });
     }
 
     void readCorporateActions(const pugi::xml_node& aSection) {
         countUnexpectedChildren(aSection, "CorporateAction");
 
-        // A split whose ISIN changes has rows of two ISINs with one action ID: it is not a split
-        // of one holding, so it is left to the unsupported path.
-        std::map<std::string, std::set<std::string>> isinsOfAction;
+        // The rows of one action ID, by the ISINs that lose units (a negative quantity) and the
+        // ISINs that get them. Rows of two ISINs in one action are an ISIN change or a merger
+        // of two companies, never the split of one holding.
+        std::map<std::string, ActionIsins> isinsOfAction;
 
         for (const pugi::xml_node row : aSection.children("CorporateAction"))
         {
             const std::string actionId{textOf(row, "actionID")};
+            const ActionType type = actionTypeOf(textOf(row, "type"));
+            const bool hasIsins = type == ActionType::Split || type == ActionType::Merger ||
+                                  type == ActionType::IssueChange;
 
-            if (!actionId.empty() && actionTypeOf(textOf(row, "type")) == ActionType::Split)
+            if (actionId.empty() || !hasIsins)
             {
-                isinsOfAction[actionId].insert(std::string{textOf(row, "isin")});
+                continue;
             }
+
+            const bool isOut = textOf(row, "quantity").starts_with('-');
+            ActionIsins& isins = isinsOfAction[actionId];
+
+            (isOut ? isins.mOut : isins.mIn).insert(std::string{textOf(row, "isin")});
         }
 
         for (const pugi::xml_node row : aSection.children("CorporateAction"))
         {
             const auto isins = isinsOfAction.find(std::string{textOf(row, "actionID")});
-            const bool changesIsin = isins != isinsOfAction.end() && isins->second.size() > 1;
+            const ActionShape shape =
+                actionShapeOf(actionTypeOf(textOf(row, "type")),
+                              isins == isinsOfAction.end() ? nullptr : &isins->second,
+                              textOf(row, "isin"));
 
-            readCorporateAction(row, changesIsin);
+            readCorporateAction(row, shape);
         }
     }
 
-    void readCorporateAction(const pugi::xml_node& aRow, const bool aChangesIsin) {
+    void readCorporateAction(const pugi::xml_node& aRow, const ActionShape& aShape) {
         auto context = makeContext(aRow, ParsedRowKind::CorporateAction);
 
         if (const auto* missing = firstMissingAttribute(aRow, kRowBaseAttributes))
@@ -1311,7 +1446,8 @@ class FlexReader {
         }
 
         const auto quantity = readFixedPoint(textOf(aRow, "quantity"), UNITS_SCALE);
-        const bool needsUnits = type == ActionType::Split || isMaturity;
+        const bool needsUnits =
+            type == ActionType::Split || type == ActionType::IssueChange || isMaturity;
 
         if (!quantity || (needsUnits && quantity->mValue == 0) ||
             quantity->mValue == std::numeric_limits<Units>::min())
@@ -1326,15 +1462,86 @@ class FlexReader {
             return;
         }
 
-        storeAction(aRow, context, *dateTime, *quantity, type, aChangesIsin);
+        if (aShape.mKind == ActionShape::Kind::CashMergerOrOther && quantity->mValue < 0)
+        {
+            readCashMerger(aRow, context, *dateTime, currency, *quantity);
+            return;
+        }
+
+        storeAction(aRow, context, *dateTime, *quantity, aShape);
+    }
+
+    /// A merger row of one ISIN that loses units: with cash it is a takeover for cash, a sale of
+    /// the units at the cash paid. Cash of zero means the units went for something else, so the
+    /// row is stored as an unsupported action.
+    void readCashMerger(const pugi::xml_node& aRow,
+                        const RowContext& aContext,
+                        const CompactDateTime& aDateTime,
+                        const Currency aCurrency,
+                        const ParsedFixedPoint& aQuantity) {
+        if (aRow.attribute("proceeds").empty())
+        {
+            aContext.rejectMissingAttribute("proceeds");
+            return;
+        }
+
+        const std::optional<ParsedFixedPoint> proceeds =
+            readFixedPoint(textOf(aRow, "proceeds"), MONEY_SCALE);
+
+        if (!proceeds || proceeds->mValue == std::numeric_limits<Money>::min())
+        {
+            aContext.rejectField("proceeds", textOf(aRow, "proceeds"));
+            return;
+        }
+
+        if (proceeds->mSourceNegative)
+        {
+            aContext.rejectSign("proceeds");
+            return;
+        }
+
+        if (!proceeds->mSourceNonzero)
+        {
+            storeAction(aRow, aContext, aDateTime, aQuantity, {.mKind = ActionShape::Kind::Other});
+            return;
+        }
+
+        // The price is the cash divided by the units, rounded once to eight decimals like every
+        // unit price.
+        const std::optional<ExactRational> cash = exactDecimal(*proceeds);
+        const std::optional<ExactRational> units = exactDecimal(aQuantity);
+        const std::optional<UnitPrice> unitPrice =
+            cash && units ? cashMergerUnitPrice(*cash, *units) : std::nullopt;
+
+        if (!unitPrice)
+        {
+            aContext.rejectField("proceeds", textOf(aRow, "proceeds"));
+            return;
+        }
+
+        const TradeFields fields{
+            .mTaxDate = aDateTime.mDate,
+            .mTimestamp = aDateTime.mTimestamp,
+            .mSide = TradeSide::Sell,
+            .mQuantity = aQuantity,
+            .mUnits = std::abs(aQuantity.mValue),
+            .mUnitPrice = *unitPrice,
+            .mAmount = proceeds->mValue,
+            .mFee = 0,
+            .mTransactionTax = 0,
+            .mCurrency = aCurrency,
+            .mFeeCurrency = aCurrency,
+            .mFromCashMerger = true,
+        };
+
+        storeTrade(aRow, aContext, fields, assetClassOf(textOf(aRow, "assetCategory"), ""));
     }
 
     void storeAction(const pugi::xml_node& aRow,
                      const RowContext& aContext,
                      const CompactDateTime& aDateTime,
                      const ParsedFixedPoint& aQuantity,
-                     const ActionType aType,
-                     const bool aChangesIsin) {
+                     const ActionShape& aShape) {
         const std::string isin{textOf(aRow, "isin")};
         const std::string name{textOf(aRow, "description")};
         auto& instrument = getOrCreateInstrument(mResult.mStatement.mTradeInstruments, isin, name);
@@ -1342,7 +1549,6 @@ class FlexReader {
         // The text of the action (for example "SPLIT 4 FOR 1") and the quantity are evidence only,
         // never a verified ratio. A merger and every action that is not supported is the type
         // the corporate-action stage blocks. The row gives no class evidence (see above).
-        const bool isSplit = aType == ActionType::Split && !aChangesIsin;
         auto metadata = aContext.metadata(aDateTime.mDate, aDateTime.mTimestamp);
         auto unitEvidence =
             unitSourceEvidence(aQuantity, textOf(aRow, "quantity"), aContext.source());
@@ -1350,11 +1556,12 @@ class FlexReader {
 
         instrument.mCorporateActions.emplace_back(CorporateAction{
             .mMetadata = std::move(metadata),
-            .mType = isSplit ? CorporateActionType::UnresolvedSplit : CorporateActionType::Merger,
+            .mType = corporateActionTypeOf(aShape.mKind),
             .mUnitsDelta = aQuantity.mValue,
             .mRatio = std::nullopt,
             .mBrokerActionId =
                 actionId.empty() ? std::nullopt : std::optional<std::string>{std::string{actionId}},
+            .mNewIsin = aShape.mNewIsin,
             .mUnitEvidence = {std::move(unitEvidence)},
             .mInstrumentEvidence = {},
         });

@@ -85,8 +85,14 @@ void writeLossQuestion(std::ostream& aOut,
 
     for (const auto& sale : aQuestion.mSales)
     {
-        aOut << "    sale " << formatCalendarDate(sale.mSaleDate) << ": "
-             << unitsText(sale.mSaleUnits) << " units, " << unitsText(sale.mLossUnits)
+        aOut << "    sale " << formatCalendarDate(sale.mSaleDate);
+
+        if (sale.mSoldAs)
+        {
+            aOut << " (sold as " << investmentText(sale.mSoldAs->mIsin, sale.mSoldAs->mName) << ')';
+        }
+
+        aOut << ": " << unitsText(sale.mSaleUnits) << " units, " << unitsText(sale.mLossUnits)
              << " at a loss, " << unitsText(sale.mOpenUnits) << " open; window "
              << formatCalendarDate(sale.mWindowStart) << " to "
              << formatCalendarDate(sale.mWindowEnd);
@@ -429,6 +435,10 @@ std::string_view actionTypeText(CorporateActionType aType) {
         return "reverse split";
     case CorporateActionType::Merger:
         return "merger";
+    case CorporateActionType::IsinChange:
+        return "ISIN change";
+    case CorporateActionType::StockMerger:
+        return "merger of two companies";
     case CorporateActionType::UnresolvedSplit:
         break;
     }
@@ -857,6 +867,156 @@ std::optional<AnswerValue> readRatioAnswer(const CorporateActionRatioQuestion& a
                 .mConfirmedUnits = *preview,
             };
         }
+    }
+}
+
+/// The question about an ISIN that changed: the rows of the old and the new ISIN of one action.
+void writeIsinChangeQuestion(std::ostream& aOut,
+                             const DecisionRequest& aRequest,
+                             const IsinChangeQuestion& aQuestion) {
+    aOut << "Question " << aRequest.mId << ": the ISIN of " << aQuestion.mOldName << " ("
+         << aQuestion.mOldIsin << ") changed to " << aQuestion.mNewIsin << " ("
+         << aQuestion.mNewName << ") on " << formatCalendarDate(aQuestion.mEffectiveDate) << '\n';
+
+    for (const CorporateActionSourceFacts& source : aQuestion.mSources)
+    {
+        aOut << "  Source: " << brokerName(source.mBroker) << ", row of "
+             << formatCalendarDate(source.mDate);
+
+        if (source.mTransactionId)
+        {
+            aOut << ", transaction " << *source.mTransactionId;
+        }
+
+        if (source.mSourceValue)
+        {
+            aOut << ", quantity " << *source.mSourceValue;
+        }
+
+        aOut << '\n';
+    }
+
+    aOut
+        << "  If it is the same company, the same kind of share and you paid or got no cash, your\n"
+           "  units carry on under the new ISIN with their purchase dates and values. If not, it\n"
+           "  is a merger of two companies, which is not supported yet.\n";
+}
+
+/// Reads whether it is the same company, then the ratio and the date. A ratio that the session
+/// rejects (a number 0) or a date outside the rows' dates is passed on as it is, so the session's
+/// rejection says what is wrong.
+std::optional<AnswerValue>
+readIsinChangeAnswer(const IsinChangeQuestion& aQuestion, std::istream& aIn, std::ostream& aOut) {
+    while (true)
+    {
+        const std::optional<std::string> line =
+            readLine(aIn,
+                     aOut,
+                     "Same company, same kind of share and no cash? (yes, no or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const std::string word = lowerCase(*line);
+
+        if (word == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        if (word == "no")
+        {
+            return IsinChangeAnswer{};
+        }
+
+        if (word == "yes")
+        {
+            break;
+        }
+
+        aOut << "Answer yes, no or cancel.\n";
+    }
+
+    aOut << "  Enter how many new units every old unit becomes, as new : old (1 : 1 when the "
+            "number\n"
+            "  of units does not change), or cancel.\n";
+
+    // The ratio of the rows is the only one the session accepts, so Enter takes it.
+    std::string ratioPrompt = "Ratio:";
+
+    if (aQuestion.mSuggestedRatio)
+    {
+        const std::string shown = std::to_string(aQuestion.mSuggestedRatio->mNewShares) + " : " +
+                                  std::to_string(aQuestion.mSuggestedRatio->mOldShares);
+
+        aOut << "  The rows show " << shown << ".\n";
+        ratioPrompt = "Ratio (empty for " + shown + "):";
+    }
+
+    EnteredRatio entered;
+
+    while (true)
+    {
+        const std::optional<std::string> line = readLine(aIn, aOut, ratioPrompt);
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        if (line->empty() && aQuestion.mSuggestedRatio)
+        {
+            entered = {.mNewShares = aQuestion.mSuggestedRatio->mNewShares,
+                       .mOldShares = aQuestion.mSuggestedRatio->mOldShares};
+            break;
+        }
+
+        const RatioInput input = parseRatioInput(*line);
+
+        if (const std::string* message = std::get_if<std::string>(&input))
+        {
+            aOut << *message << '\n';
+            continue;
+        }
+
+        if (std::holds_alternative<CancelAnswer>(input))
+        {
+            return CancelAnswer{};
+        }
+
+        entered = std::get<EnteredRatio>(input);
+        break;
+    }
+
+    const std::string prompt = "Effective date (YYYY-MM-DD, " +
+                               formatCalendarDate(aQuestion.mEarliestDate) + " to " +
+                               formatCalendarDate(aQuestion.mLatestDate) + ", or empty for " +
+                               formatCalendarDate(aQuestion.mEffectiveDate) + "):";
+
+    while (true)
+    {
+        const std::optional<std::string> line = readLine(aIn, aOut, prompt);
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const std::optional<Date> date = line->empty()
+                                             ? std::optional<Date>{aQuestion.mEffectiveDate}
+                                             : parseCalendarDate(*line);
+
+        if (date)
+        {
+            return IsinChangeAnswer{.mSameIssuer = true,
+                                    .mNewShares = entered.mNewShares,
+                                    .mOldShares = entered.mOldShares,
+                                    .mEffectiveDate = *date};
+        }
+
+        aOut << "Enter the date as YYYY-MM-DD.\n";
     }
 }
 
@@ -1332,6 +1492,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
             writeIdentityQuestion(aOut, aRequest, aQuestion);
             return readGroupingAnswer(aIn, aOut);
         }
+        else if constexpr (std::is_same_v<Question, IsinChangeQuestion>)
+        {
+            writeIsinChangeQuestion(aOut, aRequest, aQuestion);
+            return readIsinChangeAnswer(aQuestion, aIn, aOut);
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -1452,6 +1617,17 @@ std::string answerText(const AnswerValue& aAnswer, bool aHasBrokers) {
             return aValue.mCountry ? "payer country " + *aValue.mCountry
                                    : std::string{"skipped, the country is completed in eDavki"};
         }
+        else if constexpr (std::is_same_v<Value, IsinChangeAnswer>)
+        {
+            if (!aValue.mSameIssuer)
+            {
+                return std::string{"not the same company: a merger, not supported yet"};
+            }
+
+            return "same company, " + std::to_string(aValue.mNewShares) + " : " +
+                   std::to_string(aValue.mOldShares) + " from " +
+                   formatCalendarDate(aValue.mEffectiveDate);
+        }
         else
         {
             static_assert(std::is_same_v<Value, SplitRatioAnswer>);
@@ -1488,7 +1664,8 @@ bool canAsk(const QuestionData& aData) {
             return true;
         }
         else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion> ||
-                           std::is_same_v<Question, CorporateActionIdentityQuestion>)
+                           std::is_same_v<Question, CorporateActionIdentityQuestion> ||
+                           std::is_same_v<Question, IsinChangeQuestion>)
         {
             return true;
         }
@@ -1665,6 +1842,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, BondTypeQuestion>)
         {
             return investmentText(aQuestion.mIsin, aQuestion.mName) + ", bond type";
+        }
+        else if constexpr (std::is_same_v<Question, IsinChangeQuestion>)
+        {
+            return investmentText(aQuestion.mOldIsin, aQuestion.mOldName) + " changed to " +
+                   aQuestion.mNewIsin + " on " + formatCalendarDate(aQuestion.mEffectiveDate);
         }
         else
         {

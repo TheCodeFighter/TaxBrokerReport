@@ -195,6 +195,8 @@ std::string_view toString(ProcessingDiagnosticCode aCode) {
         return "corporate_action_quantity_rounded";
     case ProcessingDiagnosticCode::CorporateActionApplied:
         return "corporate_action_applied";
+    case ProcessingDiagnosticCode::CorporateActionInconsistent:
+        return "corporate_action_inconsistent";
     case ProcessingDiagnosticCode::CorporateActionSourcesMismatchPossible:
         return "corporate_action_sources_mismatch_possible";
     case ProcessingDiagnosticCode::UnsupportedCorporateAction:
@@ -253,6 +255,8 @@ std::string_view toString(RequestType aType) {
         return "exchange_rates_required";
     case RequestType::CorporateActionIdentityRequired:
         return "corporate_action_identity_required";
+    case RequestType::CorporateActionIsinChangeRequired:
+        return "corporate_action_isin_change_required";
     case RequestType::CorporateActionRatioRequired:
         return "corporate_action_ratio_required";
     case RequestType::QuantityCorrectionRequired:

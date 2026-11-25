@@ -60,6 +60,7 @@ enum class AnswerRejection {
     CorrectionOverBudget,     ///< A quantity answer whose impact reaches EUR 0.01.
     GroupingIncomplete,       ///< A grouping answer without one valid number per row.
     GroupingWindow,           ///< A grouping answer with rows of one action over 10 days apart.
+    IsinChangeRatioMismatch,  ///< An ISIN change answer whose ratio differs from its rows' units.
 };
 
 struct RejectedAnswer {
