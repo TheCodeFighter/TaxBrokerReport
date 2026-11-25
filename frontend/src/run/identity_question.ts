@@ -9,6 +9,8 @@ const rowTypeTexts = new Map<string, UiTextKey>([
   ["reverse_split", "actionReverseSplit"],
   ["unresolved_split", "actionUnresolvedSplit"],
   ["merger", "actionMerger"],
+  ["isin_change", "actionIsinChange"],
+  ["stock_merger", "actionStockMerger"],
 ]);
 
 /** The text of a row type; `undefined` for a type the page does not know (it shows the word). */

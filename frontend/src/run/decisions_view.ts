@@ -68,6 +68,26 @@ function identityAnswerText(answer: Decision["answer"], language: Language): str
   return uiText(language, "answerRecorded");
 }
 
+function isinChangeAnswerText(answer: Decision["answer"], language: Language): string {
+  if (answer === "cancel") {
+    return uiText(language, "answerCancelled");
+  }
+
+  if (answer === "different_issuer") {
+    return uiText(language, "answerIsinChangeNo");
+  }
+
+  if (typeof answer === "object") {
+    return uiTextWith(language, "answerIsinChangeYes", {
+      new: String(answer.newShares),
+      old: String(answer.oldShares),
+      date: String(answer.effectiveDate),
+    });
+  }
+
+  return uiText(language, "answerRecorded");
+}
+
 function quantityAnswerText(answer: Decision["answer"], language: Language): string {
   if (answer === "cancel") {
     return uiText(language, "answerCancelled");
@@ -189,6 +209,12 @@ function investmentOf(decision: Decision, kind: QuestionKind | undefined): strin
     return decision.depositCheck === undefined ? undefined : String(decision.depositCheck.year);
   }
 
+  if (kind === "isinChange") {
+    const change = decision.isinChangeCheck;
+
+    return change === undefined ? undefined : `${change.oldName} (${change.oldIsin}) → ${change.newIsin}`;
+  }
+
   const check =
     decision.lossCheck ??
     decision.ratioCheck ??
@@ -215,6 +241,8 @@ function describeDecision(
       return { title: uiText(language, "decisionRatio"), answer: ratioAnswerText(decision.answer, language) };
     case "identity":
       return { title: uiText(language, "decisionIdentity"), answer: identityAnswerText(decision.answer, language) };
+    case "isinChange":
+      return { title: uiText(language, "decisionIsinChange"), answer: isinChangeAnswerText(decision.answer, language) };
     case "quantity":
       return { title: uiText(language, "decisionQuantity"), answer: quantityAnswerText(decision.answer, language) };
     case "classification":

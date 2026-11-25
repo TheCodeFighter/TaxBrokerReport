@@ -351,6 +351,10 @@ export const uiTexts = {
     en: "Sales at a loss. The 30-day rule blocks a loss when you buy the same investment within 30 days before or after the sale. Your files show those purchases; the application cannot see other brokers or accounts.",
   },
   lossSaleTitle: { sl: "Prodaja {date}", en: "Sale on {date}" },
+  lossSoldAs: {
+    sl: "Prodano pod ISIN {isin} ({name}), pred spremembo ISIN",
+    en: "Sold as {isin} ({name}), before the ISIN change",
+  },
   lossSaleUnits: { sl: "Prodane enote: {units}", en: "Units sold: {units}" },
   lossLossUnits: { sl: "Enote, prodane z izgubo: {units}", en: "Units sold at a loss: {units}" },
   lossWindow: { sl: "Okno 30 dni: od {start} do {end}", en: "30-day window: {start} to {end}" },
@@ -508,6 +512,46 @@ export const uiTexts = {
     en: "split or reverse split (direction not known)",
   },
   actionMerger: { sl: "pripojitev", en: "merger" },
+  actionIsinChange: { sl: "sprememba ISIN", en: "ISIN change" },
+  actionStockMerger: { sl: "združitev dveh družb", en: "merger of two companies" },
+  isinChangeTitle: { sl: "Se je samo spremenil ISIN?", en: "Did only the ISIN change?" },
+  isinChangeIntro: {
+    sl: "ISIN te naložbe se je spremenil: enote starega ISIN so izginile, enote novega ISIN pa so prišle. Če gre za istega izdajatelja, isto vrsto delnice in brez denarja, enote nadaljujejo pod novim ISIN z istimi datumi in vrednostmi nakupa (to ni prodaja). Če ne, gre za združitev dveh družb, ki je aplikacija še ne podpira, zato prodaj teh naložb ni mogoče prijaviti.",
+    en: "The ISIN of this investment changed: units of the old ISIN left and units of the new ISIN came in. If it is the same issuer, the same kind of share and no cash, your units carry on under the new ISIN with their purchase dates and values (this is not a sale). If not, it is a merger of two companies, which the app does not support yet, so the sales of these investments cannot be reported.",
+  },
+  isinChangeSourcesTitle: { sl: "Vrstice izvoza", en: "Rows of the export" },
+  isinChangeYes: {
+    sl: "Da: isti izdajatelj, ista vrsta delnice in brez denarja",
+    en: "Yes: same issuer, same kind of share and no cash",
+  },
+  isinChangeNo: {
+    sl: "Ne: združitev dveh družb ali kaj drugega",
+    en: "No: a merger of two companies, or something else",
+  },
+  isinChangeRatioHint: {
+    sl: "Koliko novih enot postane iz ene stare. Vnesite 1 : 1, če se število enot ne spremeni.",
+    en: "How many new units each old unit becomes. Enter 1 : 1 when the number of units does not change.",
+  },
+  isinChangeRatioRows: {
+    sl: "Vrstice izvoza kažejo {new} : {old}. Drugega razmerja ne sprejmemo.",
+    en: "The rows of the export show {new} : {old}. No other ratio is accepted.",
+  },
+  isinChangeDate: { sl: "Datum spremembe", en: "Date of the change" },
+  isinChangeDateHint: { sl: "Od {from} do {to}.", en: "From {from} to {to}." },
+  isinChangeNumbersNotValid: {
+    sl: "Vnesite celi števili nad 0.",
+    en: "Enter whole numbers above 0.",
+  },
+  isinChangeDateNotValid: {
+    sl: "Datum mora biti med {from} in {to} (YYYY-MM-DD).",
+    en: "The date must be between {from} and {to} (YYYY-MM-DD).",
+  },
+  decisionIsinChange: { sl: "Sprememba ISIN", en: "ISIN change" },
+  answerIsinChangeYes: {
+    sl: "Isti izdajatelj, {new} : {old} od {date}",
+    en: "Same issuer, {new} : {old} from {date}",
+  },
+  answerIsinChangeNo: { sl: "Ni isti izdajatelj (združitev)", en: "Not the same issuer (a merger)" },
   answersTitle: { sl: "Vaši odgovori ({count})", en: "Your answers ({count})" },
   answersHint: {
     sl: "Izbrisan odgovor vrne vprašanje.",

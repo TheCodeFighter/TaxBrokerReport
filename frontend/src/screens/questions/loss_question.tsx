@@ -31,6 +31,9 @@ function SaleFacts({ env, sale }: SaleProps) {
             })}
           </li>
         )}
+        {sale.soldAs === undefined ? null : (
+          <li>{uiTextWith(language, "lossSoldAs", { isin: sale.soldAs.isin, name: sale.soldAs.name })}</li>
+        )}
         <li>{uiTextWith(language, "lossSaleUnits", { units: sale.saleUnits })}</li>
         <li>{uiTextWith(language, "lossLossUnits", { units: sale.lossUnits })}</li>
         <li>{uiTextWith(language, "lossWindow", { start: sale.windowStart, end: sale.windowEnd })}</li>
