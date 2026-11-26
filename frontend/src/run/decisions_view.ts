@@ -88,6 +88,24 @@ function isinChangeAnswerText(answer: Decision["answer"], language: Language): s
   return uiText(language, "answerRecorded");
 }
 
+function stockMergerAnswerText(answer: Decision["answer"], language: Language, currency: string): string {
+  if (answer === "cancel") {
+    return uiText(language, "answerCancelled");
+  }
+
+  if (typeof answer === "object") {
+    return answer.treatment === "deferred"
+      ? uiTextWith(language, "answerStockMergerDeferred", { date: String(answer.effectiveDate) })
+      : uiTextWith(language, "answerStockMergerTaxable", {
+          value: String(answer.marketValue),
+          currency,
+          date: String(answer.effectiveDate),
+        });
+  }
+
+  return uiText(language, "answerRecorded");
+}
+
 function quantityAnswerText(answer: Decision["answer"], language: Language): string {
   if (answer === "cancel") {
     return uiText(language, "answerCancelled");
@@ -215,6 +233,12 @@ function investmentOf(decision: Decision, kind: QuestionKind | undefined): strin
     return change === undefined ? undefined : `${change.oldName} (${change.oldIsin}) → ${change.newIsin}`;
   }
 
+  if (kind === "stockMerger") {
+    const merger = decision.stockMergerCheck;
+
+    return merger === undefined ? undefined : `${merger.oldName} (${merger.oldIsin}) → ${merger.newIsin}`;
+  }
+
   const check =
     decision.lossCheck ??
     decision.ratioCheck ??
@@ -243,6 +267,11 @@ function describeDecision(
       return { title: uiText(language, "decisionIdentity"), answer: identityAnswerText(decision.answer, language) };
     case "isinChange":
       return { title: uiText(language, "decisionIsinChange"), answer: isinChangeAnswerText(decision.answer, language) };
+    case "stockMerger":
+      return {
+        title: uiText(language, "decisionStockMerger"),
+        answer: stockMergerAnswerText(decision.answer, language, decision.stockMergerCheck?.currency ?? ""),
+      };
     case "quantity":
       return { title: uiText(language, "decisionQuantity"), answer: quantityAnswerText(decision.answer, language) };
     case "classification":

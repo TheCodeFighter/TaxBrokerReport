@@ -8,6 +8,7 @@ import { DeveloperConfirmation } from "./developer_confirmation";
 import { FailureQuestion } from "./failure_question";
 import { IdentityQuestion } from "./identity_question";
 import { IsinChangeQuestion } from "./isin_change_question";
+import { StockMergerQuestion } from "./stock_merger_question";
 import { IncomeQuestion } from "./income_question";
 import { LossQuestion } from "./loss_question";
 import { PayerQuestion } from "./payer_question";
@@ -34,6 +35,8 @@ function QuestionView({ env, request }: { env: QuestionEnv; request: DecisionReq
       return <IdentityQuestion env={env} request={request} />;
     case "isinChange":
       return <IsinChangeQuestion env={env} request={request} />;
+    case "stockMerger":
+      return <StockMergerQuestion env={env} request={request} />;
     case "quantity":
       return <QuantityQuestion env={env} request={request} />;
     case "classification":
