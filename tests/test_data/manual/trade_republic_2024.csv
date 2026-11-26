@@ -7,6 +7,7 @@ datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,am
 2024-02-14T16:00:00.000001Z,2024-02-14,DEFAULT,CASH,INTEREST_PAYMENT,BOND,Synthetic Bond A 2025,XS0000000201,,,18.67,,,EUR,20.00,USD,0.933445,Interest Payment for ISIN XS0000000201,manual-2024-015,,,,
 2024-02-20T09:00:00Z,2024-02-20,DEFAULT,TRADING,SELL,STOCK,Synthetic Basic Share,XX0000000101,-5,35,175.00,,,EUR,,,,,manual-2024-009,,,,
 2024-02-29T10:00:00Z,2024-02-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,35.20,,,EUR,,,,Synthetic bank interest,manual-2024-024,,,,
+2024-03-04T09:00:00Z,2024-03-04,DEFAULT,TRADING,BUY,STOCK,Synthetic Cross Broker Loss Share,XX0000000138,10,20,-200.00,,,EUR,,,,,manual-2024-044,,,,
 2024-03-05T09:00:00Z,2024-03-05,DEFAULT,TRADING,BUY,BOND,Synthetic Slovenian Bond,SI0031102153,300,1,-300.00,,,EUR,,,,,manual-2024-013,,,,
 2024-03-12T09:00:00Z,2024-03-12,DEFAULT,CORPORATE_ACTION,SPLIT,STOCK,Synthetic Reverse Split Share,XX0000000108,-9,,,,,,,,,Synthetic reverse split (ratio not in the export),manual-2024-001,,,,
 2024-03-13T09:00:00Z,2024-03-13,DEFAULT,CASH,DIVIDEND,STOCK,Novartis AG,CH0012005267,5,,34.38,,-12.03,EUR,33.00,CHF,1.041775,,manual-2024-019,,,,
@@ -41,4 +42,5 @@ datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,am
 2024-11-13T11:00:00Z,2024-11-13,DEFAULT,CASH,PRIVATE_MARKET_SELL,PRIVATE_FUND,Synthetic Private Fund,XX0000000130,,,125.00,,,EUR,,,,Synthetic private-market sell,manual-2024-008,,,,
 2024-11-29T10:00:00Z,2024-11-29,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,36.10,,,EUR,,,,Synthetic bank interest,manual-2024-033,,,,
 2024-12-02T11:00:00Z,2024-12-02,DEFAULT,CASH,BONUS,,,,,,3.00,,,EUR,,,,Synthetic bonus,manual-2024-039,,,,
+2024-12-16T09:00:00Z,2024-12-16,DEFAULT,TRADING,SELL,STOCK,Synthetic Cross Broker Loss Share,XX0000000138,-4,15,60.00,,,EUR,,,,,manual-2024-045,,,,
 2024-12-31T10:00:00Z,2024-12-31,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,36.20,,,EUR,,,,Synthetic bank interest,manual-2024-034,,,,

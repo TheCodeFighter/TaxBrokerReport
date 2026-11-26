@@ -105,6 +105,12 @@ describe("capital screens of the manual files", () => {
     await pickWord(loss, "other_activity");
     await sendAnswer(loss);
 
+    // Only Trade Republic files are loaded, so the purchase at Interactive Brokers that replaces the
+    // loss sale of the Cross Broker Loss Share is missing: its loss question is open (README, 2024).
+    const crossBrokerLoss = question(page, "Synthetic Cross Broker Loss Share (XX0000000138)");
+    await pickWord(crossBrokerLoss, "no_other_activity");
+    await sendAnswer(crossBrokerLoss);
+
     const sentBefore = requests.count();
 
     // The quantity question: 1 unit sold, 0.99999999 bought. 1 is above the units left.

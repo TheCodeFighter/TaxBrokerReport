@@ -166,6 +166,7 @@ add_executable(taxbroker_integration_tests
     integration/income_xml_integration_test.cpp
     integration/kdvp_xml_integration_test.cpp
     integration/loss_eligibility_integration_test.cpp
+    integration/mixed_broker_integration_test.cpp
     integration/processor_history_integration_test.cpp
     integration/reporting_year_integration_test.cpp
     integration/server_run_test.cpp
