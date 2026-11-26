@@ -85,6 +85,27 @@ std::optional<Units> unitsFrom(const Json& aJson) {
     return std::get<ParsedFixedPoint>(imported).mValue;
 }
 
+/// A money amount from a text with at most 4 decimals; a JSON number would lose digits.
+std::optional<Money> moneyFrom(const Json& aJson) {
+    if (!aJson.is_string())
+    {
+        return std::nullopt;
+    }
+
+    const auto imported = importFixedPoint(aJson.get_ref<const std::string&>(),
+                                           MONEY_SCALE,
+                                           ValuePolicy::Signed,
+                                           true,
+                                           false);
+
+    if (!std::holds_alternative<ParsedFixedPoint>(imported))
+    {
+        return std::nullopt;
+    }
+
+    return std::get<ParsedFixedPoint>(imported).mValue;
+}
+
 /// A whole number that fits int64.
 std::optional<std::int64_t> wholeNumberFrom(const Json& aJson) {
     if (!aJson.is_number_integer())
@@ -165,6 +186,50 @@ Parsed isinChangeFrom(const Json& aJson) {
                             .mNewShares = *newShares,
                             .mOldShares = *oldShares,
                             .mEffectiveDate = *date};
+}
+
+/// The answer to a stock merger question: `{"treatment": "taxable", "marketValue": "520.0000",
+/// "effectiveDate": "2024-06-03"}`, or `{"treatment": "deferred", "effectiveDate": "2024-06-03"}`.
+/// The session checks the value and the date.
+Parsed stockMergerFrom(const Json& aJson) {
+    if (!aJson.is_object() || !aJson.contains("treatment") || !aJson["treatment"].is_string() ||
+        !aJson.contains("effectiveDate") || !aJson["effectiveDate"].is_string())
+    {
+        return std::nullopt;
+    }
+
+    const std::string& treatment = aJson["treatment"].get_ref<const std::string&>();
+    const std::optional<Date> date =
+        parseCalendarDate(aJson["effectiveDate"].get_ref<const std::string&>());
+
+    if (!date)
+    {
+        return std::nullopt;
+    }
+
+    if (treatment == "deferred" && hasExactKeys(aJson, {"treatment", "effectiveDate"}))
+    {
+        return StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                 .mMarketValue = 0,
+                                 .mEffectiveDate = *date};
+    }
+
+    if (treatment != "taxable" ||
+        !hasExactKeys(aJson, {"treatment", "marketValue", "effectiveDate"}))
+    {
+        return std::nullopt;
+    }
+
+    const std::optional<Money> value = moneyFrom(aJson["marketValue"]);
+
+    if (!value)
+    {
+        return std::nullopt;
+    }
+
+    return StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                             .mMarketValue = *value,
+                             .mEffectiveDate = *date};
 }
 
 /// The answer to an identity question: `{"type": "grouping", "actionOfRow": [1, 1, 2]}`, one
@@ -281,6 +346,10 @@ Parsed answerFor(const Json& aJson, const DecisionRequest& aRequest) {
         else if constexpr (std::is_same_v<Data, IsinChangeQuestion>)
         {
             return isinChangeFrom(aJson);
+        }
+        else if constexpr (std::is_same_v<Data, StockMergerQuestion>)
+        {
+            return stockMergerFrom(aJson);
         }
         else if constexpr (std::is_same_v<Data, TaxClassificationQuestion>)
         {

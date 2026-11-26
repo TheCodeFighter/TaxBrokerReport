@@ -7,6 +7,7 @@
 #include "processors/capital_report_gates.hpp"
 #include "processors/corporate_actions.hpp"
 #include "processors/isin_change.hpp"
+#include "processors/stock_merger.hpp"
 #include "processors/failure_resolution_stage.hpp"
 #include "processors/fee_summary.hpp"
 #include "processors/fifo_matcher.hpp"
@@ -310,18 +311,27 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
         return failed;
     }
 
-    // The ISIN changes come first: after an answered one the old lots are under the new ISIN, so
-    // the statement and its ledger are made again from it. The new statement is moved in and the
-    // merge diagnostics stay with the prepared result, which the stages below read.
+    // The ISIN changes come first, then the mergers of two companies (an ISIN change answered "not
+    // the same issuer" is one): after an answered one the lots are under the new ISIN, or a sale
+    // and a purchase were added, so the statement and its ledger are made again from it. The new
+    // statement is moved in and the merge diagnostics stay with the prepared result, which the
+    // stages below read.
     IsinChangeResult isinChanges =
         applyIsinChanges(aPrepared.mMerged.mStatement, *aPrepared.mLedger, aDecisions);
+    const MergedStatement& afterIsinChanges =
+        isinChanges.mStatement ? *isinChanges.mStatement : aPrepared.mMerged.mStatement;
+    StockMergerResult stockMergers =
+        applyStockMergers(afterIsinChanges, *aPrepared.mLedger, aDecisions);
+    std::optional<MergedStatement> changedStatement = stockMergers.mStatement
+                                                          ? std::move(stockMergers.mStatement)
+                                                          : std::move(isinChanges.mStatement);
     std::optional<TaxProcessingResult> carriedOut;
 
-    if (isinChanges.mStatement)
+    if (changedStatement)
     {
         carriedOut = TaxProcessor::prepareReportingYear(
             {aRequest.mReportingYear,
-             StatementMergeResult{.mStatement = std::move(*isinChanges.mStatement)}});
+             StatementMergeResult{.mStatement = std::move(*changedStatement)}});
     }
 
     // The classification comes next: the instruments it leaves out are not part of the capital
@@ -378,6 +388,9 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
               std::back_inserter(processing));
     std::move(fifo.mDiagnostics.begin(), fifo.mDiagnostics.end(), std::back_inserter(processing));
     appendStageOutput(input, std::move(isinChanges.mDiagnostics), std::move(isinChanges.mRequests));
+    appendStageOutput(input,
+                      std::move(stockMergers.mDiagnostics),
+                      std::move(stockMergers.mRequests));
     appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
     appendStageOutput(input, std::move(quantities.mDiagnostics), std::move(quantities.mRequests));
     appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));

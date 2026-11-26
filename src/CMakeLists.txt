@@ -59,6 +59,8 @@ add_library(taxbroker_core STATIC
     processors/capital_report_gates.cpp
     processors/corporate_actions.cpp
     processors/isin_change.cpp
+    processors/lot_carry.cpp
+    processors/stock_merger.cpp
     processors/decision_session.cpp
     processors/dividend_payments.cpp
     processors/fifo_basis.cpp

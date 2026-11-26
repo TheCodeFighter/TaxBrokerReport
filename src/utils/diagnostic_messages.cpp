@@ -96,6 +96,11 @@ constexpr std::array kIsinChange{
     MessageParamDefinition{"oldShares", MessageParamKind::Number},
     MessageParamDefinition{"effectiveDate", MessageParamKind::Text},
 };
+constexpr std::array kStockMerger{
+    MessageParamDefinition{"oldIsin", MessageParamKind::Text},
+    MessageParamDefinition{"newIsin", MessageParamKind::Text},
+    MessageParamDefinition{"effectiveDate", MessageParamKind::Text},
+};
 constexpr std::array kRequestIdAndRatio{
     MessageParamDefinition{"requestId", MessageParamKind::Text},
     MessageParamDefinition{"newShares", MessageParamKind::Number},
@@ -556,6 +561,24 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::AnswerRejectedIsinChangeRatioMismatch,
                       "answer_rejected.isin_change_ratio_mismatch",
                       kRequestIdAndRatio},
+    MessageDefinition{MessageKey::CorporateActionAppliedStockMerger,
+                      "corporate_action_applied.stock_merger",
+                      kStockMerger},
+    MessageDefinition{MessageKey::CorporateActionAppliedStockMergerDeferred,
+                      "corporate_action_applied.stock_merger_deferred",
+                      kStockMerger},
+    MessageDefinition{MessageKey::CorporateActionInconsistentUnitsLeftAfterStockMerger,
+                      "corporate_action_inconsistent.units_left_after_stock_merger",
+                      {}},
+    MessageDefinition{MessageKey::CorporateActionAmbiguousStockMergerRequired,
+                      "corporate_action_ambiguous.stock_merger_required",
+                      {}},
+    MessageDefinition{MessageKey::UnsupportedCorporateActionStockMergerDeferralWithCash,
+                      "unsupported_corporate_action.stock_merger_deferral_with_cash",
+                      {}},
+    MessageDefinition{MessageKey::AnswerRejectedMarketValueNotPositive,
+                      "answer_rejected.market_value_not_positive",
+                      kRequestId},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -572,7 +595,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::AnswerRejectedIsinChangeRatioMismatch) + 1,
+                  static_cast<std::size_t>(MessageKey::AnswerRejectedMarketValueNotPositive) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 11> kTermKeys{

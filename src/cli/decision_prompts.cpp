@@ -438,6 +438,7 @@ std::string_view actionTypeText(CorporateActionType aType) {
     case CorporateActionType::IsinChange:
         return "ISIN change";
     case CorporateActionType::StockMerger:
+    case CorporateActionType::StockMergerPending:
         return "merger of two companies";
     case CorporateActionType::UnresolvedSplit:
         break;
@@ -899,7 +900,7 @@ void writeIsinChangeQuestion(std::ostream& aOut,
     aOut
         << "  If it is the same company, the same kind of share and you paid or got no cash, your\n"
            "  units carry on under the new ISIN with their purchase dates and values. If not, it\n"
-           "  is a merger of two companies, which is not supported yet.\n";
+           "  is a merger of two companies, and you are asked next how it is taxed.\n";
 }
 
 /// Reads whether it is the same company, then the ratio and the date. A ratio that the session
@@ -1014,6 +1015,153 @@ readIsinChangeAnswer(const IsinChangeQuestion& aQuestion, std::istream& aIn, std
                                     .mNewShares = entered.mNewShares,
                                     .mOldShares = entered.mOldShares,
                                     .mEffectiveDate = *date};
+        }
+
+        aOut << "Enter the date as YYYY-MM-DD.\n";
+    }
+}
+
+/// The question about shares of one company that became shares of another: the rows of the old
+/// and the new ISIN of one action, with the cash and the market value they give.
+void writeStockMergerQuestion(std::ostream& aOut,
+                              const DecisionRequest& aRequest,
+                              const StockMergerQuestion& aQuestion) {
+    const std::string currency{currencyCode(aQuestion.mCurrency)};
+
+    aOut << "Question " << aRequest.mId << ": the shares of " << aQuestion.mOldName << " ("
+         << aQuestion.mOldIsin << ") were exchanged for shares of " << aQuestion.mNewName << " ("
+         << aQuestion.mNewIsin << ") on " << formatCalendarDate(aQuestion.mEffectiveDate) << '\n';
+
+    for (const CorporateActionSourceFacts& source : aQuestion.mSources)
+    {
+        aOut << "  Source: " << brokerName(source.mBroker) << ", row of "
+             << formatCalendarDate(source.mDate);
+
+        if (source.mTransactionId)
+        {
+            aOut << ", transaction " << *source.mTransactionId;
+        }
+
+        if (source.mSourceValue)
+        {
+            aOut << ", quantity " << *source.mSourceValue;
+        }
+
+        aOut << '\n';
+    }
+
+    aOut << "  " << unitsText(aQuestion.mOldUnits) << " units left and "
+         << unitsText(aQuestion.mNewUnits) << " units came in, with cash of "
+         << formatFixedPoint(aQuestion.mCash, MONEY_SCALE, 2) << ' ' << currency << ".\n"
+         << "  As a rule this is a sale of the old shares at the market value of the new ones\n"
+            "  (plus the cash), and the new shares are bought at that value on the same date.\n"
+            "  If FURS decided a deferral for it, answer deferred: the old lots then carry on\n"
+            "  under the new ISIN with their purchase dates and values.\n";
+}
+
+/// Reads how the merger is taxed, for a sale the market value of all new units, then the date. A
+/// value of 0 or below and a date outside the rows' dates are passed on as entered, so the
+/// session's rejection says what is wrong.
+std::optional<AnswerValue>
+readStockMergerAnswer(const StockMergerQuestion& aQuestion, std::istream& aIn, std::ostream& aOut) {
+    StockMergerTreatment treatment = StockMergerTreatment::Taxable;
+
+    while (true)
+    {
+        const std::optional<std::string> line =
+            readLine(aIn, aOut, "How is it taxed? (taxable, deferred or cancel):");
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const std::string word = lowerCase(*line);
+
+        if (word == "cancel")
+        {
+            return CancelAnswer{};
+        }
+
+        if (word == "taxable" || word == "deferred")
+        {
+            treatment =
+                word == "taxable" ? StockMergerTreatment::Taxable : StockMergerTreatment::Deferred;
+            break;
+        }
+
+        aOut << "Answer taxable, deferred or cancel.\n";
+    }
+
+    Money value = 0;
+
+    if (treatment == StockMergerTreatment::Taxable)
+    {
+        const std::string currency{currencyCode(aQuestion.mCurrency)};
+        std::string prompt = "Market value of all new units in " + currency + ":";
+
+        if (aQuestion.mSuggestedValue)
+        {
+            prompt = "Market value of all new units in " + currency + " (empty for " +
+                     formatFixedPoint(*aQuestion.mSuggestedValue, MONEY_SCALE, 2) + "):";
+        }
+
+        while (true)
+        {
+            const std::optional<std::string> line = readLine(aIn, aOut, prompt);
+
+            if (!line)
+            {
+                return std::nullopt;
+            }
+
+            if (line->empty() && aQuestion.mSuggestedValue)
+            {
+                value = *aQuestion.mSuggestedValue;
+                break;
+            }
+
+            std::string text = *line;
+
+            std::replace(text.begin(), text.end(), ',', '.');
+
+            const NumericResult<ParsedFixedPoint> imported =
+                importFixedPoint(text, MONEY_SCALE, ValuePolicy::Signed, true, false);
+            const ParsedFixedPoint* parsed = std::get_if<ParsedFixedPoint>(&imported);
+
+            if (parsed != nullptr)
+            {
+                value = parsed->mValue;
+                break;
+            }
+
+            aOut << "Enter the amount with up to 4 decimals.\n";
+        }
+    }
+
+    const std::string prompt = "Date of the sale and the purchase (YYYY-MM-DD, " +
+                               formatCalendarDate(aQuestion.mEarliestDate) + " to " +
+                               formatCalendarDate(aQuestion.mLatestDate) + ", or empty for " +
+                               formatCalendarDate(aQuestion.mEffectiveDate) + "):";
+
+    while (true)
+    {
+        const std::optional<std::string> line = readLine(aIn, aOut, prompt);
+
+        if (!line)
+        {
+            return std::nullopt;
+        }
+
+        const std::optional<Date> date = line->empty()
+                                             ? std::optional<Date>{aQuestion.mEffectiveDate}
+                                             : parseCalendarDate(*line);
+
+        if (date)
+        {
+            return StockMergerAnswer{.mTreatment = treatment,
+                                     .mMarketValue = value,
+                                     .mEffectiveDate = *date};
         }
 
         aOut << "Enter the date as YYYY-MM-DD.\n";
@@ -1497,6 +1645,11 @@ askQuestion(const DecisionRequest& aRequest, std::istream& aIn, std::ostream& aO
             writeIsinChangeQuestion(aOut, aRequest, aQuestion);
             return readIsinChangeAnswer(aQuestion, aIn, aOut);
         }
+        else if constexpr (std::is_same_v<Question, StockMergerQuestion>)
+        {
+            writeStockMergerQuestion(aOut, aRequest, aQuestion);
+            return readStockMergerAnswer(aQuestion, aIn, aOut);
+        }
         else
         {
             static_assert(std::is_same_v<Question, CorporateActionRatioQuestion>);
@@ -1617,11 +1770,23 @@ std::string answerText(const AnswerValue& aAnswer, bool aHasBrokers) {
             return aValue.mCountry ? "payer country " + *aValue.mCountry
                                    : std::string{"skipped, the country is completed in eDavki"};
         }
+        else if constexpr (std::is_same_v<Value, StockMergerAnswer>)
+        {
+            if (aValue.mTreatment == StockMergerTreatment::Deferred)
+            {
+                return "deferred (FURS decision), from " +
+                       formatCalendarDate(aValue.mEffectiveDate);
+            }
+
+            return "taxable, market value " +
+                   formatFixedPoint(aValue.mMarketValue, MONEY_SCALE, 2) + " on " +
+                   formatCalendarDate(aValue.mEffectiveDate);
+        }
         else if constexpr (std::is_same_v<Value, IsinChangeAnswer>)
         {
             if (!aValue.mSameIssuer)
             {
-                return std::string{"not the same company: a merger, not supported yet"};
+                return std::string{"not the same company: a merger, asked next"};
             }
 
             return "same company, " + std::to_string(aValue.mNewShares) + " : " +
@@ -1665,7 +1830,8 @@ bool canAsk(const QuestionData& aData) {
         }
         else if constexpr (std::is_same_v<Question, QuantityCorrectionQuestion> ||
                            std::is_same_v<Question, CorporateActionIdentityQuestion> ||
-                           std::is_same_v<Question, IsinChangeQuestion>)
+                           std::is_same_v<Question, IsinChangeQuestion> ||
+                           std::is_same_v<Question, StockMergerQuestion>)
         {
             return true;
         }
@@ -1846,6 +2012,11 @@ std::string answerLine(const RecordedDecision& aDecision) {
         else if constexpr (std::is_same_v<Question, IsinChangeQuestion>)
         {
             return investmentText(aQuestion.mOldIsin, aQuestion.mOldName) + " changed to " +
+                   aQuestion.mNewIsin + " on " + formatCalendarDate(aQuestion.mEffectiveDate);
+        }
+        else if constexpr (std::is_same_v<Question, StockMergerQuestion>)
+        {
+            return investmentText(aQuestion.mOldIsin, aQuestion.mOldName) + " exchanged for " +
                    aQuestion.mNewIsin + " on " + formatCalendarDate(aQuestion.mEffectiveDate);
         }
         else

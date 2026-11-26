@@ -61,6 +61,7 @@ enum class AnswerRejection {
     GroupingIncomplete,       ///< A grouping answer without one valid number per row.
     GroupingWindow,           ///< A grouping answer with rows of one action over 10 days apart.
     IsinChangeRatioMismatch,  ///< An ISIN change answer whose ratio differs from its rows' units.
+    MarketValueNotPositive,   ///< A taxable stock merger answer whose market value is 0 or below.
 };
 
 struct RejectedAnswer {

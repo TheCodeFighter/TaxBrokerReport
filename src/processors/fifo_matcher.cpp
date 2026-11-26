@@ -300,17 +300,18 @@ ProcessingDiagnostic cashMergerDiagnostic(DiagnosticSeverity aSeverity,
     };
 }
 
-/// After a sale that is a takeover for cash: the warning about its date (for a sale of the selected
-/// year), and the error when units of the ISIN are still held after the last row of the takeover
-/// of that day. Rows of one takeover (one per broker) come one after the other on the same date,
-/// so only the last of them checks. The error stops the pool, so its sales are not reported.
-void checkCashMerger(FifoIsinResult& aPool,
+/// After a sale that is a takeover for cash or a taxable stock merger: the warning about its date
+/// (a takeover for cash, for a sale of the selected year; the stock merger stage warns on its
+/// own), and the error when units of the ISIN are still held after the last row of the action of
+/// that day. Rows of one action (one per broker) come one after the other on the same date, so
+/// only the last of them checks. The error stops the pool, so its sales are not reported.
+void checkMergerSale(FifoIsinResult& aPool,
                      const TradeTransaction& aSale,
                      const StatementEventReference& aEvent,
                      const TradeInstrument& aInstrument,
                      bool aInSelectedYear,
                      std::vector<ProcessingDiagnostic>& aDiagnostics) {
-    if (aInSelectedYear)
+    if (aInSelectedYear && aSale.mFromCashMerger)
     {
         aDiagnostics.push_back(cashMergerDiagnostic(
             DiagnosticSeverity::Warning,
@@ -326,7 +327,8 @@ void checkCashMerger(FifoIsinResult& aPool,
         aInstrument.mTransactions.begin() + static_cast<std::ptrdiff_t>(aEvent.mEventIndex) + 1,
         aInstrument.mTransactions.end(),
         [&aSale](const TradeTransaction& aOther) {
-            return aOther.mFromCashMerger && aOther.mMetadata.mTaxDate == aSale.mMetadata.mTaxDate;
+            return (aOther.mFromCashMerger || aOther.mFromStockMerger) &&
+                   aOther.mMetadata.mTaxDate == aSale.mMetadata.mTaxDate;
         });
 
     if (hasLaterRow || aPool.mOpenLots.empty())
@@ -337,7 +339,10 @@ void checkCashMerger(FifoIsinResult& aPool,
     aDiagnostics.push_back(cashMergerDiagnostic(
         DiagnosticSeverity::Error,
         ProcessingDiagnosticCode::CorporateActionInconsistent,
-        makeDiagnosticMessage(MessageKey::CorporateActionInconsistentUnitsLeftAfterCashMerger),
+        makeDiagnosticMessage(
+            aSale.mFromCashMerger
+                ? MessageKey::CorporateActionInconsistentUnitsLeftAfterCashMerger
+                : MessageKey::CorporateActionInconsistentUnitsLeftAfterStockMerger),
         aPool,
         aSale));
     stopPool(aPool, FifoIsinStatus::NumericFailure, aEvent);
@@ -799,9 +804,10 @@ FifoMatcher::match(const MergedStatement& aStatement,
                       correction == aCorrections.end() ? nullptr : &*correction,
                       result.mDiagnostics);
 
-            if (trade.mFromCashMerger && pool.mStatus == FifoIsinStatus::Matched)
+            if ((trade.mFromCashMerger || trade.mFromStockMerger) &&
+                pool.mStatus == FifoIsinStatus::Matched)
             {
-                checkCashMerger(pool,
+                checkMergerSale(pool,
                                 trade,
                                 event,
                                 instruments.at(instrumentIndex),

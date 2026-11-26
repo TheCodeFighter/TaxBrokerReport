@@ -77,6 +77,11 @@ namespace {
             return std::holds_alternative<IsinChangeAnswer>(aAnswer) ||
                    std::holds_alternative<CancelAnswer>(aAnswer);
         }
+        else if constexpr (std::is_same_v<Data, StockMergerQuestion>)
+        {
+            return std::holds_alternative<StockMergerAnswer>(aAnswer) ||
+                   std::holds_alternative<CancelAnswer>(aAnswer);
+        }
         else if constexpr (std::is_same_v<Data, QuantityCorrectionQuestion>)
         {
             return std::holds_alternative<QuantityCorrectionAnswer>(aAnswer) ||
@@ -344,6 +349,48 @@ rejectedRatioField(std::size_t aIndex, const std::string& aRequestId, std::strin
     return std::nullopt;
 }
 
+/// Checks a stock merger answer: a taxable one needs a market value above 0, and every answer a
+/// date between the earliest and the latest row of the action.
+[[nodiscard]] std::optional<RejectedAnswer> checkStockMergerAnswer(
+    std::size_t aIndex, const DecisionRequest& aRequest, const StockMergerAnswer& aAnswer) {
+    const StockMergerQuestion& question = std::get<StockMergerQuestion>(aRequest.mData);
+
+    if (aAnswer.mTreatment == StockMergerTreatment::Taxable && aAnswer.mMarketValue <= 0)
+    {
+        DiagnosticMessage message =
+            makeDiagnosticMessage(MessageKey::AnswerRejectedMarketValueNotPositive,
+                                  {textParam("requestId", aRequest.mId)});
+
+        return RejectedAnswer{
+            .mIndex = aIndex,
+            .mReason = AnswerRejection::MarketValueNotPositive,
+            .mMessage = std::move(message.mEnglish),
+            .mMessageKey = message.mKey,
+            .mMessageParams = std::move(message.mParams),
+        };
+    }
+
+    if (aAnswer.mEffectiveDate < question.mEarliestDate ||
+        aAnswer.mEffectiveDate > question.mLatestDate)
+    {
+        DiagnosticMessage message = makeDiagnosticMessage(
+            MessageKey::AnswerRejectedEffectiveDateOutOfRange,
+            {textParam("requestId", aRequest.mId),
+             textParam("earliestDate", formatCalendarDate(question.mEarliestDate)),
+             textParam("latestDate", formatCalendarDate(question.mLatestDate))});
+
+        return RejectedAnswer{
+            .mIndex = aIndex,
+            .mReason = AnswerRejection::EffectiveDateOutOfRange,
+            .mMessage = std::move(message.mEnglish),
+            .mMessageKey = message.mKey,
+            .mMessageParams = std::move(message.mParams),
+        };
+    }
+
+    return std::nullopt;
+}
+
 /// Checks a grouping answer: one number for every row, from 1 without gaps, and the rows of one
 /// action at most kSameActionWindowDays apart.
 [[nodiscard]] std::optional<RejectedAnswer>
@@ -583,6 +630,15 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
             }
         }
 
+        if (const StockMergerAnswer* merger = std::get_if<StockMergerAnswer>(&given.mValue))
+        {
+            if (std::optional<RejectedAnswer> rejection =
+                    checkStockMergerAnswer(index, *request, *merger))
+            {
+                rejections.push_back(std::move(*rejection));
+            }
+        }
+
         if (const auto* grouping = std::get_if<CorporateActionGroupingAnswer>(&given.mValue))
         {
             if (auto rejection = checkGroupingAnswer(index, *request, *grouping))
@@ -637,6 +693,13 @@ std::vector<RejectedAnswer> DecisionSession::answer(std::vector<DecisionAnswer> 
         {
             // The unused fields of a "not the same issuer" answer are not kept.
             *change = IsinChangeAnswer{};
+        }
+
+        // The market value of a deferral is not used and is not kept.
+        if (StockMergerAnswer* merger = std::get_if<StockMergerAnswer>(&value);
+            merger && merger->mTreatment == StockMergerTreatment::Deferred)
+        {
+            merger->mMarketValue = 0;
         }
 
         // A checked treaty text is kept without the spaces at its start and end.

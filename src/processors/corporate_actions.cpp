@@ -753,8 +753,12 @@ bool checkActionRows(ResolvedCorporateAction& aAction,
     {
         aAction.mState = CorporateActionState::Unsupported;
 
-        // An ISIN change that was not carried out has its own error and question from its stage.
-        if (actionOf(aInstruments, *blocked).mType == CorporateActionType::IsinChange)
+        // An ISIN change or a stock merger that was not carried out has its own error and question
+        // from its stage.
+        const CorporateActionType blockedType = actionOf(aInstruments, *blocked).mType;
+
+        if (blockedType == CorporateActionType::IsinChange ||
+            blockedType == CorporateActionType::StockMergerPending)
         {
             return false;
         }
@@ -1099,6 +1103,7 @@ FirstActionOutcome resolveFirstAction(ResolvedCorporateAction& aAction,
             static_assert(std::is_same_v<Answer, FailureResolutionAnswer> ||
                           std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
                           std::is_same_v<Answer, IsinChangeAnswer> ||
+                          std::is_same_v<Answer, StockMergerAnswer> ||
                           std::is_same_v<Answer, NoOtherActivityAnswer> ||
                           std::is_same_v<Answer, OtherActivityAnswer> ||
                           std::is_same_v<Answer, CapitalGainsAnswer> ||

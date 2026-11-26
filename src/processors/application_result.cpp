@@ -490,6 +490,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const auto* ratio = std::get_if<CorporateActionRatioQuestion>(&aQuestion.mData);
     const auto* identity = std::get_if<CorporateActionIdentityQuestion>(&aQuestion.mData);
     const IsinChangeQuestion* isinChange = std::get_if<IsinChangeQuestion>(&aQuestion.mData);
+    const StockMergerQuestion* stockMerger = std::get_if<StockMergerQuestion>(&aQuestion.mData);
     const auto* classification = std::get_if<TaxClassificationQuestion>(&aQuestion.mData);
     const auto* quantity = std::get_if<QuantityCorrectionQuestion>(&aQuestion.mData);
     const auto* payer = std::get_if<PayerChoiceQuestion>(&aQuestion.mData);
@@ -503,6 +504,8 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     const bool isRatioType = aQuestion.mType == RequestType::CorporateActionRatioRequired;
     const bool isIdentityType = aQuestion.mType == RequestType::CorporateActionIdentityRequired;
     const bool isIsinChangeType = aQuestion.mType == RequestType::CorporateActionIsinChangeRequired;
+    const bool isStockMergerType =
+        aQuestion.mType == RequestType::CorporateActionStockMergerRequired;
     const bool isClassificationType = aQuestion.mType == RequestType::TaxClassificationRequired;
     const bool isQuantityType = aQuestion.mType == RequestType::QuantityCorrectionRequired;
     const bool isIncomeDetailsType = aQuestion.mType == RequestType::IncomeDetailsRequired;
@@ -511,6 +514,7 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     if ((failure != nullptr) != isFailureResolution(aQuestion.mType) ||
         (loss != nullptr) != isLossType || (ratio != nullptr) != isRatioType ||
         (identity != nullptr) != isIdentityType || (isinChange != nullptr) != isIsinChangeType ||
+        (stockMerger != nullptr) != isStockMergerType ||
         ((classification != nullptr || income != nullptr) != isClassificationType) ||
         (quantity != nullptr) != isQuantityType ||
         ((payer != nullptr || country != nullptr || bond != nullptr || treaty != nullptr) &&
@@ -535,6 +539,19 @@ void checkQuestionData(const DecisionQuestion& aQuestion) {
     {
         throw std::invalid_argument("An ISIN change question needs two different ISINs, at least "
                                     "two rows and a date between its earliest and latest one.");
+    }
+
+    if (stockMerger != nullptr &&
+        (stockMerger->mOldIsin.empty() || stockMerger->mNewIsin.empty() ||
+         stockMerger->mOldIsin == stockMerger->mNewIsin || stockMerger->mSources.size() < 2 ||
+         stockMerger->mOldUnits <= 0 || stockMerger->mNewUnits <= 0 ||
+         stockMerger->mCurrency == Currency::Unknown || stockMerger->mCash < 0 ||
+         stockMerger->mEarliestDate > stockMerger->mEffectiveDate ||
+         stockMerger->mEffectiveDate > stockMerger->mLatestDate))
+    {
+        throw std::invalid_argument("A stock merger question needs two different ISINs, units on "
+                                    "both sides, a currency, at least two rows and a date between "
+                                    "its earliest and latest one.");
     }
 
     if (developer != nullptr &&
@@ -1211,6 +1228,22 @@ QuestionData normalizedData(QuestionData aData) {
         std::sort(
             isinChange->mSources.begin(),
             isinChange->mSources.end(),
+            [](const CorporateActionSourceFacts& aLeft, const CorporateActionSourceFacts& aRight) {
+                return std::tie(aLeft.mDate,
+                                aLeft.mBroker,
+                                aLeft.mTransactionId,
+                                aLeft.mSourceValue) < std::tie(aRight.mDate,
+                                                               aRight.mBroker,
+                                                               aRight.mTransactionId,
+                                                               aRight.mSourceValue);
+            });
+    }
+
+    if (StockMergerQuestion* stockMerger = std::get_if<StockMergerQuestion>(&aData))
+    {
+        std::sort(
+            stockMerger->mSources.begin(),
+            stockMerger->mSources.end(),
             [](const CorporateActionSourceFacts& aLeft, const CorporateActionSourceFacts& aRight) {
                 return std::tie(aLeft.mDate,
                                 aLeft.mBroker,
