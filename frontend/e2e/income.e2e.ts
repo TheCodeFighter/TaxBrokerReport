@@ -56,6 +56,11 @@ describe("income screens of the manual files", () => {
 
     // Benefits: saveback 2.50, stock perk 7.50, bonus 3.00 and referral 20.00 are 33.00 in all.
     expect(await fees.textContent()).toContain("Skupaj v EUR: 33,00");
+
+    // Each part of the result is its own region with its own heading: the fees above, the
+    // approximate tax and the trade files.
+    expect(await page.getByRole("region", { name: "Približni davek za plačilo" }).count()).toBe(1);
+    expect(await page.getByRole("region", { name: "Datoteke s posli", exact: true }).count()).toBe(1);
   });
 
   it("F8 skips the payer and says that other banks' interest is missing", async () => {

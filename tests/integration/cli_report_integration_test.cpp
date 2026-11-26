@@ -185,6 +185,10 @@ Units past the holding period (tax free, not in the XML): 0
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
 
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 60.88 EUR
+  Total: 60.88 EUR
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -376,6 +380,10 @@ Units past the holding period (tax free, not in the XML): 1
 Fees in 2025 (information only, not in any form): none
 Benefits in 2025 (information only, not in any form): none
 
+Approximate tax for 2025 (information only, FURS makes the real assessment):
+  Capital gains: 1.90 EUR (probably no tax to pay: FURS does not assess a tax of 10 EUR or less)
+  Total: 0.00 EUR
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -501,6 +509,8 @@ Units past the holding period (tax free, not in the XML): 0
 Fees in 2025 (information only, not in any form): none
 Benefits in 2025 (information only, not in any form): none
 
+Approximate tax for 2025 (information only, FURS makes the real assessment): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -555,6 +565,10 @@ Units past the holding period (tax free, not in the XML): 0
 
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
+
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 49.00 EUR
+  Total: 49.00 EUR
 
 Private-market events skipped (only a cash amount, no units): 2
   XX0000000009 Synthetic Private Fund: 2024-05-02, history.csv row 4
@@ -652,6 +666,10 @@ Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form):
   Trade Republic, bonus: 1 benefit, 3.0000 EUR
   Total: 3.0000 EUR
+
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 49.00 EUR
+  Total: 49.00 EUR
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -785,6 +803,10 @@ Units past the holding period (tax free, not in the XML): 0
 
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
+
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 49.00 EUR
+  Total: 49.00 EUR
 
 Private-market events skipped (only a cash amount, no units): 1
   XX0000000009 Synthetic Private Fund: 2024-05-02, history.csv row 4
@@ -1580,6 +1602,10 @@ Units past the holding period (tax free, not in the XML): 0
 Fees in 2025 (information only, not in any form): none
 Benefits in 2025 (information only, not in any form): none
 
+Approximate tax for 2025 (information only, FURS makes the real assessment):
+  Capital gains: 0.00 EUR
+  Total: 0.00 EUR
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -1986,6 +2012,10 @@ Units past the holding period (tax free, not in the XML): 0
 
 Fees in 2025 (information only, not in any form): none
 Benefits in 2025 (information only, not in any form): none
+
+Approximate tax for 2025 (information only, FURS makes the real assessment):
+  Capital gains: no estimate (the form is not complete)
+  Total: no estimate
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -2424,6 +2454,10 @@ Units past the holding period (tax free, not in the XML): 0
 
 Fees in 2025 (information only, not in any form): none
 Benefits in 2025 (information only, not in any form): none
+
+Approximate tax for 2025 (information only, FURS makes the real assessment):
+  Capital gains: 12.33 EUR
+  Total: 12.33 EUR
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -4609,6 +4643,10 @@ Units past the holding period (tax free, not in the XML): 0
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
 
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 49.00 EUR
+  Total: 49.00 EUR
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -4807,6 +4845,10 @@ Units past the holding period (tax free, not in the XML): 0
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
 
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 49.00 EUR
+  Total: 49.00 EUR
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -4868,6 +4910,13 @@ Units past the holding period (tax free, not in the XML): 0
 
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
+
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: no estimate (the form is not complete)
+  Dividends: no estimate (the form is not complete)
+  Bank-deposit interest: no estimate (the form is not complete)
+  Other interest: no estimate (the form is not complete)
+  Total: no estimate
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -5691,6 +5740,8 @@ Units past the holding period (tax free, not in the XML): 0
 Fees in 2000 (information only, not in any form): none
 Benefits in 2000 (information only, not in any form): none
 
+Approximate tax for 2000 (information only, FURS makes the real assessment): none
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -5912,6 +5963,8 @@ Units past the holding period (tax free, not in the XML): 1
 
 Fees in 2025 (information only, not in any form): none
 Benefits in 2025 (information only, not in any form): none
+
+Approximate tax for 2025 (information only, FURS makes the real assessment): none
 
 Private-market events skipped (only a cash amount, no units): 0
 
@@ -6299,6 +6352,10 @@ Units past the holding period (tax free, not in the XML): 0
 
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
+
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 4.90 EUR (probably no tax to pay: FURS does not assess a tax of 10 EUR or less)
+  Total: 0.00 EUR
 
 Private-market events skipped (only a cash amount, no units): 0
 

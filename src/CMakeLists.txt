@@ -76,6 +76,7 @@ add_library(taxbroker_core STATIC
     processors/quantity_reconciliation.cpp
     processors/statement_merger.cpp
     processors/tax_classifier.cpp
+    processors/tax_estimate.cpp
     processors/tax_processor.cpp
     processors/trade_conversion.cpp
     ${EMBEDDED_DIR}/broker_payers_csv.cpp

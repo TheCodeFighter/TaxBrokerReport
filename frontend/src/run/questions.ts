@@ -404,9 +404,24 @@ export function placeQuestions(
   return { byReport, rest };
 }
 
-/** The ID of the first open question with a screen; `undefined` when there is none (no link). */
-export function firstQuestionId(result: RunResult): string | undefined {
-  return supportedQuestions(result)[0]?.id;
+/**
+ * The ID of the first open question with a screen, as the page shows them: the forms in their
+ * order (`reportKeys`), in each form from the top down, then the questions that no form lists.
+ * `undefined` when there is none (no link). Open questions are the unanswered ones: an answered
+ * question is no longer in the result.
+ */
+export function firstQuestionId(result: RunResult, reportKeys: string[]): string | undefined {
+  const placed = placeQuestions(result, reportKeys);
+
+  for (const key of reportKeys) {
+    const first = placed.byReport.get(key)?.[0];
+
+    if (first !== undefined) {
+      return first.id;
+    }
+  }
+
+  return placed.rest[0]?.id;
 }
 
 /** The page anchor of a question; the link scrolls to it and moves the focus to its heading. */

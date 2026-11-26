@@ -1466,6 +1466,73 @@ checked against the schema by a unit test. This is a schema check only. Row 1 is
 Row 2 is a bond coupon: `Date` `2025-06-15`, `Type` `2`, `Value` `25.00`, `ForeignTax` `3.75`,
 payer and source country `FR`.
 
+## Approximate tax to pay
+
+After a run the app shows the approximate tax FURS will assess for the year, for each form with data
+and in total. It is information only: it is never in the XML, never blocks and is not a diagnostic.
+FURS makes the real assessment. The estimate reads only the built reports, so it is the same for a
+mixed Trade Republic and Interactive Brokers run.
+
+**Rates (per cent).** The sale year or the income year decides. A year outside the table has no
+estimate.
+
+| Year | Under 5 y | 5 to 10 y | 10 to 15 y | 15 to 20 y | Over the limit | Dividend, interest |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2016 to 2019 | 25 | 15 | 10 | 5 | 0 after 20 y | 25 |
+| 2020 to 2021 | 27.5 | 20 | 15 | 10 | 0 after 20 y | 27.5 |
+| 2022 to 2025 | 25 | 20 | 15 | none | 0 after 15 y | 25 |
+
+The holding step follows the anniversary rule of [Long-held investments](#long-held-investments): a
+sale on the 5th, 10th or 15th anniversary is still in the lower step. The rows of units past the
+holding period are not listed, so they are not in the estimate.
+
+**Doh-KDVP.** The estimate follows the listed rows, not the internal FIFO. A sale row takes its
+units from the purchase rows in FIFO order. For each part:
+gain = sale value x 0.99 - purchase value x 1.01 (the normalized costs, 1 % of each value, which
+FURS applies on its own). The loss of a part (a negative gain) lowers the gains of the year in
+proportion: every gain gets the same share of the total loss, and each lowered gain is taxed at
+the rate of its own holding step. A loss of a sale row with `F10` false (blocked by the 30-day
+rule) does not count. Losses are not carried to another year. The proportional split is the
+answer of the FURS chatbot and is unconfirmed by a written source.
+
+**Doh-Div and Doh-Obr.** Per row: Slovenian tax = rate x gross; foreign tax credit = the foreign tax
+paid, at most 15 % of the gross; tax = Slovenian tax - credit. With a foreign tax of 15 % or more the
+user always pays 10 % of the gross.
+
+**Doh-DHO.** Tax = rate x (the imported qualifying interest - EUR 1,000). Interest of other banks is
+not in the app, so the form's note stays.
+
+**EUR 10.** A tax is not assessed when it does not exceed EUR 10 (ZDavP-2 Article 50, "*ne presega*").
+The estimate applies it to each form, which is unconfirmed (it may be per assessment decision). A
+form with a tax above 0 and up to EUR 10.00 is shown as "probably no tax to pay" and counts 0 in the
+total. A form with no tax shows 0.00.
+
+**Rounding.** Exact arithmetic for each form, rounded once to cents, half away from zero. The total
+is the sum of the rounded amounts that are above EUR 10. A form that is `needs_input` or `failed` has
+no amount, and the total is then a lower limit ("at least ..., without ..."), or "no estimate" when
+no form has an amount. A form with no data is
+left out.
+
+Examples for 2024, all at 25 % unless said otherwise (amounts in EUR):
+
+- One purchase of 10 at 100.00 on 2020-03-02 and a sale of 10 at 150.00 on 2024-06-03: sale 1,500.00,
+  purchase 1,000.00, costs 10.00 + 15.00, gain 475.00, tax **118.75**.
+- The same purchase on 2017-01-10 and the sale on 2024-02-01 (5 to 10 years, 20 %): **95.00**.
+- A second ISIN with a loss of 218.00 (10 bought at 100.00, sold at 80.00): the base is 475.00 -
+  218.00, tax **64.25**. If the 30-day rule blocks that loss, the tax stays **118.75**.
+- Gains of 475.00 (25 %) and 475.00 (20 %) and a loss of 218.00: each gain gets 109.00 of the loss,
+  366.00 x 25 % + 366.00 x 20 % = **164.70**.
+- Gains of 475.00 (25 %) and 237.50 (15 %) and a loss of 142.50: the shares are 2/3 and 1/3, the
+  bases are 380.00 and 190.00, tax 95.00 + 28.50 = **123.50**. A loss of 614.00 leaves **0.00**.
+- A gain of 40.00: tax 10.00, not assessed, counts 0 in the total.
+- Purchases of 5 at 100.00 (2014-03-03) and 5 at 120.00 (2022-03-01), a sale of 10 at 150.00 on
+  2024-03-04: 237.50 at 15 % and 136.50 at 25 %, tax 35.625 + 34.125 = **69.75**.
+- Dividends: gross 200.00 with foreign tax 30.00 gives 20.00; gross 100.00 with foreign tax 35.00 gives
+  25.00 - 15.00 = 10.00; gross 40.00 without tax gives 10.00: **40.00**. Gross 30.00 with foreign
+  tax 4.50 gives **3.00**, not assessed.
+- Doh-DHO: interest 2,000.00 gives **250.00**, 1,500.00 gives **125.00**, 900.00 gives **0.00**.
+- A sale in 2020 (27.5 %): gain 475.00 gives 130.625, rounded to **130.63**.
+
 ## Required processor tests
 
 Tests based on this document must prove that:

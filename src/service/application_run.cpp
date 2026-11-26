@@ -10,6 +10,7 @@
 #include "processors/stock_merger.hpp"
 #include "processors/failure_resolution_stage.hpp"
 #include "processors/fee_summary.hpp"
+#include "processors/tax_estimate.hpp"
 #include "processors/fifo_matcher.hpp"
 #include "processors/income_reports.hpp"
 #include "processors/loss_eligibility.hpp"
@@ -523,6 +524,11 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
 
     input.mFees = std::move(summaries.mFees);
     input.mBenefits = std::move(summaries.mBenefits);
+    input.mTaxEstimate = estimateTax(aRequest.mReportingYear,
+                                     preview,
+                                     income.mDividends,
+                                     input.mDepositInterest,
+                                     income.mOther);
 
     return input;
 }

@@ -98,6 +98,7 @@ add_executable(taxbroker_unit_tests
     unit/left_out_instruments_test.cpp
     unit/left_out_rows_test.cpp
     unit/tax_classifier_test.cpp
+    unit/tax_estimate_test.cpp
     unit/tax_processor_test.cpp
     unit/taxpayer_file_test.cpp
     unit/taxpayer_json_test.cpp

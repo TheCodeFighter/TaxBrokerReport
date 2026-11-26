@@ -132,6 +132,15 @@ describe("year 2024 of the manual files", () => {
     expect(await card(page, "Doh-Div").getByText(/Vrstice: 5,/).count()).toBe(1);
     expect(await cardStatus(page, "Doh-DHO")).toBe("ni podatkov");
     expect(await cardStatus(page, "Doh-Obr")).toBe("pripravljeno");
+
+    // README, approximate tax 2024: the amount of each form and the total.
+    const estimate = await page.getByRole("region", { name: "Približni davek za plačilo" }).textContent();
+
+    expect(estimate).toContain("Doh-KDVP: 99,74 EUR");
+    expect(estimate).toContain("Doh-Div: 8,19 EUR");
+    expect(estimate).toContain("Verjetno ne boste plačali davka");
+    expect(estimate).toContain("Doh-Obr: 12,20 EUR");
+    expect(estimate).toContain("Skupaj: 111,94 EUR");
     expect(await card(page, "Doh-Obr").getByText(/Vrstice: 3,/).count()).toBe(1);
     expect(await excludedInvestments(page, "Doh-Obr").getByText("Synthetic Bond B 2030 (XS0000000202)").count()).toBe(1);
 

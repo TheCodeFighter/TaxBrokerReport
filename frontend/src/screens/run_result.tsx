@@ -26,9 +26,11 @@ import { QuestionLink } from "./questions/question_link";
 import { QuestionList } from "./questions/question_list";
 import { RecordedAnswers } from "./questions/recorded_answers";
 import { FeeSummary } from "./fee_summary";
+import { TaxEstimate } from "./tax_estimate";
 import { CapitalRows } from "./capital_rows";
 import { IncomeRows } from "./income_rows";
 import { ReportDownloadButton } from "./report_download_button";
+import { ResultRegion } from "./result_region";
 
 interface Props {
   language: Language;
@@ -63,7 +65,10 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
     cards.map((card) => card.key),
   );
   const questionIds = new Set(supportedQuestions(result).map((request) => request.id));
-  const firstQuestion = firstQuestionId(result);
+  const firstQuestion = firstQuestionId(
+    result,
+    cards.map((card) => card.key),
+  );
   const env: QuestionEnv = {
     language,
     catalogue,
@@ -88,27 +93,29 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
       <h2 id="result-title" ref={titleRef} tabIndex={-1}>{uiText(language, "resultTitle")}</h2>
       {shown.outOfDate ? <p class="notice">{uiText(language, "resultOutOfDate")}</p> : null}
       <div class={shown.outOfDate ? "result result-old" : "result"}>
-        <p class={`result-status tone-${tone}`}>{uiText(language, overallStatusText(result.status))}</p>
-        {note === undefined ? null : (
-          <p class="notice" role="status">
-            {uiText(language, note)}
-          </p>
-        )}
-        {needsAnswerHint(result) ? <p class="notice">{uiText(language, "answersLater")}</p> : null}
-        {firstQuestion === undefined ? null : (
+        <div class="result-summary">
+          <p class={`result-status tone-${tone}`}>{uiText(language, overallStatusText(result.status))}</p>
+          {note === undefined ? null : (
+            <p class="notice" role="status">
+              {uiText(language, note)}
+            </p>
+          )}
+          {needsAnswerHint(result) ? <p class="notice">{uiText(language, "answersLater")}</p> : null}
+          {firstQuestion === undefined ? null : (
+            <p>
+              <QuestionLink
+                language={language}
+                requestId={firstQuestion}
+                label="answerQuestionsButton"
+                primary
+                count={questionIds.size}
+              />
+            </p>
+          )}
           <p>
-            <QuestionLink
-              language={language}
-              requestId={firstQuestion}
-              label="answerQuestionsButton"
-              primary
-              count={questionIds.size}
-            />
+            {uiTextWith(language, "resultCounts", { errors: counts.errors, warnings: counts.warnings })}
           </p>
-        )}
-        <p>
-          {uiTextWith(language, "resultCounts", { errors: counts.errors, warnings: counts.warnings })}
-        </p>
+        </div>
         {cards.map((card) => (
           <ReportCardView
             key={card.key}
@@ -133,8 +140,7 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
         <QuestionList env={env} requests={placedQuestions.rest} />
         <RecordedAnswers env={env} decisions={result.decisions} />
         {shared.length === 0 ? null : (
-          <>
-            <h3>{uiText(language, "sharedMessagesTitle")}</h3>
+          <ResultRegion id="shared-messages-title" title={uiText(language, "sharedMessagesTitle")}>
             <DiagnosticList
               language={language}
               groups={shared}
@@ -143,11 +149,12 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
               showForms={true}
               questionIds={questionIds}
             />
-          </>
+          </ResultRegion>
         )}
+        <FeeSummary language={language} result={result} />
+        <TaxEstimate language={language} result={result} />
         {classification.length === 0 ? null : (
-          <>
-            <h3>{uiText(language, "classificationTitle")}</h3>
+          <ResultRegion id="classification-title" title={uiText(language, "classificationTitle")}>
             <ul class="plain-list">
               {classification.map((row, index) => (
                 <li key={index}>
@@ -156,15 +163,15 @@ export function RunResultView({ language, shown, catalogue, apiFetch, note, onRe
                 </li>
               ))}
             </ul>
-          </>
+          </ResultRegion>
         )}
-        <FeeSummary language={language} result={result} />
-        <h3>{uiText(language, "resultFiles")}</h3>
-        <ol class="plain-list">
-          {shown.fileLabels.map((label, index) => (
-            <li key={index}>{label}</li>
-          ))}
-        </ol>
+        <ResultRegion id="result-files-title" title={uiText(language, "resultFiles")}>
+          <ol class="plain-list block-list">
+            {shown.fileLabels.map((label, index) => (
+              <li key={index}>{label}</li>
+            ))}
+          </ol>
+        </ResultRegion>
       </div>
     </section>
   );
@@ -207,6 +214,7 @@ function ReportCardView({
   outOfDate,
 }: CardProps) {
   const headingId = `report-${card.key}`;
+  const messagesId = `report-${card.key}-messages`;
   const groups = groupDiagnostics(diagnostics);
   const reminder = depositReminder(result.depositInterest, language);
 
@@ -232,67 +240,76 @@ function ReportCardView({
         <span class={`badge tone-${card.tone}`}>{uiText(language, card.statusText)}</span>
         {card.unsafe ? <span class="badge tone-fail">{uiText(language, "unsafeMarker")}</span> : null}
       </div>
-      {card.noDataText === undefined ? null : <p>{uiText(language, card.noDataText)}</p>}
-      {card.questions <= questions.length ? null : (
-        <p>{uiTextWith(language, "questionsWaiting", { count: card.questions - questions.length })}</p>
-      )}
-      {questions.length === 0 || card.tone !== "pending" ? null : (
-        <QuestionLink language={language} requestId={questions[0]?.id ?? ""} label="goToQuestion" />
-      )}
-      {card.resolutionText === undefined ? null : <p>{uiText(language, card.resolutionText)}</p>}
-      {card.excluded.length === 0 ? null : (
-        <>
-          <h4>{uiText(language, "excludedTitle")}</h4>
-          {investmentList(card.excluded)}
-        </>
-      )}
-      {card.excludedBrokers.length === 0 ? null : (
-        <>
-          <h4>{uiText(language, "excludedBrokersTitle")}</h4>
-          <ul class="plain-list">
-            {card.excludedBrokers.map((broker) => (
-              <li key={broker}>{brokerTitle(broker, language)}</li>
-            ))}
-          </ul>
-        </>
-      )}
-      {card.unsafeInvestments.length === 0 ? null : (
-        <>
-          <h4>{uiText(language, "unsafeTitle")}</h4>
-          {investmentList(card.unsafeInvestments)}
-        </>
-      )}
-      {card.evidenceRows === 0 ? null : (
-        <p>{uiTextWith(language, "evidenceRows", { count: card.evidenceRows })}</p>
-      )}
-      {card.key === "capitalGains" ? <CapitalRows language={language} summary={result.capitalSummary} /> : null}
-      <IncomeRows language={language} summary={result.reports[card.key]?.incomeSummary} />
-      {card.key !== "bankInterest" || reminder === undefined ? null : <p class="notice">{reminder}</p>}
-      {card.key === "capitalGains" ? (
-        <CorrectionsBlock language={language} corrections={result.corrections} reconciliation={result.reconciliation} />
-      ) : null}
-      <QuestionList env={env} requests={questions} />
-      {card.downloadAvailable ? (
-        <ReportDownloadButton
-          key={revision}
-          language={language}
-          apiFetch={apiFetch}
-          reportKey={card.key}
-          form={card.form}
-          revision={revision}
-          disabled={outOfDate}
-          unsafe={card.unsafe}
-        />
-      ) : null}
+      <div class="card-part">
+        {card.noDataText === undefined ? null : <p>{uiText(language, card.noDataText)}</p>}
+        {card.questions <= questions.length ? null : (
+          <p>{uiTextWith(language, "questionsWaiting", { count: card.questions - questions.length })}</p>
+        )}
+        {questions.length === 0 || card.tone !== "pending" ? null : (
+          <QuestionLink language={language} requestId={questions[0]?.id ?? ""} label="goToQuestion" />
+        )}
+        {card.resolutionText === undefined ? null : <p>{uiText(language, card.resolutionText)}</p>}
+        {card.excluded.length === 0 ? null : (
+          <>
+            <h4>{uiText(language, "excludedTitle")}</h4>
+            {investmentList(card.excluded)}
+          </>
+        )}
+        {card.excludedBrokers.length === 0 ? null : (
+          <>
+            <h4>{uiText(language, "excludedBrokersTitle")}</h4>
+            <ul class="plain-list">
+              {card.excludedBrokers.map((broker) => (
+                <li key={broker}>{brokerTitle(broker, language)}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        {card.unsafeInvestments.length === 0 ? null : (
+          <>
+            <h4>{uiText(language, "unsafeTitle")}</h4>
+            {investmentList(card.unsafeInvestments)}
+          </>
+        )}
+        {card.evidenceRows === 0 ? null : (
+          <p>{uiTextWith(language, "evidenceRows", { count: card.evidenceRows })}</p>
+        )}
+        {card.key === "capitalGains" ? <CapitalRows language={language} summary={result.capitalSummary} /> : null}
+        <IncomeRows language={language} summary={result.reports[card.key]?.incomeSummary} />
+        {card.key !== "bankInterest" || reminder === undefined ? null : <p class="notice">{reminder}</p>}
+        {card.key === "capitalGains" ? (
+          <CorrectionsBlock language={language} corrections={result.corrections} reconciliation={result.reconciliation} />
+        ) : null}
+      </div>
+      <div class="card-part">
+        <QuestionList env={env} requests={questions} />
+      </div>
+      <div class="card-part">
+        {card.downloadAvailable ? (
+          <ReportDownloadButton
+            key={revision}
+            language={language}
+            apiFetch={apiFetch}
+            reportKey={card.key}
+            form={card.form}
+            revision={revision}
+            disabled={outOfDate}
+            unsafe={card.unsafe}
+          />
+        ) : null}
+      </div>
       {groups.length === 0 ? null : (
-        <DiagnosticList
-          language={language}
-          groups={groups}
-          fileLabels={fileLabels}
-          catalogue={catalogue}
-          showForms={false}
-          questionIds={questionIds}
-        />
+        <section class="card-part card-messages" aria-labelledby={messagesId}>
+          <h4 id={messagesId}>{uiTextWith(language, "messagesTitle", { count: diagnostics.length })}</h4>
+          <DiagnosticList
+            language={language}
+            groups={groups}
+            fileLabels={fileLabels}
+            catalogue={catalogue}
+            showForms={false}
+            questionIds={questionIds}
+          />
+        </section>
       )}
     </section>
   );

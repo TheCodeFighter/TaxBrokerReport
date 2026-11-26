@@ -156,6 +156,9 @@ Rules:
   with more than eight decimals are rare, and the price is a fact the broker gave at that
   precision.
 
+The approximate tax to pay ([`tax_rules.md`](tax_rules.md), "Approximate tax to pay") is exact
+arithmetic per form, rounded once to cents with this rule, and never fed back into any form value.
+
 ## Official exchange-rate direction
 
 Banka Slovenije publishes exchange rates as the number of foreign-currency units for `1 EUR`.

@@ -113,6 +113,26 @@ export interface BenefitSummary {
   totalEur: string | null;
 }
 
+/** The approximate tax of one form; `taxEur` is none when the form is not complete. */
+export interface FormTaxEstimate {
+  /** The report key: `capitalGains`, `dividends`, `bankInterest` or `otherInterest`. */
+  report: string;
+  taxEur: string | null;
+  /** The tax is above 0 and at most EUR 10: FURS does not assess it, and it counts 0. */
+  notAssessed: boolean;
+  incomplete: boolean;
+}
+
+/** The approximate tax to pay for the year; information only. */
+export interface TaxEstimate {
+  /** False when the year has no confirmed rates and a form has data. */
+  yearSupported: boolean;
+  forms: FormTaxEstimate[];
+  totalEur: string;
+  /** A form is incomplete, so the total is a lower limit. */
+  totalPartial: boolean;
+}
+
 /** The imported deposit interest against the EUR 1,000 allowance; only when the year has some. */
 export interface DepositInterest {
   importedInterestEur: string;
@@ -194,6 +214,7 @@ export interface RunResult {
   capitalSummary?: CapitalSummary;
   feeSummary?: FeeSummary;
   benefitSummary?: BenefitSummary;
+  taxEstimate?: TaxEstimate;
   depositInterest?: DepositInterest;
 }
 

@@ -1418,6 +1418,12 @@ TEST(ApplicationResultIntegrationTest, AMixedRunWritesTheDocumentedJson) {
     "brokers": [],
     "totalEur": null
   },
+  "taxEstimate": {
+    "yearSupported": false,
+    "forms": [],
+    "totalEur": "0.0000",
+    "totalPartial": false
+  },
   "corrections": [],
   "reconciliation": [],
   "dataSources": {
