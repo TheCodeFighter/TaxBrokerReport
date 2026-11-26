@@ -156,14 +156,19 @@ enum class CorporateActionType {
     /// Units of one ISIN leave and units of another ISIN come in, one action. The user is asked
     /// whether it is the same issuer, the same kind of share and no cash (see mNewIsin).
     IsinChange,
-    /// Shares of one company become shares of another, with or without cash. Unsupported.
-    StockMerger
+    /// Shares of one company become shares of another, with or without cash. The stock merger
+    /// stage asks how it is taxed; a merger it cannot read stays unsupported.
+    StockMerger,
+    /// A StockMerger row of a merger the stock merger stage asked about or blocked: the stage has
+    /// its own question or error, so no other stage adds one.
+    StockMergerPending
 };
 
 /// True for a row that is not a split or a reverse split. The corporate-action stage never asks
 /// the ratio of such a row; it is unsupported, or an ISIN change that has its own question.
 [[nodiscard]] constexpr bool isNonSplitActionType(CorporateActionType aType) noexcept {
     return aType == CorporateActionType::Merger || aType == CorporateActionType::StockMerger ||
+           aType == CorporateActionType::StockMergerPending ||
            aType == CorporateActionType::IsinChange;
 }
 
@@ -221,8 +226,24 @@ struct CorporateAction {
     /// For IsinChange on the row of the old ISIN: the ISIN the units become. Empty on every other
     /// row, also on the row of the new ISIN.
     std::optional<std::string> mNewIsin;
+    /// For StockMerger on a row that loses units: the cash the broker paid with it, positive, in
+    /// mAmountCurrency. Empty when the export gives none.
+    std::optional<Money> mCashProceeds;
+    /// For StockMerger on a row that gets units: the market value the broker gives for them,
+    /// positive, in mAmountCurrency. Evidence only: the user confirms the value. Empty when none.
+    std::optional<Money> mMarketValue;
+    /// Currency of the row's amounts (mCashProceeds, mMarketValue); Unknown when the source gives
+    /// none.
+    Currency mAmountCurrency{Currency::Unknown};
     std::vector<UnitSourceEvidence> mUnitEvidence;
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
+};
+
+/// How a purchase came about, for Doh-KDVP F2.
+enum class PurchaseKind {
+    NotAPurchase,         ///< A sale: there is no way of purchase.
+    Bought,               ///< Bought: F2 `B`.
+    StatusChangeExchange, ///< Shares received in an exchange at a status change: F2 `E`.
 };
 
 /// The ISIN and name an instrument had when a trade was made.
@@ -257,6 +278,12 @@ struct TradeTransaction {
     /// True for the units that left the holding in a takeover for cash only: a sale at the cash
     /// paid, at the date of the broker's action row, not a trade the user made.
     bool mFromCashMerger{};
+    /// True for the units that left the holding in a stock merger the user answered as taxable:
+    /// a sale at the value of the new shares plus the cash, not a trade the user made.
+    bool mFromStockMerger{};
+    /// How a purchase came about (Doh-KDVP F2); NotAPurchase for a sale. Always set by the creator
+    /// of a trade: `{}` is only the neutral value, which the F2 of a purchase maps to `B`.
+    PurchaseKind mPurchaseKind{};
     /// Set only by the ISIN change stage on a trade it moved to the new ISIN: the ISIN and name
     /// the trade had, under which a sale is listed. Empty on every other trade.
     std::optional<ListedInstrument> mListedAs;

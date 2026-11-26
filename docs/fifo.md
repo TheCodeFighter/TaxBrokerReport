@@ -464,6 +464,15 @@ basis); no ratio question is asked for it, and it gets no `corporate_action_appl
 warning (the stage has its own warning). A ratio of 1 / 1 leaves no row. A row with a confirmed
 ratio is applied from the start of every run.
 
+A merger of two companies (`StockMerger` rows, one ISIN out and one in) is carried out the same way
+before the pools are built, after the ISIN changes. After the answer "sale" the action rows are
+replaced by neutral trades on the answered date: a sale of every unit that left (one per row, at
+(value + cash) / units) and a purchase of the units that came in (value / units, marked as
+received in an exchange, `F2` `E`); the pool of A is then sold whole by FIFO across brokers, and
+units left in it are `corporate_action_inconsistent`, key `.units_left_after_stock_merger`. After
+the answer "deferral" the lots are carried like an ISIN change with the ratio of the units, the
+carried purchases marked `E`. See `tax_rules.md`, "Merger of two companies".
+
 The ratio is kept as an exact fraction during processing. The app must not round it to the
 eight-decimal `CorpRatio` scale and then use the rounded value to adjust lots.
 
@@ -574,7 +583,7 @@ Corporate-action errors use these diagnostic codes:
 | Code | When it is used |
 | --- | --- |
 | `corporate_action_missing_position` | No positive covered position exists immediately before the action on its row date. |
-| `corporate_action_inconsistent` | Reliable source ratios conflict with each other, or a confirmed ratio conflicts with an unambiguous source value. Key `.units_left_after_cash_merger`: units are still held after the last row of a takeover for cash. Key `.trade_across_isin_change`: a trade of the old ISIN on or after the date of an ISIN change, or of the new ISIN before it. |
+| `corporate_action_inconsistent` | Reliable source ratios conflict with each other, or a confirmed ratio conflicts with an unambiguous source value. Key `.units_left_after_cash_merger`: units are still held after the last row of a takeover for cash. Key `.trade_across_isin_change`: a trade of the old ISIN on or after the date of an ISIN change or a deferred merger, or of the new ISIN before it. Key `.units_left_after_stock_merger`: units are still held after the sale of a taxable merger of two companies. |
 | `corporate_action_ambiguous` | A reliable ratio is unavailable, the user does not confirm one, or the order of several same-day actions cannot be established. |
 | `corporate_action_unrepresentable` | Arithmetic overflows or the action cannot preserve lots and their purchase values at the required precision: a lot would become 0 units, or the rounding of the ISIN's actions reaches EUR 0.01 (key `.rounding_budget`). |
 | `unsupported_corporate_action` | The action needs tax rules that are not documented here: key `.stock_merger` for a merger of two companies, `.merger` for any other action. |

@@ -213,6 +213,8 @@ std::string_view toString(CorporateActionType aCorporateActionType) {
         return "IsinChange";
     case CorporateActionType::StockMerger:
         return "StockMerger";
+    case CorporateActionType::StockMergerPending:
+        return "StockMergerPending";
     }
 
     return "Unknown";

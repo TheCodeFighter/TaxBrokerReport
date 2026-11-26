@@ -31,6 +31,7 @@ std::vector<DecisionRequest> allRequests() {
         make(RequestType::LossEligibilityConfirmationRequired, LossEligibilityQuestion{}),
         make(RequestType::CorporateActionIdentityRequired, CorporateActionIdentityQuestion{}),
         make(RequestType::CorporateActionIsinChangeRequired, IsinChangeQuestion{}),
+        make(RequestType::CorporateActionStockMergerRequired, StockMergerQuestion{}),
         make(RequestType::CorporateActionRatioRequired, CorporateActionRatioQuestion{}),
         make(RequestType::TaxClassificationRequired, TaxClassificationQuestion{}),
         make(RequestType::TaxClassificationRequired, IncomeClassificationQuestion{}),

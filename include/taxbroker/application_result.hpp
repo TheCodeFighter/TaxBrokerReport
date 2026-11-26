@@ -45,6 +45,7 @@ enum class RequestType {
     ExchangeRatesRequired,
     CorporateActionIdentityRequired,
     CorporateActionIsinChangeRequired,
+    CorporateActionStockMergerRequired,
     CorporateActionRatioRequired,
     QuantityCorrectionRequired,
     LossEligibilityConfirmationRequired,
@@ -306,6 +307,36 @@ struct IsinChangeQuestion {
     bool operator==(const IsinChangeQuestion&) const = default;
 };
 
+/// The question data of `corporate_action_stock_merger_required`: the rows of one action in which
+/// shares of one company left and shares of another company came in, with or without cash. The user
+/// says how it is taxed: a sale at the market value of the new shares (plus the cash), or an
+/// exchange FURS allowed to defer, in which the old lots carry on under the new ISIN.
+struct StockMergerQuestion {
+    Isin mOldIsin;
+    std::string mOldName;
+    Isin mNewIsin;
+    std::string mNewName;
+    Units mOldUnits{}; ///< All units that left, positive.
+    Units mNewUnits{}; ///< All units that came in, positive.
+    /// Currency of mCash and of the market value in the answer; always set by the creator.
+    Currency mCurrency{Currency::Unknown};
+    /// The cash paid with the exchange, positive, in mCurrency; 0 when the rows give none.
+    Money mCash{};
+    /// The market value of all new units, in mCurrency, as the broker's rows give it; empty when
+    /// they give none. Shown pre-filled; never used without the answer.
+    std::optional<Money> mSuggestedValue;
+    Date mEffectiveDate; ///< The date of the first row of the action, shown pre-filled.
+    /// The dates of the earliest and of the latest row of the action; the answer's date is
+    /// between them, both included.
+    Date mEarliestDate;
+    Date mLatestDate;
+    /// Every row of the action, of both ISINs; the value is the broker's quantity, negative for
+    /// units that left.
+    std::vector<CorporateActionSourceFacts> mSources;
+
+    bool operator==(const StockMergerQuestion&) const = default;
+};
+
 /// The question data of `tax_classification_required` for a trade investment whose asset class is
 /// missing, not recognized or different between rows.
 struct TaxClassificationQuestion {
@@ -487,6 +518,7 @@ using QuestionData = std::variant<std::monostate,
                                   CorporateActionRatioQuestion,
                                   CorporateActionIdentityQuestion,
                                   IsinChangeQuestion,
+                                  StockMergerQuestion,
                                   TaxClassificationQuestion,
                                   QuantityCorrectionQuestion,
                                   PayerChoiceQuestion,
@@ -583,6 +615,23 @@ struct IsinChangeAnswer {
     bool operator==(const IsinChangeAnswer&) const = default;
 };
 
+/// How a stock merger is taxed.
+enum class StockMergerTreatment {
+    Taxable,  ///< A sale of the old shares at the market value of the new ones plus the cash.
+    Deferred, ///< FURS decided a deferral: the new shares keep the old purchase dates and values.
+};
+
+/// The answer to a stock merger question. Taxable: the market value of all new units (in the
+/// question's currency, above 0) and the date of the sale and of the purchase. Deferred: only the
+/// date; the market value is not used (the session clears it to 0).
+struct StockMergerAnswer {
+    StockMergerTreatment mTreatment{}; ///< Always set by the creator.
+    Money mMarketValue{};
+    Date mEffectiveDate; ///< Between mEarliestDate and mLatestDate of the question.
+
+    bool operator==(const StockMergerAnswer&) const = default;
+};
+
 /// `capital_gains` to a classification question: treat the investment as shares or fund units
 /// (Doh-KDVP).
 struct CapitalGainsAnswer {
@@ -668,6 +717,7 @@ using AnswerValue = std::variant<FailureResolutionAnswer,
                                  SeparateEventsAnswer,
                                  CorporateActionGroupingAnswer,
                                  IsinChangeAnswer,
+                                 StockMergerAnswer,
                                  CapitalGainsAnswer,
                                  ExcludeFromReportsAnswer,
                                  QuantityCorrectionAnswer,

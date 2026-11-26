@@ -102,6 +102,30 @@ export interface IsinChangeCheck {
   suggestedRatio?: { newShares: number; oldShares: number };
 }
 
+/** The rows of a merger of two companies: the old ISIN lost units and the new one got them. */
+export interface StockMergerCheck {
+  oldIsin: string;
+  oldName: string;
+  newIsin: string;
+  newName: string;
+  /** All units that left and all that came in, with 8 decimals. */
+  oldUnits: string;
+  newUnits: string;
+  /** The currency of the cash and of the market value, a code such as `USD`. */
+  currency: string;
+  /** The cash paid with the exchange, 4 decimals; `0.0000` when there is none. */
+  cash: string;
+  /** The market value of all new units as the rows give it; shown pre-filled, never used unasked. */
+  suggestedValue?: string;
+  /** The date of the first row, shown pre-filled. */
+  effectiveDate: string;
+  /** The answer's date is between these two dates, both included. */
+  earliestDate: string;
+  latestDate: string;
+  /** Every row of both ISINs; the value is negative for the units that left. */
+  sources: RatioSource[];
+}
+
 export interface QuantityCheck {
   name: string;
   isin: string;
@@ -219,6 +243,7 @@ export interface DecisionRequest {
   ratioCheck?: RatioCheck;
   identityCheck?: IdentityCheck;
   isinChangeCheck?: IsinChangeCheck;
+  stockMergerCheck?: StockMergerCheck;
   quantityCheck?: QuantityCheck;
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
@@ -244,6 +269,7 @@ export interface Decision {
   ratioCheck?: RatioCheck;
   identityCheck?: IdentityCheck;
   isinChangeCheck?: IsinChangeCheck;
+  stockMergerCheck?: StockMergerCheck;
   quantityCheck?: QuantityCheck;
   classificationCheck?: ClassificationCheck;
   incomeCheck?: IncomeCheck;
@@ -282,6 +308,7 @@ export type QuestionKind =
   | "ratio"
   | "identity"
   | "isinChange"
+  | "stockMerger"
   | "quantity"
   | "classification"
   | "income"
@@ -297,6 +324,7 @@ const questionKinds = new Map<string, QuestionKind>([
   ["loss_eligibility_confirmation_required", "loss"],
   ["corporate_action_identity_required", "identity"],
   ["corporate_action_isin_change_required", "isinChange"],
+  ["corporate_action_stock_merger_required", "stockMerger"],
   ["corporate_action_ratio_required", "ratio"],
   ["quantity_correction_required", "quantity"],
   ["deposit_interest_total_required", "deposit"],
@@ -522,6 +550,8 @@ export type RejectionTarget =
   | "newShares"
   | "oldShares"
   | "effectiveDate"
+  /** The market value of a stock merger question. */
+  | "marketValue"
   | "confirmation"
   | "correctedUnits"
   /** The action numbers of an identity question: shown under the list of rows. */
@@ -544,6 +574,8 @@ export function rejectionTargets(messageKey: string, params: MessageParams): Rej
     case "ratio_out_of_range":
     case "isin_change_ratio_mismatch":
       return ["newShares", "oldShares"];
+    case "market_value_not_positive":
+      return ["marketValue"];
     case "later_sale_too_large":
       return ["newShares", "oldShares", "effectiveDate"];
     case "preview_mismatch":

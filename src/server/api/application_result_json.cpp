@@ -146,6 +146,13 @@ std::string unitsString(Units aUnits) {
     return formatFixedPoint(aUnits, UNITS_SCALE, kDecimals);
 }
 
+/// An amount as an exact decimal string with four decimals: EUR 15.5 is `15.5000`.
+std::string moneyString(Money aAmount) {
+    constexpr std::size_t kDecimals = 4;
+
+    return formatFixedPoint(aAmount, MONEY_SCALE, kDecimals);
+}
+
 /// The answer for a treatment: a string, or the choice `other_interest` with its subtype.
 Json incomeTreatmentToJson(IncomeTreatment aTreatment) {
     switch (aTreatment)
@@ -209,6 +216,18 @@ Json answerToJson(const AnswerValue& aAnswer) {
                 {"oldShares", aValue.mOldShares},
                 {"effectiveDate", isoDate(aValue.mEffectiveDate)},
             };
+        }
+        else if constexpr (std::is_same_v<Value, StockMergerAnswer>)
+        {
+            if (aValue.mTreatment == StockMergerTreatment::Deferred)
+            {
+                return Json{{"treatment", "deferred"},
+                            {"effectiveDate", isoDate(aValue.mEffectiveDate)}};
+            }
+
+            return Json{{"treatment", "taxable"},
+                        {"marketValue", moneyString(aValue.mMarketValue)},
+                        {"effectiveDate", isoDate(aValue.mEffectiveDate)}};
         }
         else if constexpr (std::is_same_v<Value, CapitalGainsAnswer>)
         {
@@ -372,6 +391,33 @@ Json isinChangeCheckToJson(const IsinChangeQuestion& aQuestion) {
     return serialized;
 }
 
+/// The question data of a stock merger question: both ISINs and names, the units on each side, the
+/// currency, the cash, the market value the rows give (when they do), the date of the first row
+/// (pre-filled), the dates an answer may give and every row of the action.
+Json stockMergerCheckToJson(const StockMergerQuestion& aQuestion) {
+    Json serialized{
+        {"oldIsin", aQuestion.mOldIsin},
+        {"oldName", aQuestion.mOldName},
+        {"newIsin", aQuestion.mNewIsin},
+        {"newName", aQuestion.mNewName},
+        {"oldUnits", unitsString(aQuestion.mOldUnits)},
+        {"newUnits", unitsString(aQuestion.mNewUnits)},
+        {"currency", std::string{currencyCode(aQuestion.mCurrency)}},
+        {"cash", moneyString(aQuestion.mCash)},
+        {"effectiveDate", isoDate(aQuestion.mEffectiveDate)},
+        {"earliestDate", isoDate(aQuestion.mEarliestDate)},
+        {"latestDate", isoDate(aQuestion.mLatestDate)},
+        {"sources", actionSourcesToJson(aQuestion.mSources)},
+    };
+
+    if (aQuestion.mSuggestedValue)
+    {
+        serialized["suggestedValue"] = moneyString(*aQuestion.mSuggestedValue);
+    }
+
+    return serialized;
+}
+
 /// The question data of a ratio question: the action, every source record, the position before
 /// it on its row date (or the earlier sale it must come before) and the date ranges an answer may
 /// give, each with its position before and the lowest change after. A source value is shown
@@ -427,6 +473,7 @@ std::string_view actionTypeName(CorporateActionType aType) {
     case CorporateActionType::IsinChange:
         return "isin_change";
     case CorporateActionType::StockMerger:
+    case CorporateActionType::StockMergerPending:
         return "stock_merger";
     case CorporateActionType::UnresolvedSplit:
         break;
@@ -719,6 +766,11 @@ Json requestToJson(const DecisionRequest& aRequest) {
         serialized["isinChangeCheck"] = isinChangeCheckToJson(*isinChange);
     }
 
+    if (const StockMergerQuestion* stockMerger = std::get_if<StockMergerQuestion>(&aRequest.mData))
+    {
+        serialized["stockMergerCheck"] = stockMergerCheckToJson(*stockMerger);
+    }
+
     if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aRequest.mData))
     {
         serialized["options"] = Json::array({"capital_gains", "exclude_from_supported_reports"});
@@ -976,6 +1028,11 @@ Json decisionToJson(const RecordedDecision& aDecision) {
         serialized["isinChangeCheck"] = isinChangeCheckToJson(*isinChange);
     }
 
+    if (const StockMergerQuestion* stockMerger = std::get_if<StockMergerQuestion>(&aDecision.mData))
+    {
+        serialized["stockMergerCheck"] = stockMergerCheckToJson(*stockMerger);
+    }
+
     if (const auto* classification = std::get_if<TaxClassificationQuestion>(&aDecision.mData))
     {
         serialized["classificationCheck"] = classificationCheckToJson(*classification);
@@ -1075,13 +1132,6 @@ std::string_view toString(CorrectionKind aKind) {
 
 std::string_view toString(OfficialRateOrigin aOrigin) {
     return aOrigin == OfficialRateOrigin::BuiltIn ? "built_in" : "supplied";
-}
-
-/// An EUR amount as an exact decimal string with four decimals: EUR 15.5 is `15.5000`.
-std::string moneyString(Money aAmount) {
-    constexpr std::size_t kDecimals = 4;
-
-    return formatFixedPoint(aAmount, MONEY_SCALE, kDecimals);
 }
 
 std::string_view toString(BenefitType aType) {

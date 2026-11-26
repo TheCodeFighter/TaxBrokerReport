@@ -631,7 +631,7 @@ TEST(DecisionPromptsTest, NoToAnIsinChangeIsAMergerOfTwoCompanies) {
     EXPECT_EQ(session.result().mDecisions[0].mAnswer, (AnswerValue{IsinChangeAnswer{}}));
     EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
               "XX0000000134 Old Synthetic Share changed to XX0000000135 on 2024-03-04: not the "
-              "same company: a merger, not supported yet");
+              "same company: a merger, asked next");
 }
 
 TEST(DecisionPromptsTest, AnUnreadableIsinChangeAnswerIsAskedAgain) {
@@ -699,6 +699,173 @@ TEST(DecisionPromptsTest, AnInputEndingAtTheDateOfAnIsinChangeLeavesTheQuestionO
     const std::string output = ask(session, "yes\n1 : 1\n");
 
     EXPECT_TRUE(contains(output, "Effective date (YYYY-MM-DD,"));
+    EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
+DecisionQuestion stockMergerQuestionOfOneBroker() {
+    return DecisionQuestion{
+        .mType = RequestType::CorporateActionStockMergerRequired,
+        .mAffectedReports = {ReportType::CapitalGains},
+        .mTaxDate = day(2024, 6, 3),
+        .mIsin = "XX0000000136",
+        .mData =
+            StockMergerQuestion{
+                .mOldIsin = "XX0000000136",
+                .mOldName = "Synthetic Merged Share",
+                .mNewIsin = "XX0000000137",
+                .mNewName = "Synthetic Acquirer",
+                .mOldUnits = 1'000'000'000, // 10 units
+                .mNewUnits = 400'000'000,   // 4 units
+                .mCurrency = Currency::USD,
+                .mCash = 300'000,             // USD 30
+                .mSuggestedValue = 5'200'000, // USD 520
+                .mEffectiveDate = day(2024, 6, 3),
+                .mEarliestDate = day(2024, 6, 3),
+                .mLatestDate = day(2024, 6, 5),
+                .mSources = {{.mBroker = Broker::InteractiveBrokers,
+                              .mTransactionId = "synthetic-5",
+                              .mDate = day(2024, 6, 3),
+                              .mSourceValue = "-10"},
+                             {.mBroker = Broker::InteractiveBrokers,
+                              .mTransactionId = "synthetic-6",
+                              .mDate = day(2024, 6, 5),
+                              .mSourceValue = "4"}},
+            },
+    };
+}
+
+TEST(DecisionPromptsTest, AStockMergerQuestionListsTheRowsAndTakesTaxableAValueAndADate) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    // taxable, the value 500,5 (a comma is accepted) and the date 2024-06-05.
+    const std::string output = ask(session, "taxable\n500,5\n2024-06-05\n");
+
+    EXPECT_TRUE(contains(output,
+                         "the shares of Synthetic Merged Share (XX0000000136) were exchanged for "
+                         "shares of Synthetic Acquirer (XX0000000137) on 2024-06-03\n"));
+    EXPECT_TRUE(contains(output,
+                         "  Source: Interactive Brokers, row of 2024-06-03, transaction "
+                         "synthetic-5, quantity -10\n"));
+    EXPECT_TRUE(contains(output,
+                         "  10.0000 units left and 4.0000 units came in, with cash of "
+                         "30.00 USD.\n"));
+    EXPECT_TRUE(contains(output, "Market value of all new units in USD (empty for 520.00):"));
+    EXPECT_TRUE(contains(output,
+                         "Date of the sale and the purchase (YYYY-MM-DD, 2024-06-03 to 2024-06-05, "
+                         "or empty for 2024-06-03):"));
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                             .mMarketValue = 5'005'000, // USD 500.5
+                                             .mEffectiveDate = day(2024, 6, 5)}}));
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000136 Synthetic Merged Share exchanged for XX0000000137 on 2024-06-03: "
+              "taxable, market value 500.50 on 2024-06-05");
+}
+
+TEST(DecisionPromptsTest, EmptyLinesOfAStockMergerTakeTheValueOfTheRowsAndTheFirstDate) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    ask(session, "taxable\n\n\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                             .mMarketValue = 5'200'000, // USD 520
+                                             .mEffectiveDate = day(2024, 6, 3)}}));
+}
+
+TEST(DecisionPromptsTest, ADeferredStockMergerAsksOnlyTheDate) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "deferred\n\n");
+
+    EXPECT_FALSE(contains(output, "Market value of all new units"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer,
+              (AnswerValue{StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                             .mMarketValue = 0,
+                                             .mEffectiveDate = day(2024, 6, 3)}}));
+    EXPECT_EQ(cli::answerLine(session.result().mDecisions[0]),
+              "XX0000000136 Synthetic Merged Share exchanged for XX0000000137 on 2024-06-03: "
+              "deferred (FURS decision), from 2024-06-03");
+}
+
+TEST(DecisionPromptsTest, AStockMergerWithoutAValueInTheRowsAsksForOne) {
+    DecisionQuestion question = stockMergerQuestionOfOneBroker();
+
+    std::get<StockMergerQuestion>(question.mData).mSuggestedValue = std::nullopt;
+
+    DecisionSession session;
+    session.start(asksUntilAnswered({question}));
+
+    // An empty line is not a value when the rows give none: it is asked again.
+    const std::string output = ask(session, "taxable\n\n750\n\n");
+
+    EXPECT_TRUE(contains(output, "Market value of all new units in USD:"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(std::get<StockMergerAnswer>(session.result().mDecisions[0].mAnswer).mMarketValue,
+              7'500'000); // USD 750
+}
+
+TEST(DecisionPromptsTest, AnUnreadableStockMergerAnswerIsAskedAgain) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "maybe\ntaxable\nabc\n1.00001\n520\nsoon\n\n");
+
+    EXPECT_TRUE(contains(output, "Answer taxable, deferred or cancel.\n"));
+    EXPECT_TRUE(contains(output, "Enter the amount with up to 4 decimals.\n"));
+    EXPECT_TRUE(contains(output, "Enter the date as YYYY-MM-DD.\n"));
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, CancelClosesAStockMergerQuestion) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    ask(session, "cancel\n");
+
+    ASSERT_EQ(session.result().mDecisions.size(), 1U);
+    EXPECT_EQ(session.result().mDecisions[0].mAnswer, (AnswerValue{CancelAnswer{}}));
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheTreatmentOfAStockMergerLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "");
+
+    EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheValueOfAStockMergerLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "taxable\n");
+
+    EXPECT_TRUE(contains(output, "Market value of all new units in USD"));
+    EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
+    EXPECT_TRUE(session.result().mDecisions.empty());
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(DecisionPromptsTest, AnInputEndingAtTheDateOfAStockMergerLeavesTheQuestionOpen) {
+    DecisionSession session;
+    session.start(asksUntilAnswered({stockMergerQuestionOfOneBroker()}));
+
+    const std::string output = ask(session, "taxable\n520\n");
+
+    EXPECT_TRUE(contains(output, "Date of the sale and the purchase (YYYY-MM-DD,"));
     EXPECT_TRUE(output.ends_with("Input ended: the open questions are listed in the summary.\n\n"));
     EXPECT_TRUE(session.result().mDecisions.empty());
     ASSERT_EQ(session.result().mRequests.size(), 1U);

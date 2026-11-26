@@ -541,7 +541,9 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
            aLeft.mEvent.mFeeCurrency == aRight.mEvent.mFeeCurrency &&
            aLeft.mEvent.mTransactionTaxPaid == aRight.mEvent.mTransactionTaxPaid &&
-           aLeft.mEvent.mFromCashMerger == aRight.mEvent.mFromCashMerger;
+           aLeft.mEvent.mFromCashMerger == aRight.mEvent.mFromCashMerger &&
+           aLeft.mEvent.mFromStockMerger == aRight.mEvent.mFromStockMerger &&
+           aLeft.mEvent.mPurchaseKind == aRight.mEvent.mPurchaseKind;
 }
 
 [[nodiscard]] bool sameEventFacts(const CorporateActionRecord& aLeft,
@@ -555,7 +557,10 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            sameUnitEvidence(aLeft.mEvent.mUnitEvidence, aRight.mEvent.mUnitEvidence) &&
            aLeft.mEvent.mRatio == aRight.mEvent.mRatio &&
            aLeft.mEvent.mBrokerActionId == aRight.mEvent.mBrokerActionId &&
-           aLeft.mEvent.mNewIsin == aRight.mEvent.mNewIsin;
+           aLeft.mEvent.mNewIsin == aRight.mEvent.mNewIsin &&
+           aLeft.mEvent.mCashProceeds == aRight.mEvent.mCashProceeds &&
+           aLeft.mEvent.mMarketValue == aRight.mEvent.mMarketValue &&
+           aLeft.mEvent.mAmountCurrency == aRight.mEvent.mAmountCurrency;
 }
 
 [[nodiscard]] bool sameEventFacts(const DividendRecord& aLeft, const DividendRecord& aRight) {

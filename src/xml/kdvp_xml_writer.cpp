@@ -24,6 +24,7 @@ constexpr std::string_view kKdvpNamespace =
 // Inventory list of securities
 constexpr std::string_view kInventoryListTypeSecurities = "PLVP";
 constexpr std::string_view kPurchaseTypeBought = "B";
+constexpr std::string_view kPurchaseTypeStatusChange = "E";
 // F5 is the inheritance or gift tax paid at the purchase: a known zero for a bought security
 // (F2 B). The FURS instructions fill column 5 on every purchase row, and the legacy output that
 // eDavki accepted wrote it the same way.
@@ -180,7 +181,10 @@ void appendRow(pugi::xml_node aSecurities, std::size_t aRowId, const KdvpRow& aR
             auto purchase = row.append_child("Purchase");
 
             appendText(purchase, "F1", dateText(aEntry.mDate).value());
-            appendText(purchase, "F2", kPurchaseTypeBought);
+            appendText(purchase,
+                       "F2",
+                       aEntry.mMethod == KdvpPurchaseMethod::E ? kPurchaseTypeStatusChange
+                                                               : kPurchaseTypeBought);
             appendText(purchase, "F3", decimalText(aEntry.mUnits));
             appendText(purchase, "F4", decimalText(aEntry.mUnitPrice));
             appendText(purchase, "F5", kNoInheritanceOrGiftTax);

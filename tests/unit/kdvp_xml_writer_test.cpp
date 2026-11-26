@@ -40,6 +40,67 @@ constexpr std::string_view kTaxNumberMessage =
     "format, a negative number, or characters the form does not accept. No XML file was written "
     "for this form.";
 
+TEST(KdvpXmlWriterTest, APurchaseReceivedInAnExchangeAtAStatusChangeHasF2E) {
+    // Two purchases and the sale of both: the first was bought (F2 `B`), the second is the new
+    // shares of a merger (F2 `E`).
+    const ReportMetadata metadata{
+        .mTaxpayer = {.mTaxNumber = "12345679", .mIsResident = true},
+        .mReportingYear = 2024,
+        .mFilingType = FilingType::Original,
+    };
+    const CapitalGainsReportKDVP report{
+        .mLists = {{
+            .mIsin = "XX0000000001",
+            .mName = "Example Shares",
+            .mIsFund = false,
+            .mRows =
+                {
+                    {.mEntry =
+                         KdvpPurchaseRow{
+                             .mPurchase = {StatementEventKind::Trade, 0, 0},
+                             .mDate = day("2024-01-10"),
+                             .mMethod = KdvpPurchaseMethod::B,
+                             .mUnits = 1'000'000'000,     // 10 units
+                             .mUnitPrice = 1'000'000'000, // EUR 10
+                         },
+                     .mStock = 1'000'000'000}, // 10
+                    {.mEntry =
+                         KdvpPurchaseRow{
+                             .mPurchase = {StatementEventKind::Trade, 0, 1},
+                             .mDate = day("2024-02-10"),
+                             .mMethod = KdvpPurchaseMethod::E,
+                             .mUnits = 500'000'000,       // 5 units
+                             .mUnitPrice = 2'000'000'000, // EUR 20
+                         },
+                     .mStock = 1'500'000'000}, // 10 + 5
+                    {.mEntry =
+                         KdvpSaleRow{
+                             .mSale = {StatementEventKind::Trade, 0, 2},
+                             .mDate = day("2024-03-10"),
+                             .mUnits = 1'500'000'000,     // 15 units
+                             .mUnitPrice = 3'000'000'000, // EUR 30
+                             .mLossRule = KdvpLossRule::NotBlocked,
+                         },
+                     .mStock = 0}, // 15 - 15
+                },
+        }}};
+
+    const auto result = KdvpXmlWriter::write(metadata, report);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_TRUE(result.mXml.has_value());
+
+    const std::string& xml = *result.mXml;
+    const std::size_t first = xml.find("<F2>");
+    const std::size_t second = xml.find("<F2>", first + 1);
+
+    ASSERT_NE(first, std::string::npos);
+    ASSERT_NE(second, std::string::npos);
+    EXPECT_EQ(xml.find("<F2>", second + 1), std::string::npos); // two purchase rows
+    EXPECT_EQ(xml.substr(first, 10), "<F2>B</F2>");
+    EXPECT_EQ(xml.substr(second, 10), "<F2>E</F2>");
+}
+
 TEST(KdvpXmlWriterTest, OneSaleUsingTwoPurchasesWritesTheWholeDocument) {
     // Example "one sale uses two purchases" in tax_rules.md.
     const ReportMetadata metadata{

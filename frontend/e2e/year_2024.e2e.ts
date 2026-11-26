@@ -77,6 +77,18 @@ describe("year 2024 of the manual files", () => {
     expect(await isinChange.getByRole("textbox", { name: "Datum spremembe" }).inputValue()).toBe("2024-03-04");
     await sendAnswer(isinChange);
 
+    // Merger of two companies (the shares of the Merged Share became shares of the Acquirer on
+    // 2024-06-03): a sale at the market value of the rows (USD 520), on the date of the rows.
+    const stockMerger = question(
+      page,
+      "Synthetic Merged Share (IBKR) (XX0000000136) → Synthetic Acquirer (IBKR) (XX0000000137)",
+    );
+    expect(await stockMerger.getByRole("button", { name: "Pošlji odgovor" }).isDisabled()).toBe(true);
+    await pickWord(stockMerger, "taxable");
+    expect(await stockMerger.getByRole("textbox", { name: "Tržna vrednost vseh novih enot v USD" }).inputValue()).toBe("520.0000");
+    expect(await stockMerger.getByRole("textbox", { name: "Datum prodaje in nakupa" }).inputValue()).toBe("2024-06-03");
+    await sendAnswer(stockMerger);
+
     // Exclusion from Doh-Obr (Bond B). The certificate is a derivative: the parser leaves it out, so
     // Doh-KDVP asks nothing about it.
     const obrFailure = question(page, "Doh-Obr: nadaljevanje brez teh naložb?");
@@ -99,6 +111,12 @@ describe("year 2024 of the manual files", () => {
     expect(
       await resultRegion(page)
         .getByText("ISIN XX0000000134 je 2024-03-04 postal XX0000000135 v razmerju 1 novih za 1 starih enot, kot ste potrdili.")
+        .count(),
+    ).toBe(1);
+    // The merger of the Merged Share is reported as a sale; the warning names the two ISINs and the date.
+    expect(
+      await resultRegion(page)
+        .getByText("Delnice XX0000000136 so bile 2024-06-03 zamenjane za delnice XX0000000137.")
         .count(),
     ).toBe(1);
     // The takeover for cash of the Cash Takeover share is a sale; its date is the row's date.

@@ -728,6 +728,7 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
             {
                 static_assert(std::is_same_v<Answer, SplitRatioAnswer> ||
                               std::is_same_v<Answer, IsinChangeAnswer> ||
+                              std::is_same_v<Answer, StockMergerAnswer> ||
                               std::is_same_v<Answer, SeparateEventsAnswer> ||
                               std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
                               std::is_same_v<Answer, CapitalGainsAnswer> ||

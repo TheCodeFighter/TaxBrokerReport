@@ -1228,7 +1228,8 @@ void writeOpenQuestions(std::ostream& aOut, const ApplicationResult& aResult) {
         {
             return aQuestion.mName;
         }
-        else if constexpr (std::is_same_v<Question, IsinChangeQuestion>)
+        else if constexpr (std::is_same_v<Question, IsinChangeQuestion> ||
+                           std::is_same_v<Question, StockMergerQuestion>)
         {
             return aQuestion.mOldName;
         }

@@ -516,8 +516,8 @@ export const uiTexts = {
   actionStockMerger: { sl: "združitev dveh družb", en: "merger of two companies" },
   isinChangeTitle: { sl: "Se je samo spremenil ISIN?", en: "Did only the ISIN change?" },
   isinChangeIntro: {
-    sl: "ISIN te naložbe se je spremenil: enote starega ISIN so izginile, enote novega ISIN pa so prišle. Če gre za istega izdajatelja, isto vrsto delnice in brez denarja, enote nadaljujejo pod novim ISIN z istimi datumi in vrednostmi nakupa (to ni prodaja). Če ne, gre za združitev dveh družb, ki je aplikacija še ne podpira, zato prodaj teh naložb ni mogoče prijaviti.",
-    en: "The ISIN of this investment changed: units of the old ISIN left and units of the new ISIN came in. If it is the same issuer, the same kind of share and no cash, your units carry on under the new ISIN with their purchase dates and values (this is not a sale). If not, it is a merger of two companies, which the app does not support yet, so the sales of these investments cannot be reported.",
+    sl: "ISIN te naložbe se je spremenil: enote starega ISIN so izginile, enote novega ISIN pa so prišle. Če gre za istega izdajatelja, isto vrsto delnice in brez denarja, enote nadaljujejo pod novim ISIN z istimi datumi in vrednostmi nakupa (to ni prodaja). Če ne, gre za združitev dveh družb in vas aplikacija nato vpraša, kako se obdavči.",
+    en: "The ISIN of this investment changed: units of the old ISIN left and units of the new ISIN came in. If it is the same issuer, the same kind of share and no cash, your units carry on under the new ISIN with their purchase dates and values (this is not a sale). If not, it is a merger of two companies, and the app then asks how it is taxed.",
   },
   isinChangeSourcesTitle: { sl: "Vrstice izvoza", en: "Rows of the export" },
   isinChangeYes: {
@@ -525,8 +525,8 @@ export const uiTexts = {
     en: "Yes: same issuer, same kind of share and no cash",
   },
   isinChangeNo: {
-    sl: "Ne: združitev dveh družb ali kaj drugega",
-    en: "No: a merger of two companies, or something else",
+    sl: "Ne: združitev dveh družb (nato vprašamo, kako se obdavči)",
+    en: "No: a merger of two companies (we then ask how it is taxed)",
   },
   isinChangeRatioHint: {
     sl: "Koliko novih enot postane iz ene stare. Vnesite 1 : 1, če se število enot ne spremeni.",
@@ -552,6 +552,36 @@ export const uiTexts = {
     en: "Same issuer, {new} : {old} from {date}",
   },
   answerIsinChangeNo: { sl: "Ni isti izdajatelj (združitev)", en: "Not the same issuer (a merger)" },
+  stockMergerTitle: { sl: "Kako se obdavči združitev?", en: "How is the merger taxed?" },
+  stockMergerIntro: {
+    sl: "Delnice te naložbe so bile zamenjane za delnice druge družbe. Praviloma je to prodaja starih delnic po tržni vrednosti novih (z denarjem vred), nove delnice pa so kupljene po tej vrednosti na isti dan. Če je davčni organ odobril odlog, nove delnice ohranijo datume in vrednosti nakupa starih.",
+    en: "The shares of this investment were exchanged for shares of another company. As a rule this is a sale of the old shares at the market value of the new ones (plus the cash), and the new shares are bought at that value on the same date. If FURS approved a deferral, the new shares keep the purchase dates and values of the old ones.",
+  },
+  stockMergerUnits: {
+    sl: "Odšlo je {old} enot, prišlo {new} enot, denar: {cash} {currency}.",
+    en: "{old} units left and {new} units came in, with cash of {cash} {currency}.",
+  },
+  stockMergerTaxable: {
+    sl: "Prodaja: stare delnice so prodane po tržni vrednosti novih",
+    en: "A sale: the old shares are sold at the market value of the new ones",
+  },
+  stockMergerDeferred: {
+    sl: "Odlog, ki ga je odobril davčni organ: to ni prodaja",
+    en: "A deferral that FURS decided: this is not a sale",
+  },
+  stockMergerValue: { sl: "Tržna vrednost vseh novih enot v {currency}", en: "Market value of all new units in {currency}" },
+  stockMergerValueRows: { sl: "Vrstice izvoza kažejo {value}.", en: "The rows of the export show {value}." },
+  stockMergerValueNotValid: {
+    sl: "Vnesite znesek nad 0 z največ 4 decimalkami.",
+    en: "Enter an amount above 0 with up to 4 decimals.",
+  },
+  stockMergerDate: { sl: "Datum prodaje in nakupa", en: "Date of the sale and the purchase" },
+  decisionStockMerger: { sl: "Združitev dveh družb", en: "Merger of two companies" },
+  answerStockMergerTaxable: {
+    sl: "Prodaja, tržna vrednost {value} {currency} dne {date}",
+    en: "A sale, market value {value} {currency} on {date}",
+  },
+  answerStockMergerDeferred: { sl: "Odlog od {date}", en: "A deferral from {date}" },
   answersTitle: { sl: "Vaši odgovori ({count})", en: "Your answers ({count})" },
   answersHint: {
     sl: "Izbrisan odgovor vrne vprašanje.",

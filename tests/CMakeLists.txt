@@ -38,6 +38,7 @@ add_executable(taxbroker_unit_tests
     unit/exact_arithmetic_test.cpp
     unit/import_fixed_point_test.cpp
     unit/isin_change_test.cpp
+    unit/stock_merger_test.cpp
     unit/income_report_models_test.cpp
     unit/fifo_basis_property_test.cpp
     unit/fifo_basis_test.cpp

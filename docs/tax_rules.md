@@ -158,7 +158,8 @@ For selected year `Y`, the app writes a *popisni list* only for an ISIN with at 
   purchase position.
 - `F8` is the running total of the listed purchase units minus the listed sale units. Every sale
   uses only earlier purchases, so `F8` is never negative, and it is 0 after the last sale row.
-- `F2` (way of purchase) is `B` (*nakup*, purchase) for every broker purchase. `A`
+- `F2` (way of purchase) is `B` (*nakup*, purchase) for every broker purchase, and `E` for the
+  new shares of a merger of two companies ("Merger of two companies"). `A`
   (*vložek kapitala*) is a capital contribution to one's own company and is not used.
 - `F10` exists only on sale rows. It is `true` (*Da*) unless the 30-day loss rule blocks the loss,
   and `false` (*Ne*) for the blocked part ([The 30-day loss rule](#the-30-day-loss-rule)). A
@@ -590,14 +591,15 @@ Sources, read in November 2026: the FURS information *Obresti, dividende in dobi
   (ZDoh-2 Article 100, second paragraph, point 2). For a company that ends, the sale date is the
   date of the decision to end it (*datum sklepa o prenehanju*), which a broker export does not
   give.
-- Doh-KDVP `F2` `E` is *"zamenjava kapitala ob statusnih spremembah družbe"*. The app writes `B`
-  for every purchase.
+- Doh-KDVP `F2` `E` is *"zamenjava kapitala ob statusnih spremembah družbe"*. The app writes `E`
+  on the purchase rows of the new shares of a merger of two companies (see below) and `B` on every
+  other purchase.
 
 | Case | Example | Tax | What the app does |
 | --- | --- | --- | --- |
 | Takeover for cash | 10 units out, EUR 500 in, no new shares | A sale at the cash paid | Reports the sale on the date of the broker's row, with a warning that FURS may count another date. No question. |
 | ISIN change of the same issuer, no cash | A new ISIN after a rename or a technical exchange, the same units or a ratio | Not a sale | Asks one question; after "same issuer" the lots carry on under the new ISIN. |
-| Merger of two companies (shares for shares, with or without cash) | 10 shares of A become 4 shares of B | A sale at the market value of the new shares, unless FURS granted a deferral | Unsupported: `unsupported_corporate_action`, key `.stock_merger`. |
+| Merger of two companies (shares for shares, with or without cash) | 10 shares of A become 4 shares of B | A sale at the market value of the new shares, unless FURS granted a deferral | Asks one question (a sale at the market value of the new shares, or the deferral FURS decided). |
 
 **Takeover for cash.** One row (per broker account) of the action: the units of one ISIN leave and
 cash comes, no row of another ISIN. The app treats it as a sale of those units at the cash paid
@@ -627,11 +629,11 @@ lists share one FIFO pool, so a purchase that both use is a purchase row in each
 the units that list's sales use, and `F8` runs inside each list. The purchases keep their original
 dates, `F2` `B` and, after a ratio other than 1 / 1, the units after the change with `F4` = exact
 value / units. "Not the same issuer" is a merger of two
-companies. Example: 20 units of the old ISIN bought on 2023-03-01 at EUR 15, the ISIN changes on
+companies, which is asked next (see "Merger of two companies"). Example: 20 units of the old ISIN bought on 2023-03-01 at EUR 15, the ISIN changes on
 2024-03-04 (`1 : 1`), 20 units sold on 2025-03-03 at EUR 18: the 2025 Doh-KDVP has the new ISIN,
 the purchase of 2023-03-01 (20 units at EUR 15.00000000) and the sale (20 at EUR 18), gain EUR 60.
 With rows of 20 units out and 40 in (`2 : 1`) the purchase is 40 units at EUR 7.50000000. The question is asked only when a sale
-of the selected year is of either ISIN and the date is at most 30 days after 31 December. Whether
+of the selected year (or units that leave in another ISIN change or merger of the year) is of either ISIN and the date is at most 30 days after 31 December. Whether
 FURS accepts the new ISIN under `F2` `B`, and a purchase split over the two lists, is unconfirmed
 until an eDavki draft import.
 
@@ -647,11 +649,45 @@ Known limits (both block and never report a wrong value):
   date" and blocks both ISINs (`.trade_across_isin_change`). The date can only be one of the rows'
   dates, often a single day, and the export's time of day is not compared.
 - Chained changes (A to B, then B to C) are carried out only for the changes that matter: a change
-  matters when either of its ISINs has a sale in the year. If only C is sold, the change A to B
-  is not carried out, its row stays in the pool of C and blocks C.
+  matters when either of its ISINs has a sale in the year, and units that leave in another ISIN
+  change or merger of the year count as a sale. If B to C is in the selected year, A to B is
+  asked as well. If only C is sold and B to C is in an earlier year than the selected one, the
+  change A to B is not carried out, its row stays in the pool of C and blocks C.
 
-**Merger of two companies.** Not supported yet. The treatment depends on a deferral that FURS grants
-on notification and on the market value of the new shares, which the export does not always give.
+**Merger of two companies.** The shares of one ISIN (A) leave and the shares of another ISIN (B)
+come in, rows of one action (exactly one ISIN out and one in; any other shape stays
+`unsupported_corporate_action`, key `.stock_merger`), with or without cash. The app asks how it is
+taxed, with the dates of the rows (the answer's date is between them) and, for a sale, the market
+value of all new units in the currency of the rows (the broker's `value`, when it gives one, is
+offered but never used without the answer) and the cash the rows show:
+
+- **Sale (taxable, the rule).** Every unit of A is sold on the answered date at (value + cash) /
+  units of A, and B is bought on the same date at value / units of B, each price rounded once to 8
+  decimals. The sale is an ordinary sale for the 30-day rule (purchases of A count; receiving B is
+  not a purchase of A); the holding period of B starts on the date. `F2` of the purchase rows of B
+  is `E`. Units of A still held after the sale mean that a row is missing:
+  `corporate_action_inconsistent`, key `.units_left_after_stock_merger`. Warning
+  `corporate_action_applied.stock_merger`: FURS may count another date (the date of the decision).
+- **Deferral (FURS decided it).** The lots of A carry on under B with the ratio of the units that
+  came in over the units that left, and keep their purchase dates and exact values, like an ISIN
+  change with a ratio (`fifo.md`); the purchase rows have `F2` `E`. A trade of A on or after the
+  date or of B before it blocks (`.trade_across_isin_change`). Cash paid with a deferral is taxed
+  as a sale of part of the old lots; that is not supported:
+  `unsupported_corporate_action`, key `.stock_merger_deferral_with_cash`.
+
+The question is asked when a row of the merger is in the selected year, or when a sale of the
+selected year is of either ISIN and the date is at most 30 days after 31 December. Units that leave
+in another ISIN change or merger of the selected year count as such a sale, so a merger of an
+earlier year is asked when the new shares are exchanged again in the selected year. An ISIN change answered "not the
+same issuer" is asked this question too, without cash or value. Examples (EUR): 10 units of A
+bought on 2023-03-01 at 40; on 2024-06-03 they become 4 units of B, answer sale with value 520: the
+2024 Doh-KDVP has A with the purchase (10 at 40.00000000, `F2` `B`) and the sale (10 at
+52.00000000), gain 120; with cash 30 the sale is 10 at 55.00000000, gain 150. B is sold on
+2025-02-03 at 140: the 2025 Doh-KDVP has B with the purchase of 2024-06-03 (4 at 130.00000000,
+`F2` `E`) and the sale (4 at 140), gain 40. With the deferral the same B sale lists the purchase of
+2023-03-01 (4 at 100.00000000, `F2` `E`) and gain 160. Whether FURS accepts `E` for the new shares
+of a taxable merger, which date it counts and whether a deferral applies to companies outside the
+EU are unconfirmed (see the open questions to FURS).
 
 ## Empty selected years
 
@@ -883,7 +919,8 @@ and corporate-action names are unconfirmed until a real file has such rows.
 | Corporate actions: forward and reverse splits | The ratio question (the text of the action is evidence only). |
 | Corporate actions: `TC` of one ISIN, units out and cash in | A sale at the cash paid, on the date of the row ("Corporate actions that change the ISIN"). |
 | Corporate actions: `IC`, and `FS` or `RS` whose action has two ISINs | The ISIN change question; the lots carry on under the new ISIN after "same issuer". |
-| Corporate actions: `TC` of two ISINs, spin-offs, rights, tenders, stock and choice dividends, others | `unsupported_corporate_action` (`.stock_merger` for a merger of two companies). |
+| Corporate actions: `TC` of two ISINs (one out, one in) | The stock merger question: a sale at the market value of the new shares, or a deferral ("Merger of two companies"). |
+| Corporate actions: `TC` of more than two ISINs, spin-offs, rights, tenders, stock and choice dividends, others | `unsupported_corporate_action` (`.stock_merger` for a merger of more than two ISINs). |
 | Corporate actions: bond and T-bill maturity | Information only (redemption event). |
 | Transfers | Not read (no FIFO effect; missing buys show as `incomplete_history` at a sale). |
 

@@ -1325,6 +1325,8 @@ class FlexReader {
             .mUnitEvidence = {std::move(unitEvidence)},
             .mInstrumentEvidence = std::move(instrumentEvidence),
             .mFromCashMerger = aFields.mFromCashMerger,
+            .mPurchaseKind =
+                aFields.mSide == TradeSide::Buy ? PurchaseKind::Bought : PurchaseKind::NotAPurchase,
         });
     }
 
@@ -1468,7 +1470,42 @@ class FlexReader {
             return;
         }
 
-        storeAction(aRow, context, *dateTime, *quantity, aShape);
+        storeAction(aRow, context, *dateTime, currency, *quantity, aShape);
+    }
+
+    /// An optional amount attribute of an action row. A missing, blank or zero one is none; a
+    /// negative or a non-number rejects the row. Returns false after a rejection.
+    static bool readOptionalAmount(const pugi::xml_node& aRow,
+                                   const RowContext& aContext,
+                                   const char* const aName,
+                                   std::optional<Money>& aAmount) {
+        const std::string_view text = textOf(aRow, aName);
+
+        if (text.empty())
+        {
+            return true;
+        }
+
+        const std::optional<ParsedFixedPoint> parsed = readFixedPoint(text, MONEY_SCALE);
+
+        if (!parsed || parsed->mValue == std::numeric_limits<Money>::min())
+        {
+            aContext.rejectField(aName, text);
+            return false;
+        }
+
+        if (parsed->mSourceNegative)
+        {
+            aContext.rejectSign(aName);
+            return false;
+        }
+
+        if (parsed->mSourceNonzero)
+        {
+            aAmount = parsed->mValue;
+        }
+
+        return true;
     }
 
     /// A merger row of one ISIN that loses units: with cash it is a takeover for cash, a sale of
@@ -1502,7 +1539,12 @@ class FlexReader {
 
         if (!proceeds->mSourceNonzero)
         {
-            storeAction(aRow, aContext, aDateTime, aQuantity, {.mKind = ActionShape::Kind::Other});
+            storeAction(aRow,
+                        aContext,
+                        aDateTime,
+                        aCurrency,
+                        aQuantity,
+                        {.mKind = ActionShape::Kind::Other});
             return;
         }
 
@@ -1540,8 +1582,27 @@ class FlexReader {
     void storeAction(const pugi::xml_node& aRow,
                      const RowContext& aContext,
                      const CompactDateTime& aDateTime,
+                     const Currency aCurrency,
                      const ParsedFixedPoint& aQuantity,
                      const ActionShape& aShape) {
+        // A merger of two companies gives the cash on the row that loses units and the market value
+        // of the new shares on the row that gets them; both are read as evidence.
+        std::optional<Money> cashProceeds;
+        std::optional<Money> marketValue;
+
+        if (aShape.mKind == ActionShape::Kind::StockMerger)
+        {
+            const bool isOut = aQuantity.mValue < 0;
+
+            if (!readOptionalAmount(aRow,
+                                    aContext,
+                                    isOut ? "proceeds" : "value",
+                                    isOut ? cashProceeds : marketValue))
+            {
+                return;
+            }
+        }
+
         const std::string isin{textOf(aRow, "isin")};
         const std::string name{textOf(aRow, "description")};
         auto& instrument = getOrCreateInstrument(mResult.mStatement.mTradeInstruments, isin, name);
@@ -1562,6 +1623,9 @@ class FlexReader {
             .mBrokerActionId =
                 actionId.empty() ? std::nullopt : std::optional<std::string>{std::string{actionId}},
             .mNewIsin = aShape.mNewIsin,
+            .mCashProceeds = cashProceeds,
+            .mMarketValue = marketValue,
+            .mAmountCurrency = aCurrency,
             .mUnitEvidence = {std::move(unitEvidence)},
             .mInstrumentEvidence = {},
         });

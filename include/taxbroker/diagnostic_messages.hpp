@@ -193,6 +193,12 @@ enum class MessageKey {
     CorporateActionInconsistentTradeAcrossIsinChange,
     CorporateActionAmbiguousIsinChangeRequired,
     AnswerRejectedIsinChangeRatioMismatch,
+    CorporateActionAppliedStockMerger,
+    CorporateActionAppliedStockMergerDeferred,
+    CorporateActionInconsistentUnitsLeftAfterStockMerger,
+    CorporateActionAmbiguousStockMergerRequired,
+    UnsupportedCorporateActionStockMergerDeferralWithCash,
+    AnswerRejectedMarketValueNotPositive,
 };
 
 enum class MessageParamKind {

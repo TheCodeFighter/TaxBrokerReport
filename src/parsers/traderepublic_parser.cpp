@@ -1126,6 +1126,8 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         .mTransactionTaxPaid = 0, // Trade Republic books no second fee.
         .mUnitEvidence = {std::move(evidence)},
         .mInstrumentEvidence = std::move(instrumentEvidence),
+        .mPurchaseKind =
+            *tradeSide == TradeSide::Buy ? PurchaseKind::Bought : PurchaseKind::NotAPurchase,
     });
 
     return true;

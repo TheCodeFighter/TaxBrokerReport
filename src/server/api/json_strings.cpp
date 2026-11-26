@@ -257,6 +257,8 @@ std::string_view toString(RequestType aType) {
         return "corporate_action_identity_required";
     case RequestType::CorporateActionIsinChangeRequired:
         return "corporate_action_isin_change_required";
+    case RequestType::CorporateActionStockMergerRequired:
+        return "corporate_action_stock_merger_required";
     case RequestType::CorporateActionRatioRequired:
         return "corporate_action_ratio_required";
     case RequestType::QuantityCorrectionRequired:

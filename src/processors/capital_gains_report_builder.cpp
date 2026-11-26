@@ -160,6 +160,17 @@ ListedInstrument listedAsOf(const std::vector<TradeInstrument>& aInstruments,
     return trade.mListedAs.value_or(ListedInstrument{.mIsin = aPool.mIsin, .mName = aPool.mName});
 }
 
+/// The F2 of a purchase row. Shares received in an exchange at a status change are `E` in the list
+/// of the ISIN they were received under; a list under the old ISIN (a sale made before the
+/// exchange) shows the same lot as bought.
+KdvpPurchaseMethod purchaseMethodOf(const TradeTransaction& aPurchase,
+                                    const Isin& aListedIsin,
+                                    const Isin& aPoolIsin) {
+    return aPurchase.mPurchaseKind == PurchaseKind::StatusChangeExchange && aListedIsin == aPoolIsin
+               ? KdvpPurchaseMethod::E
+               : KdvpPurchaseMethod::B;
+}
+
 /// Returns the tax-free units of each sale of the year, past the holding period.
 std::vector<KdvpLongHeldUnits>
 collectLongHeldUnits(const std::vector<TradeInstrument>& aInstruments,
@@ -402,12 +413,15 @@ KdvpInventoryList buildList(const std::vector<TradeInstrument>& aInstruments,
                 // findBlock checked that the unit value fits F4.
                 stock += group.mUnits;
                 list.mRows.push_back(
-                    {.mEntry = KdvpPurchaseRow{.mPurchase = event,
-                                               .mDate = trade.mMetadata.mTaxDate,
-                                               .mMethod = KdvpPurchaseMethod::B,
-                                               .mUnits = group.mUnits,
-                                               .mUnitPrice = std::get<UnitPrice>(
-                                                   filingUnitPriceOf(group.mUnitValue))},
+                    {.mEntry =
+                         KdvpPurchaseRow{
+                             .mPurchase = event,
+                             .mDate = trade.mMetadata.mTaxDate,
+                             .mMethod =
+                                 purchaseMethodOf(trade, aListedSales.mListed.mIsin, aPool.mIsin),
+                             .mUnits = group.mUnits,
+                             .mUnitPrice =
+                                 std::get<UnitPrice>(filingUnitPriceOf(group.mUnitValue))},
                      .mStock = stock});
             }
         }
@@ -532,12 +546,15 @@ buildDeveloperList(const std::vector<TradeInstrument>& aInstruments,
             if (isBuy)
             {
                 stock += trade.mUnits;
-                list.mRows.push_back({.mEntry = KdvpPurchaseRow{.mPurchase = event,
-                                                                .mDate = trade.mMetadata.mTaxDate,
-                                                                .mMethod = KdvpPurchaseMethod::B,
-                                                                .mUnits = trade.mUnits,
-                                                                .mUnitPrice = trade.mUnitPrice},
-                                      .mStock = stock});
+                list.mRows.push_back(
+                    {.mEntry =
+                         KdvpPurchaseRow{.mPurchase = event,
+                                         .mDate = trade.mMetadata.mTaxDate,
+                                         .mMethod =
+                                             purchaseMethodOf(trade, aPool.mIsin, aPool.mIsin),
+                                         .mUnits = trade.mUnits,
+                                         .mUnitPrice = trade.mUnitPrice},
+                     .mStock = stock});
             }
             else
             {
@@ -564,12 +581,14 @@ buildDeveloperList(const std::vector<TradeInstrument>& aInstruments,
 
                 stock += group.mUnits;
                 list.mRows.push_back(
-                    {.mEntry = KdvpPurchaseRow{.mPurchase = event,
-                                               .mDate = trade.mMetadata.mTaxDate,
-                                               .mMethod = KdvpPurchaseMethod::B,
-                                               .mUnits = group.mUnits,
-                                               .mUnitPrice = std::get<UnitPrice>(
-                                                   filingUnitPriceOf(group.mUnitValue))},
+                    {.mEntry =
+                         KdvpPurchaseRow{
+                             .mPurchase = event,
+                             .mDate = trade.mMetadata.mTaxDate,
+                             .mMethod = purchaseMethodOf(trade, aPool.mIsin, aPool.mIsin),
+                             .mUnits = group.mUnits,
+                             .mUnitPrice =
+                                 std::get<UnitPrice>(filingUnitPriceOf(group.mUnitValue))},
                      .mStock = stock});
             }
         }
