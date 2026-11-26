@@ -285,6 +285,7 @@ export const uiTexts = {
     sl: "Rezultat se je medtem spremenil. Ponovno ustvarite poročila.",
     en: "The result changed in the meantime. Create the reports again.",
   },
+  messagesTitle: { sl: "Sporočila ({count})", en: "Messages ({count})" },
   sharedMessagesTitle: { sl: "Sporočila za več poročil", en: "Messages for several reports" },
   classificationTitle: { sl: "Izpuščeno pri razvrstitvi", en: "Left out by classification" },
   excludedReasonDebtSecurity: { sl: "dolžniški vrednostni papir", en: "debt security" },
@@ -860,6 +861,31 @@ export const uiTexts = {
   },
   feesFees: { sl: "Stroški posrednika", en: "Broker fees" },
   feesBenefits: { sl: "Ugodnosti", en: "Benefits" },
+  taxTitle: { sl: "Približni davek za plačilo", en: "Approximate tax to pay" },
+  taxHint: {
+    sl: "Samo za Vaš pregled: pravi davek odmeri FURS. Ni v nobeni datoteki XML.",
+    en: "For your information only: FURS makes the real assessment. It is in no XML file.",
+  },
+  taxUnsupported: {
+    sl: "Za to leto stopnje davka niso znane, zato ocene ni.",
+    en: "The tax rates of this year are not known, so there is no estimate.",
+  },
+  taxAmount: { sl: "{amount} EUR", en: "EUR {amount}" },
+  taxNotAssessed: {
+    sl: "Verjetno ne boste plačali davka: FURS ne odmeri davka do 10 EUR.",
+    en: "You will probably pay no tax on this form: FURS does not assess a tax of EUR 10 or less.",
+  },
+  taxIncomplete: { sl: "ni ocene: napoved ni popolna", en: "no estimate: the form is not complete" },
+  taxDepositNote: {
+    sl: "Samo obresti iz Vaših datotek; obresti drugih bank niso vštete.",
+    en: "Only the interest from your files; the interest of other banks is not included.",
+  },
+  taxTotal: { sl: "Skupaj: {amount} EUR", en: "Total: EUR {amount}" },
+  taxTotalNone: { sl: "Skupaj: ni ocene", en: "Total: no estimate" },
+  taxTotalPartial: {
+    sl: "Skupaj vsaj {amount} EUR, brez: {forms}",
+    en: "Total at least EUR {amount}, without: {forms}",
+  },
   notFiledHint: {
     sl: "Datoteke XML še niso oddana napoved. V eDavkih jih uvozite, preverite vrednosti, priložite dokazila, ki jih zahtevajo vrstice (označena zgoraj), in tam oddajte napoved.",
     en: "The XML files are not a filed return. Import them in eDavki, check the values, attach the evidence the rows ask for (marked above) and file the return there.",

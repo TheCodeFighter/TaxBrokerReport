@@ -142,6 +142,15 @@ describe("year 2025 of the manual files", () => {
     expect(await card(page, "Doh-DHO").getByText(/Vrstice: 1,/).count()).toBe(1);
     expect(await card(page, "Doh-DHO").getByText(/Obresti drugih bank niso vključene/).count()).toBe(0);
     expect(await cardStatus(page, "Doh-Obr")).toBe("pripravljeno");
+
+    // README, approximate tax 2025: the amount of each form and the total.
+    const estimate = await page.getByRole("region", { name: "Približni davek za plačilo" }).textContent();
+
+    expect(estimate).toContain("Doh-KDVP: 166,82 EUR");
+    expect(estimate).toContain("Doh-Div: 22,82 EUR");
+    expect(estimate).toContain("Doh-DHO: 35,00 EUR");
+    expect(estimate).toContain("Doh-Obr: 12,93 EUR");
+    expect(estimate).toContain("Skupaj: 237,57 EUR");
     expect(await card(page, "Doh-Obr").getByText(/Vrstice: 3,/).count()).toBe(1);
   });
 });

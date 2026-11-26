@@ -1,5 +1,6 @@
 import { localizeNumber, roundToCents } from "../i18n/number_format";
 import { uiText, uiTextWith, type Language, type UiTextKey } from "../i18n/ui_texts";
+import { reportForms } from "./diagnostics_view";
 import { brokerTitle } from "./result_view";
 import type {
   BenefitSummary,
@@ -9,6 +10,7 @@ import type {
   FeeSummary,
   IncomeRow,
   IncomeSummary,
+  TaxEstimate,
 } from "./submit";
 
 /** One income row as the page shows it; every field is text, `evidence` marks a proof to attach. */
@@ -203,5 +205,72 @@ export function benefitView(summary: BenefitSummary | undefined, language: Langu
       };
     }),
     total: totalText(summary.totalEur, language),
+  };
+}
+
+/** One form of the tax estimate: its form code, the amount or the reason it has none, and a note. */
+export interface TaxEstimateRowView {
+  form: string;
+  text: string;
+  note?: string;
+}
+
+/** The estimate block: a message instead of rows for a year without rates, else the rows and the total. */
+export interface TaxEstimateView {
+  unsupported: boolean;
+  rows: TaxEstimateRowView[];
+  total: string;
+}
+
+function formCode(report: string): string {
+  return reportForms.find((form) => form.key === report)?.form ?? report;
+}
+
+/**
+ * The approximate tax to pay; `undefined` when no form has data. A form that is not complete has no
+ * amount and makes the total a lower limit. Amounts are the server's cents, never recalculated.
+ */
+export function taxEstimateView(
+  estimate: TaxEstimate | undefined,
+  addOtherBanks: boolean,
+  language: Language,
+): TaxEstimateView | undefined {
+  if (estimate === undefined || (estimate.yearSupported && estimate.forms.length === 0)) {
+    return undefined;
+  }
+
+  const rows: TaxEstimateRowView[] = estimate.forms.map((form) => {
+    const notes: string[] = [];
+
+    if (form.notAssessed) {
+      notes.push(uiText(language, "taxNotAssessed"));
+    }
+
+    if (form.report === "bankInterest" && addOtherBanks && !form.incomplete) {
+      notes.push(uiText(language, "taxDepositNote"));
+    }
+
+    const note = notes.length === 0 ? undefined : notes.join(" ");
+
+    return {
+      form: formCode(form.report),
+      text:
+        form.taxEur === null || form.incomplete
+          ? uiText(language, "taxIncomplete")
+          : uiTextWith(language, "taxAmount", { amount: roundToCents(form.taxEur) }),
+      ...(note === undefined ? {} : { note }),
+    };
+  });
+  const amount = roundToCents(estimate.totalEur);
+  const missing = estimate.forms.filter((form) => form.incomplete).map((form) => formCode(form.report));
+
+  return {
+    unsupported: !estimate.yearSupported,
+    rows,
+    total: estimate.totalPartial && missing.length === estimate.forms.length
+      ? uiText(language, "taxTotalNone")
+      : estimate.totalPartial
+      ? uiTextWith(language, "taxTotalPartial", { amount, forms: missing.join(", ") })
+      : uiTextWith(language, "taxTotal", { amount }),
   };
 }

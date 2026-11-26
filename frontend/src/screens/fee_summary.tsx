@@ -1,6 +1,7 @@
 import { uiText, type Language } from "../i18n/ui_texts";
 import { benefitView, feeView, type SummaryView } from "../run/income_view";
 import type { RunResult } from "../run/submit";
+import { ResultRegion } from "./result_region";
 
 interface Props {
   language: Language;
@@ -11,7 +12,7 @@ function SummaryList({ language, title, view }: { language: Language; title: str
   return (
     <>
       <h4>{title}</h4>
-      <ul class="plain-list">
+      <ul class="plain-list block-list">
         {view.rows.map((row, index) => (
           <li key={index}>
             <strong>{row.title}</strong>
@@ -43,13 +44,11 @@ export function FeeSummary({ language, result }: Props) {
   }
 
   return (
-    <section aria-labelledby="fees-title">
-      <h3 id="fees-title">{uiText(language, "feesTitle")}</h3>
-      <p class="hint">{uiText(language, "feesHint")}</p>
+    <ResultRegion id="fees-title" title={uiText(language, "feesTitle")} hint={uiText(language, "feesHint")}>
       {fees === undefined ? null : <SummaryList language={language} title={uiText(language, "feesFees")} view={fees} />}
       {benefits === undefined ? null : (
         <SummaryList language={language} title={uiText(language, "feesBenefits")} view={benefits} />
       )}
-    </section>
+    </ResultRegion>
   );
 }

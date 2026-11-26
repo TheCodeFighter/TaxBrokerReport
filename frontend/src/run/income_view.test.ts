@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { benefitView, depositReminder, feeView, incomeGroups, incomeSummaryLine } from "./income_view";
-import type { IncomeRow, IncomeSummary } from "./submit";
+import {
+  benefitView,
+  depositReminder,
+  feeView,
+  incomeGroups,
+  incomeSummaryLine,
+  taxEstimateView,
+} from "./income_view";
+import type { IncomeRow, IncomeSummary, TaxEstimate } from "./submit";
 
 const dividend: IncomeRow = {
   kind: "dividend",
@@ -244,5 +251,107 @@ describe("benefitView", () => {
     );
 
     expect(view?.rows[0]?.title).toBe("Trade Republic: new_kind");
+  });
+});
+
+describe("taxEstimateView", () => {
+  it("shows each form with its amount and the total, in English and Slovenian", () => {
+    const estimate: TaxEstimate = {
+      yearSupported: true,
+      forms: [
+        { report: "capitalGains", taxEur: "118.7500", notAssessed: false, incomplete: false },
+        { report: "dividends", taxEur: "3.0000", notAssessed: true, incomplete: false },
+      ],
+      totalEur: "118.7500",
+      totalPartial: false,
+    };
+
+    expect(taxEstimateView(estimate, false, "en")).toEqual({
+      unsupported: false,
+      rows: [
+        { form: "Doh-KDVP", text: "EUR 118.75" },
+        {
+          form: "Doh-Div",
+          text: "EUR 3.00",
+          note: "You will probably pay no tax on this form: FURS does not assess a tax of EUR 10 or less.",
+        },
+      ],
+      total: "Total: EUR 118.75",
+    });
+    expect(taxEstimateView(estimate, false, "sl")?.rows[0]).toEqual({ form: "Doh-KDVP", text: "118,75 EUR" });
+    expect(taxEstimateView(estimate, false, "sl")?.total).toBe("Skupaj: 118,75 EUR");
+  });
+
+  it("shows no amount for a form that is not complete and a lower limit as the total", () => {
+    const estimate: TaxEstimate = {
+      yearSupported: true,
+      forms: [
+        { report: "capitalGains", taxEur: "10.1000", notAssessed: false, incomplete: false },
+        { report: "dividends", taxEur: null, notAssessed: false, incomplete: true },
+        { report: "otherInterest", taxEur: null, notAssessed: false, incomplete: true },
+      ],
+      totalEur: "10.1000",
+      totalPartial: true,
+    };
+
+    const view = taxEstimateView(estimate, false, "en");
+
+    expect(view?.rows[1]).toEqual({ form: "Doh-Div", text: "no estimate: the form is not complete" });
+    expect(view?.total).toBe("Total at least EUR 10.10, without: Doh-Div, Doh-Obr");
+  });
+
+  it("notes that the deposit interest holds only the imported interest", () => {
+    const estimate: TaxEstimate = {
+      yearSupported: true,
+      forms: [{ report: "bankInterest", taxEur: "125.0000", notAssessed: false, incomplete: false }],
+      totalEur: "125.0000",
+      totalPartial: false,
+    };
+
+    expect(taxEstimateView(estimate, true, "en")?.rows[0]).toEqual({
+      form: "Doh-DHO",
+      text: "EUR 125.00",
+      note: "Only the interest from your files; the interest of other banks is not included.",
+    });
+    expect(taxEstimateView(estimate, false, "en")?.rows[0]).toEqual({ form: "Doh-DHO", text: "EUR 125.00" });
+  });
+
+  it("shows both notes for a deposit interest tax of EUR 10 or less with other banks", () => {
+    const estimate: TaxEstimate = {
+      yearSupported: true,
+      forms: [{ report: "bankInterest", taxEur: "5.0000", notAssessed: true, incomplete: false }],
+      totalEur: "0.0000",
+      totalPartial: false,
+    };
+
+    // Interest 1,020.00: (1,020.00 - 1,000.00) x 25 % = 5.00, not assessed; other banks may add more.
+    expect(taxEstimateView(estimate, true, "en")?.rows[0]).toEqual({
+      form: "Doh-DHO",
+      text: "EUR 5.00",
+      note:
+        "You will probably pay no tax on this form: FURS does not assess a tax of EUR 10 or less. " +
+        "Only the interest from your files; the interest of other banks is not included.",
+    });
+  });
+
+  it("says no estimate for the total when every form is incomplete", () => {
+    const estimate: TaxEstimate = {
+      yearSupported: true,
+      forms: [{ report: "capitalGains", taxEur: null, notAssessed: false, incomplete: true }],
+      totalEur: "0.0000",
+      totalPartial: true,
+    };
+
+    expect(taxEstimateView(estimate, false, "en")?.total).toBe("Total: no estimate");
+    expect(taxEstimateView(estimate, false, "sl")?.total).toBe("Skupaj: ni ocene");
+  });
+
+  it("marks a year without rates and shows nothing without a form", () => {
+    expect(taxEstimateView({ yearSupported: false, forms: [], totalEur: "0.0000", totalPartial: false }, false, "en"))
+      .toEqual({ unsupported: true, rows: [], total: "Total: EUR 0.00" });
+    expect(
+      taxEstimateView({ yearSupported: true, forms: [], totalEur: "0.0000", totalPartial: false }, false, "en"),
+    ).toBeUndefined();
+    expect(taxEstimateView(undefined, false, "en")).toBeUndefined();
   });
 });

@@ -1091,6 +1091,10 @@ Units past the holding period (tax free, not in the XML): 0
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
 
+Approximate tax for 2024 (information only, FURS makes the real assessment):
+  Capital gains: 49.00 EUR
+  Total: 49.00 EUR
+
 Private-market events skipped (only a cash amount, no units): 0
 
 Doh-KDVP errors: 0
@@ -1155,6 +1159,32 @@ TEST(ReportCommandTest, EachInputFileIsListedWithItsSourceIdAndFileName) {
     EXPECT_FALSE(contains(result.mOut, folder.path("")));
 }
 
+TEST(ReportCommandTest, YearWithoutTaxRatesGivesNoEstimateForASale) {
+    const TemporaryFolder folder;
+    const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const auto history = folder.writeCsv(
+        "history.csv",
+        {
+            R"(2026-01-10T09:00:00Z,2026-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+            R"(2026-03-10T09:00:00Z,2026-03-10,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-10,30,300,,,EUR,,,,,synthetic-sell-1,,,,)",
+        });
+
+    const auto result = run({"report",
+                             "--year",
+                             "2026",
+                             "--taxpayer",
+                             taxpayer,
+                             "--out",
+                             folder.outputDirectory(),
+                             "--trade-republic",
+                             history});
+
+    // The rates are known for 2016 to 2025 only.
+    EXPECT_TRUE(contains(result.mOut,
+                         "Approximate tax for 2026 (information only, FURS makes the real "
+                         "assessment): no estimate (the tax rates of this year are not known)\n"));
+}
+
 TEST(ReportCommandTest, YearWithoutDataWritesOnlyTheSummary) {
     const TemporaryFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
@@ -1189,6 +1219,8 @@ Units past the holding period (tax free, not in the XML): 0
 
 Fees in 2024 (information only, not in any form): none
 Benefits in 2024 (information only, not in any form): none
+
+Approximate tax for 2024 (information only, FURS makes the real assessment): none
 
 Private-market events skipped (only a cash amount, no units): 0
 

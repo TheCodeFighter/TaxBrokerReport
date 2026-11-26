@@ -981,6 +981,33 @@ struct BenefitSummary {
     bool operator==(const BenefitSummary&) const = default;
 };
 
+/// The approximate tax of one form. It is information only and never changes a form value.
+struct FormTaxEstimate {
+    ReportType mForm{}; ///< Always set by the creator.
+    /// The tax in EUR, rounded to cents (a multiple of 100 at 4 decimals); none when incomplete.
+    std::optional<Money> mTax;
+    /// The tax is above 0 and at most EUR 10: FURS does not assess it, and it counts 0 in the
+    /// total.
+    bool mNotAssessed{};
+    /// There is no amount: the form is not complete, or its sum does not fit.
+    bool mIncomplete{};
+
+    bool operator==(const FormTaxEstimate&) const = default;
+};
+
+/// The approximate tax to pay for the selected year, per form and in total.
+struct TaxEstimate {
+    /// False for a year without confirmed rates when a form has data; then there are no forms and
+    /// no total.
+    bool mYearSupported{};
+    /// The forms with data, in report order. A form without data is left out.
+    std::vector<FormTaxEstimate> mForms;
+    Money mTotal{};       ///< The sum of the assessed amounts of the forms; 0 for none.
+    bool mTotalPartial{}; ///< A form is incomplete, so the total is a lower limit.
+
+    bool operator==(const TaxEstimate&) const = default;
+};
+
 /// How a sale's quantity was corrected.
 enum class CorrectionKind {
     RoundingEvidence, ///< The discarded source digits prove a rounding difference.
@@ -1125,6 +1152,8 @@ struct ApplicationResult {
     FeeSummary mFees;
     /// The benefits of the selected year; information only.
     BenefitSummary mBenefits;
+    /// The approximate tax to pay; information only.
+    TaxEstimate mTaxEstimate;
     /// The applied quantity corrections, by ISIN and ledger order.
     std::vector<AppliedCorrection> mCorrections;
     /// The ISINs with a rounding impact above 0, by ISIN.
@@ -1159,6 +1188,8 @@ struct ApplicationResultInput {
     std::optional<DepositInterestSummary> mDepositInterest;
     FeeSummary mFees;
     BenefitSummary mBenefits;
+    /// The amounts of the forms the stages built; the builder adds the statuses and the total.
+    TaxEstimate mTaxEstimate;
     std::vector<AppliedCorrectionInput> mCorrections;
     std::vector<ReconciliationImpact> mReconciliation;
     ApplicationDataSources mDataSources;

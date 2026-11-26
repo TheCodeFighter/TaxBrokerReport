@@ -59,6 +59,14 @@ describe("year 2022 of the manual files", () => {
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
     expect(await cardStatus(page, "Doh-DHO")).toBe("ni podatkov");
     expect(await cardStatus(page, "Doh-Obr")).toBe("pripravljeno");
+
+    // README, approximate tax 2022: the amount of each form and the total.
+    const estimate = await page.getByRole("region", { name: "Približni davek za plačilo" }).textContent();
+
+    expect(estimate).toContain("Doh-KDVP: 41,77 EUR");
+    expect(estimate).toContain("Doh-Div: 16,11 EUR");
+    expect(estimate).toContain("Doh-Obr: 21,41 EUR");
+    expect(estimate).toContain("Skupaj: 79,29 EUR");
     expect(await card(page, "Doh-Div").getByText(/Vrstice: 8,/).count()).toBe(1);
     expect(await card(page, "Doh-Obr").getByText(/Vrstice: 15,/).count()).toBe(1);
 

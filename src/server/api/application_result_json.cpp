@@ -1209,6 +1209,25 @@ Json benefitSummaryToJson(const BenefitSummary& aSummary) {
                 {"totalEur", optionalMoneyToJson(aSummary.mEurTotal)}};
 }
 
+Json taxEstimateToJson(const TaxEstimate& aEstimate) {
+    Json forms = Json::array();
+
+    std::transform(aEstimate.mForms.begin(),
+                   aEstimate.mForms.end(),
+                   std::back_inserter(forms),
+                   [](const FormTaxEstimate& aForm) {
+                       return Json{{"report", reportKey(aForm.mForm)},
+                                   {"taxEur", optionalMoneyToJson(aForm.mTax)},
+                                   {"notAssessed", aForm.mNotAssessed},
+                                   {"incomplete", aForm.mIncomplete}};
+                   });
+
+    return Json{{"yearSupported", aEstimate.mYearSupported},
+                {"forms", std::move(forms)},
+                {"totalEur", moneyString(aEstimate.mTotal)},
+                {"totalPartial", aEstimate.mTotalPartial}};
+}
+
 Json catalogueSourceToJson(const CatalogueSource& aSource) {
     return Json{{"source", aSource.mSource},
                 {"sourceRevision", aSource.mSourceRevision},
@@ -1637,6 +1656,7 @@ std::string serializeApplicationResultJson(const ApplicationResult& aResult, int
         {"usedRates", std::move(usedRates)},
         {"feeSummary", feeSummaryToJson(aResult.mFees)},
         {"benefitSummary", benefitSummaryToJson(aResult.mBenefits)},
+        {"taxEstimate", taxEstimateToJson(aResult.mTaxEstimate)},
         {"corrections", std::move(corrections)},
         {"reconciliation", std::move(reconciliation)},
         {"dataSources", dataSourcesToJson(aResult.mDataSources)},

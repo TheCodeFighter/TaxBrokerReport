@@ -146,6 +146,22 @@ any screen.
 Not reachable from a Trade Republic export, covered by the frontend tests: an interest payment of
 an unknown type (the choice `other_interest` and its kinds) and fees with a missing exchange rate.
 
+## Approximate tax to pay
+
+After the fees and benefits the summary (and the result screen, "Približni davek za plačilo") shows
+the approximate tax of each form with data and the total, with the answers of the table above. The
+amounts come from `scripts/report.sh` and the browser tests check them as literals. The checks by hand:
+Doh-DHO 2025 is (12 x 95.00 - 1,000.00) x 25 % = 35.00, the 2023 interest of EUR 12.50 is below the
+allowance (0.00), and the 2024 dividends give a tax of 8.19, which is up to EUR 10 and so is shown
+as "probably no tax to pay" and counts 0 in the total.
+
+| Year | Doh-KDVP | Doh-Div | Doh-DHO | Doh-Obr | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2022 | 41.77 | 16.11 | no data | 21.41 | 79.29 |
+| 2023 | 28.23 | 15.36 | 0.00 | 31.40 | 74.99 |
+| 2024 | 99.74 | 8.19 (not assessed) | no data | 12.20 | 111.94 |
+| 2025 | 166.82 | 22.82 | 35.00 | 12.93 | 237.57 |
+
 ## Doh-KDVP rows to check in eDavki
 
 | Year | ISIN | Rows (`F1`/`F6` date, `F3`/`F7` units, `F4`/`F9` EUR per unit, `F10`) |

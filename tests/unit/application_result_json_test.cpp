@@ -116,6 +116,7 @@ TEST(ApplicationResultJsonTest, WritesTheDocumentedPartialResultExample) {
       "usedRates": [],
       "feeSummary": {"brokers": [], "totalEur": null},
       "benefitSummary": {"brokers": [], "totalEur": null},
+      "taxEstimate": {"yearSupported": false, "forms": [], "totalEur": "0.0000", "totalPartial": false},
       "corrections": [],
       "reconciliation": [],
       "dataSources": {"referenceFiles": [], "rateFiles": []},
@@ -3676,6 +3677,55 @@ TEST(ApplicationResultJsonTest, WritesTheFeeAndBenefitSummaries) {
 
     EXPECT_EQ(json.at("feeSummary").dump(), expectedFees.dump());
     EXPECT_EQ(json.at("benefitSummary").dump(), expectedBenefits.dump());
+}
+
+TEST(ApplicationResultJsonTest, WritesTheTaxEstimateOfEveryFormWithItsStatus) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    // Doh-KDVP, Doh-Div and Doh-Obr are generated; Doh-DHO has no data and is left out.
+    input.mReports[0].mXml = "<Envelope>capital</Envelope>";
+    input.mReports[1].mXml = "<Envelope>dividends</Envelope>";
+    input.mReports[3].mXml = "<Envelope>other</Envelope>";
+    input.mTaxEstimate = TaxEstimate{
+        .mYearSupported = true,
+        .mForms = {{.mForm = ReportType::CapitalGains, .mTax = 1'187'500},
+                   {.mForm = ReportType::Dividends, .mTax = 30'000, .mNotAssessed = true},
+                   {.mForm = ReportType::OtherInterest, .mTax = 260'000}}};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto expected = nlohmann::json::parse(R"({
+      "yearSupported": true,
+      "forms": [
+        {"report": "capitalGains", "taxEur": "118.7500", "notAssessed": false, "incomplete": false},
+        {"report": "dividends", "taxEur": "3.0000", "notAssessed": true, "incomplete": false},
+        {"report": "otherInterest", "taxEur": "26.0000", "notAssessed": false, "incomplete": false}
+      ],
+      "totalEur": "144.7500",
+      "totalPartial": false
+    })");
+
+    // 118.75 + 26.00 = 144.75: the 3.00 of Doh-Div is not assessed and counts 0.
+    EXPECT_EQ(json.at("taxEstimate").dump(), expected.dump());
+}
+
+TEST(ApplicationResultJsonTest, WritesAFormThatIsNotCompleteWithoutAnAmount) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    // Doh-Div is generated, but the stages gave no amount for it.
+    input.mReports[1].mXml = "<Envelope>dividends</Envelope>";
+    input.mTaxEstimate = TaxEstimate{.mYearSupported = true};
+
+    const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const auto expected = nlohmann::json::parse(R"({
+      "yearSupported": true,
+      "forms": [
+        {"report": "dividends", "taxEur": null, "notAssessed": false, "incomplete": true}
+      ],
+      "totalEur": "0.0000",
+      "totalPartial": true
+    })");
+
+    EXPECT_EQ(json.at("taxEstimate").dump(), expected.dump());
 }
 
 TEST(ApplicationResultJsonTest, WritesEveryBenefitTypeByItsName) {

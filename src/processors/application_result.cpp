@@ -1,4 +1,5 @@
 #include "taxbroker/application_result.hpp"
+#include "processors/tax_estimate.hpp"
 #include "utils/numbered_id.hpp"
 
 #include <algorithm>
@@ -1597,6 +1598,15 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
     result.mDepositInterest = aInput.mDepositInterest;
     result.mFees = std::move(aInput.mFees);
     result.mBenefits = std::move(aInput.mBenefits);
+
+    std::array<ReportStatus, 4> statuses{};
+
+    for (std::size_t index = 0; index < statuses.size(); ++index)
+    {
+        statuses[index] = result.mReports[index].mStatus;
+    }
+
+    result.mTaxEstimate = completeTaxEstimate(std::move(aInput.mTaxEstimate), statuses);
     result.mCorrections = correctionsOf(aInput.mCorrections);
     result.mReconciliation = std::move(aInput.mReconciliation);
 

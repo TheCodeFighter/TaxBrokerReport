@@ -136,22 +136,83 @@ describe("question kinds", () => {
 });
 
 describe("firstQuestionId", () => {
-  it("is the first open question that has a screen", () => {
-    const result = resultWith([
-      request("request-0001", "unknown_future_question_required"),
-      request("request-0002", "loss_eligibility_confirmation_required"),
-      request("request-0003", "quantity_correction_required"),
-    ]);
+  const keys = ["capitalGains", "dividends", "bankInterest", "otherInterest"];
 
-    expect(firstQuestionId(result)).toBe("request-0002");
+  function report(requestIds: string[]) {
+    return { status: "needs_input" as const, diagnosticIds: [], requestIds, unsafe: false };
+  }
+
+  it("is the first open question that has a screen", () => {
+    const result: RunResult = {
+      ...resultWith([
+        request("request-0001", "unknown_future_question_required"),
+        request("request-0002", "loss_eligibility_confirmation_required"),
+        request("request-0003", "quantity_correction_required"),
+      ]),
+      reports: { capitalGains: report(["request-0002", "request-0003"]) },
+    };
+
+    expect(firstQuestionId(result, keys)).toBe("request-0002");
     expect(supportedQuestions(result).map((entry) => entry.id)).toEqual(["request-0002", "request-0003"]);
+  });
+
+  it("takes the first form in the order Doh-KDVP, Doh-Div, Doh-DHO, Doh-Obr, whatever the result order is", () => {
+    // The result lists the Doh-Obr question first, then Doh-DHO, then Doh-Div.
+    const result: RunResult = {
+      ...resultWith([
+        request("request-0001", "other_interest_failure_resolution_required"),
+        request("request-0002", "deposit_interest_total_required"),
+        request("request-0003", "dividends_failure_resolution_required"),
+      ]),
+      reports: {
+        dividends: report(["request-0003"]),
+        bankInterest: report(["request-0002"]),
+        otherInterest: report(["request-0001"]),
+      },
+    };
+
+    expect(firstQuestionId(result, keys)).toBe("request-0003");
+  });
+
+  it("skips a form that has no open question and goes on to the next one", () => {
+    const result: RunResult = {
+      ...resultWith([
+        request("request-0001", "other_interest_failure_resolution_required"),
+        request("request-0002", "deposit_interest_total_required"),
+      ]),
+      reports: {
+        capitalGains: { status: "generated", diagnosticIds: [], requestIds: [], unsafe: false },
+        bankInterest: report(["request-0002"]),
+        otherInterest: report(["request-0001"]),
+      },
+    };
+
+    expect(firstQuestionId(result, keys)).toBe("request-0002");
+  });
+
+  it("takes the first question of a form from the top down", () => {
+    const result: RunResult = {
+      ...resultWith([
+        request("request-0001", "loss_eligibility_confirmation_required"),
+        request("request-0002", "quantity_correction_required"),
+      ]),
+      reports: { capitalGains: report(["request-0001", "request-0002"]) },
+    };
+
+    expect(firstQuestionId(result, keys)).toBe("request-0001");
+  });
+
+  it("falls back to a question that no form lists", () => {
+    const result = resultWith([request("request-0001", "loss_eligibility_confirmation_required")]);
+
+    expect(firstQuestionId(result, keys)).toBe("request-0001");
   });
 
   it("is undefined when no open question has a screen, so there is no link", () => {
     const result = resultWith([request("request-0001", "unknown_future_question_required")]);
 
-    expect(firstQuestionId(result)).toBeUndefined();
-    expect(firstQuestionId(resultWith([]))).toBeUndefined();
+    expect(firstQuestionId(result, keys)).toBeUndefined();
+    expect(firstQuestionId(resultWith([]), keys)).toBeUndefined();
   });
 });
 

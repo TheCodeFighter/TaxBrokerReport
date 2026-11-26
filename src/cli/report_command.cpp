@@ -1441,6 +1441,107 @@ void writeFeesAndBenefits(std::ostream& aOut, const RunOutcome& aOutcome) {
     aOut << '\n';
 }
 
+/// An estimate amount in whole cents, for example `118.75 EUR`.
+std::string estimateAmountText(Money aAmount) {
+    return formatFixedPoint(aAmount, MONEY_SCALE, 2) + " EUR";
+}
+
+/// The label of a form in the estimate block.
+std::string_view formLabel(ReportType aType) {
+    const auto found = std::ranges::find(kForms, aType, &FormInfo::mType);
+
+    return found->mLabel;
+}
+
+/// The line of one form in the estimate block.
+void writeTaxEstimateForm(std::ostream& aOut,
+                          const FormTaxEstimate& aForm,
+                          const ApplicationResult& aResult) {
+    aOut << "  " << formLabel(aForm.mForm) << ": ";
+
+    if (aForm.mIncomplete)
+    {
+        aOut << "no estimate (the form is not complete)\n";
+
+        return;
+    }
+
+    aOut << estimateAmountText(*aForm.mTax);
+
+    if (aForm.mNotAssessed)
+    {
+        aOut << " (probably no tax to pay: FURS does not assess a tax of 10 EUR or less)";
+    }
+
+    if (aForm.mForm == ReportType::BankDepositInterest && aResult.mDepositInterest &&
+        aResult.mDepositInterest->mAddOtherBanks)
+    {
+        aOut << " (only the imported interest; interest of other banks is not included)";
+    }
+
+    aOut << '\n';
+}
+
+/// The approximate tax of the year. It is information only: FURS makes the real assessment.
+void writeTaxEstimate(std::ostream& aOut, const RunOutcome& aOutcome) {
+    const TaxEstimate& estimate = aOutcome.mResult.mTaxEstimate;
+    const std::string year = std::to_string(aOutcome.mRequest.mReportingYear);
+
+    aOut << "Approximate tax for " << year
+         << " (information only, FURS makes the real assessment):";
+
+    if (!estimate.mYearSupported)
+    {
+        aOut << " no estimate (the tax rates of this year are not known)\n\n";
+
+        return;
+    }
+
+    if (estimate.mForms.empty())
+    {
+        aOut << " none\n\n";
+
+        return;
+    }
+
+    aOut << '\n';
+
+    std::vector<std::string_view> incomplete;
+
+    for (const FormTaxEstimate& form : estimate.mForms)
+    {
+        writeTaxEstimateForm(aOut, form, aOutcome.mResult);
+
+        if (form.mIncomplete)
+        {
+            incomplete.push_back(formLabel(form.mForm));
+        }
+    }
+
+    aOut << "  Total: ";
+
+    if (estimate.mTotalPartial && incomplete.size() == estimate.mForms.size())
+    {
+        // No form has an amount, so there is no lower limit to show.
+        aOut << "no estimate";
+    }
+    else if (estimate.mTotalPartial)
+    {
+        aOut << "at least " << estimateAmountText(estimate.mTotal) << ", without";
+
+        for (std::size_t index = 0; index < incomplete.size(); ++index)
+        {
+            aOut << (index == 0 ? " " : ", ") << incomplete[index];
+        }
+    }
+    else
+    {
+        aOut << estimateAmountText(estimate.mTotal);
+    }
+
+    aOut << "\n\n";
+}
+
 /// The errors and the warnings of a form. The Doh-KDVP lists are always written; an income form
 /// has them only when it has a diagnostic.
 void writeFormDiagnostics(std::ostream& aOut, const RunOutcome& aOutcome, const FormInfo& aForm) {
@@ -1600,6 +1701,7 @@ std::string summaryText(const RunOutcome& aOutcome) {
     out << '\n';
     writeUsedRates(out, aOutcome);
     writeFeesAndBenefits(out, aOutcome);
+    writeTaxEstimate(out, aOutcome);
     writePrivateMarketEvents(out, aOutcome);
 
     for (const auto& form : kForms)

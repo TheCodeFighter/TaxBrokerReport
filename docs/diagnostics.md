@@ -122,6 +122,13 @@ These parts are informational: the XML is the truth, and they never change a sta
   codes of the exclusion for `excluded`), `listedSales`, `listedUnits`, `blockedLossUnits` (the
   listed units whose loss the 30-day rule blocks, `F10` false) and the `sales` in ledger order with
   their date and safe source. `capitalSummary.longHeld` lists the units past the holding period.
+- `taxEstimate`: the approximate tax to pay ([`tax_rules.md`](tax_rules.md), "Approximate tax to pay").
+  `yearSupported` is false for a year without rates when a form has data (then `forms` is empty);
+  `forms` lists the forms with data in report order, each with `report` (the report key),
+  `taxEur` (cents at four decimals, `null` when the form is not complete), `notAssessed` (the tax
+  is above 0 and at most EUR 10, so FURS does not assess it) and `incomplete`; `totalEur` adds
+  the assessed amounts, and `totalPartial` is true when a form is incomplete. Information only: it
+  is in no XML file and in no diagnostic.
 - `feeSummary` and `benefitSummary`: the informational summaries of the selected year
   (`calculations.md`, "Informational fee summary"). Each has `brokers` and the overall `totalEur`.
   A fee row has the `broker`, its `byCurrency` entries (`currency`, `count`, `total`), the broker's
@@ -1332,6 +1339,7 @@ is present; the raw CSV row is not.
   "usedRates": [],
   "feeSummary": { "brokers": [], "totalEur": null },
   "benefitSummary": { "brokers": [], "totalEur": null },
+  "taxEstimate": { "yearSupported": false, "forms": [], "totalEur": "0.0000", "totalPartial": false },
   "corrections": [],
   "reconciliation": [],
   "dataSources": { "referenceFiles": [], "rateFiles": [] },
