@@ -1108,6 +1108,93 @@ TEST(IsinChangeTest, TwoChangesInARowAreAskedInDateOrderAndBothCarriedOut) {
     EXPECT_EQ(latest.mDiagnostics.at(1).mMessageKey, MessageKey::CorporateActionAppliedIsinChange);
 }
 
+TEST(IsinChangeTest, AnEarlierChangeIsAskedWhenALaterChangeOfTheYearTakesTheNewIsinOut) {
+    // A to B on 2023-09-01 (10 units) and B to C on 2024-07-01 (10 units). Only C is sold in
+    // 2024, on 2024-09-02. B to C matters by that sale; A to B matters because the units of B
+    // leave in a change of the year, which is a sale of B once it is answered.
+    StatementMergeResult merged;
+
+    merged.mStatement.mPresentation.mTradeInstruments = {
+        {
+            .mName = "Synthetic Old Share",
+            .mIsin = kOldIsin,
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2023-05-02"), .mSources = {source(2, "buy-a")}},
+                     .mTradeSide = TradeSide::Buy,
+                     .mUnitPrice = 1'000'000'000, // EUR 10
+                     .mUnits = 1'000'000'000,     // 10 units
+                     .mCurrency = Currency::EUR},
+                },
+            .mCorporateActions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2023-09-01"),
+                                   .mSources = {source(3, "out-ab")}},
+                     .mType = CorporateActionType::IsinChange,
+                     .mUnitsDelta = -1'000'000'000, // 10 units out
+                     .mBrokerActionId = "change-ab",
+                     .mNewIsin = kNewIsin,
+                     .mUnitEvidence = sharesEvidence(source(3, "out-ab"), "-10")},
+                },
+        },
+        {
+            .mName = "Synthetic New Share",
+            .mIsin = kNewIsin,
+            .mAssetClass = AssetClass::Stock,
+            .mCorporateActions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2023-09-01"), .mSources = {source(4, "in-ab")}},
+                     .mType = CorporateActionType::IsinChange,
+                     .mUnitsDelta = 1'000'000'000, // 10 units in
+                     .mBrokerActionId = "change-ab",
+                     .mUnitEvidence = sharesEvidence(source(4, "in-ab"), "10")},
+                    {.mMetadata = {.mTaxDate = day("2024-07-01"),
+                                   .mSources = {source(6, "out-bc")}},
+                     .mType = CorporateActionType::IsinChange,
+                     .mUnitsDelta = -1'000'000'000, // 10 units out
+                     .mBrokerActionId = "change-bc",
+                     .mNewIsin = kThirdIsin,
+                     .mUnitEvidence = sharesEvidence(source(6, "out-bc"), "-10")},
+                },
+        },
+        {
+            .mName = "Synthetic Third Share",
+            .mIsin = kThirdIsin,
+            .mAssetClass = AssetClass::Stock,
+            .mTransactions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-09-02"),
+                                   .mSources = {source(9, "sell-c")}},
+                     .mTradeSide = TradeSide::Sell,
+                     .mUnitPrice = 1'500'000'000, // EUR 15
+                     .mUnits = 1'000'000'000,     // 10 units
+                     .mCurrency = Currency::EUR},
+                },
+            .mCorporateActions =
+                {
+                    {.mMetadata = {.mTaxDate = day("2024-07-01"), .mSources = {source(7, "in-bc")}},
+                     .mType = CorporateActionType::IsinChange,
+                     .mUnitsDelta = 1'000'000'000, // 10 units in
+                     .mBrokerActionId = "change-bc",
+                     .mUnitEvidence = sharesEvidence(source(7, "in-bc"), "10")},
+                },
+        },
+    };
+
+    IsinChangeResult latest;
+    DecisionSession session;
+
+    session.start(changeCalculation(merged, 2024, latest));
+
+    // The earlier change is asked first, then the later one.
+    ASSERT_EQ(latest.mRequests.size(), 2U);
+    EXPECT_EQ(std::get<IsinChangeQuestion>(latest.mRequests.at(0).mQuestion.mData).mOldIsin,
+              kOldIsin);
+    EXPECT_EQ(std::get<IsinChangeQuestion>(latest.mRequests.at(1).mQuestion.mData).mOldIsin,
+              kNewIsin);
+}
+
 TEST(IsinChangeTest, TheNewInstrumentTakesTheAssetClassAndNameOfTheOldOneWhenItHasNone) {
     StatementMergeResult merged = usualStatement(usualOutAction(), usualInAction());
     auto& instruments = merged.mStatement.mPresentation.mTradeInstruments;

@@ -91,6 +91,18 @@ describe("year 2025 of the manual files", () => {
     expect(await isinChange.getByRole("textbox", { name: "Datum spremembe" }).inputValue()).toBe("2024-03-04");
     await sendAnswer(isinChange);
 
+    // Merger of two companies of 2024-06-03 (the Acquirer is sold in 2025): a sale at the market value
+    // of the rows (USD 520), on the date of the rows.
+    const stockMerger = question(
+      page,
+      "Synthetic Merged Share (IBKR) (XX0000000136) → Synthetic Acquirer (IBKR) (XX0000000137)",
+    );
+    expect(await stockMerger.getByRole("button", { name: "Pošlji odgovor" }).isDisabled()).toBe(true);
+    await pickWord(stockMerger, "taxable");
+    expect(await stockMerger.getByRole("textbox", { name: "Tržna vrednost vseh novih enot v USD" }).inputValue()).toBe("520.0000");
+    expect(await stockMerger.getByRole("textbox", { name: "Datum prodaje in nakupa" }).inputValue()).toBe("2024-06-03");
+    await sendAnswer(stockMerger);
+
     // Bond type at maturity of the Interactive Brokers bond: ordinary.
     const ibkrBond = question(page, "Synthetic IB Bond 2025 (XS0000000203)");
     await pickWord(ibkrBond, "ordinary");
@@ -115,6 +127,13 @@ describe("year 2025 of the manual files", () => {
     expect(
       await resultRegion(page)
         .getByText("ISIN XX0000000134 je 2024-03-04 postal XX0000000135 v razmerju 1 novih za 1 starih enot, kot ste potrdili.")
+        .count(),
+    ).toBe(1);
+    // The Acquirer is listed with the purchase of 2024-06-03 (F2 `E`) and its sale; the warning
+    // that the merger was applied is in the list.
+    expect(
+      await resultRegion(page)
+        .getByText("Delnice XX0000000136 so bile 2024-06-03 zamenjane za delnice XX0000000137.")
         .count(),
     ).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");

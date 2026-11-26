@@ -1630,6 +1630,146 @@ TEST(ApplicationResultJsonTest, AnIsinChangeAnswerIsWrittenAsARatioOrTheWordNo) 
     EXPECT_EQ(json.at("decisions").at(0).at("isinChangeCheck").at("newIsin"), "XX0000000135");
 }
 
+TEST(ApplicationResultJsonTest, AStockMergerRequestWritesItsUnitsCashValueDatesAndRows) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CorporateActionStockMergerRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-06-03"),
+                .mIsin = "XX0000000136",
+                .mData =
+                    StockMergerQuestion{
+                        .mOldIsin = "XX0000000136",
+                        .mOldName = "Synthetic Merged Share",
+                        .mNewIsin = "XX0000000137",
+                        .mNewName = "Synthetic Acquirer",
+                        .mOldUnits = 1'000'000'000, // 10 units
+                        .mNewUnits = 400'000'000,   // 4 units
+                        .mCurrency = Currency::USD,
+                        .mCash = 300'000,             // USD 30
+                        .mSuggestedValue = 5'200'000, // USD 520
+                        .mEffectiveDate = day("2024-06-03"),
+                        .mEarliestDate = day("2024-06-03"),
+                        .mLatestDate = day("2024-06-05"),
+                        // Listed out of order: the request sorts the rows by date.
+                        .mSources = {{.mBroker = Broker::InteractiveBrokers,
+                                      .mTransactionId = "synthetic-6",
+                                      .mDate = day("2024-06-05"),
+                                      .mSourceValue = "4"},
+                                     {.mBroker = Broker::InteractiveBrokers,
+                                      .mTransactionId = "synthetic-5",
+                                      .mDate = day("2024-06-03"),
+                                      .mSourceValue = "-10"}},
+                    },
+            },
+    }};
+
+    const nlohmann::json json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const nlohmann::json& request = json.at("requests").at(0);
+    const nlohmann::json& check = request.at("stockMergerCheck");
+
+    EXPECT_EQ(request.at("type"), "corporate_action_stock_merger_required");
+    EXPECT_EQ(check.at("oldIsin"), "XX0000000136");
+    EXPECT_EQ(check.at("oldName"), "Synthetic Merged Share");
+    EXPECT_EQ(check.at("newIsin"), "XX0000000137");
+    EXPECT_EQ(check.at("newName"), "Synthetic Acquirer");
+    EXPECT_EQ(check.at("oldUnits"), "10.00000000");
+    EXPECT_EQ(check.at("newUnits"), "4.00000000");
+    EXPECT_EQ(check.at("currency"), "USD");
+    EXPECT_EQ(check.at("cash"), "30.0000");
+    EXPECT_EQ(check.at("suggestedValue"), "520.0000");
+    EXPECT_EQ(check.at("effectiveDate"), "2024-06-03");
+    EXPECT_EQ(check.at("earliestDate"), "2024-06-03");
+    EXPECT_EQ(check.at("latestDate"), "2024-06-05");
+    ASSERT_EQ(check.at("sources").size(), 2U);
+    EXPECT_EQ(check.at("sources").at(0).at("transactionId"), "synthetic-5");
+    EXPECT_EQ(check.at("sources").at(0).at("sourceValue"), "-10");
+}
+
+TEST(ApplicationResultJsonTest, AStockMergerRequestWithoutAValueHasNoSuggestedValue) {
+    ApplicationResultInput input{.mReportingYear = 2024};
+
+    input.mRequests = {RequestInput{
+        .mQuestion =
+            {
+                .mType = RequestType::CorporateActionStockMergerRequired,
+                .mAffectedReports = {kCapital},
+                .mTaxDate = day("2024-06-03"),
+                .mIsin = "XX0000000136",
+                .mData =
+                    StockMergerQuestion{
+                        .mOldIsin = "XX0000000136",
+                        .mOldName = "Synthetic Merged Share",
+                        .mNewIsin = "XX0000000137",
+                        .mNewName = "Synthetic Acquirer",
+                        .mOldUnits = 1'000'000'000,
+                        .mNewUnits = 400'000'000,
+                        .mCurrency = Currency::EUR,
+                        .mEffectiveDate = day("2024-06-03"),
+                        .mEarliestDate = day("2024-06-03"),
+                        .mLatestDate = day("2024-06-03"),
+                        .mSources =
+                            {{.mBroker = Broker::InteractiveBrokers, .mDate = day("2024-06-03")},
+                             {.mBroker = Broker::InteractiveBrokers, .mDate = day("2024-06-03")}},
+                    },
+            },
+    }};
+
+    const nlohmann::json json = serialize(ApplicationResultBuilder::build(std::move(input)));
+    const nlohmann::json& check = json.at("requests").at(0).at("stockMergerCheck");
+
+    EXPECT_FALSE(check.contains("suggestedValue"));
+    EXPECT_EQ(check.at("cash"), "0.0000");
+    EXPECT_EQ(check.at("currency"), "EUR");
+}
+
+TEST(ApplicationResultJsonTest, AStockMergerAnswerIsWrittenAsATaxableValueOrADeferral) {
+    ApplicationResult result =
+        ApplicationResultBuilder::build(ApplicationResultInput{.mReportingYear = 2024});
+    const StockMergerQuestion question{
+        .mOldIsin = "XX0000000136",
+        .mOldName = "Synthetic Merged Share",
+        .mNewIsin = "XX0000000137",
+        .mNewName = "Synthetic Acquirer",
+        .mOldUnits = 1'000'000'000,
+        .mNewUnits = 400'000'000,
+        .mCurrency = Currency::EUR,
+        .mEffectiveDate = day("2024-06-03"),
+        .mEarliestDate = day("2024-06-03"),
+        .mLatestDate = day("2024-06-03"),
+        .mSources = {{.mBroker = Broker::InteractiveBrokers, .mDate = day("2024-06-03")},
+                     {.mBroker = Broker::InteractiveBrokers, .mDate = day("2024-06-03")}},
+    };
+
+    result.mDecisions = {
+        RecordedDecision{.mId = "decision-0001",
+                         .mType = RequestType::CorporateActionStockMergerRequired,
+                         .mData = question,
+                         .mAnswer = StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                                      .mMarketValue = 5'200'000, // EUR 520
+                                                      .mEffectiveDate = day("2024-06-03")}},
+        RecordedDecision{.mId = "decision-0002",
+                         .mType = RequestType::CorporateActionStockMergerRequired,
+                         .mData = question,
+                         .mAnswer = StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                                      .mMarketValue = 0,
+                                                      .mEffectiveDate = day("2024-06-03")}},
+    };
+
+    const nlohmann::json json = nlohmann::json::parse(api::serializeApplicationResultJson(result));
+
+    EXPECT_EQ(json.at("decisions").at(0).at("answer"),
+              (nlohmann::json{{"treatment", "taxable"},
+                              {"marketValue", "520.0000"},
+                              {"effectiveDate", "2024-06-03"}}));
+    EXPECT_EQ(json.at("decisions").at(1).at("answer"),
+              (nlohmann::json{{"treatment", "deferred"}, {"effectiveDate", "2024-06-03"}}));
+    EXPECT_EQ(json.at("decisions").at(0).at("stockMergerCheck").at("newIsin"), "XX0000000137");
+}
+
 TEST(ApplicationResultJsonTest, AnIdentityRequestNamesEveryRowType) {
     ApplicationResultInput input{.mReportingYear = 2024};
 

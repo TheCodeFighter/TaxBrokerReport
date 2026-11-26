@@ -1931,6 +1931,91 @@ TEST(IbkrParserActionRowTest, MergerWithSharesIsAStockMerger) {
     EXPECT_EQ(findTrade(result, "M1"), nullptr); // no sale is made up
 }
 
+TEST(IbkrParserActionRowTest, StockMergerRowsKeepTheCashTheValueAndTheCurrency) {
+    // USD 30 paid with the 10 units that left, and USD 520 as the market value of the 4 units that
+    // came in, at 4 decimals.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M7" actionID="M7001" type="TC" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240603;202500" quantity="-10" proceeds="30" value="0"/>
+        <CorporateAction transactionID="M8" actionID="M7001" type="TC" assetCategory="STK" description="OTHER SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240603;202500" quantity="4" proceeds="0" value="520"/>)",
+        ""));
+
+    const CorporateAction* out = findAction(result, "M7");
+    const CorporateAction* in = findAction(result, "M8");
+
+    ASSERT_NE(out, nullptr);
+    ASSERT_NE(in, nullptr);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_EQ(out->mType, CorporateActionType::StockMerger);
+    EXPECT_EQ(out->mCashProceeds, std::optional<taxbroker::Money>{300'000}); // USD 30
+    EXPECT_FALSE(out->mMarketValue.has_value());
+    EXPECT_EQ(out->mAmountCurrency, Currency::USD);
+    EXPECT_EQ(in->mType, CorporateActionType::StockMerger);
+    EXPECT_FALSE(in->mCashProceeds.has_value());
+    EXPECT_EQ(in->mMarketValue, std::optional<taxbroker::Money>{5'200'000}); // USD 520
+    EXPECT_EQ(in->mAmountCurrency, Currency::USD);
+}
+
+TEST(IbkrParserActionRowTest, StockMergerWithoutCashOrValueHasNone) {
+    // A blank and a zero amount are none; the rows are kept.
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M9" actionID="M7002" type="TC" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240603;202500" quantity="-10" proceeds="0" value=""/>
+        <CorporateAction transactionID="M10" actionID="M7002" type="TC" assetCategory="STK" description="OTHER SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240603;202500" quantity="4" proceeds="" value=""/>)",
+        ""));
+
+    const CorporateAction* out = findAction(result, "M9");
+    const CorporateAction* in = findAction(result, "M10");
+
+    ASSERT_NE(out, nullptr);
+    ASSERT_NE(in, nullptr);
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    EXPECT_FALSE(out->mCashProceeds.has_value());
+    EXPECT_FALSE(in->mMarketValue.has_value());
+}
+
+TEST(IbkrParserActionRowTest, StockMergerWithNegativeProceedsIsRejected) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M11" actionID="M7003" type="TC" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240603;202500" quantity="-10" proceeds="-30" value="0"/>
+        <CorporateAction transactionID="M12" actionID="M7003" type="TC" assetCategory="STK" description="OTHER SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240603;202500" quantity="4" proceeds="0" value="520"/>)",
+        ""));
+
+    ASSERT_EQ(diagnosticsOf(result, "M11").size(), 1U);
+
+    EXPECT_EQ(findAction(result, "M11"), nullptr);
+    EXPECT_EQ(diagnosticsOf(result, "M11").front()->mField, "proceeds");
+    EXPECT_NE(findAction(result, "M12"), nullptr);
+}
+
+TEST(IbkrParserActionRowTest, StockMergerWithANegativeValueIsRejected) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M13" actionID="M7004" type="TC" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240603;202500" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction transactionID="M14" actionID="M7004" type="TC" assetCategory="STK" description="OTHER SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240603;202500" quantity="4" proceeds="0" value="-520"/>)",
+        ""));
+
+    ASSERT_EQ(diagnosticsOf(result, "M14").size(), 1U);
+
+    EXPECT_EQ(findAction(result, "M14"), nullptr);
+    EXPECT_EQ(diagnosticsOf(result, "M14").front()->mField, "value");
+}
+
+TEST(IbkrParserActionRowTest, StockMergerWithAValueThatIsNotANumberIsRejected) {
+    const ParseResult result = parseText(statementWithRows(
+        "",
+        R"(<CorporateAction transactionID="M15" actionID="M7005" type="TC" assetCategory="STK" description="OLD SYNTHETIC INC" isin="US0000000036" currency="USD" dateTime="20240603;202500" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction transactionID="M16" actionID="M7005" type="TC" assetCategory="STK" description="OTHER SYNTHETIC INC" isin="US0000000051" currency="USD" dateTime="20240603;202500" quantity="4" proceeds="0" value="abc"/>)",
+        ""));
+
+    ASSERT_EQ(diagnosticsOf(result, "M16").size(), 1U);
+
+    EXPECT_EQ(findAction(result, "M16"), nullptr);
+    EXPECT_EQ(diagnosticsOf(result, "M16").front()->mField, "value");
+}
+
 TEST(IbkrParserActionRowTest, CashMergerRowIsStoredAsASaleAtItsProceeds) {
     const ParseResult result = parseText(statementWithRows(
         "",

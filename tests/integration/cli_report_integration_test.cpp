@@ -8167,6 +8167,93 @@ TEST(CliReportIntegrationTest, AnIsinChangeWithoutInputStaysOpenAndBlocks) {
     EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2025.xml"));
 }
 
+TEST(CliReportIntegrationTest, AStockMergerIsAskedInTheTerminalAndSellsTheOldShares) {
+    const TemporaryCliFolder folder;
+    const std::string taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    // 10 units of XX0000000136 bought at EUR 40.00 on 2023-03-01 become 4 units of XX0000000137 on
+    // 2024-06-03; the rows give the market value EUR 520. XX0000000137 was held before (1 unit), so
+    // its class is known.
+    const std::string flexQuery =
+        folder.writeText("flex.xml",
+                         R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="synthetic-1" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Merged Share" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;040000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+        <Trade transactionID="synthetic-2" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Acquirer" isin="XX0000000137" currency="EUR" tradeDate="20230502" dateTime="20230502;040000" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions>
+        <CorporateAction transactionID="synthetic-3" actionID="M1" type="TC" assetCategory="STK" description="Synthetic Merged Share" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction transactionID="synthetic-4" actionID="M1" type="TC" assetCategory="STK" description="Synthetic Acquirer" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" quantity="4" proceeds="0" value="520"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml");
+    const std::vector<std::string> arguments{"report",
+                                             "--year",
+                                             "2024",
+                                             "--taxpayer",
+                                             taxpayer,
+                                             "--out",
+                                             folder.outputDirectory(),
+                                             "--ibkr",
+                                             flexQuery};
+
+    // taxable, an empty line for the value of the rows (EUR 520) and an empty line for the date.
+    const CliRun result = run(arguments, "taxable\n\n\n");
+
+    EXPECT_EQ(result.mExitCode, kExitSuccess);
+    EXPECT_TRUE(contains(result.mOut, "exchanged for shares of Synthetic Acquirer"));
+    EXPECT_TRUE(folder.hasOutput("Doh-KDVP_2024.xml"));
+
+    const std::string xml = folder.readOutput("Doh-KDVP_2024.xml");
+
+    EXPECT_TRUE(contains(xml, "<ISIN>XX0000000136</ISIN>"));
+    EXPECT_TRUE(contains(xml, "<F4>40.0000</F4>"));
+    EXPECT_TRUE(contains(xml, "<F9>52.0000</F9>")); // EUR 520 / 10 units
+    EXPECT_FALSE(contains(xml, "XX0000000137"));
+}
+
+TEST(CliReportIntegrationTest, AStockMergerWithoutInputStaysOpenAndBlocks) {
+    const TemporaryCliFolder folder;
+    const std::string taxpayer = folder.writeText("taxpayer.json", kTaxpayer);
+    const std::string flexQuery =
+        folder.writeText("flex.xml",
+                         R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="synthetic-1" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Merged Share" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;040000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+        <Trade transactionID="synthetic-2" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Acquirer" isin="XX0000000137" currency="EUR" tradeDate="20230502" dateTime="20230502;040000" buySell="BUY" quantity="1" tradePrice="100" proceeds="-100" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions>
+        <CorporateAction transactionID="synthetic-3" actionID="M1" type="TC" assetCategory="STK" description="Synthetic Merged Share" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction transactionID="synthetic-4" actionID="M1" type="TC" assetCategory="STK" description="Synthetic Acquirer" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" quantity="4" proceeds="0" value="520"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml");
+
+    const CliRun result = run({"report",
+                               "--year",
+                               "2024",
+                               "--taxpayer",
+                               taxpayer,
+                               "--out",
+                               folder.outputDirectory(),
+                               "--no-input",
+                               "--ibkr",
+                               flexQuery});
+
+    EXPECT_EQ(result.mExitCode, kExitBlocked);
+    EXPECT_TRUE(contains(result.mOut, "corporate_action_stock_merger_required"));
+    EXPECT_FALSE(folder.hasOutput("Doh-KDVP_2024.xml"));
+}
+
 TEST(CliReportIntegrationTest, TheCliPutsTheTradeRepublicFilesBeforeTheIbkrFiles) {
     const TemporaryCliFolder folder;
     const auto taxpayer = folder.writeText("taxpayer.json", kTaxpayer);

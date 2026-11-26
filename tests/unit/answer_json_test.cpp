@@ -99,6 +99,48 @@ TEST(AnswerJsonTest, IsinChangeAnswerWithABadShapeIsRefused) {
     EXPECT_EQ(fit(R"("separate_events")", request), std::nullopt);
 }
 
+TEST(AnswerJsonTest, StockMergerQuestionReadsATaxableValueADeferralAndCancel) {
+    const DecisionRequest request =
+        requestOf(RequestType::CorporateActionStockMergerRequired, StockMergerQuestion{});
+
+    // The value is a text with at most 4 decimals: 520.5 is 5'205'000.
+    EXPECT_EQ(fit(R"({"treatment":"taxable","marketValue":"520.5","effectiveDate":"2024-06-03"})",
+                  request),
+              (AnswerValue{StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                             .mMarketValue = 5'205'000,
+                                             .mEffectiveDate = *parseCalendarDate("2024-06-03")}}));
+    EXPECT_EQ(fit(R"({"treatment":"deferred","effectiveDate":"2024-06-03"})", request),
+              (AnswerValue{StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                             .mMarketValue = 0,
+                                             .mEffectiveDate = *parseCalendarDate("2024-06-03")}}));
+    EXPECT_EQ(fit(R"("cancel")", request), AnswerValue{CancelAnswer{}});
+}
+
+TEST(AnswerJsonTest, StockMergerAnswerWithABadShapeIsRefused) {
+    const DecisionRequest request =
+        requestOf(RequestType::CorporateActionStockMergerRequired, StockMergerQuestion{});
+
+    // A number instead of a text, five decimals, a missing value, a value with a deferral, a
+    // missing date, a bad date, a missing treatment, another treatment and a word.
+    EXPECT_EQ(
+        fit(R"({"treatment":"taxable","marketValue":520,"effectiveDate":"2024-06-03"})", request),
+        std::nullopt);
+    EXPECT_EQ(fit(R"({"treatment":"taxable","marketValue":"1.00001","effectiveDate":"2024-06-03"})",
+                  request),
+              std::nullopt);
+    EXPECT_EQ(fit(R"({"treatment":"taxable","effectiveDate":"2024-06-03"})", request),
+              std::nullopt);
+    EXPECT_EQ(
+        fit(R"({"treatment":"deferred","marketValue":"1","effectiveDate":"2024-06-03"})", request),
+        std::nullopt);
+    EXPECT_EQ(fit(R"({"treatment":"deferred"})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"treatment":"deferred","effectiveDate":"2024-13-03"})", request),
+              std::nullopt);
+    EXPECT_EQ(fit(R"({"effectiveDate":"2024-06-03"})", request), std::nullopt);
+    EXPECT_EQ(fit(R"({"treatment":"free","effectiveDate":"2024-06-03"})", request), std::nullopt);
+    EXPECT_EQ(fit(R"("taxable")", request), std::nullopt);
+}
+
 TEST(AnswerJsonTest, IdentityQuestionReadsAGroupingAndCancel) {
     const auto request =
         requestOf(RequestType::CorporateActionIdentityRequired, CorporateActionIdentityQuestion{});

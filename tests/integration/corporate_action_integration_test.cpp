@@ -6,6 +6,7 @@
 #include "processors/fifo_matcher.hpp"
 #include "processors/isin_change.hpp"
 #include "processors/loss_eligibility.hpp"
+#include "processors/stock_merger.hpp"
 #include "processors/tax_processor.hpp"
 #include "taxbroker/api/application_result_json.hpp"
 #include "taxbroker/decision_session.hpp"
@@ -111,13 +112,20 @@ ApplicationResultInput calculateCapitalGains(const std::vector<ParseResult>& aPa
         {aYear, DeterministicStatementMerger{}.merge(std::move(inputs))});
     IsinChangeResult isinChanges =
         applyIsinChanges(prepared.mMerged.mStatement, *prepared.mLedger, aDecisions);
+    const MergedStatement& afterIsinChanges =
+        isinChanges.mStatement ? *isinChanges.mStatement : prepared.mMerged.mStatement;
+    StockMergerResult stockMergers =
+        applyStockMergers(afterIsinChanges, *prepared.mLedger, aDecisions);
+    std::optional<MergedStatement> changedStatement = stockMergers.mStatement
+                                                          ? std::move(stockMergers.mStatement)
+                                                          : std::move(isinChanges.mStatement);
     std::optional<TaxProcessingResult> carriedOut;
 
-    // An answered ISIN change moves the lots to the new ISIN: the ledger is made again from it.
-    if (isinChanges.mStatement)
+    // An answered ISIN change or stock merger changes the lots: the ledger is made again from it.
+    if (changedStatement)
     {
         carriedOut = TaxProcessor::prepareReportingYear(
-            {aYear, StatementMergeResult{std::move(*isinChanges.mStatement), {}}});
+            {aYear, StatementMergeResult{std::move(*changedStatement), {}}});
     }
 
     const ReportingYearLedger& ledger =
@@ -146,6 +154,9 @@ ApplicationResultInput calculateCapitalGains(const std::vector<ParseResult>& aPa
               fifo.mDiagnostics.end(),
               std::back_inserter(input.mProcessingDiagnostics));
     appendStageOutput(input, std::move(isinChanges.mDiagnostics), std::move(isinChanges.mRequests));
+    appendStageOutput(input,
+                      std::move(stockMergers.mDiagnostics),
+                      std::move(stockMergers.mRequests));
     appendStageOutput(input, std::move(actions.mDiagnostics), std::move(actions.mRequests));
     appendStageOutput(input, std::move(loss.mDiagnostics), std::move(loss.mRequests));
     std::move(gates.begin(), gates.end(), std::back_inserter(input.mProcessingDiagnostics));
@@ -1499,7 +1510,7 @@ TEST(CorporateActionIntegrationTest, AnIsinChangeRatioThatDiffersFromItsRowsIsRe
     EXPECT_TRUE(session.result().mRequests.empty());
 }
 
-TEST(CorporateActionIntegrationTest, AnIsinChangeAnsweredNoIsAStockMerger) {
+TEST(CorporateActionIntegrationTest, IsinChangeAnsweredDifferentIssuerAsksTheStockMerger) {
     const std::string xml = ibkrStatement(
         R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNO" description="OLD SYNTHETIC INC" isin="XX0000000134" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="20" tradePrice="15" proceeds="-300" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
         <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYNN" description="NEW SYNTHETIC INC" isin="XX0000000135" currency="EUR" tradeDate="20250303" dateTime="20250303;100000" buySell="SELL" quantity="-20" tradePrice="18" proceeds="360" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
@@ -1518,15 +1529,32 @@ TEST(CorporateActionIntegrationTest, AnIsinChangeAnsweredNoIsAStockMerger) {
 
     const ApplicationResult& result = session.result();
 
-    EXPECT_TRUE(result.mRequests.empty());
-    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+    // The pair is a merger of two companies now: its question is open, without cash or a value,
+    // and both ISINs wait for it.
+    ASSERT_EQ(result.mRequests.size(), 1U);
 
-    ASSERT_EQ(result.mDiagnostics.size(), 1U);
-    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
-              ApplicationDiagnosticCode{ProcessingDiagnosticCode::UnsupportedCorporateAction});
+    const DecisionRequest& request = result.mRequests.at(0);
+
+    EXPECT_EQ(request.mType, RequestType::CorporateActionStockMergerRequired);
+
+    const StockMergerQuestion& question = std::get<StockMergerQuestion>(request.mData);
+
+    EXPECT_EQ(question.mOldIsin, "XX0000000134");
+    EXPECT_EQ(question.mNewIsin, "XX0000000135");
+    EXPECT_EQ(question.mOldUnits, 2'000'000'000); // 20 units
+    EXPECT_EQ(question.mNewUnits, 2'000'000'000); // 20 units
+    EXPECT_EQ(question.mCurrency, Currency::EUR);
+    EXPECT_EQ(question.mCash, 0);
+    EXPECT_FALSE(question.mSuggestedValue.has_value());
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
     EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
-              MessageKey::UnsupportedCorporateActionStockMerger);
-    EXPECT_EQ(result.mDiagnostics.at(0).mIsin, "XX0000000135");
+              MessageKey::CorporateActionAmbiguousStockMergerRequired);
+    EXPECT_EQ(result.mDiagnostics.at(0).mIsin, "XX0000000134");
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey,
+              MessageKey::CorporateActionAmbiguousStockMergerRequired);
+    EXPECT_EQ(result.mDiagnostics.at(1).mIsin, "XX0000000135");
 }
 
 TEST(CorporateActionIntegrationTest, ACancelledIsinChangeBlocksBothIsins) {
@@ -1969,6 +1997,771 @@ TEST(CorporateActionIntegrationTest, SalesOnBothSidesOfAnIsinChangeAreTwoListsOf
     EXPECT_EQ(newSale.mDate, day("2024-05-06"));
     EXPECT_EQ(newSale.mUnitPrice, 1'300'000'000); // EUR 13
     EXPECT_EQ(newList.mRows.at(1).mStock, 0);
+}
+
+TEST(CorporateActionIntegrationTest, TaxableStockMergerSellsAAndBuysB) {
+    // 10 units of A bought at EUR 40 on 2023-03-01 become 4 units of B on 2024-06-03. Answer: a
+    // sale at EUR 520. The 2024 Doh-KDVP lists A: the purchase and a sale of 10 units at EUR 52,
+    // gain 520 - 400 = 120. B has no sale in 2024, so it has no list.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="520"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 5'200'000,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    // The only diagnostic is the warning that the merger was applied.
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionAppliedStockMerger);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageParams,
+              (std::vector<MessageParam>{textParam("oldIsin", "XX0000000136"),
+                                         textParam("newIsin", "XX0000000137"),
+                                         textParam("effectiveDate", "2024-06-03")}));
+
+    ASSERT_EQ(stages.mFifo.mIsins.size(), 2U);
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mIsin, "XX0000000136");
+    ASSERT_EQ(stages.mFifo.mIsins.at(0).mMatches.size(), 1U);
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mMatches.at(0).mUnits, 1'000'000'000); // 10 units
+    // Gain EUR 120 = 520 - 400, in ticks of 10^-16 EUR.
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mMatches.at(0).mGainTicks,
+              ExactRational{WideInteger{1'200'000'000'000'000'000}});
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+
+    const KdvpInventoryList& list = stages.mBuilt.mReport->mLists.at(0);
+
+    EXPECT_EQ(list.mIsin, "XX0000000136");
+    ASSERT_EQ(list.mRows.size(), 2U);
+
+    const KdvpPurchaseRow& purchase = std::get<KdvpPurchaseRow>(list.mRows.at(0).mEntry);
+    const KdvpSaleRow& sale = std::get<KdvpSaleRow>(list.mRows.at(1).mEntry);
+
+    EXPECT_EQ(purchase.mDate, day("2023-03-01"));
+    EXPECT_EQ(purchase.mMethod, KdvpPurchaseMethod::B);
+    EXPECT_EQ(purchase.mUnits, 1'000'000'000);     // 10 units
+    EXPECT_EQ(purchase.mUnitPrice, 4'000'000'000); // EUR 40
+    EXPECT_EQ(sale.mDate, day("2024-06-03"));
+    EXPECT_EQ(sale.mUnits, 1'000'000'000);     // 10 units
+    EXPECT_EQ(sale.mUnitPrice, 5'200'000'000); // EUR 520 / 10 units = EUR 52
+    EXPECT_EQ(sale.mLossRule, KdvpLossRule::NotBlocked);
+}
+
+TEST(CorporateActionIntegrationTest, TheNewSharesOfATaxableStockMergerAreBoughtAtTheValueWithF2E) {
+    // The same merger. B is sold on 2025-02-03: the 2025 Doh-KDVP lists B with the purchase of
+    // 2024-06-03 (4 units at EUR 520 / 4 = 130, F2 `E`) and the sale of 4 units at EUR 140,
+    // gain 40.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" tradeDate="20250203" dateTime="20250203;100000" buySell="SELL" quantity="-4" tradePrice="140" proceeds="560" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="520"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2025, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 5'200'000,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+
+    const KdvpInventoryList& list = stages.mBuilt.mReport->mLists.at(0);
+
+    EXPECT_EQ(list.mIsin, "XX0000000137");
+    ASSERT_EQ(list.mRows.size(), 2U);
+
+    const KdvpPurchaseRow& purchase = std::get<KdvpPurchaseRow>(list.mRows.at(0).mEntry);
+    const KdvpSaleRow& sale = std::get<KdvpSaleRow>(list.mRows.at(1).mEntry);
+
+    EXPECT_EQ(purchase.mDate, day("2024-06-03"));
+    EXPECT_EQ(purchase.mMethod, KdvpPurchaseMethod::E);
+    EXPECT_EQ(purchase.mUnits, 400'000'000);        // 4 units
+    EXPECT_EQ(purchase.mUnitPrice, 13'000'000'000); // EUR 520 / 4 units = EUR 130
+    EXPECT_EQ(sale.mDate, day("2025-02-03"));
+    EXPECT_EQ(sale.mUnits, 400'000'000);        // 4 units
+    EXPECT_EQ(sale.mUnitPrice, 14'000'000'000); // EUR 140
+
+    // Gain EUR 40 = 4 x (140 - 130), in ticks of 10^-16 EUR.
+    ASSERT_EQ(stages.mFifo.mIsins.size(), 2U);
+    EXPECT_EQ(stages.mFifo.mIsins.at(1).mIsin, "XX0000000137");
+    ASSERT_EQ(stages.mFifo.mIsins.at(1).mMatches.size(), 1U);
+    EXPECT_EQ(stages.mFifo.mIsins.at(1).mMatches.at(0).mGainTicks,
+              ExactRational{WideInteger{400'000'000'000'000'000}});
+}
+
+TEST(CorporateActionIntegrationTest, TaxableStockMergerWithCashSellsAAtTheValuePlusTheCash) {
+    // The same merger with EUR 30 paid in cash: A is sold at 520 + 30 = 550 over 10 units = EUR 55
+    // (gain 150), and B is still bought at the value of the shares only, 520 over 4 units = EUR
+    // 130.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" tradeDate="20250203" dateTime="20250203;100000" buySell="SELL" quantity="-4" tradePrice="140" proceeds="560" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="30" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="520"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 5'200'000,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    ASSERT_EQ(stages.mFifo.mIsins.size(), 2U);
+    ASSERT_EQ(stages.mFifo.mIsins.at(0).mMatches.size(), 1U);
+    // Gain EUR 150 = 550 - 400, in ticks of 10^-16 EUR.
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mMatches.at(0).mGainTicks,
+              ExactRational{WideInteger{1'500'000'000'000'000'000}});
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+
+    const KdvpInventoryList& list = stages.mBuilt.mReport->mLists.at(0);
+
+    ASSERT_EQ(list.mRows.size(), 2U);
+    EXPECT_EQ(std::get<KdvpSaleRow>(list.mRows.at(1).mEntry).mUnitPrice, 5'500'000'000); // EUR 55
+}
+
+TEST(CorporateActionIntegrationTest, StockMergerPricesAreRoundedOnce) {
+    // 3 units of A bought at EUR 30 become 7 units of B, value EUR 100: A is sold at 100 / 3 =
+    // 33.33333333 (rounded once to 8 decimals) and B is bought at 100 / 7 = 14.28571429.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="3" tradePrice="30" proceeds="-90" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" tradeDate="20250203" dateTime="20250203;100000" buySell="SELL" quantity="-7" tradePrice="20" proceeds="140" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-3" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="7" proceeds="0" value="100"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2025, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 1'000'000,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.at(0).mRows.size(), 2U);
+
+    const KdvpPurchaseRow& purchase =
+        std::get<KdvpPurchaseRow>(stages.mBuilt.mReport->mLists.at(0).mRows.at(0).mEntry);
+
+    EXPECT_EQ(purchase.mUnits, 700'000'000);       // 7 units
+    EXPECT_EQ(purchase.mUnitPrice, 1'428'571'429); // EUR 14.28571429
+}
+
+TEST(CorporateActionIntegrationTest, TheSaleOfAInAStockMergerIsAtTheRoundedPrice) {
+    // The same merger seen in 2024: the sale of 3 units of A at EUR 33.33333333.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="3" tradePrice="30" proceeds="-90" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-3" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="7" proceeds="0" value="100"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 1'000'000,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.at(0).mRows.size(), 2U);
+
+    const KdvpSaleRow& sale =
+        std::get<KdvpSaleRow>(stages.mBuilt.mReport->mLists.at(0).mRows.at(1).mEntry);
+
+    EXPECT_EQ(sale.mUnits, 300'000'000);       // 3 units
+    EXPECT_EQ(sale.mUnitPrice, 3'333'333'333); // EUR 33.33333333
+}
+
+TEST(CorporateActionIntegrationTest, DeferredStockMergerCarriesTheLots) {
+    // 10 units of A bought at EUR 40 on 2023-03-01 become 4 units of B; FURS decided a deferral.
+    // The lot carries on under B: 4 units at EUR 400 / 4 = 100, purchase date 2023-03-01, F2 `E`.
+    // B is sold on 2025-02-03 at EUR 140: gain 4 x (140 - 100) = 160.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" tradeDate="20250203" dateTime="20250203;100000" buySell="SELL" quantity="-4" tradePrice="140" proceeds="560" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2025, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                           .mMarketValue = 0,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mSeverity, DiagnosticSeverity::Warning);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::CorporateActionAppliedStockMergerDeferred);
+
+    // One pool: A has no instrument any more.
+    ASSERT_EQ(stages.mFifo.mIsins.size(), 1U);
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mIsin, "XX0000000137");
+    ASSERT_EQ(stages.mFifo.mIsins.at(0).mMatches.size(), 1U);
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mMatches.at(0).mPurchaseDate, day("2023-03-01"));
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mMatches.at(0).mUnits, 400'000'000); // 4 units
+    // Gain EUR 160 = 560 - 400, in ticks of 10^-16 EUR.
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mMatches.at(0).mGainTicks,
+              ExactRational{WideInteger{1'600'000'000'000'000'000}});
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+
+    const KdvpInventoryList& list = stages.mBuilt.mReport->mLists.at(0);
+
+    EXPECT_EQ(list.mIsin, "XX0000000137");
+    ASSERT_EQ(list.mRows.size(), 2U);
+
+    const KdvpPurchaseRow& purchase = std::get<KdvpPurchaseRow>(list.mRows.at(0).mEntry);
+    const KdvpSaleRow& sale = std::get<KdvpSaleRow>(list.mRows.at(1).mEntry);
+
+    EXPECT_EQ(purchase.mDate, day("2023-03-01"));
+    EXPECT_EQ(purchase.mMethod, KdvpPurchaseMethod::E);
+    EXPECT_EQ(purchase.mUnits, 400'000'000);        // 4 units
+    EXPECT_EQ(purchase.mUnitPrice, 10'000'000'000); // EUR 400 / 4 units = EUR 100
+    EXPECT_EQ(sale.mUnits, 400'000'000);            // 4 units
+    EXPECT_EQ(sale.mUnitPrice, 14'000'000'000);     // EUR 140
+}
+
+TEST(CorporateActionIntegrationTest, ADeferredStockMergerWithTheSameNumberOfUnitsNeedsNoRatio) {
+    // 10 units of A bought at EUR 40 become 10 units of B, deferred: no ratio row is left, and the
+    // lot is listed under B with its date and its value, F2 `E`.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" tradeDate="20250203" dateTime="20250203;100000" buySell="SELL" quantity="-10" tradePrice="50" proceeds="500" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="10" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2025, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                           .mMarketValue = 0,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.at(0).mRows.size(), 2U);
+
+    const KdvpPurchaseRow& purchase =
+        std::get<KdvpPurchaseRow>(stages.mBuilt.mReport->mLists.at(0).mRows.at(0).mEntry);
+
+    EXPECT_EQ(purchase.mDate, day("2023-03-01"));
+    EXPECT_EQ(purchase.mMethod, KdvpPurchaseMethod::E);
+    EXPECT_EQ(purchase.mUnits, 1'000'000'000);     // 10 units
+    EXPECT_EQ(purchase.mUnitPrice, 4'000'000'000); // EUR 40
+}
+
+TEST(CorporateActionIntegrationTest, ASaleOfABeforeADeferredStockMergerShowsTheLotAsBought) {
+    // 20 units of A bought on 2024-01-10 at EUR 10, 10 sold on 2024-02-20 at EUR 12, the other 10
+    // become 10 units of B on 2024-06-03 (deferred) and are sold on 2024-09-02 at EUR 13. The 2024
+    // Doh-KDVP has two lists. In the list of A the purchase of 10 units is `B`; in the list of B
+    // the purchase of the carried 10 units is `E`.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20240110" dateTime="20240110;100000" buySell="BUY" quantity="20" tradePrice="10" proceeds="-200" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20240220" dateTime="20240220;100000" buySell="SELL" quantity="-10" tradePrice="12" proceeds="120" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1003" tradeID="1003" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" tradeDate="20240902" dateTime="20240902;100000" buySell="SELL" quantity="-10" tradePrice="13" proceeds="130" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="10" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                           .mMarketValue = 0,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 2U);
+
+    const KdvpInventoryList& listOfA = stages.mBuilt.mReport->mLists.at(0);
+    const KdvpInventoryList& listOfB = stages.mBuilt.mReport->mLists.at(1);
+
+    EXPECT_EQ(listOfA.mIsin, "XX0000000136");
+    EXPECT_EQ(listOfB.mIsin, "XX0000000137");
+    ASSERT_EQ(listOfA.mRows.size(), 2U);
+    ASSERT_EQ(listOfB.mRows.size(), 2U);
+    EXPECT_EQ(std::get<KdvpPurchaseRow>(listOfA.mRows.at(0).mEntry).mMethod, KdvpPurchaseMethod::B);
+    EXPECT_EQ(std::get<KdvpPurchaseRow>(listOfA.mRows.at(0).mEntry).mUnits, 1'000'000'000); // 10
+    EXPECT_EQ(std::get<KdvpPurchaseRow>(listOfB.mRows.at(0).mEntry).mMethod, KdvpPurchaseMethod::E);
+    EXPECT_EQ(std::get<KdvpPurchaseRow>(listOfB.mRows.at(0).mEntry).mUnits, 1'000'000'000); // 10
+}
+
+TEST(CorporateActionIntegrationTest, DeferredStockMergerWithCashIsUnsupported) {
+    // A deferral with cash would need a partial sale of the old lots: it blocks both ISINs.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="30" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                           .mMarketValue = 0,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::UnsupportedCorporateAction});
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::UnsupportedCorporateActionStockMergerDeferralWithCash);
+    EXPECT_EQ(result.mDiagnostics.at(0).mIsin, "XX0000000136");
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey,
+              MessageKey::UnsupportedCorporateActionStockMergerDeferralWithCash);
+    EXPECT_EQ(result.mDiagnostics.at(1).mIsin, "XX0000000137");
+}
+
+TEST(CorporateActionIntegrationTest, ADeferredStockMergerBlocksATradeOfAAfterItsDate) {
+    // A bought again on 2024-06-04, after the merger date: the trades do not fit one exchange.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20240604" dateTime="20240604;100000" buySell="BUY" quantity="1" tradePrice="41" proceeds="-41" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Deferred,
+                                           .mMarketValue = 0,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::CorporateActionInconsistent});
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::CorporateActionInconsistentTradeAcrossIsinChange);
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey,
+              MessageKey::CorporateActionInconsistentTradeAcrossIsinChange);
+}
+
+TEST(CorporateActionIntegrationTest, UnitsLeftAfterAStockMergerBlockTheInvestment) {
+    // 10 units of A, but the rows take only 6 away: 4 units are still held after the merger, so a
+    // row is probably missing.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-6" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="520"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 5'200'000,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+
+    // The error of the sale (from the FIFO stage), then the warning that the merger was applied.
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::CorporateActionInconsistent});
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::CorporateActionInconsistentUnitsLeftAfterStockMerger);
+    EXPECT_EQ(result.mDiagnostics.at(0).mIsin, "XX0000000136");
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey, MessageKey::CorporateActionAppliedStockMerger);
+}
+
+TEST(CorporateActionIntegrationTest, StockMergerMarketValueZeroIsRejected) {
+    // A market value of 0 is not a value.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 0,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections.at(0).mReason, AnswerRejection::MarketValueNotPositive);
+    EXPECT_EQ(rejections.at(0).mMessageKey, MessageKey::AnswerRejectedMarketValueNotPositive);
+
+    // The question stays open.
+    ASSERT_EQ(session.result().mRequests.size(), 1U);
+}
+
+TEST(CorporateActionIntegrationTest, StockMergerDateOutsideTheRowsIsRejected) {
+    // The rows are dated 2024-06-03 and 2024-06-05: 2024-06-10 is outside them.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240605;202500" reportDate="20240605" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 5'200'000,
+                                           .mEffectiveDate = day("2024-06-10")}}});
+
+    ASSERT_EQ(rejections.size(), 1U);
+    EXPECT_EQ(rejections.at(0).mReason, AnswerRejection::EffectiveDateOutOfRange);
+    EXPECT_EQ(rejections.at(0).mMessageKey, MessageKey::AnswerRejectedEffectiveDateOutOfRange);
+}
+
+TEST(CorporateActionIntegrationTest, AnOpenStockMergerAsksOneQuestionAndBlocksBothIsins) {
+    // No answer yet: one question with the units, the cash and the value of the rows, and an error
+    // on each ISIN that links to it. The old stock merger error is not added.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="30" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="520"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NeedsInput);
+    ASSERT_EQ(result.mRequests.size(), 1U);
+
+    const DecisionRequest& request = result.mRequests.at(0);
+
+    EXPECT_EQ(request.mType, RequestType::CorporateActionStockMergerRequired);
+    EXPECT_EQ(request.mIsin, "XX0000000136");
+
+    const StockMergerQuestion& question = std::get<StockMergerQuestion>(request.mData);
+
+    EXPECT_EQ(question.mOldName, "SYNTHETIC MERGED SHARE");
+    EXPECT_EQ(question.mNewName, "SYNTHETIC ACQUIRER");
+    EXPECT_EQ(question.mOldUnits, 1'000'000'000); // 10 units
+    EXPECT_EQ(question.mNewUnits, 400'000'000);   // 4 units
+    EXPECT_EQ(question.mCurrency, Currency::EUR);
+    EXPECT_EQ(question.mCash, 300'000);                                   // EUR 30
+    EXPECT_EQ(question.mSuggestedValue, std::optional<Money>{5'200'000}); // EUR 520
+    EXPECT_EQ(question.mEffectiveDate, day("2024-06-03"));
+    EXPECT_EQ(question.mEarliestDate, day("2024-06-03"));
+    EXPECT_EQ(question.mLatestDate, day("2024-06-03"));
+    ASSERT_EQ(question.mSources.size(), 2U);
+    EXPECT_EQ(question.mSources.at(0).mTransactionId, "3001");
+    EXPECT_EQ(question.mSources.at(0).mSourceValue, "-10"); // the units that left
+    EXPECT_EQ(question.mSources.at(1).mTransactionId, "3002");
+    EXPECT_EQ(question.mSources.at(1).mSourceValue, "4"); // the units that came in
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mCode,
+              ApplicationDiagnosticCode{ProcessingDiagnosticCode::CorporateActionAmbiguous});
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::CorporateActionAmbiguousStockMergerRequired);
+    EXPECT_EQ(result.mDiagnostics.at(0).mIsin, "XX0000000136");
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey,
+              MessageKey::CorporateActionAmbiguousStockMergerRequired);
+    EXPECT_EQ(result.mDiagnostics.at(1).mIsin, "XX0000000137");
+}
+
+TEST(CorporateActionIntegrationTest, ACancelledStockMergerBlocksBothIsins) {
+    // Cancelling the question leaves both ISINs with the cancelled error and no question.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001", 1, CancelAnswer{}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+
+    ASSERT_EQ(result.mDiagnostics.size(), 2U);
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey, MessageKey::CorporateActionAmbiguousCancelled);
+    EXPECT_EQ(result.mDiagnostics.at(1).mMessageKey, MessageKey::CorporateActionAmbiguousCancelled);
+}
+
+TEST(CorporateActionIntegrationTest, AStockMergerAfterTheYearWithoutASaleIsNotAsked) {
+    // The merger is on 2024-06-03 and the year is 2023, with no sale of either ISIN: nothing is
+    // asked and nothing blocks.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2023, aDecisions, &stages);
+    });
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(CorporateActionIntegrationTest, AStockMergerBeforeTheYearIsAskedWhenTheNewSharesAreSold) {
+    // The merger is on 2024-06-03 and B is sold in 2025: the basis of B depends on the answer.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="10" tradePrice="40" proceeds="-400" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" tradeDate="20250203" dateTime="20250203;100000" buySell="SELL" quantity="-4" tradePrice="140" proceeds="560" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2025, aDecisions, &stages);
+    });
+
+    const ApplicationResult& result = session.result();
+
+    ASSERT_EQ(result.mRequests.size(), 1U);
+    EXPECT_EQ(result.mRequests.at(0).mType, RequestType::CorporateActionStockMergerRequired);
+}
+
+TEST(CorporateActionIntegrationTest, TheSaleOfATaxableStockMergerIsAnOrdinarySaleForTheLossRule) {
+    // 10 units of A bought at EUR 60 on 2024-01-10, the merger on 2024-06-03 at EUR 520: the sale
+    // is 10 units at EUR 52, a loss of 80. The sale is an ordinary sale for the loss rule:
+    // receiving B is not a purchase of A, so no unit is blocked and the 10 loss units are open,
+    // which the loss question asks about. After "no other activity" the loss stays deductible.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20240110" dateTime="20240110;100000" buySell="BUY" quantity="10" tradePrice="60" proceeds="-600" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const std::vector<RejectedAnswer> rejections =
+        session.answer({{"request-0001",
+                         1,
+                         StockMergerAnswer{.mTreatment = StockMergerTreatment::Taxable,
+                                           .mMarketValue = 5'200'000,
+                                           .mEffectiveDate = day("2024-06-03")}}});
+
+    EXPECT_TRUE(rejections.empty());
+
+    const ApplicationResult& asked = session.result();
+
+    ASSERT_EQ(asked.mRequests.size(), 1U);
+    EXPECT_EQ(asked.mRequests.at(0).mType, RequestType::LossEligibilityConfirmationRequired);
+    EXPECT_EQ(asked.mRequests.at(0).mIsin, "XX0000000136");
+
+    const LossEligibilityQuestion& question =
+        std::get<LossEligibilityQuestion>(asked.mRequests.at(0).mData);
+
+    ASSERT_EQ(question.mSales.size(), 1U);
+    EXPECT_EQ(question.mSales.at(0).mSaleUnits, 1'000'000'000); // 10 units
+    EXPECT_EQ(question.mSales.at(0).mLossUnits, 1'000'000'000); // 10 units
+    EXPECT_EQ(question.mSales.at(0).mKnownIneligibleUnits, 0);  // B is no replacement
+    EXPECT_EQ(question.mSales.at(0).mOpenUnits, 1'000'000'000); // 10 units
+    EXPECT_TRUE(question.mSales.at(0).mKnownReplacements.empty());
+
+    const std::string lossRequestId = asked.mRequests.at(0).mId;
+    const std::uint64_t lossRevision = asked.mRunRevision;
+
+    EXPECT_TRUE(session.answer({{lossRequestId, lossRevision, NoOtherActivityAnswer{}}}).empty());
+    EXPECT_TRUE(session.result().mRequests.empty());
+
+    ASSERT_EQ(stages.mFifo.mIsins.size(), 2U);
+    ASSERT_EQ(stages.mFifo.mIsins.at(0).mMatches.size(), 1U);
+    // Loss EUR 80 = 520 - 600, in ticks of 10^-16 EUR.
+    EXPECT_EQ(stages.mFifo.mIsins.at(0).mMatches.at(0).mGainTicks,
+              ExactRational{WideInteger{-800'000'000'000'000'000}});
+
+    ASSERT_TRUE(stages.mBuilt.mReport.has_value());
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.size(), 1U);
+    ASSERT_EQ(stages.mBuilt.mReport->mLists.at(0).mRows.size(), 2U);
+    EXPECT_EQ(
+        std::get<KdvpSaleRow>(stages.mBuilt.mReport->mLists.at(0).mRows.at(1).mEntry).mLossRule,
+        KdvpLossRule::NotBlocked);
+}
+
+TEST(CorporateActionIntegrationTest, AMergerWithThreeIsinsStaysUnsupported) {
+    // One action with three ISINs (one out, two in) is not a merger of two companies: no question,
+    // and the old unsupported error stays when A is sold after it.
+    const std::string xml = ibkrStatement(
+        R"(<Trade accountId="U0000000" transactionID="1001" tradeID="1001" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20230301" dateTime="20230301;100000" buySell="BUY" quantity="20" tradePrice="40" proceeds="-800" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="O" notes="" multiplier="1"/>
+        <Trade accountId="U0000000" transactionID="1002" tradeID="1002" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" tradeDate="20240902" dateTime="20240902;100000" buySell="SELL" quantity="-10" tradePrice="45" proceeds="450" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" openCloseIndicator="C" notes="" multiplier="1"/>)",
+        R"(<CorporateAction accountId="U0000000" transactionID="3001" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC MERGED SHARE" isin="XX0000000136" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="-10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3002" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC ACQUIRER" isin="XX0000000137" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="4" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="3003" actionID="M7001" type="TC" assetCategory="STK" symbol="SYN" description="SYNTHETIC THIRD SHARE" isin="XX0000000138" currency="EUR" dateTime="20240603;202500" reportDate="20240603" quantity="2" proceeds="0" value="0"/>)");
+    const std::vector<ParseResult> parsed{ibkr::IbkrParser{}.parse(xml, "ibkr.xml", 0)};
+    CapitalStages stages;
+    DecisionSession session;
+    session.start([&parsed, &stages](RunDecisions& aDecisions) {
+        return calculateCapitalGains(parsed, 2024, aDecisions, &stages);
+    });
+
+    const ApplicationResult& result = session.result();
+
+    EXPECT_TRUE(result.mRequests.empty());
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Failed);
+
+    ASSERT_FALSE(result.mDiagnostics.empty());
+    EXPECT_EQ(result.mDiagnostics.at(0).mMessageKey,
+              MessageKey::UnsupportedCorporateActionStockMerger);
 }
 
 } // namespace
