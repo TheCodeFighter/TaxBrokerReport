@@ -95,7 +95,7 @@ describe("year 2024 of the manual files", () => {
     await pickWord(obrFailure, "exclude_failed_instruments");
     await sendAnswer(obrFailure);
 
-    // README, 2024: Doh-KDVP generated, without the certificate, with the two-broker share, the cash takeover and the renamed share in two lists; Doh-Div 5 rows; Doh-DHO no data;
+    // README, 2024: Doh-KDVP generated, without the certificate, with the two-broker share, the cash takeover, the cross-broker loss share and the renamed share in two lists; Doh-Div 5 rows; Doh-DHO no data;
     // Doh-Obr 3 rows without Bond B; two warnings about left-out derivative rows: 2 rows of the
     // certificate (Trade Republic) and 1 row of the option (Interactive Brokers).
     expect(await cardStatus(page, "Doh-KDVP")).toBe("pripravljeno");
@@ -126,6 +126,10 @@ describe("year 2024 of the manual files", () => {
         .count(),
     ).toBe(1);
     expect(await page.getByText("Synthetic Index Certificate").count()).toBe(0);
+    // The Cross Broker Loss Share is a loss sale whose units are replaced by a purchase at the other
+    // broker 23 days later (README): its loss question is not asked, because the Interactive
+    // Brokers file of 2025 is loaded. The share is only listed in Doh-KDVP.
+    expect(await question(page, "Synthetic Cross Broker Loss Share (XX0000000138)").count()).toBe(0);
     expect(await resultRegion(page).getByText("(število vrstic: 2)").count()).toBe(1);
     expect(await resultRegion(page).getByText("(število vrstic: 1)").count()).toBe(1);
     expect(await cardStatus(page, "Doh-Div")).toBe("pripravljeno");
