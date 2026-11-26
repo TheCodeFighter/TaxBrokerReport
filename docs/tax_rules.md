@@ -1605,7 +1605,8 @@ Tests based on this document must prove that:
   decision;
 - foreign-tax claims preserve gross income and actual investor-level tax, require the relevant
   evidence, and never infer a treaty exemption from list membership;
-- an unresolved requested exemption needs input until supported or explicitly withdrawn;
+- an unanswered treaty question makes no claim and never blocks: the gross amount and the foreign
+  tax stay as received;
 - exactly EUR 1,000 of qualifying interest does not require a return;
 - the answer "yes" to the question about other banks makes Doh-DHO from imported interest at or below EUR 1,000, "no" gives `no_data`, an unanswered question leaves `needs_input`, and a total above EUR 1,000 or equal to zero asks nothing;
 - the total is the exact four-decimal sum: EUR 500.0000 + EUR 500.0000 asks, EUR 500.0000 + EUR 500.0001 does not;
