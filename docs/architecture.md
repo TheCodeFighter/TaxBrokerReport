@@ -437,7 +437,7 @@ Rules (each one is a row of the parser fixtures):
     | `FS` forward split, `RS` reverse split, same ISIN before and after | `UnresolvedSplit`: the ratio is asked, as for Trade Republic. The text in `actionDescription` (for example "SPLIT 4 FOR 1") is evidence only, never a verified ratio. |
     | `TC` of one ISIN with an `actionID`: `quantity` negative and `proceeds` above 0 | Takeover for cash: a `TradeTransaction` sale (`mFromCashMerger`) of the units at `proceeds` divided by the units, on the date of the row, in the currency of the row, without a fee. `proceeds` missing or not a number rejects the row; a negative `proceeds` rejects it by sign; 0, a positive `quantity` or no `actionID` (the rows of another ISIN of the same merger cannot be seen) is stored as an unsupported action. |
     | `IC` issue change, and `FS` or `RS` where the action has two ISINs | `IsinChange`: one ISIN with negative quantities (the old one, the row names the new ISIN in `mNewIsin`) and one with positive ones; any other shape is unsupported. The processor asks the user before it uses it. |
-    | `TC` with the rows of two ISINs in one action | `StockMerger`: `unsupported_corporate_action`, key `.stock_merger`. |
+    | `TC` with the rows of two or more ISINs in one action | `StockMerger`. On a row that loses units `proceeds` is read as the cash (`mCashProceeds`), on a row that gets units `value` as the market value of the new units (`mMarketValue`), both in the row's `currency` (`mAmountCurrency`); a blank or zero one is none, a negative or non-number rejects the row. With exactly one ISIN out and one in the stock merger stage asks the user; any other shape is `unsupported_corporate_action`, key `.stock_merger`. |
     | `SO` spin-off, `SD` stock dividend, `RI`, `DI`, `ED`, `SR` rights, `TO`, `TI` tender, `DW` delisted worthless, `CH`, `HD`, `HI` choice dividend, `BC`, `CI`, any other | `unsupported_corporate_action`. |
     | `BM` bond maturity, `TM` T-bill maturity | `BondRedemptionEvent`, information only. |
     | `CD` cash dividend, `CP` coupon | Ignored here; the cash row is the payment. |
@@ -447,7 +447,7 @@ Rules (each one is a row of the parser fixtures):
     count as a maturity only on a bond or a bill; the same code on another class is
     unsupported. A positive `quantity` on a maturity is a cancelled maturity. Every other action
     keeps its quantity as evidence and is stored with the merger type, which the corporate-action
-    stage blocks. The rows of one action ID are matched in one statement, by the sign of the
+    stage blocks. The `currency` of every action row is kept as `mAmountCurrency`. The rows of one action ID are matched in one statement, by the sign of the
     quantity; the rows of one action ID in different files are not compared (unconfirmed: a `TC`
     cash row in one file and the share row of the same action in another is read as a takeover for
     cash only).
@@ -1140,7 +1140,7 @@ writer adds constants that are not data: the taxpayer type `FO`, the period date
 
 **Doh-KDVP model.** `CapitalGainsReportKDVP` holds one `KdvpInventoryList` (a *popisni list*) for
 each ISIN with a sale in the selected year, in ISIN order. A list has the ISIN, the name, `IsFond` and
-its rows in ledger order. A row is a `KdvpPurchaseRow` (F1 date, F2 method `B`, F3 units, F4 unit
+its rows in ledger order. A row is a `KdvpPurchaseRow` (F1 date, F2 method `B`, or `E` for the new shares of a merger of two companies, F3 units, F4 unit
 value) or a `KdvpSaleRow` (F6 date, F7 units, F9 unit value, F10), plus F8, the stock. The rows
 are the filing rows of [`tax_rules.md`](tax_rules.md), "Doh-KDVP filing rows"; the internal FIFO
 matches are not part of the model. A row keeps a `StatementEventReference` to its source trade
