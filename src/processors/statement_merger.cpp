@@ -866,72 +866,116 @@ void addSameFileDuplicateDiagnostics(const MergeEvent& aMerged,
     }
 }
 
+/// One event that has a transaction identity: the identity and the event's index in the list.
+struct IdentifiedEvent {
+    TransactionIdentity mIdentity;
+    std::size_t mIndex{};
+};
+
+/// Merges the events that share a transaction identity. The result keeps the order of the primary
+/// sources. An event with no duplicate is never copied, and the events are not moved by the sort.
 void deduplicateEvents(std::vector<MergeEvent>& aEvents,
                        std::vector<MergeDiagnostic>& aDiagnostics) {
-    std::stable_sort(aEvents.begin(),
-                     aEvents.end(),
-                     [](const MergeEvent& aLeft, const MergeEvent& aRight) {
-                         return StableSourceOrder{}(primarySource(eventMetadata(aLeft)),
-                                                    primarySource(eventMetadata(aRight)));
-                     });
+    std::vector<std::size_t> order(aEvents.size());
 
-    std::map<TransactionIdentity, std::vector<std::size_t>, TransactionIdentityOrder> groups;
+    std::iota(order.begin(), order.end(), std::size_t{0});
+    std::stable_sort(order.begin(), order.end(), [&aEvents](std::size_t aLeft, std::size_t aRight) {
+        return StableSourceOrder{}(primarySource(eventMetadata(aEvents[aLeft])),
+                                   primarySource(eventMetadata(aEvents[aRight])));
+    });
+
+    std::vector<IdentifiedEvent> identified;
     std::vector<bool> rejected(aEvents.size(), false);
 
-    for (std::size_t index = 0; index < aEvents.size(); ++index)
+    identified.reserve(aEvents.size());
+
+    for (const std::size_t index : order)
     {
-        const auto identity = transactionIdentity(eventMetadata(aEvents[index]));
+        std::optional<TransactionIdentity> identity =
+            transactionIdentity(eventMetadata(aEvents[index]));
 
         if (identity)
         {
-            groups[*identity].push_back(index);
+            identified.push_back(
+                IdentifiedEvent{.mIdentity = std::move(*identity), .mIndex = index});
         }
     }
 
-    for (auto& group : groups)
+    // A stable sort keeps the order of the primary sources inside each identity, and the groups
+    // come in the order of the identity, as they did in an ordered map.
+    std::stable_sort(identified.begin(),
+                     identified.end(),
+                     [](const IdentifiedEvent& aLeft, const IdentifiedEvent& aRight) {
+                         return TransactionIdentityOrder{}(aLeft.mIdentity, aRight.mIdentity);
+                     });
+
+    for (std::size_t begin = 0; begin < identified.size();)
     {
-        auto& candidates = group.second;
-        auto& canonical = aEvents[candidates.front()];
-        // Accumulate evidence so an evidence-free first event cannot hide later conflicts.
-        auto combined = canonical;
-        bool allMatch = true;
+        std::size_t end = begin + 1;
 
-        // A plain loop, not std::all_of: optimized Clang builds cannot apply the unroll hint that
-        // libstdc++ puts on std::all_of here, and warn.
-        for (std::size_t index = 1; index < candidates.size(); ++index)
+        while (end < identified.size() && identified[end].mIdentity == identified[begin].mIdentity)
         {
-            const auto& candidate = aEvents[candidates[index]];
+            ++end;
+        }
 
-            if (!sameEventFacts(combined, candidate))
+        // A single event has nothing to merge, compare or report.
+        if (end - begin > 1)
+        {
+            std::vector<std::size_t> candidates;
+
+            candidates.reserve(end - begin);
+
+            for (std::size_t position = begin; position < end; ++position)
             {
-                allMatch = false;
-                break;
+                candidates.push_back(identified[position].mIndex);
             }
 
-            mergeExactEvent(combined, candidate);
+            auto& canonical = aEvents[candidates.front()];
+            // Accumulate evidence so an evidence-free first event cannot hide later conflicts.
+            auto combined = canonical;
+            bool allMatch = true;
+
+            // A plain loop, not std::all_of: optimized Clang builds cannot apply the unroll hint
+            // that libstdc++ puts on std::all_of here, and warn.
+            for (std::size_t index = 1; index < candidates.size(); ++index)
+            {
+                const auto& candidate = aEvents[candidates[index]];
+
+                if (!sameEventFacts(combined, candidate))
+                {
+                    allMatch = false;
+                    break;
+                }
+
+                mergeExactEvent(combined, candidate);
+            }
+
+            if (!allMatch)
+            {
+                addConflictingDuplicateDiagnostic(aEvents, candidates, aDiagnostics);
+                rejected[candidates.front()] = true;
+            }
+            else
+            {
+                // The candidates still hold their own sources here; the move below combines them.
+                addSameFileDuplicateDiagnostics(combined, aEvents, candidates, aDiagnostics);
+                canonical = std::move(combined);
+            }
+
+            for (std::size_t index = 1; index < candidates.size(); ++index)
+            {
+                rejected[candidates[index]] = true;
+            }
         }
 
-        if (!allMatch)
-        {
-            addConflictingDuplicateDiagnostic(aEvents, candidates, aDiagnostics);
-            rejected[candidates.front()] = true;
-        }
-        else
-        {
-            // The candidates still hold their own sources here; the move below combines them.
-            addSameFileDuplicateDiagnostics(combined, aEvents, candidates, aDiagnostics);
-            canonical = std::move(combined);
-        }
-
-        for (std::size_t index = 1; index < candidates.size(); ++index)
-        {
-            rejected[candidates[index]] = true;
-        }
+        begin = end;
     }
 
     std::vector<MergeEvent> retainedEvents;
 
-    for (std::size_t index = 0; index < aEvents.size(); ++index)
+    retainedEvents.reserve(aEvents.size());
+
+    for (const std::size_t index : order)
     {
         if (!rejected[index])
         {

@@ -19433,6 +19433,163 @@ TEST(TradeRepublicParserTest, CompletesMissingTradeNameWithoutChangingOriginalEv
     EXPECT_EQ(result.mDiagnostics[0].mTransactionId, "synthetic-unnamed");
 }
 
+TEST(TradeRepublicParserTest, KeepsTradesOfInterleavedInstrumentsUnderTheirOwnIsin) {
+    const SyntheticCsvRow firstA{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Share A",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-a1",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow onlyB{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Share B",
+        .mSymbol = "XX9000000002",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-b1",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const SyntheticCsvRow secondA{
+        .mDatetime = "2024-01-15T10:00:00.000Z",
+        .mDate = "2024-01-15",
+        .mAccountType = "DEFAULT",
+        .mCategory = "TRADING",
+        .mType = "BUY",
+        .mAssetClass = "STOCK",
+        .mName = "Share A",
+        .mSymbol = "XX9000000001",
+        .mShares = "1.0000000000",
+        .mPrice = "10.000000",
+        .mAmount = "-10.000000",
+        .mFee = "",
+        .mTax = "",
+        .mCurrency = "EUR",
+        .mOriginalAmount = "",
+        .mOriginalCurrency = "",
+        .mFxRate = "",
+        .mDescription = "Synthetic test row",
+        .mTransactionId = "synthetic-a2",
+        .mCounterpartyName = "",
+        .mCounterpartyIban = "",
+        .mPaymentReference = "",
+        .mMccCode = "",
+    };
+    const TemporaryCsvFile csvFile{firstA, onlyB, secondA};
+    tr::TradeRepublicParser parser;
+
+    const auto result = parser.parseFile(csvFile.path());
+
+    // The instruments are listed in the order of their first row.
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 2U);
+
+    const auto& shareA = result.mStatement.mTradeInstruments[0];
+    const auto& shareB = result.mStatement.mTradeInstruments[1];
+
+    EXPECT_EQ(shareA.mIsin, "XX9000000001");
+    EXPECT_EQ(shareA.mName, "Share A");
+    ASSERT_EQ(shareA.mTransactions.size(), 2U);
+    EXPECT_EQ(shareA.mTransactions[0].mMetadata.mSources.front().mSourceRow, 2U);
+    EXPECT_EQ(shareA.mTransactions[1].mMetadata.mSources.front().mSourceRow, 4U);
+
+    EXPECT_EQ(shareB.mIsin, "XX9000000002");
+    EXPECT_EQ(shareB.mName, "Share B");
+    ASSERT_EQ(shareB.mTransactions.size(), 1U);
+    EXPECT_EQ(shareB.mTransactions[0].mMetadata.mSources.front().mSourceRow, 3U);
+    EXPECT_TRUE(result.mDiagnostics.empty());
+}
+
+TEST(TradeRepublicParserTest, ReadsATradeRowWithColumnsInAnotherOrder) {
+    // The 23 columns with transaction_id first and fee, currency, price, shares and amount moved
+    // before datetime. A trade row reads them by their position in this header.
+    const ParseResult result = parseRawText(
+        R"(transaction_id,fee,currency,price,shares,amount,datetime,date,account_type,category,)"
+        R"(type,asset_class,name,symbol,tax,original_amount,original_currency,fx_rate,description,)"
+        R"(counterparty_name,counterparty_iban,payment_reference,mcc_code)"
+        "\n"
+        R"(synthetic-order-1,-1.00,EUR,10.000000,2.0000000000,-20.000000,2024-01-15T10:00:00.000Z,)"
+        R"(2024-01-15,DEFAULT,TRADING,BUY,STOCK,Share A,XX9000000001,,,,,Synthetic test row,,,,)"
+        "\n");
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+
+    const auto& instrument = result.mStatement.mTradeInstruments.front();
+
+    EXPECT_EQ(instrument.mIsin, "XX9000000001");
+    EXPECT_EQ(instrument.mName, "Share A");
+    ASSERT_EQ(instrument.mTransactions.size(), 1U);
+
+    const TradeTransaction& trade = instrument.mTransactions.front();
+
+    EXPECT_EQ(trade.mTradeSide, TradeSide::Buy);
+    EXPECT_EQ(trade.mUnits, 200'000'000);       // 2 units at 8 decimals
+    EXPECT_EQ(trade.mUnitPrice, 1'000'000'000); // EUR 10 at 8 decimals
+    ASSERT_TRUE(trade.mAmount.has_value());
+    EXPECT_EQ(*trade.mAmount, 200'000); // EUR 20 at 4 decimals, sign dropped
+    EXPECT_EQ(trade.mFeePaid, 10'000);  // EUR 1 at 4 decimals, sign dropped
+    EXPECT_EQ(trade.mCurrency, Currency::EUR);
+    EXPECT_EQ(trade.mFeeCurrency, Currency::EUR);
+    EXPECT_EQ(trade.mMetadata.mSources.front().mTransactionId, "synthetic-order-1");
+}
+
+TEST(TradeRepublicParserTest, ReadsTheLastColumnOfARepeatedNameInATradeRow) {
+    // 24 fields: price is written twice (10.00 first, 20.00 last). A read by name gives the last
+    // column, so a trade row must give it too.
+    const ParseResult result = parseRawText(
+        R"(datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,)"
+        R"(fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,)"
+        R"(counterparty_name,counterparty_iban,payment_reference,mcc_code,price)"
+        "\n"
+        R"(2024-01-15T10:00:00.000Z,2024-01-15,DEFAULT,TRADING,BUY,STOCK,Share A,XX9000000001,)"
+        R"(1.0000000000,10.000000,-20.000000,,,EUR,,,,Synthetic test row,synthetic-repeat-1,,,,,)"
+        R"(20.000000)"
+        "\n");
+
+    EXPECT_TRUE(result.mDiagnostics.empty());
+    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+
+    const TradeTransaction& trade =
+        result.mStatement.mTradeInstruments.front().mTransactions.front();
+
+    EXPECT_EQ(trade.mUnitPrice, 2'000'000'000); // the last price, EUR 20 at 8 decimals
+}
+
 TEST(TradeRepublicParserTest, CompletesMissingDividendNameWithoutChangingOriginalEvidence) {
     const SyntheticCsvRow unnamedRow{
         .mDatetime = "2024-01-15T10:00:00.000Z",

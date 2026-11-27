@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -346,16 +347,6 @@ std::string_view builtInBody(const BuiltInRateFile& aFile) {
                                                : aFile.mText.substr(headerEnd + 1);
 }
 
-/// Takes the next line off the front of aRest, without its line break.
-std::string_view takeLine(std::string_view& aRest) {
-    const std::size_t lineEnd = aRest.find('\n');
-    const std::string_view line = aRest.substr(0, lineEnd);
-
-    aRest = lineEnd == std::string_view::npos ? std::string_view{} : aRest.substr(lineEnd + 1);
-
-    return line;
-}
-
 /// The three fields of a row `currency,date,rate`. A quote, a missing or an extra comma makes the
 /// row not valid: the files are written without quotes.
 struct BuiltInRow {
@@ -364,37 +355,99 @@ struct BuiltInRow {
     std::string_view mRate;
 };
 
-BuiltInRow splitBuiltInRow(const BuiltInRateFile& aFile, std::size_t aRow, std::string_view aLine) {
-    const std::size_t firstComma = aLine.find(',');
-    const std::size_t secondComma =
-        firstComma == std::string_view::npos ? firstComma : aLine.find(',', firstComma + 1);
+/// Reads the line at aPosition in one pass and moves aPosition past its line break. Throws the
+/// build error of the row when it is not valid.
+BuiltInRow readBuiltInRow(const BuiltInRateFile& aFile,
+                          std::size_t aRow,
+                          const char*& aPosition,
+                          const char* aEnd) {
+    const char* const lineStart = aPosition;
+    const char* firstComma = nullptr;
+    const char* secondComma = nullptr;
+    bool isValid = true;
+    const char* cursor = lineStart;
 
-    if (secondComma == std::string_view::npos ||
-        aLine.find(',', secondComma + 1) != std::string_view::npos ||
-        aLine.find('"') != std::string_view::npos)
+    for (; cursor != aEnd; ++cursor)
+    {
+        // Most characters (letters, digits, '.', '-') are above the comma and need no check.
+        if (static_cast<unsigned char>(*cursor) > static_cast<unsigned char>(','))
+        {
+            continue;
+        }
+
+        if (*cursor == '\n')
+        {
+            break;
+        }
+
+        if (*cursor == ',')
+        {
+            if (firstComma == nullptr)
+            {
+                firstComma = cursor;
+            }
+            else if (secondComma == nullptr)
+            {
+                secondComma = cursor;
+            }
+            else
+            {
+                isValid = false;
+            }
+        }
+        else if (*cursor == '"')
+        {
+            isValid = false;
+        }
+    }
+
+    if (!isValid || secondComma == nullptr)
     {
         failBuiltIn(aFile.mName, aRow, "the row is not valid");
     }
 
+    // Each field starts one character after its separator (a comma, or the line break for the
+    // next row).
+    constexpr std::ptrdiff_t kSeparatorSize = 1;
+
+    aPosition = cursor == aEnd ? aEnd : cursor + kSeparatorSize;
+
     return BuiltInRow{
-        .mCurrency = aLine.substr(0, firstComma),
-        .mDate = aLine.substr(firstComma + 1, secondComma - firstComma - 1),
-        .mRate = aLine.substr(secondComma + 1),
+        .mCurrency = std::string_view{lineStart, firstComma},
+        .mDate = std::string_view{firstComma + kSeparatorSize, secondComma},
+        .mRate = std::string_view{secondComma + kSeparatorSize, cursor},
     };
 }
 
+/// True when the 10-character date at aLeft is before the one at aRight, as text.
+bool dateTextBefore(const char* aLeft, const char* aRight) {
+    for (std::size_t index = 0; index < 10; ++index)
+    {
+        if (aLeft[index] != aRight[index])
+        {
+            return static_cast<unsigned char>(aLeft[index]) <
+                   static_cast<unsigned char>(aRight[index]);
+        }
+    }
+
+    return false;
+}
+
 /// A built-in file as a cheap scan sees it: the year, the first and last date and the row count.
-/// The rows are checked only as far as the scan needs; `parseBuiltInRates` checks every value.
+/// One pass over the text; the rows are checked only as far as the scan needs, and
+/// `parseBuiltInRates` checks every value.
 OfficialRateFile scanBuiltInFile(const BuiltInRateFile& aFile) {
-    std::string_view rest = builtInBody(aFile);
-    std::string_view first;
-    std::string_view last;
+    const std::string_view body = builtInBody(aFile);
+    const char* position = body.data();
+    const char* const end = body.data() + body.size();
+    const char* first = nullptr;
+    const char* last = nullptr;
     std::size_t count = 0;
 
-    while (!rest.empty())
+    while (position != end)
     {
         const std::size_t row = count + 2; // the header is row 1
-        const BuiltInRow fields = splitBuiltInRow(aFile, row, takeLine(rest));
+        const BuiltInRow fields = readBuiltInRow(aFile, row, position, end);
 
         if (fields.mDate.size() != 10)
         {
@@ -402,8 +455,16 @@ OfficialRateFile scanBuiltInFile(const BuiltInRateFile& aFile) {
         }
 
         // The dates are written as YYYY-MM-DD, so the text compares like the dates.
-        first = count == 0 ? fields.mDate : std::min(first, fields.mDate);
-        last = count == 0 ? fields.mDate : std::max(last, fields.mDate);
+        if (count == 0 || dateTextBefore(fields.mDate.data(), first))
+        {
+            first = fields.mDate.data();
+        }
+
+        if (count == 0 || dateTextBefore(last, fields.mDate.data()))
+        {
+            last = fields.mDate.data();
+        }
+
         ++count;
     }
 
@@ -412,8 +473,8 @@ OfficialRateFile scanBuiltInFile(const BuiltInRateFile& aFile) {
         failBuiltIn(aFile.mName, std::nullopt, "the file has no rates");
     }
 
-    const auto firstDate = parseCalendarDate(first);
-    const auto lastDate = parseCalendarDate(last);
+    const auto firstDate = parseCalendarDate(std::string_view{first, 10});
+    const auto lastDate = parseCalendarDate(std::string_view{last, 10});
 
     if (!firstDate || !lastDate)
     {
@@ -430,6 +491,76 @@ OfficialRateFile scanBuiltInFile(const BuiltInRateFile& aFile) {
     info.mOrigin = OfficialRateOrigin::BuiltIn;
 
     return info;
+}
+
+/// The rate of a built-in row as 8-decimal fixed point. A plain positive decimal (up to 10 integer
+/// digits and 8 decimals, such as `1.2625`) is read directly; anything else goes through
+/// `importExchangeRate`, which gives the same value and the same errors.
+std::optional<ExchangeRate> builtInRateValue(std::string_view aText) {
+    constexpr std::size_t kMaxIntegerDigits = 10;
+    constexpr std::size_t kDecimals = 8; // EXCHANGE_RATE_SCALE is 10^8
+
+    std::int64_t integerPart = 0;
+    std::int64_t fractionPart = 0;
+    std::size_t integerDigits = 0;
+    std::size_t fractionDigits = 0;
+    bool isAfterPoint = false;
+    bool isPlain = !aText.empty();
+
+    for (const char character : aText)
+    {
+        if (character == '.' && !isAfterPoint)
+        {
+            isAfterPoint = true;
+        }
+        else if (character >= '0' && character <= '9')
+        {
+            const std::int64_t digit = character - '0';
+
+            if (isAfterPoint)
+            {
+                fractionPart = fractionPart * 10 + digit;
+                ++fractionDigits;
+            }
+            else
+            {
+                integerPart = integerPart * 10 + digit;
+                ++integerDigits;
+            }
+
+            // The loop stops growing the numbers once the text is too long for the plain form.
+            if (integerDigits > kMaxIntegerDigits || fractionDigits > kDecimals)
+            {
+                isPlain = false;
+                break;
+            }
+        }
+        else
+        {
+            isPlain = false;
+            break;
+        }
+    }
+
+    if (isPlain && integerDigits > 0 && (isAfterPoint ? fractionDigits > 0 : true))
+    {
+        for (std::size_t digit = fractionDigits; digit < kDecimals; ++digit)
+        {
+            fractionPart *= 10;
+        }
+
+        const ExchangeRate value = integerPart * EXCHANGE_RATE_SCALE + fractionPart;
+
+        if (value > 0)
+        {
+            return value;
+        }
+    }
+
+    const NumericResult<ExchangeRate> imported = importExchangeRate(aText);
+    const ExchangeRate* rateValue = std::get_if<ExchangeRate>(&imported);
+
+    return rateValue == nullptr ? std::nullopt : std::optional<ExchangeRate>{*rateValue};
 }
 
 /// The built-in years, made once. Making one only scans its file; a fault there is a build error,
@@ -455,28 +586,33 @@ const std::vector<std::shared_ptr<const BuiltInRateYear>>& builtInYears() {
 } // namespace
 
 OfficialRateTable parseBuiltInRates(const BuiltInRateFile& aFile) {
-    std::string_view rest = builtInBody(aFile);
+    const std::string_view text = builtInBody(aFile);
+    const char* position = text.data();
+    const char* const end = text.data() + text.size();
 
     OfficialRateTable result;
     OfficialRateFile info;
     std::size_t row = 1; // the header is row 1
+    // The rows are sorted by currency, so the series key is built once for each currency.
+    std::string seriesCurrency;
+    std::string seriesKey;
 
     info.mSourceFile = SourceFilename::fromPath(aFile.mName);
     info.mYear = aFile.mYear;
     info.mOrigin = OfficialRateOrigin::BuiltIn;
 
-    while (!rest.empty())
+    while (position != end)
     {
         ++row;
 
-        const BuiltInRow fields = splitBuiltInRow(aFile, row, takeLine(rest));
-        const std::string currency{fields.mCurrency};
+        const BuiltInRow fields = readBuiltInRow(aFile, row, position, end);
 
-        if (!isCurrencyCode(currency))
+        if (!isCurrencyCode(fields.mCurrency))
         {
             failBuiltIn(aFile.mName, row, "the currency is not a code");
         }
 
+        const std::string currency{fields.mCurrency};
         const auto observationDate = parseCalendarDate(fields.mDate);
 
         if (!observationDate)
@@ -485,17 +621,25 @@ OfficialRateTable parseBuiltInRates(const BuiltInRateFile& aFile) {
         }
 
         // The date was validated, so its first four characters are digits.
-        if (std::stoi(std::string{fields.mDate.substr(0, 4)}) != aFile.mYear)
+        const int dateYear = (fields.mDate[0] - '0') * 1000 + (fields.mDate[1] - '0') * 100 +
+                             (fields.mDate[2] - '0') * 10 + (fields.mDate[3] - '0');
+
+        if (dateYear != aFile.mYear)
         {
             failBuiltIn(aFile.mName, row, "the date is in another year");
         }
 
-        const auto value = importExchangeRate(fields.mRate);
-        const auto* rateValue = std::get_if<ExchangeRate>(&value);
+        const std::optional<ExchangeRate> rateValue = builtInRateValue(fields.mRate);
 
-        if (rateValue == nullptr)
+        if (!rateValue)
         {
             failBuiltIn(aFile.mName, row, "the rate is not valid");
+        }
+
+        if (currency != seriesCurrency)
+        {
+            seriesCurrency = currency;
+            seriesKey = "EXR.D." + currency + ".EUR.SP00.A";
         }
 
         const bool first = result.mRates.empty();
@@ -508,7 +652,7 @@ OfficialRateTable parseBuiltInRates(const BuiltInRateFile& aFile) {
                                        .mCurrencyCode = currency,
                                        .mObservationDate = *observationDate,
                                        .mValue = *rateValue,
-                                       .mSeriesKey = "EXR.D." + currency + ".EUR.SP00.A",
+                                       .mSeriesKey = seriesKey,
                                        .mSourceFile = info.mSourceFile,
                                        .mSourceRow = row,
                                        .mSource = OfficialRateSource::EcbReferenceRateFile,

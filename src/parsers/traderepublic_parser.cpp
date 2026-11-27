@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -82,30 +83,35 @@ constexpr auto kTransactionTypeMappings = std::array{
     TransactionTypeMapping{"TRANSFER_OUTBOUND", "CASH", taxbroker::RowType::Ignored},
 };
 
+/// Where each ISIN is in the instrument list of one file, so a row finds its instrument without a
+/// walk over the list. Only getOrCreateInstrument adds an instrument while a file is read.
+using InstrumentPositions = std::unordered_map<std::string, std::size_t>;
+
+/// The instrument with the ISIN, added when the file has none yet; a blank name is filled in.
 template <typename InstrumentT>
 InstrumentT& getOrCreateInstrument(std::vector<InstrumentT>& aInstruments,
+                                   InstrumentPositions& aPositions,
                                    const std::string& aIsin,
                                    const std::string& aName) {
-    auto instrumentIt =
-        std::find_if(aInstruments.begin(), aInstruments.end(), [&](const InstrumentT& aInstrument) {
-            return aInstrument.mIsin == aIsin;
-        });
+    auto found = aPositions.find(aIsin);
 
-    if (instrumentIt == aInstruments.end())
+    if (found == aPositions.end())
     {
         aInstruments.emplace_back(InstrumentT{
             .mName = aName,
             .mIsin = aIsin,
         });
-        instrumentIt = std::prev(aInstruments.end());
+        found = aPositions.emplace(aIsin, aInstruments.size() - 1).first;
     }
 
-    if (instrumentIt->mName.empty())
+    InstrumentT& instrument = aInstruments[found->second];
+
+    if (instrument.mName.empty())
     {
-        instrumentIt->mName = aName;
+        instrument.mName = aName;
     }
 
-    return *instrumentIt;
+    return instrument;
 }
 
 std::string getAmountCurrencyValue(const csv::CSVRow& aCsvRow) {
@@ -170,6 +176,47 @@ constexpr std::array<std::string_view, 18> REQUIRED_COLUMNS{
     "description",
     "transaction_id",
 };
+
+/// Where the columns that a trade row reads are in the header of one file. A read by name searches
+/// the header, so the trade rows, which are most of a file, read by position instead. Every member
+/// is always set by columnPositionsOf.
+struct ColumnPositions {
+    std::size_t mDate{};
+    std::size_t mName{};
+    std::size_t mSymbol{};
+    std::size_t mShares{};
+    std::size_t mPrice{};
+    std::size_t mAmount{};
+    std::size_t mFee{};
+    std::size_t mCurrency{};
+    std::size_t mOriginalAmount{};
+    std::size_t mOriginalCurrency{};
+    std::size_t mFxRate{};
+};
+
+/// The positions of the columns in the header. Every one of them is a required column, so the
+/// header has it. A repeated name gives its last column, as a read by name does.
+ColumnPositions columnPositionsOf(const std::vector<std::string>& aHeader) {
+    const auto positionOf = [&aHeader](std::string_view aColumn) {
+        const auto found = std::find(aHeader.rbegin(), aHeader.rend(), aColumn);
+
+        return static_cast<std::size_t>(std::distance(found, aHeader.rend()) - 1);
+    };
+
+    return ColumnPositions{
+        .mDate = positionOf("date"),
+        .mName = positionOf("name"),
+        .mSymbol = positionOf("symbol"),
+        .mShares = positionOf("shares"),
+        .mPrice = positionOf("price"),
+        .mAmount = positionOf("amount"),
+        .mFee = positionOf("fee"),
+        .mCurrency = positionOf("currency"),
+        .mOriginalAmount = positionOf("original_amount"),
+        .mOriginalCurrency = positionOf("original_currency"),
+        .mFxRate = positionOf("fx_rate"),
+    };
+}
 
 /// Required column names that the header does not contain, in REQUIRED_COLUMNS order.
 std::vector<std::string_view> missingRequiredColumns(const std::vector<std::string>& aHeader) {
@@ -279,9 +326,17 @@ std::optional<CashHolder> cashHolderOfRow(const csv::CSVRow& aCsvRow,
 
 } // namespace
 
+/// The instrument positions of the file being read, one list for each kind of instrument.
+struct InstrumentPositionLists {
+    InstrumentPositions mTrade;    ///< The trade instruments, also used by corporate actions.
+    InstrumentPositions mDividend; ///< The dividend instruments.
+};
+
 struct TradeRepublicParser::RowContext {
     ParseResult& mParseResult;
     const SourceFilename& mSourceFile;
+    InstrumentPositionLists& mInstrumentPositions;
+    const ColumnPositions& mColumns;
     std::size_t mRowIndex{};
     StableInputSequence mInputSequence;
     std::string_view mTransactionId;
@@ -584,6 +639,9 @@ ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
 
         std::size_t rowIndex = 1;
         std::size_t localizedNumberRows = 0;
+        InstrumentPositionLists instrumentPositions;
+        const ColumnPositions columns = columnPositionsOf(headerNames);
+
         for (const csv::CSVRow& row : reader)
         {
             ++rowIndex;
@@ -610,6 +668,8 @@ ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
                 const RowContext mismatchContext{
                     .mParseResult = parsedResult,
                     .mSourceFile = sourceFile,
+                    .mInstrumentPositions = instrumentPositions,
+                    .mColumns = columns,
                     .mRowIndex = rowIndex,
                     .mInputSequence =
                         StableInputSequence{
@@ -638,6 +698,8 @@ ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
             const RowContext context{
                 .mParseResult = parsedResult,
                 .mSourceFile = sourceFile,
+                .mInstrumentPositions = instrumentPositions,
+                .mColumns = columns,
                 .mRowIndex = rowIndex,
                 .mInputSequence =
                     StableInputSequence{
@@ -982,29 +1044,39 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
                                         const RowParsedValues& aParsedValues,
                                         const RowContext& aContext) {
 
-    const auto isinValue = aCsvRow["symbol"].get<std::string>();
-    const auto nameValue = aCsvRow["name"].get<std::string>();
+    const std::string isinValue = aCsvRow[aContext.mColumns.mSymbol].get<std::string>();
+    const std::string nameValue = aCsvRow[aContext.mColumns.mName].get<std::string>();
     std::string_view typeValue = aParsedValues.mType;
 
-    auto date = parseCalendarDate(aCsvRow["date"].get<std::string>());
+    // Every column is read once, by its position in the header.
+    const std::string dateText = aCsvRow[aContext.mColumns.mDate].get<std::string>();
+    const std::string priceText = aCsvRow[aContext.mColumns.mPrice].get<std::string>();
+    const std::string feeText = aCsvRow[aContext.mColumns.mFee].get<std::string>();
+    const std::string currencyText = aCsvRow[aContext.mColumns.mCurrency].get<std::string>();
+    const std::string originalCurrencyText =
+        aCsvRow[aContext.mColumns.mOriginalCurrency].get<std::string>();
+
+    auto date = parseCalendarDate(dateText);
     auto tradeSide = parseTradeSide(typeValue);
-    auto unitPrice = parseUnitPrice(aCsvRow["price"].get<std::string>());
-    const auto sharesText = aCsvRow["shares"].get<std::string>();
+    auto unitPrice = parseUnitPrice(priceText);
+    const std::string sharesText = aCsvRow[aContext.mColumns.mShares].get<std::string>();
     const auto importedUnits = importFixedPoint(sharesText, UNITS_SCALE);
     const auto* units = std::get_if<ParsedFixedPoint>(&importedUnits);
     // Like foreign income, a trade with original_currency has its amount and price in that
     // currency, while the fee stays in currency.
-    const bool usesOriginalCurrency = !aCsvRow["original_currency"].get<std::string>().empty();
+    const bool usesOriginalCurrency = !originalCurrencyText.empty();
     const std::string_view amountField = usesOriginalCurrency ? "original_amount" : "amount";
-    const auto amountValue = aCsvRow[std::string{amountField}].get<std::string>();
-    auto amount = amountValue.empty() ? std::optional<Money>{} : parseMoney(amountValue);
     // With original_currency the cash amount is not stored, but it must still be a valid number.
-    const auto cashAmountText = aCsvRow["amount"].get<std::string>();
+    const std::string cashAmountText = aCsvRow[aContext.mColumns.mAmount].get<std::string>();
+    const std::string amountValue =
+        usesOriginalCurrency ? aCsvRow[aContext.mColumns.mOriginalAmount].get<std::string>()
+                             : cashAmountText;
+    auto amount = amountValue.empty() ? std::optional<Money>{} : parseMoney(amountValue);
     const bool cashAmountInvalid = !cashAmountText.empty() && !parseMoney(cashAmountText);
-    auto feePaid = parseFeePaid(aCsvRow["fee"].get<std::string>());
-    const auto feeCurrency = parseCurrency(aCsvRow["currency"].get<std::string>());
-    const auto currency = parseCurrency(getAmountCurrencyValue(aCsvRow));
-    const auto rateText = aCsvRow["fx_rate"].get<std::string>();
+    auto feePaid = parseFeePaid(feeText);
+    const auto feeCurrency = parseCurrency(currencyText);
+    const auto currency = parseCurrency(usesOriginalCurrency ? originalCurrencyText : currencyText);
+    const std::string rateText = aCsvRow[aContext.mColumns.mFxRate].get<std::string>();
     const auto exchangeRate =
         parseBrokerRate(rateText,
                         usesOriginalCurrency,
@@ -1017,9 +1089,7 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     // Every invalid field is reported, in the column order of the export.
     if (!date)
     {
-        aContext.addInvalidFieldDiagnostic("date",
-                                           aCsvRow["date"].get<std::string>(),
-                                           term::kRowKindTrade);
+        aContext.addInvalidFieldDiagnostic("date", dateText, term::kRowKindTrade);
     }
 
     if (!tradeSide)
@@ -1031,16 +1101,12 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
 
     if (!units)
     {
-        aContext.addInvalidFieldDiagnostic("shares",
-                                           aCsvRow["shares"].get<std::string>(),
-                                           term::kRowKindTrade);
+        aContext.addInvalidFieldDiagnostic("shares", sharesText, term::kRowKindTrade);
     }
 
     if (!unitPrice || *unitPrice <= 0)
     {
-        aContext.addInvalidFieldDiagnostic("price",
-                                           aCsvRow["price"].get<std::string>(),
-                                           term::kRowKindTrade);
+        aContext.addInvalidFieldDiagnostic("price", priceText, term::kRowKindTrade);
     }
 
     if (cashAmountInvalid)
@@ -1050,16 +1116,12 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
 
     if (!feePaid)
     {
-        aContext.addInvalidFieldDiagnostic("fee",
-                                           aCsvRow["fee"].get<std::string>(),
-                                           term::kRowKindTrade);
+        aContext.addInvalidFieldDiagnostic("fee", feeText, term::kRowKindTrade);
     }
 
     if (feeCurrency == Currency::Unknown)
     {
-        aContext.addInvalidFieldDiagnostic("currency",
-                                           aCsvRow["currency"].get<std::string>(),
-                                           term::kRowKindTrade);
+        aContext.addInvalidFieldDiagnostic("currency", currencyText, term::kRowKindTrade);
     }
 
     if (usesOriginalCurrency && !amount)
@@ -1070,7 +1132,7 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
     if (usesOriginalCurrency && currency == Currency::Unknown)
     {
         aContext.addInvalidFieldDiagnostic("original_currency",
-                                           aCsvRow["original_currency"].get<std::string>(),
+                                           originalCurrencyText,
                                            term::kRowKindTrade);
     }
 
@@ -1136,7 +1198,10 @@ bool TradeRepublicParser::parseTradeRow(const csv::CSVRow& aCsvRow,
         return true;
     }
 
-    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+    auto& instrument = getOrCreateInstrument(aInstruments,
+                                             aContext.mInstrumentPositions.mTrade,
+                                             isinValue,
+                                             nameValue);
 
     aContext.preserveAssetClass(instrument, assetClass, classLabel);
 
@@ -1262,7 +1327,10 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+    auto& instrument = getOrCreateInstrument(aInstruments,
+                                             aContext.mInstrumentPositions.mDividend,
+                                             isinValue,
+                                             nameValue);
     auto metadata = aContext.metadata(income->mDate);
     const auto classLabel = aCsvRow["asset_class"].get<std::string>();
     auto evidence =
@@ -1413,7 +1481,10 @@ void TradeRepublicParser::parseCorporateActionRow(const csv::CSVRow& aCsvRow,
         return;
     }
 
-    auto& instrument = getOrCreateInstrument(aInstruments, isinValue, nameValue);
+    auto& instrument = getOrCreateInstrument(aInstruments,
+                                             aContext.mInstrumentPositions.mTrade,
+                                             isinValue,
+                                             nameValue);
 
     aContext.preserveAssetClass(instrument, assetClass, classLabel);
 

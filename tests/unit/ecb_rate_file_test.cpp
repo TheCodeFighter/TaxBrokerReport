@@ -1763,6 +1763,73 @@ TEST(BuiltInRatesTest, ReadsAFileWithoutALineBreakAtTheEnd) {
     EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,1.25"), "");
 }
 
+TEST(BuiltInRatesTest, ReadsPlainRatesAtEightDecimals) {
+    const OfficialRateTable table = parseBuiltInRates(BuiltInRateFile{
+        .mYear = 2025,
+        .mName = "rates_2025.csv",
+        .mText = "currency,date,rate\n"
+                 "AUD,2025-01-02,7\n"
+                 "BGN,2025-01-02,1.25\n"
+                 "CHF,2025-01-02,0.00012345\n"
+                 "JPY,2025-01-02,1234.5\n"
+                 "USD,2025-01-02,12345.12345678\n",
+    });
+
+    ASSERT_EQ(table.mRates.size(), 5U);
+    EXPECT_EQ(table.find("AUD", date("2025-01-02"))->mValue, 700'000'000);       // 7
+    EXPECT_EQ(table.find("BGN", date("2025-01-02"))->mValue, 125'000'000);       // 1.25
+    EXPECT_EQ(table.find("CHF", date("2025-01-02"))->mValue, 12'345);            // 0.00012345
+    EXPECT_EQ(table.find("JPY", date("2025-01-02"))->mValue, 123'450'000'000);   // 1234.5
+    EXPECT_EQ(table.find("USD", date("2025-01-02"))->mValue, 1'234'512'345'678); // 12345.12345678
+}
+
+TEST(BuiltInRatesTest, ReadsARateWithASignOrManyDigitsLikeAnyOtherNumber) {
+    const OfficialRateTable table = parseBuiltInRates(BuiltInRateFile{
+        .mYear = 2025,
+        .mName = "rates_2025.csv",
+        .mText = "currency,date,rate\n"
+                 "AUD,2025-01-02,+1.5\n"
+                 "USD,2025-01-02,12345678901\n",
+    });
+
+    ASSERT_EQ(table.mRates.size(), 2U);
+    EXPECT_EQ(table.find("AUD", date("2025-01-02"))->mValue, 150'000'000); // +1.5
+    // 12,345,678,901 has 11 integer digits, so it is read by the general number reader.
+    EXPECT_EQ(table.find("USD", date("2025-01-02"))->mValue, 1'234'567'890'100'000'000);
+}
+
+TEST(BuiltInRatesTest, RejectsARateOfZeroWrittenWithADecimal) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,0.0\n"),
+              "rates_2025.csv row 2: the rate is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsARateWithNineDecimals) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,1.234567891\n"),
+              "rates_2025.csv row 2: the rate is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsARateWithALetter) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,1.2x5\n"),
+              "rates_2025.csv row 2: the rate is not valid");
+}
+
+TEST(BuiltInRatesTest, RejectsAnEmptyRate) {
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,\n"),
+              "rates_2025.csv row 2: the rate is not valid");
+}
+
+TEST(BuiltInRatesTest, NamesTheRowOfAnExtraFieldAQuoteAndAnEmptyLine) {
+    // Row 3 has four fields.
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,1.25\nUSD,2025-01-03,1.25,9\n"),
+              "rates_2025.csv row 3: the row is not valid");
+    // Row 2 has a quote.
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,\"2025-01-02\",1.25\n"),
+              "rates_2025.csv row 2: the row is not valid");
+    // Row 3 is an empty line.
+    EXPECT_EQ(builtInFault("currency,date,rate\nUSD,2025-01-02,1.25\n\nUSD,2025-01-03,1.25\n"),
+              "rates_2025.csv row 3: the row is not valid");
+}
+
 // A built-in year: scanned when made, parsed on the first lookup.
 
 constexpr std::string_view kYearText = "currency,date,rate\n"
@@ -1829,6 +1896,43 @@ TEST(BuiltInRateYearTest, RejectsADateThatIsNotACalendarDateWhenMade) {
     // 2025 has no 30 February; the scan finds it as the first date.
     EXPECT_THROW(BuiltInRateYear{yearFile("currency,date,rate\nUSD,2025-02-30,1.25\n")},
                  std::logic_error);
+}
+
+/// Makes the year from the text as the file rates_2025.csv and returns the error text, or "".
+std::string yearFault(std::string_view aText) {
+    try
+    {
+        const BuiltInRateYear year{yearFile(aText)};
+
+        static_cast<void>(year);
+    } catch (const std::logic_error& error)
+    { return error.what(); }
+
+    return "";
+}
+
+TEST(BuiltInRateYearTest, ScansAFileWithoutALineBreakAtTheEnd) {
+    const BuiltInRateYear year{
+        yearFile("currency,date,rate\nUSD,2025-01-03,1.25\nUSD,2025-01-02,1.2625")};
+
+    EXPECT_EQ(year.info().mFirstDate, date("2025-01-02"));
+    EXPECT_EQ(year.info().mLastDate, date("2025-01-03"));
+    EXPECT_EQ(year.info().mRateCount, 2U);
+}
+
+TEST(BuiltInRateYearTest, NamesTheRowOfAFaultWhenMade) {
+    // Row 3 has four fields.
+    EXPECT_EQ(yearFault("currency,date,rate\nUSD,2025-01-02,1.25\nUSD,2025-01-03,1.25,9\n"),
+              "rates_2025.csv row 3: the row is not valid");
+    // Row 2 has a quote.
+    EXPECT_EQ(yearFault("currency,date,rate\nUSD,\"2025-01-02\",1.25\n"),
+              "rates_2025.csv row 2: the row is not valid");
+    // Row 3 is an empty line.
+    EXPECT_EQ(yearFault("currency,date,rate\nUSD,2025-01-02,1.25\n\nUSD,2025-01-03,1.25\n"),
+              "rates_2025.csv row 3: the row is not valid");
+    // Row 3 has the date 2025-1-3.
+    EXPECT_EQ(yearFault("currency,date,rate\nUSD,2025-01-02,1.25\nUSD,2025-1-3,1.25\n"),
+              "rates_2025.csv row 3: the date is not a calendar date");
 }
 
 TEST(BuiltInRateYearTest, RejectsAValueFaultOnTheFirstLookup) {

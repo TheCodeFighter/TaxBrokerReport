@@ -220,6 +220,64 @@ run one large-input part each on every push to `main`. A pull request runs a par
 changes a file of that part, the CSV reader, a `CMakeLists.txt`, `docker/`, the Valgrind script
 or the CI workflow. These jobs are not required checks.
 
+## Performance
+
+Measure a `report` run with:
+
+```sh
+scripts/profile.sh
+```
+
+The script builds `build/profile` from scratch (a static Release build with symbols, only the
+`taxbroker` executable), runs each workload five times for the wall time (median) and the peak
+memory, and once under Callgrind for the instruction count (`Ir`) and the cost of each stage. The
+instruction count is the number to compare between two changes: it varies by well under 0.01%,
+while times on a shared machine do not. Everything is written to the ignored
+`runtime/profile/<workload>/` (`large_<rows>/` for the large workload): `time.txt`, `stages.txt`
+(the stage table), `top.txt` (the 15 most expensive functions, inclusive and exclusive),
+`callgrind.out` and the generated forms in `out/`. `--reuse-build` keeps `build/profile`,
+`--no-callgrind` skips the Callgrind run, `--runs N` sets the timing runs.
+
+Workloads (all for the year 2024):
+
+| Workload | Input |
+| --- | --- |
+| `synthetic` | the files of `scripts/report.sh --synthetic` (14 events, one answer) |
+| `mixed` | the eight manual files of `tests/test_data/manual/` (4 Trade Republic and 4 Interactive Brokers, 210 events), answered as their README says (13 calculations) |
+| `large` | a generated Trade Republic export, `--rows N` (default 50,000): 20 rows for each weekday, ending on 2024-12-31, buys, sales, dividends and interest; only the years before 2024 grow with `N` |
+| `custom` | your own files: `--trade-republic`, `--ibkr`, `--taxpayer`, `--year`, `--no-input` |
+
+Numbers of the first measurement (one development machine, musl, static; instructions in millions):
+
+| Workload | Wall before | Wall after | Peak memory | Instructions before | Instructions after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `synthetic` | 11 ms | 10 ms | 10.6 MB | 75.2 | 34.0 |
+| `mixed` | 41 ms | 36 ms | 18.1 MB | 237.6 | 148.1 |
+| `large`, 5,000 rows | 73 ms | 60 ms | 22.3 MB | 496.2 | 337.0 |
+| `large`, 50,000 rows | 593 ms | 456 ms | 134.1 MB | 3,395.2 | 2,131.2 |
+
+The generated forms were identical before and after (`cmp` on the `mixed` and 50,000-row output).
+Going from 5,000 to 50,000 rows, the instructions grow 6.3 times, the parse and merge stages
+about 10 times, so nothing grows faster than the input.
+
+Where the instructions go now:
+
+- **Built-in ECB rates:** every run scans the ten built-in files (85,000 rows) once, 20 M
+  instructions, to know each year's first and last date and its row count (59% of `synthetic`).
+  The first lookup of a year parses it, about 14 M for each year a run uses. A precomputed
+  summary of the files would remove the scan.
+- **Trade Republic rows:** about 16,000 instructions for each row (CSV reading, a read of each
+  field, the number reader).
+- **Merge:** about 13,000 instructions for each event (ordering and the duplicate check).
+- **Every answer to a question is a new calculation** of the whole report, about 7 M
+  instructions each in `mixed`.
+- Reference files (4.4 M), the logger set-up (0.8 M) and writing the output files (0.01 M) are
+  small.
+
+Under Valgrind a run is about 40 to 60 times slower. The built-in rates are scanned and parsed
+once per process, so a command-line run pays the scan every time, while a test program that
+calls the command line hundreds of times pays it once.
+
 ## Test suites
 
 Unit and integration tests live in `tests/unit/` and `tests/integration/`, respectively, and use

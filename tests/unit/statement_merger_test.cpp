@@ -3190,6 +3190,64 @@ TEST(DeterministicStatementMergerTest, RejectsEveryCandidateForAConflictingTrans
     EXPECT_EQ(diagnostic->mSources.size(), 3U);
 }
 
+TEST(DeterministicStatementMergerTest, ReportsConflictsByTheirFirstRowAndKeepsEventsWithoutCopies) {
+    StatementMergeInput input{.mSourceIndex = 0};
+    // Input order: b-2, a-1, b-2 again with another fee, a-1 again with another fee, c-3 alone,
+    // d-4 and its exact copy.
+    auto conflictB1 =
+        makeTrade(0, 0, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "b-2");
+    auto conflictA1 =
+        makeTrade(0, 1, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "a-1");
+    auto conflictB2 =
+        makeTrade(0, 2, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "b-2");
+    auto conflictA2 =
+        makeTrade(0, 3, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "a-1");
+    auto single = makeTrade(0, 4, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "c-3");
+    auto copyD1 = makeTrade(0, 5, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "d-4");
+    auto copyD2 = makeTrade(0, 6, makeDate(2024, 3, 1), Broker::TradeRepublic, "one.csv", "d-4");
+    conflictB2.mFeePaid = 100;
+    conflictA2.mFeePaid = 200;
+    input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{
+        .mName = "Security",
+        .mIsin = "XX0000000001",
+        .mAssetClass = AssetClass::Stock,
+        .mTransactions = {conflictB1, conflictA1, conflictB2, conflictA2, single, copyD1, copyD2},
+    });
+
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
+
+    // The conflicts are reported in the order of the input position of their first row (b-2 is
+    // event 0, a-1 is event 1), not in the order of the transaction ids.
+    const std::vector<const MergeDiagnostic*> mergeDiagnostics =
+        diagnosticsOf<MergeDiagnostic>(result);
+    std::vector<const MergeDiagnostic*> conflicts;
+
+    std::copy_if(mergeDiagnostics.begin(),
+                 mergeDiagnostics.end(),
+                 std::back_inserter(conflicts),
+                 [](const MergeDiagnostic* aDiagnostic) {
+                     return aDiagnostic->mCode == MergeDiagnosticCode::ConflictingDuplicate;
+                 });
+
+    ASSERT_EQ(conflicts.size(), 2U);
+    ASSERT_EQ(conflicts[0]->mSources.size(), 2U);
+    ASSERT_EQ(conflicts[1]->mSources.size(), 2U);
+    EXPECT_EQ(conflicts[0]->mSources.front().mTransactionId, "b-2");
+    EXPECT_EQ(conflicts[1]->mSources.front().mTransactionId, "a-1");
+
+    // The single event c-3 and the merged d-4 stay, in the order of their sources.
+    ASSERT_EQ(result.mStatement.mPresentation.mTradeInstruments.size(), 1U);
+
+    const auto& kept = result.mStatement.mPresentation.mTradeInstruments.front().mTransactions;
+
+    ASSERT_EQ(kept.size(), 2U);
+    EXPECT_EQ(kept[0].mMetadata.mSources.size(), 1U);
+    EXPECT_EQ(kept[0].mMetadata.mSources.front().mTransactionId, "c-3");
+    EXPECT_EQ(kept[1].mMetadata.mSources.size(), 2U); // the two copies of d-4
+    EXPECT_EQ(kept[1].mMetadata.mSources.front().mTransactionId, "d-4");
+}
+
 TEST(DeterministicStatementMergerTest, RejectsCrossKindTransactionIdConflicts) {
     StatementMergeInput input{.mSourceIndex = 0};
     input.mParseResult.mStatement.mTradeInstruments.push_back(TradeInstrument{

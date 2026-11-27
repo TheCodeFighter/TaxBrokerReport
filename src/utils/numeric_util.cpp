@@ -285,8 +285,6 @@ NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
         return NumericError::InvalidInput;
     }
 
-    std::string integerDigits;
-
     for (const auto character : integerPart)
     {
         if (character < '0' || character > '9')
@@ -294,7 +292,6 @@ NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
             return NumericError::InvalidInput;
         }
 
-        integerDigits += character;
         parsed.mSourceNonzero = parsed.mSourceNonzero || character != '0';
     }
 
@@ -322,8 +319,10 @@ NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
     }
 
     // Normalize spelling without rounding, so exact source quantities remain comparable.
-    const auto firstDigit = integerDigits.find_first_not_of('0');
-    integerDigits = firstDigit == std::string::npos ? "0" : integerDigits.substr(firstDigit);
+    const auto firstDigit = integerPart.find_first_not_of('0');
+    const std::string_view integerDigits = firstDigit == std::string_view::npos
+                                               ? std::string_view{"0"}
+                                               : integerPart.substr(firstDigit);
     auto significantFraction = fractionalPart;
 
     while (!significantFraction.empty() && significantFraction.back() == '0')
@@ -331,7 +330,13 @@ NumericResult<ParsedFixedPoint> importFixedPoint(std::string_view aValue,
         significantFraction.remove_suffix(1);
     }
 
-    parsed.mCanonicalValue = parsed.mSourceNegative && parsed.mSourceNonzero ? "-" : "";
+    parsed.mCanonicalValue.reserve(integerDigits.size() + significantFraction.size() + 2);
+
+    if (parsed.mSourceNegative && parsed.mSourceNonzero)
+    {
+        parsed.mCanonicalValue += '-';
+    }
+
     parsed.mCanonicalValue += integerDigits;
 
     if (!significantFraction.empty())
