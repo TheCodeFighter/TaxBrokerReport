@@ -473,6 +473,7 @@ const std::vector<ExpectedMessage>& expectedMessages() {
         {MessageKey::InvalidHeaderDuplicateColumn,
          "invalid_header.duplicate_column",
          {{"column", MessageParamKind::Text}}},
+        {MessageKey::ParseErrorInternal, "parse_error.internal", {}},
     };
 
     return messages;
@@ -537,8 +538,8 @@ std::vector<MessageParam> sampleParams(const MessageDefinition& aDefinition) {
 TEST(DiagnosticMessagesTest, KeepsEveryKeyIdAndParameterListStable) {
     const auto definitions = messageDefinitions();
 
-    ASSERT_EQ(definitions.size(), 188U);
-    ASSERT_EQ(expectedMessages().size(), 188U);
+    ASSERT_EQ(definitions.size(), 189U);
+    ASSERT_EQ(expectedMessages().size(), 189U);
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
     {
@@ -572,8 +573,8 @@ TEST(DiagnosticMessagesTest, EveryKeyHasOneUniqueIdOfTheDocumentedShape) {
         EXPECT_TRUE(keys.insert(definition.mKey).second);
     }
 
-    EXPECT_EQ(ids.size(), 188U);
-    EXPECT_EQ(keys.size(), 188U);
+    EXPECT_EQ(ids.size(), 189U);
+    EXPECT_EQ(keys.size(), 189U);
 }
 
 TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
@@ -598,7 +599,7 @@ TEST(DiagnosticMessagesTest, KeepsEveryTermStable) {
 TEST(DiagnosticMessagesTest, TableHasEveryKeyAndTermExactlyOnce) {
     const auto& table = messageTable();
 
-    ASSERT_EQ(table.size(), 199U); // 188 message keys and 11 terms.
+    ASSERT_EQ(table.size(), 200U); // 189 message keys and 11 terms.
 
     std::set<std::string> tableKeys;
 

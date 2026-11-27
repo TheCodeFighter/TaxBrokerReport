@@ -17,6 +17,8 @@
 #include "processors/tax_classifier.hpp"
 #include "processors/tax_processor.hpp"
 #include "processors/trade_conversion.hpp"
+#include "service/ordered_tasks.hpp"
+#include "service/parse_failure.hpp"
 #include "taxbroker/logging.hpp"
 #include "utils/tax_number.hpp"
 #include "parsers/ecb_rate_file.hpp"
@@ -31,6 +33,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -533,31 +536,53 @@ ApplicationResultInput calculateReport(const ApplicationRequest& aRequest,
     return input;
 }
 
-/// Parses every broker file with the parser of its broker and merges them; the position in the
-/// request is the source index.
-StatementMergeResult parseAndMerge(const std::vector<BrokerInputFile>& aFiles) {
-    tr::TradeRepublicParser tradeRepublic;
-    ibkr::IbkrParser interactiveBrokers;
-    std::vector<StatementMergeInput> inputs;
+/// Parses file `aIndex` with a new parser of its broker; the index is the source index.
+ParseResult parseBrokerFile(const std::vector<BrokerInputFile>& aFiles, const std::size_t aIndex) {
+    const BrokerInputFile& file = aFiles[aIndex];
 
-    for (std::size_t index = 0; index < aFiles.size(); ++index)
+    switch (file.mBroker)
     {
-        const auto& file = aFiles[index];
+    case Broker::TradeRepublic:
+        return tr::TradeRepublicParser{}.parse(file.mFile.mContent, file.mFile.mName, aIndex);
+    case Broker::InteractiveBrokers:
+        return ibkr::IbkrParser{}.parse(file.mFile.mContent, file.mFile.mName, aIndex);
+    case Broker::Unknown:
+        break;
+    }
 
-        switch (file.mBroker)
-        {
-        case Broker::TradeRepublic:
-            inputs.push_back(
-                {index, tradeRepublic.parse(file.mFile.mContent, file.mFile.mName, index)});
-            break;
-        case Broker::InteractiveBrokers:
-            inputs.push_back(
-                {index, interactiveBrokers.parse(file.mFile.mContent, file.mFile.mName, index)});
-            break;
-        case Broker::Unknown:
-            // No other parser exists yet.
-            throw std::logic_error("A broker file has a broker without a parser.");
-        }
+    throw std::logic_error("A broker file has a broker without a parser.");
+}
+
+/// Parses the broker files at the same time on a bounded pool and merges them on this thread; the
+/// position in the request is the source index. A parser that throws leaves a file error.
+StatementMergeResult parseAndMerge(const std::vector<BrokerInputFile>& aFiles,
+                                   const std::size_t aWorkerLimit) {
+    const bool hasUnknownBroker =
+        std::any_of(aFiles.begin(), aFiles.end(), [](const BrokerInputFile& aFile) {
+            return aFile.mBroker == Broker::Unknown;
+        });
+
+    if (hasUnknownBroker)
+    {
+        // No other parser exists yet.
+        throw std::logic_error("A broker file has a broker without a parser.");
+    }
+
+    const std::size_t workerCount =
+        parseWorkerCount(aFiles.size(), aWorkerLimit, std::thread::hardware_concurrency());
+
+    std::vector<TaskOutcome<ParseResult>> outcomes =
+        runTasksInOrder(aFiles.size(), workerCount, [&](const std::size_t aIndex) {
+            return parseBrokerFile(aFiles, aIndex);
+        });
+
+    std::vector<StatementMergeInput> inputs;
+    inputs.reserve(aFiles.size());
+
+    for (std::size_t index = 0; index < outcomes.size(); ++index)
+    {
+        inputs.push_back(
+            {index, parseResultOfOutcome(std::move(outcomes[index]), aFiles[index], index)});
     }
 
     return DeterministicStatementMerger{}.merge(std::move(inputs));
@@ -576,7 +601,8 @@ struct RunData {
 
 /// Loads the rate and reference files of the request and prepares the year. A supplied file that
 /// is not valid gives a fault. Parsing, merging and the year do not depend on an answer.
-std::variant<ApplicationInputFault, RunData> loadRunData(ApplicationRequest aRequest) {
+std::variant<ApplicationInputFault, RunData> loadRunData(ApplicationRequest aRequest,
+                                                         const ApplicationRunOptions& aOptions) {
     // The files are named by the user, so a file that is not valid fails the run.
     auto rates = loadOfficialRates(aRequest.mEcbRateFiles);
 
@@ -599,7 +625,7 @@ std::variant<ApplicationInputFault, RunData> loadRunData(ApplicationRequest aReq
     const auto parseStart = std::chrono::steady_clock::now();
     auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
         .mReportingYear = aRequest.mReportingYear,
-        .mMerged = parseAndMerge(aRequest.mBrokerFiles),
+        .mMerged = parseAndMerge(aRequest.mBrokerFiles, aOptions.mParseWorkerLimit),
     });
 
     logLoadStages(aRequest, prepared, millisecondsSince(parseStart));
@@ -676,7 +702,12 @@ DecisionSession& ApplicationRun::session() {
 
 std::variant<ApplicationInputFault, ApplicationRun>
 ApplicationRun::start(ApplicationRequest aRequest) {
-    auto loaded = loadRunData(std::move(aRequest));
+    return start(std::move(aRequest), ApplicationRunOptions{});
+}
+
+std::variant<ApplicationInputFault, ApplicationRun>
+ApplicationRun::start(ApplicationRequest aRequest, const ApplicationRunOptions& aOptions) {
+    auto loaded = loadRunData(std::move(aRequest), aOptions);
 
     if (auto* fault = std::get_if<ApplicationInputFault>(&loaded))
     {
@@ -689,7 +720,12 @@ ApplicationRun::start(ApplicationRequest aRequest) {
 }
 
 std::optional<ApplicationInputFault> ApplicationRun::restart(ApplicationRequest aRequest) {
-    auto loaded = loadRunData(std::move(aRequest));
+    return restart(std::move(aRequest), ApplicationRunOptions{});
+}
+
+std::optional<ApplicationInputFault>
+ApplicationRun::restart(ApplicationRequest aRequest, const ApplicationRunOptions& aOptions) {
+    auto loaded = loadRunData(std::move(aRequest), aOptions);
 
     if (auto* fault = std::get_if<ApplicationInputFault>(&loaded))
     {
