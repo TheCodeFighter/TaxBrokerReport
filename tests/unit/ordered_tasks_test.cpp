@@ -30,9 +30,10 @@ TEST(OrderedTasksTest, WorkerCountIsBoundedByFilesLimitAndHardware) {
     EXPECT_EQ(parseWorkerCount(8, 16, 8), 8U); // A high limit stops at the file count.
 }
 
-TEST(OrderedTasksTest, RunOptionsDefaultToFourParseWorkers) {
-    EXPECT_EQ(ApplicationRunOptions{}.mParseWorkerLimit, 4U);
-    EXPECT_EQ(kDefaultParseWorkerLimit, 4U);
+TEST(OrderedTasksTest, RunOptionsParseOneFileAtATimeByDefault) {
+    EXPECT_EQ(ApplicationRunOptions{}.mParseWorkerLimit, 1U);
+    EXPECT_EQ(kDefaultParseWorkerLimit, 1U);
+    EXPECT_TRUE(ApplicationRunOptions{}.mParseStartOrder.empty());
 }
 
 TEST(OrderedTasksTest, ResultsAreInTaskOrder) {
@@ -183,6 +184,66 @@ TEST(OrderedTasksTest, NoTaskGivesNoOutcome) {
         runTasksInOrder(0, 0, [](const std::size_t aIndex) { return aIndex; });
 
     EXPECT_TRUE(outcomes.empty());
+}
+
+TEST(OrderedTasksTest, AStartOrderSetsTheOrderTheTasksRunIn) {
+    // One worker runs the tasks one after the other on this thread, so they run and finish in
+    // the start order 2, 0, 1; the results stay in task order.
+    std::vector<std::size_t> called;
+
+    const std::vector<TaskOutcome<int>> outcomes = runTasksInOrder(
+        3,
+        1,
+        [&](const std::size_t aIndex) {
+            called.push_back(aIndex);
+            return static_cast<int>(aIndex) * 10;
+        },
+        std::vector<std::size_t>{2, 0, 1});
+
+    EXPECT_EQ(called, (std::vector<std::size_t>{2, 0, 1}));
+
+    ASSERT_EQ(outcomes.size(), 3U);
+
+    EXPECT_EQ(outcomes[0].mValue.value(), 0);
+    EXPECT_EQ(outcomes[1].mValue.value(), 10);
+    EXPECT_EQ(outcomes[2].mValue.value(), 20);
+}
+
+TEST(OrderedTasksTest, AStartOrderWithManyWorkersKeepsTheResultsInTaskOrder) {
+    const std::vector<TaskOutcome<int>> outcomes = runTasksInOrder(
+        6,
+        3,
+        [](const std::size_t aIndex) { return static_cast<int>(aIndex) * 10; },
+        std::vector<std::size_t>{5, 4, 3, 2, 1, 0});
+
+    ASSERT_EQ(outcomes.size(), 6U);
+
+    EXPECT_EQ(outcomes[0].mValue.value(), 0);
+    EXPECT_EQ(outcomes[1].mValue.value(), 10);
+    EXPECT_EQ(outcomes[2].mValue.value(), 20);
+    EXPECT_EQ(outcomes[3].mValue.value(), 30);
+    EXPECT_EQ(outcomes[4].mValue.value(), 40);
+    EXPECT_EQ(outcomes[5].mValue.value(), 50);
+}
+
+TEST(OrderedTasksTest, AStartOrderThatIsNotAPermutationIsRejected) {
+    std::atomic<std::size_t> calls{0};
+    const auto task = [&](const std::size_t aIndex) {
+        ++calls;
+        return aIndex;
+    };
+
+    // One task is missing.
+    EXPECT_THROW(static_cast<void>(runTasksInOrder(3, 2, task, std::vector<std::size_t>{0, 1})),
+                 std::invalid_argument);
+    // Task 0 twice, task 2 missing.
+    EXPECT_THROW(static_cast<void>(runTasksInOrder(3, 2, task, std::vector<std::size_t>{0, 0, 1})),
+                 std::invalid_argument);
+    // Task 3 does not exist.
+    EXPECT_THROW(static_cast<void>(runTasksInOrder(3, 2, task, std::vector<std::size_t>{0, 1, 3})),
+                 std::invalid_argument);
+
+    EXPECT_EQ(calls.load(), 0U); // No task runs before the order is checked.
 }
 
 TEST(ParseFailureResultTest, GivesNoEventsAndOneFileErrorWithTheFileName) {

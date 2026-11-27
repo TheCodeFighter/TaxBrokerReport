@@ -236,7 +236,10 @@ while times on a shared machine do not. Everything is written to the ignored
 `runtime/profile/<workload>/` (`large_<rows>/` for the large workload): `time.txt`, `stages.txt`
 (the stage table), `top.txt` (the 15 most expensive functions, inclusive and exclusive),
 `callgrind.out` and the generated forms in `out/`. `--reuse-build` keeps `build/profile`,
-`--no-callgrind` skips the Callgrind run, `--runs N` sets the timing runs.
+`--no-callgrind` skips the Callgrind run, `--runs N` sets the timing runs. `--cpus N` runs the
+measuring container on the first N CPUs only (a Docker CPU set, folder suffix `_cpus<N>`): the
+app never starts more parse workers than the CPUs it may use. The default parse worker limit is
+1, so `--cpus` changes nothing until a build has a higher limit.
 
 Workloads (all for the year 2024):
 
@@ -245,6 +248,7 @@ Workloads (all for the year 2024):
 | `synthetic` | the files of `scripts/report.sh --synthetic` (14 events, one answer) |
 | `mixed` | the eight manual files of `tests/test_data/manual/` (4 Trade Republic and 4 Interactive Brokers, 210 events), answered as their README says (13 calculations) |
 | `large` | a generated Trade Republic export, `--rows N` (default 50,000): 20 rows for each weekday, ending on 2024-12-31, buys, sales, dividends and interest; only the years before 2024 grow with `N` |
+| `multi` | `--files N` (default 4) generated Trade Republic exports of `--rows N` rows each, like `large`, each with its own instruments and transaction IDs (not part of `all`) |
 | `custom` | your own files: `--trade-republic`, `--ibkr`, `--taxpayer`, `--year`, `--no-input` |
 
 Numbers of the first measurement (one development machine, musl, static; instructions in millions):
@@ -273,6 +277,24 @@ Where the instructions go now:
   instructions each in `mixed`.
 - Reference files (4.4 M), the logger set-up (0.8 M) and writing the output files (0.01 M) are
   small.
+
+Sequential parse against the parse pool, measured with a worker limit of 4 (the first default of
+the pool; the default is now 1, which is the `--cpus 1` column). Median of 5 runs, three rounds
+for `multi`; 16 CPUs; "parse and merge" is the time of that stage in the run log:
+
+| Workload | `--cpus 1` wall | Pool wall | `--cpus 1` parse and merge | Pool parse and merge | Peak memory |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `mixed` (8 small files) | 35 ms | 34 ms | 3 ms | 2 ms | 18.3 MB |
+| `large`, 50,000 rows (1 file) | 443 ms | 448 ms | 300 ms | 304 ms | 134.4 MB |
+| `multi`, 4 files of 50,000 rows | 2,032 to 2,054 ms | 2,254 to 2,434 ms | 1,368 to 1,382 ms | 1,577 to 1,691 ms | 504.8 MB |
+
+The forms are byte-identical in both modes and to the build before the pool. Small files and a
+single file cost the same in both modes. Four large files are parsed about 15% slower on the pool
+than one after the other (also with `--cpus 4`: 2,400 to 2,482 ms), so on this build the pool
+gives no gain, which is why the default limit is 1. The cause is not measured; a likely one
+is that the parsers allocate memory at the same time and the musl allocator serialises them. The
+limit stays 1 on Linux because real exports are small. Windows and macOS (system allocators) are
+not measured yet: their default stays 1 until the pool is measured there.
 
 Under Valgrind a run is about 40 to 60 times slower. The built-in rates are scanned and parsed
 once per process, so a command-line run pays the scan every time, while a test program that

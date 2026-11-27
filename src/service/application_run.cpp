@@ -553,10 +553,11 @@ ParseResult parseBrokerFile(const std::vector<BrokerInputFile>& aFiles, const st
     throw std::logic_error("A broker file has a broker without a parser.");
 }
 
-/// Parses the broker files at the same time on a bounded pool and merges them on this thread; the
-/// position in the request is the source index. A parser that throws leaves a file error.
+/// Parses the broker files (one at a time, or on a bounded pool with a higher worker limit) and
+/// merges them on this thread; the position in the request is the source index. A parser that
+/// throws leaves a file error.
 StatementMergeResult parseAndMerge(const std::vector<BrokerInputFile>& aFiles,
-                                   const std::size_t aWorkerLimit) {
+                                   const ApplicationRunOptions& aOptions) {
     const bool hasUnknownBroker =
         std::any_of(aFiles.begin(), aFiles.end(), [](const BrokerInputFile& aFile) {
             return aFile.mBroker == Broker::Unknown;
@@ -568,13 +569,15 @@ StatementMergeResult parseAndMerge(const std::vector<BrokerInputFile>& aFiles,
         throw std::logic_error("A broker file has a broker without a parser.");
     }
 
-    const std::size_t workerCount =
-        parseWorkerCount(aFiles.size(), aWorkerLimit, std::thread::hardware_concurrency());
+    const std::size_t workerCount = parseWorkerCount(aFiles.size(),
+                                                     aOptions.mParseWorkerLimit,
+                                                     std::thread::hardware_concurrency());
+    const auto parseFile = [&](const std::size_t aIndex) {
+        return parseBrokerFile(aFiles, aIndex);
+    };
 
     std::vector<TaskOutcome<ParseResult>> outcomes =
-        runTasksInOrder(aFiles.size(), workerCount, [&](const std::size_t aIndex) {
-            return parseBrokerFile(aFiles, aIndex);
-        });
+        runTasksInOrder(aFiles.size(), workerCount, parseFile, aOptions.mParseStartOrder);
 
     std::vector<StatementMergeInput> inputs;
     inputs.reserve(aFiles.size());
@@ -625,7 +628,7 @@ std::variant<ApplicationInputFault, RunData> loadRunData(ApplicationRequest aReq
     const auto parseStart = std::chrono::steady_clock::now();
     auto prepared = TaxProcessor::prepareReportingYear(TaxProcessingRequest{
         .mReportingYear = aRequest.mReportingYear,
-        .mMerged = parseAndMerge(aRequest.mBrokerFiles, aOptions.mParseWorkerLimit),
+        .mMerged = parseAndMerge(aRequest.mBrokerFiles, aOptions),
     });
 
     logLoadStages(aRequest, prepared, millisecondsSince(parseStart));

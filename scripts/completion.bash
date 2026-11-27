@@ -213,8 +213,9 @@ _tbr_report() {
 }
 
 _tbr_profile() {
-    _tbr_complete --reuse-build "--workload=words:synthetic mixed large custom all" --rows=none \
-        --runs=none --callgrind --no-callgrind --trade-republic=csv+ --ibkr=xml+ \
+    _tbr_complete --reuse-build "--workload=words:synthetic mixed large multi custom all" \
+        --rows=none --files=none --runs=none --cpus=none --callgrind --no-callgrind \
+        --trade-republic=csv+ --ibkr=xml+ \
         --taxpayer=json --year=year --no-input --help
 }
 
