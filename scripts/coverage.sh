@@ -52,6 +52,9 @@ lcov_options="--quiet --rc lcov_branch_coverage=1"
 # so use only lib.sh functions that the base commit already has.
 cmake -E rm -rf "$coverage_build_dir"
 
+# The counters are updated atomically (-fprofile-update=atomic) because the parsers of one run can
+# run on several threads: plain counters lose updates there and a line may show as not hit.
+
 # FetchContent downloads the dependencies from GitHub during the configure, and CMake gives up at
 # once on an HTTP error such as a 504, so the configure runs up to three times. The loop stays in
 # this script (not lib.sh) for the base-commit runs described above.
@@ -61,7 +64,7 @@ for attempt in 1 2 3; do
         -B "$coverage_build_dir" \
         -G Ninja \
         -DCMAKE_BUILD_TYPE=Debug \
-        -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path" \
+        -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path -fprofile-update=atomic" \
         -DCMAKE_EXE_LINKER_FLAGS="--coverage"; then
         break
     fi

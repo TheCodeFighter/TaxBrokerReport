@@ -9,8 +9,8 @@ manual_dir="tests/test_data/manual"
 
 usage() {
     cat <<EOF
-Usage: profile.sh [--reuse-build] [--workload synthetic|mixed|large|custom|all] [--rows N]
-                  [--runs N] [--callgrind | --no-callgrind]
+Usage: profile.sh [--reuse-build] [--workload synthetic|mixed|large|multi|custom|all]
+                  [--rows N] [--files N] [--runs N] [--cpus N] [--callgrind | --no-callgrind]
                   [--trade-republic path.csv ...] [--ibkr path.xml ...] [--taxpayer path.json]
                   [--year YYYY] [--no-input]
 
@@ -18,19 +18,27 @@ Usage: profile.sh [--reuse-build] [--workload synthetic|mixed|large|custom|all] 
     and a Callgrind profile with the cost of each stage. It builds build/profile from scratch
     (Release, symbols, static, only the taxbroker executable) and runs inside Docker. Everything
     is written to the ignored runtime/profile/<workload>/ (time.txt, callgrind.out, top.txt,
-    stages.txt, run.log and out/; the folder of the large workload is large_<rows>); nothing
-    leaves runtime/. Paths must not contain whitespace.
+    stages.txt, run.log and out/; the folder of the large workload is large_<rows>, of the multi
+    workload multi_<files>x<rows>, and --cpus N adds _cpus<N>); nothing leaves runtime/. Paths
+    must not contain whitespace.
 
     --reuse-build   use the existing build/profile and compile nothing
     --workload      synthetic  the report.sh --synthetic files, year 2024
                     mixed      the manual files of $manual_dir (4 Trade Republic, 4
                                Interactive Brokers), year 2024, with the answers of its README
                     large      a generated Trade Republic export of --rows rows, year 2024
+                    multi      --files generated Trade Republic exports of --rows rows each,
+                               each with its own instruments and IDs, year 2024 (several large
+                               files: the case the parse pool is for)
                     custom     your own files (the file options below; --taxpayer is required)
-                    all        synthetic, mixed and large (the default)
+                    all        synthetic, mixed and large (the default; not multi)
     --rows          rows of the generated export (default 50000); the file is
                     runtime/profile/input/large_trade_republic_<rows>.csv
+    --files         files of the multi workload (default 4, at most 16)
     --runs          timing runs per workload (default 5)
+    --cpus          run the measuring container on the first N CPUs only (a Docker CPU set);
+                    the app never starts more parse workers than the CPUs it may use; the default
+                    worker limit is 1, so --cpus matters only for a build with a higher limit
     --callgrind     profile each workload under Callgrind (the default)
     --no-callgrind  only the timing runs
     --trade-republic, --ibkr   the exports of the custom workload (paths after the option)
@@ -47,6 +55,8 @@ EOF
 reuse_build=false
 workload=all
 rows=50000
+files=4
+cpus=""
 runs=5
 callgrind=true
 taxpayer=""
@@ -101,8 +111,8 @@ while [[ $# -gt 0 ]]; do
         --workload)
             end_list
 
-            if [[ $# -lt 2 || ! "$2" =~ ^(synthetic|mixed|large|custom|all)$ ]]; then
-                echo "--workload requires synthetic, mixed, large, custom or all." >&2
+            if [[ $# -lt 2 || ! "$2" =~ ^(synthetic|mixed|large|multi|custom|all)$ ]]; then
+                echo "--workload requires synthetic, mixed, large, multi, custom or all." >&2
                 exit 2
             fi
 
@@ -121,6 +131,22 @@ while [[ $# -gt 0 ]]; do
                 rows="$2"
             else
                 runs="$2"
+            fi
+
+            shift 2
+            ;;
+        --files | --cpus)
+            end_list
+
+            if [[ $# -lt 2 || ! "$2" =~ ^[1-9][0-9]?$ ]]; then
+                echo "$1 requires a whole number from 1 to 99." >&2
+                exit 2
+            fi
+
+            if [[ "$1" == "--files" ]]; then
+                files="$2"
+            else
+                cpus="$2"
             fi
 
             shift 2
@@ -188,6 +214,16 @@ fi
 
 year="${year:-$(( $(date +%Y) - 1 ))}"
 
+if [[ "$files" -gt 16 ]]; then
+    echo "--files allows at most 16 files." >&2
+    exit 2
+fi
+
+if [[ -n "$cpus" && "$cpus" -gt "$(nproc)" ]]; then
+    echo "--cpus $cpus is more than the $(nproc) CPUs of this machine." >&2
+    exit 2
+fi
+
 for input_path in "$taxpayer" "${csv_inputs[@]}" "${ibkr_inputs[@]}"; do
     if [[ -z "$input_path" ]]; then
         continue
@@ -241,12 +277,29 @@ done
 
 echo "==> Profiling workload $workload..."
 
+# Only the measuring container runs on the CPU set; the build above uses every CPU.
+measure_compose=(compose)
+folder_suffix=""
+
+if [[ -n "$cpus" ]]; then
+    cpuset_file="$repo_root/runtime/profile/cpuset.yml"
+    printf 'services:\n  dev:\n    cpuset: "0-%d"\n' "$((cpus - 1))" > "$cpuset_file"
+    measure_compose=(docker compose --project-directory "$repo_root/docker" -f "$compose_file"
+        -f "$cpuset_file")
+    folder_suffix="_cpus$cpus"
+    ensure_uid_gid_env
+    mkdir -p "$repo_root/logs"
+    echo "==> The measuring container runs on CPUs 0-$((cpus - 1))."
+fi
+
 # The measuring script runs inside the container. It is read from standard input, so the answers
 # of each workload come from files it writes itself.
 set +e
-compose run --rm -T \
+"${measure_compose[@]}" run --rm -T \
     -e PROFILE_WORKLOAD="$workload" \
     -e PROFILE_ROWS="$rows" \
+    -e PROFILE_FILES="$files" \
+    -e PROFILE_SUFFIX="$folder_suffix" \
     -e PROFILE_RUNS="$runs" \
     -e PROFILE_CALLGRIND="$callgrind" \
     -e PROFILE_YEAR="$year" \
@@ -265,12 +318,14 @@ failed=0
 
 mkdir -p "$profile/input"
 
-# Writes the generated Trade Republic export: PROFILE_ROWS rows of buys, sales, dividends and
+# Writes a generated Trade Republic export: PROFILE_ROWS rows of buys, sales, dividends and
 # interest, deterministic for a given row count, ending on 2024-12-31. Amounts are in cents (integers only).
-generate_large_csv() {
-    file="$profile/input/large_trade_republic_$PROFILE_ROWS.csv"
+# Arguments: the file, then the file number: 0 for the large workload, 1 to 16 for the files of the
+# multi workload, each with its own instruments (XX<nn>001...) and transaction IDs.
+generate_csv() {
+    file="$1"
 
-    awk -v rows="$PROFILE_ROWS" '
+    awk -v rows="$PROFILE_ROWS" -v number="$2" '
     function civil(z,   era, doe, yoe, y, doy, mp, d, m) {
         z += 719468
         era = int(z / 146097)
@@ -306,11 +361,11 @@ generate_large_csv() {
             slot = row % 20
             date = civil(days[weekday])
             stock = (weekday * 20 + slot) % 40
-            isin = sprintf("XX00001%05d", stock + 1)
+            isin = sprintf("XX%02d001%05d", number, stock + 1)
             name = "Synthetic Stock " (stock + 1)
             cents = 1000 + weekday
             stamp = sprintf("%sT09:00:%02dZ", date, slot)
-            id = "profile-" (row + 1)
+            id = number == 0 ? "profile-" (row + 1) : "profile-" number "-" (row + 1)
 
             if (slot == 19) {
                 if (weekday % 2 == 0) {
@@ -339,7 +394,7 @@ profile_workload() {
     answers="$2"
     shift 2
 
-    dir="$profile/$name"
+    dir="$profile/$name$PROFILE_SUFFIX"
     rm -rf "$dir"
     mkdir -p "$dir/out"
 
@@ -481,12 +536,34 @@ esac
 
 case "$PROFILE_WORKLOAD" in
     large | all)
-        generate_large_csv
+        generate_csv "$profile/input/large_trade_republic_$PROFILE_ROWS.csv" 0
         echo "==> Generated $(wc -l < "$profile/input/large_trade_republic_$PROFILE_ROWS.csv") lines."
         printf 'yes\n' > "$profile/large_answers.txt"
         PROFILE_YEAR=2024 profile_workload "large_$PROFILE_ROWS" "$profile/large_answers.txt" \
             --taxpayer "$cli/taxpayer.json" \
             --trade-republic "$profile/input/large_trade_republic_$PROFILE_ROWS.csv"
+        ;;
+esac
+
+case "$PROFILE_WORKLOAD" in
+    multi)
+        multi_files=""
+        number=1
+
+        while [ "$number" -le "$PROFILE_FILES" ]; do
+            multi_file="$profile/input/multi_trade_republic_${PROFILE_ROWS}_$number.csv"
+            generate_csv "$multi_file" "$number"
+            multi_files="$multi_files $multi_file"
+            number=$((number + 1))
+        done
+
+        echo "==> Generated $PROFILE_FILES files of $PROFILE_ROWS rows."
+        printf 'yes\n' > "$profile/multi_answers.txt"
+        # shellcheck disable=SC2086
+        PROFILE_YEAR=2024 profile_workload "multi_${PROFILE_FILES}x$PROFILE_ROWS" \
+            "$profile/multi_answers.txt" \
+            --taxpayer "$cli/taxpayer.json" \
+            --trade-republic $multi_files
         ;;
 esac
 

@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <vector>
 
 namespace taxbroker {
 
@@ -23,14 +24,21 @@ struct RateFileFault {
 /// valid. No result exists for it.
 using ApplicationInputFault = std::variant<RateFileFault, ReferenceFileFault>;
 
-/// The default most files parsed at the same time.
-inline constexpr std::size_t kDefaultParseWorkerLimit = 4;
+/// The default most files parsed at the same time: 1, one file at a time, on every platform.
+/// Several large files on the pool were measured about 15% slower on the static Linux build;
+/// Windows and macOS are not measured yet, so a platform gets a higher value only after that.
+inline constexpr std::size_t kDefaultParseWorkerLimit = 1;
 
 /// What a run is started with besides the request.
 struct ApplicationRunOptions {
     /// The most files parsed at the same time; 1 (and 0) parse one file at a time on the calling
     /// thread.
     std::size_t mParseWorkerLimit{kDefaultParseWorkerLimit};
+    /// The order in which the files are taken for parsing, by position in the request; empty
+    /// takes them in request order. Tests use it to change the order the parsers finish in; the
+    /// results stay in request order. Any other value than every position once is an
+    /// `std::invalid_argument`.
+    std::vector<std::size_t> mParseStartOrder;
 };
 
 /**

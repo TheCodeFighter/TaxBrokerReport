@@ -385,13 +385,27 @@ pipeline came first and stays the reference.
 - Keep diagnostics and final output ordering identical between sequential and concurrent parsing.
 - Measure performance and avoid creating more work than the number of files or configured workers.
 
-Built: the parsers of a run take their files from a pool of at most 4 workers (the calling thread
-is one of them; the limit is `ApplicationRunOptions`, 0 is the default 4, 1 parses on the calling
-thread only), also bounded by the file count and the hardware threads. One file starts no thread.
+Built: the parsers of a run can take their files from a pool (the calling thread is one of the
+workers; the limit is `ApplicationRunOptions`, bounded also by the file count and the hardware
+threads). The default limit is 1: one file at a time on the calling thread, no thread. One file
+starts no thread at any limit. The pool is off by default because it was measured slower (below).
 A parser that throws what it does not handle leaves one file-level `parse_error` for its file
 (key `parse_error.internal`) that fails every form; the other files' results are kept, and the
 run does not crash. The Trade Republic parser copies the
-file text, so at most 4 files are held twice in memory at the peak.
+file text, so with a limit of 4, up to 4 files are held twice in memory at the peak.
+
+Checked: `ParseModeEquivalenceTest` runs the same files and answers with one worker in request
+order, one worker in reverse order, four workers in reverse order and eight workers interleaved,
+and the result JSON (sources, diagnostics, requests, decisions, exclusions, summaries), the four
+XML files and the question text are identical; an answer given in one mode is used in the other.
+Measured with a limit of 4 (`docs/development.md`, "Performance"): the same forms in both modes;
+no cost for small files or one file; four files of 50,000 rows are about 15% slower on the pool
+than one after the other, so the default is 1 on Linux and stays 1: real exports are small (the
+eight manual files parse in about 3 ms), so a faster pool would save little. The likely cause is
+the allocator of the static musl build, which serialises the parsers' allocations. Windows and
+macOS use their system allocators and may gain, but nothing is measured there: their default stays
+1 until the pool is measured on those systems, and it is raised on a platform only where it is
+faster and the forms are identical.
 
 Do not divide merging into concurrent jobs by trades, dividends, corporate actions, and interest.
 Trades and corporate actions are state-dependent, while the expected workload for independent

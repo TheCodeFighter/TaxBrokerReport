@@ -539,7 +539,8 @@ The stable input sequence is scoped to the complete input request. `mSourceIndex
 position of the source file in the request, and `mEventIndex` is the zero-based source-order
 position assigned by that source's parser. The current CSV parsers use the data-row position as the
 event index. Parser completion order is never used, so files can be parsed concurrently without
-changing event order.
+changing event order. `ParseModeEquivalenceTest` checks it: the same files parsed one at a time and
+on the pool, taken in request order, in reverse and interleaved, give the same result.
 
 The pair must uniquely identify each imported event in a request. It is the final ordering key and
 does not represent broker time. Application JSON may expose only the derived source ID, never the
@@ -1488,10 +1489,11 @@ same facts.
 **Application service** (`include/taxbroker/application_run.hpp`, library `taxbroker_service`).
 `ApplicationRun::start(request)` is the one operation behind the command and, later, the local API.
 It runs the stages one after the other, in a fixed order: the supplied ECB rate files, the
-supplied reference files, the parsers (a new parser object for each file; at most 4 files are
-parsed at the same time on a bounded pool, the results are taken in request order, and the
-position in the request is the source index), the merge (on the calling thread, like every later
-stage), the reporting-year preparation, and then the calculation of a
+supplied reference files, the parsers (a new parser object for each file; by default one file at
+a time, and with a higher worker limit in `ApplicationRunOptions` that many files at the same time
+on a bounded pool; the results are taken in request order either way, and the position in the
+request is the source index), the merge (on the calling thread, like every later stage), the
+reporting-year preparation, and then the calculation of a
 `DecisionSession` (the pipeline below). A supplied rate or reference file that is not valid is a
 structured `ApplicationInputFault` and gives no run: no result exists for it. A year that is not
 supported gives a result whose four forms are failed. The run hides the data the calculation reads
