@@ -3637,6 +3637,93 @@ TEST(TradeRepublicParserTest, RejectsAHeaderWithARenamedColumnAndARow) {
     EXPECT_FALSE(diagnostic.mTransactionId.has_value());
 }
 
+TEST(TradeRepublicParserTest, RejectsAHeaderThatRepeatsAColumn) {
+    // 24 fields: price is written twice (10.00 first, 20.00 last). It is not clear which one to
+    // read, so the file is rejected and the BUY row (1 share, amount -20.00) is not imported.
+    const ParseResult parseResult = parseRawText(
+        R"(datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,)"
+        R"(fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,)"
+        R"(counterparty_name,counterparty_iban,payment_reference,mcc_code,price)"
+        "\n"
+        R"(2024-01-15T10:00:00.000Z,2024-01-15,DEFAULT,TRADING,BUY,STOCK,Share A,XX9000000001,)"
+        R"(1.0000000000,10.000000,-20.000000,,,EUR,,,,Synthetic test row,synthetic-repeat-1,,,,,)"
+        R"(20.000000)"
+        "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+
+    const auto& diagnostic = parseResult.mDiagnostics.front();
+
+    EXPECT_EQ(diagnostic.mSeverity, DiagnosticSeverity::Error);
+    EXPECT_EQ(diagnostic.mCode, DiagnosticCode::InvalidHeader);
+    EXPECT_EQ(diagnostic.mSourceFile,
+              "taxbroker_TradeRepublicParserTest_RejectsAHeaderThatRepeatsAColumn.csv");
+    EXPECT_FALSE(diagnostic.mRowIndex.has_value());
+    EXPECT_FALSE(diagnostic.mField.has_value());
+    EXPECT_FALSE(diagnostic.mTransactionId.has_value());
+    EXPECT_EQ(diagnostic.mMessage,
+              "The file has the column price more than once in the header, so it is not clear "
+              "which one to read. Download the export again from Trade Republic and import it "
+              "unchanged. No rows were imported.");
+    EXPECT_EQ(diagnostic.mMessageKey, MessageKey::InvalidHeaderDuplicateColumn);
+    EXPECT_EQ(diagnostic.mMessageParams, (std::vector<MessageParam>{textParam("column", "price")}));
+}
+
+TEST(TradeRepublicParserTest, NamesTheFirstRequiredColumnWhenSeveralAreRepeated) {
+    // 25 fields: amount and date are both written twice. date comes before amount in the list of
+    // required columns, so date is named.
+    const ParseResult parseResult = parseRawText(
+        R"(datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,)"
+        R"(fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,)"
+        R"(counterparty_name,counterparty_iban,payment_reference,mcc_code,amount,date)"
+        "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageKey,
+              MessageKey::InvalidHeaderDuplicateColumn);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageParams,
+              (std::vector<MessageParam>{textParam("column", "date")}));
+}
+
+TEST(TradeRepublicParserTest, ReportsMissingColumnsBeforeARepeatedColumn) {
+    // 23 fields: fx_rate is missing and price is written twice. Only the missing column is
+    // reported.
+    const ParseResult parseResult = parseRawText(
+        R"(datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,)"
+        R"(fee,tax,currency,original_amount,original_currency,description,transaction_id,)"
+        R"(counterparty_name,counterparty_iban,payment_reference,mcc_code,price)"
+        "\n");
+
+    expectNoParsedRecords(parseResult);
+    ASSERT_EQ(parseResult.mDiagnostics.size(), 1U);
+    EXPECT_EQ(parseResult.mDiagnostics.front().mMessageKey,
+              MessageKey::InvalidHeaderMissingColumns);
+    EXPECT_EQ(
+        parseResult.mDiagnostics.front().mMessageParams,
+        (std::vector<MessageParam>{numberParam("count", 1U), textParam("columns", "fx_rate")}));
+}
+
+TEST(TradeRepublicParserTest, AcceptsARepeatedColumnThatTheParserDoesNotRead) {
+    // 24 fields: mcc_code is written twice. The parser does not read it, so the BUY row of 2
+    // shares at 10.00 is imported.
+    const ParseResult parseResult = parseRawText(
+        R"(datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,)"
+        R"(fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,)"
+        R"(counterparty_name,counterparty_iban,payment_reference,mcc_code,mcc_code)"
+        "\n"
+        R"(2024-01-15T10:00:00.000Z,2024-01-15,DEFAULT,TRADING,BUY,STOCK,Share A,XX9000000001,)"
+        R"(2.0000000000,10.000000,-20.000000,,,EUR,,,,Synthetic test row,synthetic-repeat-2,,,,,)"
+        "\n");
+
+    EXPECT_TRUE(parseResult.mDiagnostics.empty());
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.size(), 1U);
+    ASSERT_EQ(parseResult.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
+    EXPECT_EQ(parseResult.mStatement.mTradeInstruments.front().mTransactions.front().mUnitPrice,
+              1'000'000'000); // EUR 10 at 8 decimals
+}
+
 TEST(TradeRepublicParserTest, AcceptsAHeaderWithoutTheUnusedColumns) {
     // Only the 18 columns the parser reads; the 5 unused export columns are absent.
     const ParseResult parseResult = parseRawText(
@@ -19565,29 +19652,6 @@ TEST(TradeRepublicParserTest, ReadsATradeRowWithColumnsInAnotherOrder) {
     EXPECT_EQ(trade.mCurrency, Currency::EUR);
     EXPECT_EQ(trade.mFeeCurrency, Currency::EUR);
     EXPECT_EQ(trade.mMetadata.mSources.front().mTransactionId, "synthetic-order-1");
-}
-
-TEST(TradeRepublicParserTest, ReadsTheLastColumnOfARepeatedNameInATradeRow) {
-    // 24 fields: price is written twice (10.00 first, 20.00 last). A read by name gives the last
-    // column, so a trade row must give it too.
-    const ParseResult result = parseRawText(
-        R"(datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,)"
-        R"(fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,)"
-        R"(counterparty_name,counterparty_iban,payment_reference,mcc_code,price)"
-        "\n"
-        R"(2024-01-15T10:00:00.000Z,2024-01-15,DEFAULT,TRADING,BUY,STOCK,Share A,XX9000000001,)"
-        R"(1.0000000000,10.000000,-20.000000,,,EUR,,,,Synthetic test row,synthetic-repeat-1,,,,,)"
-        R"(20.000000)"
-        "\n");
-
-    EXPECT_TRUE(result.mDiagnostics.empty());
-    ASSERT_EQ(result.mStatement.mTradeInstruments.size(), 1U);
-    ASSERT_EQ(result.mStatement.mTradeInstruments.front().mTransactions.size(), 1U);
-
-    const TradeTransaction& trade =
-        result.mStatement.mTradeInstruments.front().mTransactions.front();
-
-    EXPECT_EQ(trade.mUnitPrice, 2'000'000'000); // the last price, EUR 20 at 8 decimals
 }
 
 TEST(TradeRepublicParserTest, CompletesMissingDividendNameWithoutChangingOriginalEvidence) {

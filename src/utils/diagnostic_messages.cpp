@@ -579,6 +579,8 @@ constexpr std::array kDefinitions{
     MessageDefinition{MessageKey::AnswerRejectedMarketValueNotPositive,
                       "answer_rejected.market_value_not_positive",
                       kRequestId},
+    MessageDefinition{
+        MessageKey::InvalidHeaderDuplicateColumn, "invalid_header.duplicate_column", kColumn},
 };
 
 constexpr bool definitionsFollowKeyOrder() {
@@ -595,7 +597,7 @@ constexpr bool definitionsFollowKeyOrder() {
 
 static_assert(definitionsFollowKeyOrder(), "Definitions must follow the MessageKey order");
 static_assert(kDefinitions.size() ==
-                  static_cast<std::size_t>(MessageKey::AnswerRejectedMarketValueNotPositive) + 1,
+                  static_cast<std::size_t>(MessageKey::InvalidHeaderDuplicateColumn) + 1,
               "Every MessageKey needs one definition");
 
 constexpr std::array<std::string_view, 11> kTermKeys{
