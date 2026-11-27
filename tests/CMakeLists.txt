@@ -57,6 +57,7 @@ add_executable(taxbroker_unit_tests
     unit/dho_xml_writer_test.cpp
     unit/obr_xml_writer_test.cpp
     unit/report_xml_stage_test.cpp
+    unit/ordered_tasks_test.cpp
     unit/div_xml_writer_test.cpp
     unit/income_classifier_test.cpp
     unit/income_payers_test.cpp

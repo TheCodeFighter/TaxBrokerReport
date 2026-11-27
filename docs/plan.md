@@ -375,8 +375,8 @@ Additional visual polish and convenience features follow only after this end-to-
 
 ## Concurrency
 
-Add bounded concurrency only for parsing multiple independent files, after the single-threaded full
-pipeline is correct and tested.
+Concurrency is bounded and limited to parsing multiple independent files; the single-threaded full
+pipeline came first and stays the reference.
 
 - Submit independent files to a bounded worker pool.
 - Each parser returns an owned result without shared mutable state.
@@ -384,6 +384,14 @@ pipeline is correct and tested.
 - Perform merging deterministically on one thread.
 - Keep diagnostics and final output ordering identical between sequential and concurrent parsing.
 - Measure performance and avoid creating more work than the number of files or configured workers.
+
+Built: the parsers of a run take their files from a pool of at most 4 workers (the calling thread
+is one of them; the limit is `ApplicationRunOptions`, 0 is the default 4, 1 parses on the calling
+thread only), also bounded by the file count and the hardware threads. One file starts no thread.
+A parser that throws what it does not handle leaves one file-level `parse_error` for its file
+(key `parse_error.internal`) that fails every form; the other files' results are kept, and the
+run does not crash. The Trade Republic parser copies the
+file text, so at most 4 files are held twice in memory at the peak.
 
 Do not divide merging into concurrent jobs by trades, dividends, corporate actions, and interest.
 Trades and corporate actions are state-dependent, while the expected workload for independent

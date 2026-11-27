@@ -943,8 +943,12 @@ a different meaning.
 
 The parsing stage keeps the existing codes `unknown_row_type`, `unsupported_row_type`,
 `unsupported_asset_class` (a warning for a private-fund trade row only; a crypto row has none, a tax rule leaves it out), `missing_field`, `invalid_value`, `inconsistent_value`, and
-`parse_error`. It adds `field_count_mismatch`: a CSV record has a different number of fields than
-the header, so the row is skipped and no field of it is trusted. The message gives only the
+`parse_error`. A parser that stops on an error it does not handle (a programming error, never a bad
+file) leaves one file-level `parse_error` with the key `parse_error.internal` for its file, with no
+row and no events. Like every file-level error it fails all four forms (the file may hold any of
+them); the rows and diagnostics of the other files are kept. The parsing stage also adds
+`field_count_mismatch`: a CSV record has a different number of fields than the header, so the row
+is skipped and no field of it is trusted. The message gives only the
 expected and found counts. It also adds `localized_number_format`, a file-level warning without row
 or field. The Trade Republic parser reports it when at least 3 rows of one file were rejected
 because a numeric field has a comma or parentheses, which Trade Republic does not export. It means

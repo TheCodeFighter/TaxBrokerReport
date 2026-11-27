@@ -1487,9 +1487,11 @@ same facts.
 
 **Application service** (`include/taxbroker/application_run.hpp`, library `taxbroker_service`).
 `ApplicationRun::start(request)` is the one operation behind the command and, later, the local API.
-It runs the stages one after the other, in a fixed order and on one thread: the supplied ECB rate
-files, the supplied reference files, the parsers (one per broker, the position in the request is
-the source index), the merge, the reporting-year preparation, and then the calculation of a
+It runs the stages one after the other, in a fixed order: the supplied ECB rate files, the
+supplied reference files, the parsers (a new parser object for each file; at most 4 files are
+parsed at the same time on a bounded pool, the results are taken in request order, and the
+position in the request is the source index), the merge (on the calling thread, like every later
+stage), the reporting-year preparation, and then the calculation of a
 `DecisionSession` (the pipeline below). A supplied rate or reference file that is not valid is a
 structured `ApplicationInputFault` and gives no run: no result exists for it. A year that is not
 supported gives a result whose four forms are failed. The run hides the data the calculation reads
@@ -1739,7 +1741,8 @@ through the public headers. The routes are unit-tested by calling `Routes::handl
 are tested with real connections on `127.0.0.1`.
 
 One thread runs the `io_context`, so many connections can be open (a browser keeps several
-alive), but only one handler runs at a time and the business code stays single-threaded. A
+alive), but only one handler runs at a time and the business code stays single-threaded (only
+the parsers of one run share a bounded pool, see "Application service"). A
 header read, a write or a wait between two body chunks that takes longer than 30 seconds closes
 the connection; the header block is limited to
 8 KiB (431). A bad request gets 400 and a failing handler 500, with no detail.

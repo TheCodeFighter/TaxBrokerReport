@@ -193,10 +193,14 @@ target_link_libraries(taxbroker_ibkr
     pugixml::static
 )
 
+find_package(Threads REQUIRED)
+
 # The application service: one run parses, merges and calculates every report and writes the XML.
 # It lives outside the core because the XML writers (pugixml) link the core.
 add_library(taxbroker_service STATIC
     service/application_run.cpp
+    service/ordered_tasks.cpp
+    service/parse_failure.cpp
 )
 
 target_include_directories(taxbroker_service
@@ -216,6 +220,7 @@ target_link_libraries(taxbroker_service
     taxbroker_core
     taxbroker_ibkr
     taxbroker_xml
+    Threads::Threads
 )
 
 # The checks and files of the local server login that need no HTTP library: loopback Host and
@@ -285,8 +290,6 @@ if(TAXBROKER_FRONTEND_DIR)
     target_compile_definitions(taxbroker_server_lib PRIVATE TAXBROKER_EMBED_FRONTEND)
     target_include_directories(taxbroker_server_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/server)
 endif()
-
-find_package(Threads REQUIRED)
 
 target_link_libraries(taxbroker_server_lib
     PUBLIC

@@ -6,6 +6,7 @@
 #include "taxbroker/diagnostics.hpp"
 #include "taxbroker/reference_catalogue.hpp"
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -22,10 +23,20 @@ struct RateFileFault {
 /// valid. No result exists for it.
 using ApplicationInputFault = std::variant<RateFileFault, ReferenceFileFault>;
 
+/// The default most files parsed at the same time.
+inline constexpr std::size_t kDefaultParseWorkerLimit = 4;
+
+/// What a run is started with besides the request.
+struct ApplicationRunOptions {
+    /// The most files parsed at the same time; 1 (and 0) parse one file at a time on the calling
+    /// thread.
+    std::size_t mParseWorkerLimit{kDefaultParseWorkerLimit};
+};
+
 /**
  * One run of the application service: loads the supplied files, parses, merges, prepares the year
- * and calculates every report in a decision session, in a fixed order on one thread. It is the
- * public entry point; the stages behind it are not part of the API.
+ * and calculates every report in a decision session, in a fixed order; only the parsers run at the
+ * same time. It is the public entry point; the stages behind it are not part of the API.
  */
 class ApplicationRun final {
   public:
@@ -33,10 +44,18 @@ class ApplicationRun final {
     [[nodiscard]] static std::variant<ApplicationInputFault, ApplicationRun>
     start(ApplicationRequest aRequest);
 
+    /// As above, with the options of the run.
+    [[nodiscard]] static std::variant<ApplicationInputFault, ApplicationRun>
+    start(ApplicationRequest aRequest, const ApplicationRunOptions& aOptions);
+
     /// A new run with new input. The recorded answers stay and are marked as from an earlier run,
     /// and an answer given for the revision before it is stale. A supplied file that is not valid
     /// gives the fault and the run stays as it was; an empty optional means success.
     [[nodiscard]] std::optional<ApplicationInputFault> restart(ApplicationRequest aRequest);
+
+    /// As above, with the options of the new run.
+    [[nodiscard]] std::optional<ApplicationInputFault>
+    restart(ApplicationRequest aRequest, const ApplicationRunOptions& aOptions);
 
     ApplicationRun(const ApplicationRun&) = delete;
     ApplicationRun& operator=(const ApplicationRun&) = delete;
