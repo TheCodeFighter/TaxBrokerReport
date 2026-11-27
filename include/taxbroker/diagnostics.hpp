@@ -56,6 +56,12 @@ enum class ParsedRowKind {
     IncomeTax,
 };
 
+/// Who holds the cash an interest payment is paid on.
+enum class CashHolder {
+    Broker, ///< A broker only: Doh-Obr.
+    Bank,   ///< A bank - the cash is a bank deposit: Doh-DHO.
+};
+
 struct ParseDiagnostic {
     DiagnosticSeverity mSeverity{DiagnosticSeverity::Error};
     DiagnosticCode mCode{DiagnosticCode::ParseError};
@@ -72,6 +78,9 @@ struct ParseDiagnostic {
     /// Absent for a diagnostic of a file or a header, of a row of unknown or unsupported type, and
     /// of a record with the wrong field count.
     std::optional<ParsedRowKind> mRowKind;
+    /// Who held the cash of a rejected interest row, when the parser knows it; it decides the
+    /// interest form the diagnostic affects. Absent when it does not (both interest forms).
+    std::optional<CashHolder> mCashHolder;
 };
 
 } // namespace taxbroker

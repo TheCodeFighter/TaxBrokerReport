@@ -331,17 +331,20 @@ std::map<Isin, IsinPayments> couponsByIsin(const std::vector<Payment>& aPayments
 }
 
 /// The payers of the cash a broker holds are told apart by the entity code the export names, if
-/// any.
-using CashPayerKey = std::pair<Broker, std::optional<std::string>>;
+/// any. The payer list text (which rows of the reference file may have paid) comes with the
+/// payment.
+using CashPayerKey = std::tuple<Broker, std::optional<std::string>, std::optional<std::string>>;
 
 CashPayerKey cashPayerKeyOf(const Payment& aPayment) {
-    return {brokerOf(aPayment), aPayment.mTransaction->mPayerCode};
+    return {brokerOf(aPayment),
+            aPayment.mTransaction->mPayerList,
+            aPayment.mTransaction->mPayerCode};
 }
 
 /// The payer of the cash a broker holds. With an entity code in the export it is the broker payer
-/// row with that code; without one it is the broker's only row. Otherwise the payer stays empty,
-/// with one warning (for the forms of its payments) saying that the code is unknown or that the
-/// reference files have no row or several.
+/// row with that code; without one it is the only row of its payer list. Otherwise the payer stays
+/// empty, with one warning (for the forms of its payments) saying that the code is unknown or that
+/// the reference files have no row or several.
 std::map<CashPayerKey, PayerOutcome> brokerPayers(const std::vector<Payment>& aPayments,
                                                   const ReferenceCatalogue& aCatalogue,
                                                   std::vector<ProcessingDiagnostic>& aDiagnostics) {
@@ -358,14 +361,15 @@ std::map<CashPayerKey, PayerOutcome> brokerPayers(const std::vector<Payment>& aP
 
     for (const auto& [key, payments] : byKey)
     {
-        const auto& [broker, code] = key;
+        const auto& [broker, list, code] = key;
+        const std::string_view listText = list ? std::string_view{*list} : std::string_view{};
         const BrokerPayerEntry* entry = nullptr;
 
         if (code)
         {
-            entry = aCatalogue.brokerPayerByCode(broker, *code);
+            entry = aCatalogue.brokerPayerByCode(listText, *code);
         }
-        else if (const auto entries = aCatalogue.brokerPayersOf(broker); entries.size() == 1)
+        else if (const auto entries = aCatalogue.brokerPayersOf(listText); entries.size() == 1)
         {
             entry = entries.front();
         }

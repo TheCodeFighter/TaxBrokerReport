@@ -309,6 +309,10 @@ struct DividendTransaction {
     Currency mCurrency{Currency::EUR};
     Currency mTaxCurrency{Currency::EUR};
     std::vector<InstrumentSourceEvidence> mInstrumentEvidence;
+    /// The `broker` text of the `broker_payers.csv` rows that may have paid it, when an answer
+    /// makes it interest on cash; set by the parser on a dividend row, absent on a dividend netted
+    /// from payment rows.
+    std::optional<std::string> mPayerList;
     /// The ISO 3166-1 country of the payer as the export names it; absent when it does not.
     std::optional<std::string> mPayerCountry;
 };
@@ -317,12 +321,6 @@ struct DividendInstrument {
     std::string mName;
     Isin mIsin;
     std::vector<DividendTransaction> mTransactions;
-};
-
-/// Who holds the cash an interest payment is paid on.
-enum class CashHolder {
-    Broker, ///< A broker only: Doh-Obr.
-    Bank,   ///< A bank - the cash is a bank deposit: Doh-DHO.
 };
 
 struct InterestTransaction {
@@ -340,6 +338,9 @@ struct InterestTransaction {
     /// Who held the cash on the receipt date; absent for a bond coupon and for a row of unknown
     /// type. Always set by the parser for the interest on cash.
     std::optional<CashHolder> mCashHolder;
+    /// The `broker` text of the `broker_payers.csv` rows that may have paid the interest on cash;
+    /// always set by the parser for it, absent on a bond coupon row (a coupon never reads it).
+    std::optional<std::string> mPayerList;
     /// The `code` of the `broker_payers.csv` row of the entity that paid the interest on cash, when
     /// the export names it; absent otherwise (the payer is then found another way or stays empty).
     std::optional<std::string> mPayerCode;

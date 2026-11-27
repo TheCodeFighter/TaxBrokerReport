@@ -118,11 +118,12 @@ class ReferenceCatalogue {
     [[nodiscard]] const BrokerPayerEntry* brokerPayer(std::string_view aBroker,
                                                       std::string_view aCode) const;
 
-    /// The broker payers of a broker, in file order; none for an unknown broker.
-    [[nodiscard]] std::vector<const BrokerPayerEntry*> brokerPayersOf(Broker aBroker) const;
+    /// The broker payers with this `broker` list text, in file order; none for an empty or
+    /// unknown text.
+    [[nodiscard]] std::vector<const BrokerPayerEntry*> brokerPayersOf(std::string_view aList) const;
 
-    /// The broker payer of a broker with this code, or null (also for an unknown broker).
-    [[nodiscard]] const BrokerPayerEntry* brokerPayerByCode(Broker aBroker,
+    /// The broker payer of the list with this code, or null (also for an empty or unknown list).
+    [[nodiscard]] const BrokerPayerEntry* brokerPayerByCode(std::string_view aList,
                                                             std::string_view aCode) const;
 
     [[nodiscard]] const std::vector<PayerEntry>& payers() const;

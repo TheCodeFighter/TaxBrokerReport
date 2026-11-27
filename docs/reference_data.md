@@ -73,7 +73,9 @@ files are the source: a company that is added later is a new row with `source` s
   source for the text (the treaty or an official FURS page), in a release or in a supplied file.
 - `broker_payers.csv`: the broker companies that pay interest on the cash a broker holds, for
   Doh-Obr and Doh-DHO: the five Interactive Brokers companies and Trade Republic Bank GmbH (`TR`,
-  `manual`, from its imprint: Brunnenstr. 19-21, 10119 Berlin, VAT ID `DE307510626`).
+  `manual`, from its imprint: Brunnenstr. 19-21, 10119 Berlin, VAT ID `DE307510626`). The `broker`
+  column is a list name: a parser names the list that may have paid its interest on cash (`IBKR`,
+  `TR`), and a new broker adds its own rows under its own name.
 
 ## What was left out
 

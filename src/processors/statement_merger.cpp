@@ -387,6 +387,46 @@ void buildChronologicalOrder(MergedStatement& aStatement) {
     return std::visit(getMetadata, aEvent);
 }
 
+/// The interest form an interest event can belong to. Interest on cash needs its cash holder; a
+/// type that is not known stays unknown (an answer can make it deposit interest).
+[[nodiscard]] InterestEventScope interestScopeOf(const InterestType aType,
+                                                 const std::optional<CashHolder> aHolder) {
+    switch (aType)
+    {
+    case InterestType::BondInterest:
+        return InterestEventScope::Coupon;
+    case InterestType::BrokerInterest:
+        if (aHolder == CashHolder::Broker)
+        {
+            return InterestEventScope::BrokerCash;
+        }
+
+        if (aHolder == CashHolder::Bank)
+        {
+            return InterestEventScope::BankCash;
+        }
+
+        break;
+    case InterestType::OtherInterest:
+    case InterestType::UnknownInterest:
+        break;
+    }
+
+    return InterestEventScope::Unknown;
+}
+
+/// The scope of an interest event, as a list of one; an empty list for any other event.
+[[nodiscard]] std::vector<InterestEventScope> interestScopes(const MergeEvent& aEvent) {
+    const InterestRecord* interest = std::get_if<InterestRecord>(&aEvent);
+
+    if (interest == nullptr)
+    {
+        return {};
+    }
+
+    return {interestScopeOf(interest->mInterestType, interest->mEvent.mCashHolder)};
+}
+
 [[nodiscard]] StatementEventKind eventKind(const MergeEvent& aEvent) {
     const auto getKind = [](const auto& aValue) {
         using Value = std::decay_t<decltype(aValue)>;
@@ -570,6 +610,7 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mExchangeRate == aRight.mEvent.mExchangeRate &&
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
            aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency &&
+           aLeft.mEvent.mPayerList == aRight.mEvent.mPayerList &&
            aLeft.mEvent.mPayerCountry == aRight.mEvent.mPayerCountry;
 }
 
@@ -588,6 +629,7 @@ void mergeUnitEvidence(std::vector<UnitSourceEvidence>& aDestination,
            aLeft.mEvent.mCurrency == aRight.mEvent.mCurrency &&
            aLeft.mEvent.mTaxCurrency == aRight.mEvent.mTaxCurrency &&
            aLeft.mEvent.mCashHolder == aRight.mEvent.mCashHolder &&
+           aLeft.mEvent.mPayerList == aRight.mEvent.mPayerList &&
            aLeft.mEvent.mPayerCode == aRight.mEvent.mPayerCode &&
            aLeft.mEvent.mPayerCountry == aRight.mEvent.mPayerCountry;
 }
@@ -721,6 +763,12 @@ void addConflictingDuplicateDiagnostic(const std::vector<MergeEvent>& aEvents,
         appendSources(diagnostic.mSources, eventMetadata(event));
         diagnostic.mEventKinds.push_back(eventKind(event));
 
+        const std::vector<InterestEventScope> scopes = interestScopes(event);
+
+        diagnostic.mInterestScopes.insert(diagnostic.mInterestScopes.end(),
+                                          scopes.begin(),
+                                          scopes.end());
+
         if (diagnostic.mTaxDate != eventMetadata(event).mTaxDate)
         {
             diagnostic.mTaxDate.reset();
@@ -742,6 +790,10 @@ void addConflictingDuplicateDiagnostic(const std::vector<MergeEvent>& aEvents,
     auto& kinds = diagnostic.mEventKinds;
     std::sort(kinds.begin(), kinds.end());
     kinds.erase(std::unique(kinds.begin(), kinds.end()), kinds.end());
+
+    std::vector<InterestEventScope>& scopes = diagnostic.mInterestScopes;
+    std::sort(scopes.begin(), scopes.end());
+    scopes.erase(std::unique(scopes.begin(), scopes.end()), scopes.end());
 
     aDiagnostics.push_back(std::move(diagnostic));
 }
@@ -809,6 +861,7 @@ void addSameFileDuplicateDiagnostics(const MergeEvent& aMerged,
             .mIsin = eventIsin(aMerged),
             .mSourceIndex = sourceIndex,
             .mEventKinds = {eventKind(aMerged)},
+            .mInterestScopes = interestScopes(aMerged),
         });
     }
 }
@@ -945,6 +998,7 @@ template <typename Variant>
 /// listed under.
 void addNameConflictDiagnostic(const Isin& aIsin,
                                StatementEventKind aEventKind,
+                               std::vector<InterestEventScope> aInterestScopes,
                                NameVariantSet& aNames,
                                std::vector<MergeDiagnostic>& aDiagnostics) {
     if (aNames.mSourcesByName.size() < 2)
@@ -966,6 +1020,7 @@ void addNameConflictDiagnostic(const Isin& aIsin,
         .mInstrumentName = aNames.mCanonicalName,
         .mIsin = aIsin,
         .mEventKinds = {aEventKind},
+        .mInterestScopes = std::move(aInterestScopes),
         .mNameVariants = std::move(variants),
     });
 }
@@ -1520,7 +1575,11 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
             .mCorporateActions = std::move(bucket.mCorporateActions),
         });
 
-        addNameConflictDiagnostic(isin, StatementEventKind::Trade, bucket.mNames, mergeDiagnostics);
+        addNameConflictDiagnostic(isin,
+                                  StatementEventKind::Trade,
+                                  {},
+                                  bucket.mNames,
+                                  mergeDiagnostics);
         addAssetClassConflictDiagnostic(isin,
                                         bucket.mNames.mCanonicalName,
                                         bucket.mAssetClasses,
@@ -1539,6 +1598,7 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
 
         addNameConflictDiagnostic(isin,
                                   StatementEventKind::Dividend,
+                                  {},
                                   bucket.mNames,
                                   mergeDiagnostics);
     }
@@ -1558,6 +1618,7 @@ DeterministicStatementMerger::merge(std::vector<StatementMergeInput>&& aInputs) 
         {
             addNameConflictDiagnostic(*identity.mIsin,
                                       StatementEventKind::Interest,
+                                      {interestScopeOf(identity.mType, std::nullopt)},
                                       bucket.mNames,
                                       mergeDiagnostics);
         }

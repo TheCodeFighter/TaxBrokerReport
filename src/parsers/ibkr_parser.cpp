@@ -415,6 +415,8 @@ struct RowContext {
     StableInputSequence mSequence;
     std::string_view mTransactionId;
     std::optional<ParsedRowKind> mRowKind; ///< Set once the row type is known.
+    /// Who held the cash of an interest row or an interest-tax row; set with the row kind.
+    std::optional<CashHolder> mCashHolder;
 
     [[nodiscard]] SourceReference source() const {
         return SourceReference{
@@ -489,6 +491,7 @@ struct RowContext {
             .mMessageKey = aMessage.mKey,
             .mMessageParams = std::move(aMessage.mParams),
             .mRowKind = mRowKind,
+            .mCashHolder = mCashHolder,
         });
     }
 
@@ -548,6 +551,7 @@ struct RowContext {
     /// A row that is not read on purpose and belongs to no form: it only leaves this notice.
     void informNoForm(const DiagnosticCode aCode, DiagnosticMessage aMessage) {
         mRowKind.reset();
+        mCashHolder.reset();
         diagnose(DiagnosticSeverity::Info, aCode, std::move(aMessage));
     }
 
@@ -1687,7 +1691,7 @@ class FlexReader {
     }
 
     void readCashTransaction(const pugi::xml_node& aRow) {
-        auto context = makeContext(aRow, std::nullopt);
+        RowContext context = makeContext(aRow, std::nullopt);
 
         // Only the single bookings are read. A total row would count a booking twice, and it may
         // have no ID or ISIN, so the level is checked before anything else.
@@ -1750,6 +1754,7 @@ class FlexReader {
             return;
         case CashType::BrokerInterestReceived:
             context.mRowKind = ParsedRowKind::BrokerInterest;
+            context.mCashHolder = CashHolder::Broker;
             readInterestRow(aRow, context, false);
             return;
         case CashType::BondInterestReceived:
@@ -1803,6 +1808,8 @@ class FlexReader {
         if (aType == CashType::WithholdingTax && textOf(aRow, "isin").empty())
         {
             aContext.mRowKind = ParsedRowKind::IncomeTax;
+            // The tax may be on interest on cash, which this broker holds itself.
+            aContext.mCashHolder = CashHolder::Broker;
         }
 
         for (const char* attribute : {"isin", "actionID", "reportDate"})
@@ -1955,6 +1962,7 @@ class FlexReader {
             .mTaxCurrency = fields->mCurrency,
             .mInstrumentEvidence = std::move(evidence),
             .mCashHolder = aIsBond ? std::nullopt : std::optional{CashHolder::Broker},
+            .mPayerList = aIsBond ? std::nullopt : std::optional<std::string>{"IBKR"},
             .mPayerCode = aIsBond || mEntityCode.empty() ? std::nullopt
                                                          : std::optional<std::string>{mEntityCode},
             .mPayerCountry = aIsBond ? payerCountryOf(aRow) : std::nullopt,
