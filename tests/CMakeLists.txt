@@ -169,6 +169,7 @@ add_executable(taxbroker_integration_tests
     integration/mixed_broker_integration_test.cpp
     integration/processor_history_integration_test.cpp
     integration/reporting_year_integration_test.cpp
+    integration/server_mixed_run_test.cpp
     integration/server_run_test.cpp
     integration/server_test.cpp
     integration/unit_evidence_integration_test.cpp

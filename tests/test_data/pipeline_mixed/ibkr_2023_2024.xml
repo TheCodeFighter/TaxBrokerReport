@@ -1,0 +1,15 @@
+<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <Trades>
+        <Trade transactionID="ib-sell-1" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Share A" isin="XX0000000201" currency="EUR" tradeDate="20230405" dateTime="20230405;040000" buySell="SELL" quantity="-0.4" tradePrice="12" proceeds="4.8" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+        <Trade transactionID="ib-sell-2" levelOfDetail="EXECUTION" transactionType="ExchTrade" assetCategory="STK" subCategory="COMMON" description="Synthetic Share A" isin="XX0000000201" currency="EUR" tradeDate="20240603" dateTime="20240603;040000" buySell="SELL" quantity="-1.6" tradePrice="14" proceeds="22.4" ibCommission="0" ibCommissionCurrency="EUR" taxes="0" notes="" multiplier="1"/>
+      </Trades>
+      <CorporateActions>
+        <CorporateAction accountId="U0000000" transactionID="ib-split-1" actionID="S1" type="FS" assetCategory="STK" description="Synthetic Share B" isin="XX0000000202" currency="EUR" dateTime="20241114;040000" reportDate="20241114" quantity="10" proceeds="0" value="0"/>
+        <CorporateAction accountId="U0000000" transactionID="ib-split-2" actionID="S2" type="FS" assetCategory="STK" description="Synthetic Share B" isin="XX0000000202" currency="EUR" dateTime="20241120;040000" reportDate="20241120" quantity="20" proceeds="0" value="0"/>
+      </CorporateActions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
