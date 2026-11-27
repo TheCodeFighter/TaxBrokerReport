@@ -208,7 +208,9 @@ TEST(ApplicationResultIntegrationTest, ARejectedTradeRepublicInterestRowIsDeposi
     EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
 }
 
-TEST(ApplicationResultIntegrationTest, ARejectedTradeRepublicInterestRowIsAlsoOtherInterestIn2023) {
+TEST(ApplicationResultIntegrationTest,
+     ARejectedTradeRepublicInterestRowOf2023BeforeTheChangeIsOtherInterest) {
+    // Dated 1 March 2023, before 6 December 2023: Trade Republic held the cash as a broker.
     constexpr std::string_view interest =
         R"(2023-03-01T09:00:00Z,2023-03-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,abc,,,EUR,,,,,synthetic-interest,,,,)";
 
@@ -223,11 +225,33 @@ TEST(ApplicationResultIntegrationTest, ARejectedTradeRepublicInterestRowIsAlsoOt
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
+    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{ReportType::OtherInterest}));
+    EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::NoData);
+    EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.report(ReportType::Dividends).mStatus, ReportStatus::NoData);
+}
+
+TEST(ApplicationResultIntegrationTest,
+     ARejectedTradeRepublicInterestRowWithAnUnreadableDateAffectsBothInterestForms) {
+    // The date is not a date, so the parser cannot tell who held the cash, in any year.
+    constexpr std::string_view interest =
+        R"(2024-03-01T09:00:00Z,not-a-date,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,5,,,EUR,,,,,synthetic-interest,,,,)";
+
+    const TemporaryApplicationInputs files;
+    const auto path = files.write("synthetic.csv", {interest});
+    tr::TradeRepublicParser parser;
+    std::vector<StatementMergeInput> inputs{{0, parser.parseFile(path)}};
+    const auto merged = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = merged.mDiagnostics});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports,
               (std::vector{ReportType::BankDepositInterest, ReportType::OtherInterest}));
     EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::Failed);
     EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
-    EXPECT_EQ(result.report(ReportType::Dividends).mStatus, ReportStatus::NoData);
 }
 
 TEST(ApplicationResultIntegrationTest, TheBondMaturityFixtureBlocksNoReport) {
@@ -396,10 +420,9 @@ TEST(ApplicationResultIntegrationTest, AConflictingTradeInTwoFilesFailsOnlyCapit
     EXPECT_EQ(text.find("-22"), std::string::npos);
 }
 
-TEST(ApplicationResultIntegrationTest, AConflictingTradeRepublicInterestFailsBothInterestForms) {
-    // One broker interest ID with two amounts: 5 in the first file, 6 in the second. The merger
-    // does not say whether interest is deposit interest or a coupon, so both interest forms are
-    // affected.
+TEST(ApplicationResultIntegrationTest, AConflictingTradeRepublicInterestFailsDepositInterest) {
+    // One broker interest ID with two amounts: 5 in the first file, 6 in the second. Dated 2024,
+    // so the bank held the cash and only the deposit interest form is affected.
     constexpr std::string_view firstCopy =
         R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,5,,,EUR,,,,,synthetic-interest,,,,)";
     constexpr std::string_view secondCopy =
@@ -422,15 +445,14 @@ TEST(ApplicationResultIntegrationTest, AConflictingTradeRepublicInterestFailsBot
 
     EXPECT_EQ(std::get<MergeDiagnosticCode>(diagnostic.mCode),
               MergeDiagnosticCode::ConflictingDuplicate);
-    EXPECT_EQ(diagnostic.mAffectedReports,
-              (std::vector{ReportType::BankDepositInterest, ReportType::OtherInterest}));
+    EXPECT_EQ(diagnostic.mAffectedReports, (std::vector{ReportType::BankDepositInterest}));
     EXPECT_TRUE(diagnostic.mBlocking);
     EXPECT_EQ(diagnostic.mSources.size(), 2U);
 
     EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::NoData);
     EXPECT_EQ(result.report(ReportType::Dividends).mStatus, ReportStatus::NoData);
     EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::Failed);
-    EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::NoData);
     EXPECT_EQ(result.mStatus, OverallStatus::PartialSuccess);
 }
 
@@ -882,9 +904,8 @@ TEST(ApplicationResultIntegrationTest, ACardTransactionLeavesNoDiagnostic) {
 }
 
 TEST(ApplicationResultIntegrationTest,
-     ARejectedInterestRowDatedAfterTheLicenceChangeStillAffectsBothFormsIn2023) {
-    // Dated 20 December 2023, after the change on 6 December, but the rejected row's date is not
-    // trusted, so a 2023 run keeps both interest forms affected.
+     ARejectedInterestRowDatedAfterTheLicenceChangeIsDepositInterestIn2023) {
+    // Dated 20 December 2023, after the change on 6 December: the bank held the cash.
     constexpr std::string_view interest =
         R"(2023-12-20T09:00:00Z,2023-12-20,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,abc,,,EUR,,,,,synthetic-interest,,,,)";
 
@@ -900,12 +921,12 @@ TEST(ApplicationResultIntegrationTest,
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports,
-              (std::vector{ReportType::BankDepositInterest, ReportType::OtherInterest}));
+              (std::vector{ReportType::BankDepositInterest}));
     EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::Failed);
-    EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::NoData);
 }
 
-TEST(ApplicationResultIntegrationTest, ARejectedInterestRowAffectsBothFormsIn2022) {
+TEST(ApplicationResultIntegrationTest, ARejectedInterestRowOf2022IsOtherInterest) {
     constexpr std::string_view interest =
         R"(2022-03-01T09:00:00Z,2022-03-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,abc,,,EUR,,,,,synthetic-interest,,,,)";
 
@@ -920,9 +941,8 @@ TEST(ApplicationResultIntegrationTest, ARejectedInterestRowAffectsBothFormsIn202
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
-    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports,
-              (std::vector{ReportType::BankDepositInterest, ReportType::OtherInterest}));
-    EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{ReportType::OtherInterest}));
+    EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::NoData);
     EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
 }
 

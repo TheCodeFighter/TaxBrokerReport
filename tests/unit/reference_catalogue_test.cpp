@@ -275,22 +275,21 @@ TEST(ReferenceCatalogueTest, FindsABrokerPayerByBrokerAndCode) {
     EXPECT_EQ(catalogue.brokerPayer("IBKR", "IB-XX"), nullptr); // another code
 }
 
-TEST(ReferenceCatalogueTest, FindsABrokerPayerOfABrokerByItsCode) {
+TEST(ReferenceCatalogueTest, FindsABrokerPayerOfAListByItsCode) {
     const auto catalogue = parse("XX0000000010,Payer A,,1 Main Street,IE,,,issuer,manual,\n",
                                  "BE,dividend,Treaty text,manual,\n",
                                  "IBKR,IB-UK,Broker UK,03958476,Level 20,GB,ib-edavki,abc123\n"
                                  "TR,TR-DE,Broker DE,DE307510626,Main Street,DE,manual,\n");
 
-    const BrokerPayerEntry* found =
-        catalogue.brokerPayerByCode(Broker::InteractiveBrokers, "IB-UK");
+    const BrokerPayerEntry* found = catalogue.brokerPayerByCode("IBKR", "IB-UK");
 
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->mName, "Broker UK");
-    EXPECT_EQ(catalogue.brokerPayerByCode(Broker::InteractiveBrokers, "TR-DE"),
+    EXPECT_EQ(catalogue.brokerPayerByCode("IBKR", "TR-DE"),
               nullptr); // other broker
-    EXPECT_EQ(catalogue.brokerPayerByCode(Broker::InteractiveBrokers, "IB-XX"),
-              nullptr);                                                        // other code
-    EXPECT_EQ(catalogue.brokerPayerByCode(Broker::Unknown, "IB-UK"), nullptr); // no broker
+    EXPECT_EQ(catalogue.brokerPayerByCode("IBKR", "IB-XX"),
+              nullptr);                                           // other code
+    EXPECT_EQ(catalogue.brokerPayerByCode("", "IB-UK"), nullptr); // no list
 }
 
 TEST(ReferenceCatalogueTest, ListsTheReliefStatementsOfACountryInFileOrder) {
@@ -1055,28 +1054,42 @@ TEST(ReferenceDataLargeInputTest, ARowLongerThanTheReaderLimitMakesTheFileUnread
     EXPECT_EQ(fault.mMessage.mKey, MessageKey::ReferenceFileUnreadable);
 }
 
-TEST(ReferenceCatalogueTest, BrokerPayersOfABrokerAreItsRowsInFileOrder) {
+TEST(ReferenceCatalogueTest, BrokerPayersOfAListAreItsRowsInFileOrder) {
     const ReferenceCatalogue catalogue = parse("",
                                                "",
                                                "IBKR,IB-A,Broker A,111,1 Main Street,GB,manual,\n"
                                                "TR,TR-A,Broker T,222,2 Main Street,DE,manual,\n"
                                                "IBKR,IB-B,Broker B,333,3 Main Street,IE,manual,\n");
 
-    const auto interactive = catalogue.brokerPayersOf(Broker::InteractiveBrokers);
+    const std::vector<const BrokerPayerEntry*> interactive = catalogue.brokerPayersOf("IBKR");
 
     ASSERT_EQ(interactive.size(), 2U);
     EXPECT_EQ(interactive.at(0)->mCode, "IB-A");
     EXPECT_EQ(interactive.at(1)->mCode, "IB-B");
 
-    const auto tradeRepublic = catalogue.brokerPayersOf(Broker::TradeRepublic);
+    const std::vector<const BrokerPayerEntry*> tradeRepublic = catalogue.brokerPayersOf("TR");
 
     ASSERT_EQ(tradeRepublic.size(), 1U);
     EXPECT_EQ(tradeRepublic.at(0)->mName, "Broker T");
-    EXPECT_TRUE(catalogue.brokerPayersOf(Broker::Unknown).empty());
+    EXPECT_TRUE(catalogue.brokerPayersOf("").empty());
+    EXPECT_TRUE(catalogue.brokerPayersOf("XX").empty()); // a list no row names
+}
+
+TEST(ReferenceCatalogueTest, TheEmbeddedFileHasTheFiveInteractiveBrokersCompanies) {
+    const std::vector<const BrokerPayerEntry*> interactive =
+        referenceCatalogue().brokerPayersOf("IBKR");
+
+    ASSERT_EQ(interactive.size(), 5U);
+    EXPECT_EQ(interactive.at(0)->mCode, "IB-UK");
+    EXPECT_EQ(interactive.at(1)->mCode, "IB-CE");
+    EXPECT_EQ(interactive.at(2)->mCode, "IB-IE");
+    EXPECT_EQ(interactive.at(3)->mCode, "IB-LUX");
+    EXPECT_EQ(interactive.at(4)->mCode, "IBLLC-US");
 }
 
 TEST(ReferenceCatalogueTest, TheEmbeddedFileHasOneTradeRepublicCompany) {
-    const auto tradeRepublic = referenceCatalogue().brokerPayersOf(Broker::TradeRepublic);
+    const std::vector<const BrokerPayerEntry*> tradeRepublic =
+        referenceCatalogue().brokerPayersOf("TR");
 
     ASSERT_EQ(tradeRepublic.size(), 1U);
     EXPECT_EQ(tradeRepublic.at(0)->mName, "Trade Republic Bank GmbH");

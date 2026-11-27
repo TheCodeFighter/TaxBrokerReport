@@ -295,7 +295,8 @@ TEST(OtherInterestFailureTest, ExcludingTheIsinKeepsTheOtherCouponAndTheCashInte
                             .mTaxPaid = 0,
                             .mCurrency = Currency::EUR,
                             .mTaxCurrency = Currency::EUR,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -564,7 +565,8 @@ TEST(OtherInterestFailureTest, ACashInterestErrorNamesItsBrokerAndAsksTheFailure
                             .mTaxPaid = 0,
                             .mCurrency = Currency::USD,
                             .mTaxCurrency = Currency::USD,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -605,7 +607,8 @@ TEST(OtherInterestFailureTest, ADepositAndACouponWithoutARateOnOneDayGiveTwoErro
                             .mTaxPaid = 0,
                             .mCurrency = Currency::USD,
                             .mTaxCurrency = Currency::USD,
-                            .mCashHolder = CashHolder::Bank}}},
+                            .mCashHolder = CashHolder::Bank,
+                            .mPayerList = "TR"}}},
         {.mName = "Synthetic Bond A",
          .mIsin = "XX0000000010",
          .mInterestType = InterestType::BondInterest,
@@ -1477,7 +1480,8 @@ TEST(OtherInterestFailureTest,
                .mTaxPaid = 0,
                .mCurrency = Currency::USD,
                .mTaxCurrency = Currency::USD,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
         {.mName = "",
          .mIsin = std::nullopt,
          .mInterestType = InterestType::BrokerInterest,
@@ -1489,7 +1493,8 @@ TEST(OtherInterestFailureTest,
                             .mTaxPaid = 0,
                             .mCurrency = Currency::EUR,
                             .mTaxCurrency = Currency::EUR,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "IBKR"}}},
     };
 
     orderChronologically(statement);
@@ -1565,7 +1570,8 @@ TEST(OtherInterestFailureTest, ABrokerAndACouponThatFailTogetherAreOneQuestionAn
                .mTaxPaid = 0,
                .mCurrency = Currency::USD,
                .mTaxCurrency = Currency::USD,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
         {.mName = "",
          .mIsin = std::nullopt,
          .mInterestType = InterestType::BrokerInterest,
@@ -1577,7 +1583,8 @@ TEST(OtherInterestFailureTest, ABrokerAndACouponThatFailTogetherAreOneQuestionAn
                             .mTaxPaid = 0,
                             .mCurrency = Currency::EUR,
                             .mTaxCurrency = Currency::EUR,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "IBKR"}}},
     };
 
     orderChronologically(statement);
@@ -1637,7 +1644,8 @@ TEST(OtherInterestFailureTest, FailingDohObrBecauseOfABrokerWritesNoFileAndExclu
                .mTaxPaid = 0,
                .mCurrency = Currency::USD,
                .mTaxCurrency = Currency::USD,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
         {.mName = "",
          .mIsin = std::nullopt,
          .mInterestType = InterestType::BrokerInterest,
@@ -1649,7 +1657,8 @@ TEST(OtherInterestFailureTest, FailingDohObrBecauseOfABrokerWritesNoFileAndExclu
                             .mTaxPaid = 0,
                             .mCurrency = Currency::EUR,
                             .mTaxCurrency = Currency::EUR,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "IBKR"}}},
     };
 
     orderChronologically(statement);
@@ -1693,7 +1702,8 @@ TEST(OtherInterestFailureTest, CancellingTheBrokerQuestionFailsDohObrWithoutAnAn
                .mTaxPaid = 0,
                .mCurrency = Currency::USD,
                .mTaxCurrency = Currency::USD,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
         {.mName = "",
          .mIsin = std::nullopt,
          .mInterestType = InterestType::BrokerInterest,
@@ -1705,7 +1715,8 @@ TEST(OtherInterestFailureTest, CancellingTheBrokerQuestionFailsDohObrWithoutAnAn
                             .mTaxPaid = 0,
                             .mCurrency = Currency::EUR,
                             .mTaxCurrency = Currency::EUR,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "IBKR"}}},
     };
 
     orderChronologically(statement);
@@ -1748,7 +1759,8 @@ TEST(OtherInterestFailureTest, ARecordedBrokerExclusionDoesNotCoverAnotherBroker
                .mTaxPaid = 0,
                .mCurrency = Currency::USD,
                .mTaxCurrency = Currency::USD,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
         {.mName = "",
          .mIsin = std::nullopt,
          .mInterestType = InterestType::BrokerInterest,
@@ -1760,7 +1772,8 @@ TEST(OtherInterestFailureTest, ARecordedBrokerExclusionDoesNotCoverAnotherBroker
                             .mTaxPaid = 0,
                             .mCurrency = Currency::EUR,
                             .mTaxCurrency = Currency::EUR,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "IBKR"}}},
     };
     second.mPresentation.mInterestInstruments = {
         {.mName = "Synthetic Bond A",
@@ -1783,7 +1796,8 @@ TEST(OtherInterestFailureTest, ARecordedBrokerExclusionDoesNotCoverAnotherBroker
                .mTaxPaid = 0,
                .mCurrency = Currency::USD,
                .mTaxCurrency = Currency::USD,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
         {.mName = "",
          .mIsin = std::nullopt,
          .mInterestType = InterestType::BrokerInterest,
@@ -1795,7 +1809,8 @@ TEST(OtherInterestFailureTest, ARecordedBrokerExclusionDoesNotCoverAnotherBroker
                             .mTaxPaid = 0,
                             .mCurrency = Currency::USD,
                             .mTaxCurrency = Currency::USD,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "IBKR"}}},
     };
 
     orderChronologically(first);
@@ -1869,7 +1884,8 @@ TEST(OtherInterestFailureTest, ADepositErrorNamesNoBrokerAndAsksNoQuestion) {
                .mTaxPaid = 0,
                .mCurrency = Currency::USD,
                .mTaxCurrency = Currency::USD,
-               .mCashHolder = CashHolder::Bank}}},
+               .mCashHolder = CashHolder::Bank,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);

@@ -619,8 +619,8 @@ TEST(ApplicationResultStatusTest, AnUnsupportedInterestSubtypeStillBlocksBothInt
 
 TEST(ApplicationResultStatusTest,
      ATaxRowWithoutAnInstrumentBlocksDividendsAndTheBrokerInterestForm) {
-    // The tax may be on a dividend or on interest, so both income forms are blocked. The broker
-    // is Interactive Brokers, whose cash interest is only ever Doh-Obr; capital gains and the
+    // The tax may be on a dividend or on interest, so both income forms are blocked. The parser
+    // says a broker holds the cash, so the interest form is only Doh-Obr; capital gains and the
     // bank-deposit form are not affected.
     ApplicationResultInput input{.mReportingYear = 2024};
     input.mMergeDiagnostics = {SourcedParseDiagnostic{
@@ -635,6 +635,7 @@ TEST(ApplicationResultStatusTest,
                 .mField = "isin",
                 .mMessage = "Synthetic parser message.",
                 .mRowKind = ParsedRowKind::IncomeTax,
+                .mCashHolder = CashHolder::Broker,
             },
     }};
     input.mReports[0].mXml = "<capital/>";
@@ -785,7 +786,7 @@ TEST(ApplicationResultScopeTest, ARejectedBondInterestRowAffectsOtherInterestOnl
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kOther}));
 }
 
-TEST(ApplicationResultScopeTest, ATradeRepublicInterestRowIsDepositInterestFrom2024) {
+TEST(ApplicationResultScopeTest, AnInterestRowOnCashHeldByABankAffectsDepositInterestOnly) {
     const SourcedParseDiagnostic diagnostic{
         .mSourceIndex = 0,
         .mBroker = Broker::TradeRepublic,
@@ -797,6 +798,7 @@ TEST(ApplicationResultScopeTest, ATradeRepublicInterestRowIsDepositInterestFrom2
                 .mRowIndex = 5,
                 .mMessage = "Synthetic parser message.",
                 .mRowKind = ParsedRowKind::BrokerInterest,
+                .mCashHolder = CashHolder::Bank,
             },
     };
 
@@ -808,8 +810,8 @@ TEST(ApplicationResultScopeTest, ATradeRepublicInterestRowIsDepositInterestFrom2
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kBank}));
 }
 
-TEST(ApplicationResultScopeTest, ATradeRepublicInterestRowCanAlsoBeOtherInterestIn2023) {
-    // The row has no trusted date; interest before 6 December 2023 belongs to Doh-Obr.
+TEST(ApplicationResultScopeTest, AnInterestRowWithoutAKnownCashHolderAffectsBothInterestForms) {
+    // The parser could not tell who held the cash (for example the date is broken), in any year.
     const SourcedParseDiagnostic diagnostic{
         .mSourceIndex = 0,
         .mBroker = Broker::TradeRepublic,
@@ -821,18 +823,19 @@ TEST(ApplicationResultScopeTest, ATradeRepublicInterestRowCanAlsoBeOtherInterest
                 .mRowIndex = 5,
                 .mMessage = "Synthetic parser message.",
                 .mRowKind = ParsedRowKind::BrokerInterest,
+                .mCashHolder = std::nullopt,
             },
     };
 
     const auto result = ApplicationResultBuilder::build(
-        ApplicationResultInput{.mReportingYear = 2023, .mMergeDiagnostics = {diagnostic}});
+        ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = {diagnostic}});
 
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
 
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kBank, kOther}));
 }
 
-TEST(ApplicationResultScopeTest, AnInteractiveBrokersInterestRowAffectsOtherInterestOnly) {
+TEST(ApplicationResultScopeTest, AnInterestRowOnCashHeldByABrokerAffectsOtherInterestOnly) {
     const SourcedParseDiagnostic diagnostic{
         .mSourceIndex = 0,
         .mBroker = Broker::InteractiveBrokers,
@@ -844,6 +847,7 @@ TEST(ApplicationResultScopeTest, AnInteractiveBrokersInterestRowAffectsOtherInte
                 .mRowIndex = 5,
                 .mMessage = "Synthetic parser message.",
                 .mRowKind = ParsedRowKind::BrokerInterest,
+                .mCashHolder = CashHolder::Broker,
             },
     };
 
@@ -1051,8 +1055,8 @@ TEST(ApplicationResultScopeTest, AConflictingDividendAffectsDividendsOnly) {
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kDividends}));
 }
 
-TEST(ApplicationResultScopeTest, AConflictingTradeRepublicInterestAffectsBothInterestForms) {
-    // The merger does not say whether it is a bond coupon or deposit interest.
+TEST(ApplicationResultScopeTest, AConflictingInterestOfUnknownTypeAffectsBothInterestForms) {
+    // The type is not known, so it may be a coupon or deposit interest.
     const MergeDiagnostic diagnostic{
         .mSeverity = DiagnosticSeverity::Error,
         .mCode = MergeDiagnosticCode::ConflictingDuplicate,
@@ -1065,6 +1069,7 @@ TEST(ApplicationResultScopeTest, AConflictingTradeRepublicInterestAffectsBothInt
             .mInputSequence = {0, 1},
         }},
         .mEventKinds = {StatementEventKind::Interest},
+        .mInterestScopes = {InterestEventScope::Unknown},
     };
 
     const auto result = ApplicationResultBuilder::build(
@@ -1075,7 +1080,7 @@ TEST(ApplicationResultScopeTest, AConflictingTradeRepublicInterestAffectsBothInt
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kBank, kOther}));
 }
 
-TEST(ApplicationResultScopeTest, AConflictingInteractiveBrokersInterestAffectsOtherInterest) {
+TEST(ApplicationResultScopeTest, AConflictingInterestOnCashHeldByABrokerAffectsOtherInterest) {
     const MergeDiagnostic diagnostic{
         .mSeverity = DiagnosticSeverity::Error,
         .mCode = MergeDiagnosticCode::ConflictingDuplicate,
@@ -1088,6 +1093,7 @@ TEST(ApplicationResultScopeTest, AConflictingInteractiveBrokersInterestAffectsOt
             .mInputSequence = {0, 1},
         }},
         .mEventKinds = {StatementEventKind::Interest},
+        .mInterestScopes = {InterestEventScope::BrokerCash},
     };
 
     const auto result = ApplicationResultBuilder::build(
@@ -1098,14 +1104,77 @@ TEST(ApplicationResultScopeTest, AConflictingInteractiveBrokersInterestAffectsOt
     EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kOther}));
 }
 
-TEST(ApplicationResultScopeTest, AConflictingInterestWithoutSourcesAffectsBothInterestForms) {
-    // Without a source the broker is not known, so it is not only Interactive Brokers.
+TEST(ApplicationResultScopeTest, AConflictingInterestOnCashHeldByABankAffectsDepositInterest) {
+    // A Trade Republic interest from 6 December 2023: the bank held the cash, so only Doh-DHO.
+    const MergeDiagnostic diagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = MergeDiagnosticCode::ConflictingDuplicate,
+        .mMessage = "Synthetic merge message.",
+        .mSources = {SourceReference{
+            .mBroker = Broker::TradeRepublic,
+            .mFilename = SourceFilename::fromPath("a.csv"),
+            .mSourceRow = 3,
+            .mTransactionId = std::nullopt,
+            .mInputSequence = {0, 1},
+        }},
+        .mEventKinds = {StatementEventKind::Interest},
+        .mInterestScopes = {InterestEventScope::BankCash},
+    };
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = {diagnostic}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kBank}));
+}
+
+TEST(ApplicationResultScopeTest, AConflictingCouponAffectsOtherInterest) {
+    // A bond coupon is Doh-Obr income.
     const MergeDiagnostic diagnostic{
         .mSeverity = DiagnosticSeverity::Error,
         .mCode = MergeDiagnosticCode::ConflictingDuplicate,
         .mMessage = "Synthetic merge message.",
         .mSources = {},
         .mEventKinds = {StatementEventKind::Interest},
+        .mInterestScopes = {InterestEventScope::Coupon},
+    };
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = {diagnostic}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kOther}));
+}
+
+TEST(ApplicationResultScopeTest, AConflictingInterestOfABankAndABrokerAffectsBothInterestForms) {
+    const MergeDiagnostic diagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = MergeDiagnosticCode::ConflictingDuplicate,
+        .mMessage = "Synthetic merge message.",
+        .mSources = {},
+        .mEventKinds = {StatementEventKind::Interest},
+        .mInterestScopes = {InterestEventScope::BrokerCash, InterestEventScope::BankCash},
+    };
+
+    const auto result = ApplicationResultBuilder::build(
+        ApplicationResultInput{.mReportingYear = 2024, .mMergeDiagnostics = {diagnostic}});
+
+    ASSERT_EQ(result.mDiagnostics.size(), 1U);
+
+    EXPECT_EQ(result.mDiagnostics[0].mAffectedReports, (std::vector{kBank, kOther}));
+}
+
+TEST(ApplicationResultScopeTest, AConflictingInterestWithoutAScopeListAffectsBothInterestForms) {
+    // No scope is listed, so nothing says which interest form the events belong to.
+    const MergeDiagnostic diagnostic{
+        .mSeverity = DiagnosticSeverity::Error,
+        .mCode = MergeDiagnosticCode::ConflictingDuplicate,
+        .mMessage = "Synthetic merge message.",
+        .mSources = {},
+        .mEventKinds = {StatementEventKind::Interest},
+        .mInterestScopes = {},
     };
 
     const auto result = ApplicationResultBuilder::build(

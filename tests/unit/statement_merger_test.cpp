@@ -736,6 +736,322 @@ TEST(DeterministicStatementMergerTest, KeepsCashInterestOfTwoBrokersApart) {
     EXPECT_EQ(instruments[1].mTransactions.size(), 1U);
 }
 
+StatementMergeInput makeCashInterestInput(const std::size_t aSourceIndex,
+                                          const Money aAmount,
+                                          const CashHolder aHolder,
+                                          std::optional<std::string> aPayerList) {
+    StatementMergeInput input{.mSourceIndex = aSourceIndex};
+
+    input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+        .mName = "",
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions = {InterestTransaction{
+            .mMetadata = makeMetadata(aSourceIndex,
+                                      0,
+                                      makeDate(2024, 1, 4),
+                                      Broker::TradeRepublic,
+                                      "interest.csv",
+                                      std::nullopt,
+                                      "interest-id"),
+            .mGrossAmount = aAmount,
+            .mTaxPaid = 0,
+            .mCurrency = Currency::EUR,
+            .mTaxCurrency = Currency::EUR,
+            .mCashHolder = aHolder,
+            .mPayerList = std::move(aPayerList),
+        }},
+    });
+
+    return input;
+}
+
+TEST(DeterministicStatementMergerTest, AConflictingCashInterestListsItsCashScope) {
+    // The same ID with EUR 0.60 in one file and EUR 0.70 in the other; a bank held the cash.
+    std::vector inputs{makeCashInterestInput(0, 6000, CashHolder::Bank, "TR"),
+                       makeCashInterestInput(1, 7000, CashHolder::Bank, "TR")};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(conflict->mInterestScopes, (std::vector{InterestEventScope::BankCash}));
+}
+
+TEST(DeterministicStatementMergerTest, AConflictingCouponListsTheCouponScope) {
+    const auto makeCoupon = [](std::size_t aSourceIndex, Money aAmount) {
+        StatementMergeInput input{.mSourceIndex = aSourceIndex};
+
+        input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+            .mName = "Synthetic Bond",
+            .mIsin = "XX0000000001",
+            .mInterestType = InterestType::BondInterest,
+            .mTransactions = {InterestTransaction{
+                .mMetadata = makeMetadata(aSourceIndex,
+                                          0,
+                                          makeDate(2024, 1, 4),
+                                          Broker::TradeRepublic,
+                                          "coupon.csv",
+                                          std::nullopt,
+                                          "coupon-id"),
+                .mGrossAmount = aAmount,
+                .mTaxPaid = 0,
+                .mCurrency = Currency::EUR,
+                .mTaxCurrency = Currency::EUR,
+                .mCashHolder = std::nullopt,
+                .mPayerList = std::nullopt,
+            }},
+        });
+
+        return input;
+    };
+    std::vector inputs{makeCoupon(0, 6000), makeCoupon(1, 7000)};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mInterestScopes, (std::vector{InterestEventScope::Coupon}));
+}
+
+TEST(DeterministicStatementMergerTest, AConflictingInterestOfUnknownTypeListsTheUnknownScope) {
+    // Two files carry the same row of an unknown interest type with an ISIN (EUR 0.60 and 0.70).
+    // The type is not known, so an answer can still make it deposit interest.
+    const auto makeUnknown = [](std::size_t aSourceIndex, Money aAmount) {
+        StatementMergeInput input{.mSourceIndex = aSourceIndex};
+
+        input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+            .mName = "Synthetic Instrument",
+            .mIsin = "XX0000000001",
+            .mInterestType = InterestType::UnknownInterest,
+            .mTransactions = {InterestTransaction{
+                .mMetadata = makeMetadata(aSourceIndex,
+                                          0,
+                                          makeDate(2024, 1, 4),
+                                          Broker::TradeRepublic,
+                                          "unknown.csv",
+                                          std::nullopt,
+                                          "unknown-id"),
+                .mGrossAmount = aAmount,
+                .mTaxPaid = 0,
+                .mCurrency = Currency::EUR,
+                .mTaxCurrency = Currency::EUR,
+                .mCashHolder = std::nullopt,
+                .mPayerList = "TR",
+            }},
+        });
+
+        return input;
+    };
+    std::vector inputs{makeUnknown(0, 6000), makeUnknown(1, 7000)};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mInterestScopes, (std::vector{InterestEventScope::Unknown}));
+}
+
+TEST(DeterministicStatementMergerTest, ACashInterestWithADifferentPayerListIsAConflict) {
+    // Same ID, amount and holder; only the payer list text differs.
+    std::vector inputs{makeCashInterestInput(0, 6000, CashHolder::Bank, "TR"),
+                       makeCashInterestInput(1, 6000, CashHolder::Bank, "XX")};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    EXPECT_NE(findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
+    EXPECT_TRUE(result.mStatement.mPresentation.mInterestInstruments.empty());
+}
+
+TEST(DeterministicStatementMergerTest, ACashInterestWithTheSamePayerListIsOneEvent) {
+    std::vector inputs{makeCashInterestInput(0, 6000, CashHolder::Bank, "TR"),
+                       makeCashInterestInput(1, 6000, CashHolder::Bank, "TR")};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    ASSERT_EQ(result.mStatement.mPresentation.mInterestInstruments.size(), 1U);
+
+    const auto& transactions =
+        result.mStatement.mPresentation.mInterestInstruments.front().mTransactions;
+
+    ASSERT_EQ(transactions.size(), 1U);
+    EXPECT_EQ(transactions.front().mPayerList, std::optional<std::string>{"TR"});
+    EXPECT_EQ(findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate), nullptr);
+}
+
+TEST(DeterministicStatementMergerTest, ADividendWithADifferentPayerListIsAConflict) {
+    // Same ID, date and amounts (EUR 12.00 = 120'000 at 4 decimals); only the payer list differs.
+    const auto makeDividend = [](std::size_t aSourceIndex, std::string aPayerList) {
+        StatementMergeInput input{.mSourceIndex = aSourceIndex};
+
+        input.mParseResult.mStatement.mDividendInstruments.push_back(DividendInstrument{
+            .mName = "Synthetic Instrument",
+            .mIsin = "XX0000000001",
+            .mTransactions = {DividendTransaction{
+                .mMetadata = makeMetadata(aSourceIndex,
+                                          0,
+                                          makeDate(2024, 1, 4),
+                                          Broker::TradeRepublic,
+                                          "dividend.csv",
+                                          std::nullopt,
+                                          "synthetic-div-1"),
+                .mGrossAmount = 120'000,
+                .mTaxPaid = 0,
+                .mCurrency = Currency::EUR,
+                .mTaxCurrency = Currency::EUR,
+                .mPayerList = std::move(aPayerList),
+            }},
+        });
+
+        return input;
+    };
+    std::vector inputs{makeDividend(0, "TR"), makeDividend(1, "XX")};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::ConflictingDuplicate);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mEventKinds, (std::vector{StatementEventKind::Dividend}));
+    EXPECT_TRUE(conflict->mInterestScopes.empty());
+    EXPECT_TRUE(result.mStatement.mPresentation.mDividendInstruments.empty());
+}
+
+TEST(DeterministicStatementMergerTest, ARepeatedCashInterestInOneFileListsItsCashScope) {
+    // Rows 2 and 3 of one file carry the same ID and the same facts, a bank holds the cash.
+    StatementMergeInput input{.mSourceIndex = 0};
+
+    input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+        .mName = "",
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                InterestTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              0,
+                                              makeDate(2024, 1, 4),
+                                              Broker::TradeRepublic,
+                                              "interest.csv",
+                                              std::nullopt,
+                                              "interest-id"),
+                    .mGrossAmount = 6000,
+                    .mTaxPaid = 0,
+                    .mCurrency = Currency::EUR,
+                    .mTaxCurrency = Currency::EUR,
+                    .mCashHolder = CashHolder::Bank,
+                    .mPayerList = "TR",
+                },
+                InterestTransaction{
+                    .mMetadata = makeMetadata(0,
+                                              1,
+                                              makeDate(2024, 1, 4),
+                                              Broker::TradeRepublic,
+                                              "interest.csv",
+                                              std::nullopt,
+                                              "interest-id"),
+                    .mGrossAmount = 6000,
+                    .mTaxPaid = 0,
+                    .mCurrency = Currency::EUR,
+                    .mTaxCurrency = Currency::EUR,
+                    .mCashHolder = CashHolder::Bank,
+                    .mPayerList = "TR",
+                },
+            },
+    });
+
+    const auto result =
+        DeterministicStatementMerger{}.merge(std::vector<StatementMergeInput>{input});
+
+    const auto* warning =
+        findMergeDiagnostic(result, MergeDiagnosticCode::DuplicateTransactionInFile);
+
+    ASSERT_NE(warning, nullptr);
+    EXPECT_EQ(warning->mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(warning->mInterestScopes, (std::vector{InterestEventScope::BankCash}));
+}
+
+TEST(DeterministicStatementMergerTest, ACouponNameConflictListsTheCouponScope) {
+    const auto makeCoupon = [](std::size_t aSourceIndex, std::string aName, std::string_view aId) {
+        StatementMergeInput input{.mSourceIndex = aSourceIndex};
+
+        input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+            .mName = std::move(aName),
+            .mIsin = "XX0000000001",
+            .mInterestType = InterestType::BondInterest,
+            .mTransactions = {InterestTransaction{
+                .mMetadata = makeMetadata(aSourceIndex,
+                                          0,
+                                          makeDate(2024, 1, 4),
+                                          Broker::TradeRepublic,
+                                          "coupon.csv",
+                                          std::nullopt,
+                                          aId),
+                .mGrossAmount = 6000,
+                .mTaxPaid = 0,
+                .mCurrency = Currency::EUR,
+                .mTaxCurrency = Currency::EUR,
+                .mCashHolder = std::nullopt,
+                .mPayerList = std::nullopt,
+            }},
+        });
+
+        return input;
+    };
+    std::vector inputs{makeCoupon(0, "Synthetic Bond", "coupon-1"),
+                       makeCoupon(1, "Synthetic Bond PLC", "coupon-2")};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::InstrumentNameConflict);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(conflict->mInterestScopes, (std::vector{InterestEventScope::Coupon}));
+}
+
+TEST(DeterministicStatementMergerTest, AnUnknownInterestNameConflictListsTheUnknownScope) {
+    // The same ISIN under two names in two files, with an interest type that is not known.
+    const auto makeUnknown = [](std::size_t aSourceIndex, std::string aName, std::string_view aId) {
+        StatementMergeInput input{.mSourceIndex = aSourceIndex};
+
+        input.mParseResult.mStatement.mInterestInstruments.push_back(InterestInstrument{
+            .mName = std::move(aName),
+            .mIsin = "XX0000000001",
+            .mInterestType = InterestType::UnknownInterest,
+            .mTransactions = {InterestTransaction{
+                .mMetadata = makeMetadata(aSourceIndex,
+                                          0,
+                                          makeDate(2024, 1, 4),
+                                          Broker::TradeRepublic,
+                                          "unknown.csv",
+                                          std::nullopt,
+                                          aId),
+                .mGrossAmount = 6000,
+                .mTaxPaid = 0,
+                .mCurrency = Currency::EUR,
+                .mTaxCurrency = Currency::EUR,
+                .mCashHolder = std::nullopt,
+                .mPayerList = "TR",
+            }},
+        });
+
+        return input;
+    };
+    std::vector inputs{makeUnknown(0, "Synthetic Instrument", "unknown-1"),
+                       makeUnknown(1, "Synthetic Instrument PLC", "unknown-2")};
+
+    const auto result = DeterministicStatementMerger{}.merge(std::move(inputs));
+
+    const auto* conflict = findMergeDiagnostic(result, MergeDiagnosticCode::InstrumentNameConflict);
+
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_EQ(conflict->mEventKinds, (std::vector{StatementEventKind::Interest}));
+    EXPECT_EQ(conflict->mInterestScopes, (std::vector{InterestEventScope::Unknown}));
+}
+
 TEST(DeterministicStatementMergerTest, MergesTheSameBondMaturityOfTwoFilesIntoOneEvent) {
     std::vector<StatementMergeInput> inputs{StatementMergeInput{.mSourceIndex = 0},
                                             StatementMergeInput{.mSourceIndex = 1}};

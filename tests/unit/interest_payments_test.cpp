@@ -186,21 +186,24 @@ TEST(InterestPaymentsTest, DepositInterestBelowTheAllowanceAsksAndMakesTheRowWit
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-03-31"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 3'000'000, // EUR 300.00
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-04-30"),
                                .mSources = {source(Broker::TradeRepublic, 4, "synthetic-int-3")}},
                  .mGrossAmount = 3'000'000, // EUR 300.00
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -253,14 +256,16 @@ TEST(InterestPaymentsTest, AnswerYesMakesTheDepositRowFromTheImportedInterestWit
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-03-31"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 4'500'000, // EUR 450.00
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -313,7 +318,8 @@ TEST(InterestPaymentsTest, AnswerNoGivesNoRowsAndTheBelowThresholdReason) {
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -350,14 +356,16 @@ TEST(InterestPaymentsTest, ExactlyTheAllowanceStillAsksTheQuestionAndMakesTheRow
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-03-31"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 5'000'000, // EUR 500.00
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -389,14 +397,16 @@ TEST(InterestPaymentsTest, OneUnitOfTheFourthDecimalAboveTheAllowanceMakesTheRow
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-03-31"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 5'000'001, // EUR 500.0001
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -431,7 +441,8 @@ TEST(InterestPaymentsTest, AnAnswerForOneTotalDoesNotAnswerAnotherTotal) {
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -475,7 +486,8 @@ TEST(InterestPaymentsTest, TheSessionTakesOnlyYesOrNoForTheDepositQuestion) {
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -508,14 +520,16 @@ TEST(InterestPaymentsTest, TheCashHolderOfEachPaymentDecidesBetweenDohObrAndDohD
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Broker},
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2023-12-06"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 200'000, // EUR 20.00, the bank holds the cash
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -578,7 +592,8 @@ TEST(InterestPaymentsTest, OnlyPaymentsOfTheReportingYearCount) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                         {.mMetadata =
                              {.mTaxDate = day("2025-01-01"),
                               .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
@@ -586,7 +601,8 @@ TEST(InterestPaymentsTest, OnlyPaymentsOfTheReportingYearCount) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                         {.mMetadata =
                              {.mTaxDate = day("2025-12-31"),
                               .mSources = {source(Broker::TradeRepublic, 4, "synthetic-int-3")}},
@@ -594,7 +610,8 @@ TEST(InterestPaymentsTest, OnlyPaymentsOfTheReportingYearCount) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                         {.mMetadata =
                              {.mTaxDate = day("2026-01-01"),
                               .mSources = {source(Broker::TradeRepublic, 5, "synthetic-int-4")}},
@@ -602,7 +619,8 @@ TEST(InterestPaymentsTest, OnlyPaymentsOfTheReportingYearCount) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                     },
             }};
 
@@ -679,7 +697,8 @@ TEST(InterestPaymentsTest, DepositInterestAboveTheAllowanceAndOtherInterestAreSe
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Bank},
+                     .mCashHolder = CashHolder::Bank,
+                     .mPayerList = "TR"},
                 },
         },
         {
@@ -695,7 +714,8 @@ TEST(InterestPaymentsTest, DepositInterestAboveTheAllowanceAndOtherInterestAreSe
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Broker},
+                     .mCashHolder = CashHolder::Broker,
+                     .mPayerList = "IBKR"},
                 },
         },
     };
@@ -751,7 +771,8 @@ TEST(InterestPaymentsTest, CashInterestOfAnotherBrokerDoesNotCountForTheAllowanc
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Bank},
+                     .mCashHolder = CashHolder::Bank,
+                     .mPayerList = "TR"},
                 },
         },
         {
@@ -767,7 +788,8 @@ TEST(InterestPaymentsTest, CashInterestOfAnotherBrokerDoesNotCountForTheAllowanc
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Broker},
+                     .mCashHolder = CashHolder::Broker,
+                     .mPayerList = "IBKR"},
                 },
         },
     };
@@ -803,14 +825,16 @@ TEST(InterestPaymentsTest, DepositTaxIsSummedAndABlankTaxCountsZeroWithoutADiagn
                  .mTaxPaid = 2'500,         // EUR 0.25
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-03-31"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 6'000'000, // EUR 600.00
                  .mTaxPaid = std::nullopt,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -878,7 +902,8 @@ TEST(InterestPaymentsTest, ADepositPaymentWithoutARateGivesNoTotalNoQuestionAndA
                  .mTaxPaid = 0,
                  .mCurrency = Currency::USD,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -915,7 +940,8 @@ TEST(InterestPaymentsTest, ADepositTotalThatConvertsToZeroAsksNothing) {
                  .mTaxPaid = 0,
                  .mCurrency = Currency::JPY,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -949,7 +975,8 @@ TEST(InterestPaymentsTest, APaymentOfZeroOrLessIsNeverARowOrPartOfTheTotal) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                         {.mMetadata =
                              {.mTaxDate = day("2025-03-31"),
                               .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
@@ -957,7 +984,8 @@ TEST(InterestPaymentsTest, APaymentOfZeroOrLessIsNeverARowOrPartOfTheTotal) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                         {.mMetadata =
                              {.mTaxDate = day("2022-03-31"),
                               .mSources = {source(Broker::TradeRepublic, 4, "synthetic-int-3")}},
@@ -965,7 +993,8 @@ TEST(InterestPaymentsTest, APaymentOfZeroOrLessIsNeverARowOrPartOfTheTotal) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                         {.mMetadata =
                              {.mTaxDate = day("2025-04-30"),
                               .mSources = {source(Broker::TradeRepublic, 5, "synthetic-int-4")}},
@@ -973,7 +1002,8 @@ TEST(InterestPaymentsTest, APaymentOfZeroOrLessIsNeverARowOrPartOfTheTotal) {
                          .mTaxPaid = 0,
                          .mCurrency = Currency::EUR,
                          .mTaxCurrency = Currency::EUR,
-                         .mCashHolder = CashHolder::Bank},
+                         .mCashHolder = CashHolder::Bank,
+                         .mPayerList = "TR"},
                     },
             }};
 
@@ -1017,14 +1047,16 @@ TEST(InterestPaymentsTest, ANegativeCashInterestOfTheBrokerIsNotARowOfDohObr) {
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Broker},
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2023-11-15"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = -4'000, // EUR -0.40, debit interest, not netted with the 1.23
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Broker},
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -1344,7 +1376,8 @@ TEST(InterestPaymentsTest, DepositRowsOfTwoBrokersAreSortedByPayerName) {
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Bank},
+                     .mCashHolder = CashHolder::Bank,
+                     .mPayerList = "IBKR"},
                 },
         },
         {
@@ -1360,7 +1393,8 @@ TEST(InterestPaymentsTest, DepositRowsOfTwoBrokersAreSortedByPayerName) {
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Bank},
+                     .mCashHolder = CashHolder::Bank,
+                     .mPayerList = "TR"},
                 },
         },
     };
@@ -1397,14 +1431,16 @@ TEST(InterestPaymentsTest, ADepositTotalThatOverflowsGivesNoTotalNoQuestionAndAn
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-03-31"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 5'000'000'000'000'000'000, // 5 * 10^18; the sum is above int64
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -1487,7 +1523,8 @@ TEST(InterestPaymentsTest, DohObrRowsFollowTheLedgerOrderOfTwoInstruments) {
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Broker},
+                     .mCashHolder = CashHolder::Broker,
+                     .mPayerList = "IBKR"},
                     {.mMetadata =
                          {.mTaxDate = day("2025-02-01"),
                           .mSources = {source(Broker::InteractiveBrokers, 4, "synthetic-ib-2")}},
@@ -1495,7 +1532,8 @@ TEST(InterestPaymentsTest, DohObrRowsFollowTheLedgerOrderOfTwoInstruments) {
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Broker},
+                     .mCashHolder = CashHolder::Broker,
+                     .mPayerList = "IBKR"},
                 },
         },
     };
@@ -1620,7 +1658,8 @@ TEST(InterestPaymentsTest, ACashInterestWhoseBrokerNumberIsTooLongIsAnErrorOfTha
                .mTaxPaid = 0,
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
         {.mName = "",
          .mIsin = std::nullopt,
          .mInterestType = InterestType::BrokerInterest,
@@ -1632,7 +1671,8 @@ TEST(InterestPaymentsTest, ACashInterestWhoseBrokerNumberIsTooLongIsAnErrorOfTha
                             .mTaxPaid = 0,
                             .mCurrency = Currency::EUR,
                             .mTaxCurrency = Currency::EUR,
-                            .mCashHolder = CashHolder::Broker}}},
+                            .mCashHolder = CashHolder::Broker,
+                            .mPayerList = "IBKR"}}},
     };
 
     orderChronologically(statement);
@@ -1672,7 +1712,8 @@ TEST(InterestPaymentsTest, ACashInterestAboveTheLargestValueOfTheFormIsAnErrorOf
                .mTaxPaid = 0,
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -1705,7 +1746,8 @@ TEST(InterestPaymentsTest, TheLargestValueThatFitsTheFormIsARow) {
                .mTaxPaid = 0,
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -1745,7 +1787,8 @@ TEST(InterestPaymentsTest, AValidRowOfEachSubtypeGivesNoRowError) {
                .mTaxPaid = 0,
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -1980,7 +2023,8 @@ TEST(InterestPaymentsTest, ACashInterestOfASlovenianBrokerWithoutAValidNumberWar
                .mTaxPaid = 0,
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -2123,7 +2167,8 @@ TEST(InterestPaymentsTest, ACouponWithoutTaxAndCashInterestAskForNoEvidence) {
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Broker},
+                     .mCashHolder = CashHolder::Broker,
+                     .mPayerList = "TR"},
                 },
         },
     };
@@ -2455,7 +2500,8 @@ TEST(InterestPaymentsTest, ACouponTextClaimsTheCouponAndTheCashInterestWithoutAT
                .mTaxPaid = 10'000,      // EUR 1.00
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -2506,7 +2552,8 @@ TEST(InterestPaymentsTest,
                .mTaxPaid = 10'000,      // EUR 1.00
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -2555,7 +2602,8 @@ TEST(InterestPaymentsTest, EachKindOfInterestGetsTheTextOfItsOwnKindWithoutAQues
                .mTaxPaid = 10'000,      // EUR 1.00
                .mCurrency = Currency::EUR,
                .mTaxCurrency = Currency::EUR,
-               .mCashHolder = CashHolder::Broker}}},
+               .mCashHolder = CashHolder::Broker,
+               .mPayerList = "TR"}}},
     };
 
     orderChronologically(statement);
@@ -2676,14 +2724,16 @@ TEST(InterestPaymentsTest, ABrokerCompanyWithoutANumberWarnsOnceForItsCashIntere
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Broker},
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "TR"},
                 {.mMetadata = {.mTaxDate = day("2025-04-15"),
                                .mSources = {source(Broker::TradeRepublic, 3, "synthetic-int-2")}},
                  .mGrossAmount = 120'000, // EUR 12.00
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Broker},
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -2725,7 +2775,8 @@ TEST(InterestPaymentsTest, ABrokerCompanyWithoutANumberAlsoWarnsForItsDepositInt
                  .mTaxPaid = 0,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Bank},
+                 .mCashHolder = CashHolder::Bank,
+                 .mPayerList = "TR"},
             },
     }};
 
@@ -2940,6 +2991,7 @@ TEST(InterestPaymentsTest, TheEntityCodeOfTheExportPicksThePayerAmongSeveralBrok
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
                  .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "IBKR",
                  .mPayerCode = "IB-X"},
             },
     }};
@@ -2977,6 +3029,7 @@ TEST(InterestPaymentsTest, TwoEntityCodesOfOneBrokerGiveTwoPayers) {
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
                  .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "IBKR",
                  .mPayerCode = "IB-X"},
                 {.mMetadata =
                      {.mTaxDate = day("2025-05-05"),
@@ -2985,6 +3038,7 @@ TEST(InterestPaymentsTest, TwoEntityCodesOfOneBrokerGiveTwoPayers) {
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
                  .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "IBKR",
                  .mPayerCode = "IB-Y"},
             },
     }};
@@ -3021,6 +3075,7 @@ TEST(InterestPaymentsTest,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
                  .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "IBKR",
                  .mPayerCode = "IB-X"},
                 {.mMetadata =
                      {.mTaxDate = day("2025-05-05"),
@@ -3029,6 +3084,7 @@ TEST(InterestPaymentsTest,
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
                  .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "IBKR",
                  .mPayerCode = "IB-Z"},
             },
     }};
@@ -3071,7 +3127,8 @@ TEST(InterestPaymentsTest, CashInterestWithoutAnEntityCodeStillNeedsTheOnlyBroke
                  .mGrossAmount = 32'100, // EUR 3.21
                  .mCurrency = Currency::EUR,
                  .mTaxCurrency = Currency::EUR,
-                 .mCashHolder = CashHolder::Broker},
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "IBKR"},
             },
     }};
 
@@ -3085,6 +3142,70 @@ TEST(InterestPaymentsTest, CashInterestWithoutAnEntityCodeStillNeedsTheOnlyBroke
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::InterestPayerNotFound);
     EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey, MessageKey::InterestPayerNotFound);
     EXPECT_TRUE(run.mLast.mDiagnostics.at(0).mMessageParams.empty());
+}
+
+TEST(InterestPaymentsTest, ACashInterestWithAPayerListNoRowNamesLeavesThePayerEmpty) {
+    // The list text "XX" names no row of the file, so no payer is found, whatever the broker is.
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "",
+        .mIsin = std::nullopt,
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-04-03"),
+                               .mSources = {source(Broker::TradeRepublic, 2, "synthetic-int-1")}},
+                 .mGrossAmount = 32'100, // EUR 3.21
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "XX"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer, IncomePayer{});
+    ASSERT_EQ(run.mLast.mDiagnostics.size(), 1U);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mCode, ProcessingDiagnosticCode::InterestPayerNotFound);
+    EXPECT_EQ(run.mLast.mDiagnostics.at(0).mMessageKey, MessageKey::InterestPayerNotFound);
+}
+
+TEST(InterestPaymentsTest, ACashInterestTakesItsPayerFromTheListTheParserNamesNotFromTheBroker) {
+    // The source is Interactive Brokers, but the list text is "TR", which has the one row TR-X.
+    const auto catalogue = catalogueOf("");
+    OfficialRateTable rates;
+    MergedStatement statement;
+    statement.mPresentation.mInterestInstruments = {{
+        .mName = "",
+        .mIsin = std::nullopt,
+        .mInterestType = InterestType::BrokerInterest,
+        .mTransactions =
+            {
+                {.mMetadata =
+                     {.mTaxDate = day("2025-04-03"),
+                      .mSources = {source(Broker::InteractiveBrokers, 2, "synthetic-ib-1")}},
+                 .mGrossAmount = 32'100, // EUR 3.21
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mCashHolder = CashHolder::Broker,
+                 .mPayerList = "TR"},
+            },
+    }};
+
+    orderChronologically(statement);
+
+    InterestRun run{statement, catalogue, rates};
+
+    ASSERT_EQ(run.mLast.mOtherReport.mRows.size(), 1U);
+    EXPECT_EQ(run.mLast.mOtherReport.mRows.at(0).mPayer.mName,
+              std::optional<std::string>{"Broker T"});
+    EXPECT_TRUE(run.mLast.mDiagnostics.empty());
 }
 
 // --- Payer country of a coupon (export, reference row, ISIN prefix) ---

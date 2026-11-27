@@ -1096,7 +1096,8 @@ TEST(IncomeClassifierTest, AnswerDepositCountsForTheAllowanceAndTheBrokerIsThePa
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mCashHolder = CashHolder::Bank},
+                     .mCashHolder = CashHolder::Bank,
+                     .mPayerList = "TR"},
                 },
         },
         {
@@ -1111,7 +1112,8 @@ TEST(IncomeClassifierTest, AnswerDepositCountsForTheAllowanceAndTheBrokerIsThePa
                      .mTaxPaid = 0,
                      .mCurrency = Currency::EUR,
                      .mTaxCurrency = Currency::EUR,
-                     .mInstrumentEvidence = {evidence(2, AssetClass::Stock, "STOCK")}},
+                     .mInstrumentEvidence = {evidence(2, AssetClass::Stock, "STOCK")},
+                     .mPayerList = "TR"},
                 },
         },
     };
@@ -1135,6 +1137,41 @@ TEST(IncomeClassifierTest, AnswerDepositCountsForTheAllowanceAndTheBrokerIsThePa
 
     EXPECT_EQ(row.mInterest, 11'000'000);
     EXPECT_EQ(row.mPayer.mName, std::optional<std::string>{"Broker T"});
+}
+
+TEST(IncomeClassifierTest, ADividendAnsweredAsDepositInterestKeepsItsPayerList) {
+    // A dividend row of a class that is not shares ("OTHER"), read from a Trade Republic file.
+    MergedStatement statement;
+    statement.mPresentation.mDividendInstruments = {{
+        .mName = "Synthetic Payer",
+        .mIsin = "XX0000000001",
+        .mTransactions =
+            {
+                {.mMetadata = {.mTaxDate = day("2025-03-10"),
+                               .mSources = {source(2, "synthetic-div-1")}},
+                 .mGrossAmount = 12'000'000, // EUR 1,200.00
+                 .mTaxPaid = 0,
+                 .mCurrency = Currency::EUR,
+                 .mTaxCurrency = Currency::EUR,
+                 .mInstrumentEvidence = {evidence(2, AssetClass::Unknown, "OTHER")},
+                 .mPayerList = "TR"},
+            },
+    }};
+
+    IncomeRun run{std::move(statement), {}, 2025};
+
+    ASSERT_TRUE(
+        run.answerAt(0, IncomeTreatmentAnswer{IncomeTreatment::BankDepositInterest}).empty());
+
+    const auto catalogue = catalogueOf("");
+    const auto payments = interestStageOf(run, catalogue);
+
+    // EUR 1,200.00 is above the EUR 1,000.00 allowance, so the row is made without a question.
+    // The payer is the one `TR` row of the payer list the dividend row names.
+    ASSERT_EQ(payments.mDepositReport.mRows.size(), 1U);
+    EXPECT_EQ(payments.mDepositReport.mRows.at(0).mInterest, 12'000'000);
+    EXPECT_EQ(payments.mDepositReport.mRows.at(0).mPayer.mName,
+              std::optional<std::string>{"Broker T"});
 }
 
 TEST(IncomeClassifierTest, AnswerBondCouponOfASlovenianIssuerIsADohObrRow) {
