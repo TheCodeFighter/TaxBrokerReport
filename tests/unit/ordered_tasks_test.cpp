@@ -1,5 +1,6 @@
 #include "service/ordered_tasks.hpp"
 #include "service/parse_failure.hpp"
+#include "taxbroker/application_run.hpp"
 #include "taxbroker/diagnostic_messages.hpp"
 
 #include <gtest/gtest.h>
@@ -25,8 +26,13 @@ TEST(OrderedTasksTest, WorkerCountIsBoundedByFilesLimitAndHardware) {
     EXPECT_EQ(parseWorkerCount(8, 4, 2), 2U);  // Two hardware threads.
     EXPECT_EQ(parseWorkerCount(8, 4, 0), 1U);  // Hardware threads unknown.
     EXPECT_EQ(parseWorkerCount(8, 1, 8), 1U);  // Limit 1 is the sequential mode.
-    EXPECT_EQ(parseWorkerCount(8, 0, 8), 4U);  // Limit 0 is the default limit, 4.
+    EXPECT_EQ(parseWorkerCount(8, 0, 8), 1U);  // Limit 0 counts as 1, the sequential mode.
     EXPECT_EQ(parseWorkerCount(8, 16, 8), 8U); // A high limit stops at the file count.
+}
+
+TEST(OrderedTasksTest, RunOptionsDefaultToFourParseWorkers) {
+    EXPECT_EQ(ApplicationRunOptions{}.mParseWorkerLimit, 4U);
+    EXPECT_EQ(kDefaultParseWorkerLimit, 4U);
 }
 
 TEST(OrderedTasksTest, ResultsAreInTaskOrder) {

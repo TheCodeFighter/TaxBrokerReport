@@ -12,9 +12,8 @@ std::size_t parseWorkerCount(const std::size_t aTaskCount,
         return 0;
     }
 
-    const std::size_t limit = aLimit == 0 ? kDefaultParseWorkerLimit : aLimit;
-
-    return std::min({aTaskCount, limit, std::max<std::size_t>(1, aHardwareThreads)});
+    return std::min(
+        {aTaskCount, std::max<std::size_t>(1, aLimit), std::max<std::size_t>(1, aHardwareThreads)});
 }
 
 } // namespace taxbroker

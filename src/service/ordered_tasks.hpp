@@ -10,11 +10,8 @@
 
 namespace taxbroker {
 
-/// The default most workers that parse files at the same time.
-inline constexpr std::size_t kDefaultParseWorkerLimit = 4;
-
-/// How many workers run `aTaskCount` tasks: the smallest of the task count, the limit (0 = the
-/// default limit) and the hardware threads (0 = unknown, then 1). 0 for no task.
+/// How many workers run `aTaskCount` tasks: the smallest of the task count, the limit (0 counts as
+/// 1) and the hardware threads (0 = unknown, then 1). 0 for no task.
 [[nodiscard]] std::size_t
 parseWorkerCount(std::size_t aTaskCount, std::size_t aLimit, std::size_t aHardwareThreads);
 

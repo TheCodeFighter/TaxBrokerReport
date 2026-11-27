@@ -23,11 +23,14 @@ struct RateFileFault {
 /// valid. No result exists for it.
 using ApplicationInputFault = std::variant<RateFileFault, ReferenceFileFault>;
 
+/// The default most files parsed at the same time.
+inline constexpr std::size_t kDefaultParseWorkerLimit = 4;
+
 /// What a run is started with besides the request.
 struct ApplicationRunOptions {
-    /// The most files parsed at the same time; 0 is the default limit (4), 1 parses one file at a
-    /// time on the calling thread.
-    std::size_t mParseWorkerLimit{};
+    /// The most files parsed at the same time; 1 (and 0) parse one file at a time on the calling
+    /// thread.
+    std::size_t mParseWorkerLimit{kDefaultParseWorkerLimit};
 };
 
 /**
