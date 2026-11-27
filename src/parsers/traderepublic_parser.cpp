@@ -195,12 +195,12 @@ struct ColumnPositions {
 };
 
 /// The positions of the columns in the header. Every one of them is a required column, so the
-/// header has it. A repeated name gives its last column, as a read by name does.
+/// header has it exactly once (a repeated required column is rejected before this is called).
 ColumnPositions columnPositionsOf(const std::vector<std::string>& aHeader) {
     const auto positionOf = [&aHeader](std::string_view aColumn) {
-        const auto found = std::find(aHeader.rbegin(), aHeader.rend(), aColumn);
+        const auto found = std::find(aHeader.begin(), aHeader.end(), aColumn);
 
-        return static_cast<std::size_t>(std::distance(found, aHeader.rend()) - 1);
+        return static_cast<std::size_t>(std::distance(aHeader.begin(), found));
     };
 
     return ColumnPositions{
@@ -230,6 +230,25 @@ std::vector<std::string_view> missingRequiredColumns(const std::vector<std::stri
                  });
 
     return missing;
+}
+
+/// The first required column (in REQUIRED_COLUMNS order) that the header has more than once, so
+/// it is not clear which one to read. A repeated column the parser does not read is allowed.
+std::optional<std::string_view>
+firstRepeatedRequiredColumn(const std::vector<std::string>& aHeader) {
+    const auto repeated =
+        std::find_if(REQUIRED_COLUMNS.begin(),
+                     REQUIRED_COLUMNS.end(),
+                     [&aHeader](std::string_view aColumn) {
+                         return std::count(aHeader.begin(), aHeader.end(), aColumn) > 1;
+                     });
+
+    if (repeated == REQUIRED_COLUMNS.end())
+    {
+        return std::nullopt;
+    }
+
+    return *repeated;
 }
 
 /// True when the whole header is one column that contains a semicolon or a tab, as a
@@ -633,6 +652,20 @@ ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
                                DiagnosticCode::InvalidHeader,
                                sourceFile,
                                invalidHeaderMessage(headerNames, missingColumns)));
+
+            return parsedResult;
+        }
+
+        if (const std::optional<std::string_view> repeatedColumn =
+                firstRepeatedRequiredColumn(headerNames))
+        {
+            LOG_ERROR("Trade Republic CSV source {} has a repeated header column", aSourceIndex);
+            parsedResult.mDiagnostics.emplace_back(fileDiagnostic(
+                DiagnosticSeverity::Error,
+                DiagnosticCode::InvalidHeader,
+                sourceFile,
+                makeDiagnosticMessage(MessageKey::InvalidHeaderDuplicateColumn,
+                                      {textParam("column", std::string{*repeatedColumn})})));
 
             return parsedResult;
         }

@@ -199,6 +199,7 @@ enum class MessageKey {
     CorporateActionAmbiguousStockMergerRequired,
     UnsupportedCorporateActionStockMergerDeferralWithCash,
     AnswerRejectedMarketValueNotPositive,
+    InvalidHeaderDuplicateColumn,
 };
 
 enum class MessageParamKind {

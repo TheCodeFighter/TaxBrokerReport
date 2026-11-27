@@ -221,6 +221,8 @@ smaller 2024 case with a purchase after the gap is `tests/test_data/cli/develope
 
 - Units held more than 15 years (tax free): Trade Republic data cannot be that old. The unit tests
   cover the boundaries (`tests/unit`, the long-held cases).
+- A Trade Republic header that repeats a column the parser reads (for example `price` twice):
+  it blocks the whole file, so only the parser unit tests cover it.
 - Rejected Interactive Brokers rows (a bad quantity, a missing ISIN, and so on): they block the
   capital form of every year, so they are in `tests/test_data/ibkr/rejected_rows.xml` and the
   parser tests. A file under the wrong broker (an XML file under Trade Republic, a CSV file under

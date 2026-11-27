@@ -79,7 +79,10 @@ The header is checked before any row is read. The Trade Republic parser needs th
 `description` and `transaction_id`. The other export columns are not used and may be missing, and
 extra columns are allowed. A header that misses a required column, for example because the file
 was saved with semicolons, is rejected with one file-level `invalid_header` error and no rows are
-read. A file of 0 bytes stays a `parse_error`.
+read. A header that has one of these 18 columns more than once is rejected the same way
+(`invalid_header.duplicate_column`, naming the first such column), because it is not clear which
+one to read; a repeated column that the parser does not read is allowed. A missing column is
+reported before a repeated one. A file of 0 bytes stays a `parse_error`.
 
 **Input from memory.** The parser core takes the CSV text, a display file name and the source index
 (`CsvParser::parse(text, displayFilename, sourceIndex)`), so an upload never has to be written to a

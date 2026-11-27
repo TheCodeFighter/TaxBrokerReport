@@ -964,7 +964,9 @@ amounts. A trade with an empty `amount` or a rejected row gets no such warning.
 
 It also adds `invalid_header`, a file-level error without row or field. The parser reports it when
 the header misses a column the parser reads (the list is in [`architecture.md`](architecture.md)),
-which includes a file saved with semicolons or tabs instead of commas. No rows are read. The
+which includes a file saved with semicolons or tabs instead of commas, or has one of those columns
+more than once (`invalid_header.duplicate_column`, parameter `column`, the first such column in the
+list; a missing column is reported first). No rows are read. The
 message gives only our own column names, never text from the file. A file of 0 bytes is still a
 `parse_error`.
 
