@@ -19,6 +19,7 @@ RUN apk add --no-cache \
     gdb \
     lldb \
     valgrind \
+    valgrind-scripts \
     linux-headers \
     make \
     nodejs \

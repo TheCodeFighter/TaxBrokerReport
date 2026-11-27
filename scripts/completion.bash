@@ -212,9 +212,15 @@ _tbr_report() {
         --trade-republic=csv+ --ibkr=xml+ --ecb-rates=csv+ --reference-files=csv+ --command-help --help
 }
 
+_tbr_profile() {
+    _tbr_complete --reuse-build "--workload=words:synthetic mixed large custom all" --rows=none \
+        --runs=none --callgrind --no-callgrind --trade-republic=csv+ --ibkr=xml+ \
+        --taxpayer=json --year=year --no-input --help
+}
+
 _tbr_scripts=(build coverage cppcheck valgrind fuzz format test debug_tests dump_tr_parse
     dump_tr_merge dump_tr_diagnostics dump_tr_fifo dump_tr_kdvp dump_ibkr_parse dump_ecb_rates
-    dump_exact_arithmetic report run frontend e2e)
+    dump_exact_arithmetic report profile run frontend e2e)
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     # The shared functions above expect bash's zero-based arrays.
