@@ -1297,18 +1297,21 @@ reports stage below; both share the payer, rate and exclusion helpers of
 
 - **Route by who holds the cash.** Each payment has one route. A bond coupon is a Doh-Obr row.
   The parser sets `mCashHolder` on every payment of interest on cash (`CashHolder`, in the common
-  interest model): `Bank` means the cash is a bank deposit, so the interest is deposit interest
-  (Doh-DHO), and `Broker` means other interest (Doh-Obr cash interest). Trade Republic is a bank
-  from 6 December 2023 and a broker before it; Interactive Brokers is always a broker. The stage
-  names no broker and no date, and a cash payment without a holder is a programming error
-  (`std::logic_error`). A payment is never split, so a payment received after the date counts as
-  a whole.
+  interest model), and the same value on the diagnostic of a rejected row of interest on cash
+  (`ParseDiagnostic::mCashHolder`, absent when the parser cannot tell): `Bank` means the cash is a
+  bank deposit, so the interest is deposit interest (Doh-DHO), and `Broker` means other interest
+  (Doh-Obr cash interest). Trade Republic is a bank from 6 December 2023 and a broker before it;
+  Interactive Brokers is always a broker. The parser decides this and the stage names no broker
+  and no date, and a cash payment without a holder is a programming error (`std::logic_error`). A
+  payment is never split, so a payment received after the date counts as a whole.
 - **Not positive.** A payment of 0 or less, or a Doh-Obr row that rounds to 0.00, is no row, is not
   in the total and gets `interest_payment_not_positive`.
 - **Payers.** A coupon's issuer is looked up by ISIN with the dividend rules (found, not found,
-  a skippable pick; a Slovenian issuer is not excluded). The payer of a broker's
-  cash interest is the only `broker_payers.csv` row of that broker (`brokerPayersOf`); with none or
-  several the facts stay empty and `interest_payer_not_found` is given once per broker.
+  a skippable pick; a Slovenian issuer is not excluded). The payer of a broker's cash interest is
+  the only `broker_payers.csv` row of the payer list the parser names on the payment
+  (`mPayerList`, the `broker` text of those rows, `brokerPayersOf`); with none or several the
+  facts stay empty and `interest_payer_not_found` is given once per payer list and broker. The
+  stage names no broker.
 - **Doh-DHO.** The deposit payments of a broker are one row (payer, kind, source country) with the
   exact sums of the interest and the foreign tax and the list of the payments. The total of all
   deposit payments is compared with EUR 1,000 at four decimals. Above it the rows are made. At or

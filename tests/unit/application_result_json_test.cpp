@@ -1083,6 +1083,7 @@ TEST(ApplicationResultJsonTest, WritesTheWarningStatusAndAnInteractiveBrokersSou
             .mInputSequence = {0, 5},
         }},
         .mEventKinds = {StatementEventKind::Interest},
+        .mInterestScopes = {InterestEventScope::BrokerCash},
     }};
 
     const auto json = serialize(ApplicationResultBuilder::build(std::move(input)));

@@ -61,6 +61,14 @@ struct InstrumentAssetClassVariant {
     std::optional<std::string> mUnrecognizedLabel;
 };
 
+/// Which interest form an interest event can belong to, for the forms a diagnostic affects.
+enum class InterestEventScope {
+    Coupon,     ///< A bond coupon: Doh-Obr.
+    BrokerCash, ///< Interest on cash a broker holds: Doh-Obr.
+    BankCash,   ///< Interest on a bank deposit: Doh-DHO.
+    Unknown,    ///< The type is not known (an answer decides): both interest forms.
+};
+
 struct MergeDiagnostic {
     DiagnosticSeverity mSeverity{DiagnosticSeverity::Error};
     MergeDiagnosticCode mCode{MergeDiagnosticCode::ConflictingDuplicate};
@@ -74,6 +82,9 @@ struct MergeDiagnostic {
     std::optional<Isin> mIsin;
     std::optional<std::size_t> mSourceIndex;
     std::vector<StatementEventKind> mEventKinds;
+    /// The scope of each interest event the diagnostic is about, sorted, without repeats. Empty
+    /// when no interest event is involved.
+    std::vector<InterestEventScope> mInterestScopes;
     std::vector<InstrumentNameVariant> mNameVariants;
     std::vector<InstrumentAssetClassVariant> mAssetClassVariants;
 };

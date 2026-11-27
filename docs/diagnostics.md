@@ -391,8 +391,9 @@ the scope from it:
 | trade, corporate action | Capital gains. |
 | dividend | Dividends. |
 | bond interest | Other interest. |
-| Trade Republic broker interest | Bank-deposit interest (doh-dho); also other interest when the selected year is 2023 or earlier, because interest before 6 December 2023 belongs to Doh-Obr and the rejected row has no trusted date. |
-| Interactive Brokers cash interest | Other interest. |
+| interest on cash held by a bank | Bank-deposit interest (Doh-DHO). The parser sets the cash holder on the diagnostic from the row (Trade Republic interest dated from 6 December 2023). |
+| interest on cash held by a broker | Other interest (Doh-Obr): the interest of Interactive Brokers, and Trade Republic interest dated before 6 December 2023. |
+| interest on cash, holder not known | Both interest forms: the parser could not read the date or the account that tells who held the cash. The year of the run plays no part. |
 | interest of unknown subtype | Both interest forms. |
 | benefit | No report. |
 | bond maturity | No report: a maturity is information only, and bond sales and maturities are in no form. The same row with an asset class other than a bond has the capital scope (corporate action), because it can be a taxable sale. |
@@ -403,10 +404,11 @@ A recognized unsupported row type (`unsupported_row_type`) without a row kind af
 stays visible as a non-blocking diagnostic. When the row has a kind, the kind decides: an interest
 row with an unsupported subtype still affects both interest forms. A merge conflict takes its scope
 from the kinds of the conflicting events. An instrument name conflict takes the kind of the
-instrument's collection (trades and corporate actions, dividends, or interest). The merger does not
-say whether an interest event is a bond coupon or deposit interest, so a conflicting interest event
-affects both interest forms unless every source is Interactive Brokers. An error without any
-affected report is never `blocking`.
+instrument's collection (trades and corporate actions, dividends, or interest). The merge
+diagnostic lists the scope of each interest event it is about: a bond coupon and interest on cash
+held by a broker give Doh-Obr, interest on cash held by a bank gives Doh-DHO, and an event of
+unknown type (an answer decides) or no listed event gives both interest forms. No code after the
+parsers names a broker for this scope. An error without any affected report is never `blocking`.
 
 A row positively known to belong to a category for which this application produces no XML is still
 reported, but it does not block an unrelated XML file. An unknown row is broader: because its
@@ -1138,7 +1140,7 @@ fails: cancellation, a missing attribute, the format of a field, then the signs.
 | The file has a `DOCTYPE` | `invalid_header`, error, file | `invalid_header.doctype_not_allowed` |
 | An attribute the row needs is not there | `invalid_header`, error, row and field | `invalid_header.missing_attribute` |
 | An empty required field (a `transactionID` or a `levelOfDetail` too), or a value that is not valid (a `multiplier` too, on its own field) | `missing_field` or `invalid_value`, error | the shared keys of the Trade Republic parser |
-| A tax row without an ISIN | `missing_field` or `invalid_header`, error, row kind tax row: blocks Doh-Div and the broker's interest form | the shared keys |
+| A tax row without an ISIN | `missing_field` or `invalid_header`, error, row kind tax row: blocks Doh-Div and the interest form of the cash holder the parser names (Doh-Obr for Interactive Brokers) | the shared keys |
 | A sign that disagrees with `buySell` | `inconsistent_value`, error | `inconsistent_value.trade_side` |
 | A cancelled or corrected trade | `unsupported_row_type`, error, row | `unsupported_row_type.cancelled_trade` |
 | An unknown cash `type` | `unknown_row_type`, error, no form named | `unknown_row_type` |

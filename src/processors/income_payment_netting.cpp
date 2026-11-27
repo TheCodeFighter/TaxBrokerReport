@@ -257,6 +257,7 @@ void netGroup(const PaymentGroup& aGroup, IncomePaymentNettingResult& aResult) {
         .mTaxPaid = hasTaxRows ? std::optional<Money>{*tax - *refunded} : std::nullopt,
         .mCurrency = currency,
         .mTaxCurrency = taxCurrency,
+        .mPayerList = std::nullopt, // the payment rows name no payer list
         .mPayerCountry = countryOf(aGroup.mDividends, aGroup.mReversals),
     };
 

@@ -838,4 +838,59 @@ TEST(MixedBrokerIntegrationTest, ExclusionsAtOneBrokerKeepTheFormsAndLossesOfThe
     EXPECT_EQ(result.mStatus, OverallStatus::CompletedWithWarnings);
 }
 
+TEST(MixedBrokerIntegrationTest, ARejectedInterestRowOfEachBrokerFailsOnlyItsOwnInterestForm) {
+    // Trade Republic: the amount of a deposit interest row of 2024 is "abc", and the bank holds
+    // the cash, so only Doh-DHO is affected. Interactive Brokers: the amount of a broker interest
+    // row is "x", and the broker holds the cash, so only Doh-Obr is affected. A profitable sale
+    // (Doh-KDVP) and a dividend (Doh-Div) in the same files stay as they are.
+    std::optional<ApplicationRun> run = startRun(requestOf(
+        2024,
+        {tradeRepublicFile(
+             "tr.csv",
+             {
+                 R"(2024-01-10T09:00:00Z,2024-01-10,DEFAULT,TRADING,BUY,STOCK,Synthetic Share,XX0000000001,10,10,-100,,,EUR,,,,,synthetic-buy-1,,,,)",
+                 R"(2024-03-04T09:00:00Z,2024-03-04,DEFAULT,TRADING,SELL,STOCK,Synthetic Share,XX0000000001,-5,12,60,,,EUR,,,,,synthetic-sell-1,,,,)",
+                 R"(2024-03-01T09:00:00Z,2024-03-01,DEFAULT,CASH,INTEREST_PAYMENT,,,,,,abc,,,EUR,,,,Synthetic bank interest,synthetic-interest-1,,,,)",
+             }),
+         ibkrFile("ibkr.xml", R"xml(<FlexQueryResponse queryName="synthetic" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000000">
+      <AccountInformation accountId="U0000000" ibEntity="IB-IE"/>
+      <CashTransactions>
+        <CashTransaction transactionID="ib-interest-1" actionID="" levelOfDetail="DETAIL" type="Broker Interest Received" assetCategory="CASH" symbol="" description="EUR CREDIT INT FOR MAR-2024" isin="" currency="EUR" dateTime="20240415" settleDate="20240415" reportDate="20240415" amount="x" issuerCountryCode=""/>
+        <CashTransaction transactionID="ib-dividend-1" actionID="A1" levelOfDetail="DETAIL" type="Dividends" assetCategory="STK" symbol="SYNC" description="SYNC CASH DIVIDEND EUR 10.00" isin="XX0000000004" currency="EUR" dateTime="20240502" settleDate="20240502" reportDate="20240502" amount="10" issuerCountryCode=""/>
+      </CashTransactions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>
+)xml")}));
+
+    ASSERT_TRUE(run.has_value());
+
+    const ApplicationResult& result = run->result();
+
+    // Each form is failed by its own row; the other forms are generated.
+    EXPECT_EQ(result.report(ReportType::BankDepositInterest).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.report(ReportType::OtherInterest).mStatus, ReportStatus::Failed);
+    EXPECT_EQ(result.report(ReportType::CapitalGains).mStatus, ReportStatus::Generated);
+    EXPECT_EQ(result.report(ReportType::Dividends).mStatus, ReportStatus::Generated);
+
+    // Two blocking parser errors: the Trade Republic row (source 0) affects Doh-DHO only, the
+    // Interactive Brokers row (source 1) Doh-Obr only.
+    std::vector<const ApplicationDiagnostic*> blocking;
+
+    for (const ApplicationDiagnostic& diagnostic : result.mDiagnostics)
+    {
+        if (diagnostic.mBlocking)
+        {
+            blocking.push_back(&diagnostic);
+        }
+    }
+
+    ASSERT_EQ(blocking.size(), 2U);
+
+    EXPECT_EQ(blocking[0]->mAffectedReports, (std::vector{ReportType::BankDepositInterest}));
+    EXPECT_EQ(blocking[1]->mAffectedReports, (std::vector{ReportType::OtherInterest}));
+}
+
 } // namespace

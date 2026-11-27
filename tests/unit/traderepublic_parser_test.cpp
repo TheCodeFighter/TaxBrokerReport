@@ -2635,6 +2635,8 @@ TEST(TradeRepublicParserTest, ParsesLocalAndForeignIncomeCurrenciesExactly) {
                             .mVerification = RateDirectionVerification::VerifiedBySourceSamples}));
     EXPECT_EQ(eur->mCurrency, Currency::EUR);
     EXPECT_EQ(eur->mTaxCurrency, Currency::EUR);
+    // The payer list an answer that makes it interest on cash looks the payer up in.
+    EXPECT_EQ(eur->mPayerList, std::optional<std::string>{"TR"});
 
     struct ExpectedForeignDividend {
         std::string_view mTransactionId;
@@ -2730,8 +2732,9 @@ TEST(TradeRepublicParserTest, GroupsBrokerInterestAndPreservesBondInterest) {
     EXPECT_EQ(transaction.mTaxCurrency, Currency::EUR);
     EXPECT_EQ(transactionId(transaction.mMetadata), "synthetic-bond-interest-001");
 
-    // A coupon has no cash holder.
+    // A coupon has no cash holder and no payer list.
     EXPECT_EQ(transaction.mCashHolder, std::nullopt);
+    EXPECT_EQ(transaction.mPayerList, std::nullopt);
 }
 
 TEST(TradeRepublicParserTest, SetsTheCashHolderOfInterestByTheBankDate) {
@@ -2797,6 +2800,77 @@ TEST(TradeRepublicParserTest, SetsTheCashHolderOfInterestByTheBankDate) {
     EXPECT_EQ(transactions[0].mCashHolder, std::optional{CashHolder::Broker});
     EXPECT_EQ(transactions[1].mCashHolder, std::optional{CashHolder::Bank});
     EXPECT_EQ(transactions[2].mCashHolder, std::optional{CashHolder::Bank});
+
+    // The payer list is the same on both sides of the date.
+    EXPECT_EQ(transactions[0].mPayerList, std::optional<std::string>{"TR"});
+    EXPECT_EQ(transactions[1].mPayerList, std::optional<std::string>{"TR"});
+    EXPECT_EQ(transactions[2].mPayerList, std::optional<std::string>{"TR"});
+}
+
+TEST(TradeRepublicParserTest, ARejectedCashInterestRowCarriesTheCashHolderOfItsDate) {
+    const SyntheticCsvRow beforeBank{.mDatetime = "2023-12-05T10:00:00.000Z",
+                                     .mDate = "2023-12-05",
+                                     .mCategory = "CASH",
+                                     .mType = "INTEREST_PAYMENT",
+                                     .mAssetClass = "",
+                                     .mName = "",
+                                     .mSymbol = "",
+                                     .mShares = "",
+                                     .mPrice = "",
+                                     .mAmount = "abc", // not a number
+                                     .mTax = "",
+                                     .mCurrency = "EUR",
+                                     .mOriginalAmount = "",
+                                     .mOriginalCurrency = "",
+                                     .mFxRate = "",
+                                     .mTransactionId = "synthetic-rejected-001"};
+    const SyntheticCsvRow onBankDay{.mDatetime = "2023-12-06T10:00:00.000Z",
+                                    .mDate = "2023-12-06",
+                                    .mCategory = "CASH",
+                                    .mType = "INTEREST_PAYMENT",
+                                    .mAssetClass = "",
+                                    .mName = "",
+                                    .mSymbol = "",
+                                    .mShares = "",
+                                    .mPrice = "",
+                                    .mAmount = "abc", // not a number
+                                    .mTax = "",
+                                    .mCurrency = "EUR",
+                                    .mOriginalAmount = "",
+                                    .mOriginalCurrency = "",
+                                    .mFxRate = "",
+                                    .mTransactionId = "synthetic-rejected-002"};
+    const SyntheticCsvRow unreadableDate{.mDatetime = "2023-12-06T10:00:00.000Z",
+                                         .mDate = "not-a-date",
+                                         .mCategory = "CASH",
+                                         .mType = "INTEREST_PAYMENT",
+                                         .mAssetClass = "",
+                                         .mName = "",
+                                         .mSymbol = "",
+                                         .mShares = "",
+                                         .mPrice = "",
+                                         .mAmount = "abc", // not a number
+                                         .mTax = "",
+                                         .mCurrency = "EUR",
+                                         .mOriginalAmount = "",
+                                         .mOriginalCurrency = "",
+                                         .mFxRate = "",
+                                         .mTransactionId = "synthetic-rejected-003"};
+
+    const auto beforeResult = parseRows({beforeBank});
+    const auto bankResult = parseRows({onBankDay});
+    const auto unreadableResult = parseRows({unreadableDate});
+
+    ASSERT_FALSE(beforeResult.mDiagnostics.empty());
+    ASSERT_FALSE(bankResult.mDiagnostics.empty());
+    ASSERT_FALSE(unreadableResult.mDiagnostics.empty());
+
+    // The day before 6 December 2023 a broker holds the cash; from that day a bank does; a date
+    // that cannot be read says nothing.
+    EXPECT_EQ(beforeResult.mDiagnostics.front().mRowKind, ParsedRowKind::BrokerInterest);
+    EXPECT_EQ(beforeResult.mDiagnostics.front().mCashHolder, std::optional{CashHolder::Broker});
+    EXPECT_EQ(bankResult.mDiagnostics.front().mCashHolder, std::optional{CashHolder::Bank});
+    EXPECT_EQ(unreadableResult.mDiagnostics.front().mCashHolder, std::nullopt);
 }
 
 TEST(TradeRepublicParserTest, PreservesBothQuantitySignsWithoutInferringSplitDirection) {
@@ -15729,6 +15803,7 @@ TEST(TradeRepublicParserTest, ReadsDepositInterestNegativeAmount) {
     EXPECT_EQ(transaction.mGrossAmount, -10'000); // EUR -1.00 at 4 decimals.
     EXPECT_EQ(transaction.mCurrency, Currency::EUR);
     EXPECT_EQ(transaction.mCashHolder, std::optional{CashHolder::Bank});
+    EXPECT_EQ(transaction.mPayerList, std::optional<std::string>{"TR"});
 }
 
 TEST(TradeRepublicParserTest, ReadsBrokerCashInterestNegativeAmount) {
@@ -15763,6 +15838,7 @@ TEST(TradeRepublicParserTest, ReadsBrokerCashInterestNegativeAmount) {
     EXPECT_EQ(transaction.mMetadata.mTaxDate, makeDate(2023, 11, 15));
     EXPECT_EQ(transaction.mGrossAmount, -4'000); // EUR -0.40 at 4 decimals.
     EXPECT_EQ(transaction.mCashHolder, std::optional{CashHolder::Broker}); // Before 2023-12-06.
+    EXPECT_EQ(transaction.mPayerList, std::optional<std::string>{"TR"});
 }
 
 TEST(TradeRepublicParserTest, ReadsNegativeCashInterestInTheOriginalCurrency) {

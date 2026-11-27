@@ -252,6 +252,33 @@ bool hasLineBreakInsideField(const csv::CSVRow& aCsvRow) {
 
 namespace taxbroker::tr {
 
+namespace {
+
+/// Trade Republic holds the customer cash as a bank from 6 December 2023; the interest it pays
+/// from then on is deposit interest, and the interest before it is other interest.
+CashHolder tradeRepublicCashHolder(const Date aTaxDate) {
+    using namespace std::chrono;
+
+    return aTaxDate >= Date{sys_days{year{2023} / December / 6}} ? CashHolder::Bank
+                                                                 : CashHolder::Broker;
+}
+
+/// The cash holder a diagnostic of an interest row on cash carries: from the row date, or none
+/// when the row is another kind or its date cannot be read.
+std::optional<CashHolder> cashHolderOfRow(const csv::CSVRow& aCsvRow,
+                                          const std::optional<ParsedRowKind> aRowKind) {
+    if (aRowKind != ParsedRowKind::BrokerInterest)
+    {
+        return std::nullopt;
+    }
+
+    const std::optional<Date> date = parseCalendarDate(aCsvRow["date"].get<std::string>());
+
+    return date ? std::optional{tradeRepublicCashHolder(*date)} : std::nullopt;
+}
+
+} // namespace
+
 struct TradeRepublicParser::RowContext {
     ParseResult& mParseResult;
     const SourceFilename& mSourceFile;
@@ -264,6 +291,8 @@ struct TradeRepublicParser::RowContext {
     mutable bool mRowRejected{};        ///< The row has an error that keeps it from being stored.
     mutable bool mHasLocalizedNumber{}; ///< A rejected numeric field has a comma or parenthesis.
     std::optional<ParsedRowKind> mRowKind; ///< Set once the row type is known.
+    /// Who held the cash of an interest row on cash, from its date when it can be read.
+    std::optional<CashHolder> mCashHolder;
 
     [[nodiscard]] EventMetadata metadata(Date aTaxDate) const;
     [[nodiscard]] std::vector<InstrumentSourceEvidence>
@@ -404,6 +433,7 @@ void TradeRepublicParser::RowContext::addDiagnostic(DiagnosticSeverity aSeverity
         .mMessageKey = aMessage.mKey,
         .mMessageParams = std::move(aMessage.mParams),
         .mRowKind = mRowKind,
+        .mCashHolder = mCashHolder,
     });
 }
 
@@ -602,6 +632,7 @@ ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
             }
 
             const RowMeta rowMeta = detectRowType(row);
+            const std::optional<ParsedRowKind> rowKind = rowKindFor(row, rowMeta.mRowType);
             const auto datetimeValue = row["datetime"].get<std::string>();
             const auto sourceTimestamp = parseSourceTimestamp(datetimeValue);
             const RowContext context{
@@ -620,7 +651,8 @@ ParseResult TradeRepublicParser::parse(const std::string_view aCsvText,
                         ? parseCalendarDate(std::string_view{datetimeValue}.substr(0, 10))
                         : std::nullopt,
                 .mSourceTimestampInvalid = !datetimeValue.empty() && !sourceTimestamp,
-                .mRowKind = rowKindFor(row, rowMeta.mRowType),
+                .mRowKind = rowKind,
+                .mCashHolder = cashHolderOfRow(row, rowKind),
             };
 
             const bool isImportedEvent = rowMeta.mRowType == RowType::Trade ||
@@ -1244,22 +1276,10 @@ void TradeRepublicParser::parseDividendRow(const csv::CSVRow& aCsvRow,
         .mCurrency = income->mCurrency,
         .mTaxCurrency = income->mTaxCurrency,
         .mInstrumentEvidence = std::move(evidence),
+        .mPayerList = "TR",
         .mPayerCountry = std::nullopt,
     });
 }
-
-namespace {
-
-/// Trade Republic holds the customer cash as a bank from 6 December 2023; the interest it pays
-/// from then on is deposit interest, and the interest before it is other interest.
-CashHolder tradeRepublicCashHolder(const Date aTaxDate) {
-    using namespace std::chrono;
-
-    return aTaxDate >= Date{sys_days{year{2023} / December / 6}} ? CashHolder::Bank
-                                                                 : CashHolder::Broker;
-}
-
-} // namespace
 
 void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
                                            std::vector<InterestInstrument>& aInstruments,
@@ -1352,6 +1372,7 @@ void TradeRepublicParser::parseInterestRow(const csv::CSVRow& aCsvRow,
         .mInstrumentEvidence = std::move(evidence),
         .mCashHolder =
             hasInstrument ? std::nullopt : std::optional{tradeRepublicCashHolder(taxDate)},
+        .mPayerList = isBond ? std::nullopt : std::optional<std::string>{"TR"},
         .mPayerCode = std::nullopt,
         .mPayerCountry = std::nullopt,
     });

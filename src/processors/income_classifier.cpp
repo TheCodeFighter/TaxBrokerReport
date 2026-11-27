@@ -101,7 +101,8 @@ bool hasUnknownClass(const DividendInstrument& aInstrument) {
                        });
 }
 
-/// The payment in the interest form. aHolder is the cash holder the treatment gives.
+/// The payment in the interest form. aHolder is the cash holder the treatment gives; the row
+/// keeps its payer list.
 template <typename Transaction>
 InterestTransaction asInterest(const Transaction& aTransaction,
                                const std::optional<CashHolder> aHolder) {
@@ -114,6 +115,7 @@ InterestTransaction asInterest(const Transaction& aTransaction,
         .mTaxCurrency = aTransaction.mTaxCurrency,
         .mInstrumentEvidence = aTransaction.mInstrumentEvidence,
         .mCashHolder = aHolder,
+        .mPayerList = aTransaction.mPayerList,
         .mPayerCode = std::nullopt,
         .mPayerCountry = aTransaction.mPayerCountry,
     };
@@ -128,6 +130,7 @@ DividendTransaction asDividend(const InterestTransaction& aTransaction) {
         .mCurrency = aTransaction.mCurrency,
         .mTaxCurrency = aTransaction.mTaxCurrency,
         .mInstrumentEvidence = aTransaction.mInstrumentEvidence,
+        .mPayerList = aTransaction.mPayerList,
         .mPayerCountry = aTransaction.mPayerCountry,
     };
 }

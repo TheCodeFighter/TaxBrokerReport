@@ -20,10 +20,6 @@ namespace {
 
 constexpr std::size_t kReportCount = 4;
 
-/// Trade Republic interest received before 6 December 2023 is Doh-Obr income, so a run for this
-/// year or an earlier one can still contain it.
-constexpr int kLastYearWithEarlierDepositInterest = 2023;
-
 using ReportList = std::vector<ReportType>;
 
 const ReportList kAllReports{ReportType::CapitalGains,
@@ -43,29 +39,27 @@ void normalizeReports(ReportList& aReports) {
     return aLeft;
 }
 
-/// The forms an interest row can belong to when its subtype is not established. Interactive
-/// Brokers cash interest is only ever Doh-Obr; Trade Republic deposit interest is Doh-DHO, and
-/// Doh-Obr income before 6 December 2023.
-[[nodiscard]] ReportList brokerInterestScope(Broker aBroker, int aReportingYear) {
-    switch (aBroker)
+/// The interest form of cash held by a broker (Doh-Obr) or a bank (Doh-DHO). When the holder is
+/// not known, an interest row can belong to either form.
+[[nodiscard]] ReportList cashInterestScope(const std::optional<CashHolder> aHolder) {
+    if (!aHolder)
     {
-    case Broker::InteractiveBrokers:
-        return {ReportType::OtherInterest};
-    case Broker::TradeRepublic:
-        if (aReportingYear > kLastYearWithEarlierDepositInterest)
-        {
-            return {ReportType::BankDepositInterest};
-        }
-        // reporting broken interest type, we cannot know if date is also broken
         return {ReportType::BankDepositInterest, ReportType::OtherInterest};
-    case Broker::Unknown:
-        break;
+    }
+
+    switch (*aHolder)
+    {
+    case CashHolder::Broker:
+        return {ReportType::OtherInterest};
+    case CashHolder::Bank:
+        return {ReportType::BankDepositInterest};
     }
 
     return {ReportType::BankDepositInterest, ReportType::OtherInterest};
 }
 
-[[nodiscard]] ReportList scopeOfRowKind(ParsedRowKind aKind, Broker aBroker, int aReportingYear) {
+[[nodiscard]] ReportList scopeOfRowKind(ParsedRowKind aKind,
+                                        const std::optional<CashHolder> aHolder) {
     switch (aKind)
     {
     case ParsedRowKind::Trade:
@@ -83,28 +77,27 @@ void normalizeReports(ReportList& aReports) {
     case ParsedRowKind::BondInterest:
         return {ReportType::OtherInterest};
     case ParsedRowKind::BrokerInterest:
-        return brokerInterestScope(aBroker, aReportingYear);
+        return cashInterestScope(aHolder);
     case ParsedRowKind::UnknownInterest:
         return {ReportType::BankDepositInterest, ReportType::OtherInterest};
     case ParsedRowKind::Benefit:
         return {};
     // The tax is on a dividend or on interest, and the row does not say which.
     case ParsedRowKind::IncomeTax:
-        return unionOf({ReportType::Dividends}, brokerInterestScope(aBroker, aReportingYear));
+        return unionOf({ReportType::Dividends}, cashInterestScope(aHolder));
     }
 
     return kAllReports;
 }
 
-[[nodiscard]] ReportList scopeOfParseDiagnostic(const SourcedParseDiagnostic& aDiagnostic,
-                                                int aReportingYear) {
+[[nodiscard]] ReportList scopeOfParseDiagnostic(const SourcedParseDiagnostic& aDiagnostic) {
     const auto& diagnostic = aDiagnostic.mDiagnostic;
 
     // The row kind wins: an interest row with an unsupported subtype still belongs to an interest
     // form.
     if (diagnostic.mRowKind)
     {
-        return scopeOfRowKind(*diagnostic.mRowKind, aDiagnostic.mBroker, aReportingYear);
+        return scopeOfRowKind(*diagnostic.mRowKind, diagnostic.mCashHolder);
     }
     // A recognized row type without an XML form in this application blocks no report.
     if (diagnostic.mCode == DiagnosticCode::UnsupportedRowType)
@@ -116,11 +109,27 @@ void normalizeReports(ReportList& aReports) {
     return kAllReports;
 }
 
-/// An interest event can be a bond coupon (Doh-Obr) or deposit interest, and the merger result
-/// does not say which, so both interest forms are affected unless every source is Interactive
-/// Brokers.
+/// The interest forms of one interest event: a coupon and interest on cash held by a broker are
+/// Doh-Obr, interest on cash held by a bank is Doh-DHO, and an event of unknown type may be either.
+[[nodiscard]] ReportList interestScopeReports(const InterestEventScope aScope) {
+    switch (aScope)
+    {
+    case InterestEventScope::Coupon:
+    case InterestEventScope::BrokerCash:
+        return {ReportType::OtherInterest};
+    case InterestEventScope::BankCash:
+        return {ReportType::BankDepositInterest};
+    case InterestEventScope::Unknown:
+        break;
+    }
+
+    return {ReportType::BankDepositInterest, ReportType::OtherInterest};
+}
+
+/// The forms of an event kind. The diagnostic lists the scope of each interest event; with none
+/// listed both interest forms are affected.
 [[nodiscard]] ReportList scopeOfEventKind(StatementEventKind aKind,
-                                          const std::vector<SourceReference>& aSources) {
+                                          const std::vector<InterestEventScope>& aInterestScopes) {
     switch (aKind)
     {
     case StatementEventKind::Trade:
@@ -135,17 +144,19 @@ void normalizeReports(ReportList& aReports) {
     case StatementEventKind::Dividend:
         return {ReportType::Dividends};
     case StatementEventKind::Interest: {
-        const bool isIbkrOnly =
-            !aSources.empty() &&
-            std::all_of(aSources.begin(), aSources.end(), [](const SourceReference& aSource) {
-                return aSource.mBroker == Broker::InteractiveBrokers;
-            });
-        if (isIbkrOnly)
+        if (aInterestScopes.empty())
         {
-            return {ReportType::OtherInterest};
+            return {ReportType::BankDepositInterest, ReportType::OtherInterest};
         }
 
-        return {ReportType::BankDepositInterest, ReportType::OtherInterest};
+        ReportList reports;
+
+        for (const InterestEventScope scope : aInterestScopes)
+        {
+            reports = unionOf(std::move(reports), interestScopeReports(scope));
+        }
+
+        return reports;
     }
     case StatementEventKind::Benefit:
         return {};
@@ -181,7 +192,7 @@ void normalizeReports(ReportList& aReports) {
     ReportList reports;
     for (const auto kind : aDiagnostic.mEventKinds)
     {
-        reports = unionOf(std::move(reports), scopeOfEventKind(kind, aDiagnostic.mSources));
+        reports = unionOf(std::move(reports), scopeOfEventKind(kind, aDiagnostic.mInterestScopes));
     }
 
     return reports;
@@ -285,10 +296,9 @@ struct DraftDiagnostic {
     return aSeverity == DiagnosticSeverity::Error && !aReports.empty();
 }
 
-[[nodiscard]] DraftDiagnostic draftOfParse(const SourcedParseDiagnostic& aSourced,
-                                           int aReportingYear) {
+[[nodiscard]] DraftDiagnostic draftOfParse(const SourcedParseDiagnostic& aSourced) {
     const auto& parse = aSourced.mDiagnostic;
-    auto reports = scopeOfParseDiagnostic(aSourced, aReportingYear);
+    auto reports = scopeOfParseDiagnostic(aSourced);
 
     ApplicationSource source{
         .mSourceIndex = aSourced.mSourceIndex,
@@ -348,14 +358,13 @@ struct DraftDiagnostic {
 }
 
 /// The draft of a parser or merger diagnostic, as the merger returns it.
-[[nodiscard]] DraftDiagnostic draftOfMergeInput(const StatementMergeDiagnostic& aDiagnostic,
-                                                int aReportingYear) {
-    const auto toDraft = [aReportingYear](const auto& aEntry) {
+[[nodiscard]] DraftDiagnostic draftOfMergeInput(const StatementMergeDiagnostic& aDiagnostic) {
+    const auto toDraft = [](const auto& aEntry) {
         using Diagnostic = std::decay_t<decltype(aEntry)>;
 
         if constexpr (std::is_same_v<Diagnostic, SourcedParseDiagnostic>)
         {
-            return draftOfParse(aEntry, aReportingYear);
+            return draftOfParse(aEntry);
         }
         else
         {
@@ -1281,8 +1290,7 @@ bool hasSourceError(const ApplicationResultInput& aInput, ReportType aReport) {
         const bool isResolved = std::find(aInput.mResolvedMergeDiagnostics.begin(),
                                           aInput.mResolvedMergeDiagnostics.end(),
                                           position) != aInput.mResolvedMergeDiagnostics.end();
-        const auto draft =
-            draftOfMergeInput(aInput.mMergeDiagnostics[position], aInput.mReportingYear);
+        const auto draft = draftOfMergeInput(aInput.mMergeDiagnostics[position]);
 
         if (!isResolved && draft.mDiagnostic.mBlocking &&
             affects(draft.mDiagnostic.mAffectedReports, aReport))
@@ -1324,12 +1332,11 @@ ApplicationResult ApplicationResultBuilder::build(ApplicationResultInput&& aInpu
     // Collect the diagnostics of every stage in stage order; the position is the creation order.
     std::vector<DraftDiagnostic> drafts;
 
-    std::transform(aInput.mMergeDiagnostics.begin(),
-                   aInput.mMergeDiagnostics.end(),
-                   std::back_inserter(drafts),
-                   [&aInput](const StatementMergeDiagnostic& aMerged) {
-                       return draftOfMergeInput(aMerged, aInput.mReportingYear);
-                   });
+    std::transform(
+        aInput.mMergeDiagnostics.begin(),
+        aInput.mMergeDiagnostics.end(),
+        std::back_inserter(drafts),
+        [](const StatementMergeDiagnostic& aMerged) { return draftOfMergeInput(aMerged); });
     for (std::size_t index = 0; index < aInput.mProcessingDiagnostics.size(); ++index)
     {
         drafts.push_back(draftOfProcessing(aInput.mProcessingDiagnostics[index], index));

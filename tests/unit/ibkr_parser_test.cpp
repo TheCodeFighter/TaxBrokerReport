@@ -492,6 +492,7 @@ TEST(IbkrParserSupportedTest, BrokerInterestNamesThePayerEntity2007) {
     EXPECT_FALSE(interest->mTaxPaid.has_value()); // no tax row: blank, not zero
     EXPECT_FALSE(interest->mExchangeRate.has_value());
     EXPECT_EQ(interest->mCashHolder, CashHolder::Broker);
+    EXPECT_EQ(interest->mPayerList, "IBKR");  // the `broker` text of its payer rows
     EXPECT_EQ(interest->mPayerCode, "IB-IE"); // ibEntity of the account `U0000000`
     EXPECT_EQ(interest->mMetadata.mTaxDate, date(2024, 4, 3));
     EXPECT_FALSE(interest->mMetadata.mSourceTimestamp.has_value());
@@ -522,6 +523,7 @@ TEST(IbkrParserSupportedTest, BondCouponIsBondInterestWithoutCashHolder2009) {
     EXPECT_EQ(interest->mGrossAmount, 450'000); // EUR 45.00
     EXPECT_EQ(interest->mCurrency, Currency::EUR);
     EXPECT_FALSE(interest->mCashHolder.has_value());
+    EXPECT_FALSE(interest->mPayerList.has_value()); // a coupon has no payer list
     EXPECT_FALSE(interest->mPayerCode.has_value()); // the issuer is found by ISIN
     EXPECT_FALSE(interest->mTaxPaid.has_value());
     EXPECT_EQ(interest->mMetadata.mTaxDate, date(2024, 6, 17));
@@ -2619,6 +2621,7 @@ TEST(IbkrParserCashRowTest, WithholdingWithAnEmptyIsinCannotBeAssignedToAPayment
     EXPECT_EQ(result.mDiagnostics.front().mCode, DiagnosticCode::MissingField);
     EXPECT_EQ(result.mDiagnostics.front().mField, "isin");
     EXPECT_EQ(result.mDiagnostics.front().mRowKind, ParsedRowKind::IncomeTax);
+    EXPECT_EQ(result.mDiagnostics.front().mCashHolder, CashHolder::Broker);
     ASSERT_EQ(result.mDiagnostics.front().mMessageParams.size(), 2U);
     EXPECT_EQ(result.mDiagnostics.front().mMessageParams[1],
               taxbroker::termParam("rowKind", taxbroker::term::kRowKindIncomeTax));
@@ -2759,6 +2762,7 @@ TEST(IbkrParserCashRowTest, BrokerInterestWithABadAmountIsRejected) {
     ASSERT_EQ(result.mDiagnostics.size(), 1U);
     EXPECT_EQ(result.mDiagnostics.front().mField, "amount");
     EXPECT_EQ(result.mDiagnostics.front().mRowKind, ParsedRowKind::BrokerInterest);
+    EXPECT_EQ(result.mDiagnostics.front().mCashHolder, CashHolder::Broker); // this broker holds it
 }
 
 TEST(IbkrParserCashRowTest, BrokerInterestWithoutTheAmountAttributeIsRejected) {
