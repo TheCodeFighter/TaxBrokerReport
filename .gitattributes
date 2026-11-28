@@ -1,2 +1,7 @@
+# Git never changes a line end, on any platform: the embedded resources, the golden XML files and
+# the hash-checked fixtures must be byte-identical to the index (a Windows checkout would otherwise
+# turn every LF file into CRLF).
+* -text
+
 # The ECB rate fixture is checked by SHA-256, so Git must never change its line ends.
 tests/test_data/ecb/*.csv -text

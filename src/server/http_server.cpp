@@ -378,7 +378,24 @@ struct HttpServer::Impl {
             (void)::fcntl(mAcceptor.native_handle(), F_SETFD, FD_CLOEXEC);
 #endif
 
+#if defined(_WIN32)
+            // On Windows SO_REUSEADDR lets another program bind the same port while this one
+            // listens and take over the connections. SO_EXCLUSIVEADDRUSE stops that.
+            const int exclusive = 1;
+
+            if (::setsockopt(mAcceptor.native_handle(),
+                             SOL_SOCKET,
+                             SO_EXCLUSIVEADDRUSE,
+                             reinterpret_cast<const char*>(&exclusive),
+                             sizeof(exclusive)) != 0)
+            {
+                throw boost::system::system_error(
+                    boost::system::error_code(::WSAGetLastError(),
+                                              boost::system::system_category()));
+            }
+#else
             mAcceptor.set_option(asio::socket_base::reuse_address(true));
+#endif
             mAcceptor.bind(endpoint);
             mAcceptor.listen(asio::socket_base::max_listen_connections);
         } catch (const boost::system::system_error&)

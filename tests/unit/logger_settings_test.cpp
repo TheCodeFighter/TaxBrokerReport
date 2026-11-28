@@ -1,9 +1,12 @@
 #include "taxbroker/logging.hpp"
 
+#include "../support/test_environment.hpp"
+
+#include "taxbroker/environment.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
-#include <cstdlib>
 #include <optional>
 #include <string>
 #include <vector>
@@ -17,10 +20,8 @@ class LogEnvironment : public ::testing::Test {
     void SetUp() override {
         for (const char* name : kNames)
         {
-            const char* old = std::getenv(name);
-
-            mOld.emplace_back(old != nullptr ? std::optional<std::string>{old} : std::nullopt);
-            unsetenv(name);
+            mOld.emplace_back(readEnvironment(name));
+            test::unsetTestEnvironment(name);
         }
     }
 
@@ -29,11 +30,11 @@ class LogEnvironment : public ::testing::Test {
         {
             if (mOld[index].has_value())
             {
-                setenv(kNames[index], mOld[index]->c_str(), 1);
+                test::setTestEnvironment(kNames[index], *mOld[index]);
             }
             else
             {
-                unsetenv(kNames[index]);
+                test::unsetTestEnvironment(kNames[index]);
             }
         }
     }
@@ -53,23 +54,23 @@ TEST_F(LogEnvironment, NothingSetMeansNothingInvalid) {
 }
 
 TEST_F(LogEnvironment, ValidValuesAreNotReported) {
-    setenv("TBR_LOG_LEVEL", "warn", 1);
-    setenv("TBR_LOG_FILE_MODE", "truncate", 1);
-    setenv("TBR_LOG_ASYNC", "0", 1);
-    setenv("TBR_LOG_QUEUE_SIZE", "65536", 1); // the largest allowed value
-    setenv("TBR_LOG_THREADS", "8", 1);        // the largest allowed value
-    setenv("TBR_LOG_STDOUT", "true", 1);
+    test::setTestEnvironment("TBR_LOG_LEVEL", "warn");
+    test::setTestEnvironment("TBR_LOG_FILE_MODE", "truncate");
+    test::setTestEnvironment("TBR_LOG_ASYNC", "0");
+    test::setTestEnvironment("TBR_LOG_QUEUE_SIZE", "65536"); // the largest allowed value
+    test::setTestEnvironment("TBR_LOG_THREADS", "8");        // the largest allowed value
+    test::setTestEnvironment("TBR_LOG_STDOUT", "true");
 
     EXPECT_TRUE(InvalidLogSettings().empty());
 }
 
 TEST_F(LogEnvironment, EachInvalidValueIsReportedByNameOnly) {
-    setenv("TBR_LOG_LEVEL", "loud", 1);
-    setenv("TBR_LOG_FILE_MODE", "sometimes", 1);
-    setenv("TBR_LOG_ASYNC", "yes", 1);
-    setenv("TBR_LOG_QUEUE_SIZE", "65537", 1); // one over the largest allowed value
-    setenv("TBR_LOG_THREADS", "9", 1);        // one over the largest allowed value
-    setenv("TBR_LOG_STDOUT", "2", 1);
+    test::setTestEnvironment("TBR_LOG_LEVEL", "loud");
+    test::setTestEnvironment("TBR_LOG_FILE_MODE", "sometimes");
+    test::setTestEnvironment("TBR_LOG_ASYNC", "yes");
+    test::setTestEnvironment("TBR_LOG_QUEUE_SIZE", "65537"); // one over the largest allowed value
+    test::setTestEnvironment("TBR_LOG_THREADS", "9");        // one over the largest allowed value
+    test::setTestEnvironment("TBR_LOG_STDOUT", "2");
 
     const std::vector<std::string> expected{"TBR_LOG_LEVEL",
                                             "TBR_LOG_FILE_MODE",
@@ -82,8 +83,8 @@ TEST_F(LogEnvironment, EachInvalidValueIsReportedByNameOnly) {
 }
 
 TEST_F(LogEnvironment, ZeroAndTextAreInvalidSizes) {
-    setenv("TBR_LOG_QUEUE_SIZE", "0", 1);
-    setenv("TBR_LOG_THREADS", "four", 1);
+    test::setTestEnvironment("TBR_LOG_QUEUE_SIZE", "0");
+    test::setTestEnvironment("TBR_LOG_THREADS", "four");
 
     const std::vector<std::string> expected{"TBR_LOG_QUEUE_SIZE", "TBR_LOG_THREADS"};
 

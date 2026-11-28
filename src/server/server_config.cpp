@@ -1,5 +1,7 @@
 #include "server_config.hpp"
 
+#include "taxbroker/environment.hpp"
+
 #include <charconv>
 #include <cstdlib>
 #include <system_error>
@@ -74,7 +76,7 @@ std::variant<ServerConfig, std::string> readServerConfig(const EnvLookup& aEnv) 
 
     if (launchFile.has_value())
     {
-        const std::filesystem::path path(*launchFile);
+        const std::filesystem::path path = pathFromUtf8(*launchFile);
 
         if (!path.is_absolute())
         {

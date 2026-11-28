@@ -4,8 +4,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include <sys/stat.h>
-
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -13,6 +11,10 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
 
 namespace {
 using namespace taxbroker;
@@ -84,21 +86,39 @@ TEST(LoggerLevelTest, EveryLevelHasASelectableName) {
 }
 
 TEST(LoggerFileTest, TheFileIsInTheStateHomeWhenItIsAbsolute) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/h, /s), which is not absolute on Windows";
+#else
     const auto file = logFilePath(envOf({{"XDG_STATE_HOME", "/s"}, {"HOME", "/h"}}));
 
     EXPECT_EQ(file, std::filesystem::path{"/s/taxbroker/taxbroker.log"});
+#endif
 }
 
 TEST(LoggerFileTest, TheFileIsInTheHomeStateFolderWithoutAStateHome) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/h, /s), which is not absolute on Windows";
+#else
     const auto file = logFilePath(envOf({{"HOME", "/h"}}));
 
     EXPECT_EQ(file, std::filesystem::path{"/h/.local/state/taxbroker/taxbroker.log"});
+#endif
 }
 
 TEST(LoggerFileTest, ARelativeStateHomeIsIgnored) {
+#if defined(_WIN32)
+    GTEST_SKIP()
+        << "Not built yet: the Windows state folder is not built yet: the test names a Linux path "
+           "(/h, /s), which is not absolute on Windows";
+#else
     const auto file = logFilePath(envOf({{"XDG_STATE_HOME", "rel"}, {"HOME", "/h"}}));
 
     EXPECT_EQ(file, std::filesystem::path{"/h/.local/state/taxbroker/taxbroker.log"});
+#endif
 }
 
 TEST(LoggerFileTest, WithoutAnAbsoluteHomeThereIsNoFile) {
@@ -119,9 +139,12 @@ TEST(LoggerFileTest, TheDefaultFileIsOpenedInAPrivateStateFolder) {
     EXPECT_NE(sink, nullptr);
     EXPECT_TRUE(std::filesystem::exists(temp.path() / "taxbroker" / "taxbroker.log"));
 
+#if !defined(_WIN32)
+    // On Windows the access list of the folder is checked in windows_private_file_test.cpp.
     struct stat info{};
     ASSERT_EQ(::stat((temp.path() / "taxbroker").c_str(), &info), 0);
     EXPECT_EQ(info.st_mode & 0777U, 0700U); // owner only
+#endif
 }
 
 TEST(LoggerFileTest, ALogFileVariableIsOpenedWithoutMakingTheStateFolder) {

@@ -4,8 +4,9 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/google/googletest.git
   GIT_TAG        v1.18.0
 )
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+# For Windows: GoogleTest uses the static C runtime of the project (set in the root CMakeLists.txt),
+# so it must not be forced to the shared one.
+set(gtest_force_shared_crt OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
@@ -23,12 +24,14 @@ endif()
 # Unit Tests
 add_executable(taxbroker_unit_tests
     support/large_allocation_hook.cpp
+    support/test_environment.cpp
     unit/answer_json_test.cpp
     unit/application_result_json_test.cpp
     unit/application_result_test.cpp
     unit/application_summaries_test.cpp
     unit/failure_resolution_stage_test.cpp
     unit/fee_summary_test.cpp
+    unit/http_server_bind_test.cpp
     unit/capital_gains_report_builder_test.cpp
     unit/capital_report_gates_test.cpp
     unit/corporate_actions_test.cpp
@@ -145,12 +148,19 @@ target_compile_definitions(taxbroker_unit_tests
     TAXBROKER_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/resources/xml/schemas"
 )
 
+# The access lists, owners, links and junctions of the private files and folders on Windows.
+if(WIN32)
+    target_sources(taxbroker_unit_tests PRIVATE unit/windows_private_file_test.cpp)
+endif()
+
 if(LibXml2_FOUND)
     target_link_libraries(taxbroker_unit_tests PRIVATE LibXml2::LibXml2)
     target_compile_definitions(taxbroker_unit_tests PRIVATE TAXBROKER_HAS_LIBXML2)
 endif()
 
-gtest_discover_tests(taxbroker_unit_tests PROPERTIES LABELS unit)
+# The discovery runs the test program once during the build; the first start of a large Debug
+# program on a Windows runner (virus scan) can need longer than the 5 seconds of the default.
+gtest_discover_tests(taxbroker_unit_tests DISCOVERY_TIMEOUT 60 PROPERTIES LABELS unit)
 
 # Integration Tests
 add_executable(taxbroker_integration_tests
@@ -255,10 +265,24 @@ foreach(PROBE ${BOUNDARY_PROBES})
     target_link_libraries(${PROBE_NAME} PRIVATE
         "$<TARGET_PROPERTY:${PROBE_TARGET},LINK_LIBRARIES>")
 
+    # --config is needed for a multi-config generator (Visual Studio); others ignore it.
     add_test(NAME PublicApiBoundary.${PROBE_TEST}
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${PROBE_NAME})
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --config $<CONFIG>
+                --target ${PROBE_NAME})
     set_tests_properties(PublicApiBoundary.${PROBE_TEST} PROPERTIES
         LABELS boundary
         RESOURCE_LOCK boundary_build
         PASS_REGULAR_EXPRESSION "${PROBE_PATTERNS}")
 endforeach()
+
+# An include that goes up a folder (#include "../processors/x.hpp") resolves next to the file and
+# gets past the include-path probes above. No compile, so no build lock.
+add_test(NAME PublicApiBoundary.NoParentIncludes
+    COMMAND ${CMAKE_COMMAND}
+        -DROOT=${CMAKE_SOURCE_DIR}
+        -DCLI_DIR=${CMAKE_SOURCE_DIR}/src/cli
+        -DSERVER_DIR=${CMAKE_SOURCE_DIR}/src/server
+        -P ${CMAKE_SOURCE_DIR}/tests/support/check_parent_includes.cmake)
+set_tests_properties(PublicApiBoundary.NoParentIncludes PROPERTIES
+    LABELS boundary
+    FAIL_REGULAR_EXPRESSION "An include goes up a folder")

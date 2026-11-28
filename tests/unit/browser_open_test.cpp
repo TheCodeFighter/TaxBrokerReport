@@ -1,14 +1,20 @@
 #include "server/browser_open.hpp"
 
+#include "../support/test_environment.hpp"
+
+#include "taxbroker/environment.hpp"
+
 #include <gtest/gtest.h>
 
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <system_error>
 
+#if defined(__linux__)
 #include <sys/stat.h>
+#endif
 
 namespace {
 using namespace taxbroker;
@@ -17,10 +23,10 @@ using namespace taxbroker;
 class PathOverride {
   public:
     explicit PathOverride(const std::string& aValue) {
-        const char* old = std::getenv("PATH");
-        mHadOld = old != nullptr;
-        mOld = mHadOld ? old : "";
-        ::setenv("PATH", aValue.c_str(), 1);
+        const std::optional<std::string> old = readEnvironment("PATH");
+        mHadOld = old.has_value();
+        mOld = mHadOld ? *old : "";
+        test::setTestEnvironment("PATH", aValue);
     }
 
     PathOverride(const PathOverride&) = delete;
@@ -29,11 +35,11 @@ class PathOverride {
     ~PathOverride() {
         if (mHadOld)
         {
-            ::setenv("PATH", mOld.c_str(), 1);
+            test::setTestEnvironment("PATH", mOld);
         }
         else
         {
-            ::unsetenv("PATH");
+            test::unsetTestEnvironment("PATH");
         }
     }
 
@@ -43,6 +49,11 @@ class PathOverride {
 };
 
 TEST(BrowserOpenTest, StartsXdgOpenWithTheFileAsItsOnlyArgument) {
+#if !defined(__linux__)
+    GTEST_SKIP()
+        << "Not built yet: the browser is opened with xdg-open on Linux only; the Windows and "
+           "macOS ways to open it are not built yet";
+#else
     const std::filesystem::path folder =
         std::filesystem::temp_directory_path() / "tbr_browser_open";
     std::filesystem::remove_all(folder);
@@ -69,6 +80,7 @@ TEST(BrowserOpenTest, StartsXdgOpenWithTheFileAsItsOnlyArgument) {
 
     std::error_code ignored;
     std::filesystem::remove_all(folder, ignored);
+#endif
 }
 
 TEST(BrowserOpenTest, ReturnsFalseWhenXdgOpenDoesNotExist) {
