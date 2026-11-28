@@ -697,51 +697,56 @@ void resolveOpenSales(LossEligibilityIsin& aIsin,
     const auto apply = [&aIsin, &openSales, &aInstruments, &aResult](const auto& aAnswer) {
         using Answer = std::decay_t<decltype(aAnswer)>;
 
-        for (const auto index : openSales)
+        if constexpr (std::is_same_v<Answer, FailureResolutionAnswer>)
         {
-            auto& sale = aIsin.mSales[index];
+            // The session accepts only a loss answer or a cancel for a loss question.
+            throw std::logic_error("A failure choice cannot answer a loss question.");
+        }
+        else if constexpr (!std::is_same_v<Answer, NoOtherActivityAnswer> &&
+                           !std::is_same_v<Answer, OtherActivityAnswer> &&
+                           !std::is_same_v<Answer, CancelAnswer>)
+        {
+            static_assert(std::is_same_v<Answer, SplitRatioAnswer> ||
+                          std::is_same_v<Answer, IsinChangeAnswer> ||
+                          std::is_same_v<Answer, StockMergerAnswer> ||
+                          std::is_same_v<Answer, SeparateEventsAnswer> ||
+                          std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
+                          std::is_same_v<Answer, CapitalGainsAnswer> ||
+                          std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
+                          std::is_same_v<Answer, QuantityCorrectionAnswer> ||
+                          std::is_same_v<Answer, PayerChoiceAnswer> ||
+                          std::is_same_v<Answer, PayerCountryAnswer> ||
+                          std::is_same_v<Answer, DepositInterestTotalAnswer> ||
+                          std::is_same_v<Answer, IncomeTreatmentAnswer> ||
+                          std::is_same_v<Answer, BondTypeAnswer> ||
+                          std::is_same_v<Answer, TreatyClaimAnswer> ||
+                          std::is_same_v<Answer, DeveloperExportConfirmAnswer>);
+            throw std::logic_error("Another question's answer cannot answer a loss question.");
+        }
+        else
+        {
+            for (const auto index : openSales)
+            {
+                auto& sale = aIsin.mSales[index];
 
-            if constexpr (std::is_same_v<Answer, NoOtherActivityAnswer>)
-            {
-                sale.mState = LossSaleState::Decided;
-            }
-            else if constexpr (std::is_same_v<Answer, OtherActivityAnswer>)
-            {
-                // The safe side: every open unit is blocked; the user corrects it in eDavki.
-                sale.mDeclaredIneligibleUnits = sale.mLossUnits - sale.mKnownIneligibleUnits;
-                sale.mState = LossSaleState::Decided;
-            }
-            else if constexpr (std::is_same_v<Answer, CancelAnswer>)
-            {
-                sale.mState = LossSaleState::Cancelled;
-                aResult.mDiagnostics.push_back(
-                    lossDiagnostic(MessageKey::LossEligibilityUnresolvedCancelled,
-                                   tradeOf(aInstruments, sale.mSale),
-                                   aIsin));
-            }
-            else if constexpr (std::is_same_v<Answer, FailureResolutionAnswer>)
-            {
-                // The session accepts only a loss answer or a cancel for a loss question.
-                throw std::logic_error("A failure choice cannot answer a loss question.");
-            }
-            else
-            {
-                static_assert(std::is_same_v<Answer, SplitRatioAnswer> ||
-                              std::is_same_v<Answer, IsinChangeAnswer> ||
-                              std::is_same_v<Answer, StockMergerAnswer> ||
-                              std::is_same_v<Answer, SeparateEventsAnswer> ||
-                              std::is_same_v<Answer, CorporateActionGroupingAnswer> ||
-                              std::is_same_v<Answer, CapitalGainsAnswer> ||
-                              std::is_same_v<Answer, ExcludeFromReportsAnswer> ||
-                              std::is_same_v<Answer, QuantityCorrectionAnswer> ||
-                              std::is_same_v<Answer, PayerChoiceAnswer> ||
-                              std::is_same_v<Answer, PayerCountryAnswer> ||
-                              std::is_same_v<Answer, DepositInterestTotalAnswer> ||
-                              std::is_same_v<Answer, IncomeTreatmentAnswer> ||
-                              std::is_same_v<Answer, BondTypeAnswer> ||
-                              std::is_same_v<Answer, TreatyClaimAnswer> ||
-                              std::is_same_v<Answer, DeveloperExportConfirmAnswer>);
-                throw std::logic_error("Another question's answer cannot answer a loss question.");
+                if constexpr (std::is_same_v<Answer, NoOtherActivityAnswer>)
+                {
+                    sale.mState = LossSaleState::Decided;
+                }
+                else if constexpr (std::is_same_v<Answer, OtherActivityAnswer>)
+                {
+                    // The safe side: every open unit is blocked; the user corrects it in eDavki.
+                    sale.mDeclaredIneligibleUnits = sale.mLossUnits - sale.mKnownIneligibleUnits;
+                    sale.mState = LossSaleState::Decided;
+                }
+                else
+                {
+                    sale.mState = LossSaleState::Cancelled;
+                    aResult.mDiagnostics.push_back(
+                        lossDiagnostic(MessageKey::LossEligibilityUnresolvedCancelled,
+                                       tradeOf(aInstruments, sale.mSale),
+                                       aIsin));
+                }
             }
         }
     };
