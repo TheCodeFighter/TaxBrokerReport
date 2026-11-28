@@ -12,6 +12,7 @@
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -165,28 +166,39 @@ inline std::string tokenIn(const std::string& aText) {
 /// StartServer on its own thread, until `stop` or the destructor.
 class RunningServer {
   public:
+    /// A limit of zero means none (see `ServerHooks`).
     RunningServer(const EnvLookup& aEnv,
                   const BrowserOpener& aOpener,
-                  std::size_t aMaxFileBytes = kMaxInputFileBytes) {
-        mThread = std::thread([this, aEnv, aOpener, aMaxFileBytes]() {
-            ServerHooks hooks;
-            hooks.mOpener = aOpener;
-            hooks.mHandleSignals = false;
-            hooks.mMaxFileBytes = aMaxFileBytes;
-            hooks.mOnListening = [this](std::uint16_t aPort, std::function<void()> aStop) {
+                  std::size_t aMaxFileBytes = kMaxInputFileBytes,
+                  std::chrono::milliseconds aNoLoginLimit = std::chrono::milliseconds{0},
+                  std::chrono::milliseconds aIdleLimit = std::chrono::milliseconds{0},
+                  std::chrono::milliseconds aClosedPageLimit = std::chrono::milliseconds{0}) {
+        mThread = std::thread(
+            [this, aEnv, aOpener, aMaxFileBytes, aNoLoginLimit, aIdleLimit, aClosedPageLimit]() {
+                ServerHooks hooks;
+                hooks.mOpener = aOpener;
+                hooks.mHandleSignals = false;
+                hooks.mMaxFileBytes = aMaxFileBytes;
+                hooks.mNoLoginLimit = aNoLoginLimit;
+                hooks.mIdleLimit = aIdleLimit;
+                hooks.mClosedPageLimit = aClosedPageLimit;
+                hooks.mOnListening = [this](std::uint16_t aPort, std::function<void()> aStop) {
+                    const std::lock_guard<std::mutex> lock(mMutex);
+                    mPort = aPort;
+                    mStop = std::move(aStop);
+                    mChanged.notify_all();
+                };
+
+                const int exitCode = StartServer(aEnv, mOut, mErr, hooks);
+
                 const std::lock_guard<std::mutex> lock(mMutex);
-                mPort = aPort;
-                mStop = std::move(aStop);
+                mExitCode = exitCode;
+                mFinished = true;
+
+                // The server ended: a later `stop` has nothing to stop.
+                mStop = nullptr;
                 mChanged.notify_all();
-            };
-
-            const int exitCode = StartServer(aEnv, mOut, mErr, hooks);
-
-            const std::lock_guard<std::mutex> lock(mMutex);
-            mExitCode = exitCode;
-            mFinished = true;
-            mChanged.notify_all();
-        });
+            });
 
         std::unique_lock<std::mutex> lock(mMutex);
         mChanged.wait(lock, [this]() { return mPort != 0 || mFinished; });
@@ -201,13 +213,28 @@ class RunningServer {
         return mPort;
     }
 
+    /// Waits until the server ended by itself (a quit, a limit or a signal); false when it did
+    /// not end within aTimeout. It stops nothing.
+    [[nodiscard]] bool waitForExit(std::chrono::milliseconds aTimeout) {
+        std::unique_lock<std::mutex> lock(mMutex);
+
+        return mChanged.wait_for(lock, aTimeout, [this]() { return mFinished; });
+    }
+
     /// Stops the server, waits for it and returns the exit code.
     int stop() {
         if (mThread.joinable())
         {
-            if (mStop)
+            std::function<void()> stopFunction;
+
             {
-                mStop();
+                const std::lock_guard<std::mutex> lock(mMutex);
+                stopFunction = mStop;
+            }
+
+            if (stopFunction)
+            {
+                stopFunction();
             }
 
             mThread.join();

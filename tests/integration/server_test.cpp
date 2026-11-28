@@ -1062,6 +1062,29 @@ TEST_F(ServerTest, SigtermStopsTheServerWhenSignalsAreHandled) {
     EXPECT_TRUE(finished);
 }
 
+TEST_F(ServerTest, SighupStopsTheServerWhenSignalsAreHandled) {
+    HttpServerOptions options = testOptions();
+    options.mHandleSignals = true;
+    HttpServer server("127.0.0.1", 0, options);
+    std::atomic<bool> finished{false};
+
+    std::thread thread([&server, &finished]() {
+        server.run(okHandler);
+        finished = true;
+    });
+
+    // The answer proves that run() is serving, so the signal handler is registered already.
+    Client client(server.port());
+    client.send(getRequest(server.port(), "/"));
+
+    ASSERT_TRUE(client.readResponse().has_value());
+    ASSERT_EQ(::kill(::getpid(), SIGHUP), 0);
+
+    thread.join();
+
+    EXPECT_TRUE(finished);
+}
+
 TEST_F(ServerTest, LocalhostIsAnAcceptedListenName) {
     HttpServer server("localhost", 0, testOptions());
 

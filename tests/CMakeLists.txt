@@ -86,6 +86,7 @@ add_executable(taxbroker_unit_tests
     unit/server_config_test.cpp
     unit/messages_json_test.cpp
     unit/server_routes_test.cpp
+    unit/start_failure_page_test.cpp
     unit/server_static_files_test.cpp
     unit/state_folder_test.cpp
     unit/reference_catalogue_test.cpp
@@ -173,6 +174,7 @@ add_executable(taxbroker_integration_tests
     integration/reporting_year_integration_test.cpp
     integration/server_mixed_run_test.cpp
     integration/server_run_test.cpp
+    integration/server_stop_test.cpp
     integration/server_test.cpp
     integration/unit_evidence_integration_test.cpp
     integration/statement_merger_integration_test.cpp

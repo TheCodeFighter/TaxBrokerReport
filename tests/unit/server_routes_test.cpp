@@ -600,6 +600,215 @@ TEST_F(ServerRoutesTest, PostToVersionIsNotAllowed) {
     EXPECT_EQ(log.count("Request refused: 405 method_not_allowed"), 1U);
 }
 
+TEST_F(ServerRoutesTest, QuitWithTheSessionAnswersStoppingAndAsksTheServerToStopAfterTheWrite) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/quit",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+    LogCapture log;
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 200U);
+    EXPECT_EQ(headerOf(response, "Content-Type"), "application/json");
+    EXPECT_EQ(response.mBody, R"({"stopping":true})");
+    EXPECT_TRUE(response.mStopAfterWrite);
+    EXPECT_TRUE(response.mSessionUsed);
+    EXPECT_EQ(log.count("Stopped from the page"), 1U);
+    expectSecurityHeaders(response);
+}
+
+TEST_F(ServerRoutesTest, QuitWithoutTheSessionIsRefusedAndDoesNotStop) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/quit",
+                              .mHeaders = {kHost, kOrigin, kClient}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 401U);
+    EXPECT_FALSE(response.mStopAfterWrite);
+    EXPECT_FALSE(response.mSessionUsed);
+}
+
+TEST_F(ServerRoutesTest, QuitWithoutTheClientHeaderIsRefusedAndDoesNotStop) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/quit",
+                              .mHeaders = {kHost, kOrigin, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 403U);
+    EXPECT_FALSE(response.mStopAfterWrite);
+}
+
+TEST_F(ServerRoutesTest, QuitWithoutTheOriginIsRefusedAndDoesNotStop) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/quit",
+                              .mHeaders = {kHost, kClient, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 403U);
+    EXPECT_FALSE(response.mStopAfterWrite);
+}
+
+TEST_F(ServerRoutesTest, GetQuitIsNotAllowedAndDoesNotStop) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/quit",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+    LogCapture log;
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 405U);
+    EXPECT_EQ(headerOf(response, "Allow"), "POST");
+    EXPECT_FALSE(response.mStopAfterWrite);
+    EXPECT_EQ(log.count("Request refused: 405 method_not_allowed"), 1U);
+    EXPECT_EQ(log.count("Stopped from the page"), 0U);
+}
+
+TEST_F(ServerRoutesTest, OnlyAnApiCallWithTheSessionOrASuccessfulLoginCountsAsUse) {
+    const HttpRequest withSession{.mMethod = "GET",
+                                  .mTarget = "/api/version",
+                                  .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+    const HttpRequest withoutSession{.mMethod = "GET",
+                                     .mTarget = "/api/version",
+                                     .mHeaders = {kHost, kOrigin, kClient}};
+    const HttpRequest page{.mMethod = "GET", .mTarget = "/", .mHeaders = {kHost}};
+    const HttpRequest wrongLogin{.mMethod = "POST",
+                                 .mTarget = "/api/session",
+                                 .mHeaders = {kHost, kOrigin, kClient},
+                                 .mBody = loginBody(kZeroToken)};
+    const HttpRequest rightLogin{.mMethod = "POST",
+                                 .mTarget = "/api/session",
+                                 .mHeaders = {kHost, kOrigin, kClient},
+                                 .mBody = loginBody(kLink)};
+
+    EXPECT_TRUE(mRoutes.handle(withSession).mSessionUsed);
+    EXPECT_FALSE(mRoutes.handle(withoutSession).mSessionUsed);
+    EXPECT_FALSE(mRoutes.handle(page).mSessionUsed);
+    EXPECT_FALSE(mRoutes.handle(wrongLogin).mSessionUsed);
+    EXPECT_TRUE(mRoutes.handle(rightLogin).mSessionUsed);
+}
+
+// ---- Pages that are open (R22)
+
+HttpRequest tabRequest(const std::string& aBody) {
+    return HttpRequest{.mMethod = "POST",
+                       .mTarget = "/api/tab",
+                       .mHeaders = {kHost, kOrigin, kClient, kCookie},
+                       .mBody = aBody};
+}
+
+TEST_F(ServerRoutesTest, TabOpenAnswers204AndEndsTheWaitButDoesNotStartOne) {
+    const HttpResponse response = mRoutes.handle(tabRequest(R"({"id":"tab-1","open":true})"));
+
+    EXPECT_EQ(response.mStatus, 204U);
+    EXPECT_TRUE(response.mSessionUsed);
+    EXPECT_TRUE(response.mPageOpened);
+    EXPECT_FALSE(response.mLastPageClosed);
+    EXPECT_FALSE(response.mStopAfterWrite);
+}
+
+TEST_F(ServerRoutesTest, ClosingTheOnlyOpenTabIsTheLastPageClosed) {
+    (void)mRoutes.handle(tabRequest(R"({"id":"tab-1","open":true})"));
+
+    const HttpResponse response = mRoutes.handle(tabRequest(R"({"id":"tab-1","open":false})"));
+
+    EXPECT_EQ(response.mStatus, 204U);
+    EXPECT_TRUE(response.mLastPageClosed);
+    EXPECT_FALSE(response.mPageOpened);
+}
+
+TEST_F(ServerRoutesTest, ClosingOneOfTwoTabsIsNotTheLastPageClosed) {
+    (void)mRoutes.handle(tabRequest(R"({"id":"tab-1","open":true})"));
+    (void)mRoutes.handle(tabRequest(R"({"id":"tab-2","open":true})"));
+
+    const HttpResponse first = mRoutes.handle(tabRequest(R"({"id":"tab-1","open":false})"));
+    const HttpResponse second = mRoutes.handle(tabRequest(R"({"id":"tab-2","open":false})"));
+
+    EXPECT_FALSE(first.mLastPageClosed);
+    EXPECT_TRUE(second.mLastPageClosed);
+}
+
+TEST_F(ServerRoutesTest, OpeningTheSameTabTwiceCountsOnce) {
+    (void)mRoutes.handle(tabRequest(R"({"id":"tab-1","open":true})"));
+    (void)mRoutes.handle(tabRequest(R"({"id":"tab-1","open":true})"));
+
+    const HttpResponse response = mRoutes.handle(tabRequest(R"({"id":"tab-1","open":false})"));
+
+    EXPECT_TRUE(response.mLastPageClosed);
+}
+
+TEST_F(ServerRoutesTest, TabBodyThatIsNotAnObjectWithAnIdAndAFlagIsBadRequest) {
+    LogCapture log;
+
+    // Not JSON, no id, an id that is a number, no flag, a flag that is a text, and an id with a
+    // character that is not allowed: each is 400 and none changes the open pages.
+    EXPECT_EQ(mRoutes.handle(tabRequest("not json")).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"open":true})")).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"id":7,"open":true})")).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"id":"tab-1"})")).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"id":"tab-1","open":"yes"})")).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"id":"tab 1","open":true})")).mStatus, 400U);
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"id":"","open":true})")).mStatus, 400U);
+    EXPECT_EQ(log.count("Request refused: 400 bad_request"), 7U);
+}
+
+TEST_F(ServerRoutesTest, SixtyFiveOpenTabsAreRefusedAtTheSixtyFifth) {
+    // Ids tab-00 to tab-63 are the 64 allowed pages.
+    for (int number = 0; number < 64; ++number)
+    {
+        const std::string id = (number < 10 ? "tab-0" : "tab-") + std::to_string(number);
+
+        EXPECT_EQ(mRoutes.handle(tabRequest("{\"id\":\"" + id + "\",\"open\":true}")).mStatus,
+                  204U);
+    }
+
+    LogCapture log;
+
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"id":"tab-64","open":true})")).mStatus, 400U);
+    EXPECT_EQ(log.count("Request refused: 400 too_many_pages"), 1U);
+
+    // A page that is already counted may say it is open again.
+    EXPECT_EQ(mRoutes.handle(tabRequest(R"({"id":"tab-00","open":true})")).mStatus, 204U);
+}
+
+TEST_F(ServerRoutesTest, GetTabIsNotAllowed) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/tab",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 405U);
+    EXPECT_EQ(headerOf(response, "Allow"), "POST");
+}
+
+TEST_F(ServerRoutesTest, TabWithoutTheSessionIsRefused) {
+    const HttpRequest request{.mMethod = "POST",
+                              .mTarget = "/api/tab",
+                              .mHeaders = {kHost, kOrigin, kClient},
+                              .mBody = R"({"id":"tab-1","open":false})"};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 401U);
+    EXPECT_FALSE(response.mLastPageClosed);
+    EXPECT_FALSE(response.mPageOpened);
+}
+
+TEST_F(ServerRoutesTest, OtherApiCallsNeverSayAPageOpenedOrClosed) {
+    const HttpRequest request{.mMethod = "GET",
+                              .mTarget = "/api/version",
+                              .mHeaders = {kHost, kOrigin, kClient, kCookie}};
+
+    const HttpResponse response = mRoutes.handle(request);
+
+    EXPECT_EQ(response.mStatus, 200U);
+    EXPECT_FALSE(response.mPageOpened);
+    EXPECT_FALSE(response.mLastPageClosed);
+}
+
 TEST_F(ServerRoutesTest, HeadRootHasNoBody) {
     const HttpRequest request{.mMethod = "HEAD", .mTarget = "/", .mHeaders = {kHost}};
 
