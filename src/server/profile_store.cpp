@@ -2,16 +2,23 @@
 
 #include "state_folder.hpp"
 
+#include "taxbroker/environment.hpp"
+
 #include <algorithm>
 #include <array>
-#include <cerrno>
-#include <fcntl.h>
 #include <stdexcept>
 #include <string>
-#include <sys/stat.h>
 #include <system_error>
-#include <unistd.h>
 #include <utility>
+
+#if defined(_WIN32)
+#include "taxbroker/private_file.hpp"
+#else
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace taxbroker {
 
@@ -24,21 +31,28 @@ std::optional<std::string> locationText(const std::filesystem::path& aFile, cons
     const std::optional<std::string> home = aEnv("HOME");
 
     // A home folder of "/" (a container user without a home) would make "~" mean the whole disk.
-    if (!home.has_value() || !std::filesystem::path(*home).is_absolute() ||
-        std::filesystem::path(*home) == std::filesystem::path(*home).root_path())
+    const std::filesystem::path homePath =
+        home.has_value() ? pathFromUtf8(*home) : std::filesystem::path{};
+
+    if (!home.has_value() || !homePath.is_absolute() || homePath == homePath.root_path())
     {
         return std::nullopt;
     }
 
-    const std::filesystem::path relative = aFile.lexically_relative(*home);
+    const std::filesystem::path relative = aFile.lexically_relative(homePath);
 
     if (relative.empty() || *relative.begin() == "..")
     {
         return std::nullopt;
     }
 
-    return "~/" + relative.generic_string();
+    // The UTF-8 form: generic_string() throws on Windows for a letter outside the ANSI code page.
+    const std::u8string text = relative.generic_u8string();
+
+    return "~/" + std::string(reinterpret_cast<const char*>(text.data()), text.size());
 }
+
+#if !defined(_WIN32)
 
 /// Writes all bytes to the descriptor. False when the write fails.
 bool writeAll(int aDescriptor, std::string_view aContent) {
@@ -65,6 +79,8 @@ bool writeAll(int aDescriptor, std::string_view aContent) {
     return true;
 }
 
+#endif
+
 } // namespace
 
 ProfileStore::ProfileStore(std::optional<std::filesystem::path> aFile,
@@ -85,6 +101,33 @@ ProfileStore ProfileStore::forUser(const EnvLookup& aEnv) {
 const std::optional<std::string>& ProfileStore::location() const {
     return mLocation;
 }
+
+#if defined(_WIN32)
+
+std::optional<std::string> ProfileStore::read(std::size_t aMaxBytes) const {
+    if (!mFile.has_value())
+    {
+        return std::nullopt;
+    }
+
+    try
+    { return readPrivateFile(*mFile, aMaxBytes); } catch (const PrivateFileError& error)
+    {
+        if (error.problem() == PrivateFileProblem::NotRegular)
+        {
+            throw std::runtime_error("the profile file is not a regular file");
+        }
+
+        if (error.problem() == PrivateFileProblem::Read)
+        {
+            throw std::runtime_error("cannot read the profile file");
+        }
+
+        throw std::runtime_error("cannot open the profile file");
+    }
+}
+
+#else
 
 std::optional<std::string> ProfileStore::read(std::size_t aMaxBytes) const {
     if (!mFile.has_value())
@@ -147,6 +190,33 @@ std::optional<std::string> ProfileStore::read(std::size_t aMaxBytes) const {
     return content;
 }
 
+#endif
+
+#if defined(_WIN32)
+
+void ProfileStore::write(std::string_view aContent) const {
+    if (!mFile.has_value())
+    {
+        throw std::runtime_error("there is no data folder for the profile file");
+    }
+
+    makePrivateFolder(mFile->parent_path());
+
+    // A link, a junction or a folder at the file name is refused inside writePrivateFile.
+    try
+    { writePrivateFile(*mFile, aContent); } catch (const PrivateFileError& error)
+    {
+        if (error.problem() == PrivateFileProblem::SymbolicLink)
+        {
+            throw std::runtime_error("the profile file is a symbolic link");
+        }
+
+        throw std::runtime_error("cannot write the profile file");
+    }
+}
+
+#else
+
 void ProfileStore::write(std::string_view aContent) const {
     if (!mFile.has_value())
     {
@@ -187,6 +257,23 @@ void ProfileStore::write(std::string_view aContent) const {
     }
 }
 
+#endif
+
+#if defined(_WIN32)
+
+void ProfileStore::remove() const {
+    if (!mFile.has_value())
+    {
+        return;
+    }
+
+    try
+    { removePrivateFile(*mFile); } catch (const PrivateFileError&)
+    { throw std::runtime_error("cannot delete the profile file"); }
+}
+
+#else
+
 void ProfileStore::remove() const {
     if (!mFile.has_value())
     {
@@ -198,5 +285,7 @@ void ProfileStore::remove() const {
         throw std::runtime_error("cannot delete the profile file");
     }
 }
+
+#endif
 
 } // namespace taxbroker

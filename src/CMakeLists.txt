@@ -90,6 +90,7 @@ add_library(taxbroker_core STATIC
     utils/currency.cpp
     utils/date_utils.cpp
     utils/diagnostic_messages.cpp
+    utils/environment.cpp
     utils/exception_kind.cpp
     utils/exact_arithmetic.cpp
     utils/logger.cpp
@@ -99,6 +100,15 @@ add_library(taxbroker_core STATIC
     utils/tax_number.cpp
     utils/xml_text.cpp
 )
+
+# The secure private file and folder of Windows (user-only access list, no links).
+if(WIN32)
+    target_sources(taxbroker_core PRIVATE
+        utils/private_file.cpp
+        utils/windows_security.cpp
+    )
+    target_link_libraries(taxbroker_core PUBLIC advapi32)
+endif()
 
 # Only include/ is public. The headers of the stages, parsers, writers and utilities are in src/
 # and are private to the backend libraries, so a consumer reaches the backend through the
@@ -231,7 +241,7 @@ add_library(taxbroker_server_security STATIC
 )
 
 if(WIN32)
-    target_link_libraries(taxbroker_server_security PRIVATE bcrypt)
+    target_link_libraries(taxbroker_server_security PRIVATE bcrypt taxbroker_core)
 endif()
 
 # The local HTTP server: options, folders, browser launch, routes and the Beast server. It reaches

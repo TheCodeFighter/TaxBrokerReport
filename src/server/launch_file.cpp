@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 #if defined(_WIN32)
-#include <fstream>
+#include "taxbroker/private_file.hpp"
 #else
 #include <cerrno>
 #include <fcntl.h>
@@ -53,21 +53,10 @@ std::string makeLaunchPage(std::uint16_t aPort, std::string_view aLinkToken) {
 #if defined(_WIN32)
 
 void writeLaunchFile(const std::filesystem::path& aPath, std::string_view aContent) {
-    // The folder is the user's %LOCALAPPDATA%, whose access list allows only that user.
-    std::ofstream file(aPath, std::ios::binary | std::ios::trunc);
-
-    if (!file)
-    {
-        failWrite();
-    }
-
-    file.write(aContent.data(), static_cast<std::streamsize>(aContent.size()));
-    file.close();
-
-    if (!file)
-    {
-        failWrite();
-    }
+    // The file is made for the user only and put in place at once; a link at its name is refused.
+    try
+    { writePrivateFile(aPath, aContent); } catch (const PrivateFileError&)
+    { failWrite(); }
 }
 
 #else

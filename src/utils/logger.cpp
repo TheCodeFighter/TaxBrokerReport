@@ -1,5 +1,6 @@
 #include "taxbroker/logging.hpp"
 
+#include "taxbroker/environment.hpp"
 #include "taxbroker/state_folder.hpp"
 
 #include <algorithm>
@@ -50,23 +51,25 @@ std::string ToLower(std::string_view aValue) {
     return loweredValue;
 }
 
-const char* GetEnvironmentValue(const char* aName) {
-    const char* value = std::getenv(aName);
-    if (value == nullptr || *value == '\0')
+/// A copy of the variable, or nothing when it is not set or empty.
+std::optional<std::string> GetEnvironmentValue(std::string_view aName) {
+    std::optional<std::string> value = taxbroker::readEnvironment(aName);
+
+    if (!value.has_value() || value->empty())
     {
-        return nullptr;
+        return std::nullopt;
     }
 
     return value;
 }
 
-std::optional<spdlog::level::level_enum> ParseLogLevel(const char* aValue) {
-    if (aValue == nullptr)
+std::optional<spdlog::level::level_enum> ParseLogLevel(const std::optional<std::string>& aValue) {
+    if (!aValue.has_value())
     {
         return std::nullopt;
     }
 
-    const auto normalizedValue = ToLower(aValue);
+    const auto normalizedValue = ToLower(*aValue);
     if (normalizedValue == "trace")
     {
         return spdlog::level::trace;
@@ -99,13 +102,13 @@ std::optional<spdlog::level::level_enum> ParseLogLevel(const char* aValue) {
     return std::nullopt;
 }
 
-std::optional<bool> ParseLogFileMode(const char* aValue) {
-    if (aValue == nullptr)
+std::optional<bool> ParseLogFileMode(const std::optional<std::string>& aValue) {
+    if (!aValue.has_value())
     {
         return std::nullopt;
     }
 
-    const auto normalizedValue = ToLower(aValue);
+    const auto normalizedValue = ToLower(*aValue);
     if (normalizedValue == "append" || normalizedValue == "a" || normalizedValue == "false" ||
         normalizedValue == "0" || normalizedValue == "no")
     {
@@ -121,13 +124,13 @@ std::optional<bool> ParseLogFileMode(const char* aValue) {
     return std::nullopt;
 }
 
-std::optional<bool> ParseLogBool(const char* aValue) {
-    if (aValue == nullptr)
+std::optional<bool> ParseLogBool(const std::optional<std::string>& aValue) {
+    if (!aValue.has_value())
     {
         return std::nullopt;
     }
 
-    const auto normalizedValue = ToLower(aValue);
+    const auto normalizedValue = ToLower(*aValue);
     if (normalizedValue == "1" || normalizedValue == "true")
     {
         return true;
@@ -144,16 +147,18 @@ std::optional<bool> ParseLogBool(const char* aValue) {
 // - Value must be > 0
 // - Value must not exceed aMaxValue
 // - Overflow (ERANGE) is rejected
-std::optional<std::size_t> ParseSizeT(const char* aValue, std::size_t aMaxValue) {
-    if (aValue == nullptr)
+std::optional<std::size_t> ParseSizeT(const std::optional<std::string>& aValue,
+                                      std::size_t aMaxValue) {
+    if (!aValue.has_value())
     {
         return std::nullopt;
     }
 
     errno = 0;
     char* end = nullptr;
-    const auto parsedValue = std::strtoul(aValue, &end, 10);
-    if (end == aValue || *end != '\0' || errno == ERANGE)
+    const char* text = aValue->c_str();
+    const auto parsedValue = std::strtoul(text, &end, 10);
+    if (end == text || *end != '\0' || errno == ERANGE)
     {
         return std::nullopt;
     }
@@ -284,7 +289,7 @@ std::optional<std::filesystem::path> logFilePath(const EnvLookup& aEnv) {
 
     if (explicitFile.has_value() && !explicitFile->empty())
     {
-        return std::filesystem::path{*explicitFile};
+        return pathFromUtf8(*explicitFile);
     }
 
     try
@@ -350,7 +355,7 @@ std::vector<std::string> InvalidLogSettings() {
     std::vector<std::string> invalid;
 
     const auto check = [&invalid](const char* aName, bool aIsValid) {
-        if (GetEnvironmentValue(aName) != nullptr && !aIsValid)
+        if (GetEnvironmentValue(aName).has_value() && !aIsValid)
         {
             invalid.emplace_back(aName);
         }
