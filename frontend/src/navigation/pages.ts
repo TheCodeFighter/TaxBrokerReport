@@ -4,7 +4,7 @@ export type Page = "home" | "report" | "manual" | "support" | "about";
 /** The pages in the order of the header links. */
 export const pages: readonly Page[] = ["home", "report", "manual", "support", "about"];
 
-/** The address hash of each page: a hash, so the back button and a reload work without the server. */
+/** The address hash of each page: a hash, so a reload works without the server. Links to it replace the history entry (see replace_links.ts). */
 const hashes: Record<Page, string> = {
   home: "#/",
   report: "#/report",

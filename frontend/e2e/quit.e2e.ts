@@ -71,3 +71,19 @@ describe("the last page is closed", () => {
     expect(await session.server.exited).toBe(0);
   }, 120_000);
 });
+
+describe("page links keep one history entry", () => {
+  const session = useSession();
+
+  it("Q13 clicking through the pages replaces the entry, so a script may close the tab", async () => {
+    const page = await openReportPage(session.context, session.server);
+    const entriesAtStart = await page.evaluate(() => window.history.length);
+
+    await page.getByRole("link", { name: "Navodila" }).click();
+    await page.getByRole("link", { name: "O aplikaciji" }).click();
+    await page.getByRole("link", { name: "Poročilo", exact: true }).click();
+    await page.getByRole("heading", { name: "Poročilo", level: 1 }).waitFor();
+
+    expect(await page.evaluate(() => window.history.length)).toBe(entriesAtStart);
+  });
+});

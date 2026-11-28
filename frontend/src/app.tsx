@@ -6,6 +6,7 @@ import { readLanguage, saveLanguage } from "./i18n/language";
 import { createMessageLoader, type MessageCatalogue } from "./i18n/messages";
 import { uiText, uiTextWith, type Language, type UiTextKey } from "./i18n/ui_texts";
 import { hashOf, pageFromHash, pages, type Page } from "./navigation/pages";
+import { replacePageLink } from "./navigation/replace_links";
 import { AboutPage } from "./screens/about_page";
 import { SupportPage } from "./screens/support_page";
 import { HomePage } from "./screens/home_page";
@@ -134,13 +135,21 @@ export function App() {
     }
   }, [screen, loadCatalogue]);
 
-  // The back button and a reload keep the page, because the page is the address hash.
+  // A reload keeps the page, because the page is the address hash. A page link replaces the
+  // history entry (the tab keeps one entry), because a browser only lets a script close a tab
+  // with one entry: Quit can then close the tab. The hash change still sets the page.
   useEffect(() => {
     const onHashChange = () => setPage(pageFromHash(window.location.hash));
+    const onClick = (event: MouseEvent) =>
+      replacePageLink(event, (hash) => window.location.replace(hash));
 
     window.addEventListener("hashchange", onHashChange);
+    document.addEventListener("click", onClick);
 
-    return () => window.removeEventListener("hashchange", onHashChange);
+    return () => {
+      window.removeEventListener("hashchange", onHashChange);
+      document.removeEventListener("click", onClick);
+    };
   }, []);
 
   // A new page takes the focus, so a screen reader reads it. Not on the first load.
